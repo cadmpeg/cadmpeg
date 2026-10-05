@@ -15,6 +15,9 @@ mod policy;
 mod probe;
 mod sort;
 mod space;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod test_support;
 pub mod tree;
 mod unique;
 mod utf16;

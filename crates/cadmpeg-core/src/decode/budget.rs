@@ -138,6 +138,15 @@ impl DecodeBudget {
             return Err(resource);
         }
         let before = used.get();
+        #[cfg(feature = "test-support")]
+        let limit = super::test_support::charge_limit(
+            &self.policy.limits,
+            dimension,
+            operation,
+            before,
+            amount,
+        )
+        .map_or(limit, |probe| limit.min(probe));
         if limit
             .checked_sub(before)
             .is_none_or(|remaining| amount > remaining)

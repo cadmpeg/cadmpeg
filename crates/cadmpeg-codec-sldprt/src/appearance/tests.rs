@@ -312,36 +312,16 @@ fn display_feature_binding_refuses_retained_limit() {
         binding.source_entity_id.as_deref() == Some("Contents/DisplayLists::DisplayFace[0]")
     }));
 
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 0;
-    for _ in 0..1024 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(source.clone()), &options)
-            .expect_err("retained limit must refuse the display route");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected a retained-byte refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        if limit.operation == "retain SLDPRT DisplayFace source identity" {
-            options.policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
-            let repeated = SldprtCodec
-                .decode(&mut Cursor::new(source), &options)
-                .expect_err("one byte below the DisplayFace source identity must refuse");
-            assert!(matches!(
-                repeated,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::RetainedBytes
-                        && refusal.operation == "retain SLDPRT DisplayFace source identity"
-            ));
-            return;
-        }
-        let next = limit.used + limit.additional;
-        assert!(next > options.policy.limits.max_retained_bytes);
-        options.policy.limits.max_retained_bytes = next;
-    }
-    panic!("display binding charge was not reached within fixture admissions");
+    let limit = cadmpeg_test_support::decode::resource_refusal_at(
+        &SldprtCodec,
+        &source,
+        &mut DecodeOptions::default(),
+        ResourceDimension::RetainedBytes,
+        "retain SLDPRT DisplayFace source identity",
+        0,
+    );
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "retain SLDPRT DisplayFace source identity");
 }
 
 #[test]

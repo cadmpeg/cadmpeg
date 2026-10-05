@@ -63,48 +63,14 @@ fn assert_decode_refusal_at(
     dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &str,
 ) {
-    let mut options = DecodeOptions::default();
-    let set_limit = |options: &mut DecodeOptions, value| match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            options.policy.limits.max_collection_items = value;
-        }
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            options.policy.limits.max_retained_bytes = value;
-        }
-        _ => panic!("unsupported test dimension"),
-    };
-    set_limit(&mut options, 0);
-    for _ in 0..8192 {
-        let error = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &options)
-            .expect_err("resource cap must refuse decode");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(limit.dimension, dimension);
-        let threshold = limit
-            .used
-            .checked_add(limit.additional)
-            .expect("resource threshold fits");
-        if limit.operation == operation {
-            set_limit(&mut options, threshold - 1);
-            let exact = FcstdCodec
-                .decode(&mut Cursor::new(bytes), &options)
-                .expect_err("one below site must refuse");
-            assert!(
-                matches!(exact,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(ref found))
-                    if found.dimension == dimension && found.operation == operation
-                        && found.used + found.additional == threshold),
-                "{exact:?}"
-            );
-            return;
-        }
-        set_limit(&mut options, threshold);
-    }
-    panic!("{operation} was not reached within 8192 admissions");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &FcstdCodec,
+        bytes,
+        &mut DecodeOptions::default(),
+        dimension,
+        operation,
+        0,
+    );
 }
 
 #[test]

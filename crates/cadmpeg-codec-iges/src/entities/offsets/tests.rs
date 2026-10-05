@@ -6,8 +6,7 @@ use std::io::Cursor;
 use super::SourceParameterMap;
 
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -31,53 +30,31 @@ const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
 
 fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used + limit.additional;
-            }
-            other => panic!("expected offset collection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("offset collection refusal was not reached: {operation}");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+    );
 }
 
 fn assert_offset_retained_refusal(bytes: &[u8], operation: &str) {
-    let mut cap = 0_u64;
-    for _ in 0..8192 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used + limit.additional;
-            }
-            other => panic!("expected offset retained refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("offset retained refusal was not reached: {operation}");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
+        ResourceDimension::RetainedBytes,
+        operation,
+        0,
+    );
 }
 
 #[test]

@@ -54,6 +54,29 @@ class TempSourceCase(unittest.TestCase):
         return [item for item in policy.check_source() if item.rule == rule]
 
 
+class AnalysisCacheTests(unittest.TestCase):
+    def test_session_reuses_analysis_and_releases_it(self):
+        source = 'fn f() { /* comment */ }'
+        @policy.analysis_session
+        def analyze():
+            first = policy.production_source(source)
+            self.assertIs(first, policy.production_source(source))
+            return first
+        first = analyze()
+        self.assertEqual(first, analyze())
+        self.assertIsNot(first, analyze())
+        self.assertIsNone(policy._ANALYSIS.get())
+
+    def test_session_releases_analysis_after_failure(self):
+        @policy.analysis_session
+        def analyze():
+            policy.production_source('fn f() {}')
+            raise ValueError('failure')
+        with self.assertRaises(ValueError):
+            analyze()
+        self.assertIsNone(policy._ANALYSIS.get())
+
+
 class StripCfgTest(unittest.TestCase):
     def test_long_flat_cfg_does_not_backtrack(self) -> None:
         # A subprocess deadline also bounds failures if the old regex returns.

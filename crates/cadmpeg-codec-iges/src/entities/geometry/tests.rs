@@ -19,30 +19,17 @@ use super::{
 };
 
 fn assert_geometry_collection_refusal(bytes: &[u8], operation: &str) {
-    use cadmpeg_core::decode::DecodePolicy;
-    use cadmpeg_ir::codec::DecodeFailure;
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected geometry collection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("geometry collection refusal was not reached: {operation}");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: cadmpeg_core::decode::DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+    );
 }
 
 #[test]

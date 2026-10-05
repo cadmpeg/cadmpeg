@@ -10,10 +10,12 @@ use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
 use crate::test_support::test_prt::rmfastload_prt;
 use crate::test_support::test_streams::partition_stream;
 use crate::NxCodec;
+use cadmpeg_core::decode::ResourceDimension::CollectionItems;
 use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_test_support::refusal::resource_limit_at;
 use std::io::Cursor;
 fn native_fastload_result(
     adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
@@ -909,7 +911,7 @@ fn arrangement_configuration_route_preserves_order() {
 
 #[test]
 fn arrangement_configuration_route_refuses_collection_limit() {
-    let error = crate::test_support::collection_refusal_at("nx arrangement names", |ceiling| {
+    let error = resource_limit_at(CollectionItems, "nx arrangement names", |ceiling| {
         arrangement_configuration_result(|policy| policy.limits.max_collection_items = ceiling)
     });
     assert!(
@@ -984,10 +986,9 @@ fn part_attribute_route_preserves_typed_value() {
 
 #[test]
 fn part_attribute_route_refuses_collection_limit() {
-    let error =
-        crate::test_support::collection_refusal_at("nx native part attributes", |ceiling| {
-            part_attribute_result(|policy| policy.limits.max_collection_items = ceiling)
-        });
+    let error = resource_limit_at(CollectionItems, "nx native part attributes", |ceiling| {
+        part_attribute_result(|policy| policy.limits.max_collection_items = ceiling)
+    });
     assert!(
         matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems

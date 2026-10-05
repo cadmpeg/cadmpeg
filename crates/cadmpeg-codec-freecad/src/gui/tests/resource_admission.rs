@@ -11,58 +11,14 @@ fn assert_gui_decode_limit_at(
     dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &str,
 ) {
-    let mut options = DecodeOptions::default();
-    let cap = |options: &DecodeOptions| match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            options.policy.limits.max_collection_items
-        }
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            options.policy.limits.max_retained_bytes
-        }
-        _ => panic!("unsupported GUI test dimension"),
-    };
-    let set_cap = |options: &mut DecodeOptions, value| match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            options.policy.limits.max_collection_items = value;
-        }
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            options.policy.limits.max_retained_bytes = value;
-        }
-        _ => panic!("unsupported GUI test dimension"),
-    };
-    set_cap(&mut options, 0);
-    for _ in 0..8192 {
-        let error = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &options)
-            .expect_err("GUI decode must reach a resource refusal");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
-            error
-        else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(refusal.dimension, dimension);
-        let threshold = refusal
-            .used
-            .checked_add(refusal.additional)
-            .expect("resource threshold fits u64");
-        assert!(threshold > cap(&options));
-        if refusal.operation == operation {
-            set_cap(&mut options, threshold - 1);
-            let exact = FcstdCodec
-                .decode(&mut Cursor::new(bytes), &options)
-                .expect_err("one below the GUI allocation must refuse");
-            assert!(
-                matches!(exact,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(ref failure))
-                    if failure.dimension == dimension && failure.operation == operation
-                        && failure.used + failure.additional == threshold),
-                "{exact:?}"
-            );
-            return;
-        }
-        set_cap(&mut options, threshold);
-    }
-    panic!("{operation} was not reached within 8192 admissions");
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &FcstdCodec,
+        bytes,
+        &mut DecodeOptions::default(),
+        dimension,
+        operation,
+        0,
+    );
 }
 
 #[test]

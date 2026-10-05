@@ -3,10 +3,9 @@
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::conic_arc_file;
@@ -16,40 +15,21 @@ use crate::test_support::test_owned::{
 use crate::IgesCodec;
 
 fn assert_conic_refusal(bytes: &[u8], operation: &str, retained: bool) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
-        let mut policy = DecodePolicy::service();
+    cadmpeg_test_support::decode::resource_refusal_at(
+        &crate::IgesCodec,
+        bytes,
+        &mut DecodeOptions {
+            policy: DecodePolicy::service(),
+            ..DecodeOptions::default()
+        },
         if retained {
-            policy.limits.max_retained_bytes = cap;
+            ResourceDimension::RetainedBytes
         } else {
-            policy.limits.max_collection_items = cap;
-        }
-        let result = IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        );
-        match result {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                let dimension = if retained {
-                    ResourceDimension::RetainedBytes
-                } else {
-                    ResourceDimension::CollectionItems
-                };
-                assert_eq!(limit.dimension, dimension);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+            ResourceDimension::CollectionItems
+        },
+        operation,
+        0,
+    );
 }
 
 #[test]

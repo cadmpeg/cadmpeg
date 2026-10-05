@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Refusal oracles for a wire key that is present and null.
+//! Wire-key and resource-budget refusal oracles.
 //!
 //! A native wire type states the key it refuses. These helpers read one key
 //! through the type's own `Deserialize` implementation and check the message.
@@ -42,34 +42,125 @@ pub fn states_the_key(key: &str, message: &str) {
 pub fn resource_limit_at<T>(
     dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &str,
+    run: impl FnMut(u64) -> Result<T, cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
+    resource_limit_at_nth(dimension, operation, 0, run)
+}
+
+/// Refuse a named resource charge after `skip` reachable budget boundaries.
+/// If the first run warms a setup cache, probe and replay once more to find
+/// the stable boundary. Routes without cache changes need two runs.
+///
+/// # Panics
+///
+/// Panics if the route has no matching boundary or no stable normal policy replay.
+pub fn resource_limit_at_nth<T>(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+    skip: usize,
     mut run: impl FnMut(u64) -> Result<T, cadmpeg_core::CodecError>,
 ) -> cadmpeg_core::CodecError {
     use cadmpeg_core::CodecError;
-    let mut cap = 0;
-    for _ in 0..8192 {
-        match run(cap) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, dimension);
-                let need = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("resource need fits");
-                assert!(need > cap, "{operation}: {limit:?}");
-                if limit.operation == operation {
-                    let error = run(need - 1)
-                        .err()
-                        .expect("one unit below the resource boundary");
-                    assert!(matches!(error, CodecError::ResourceLimit(ref refusal)
-                        if refusal.dimension == dimension
-                            && refusal.operation == operation
-                            && refusal.used + refusal.additional == need));
-                    return error;
-                }
-                cap = need;
-            }
+    let mut mismatch = None;
+    for _ in 0..2 {
+        let probed =
+            cadmpeg_core::decode::test_support::at_charge(dimension, operation, skip, || {
+                run(u64::MAX)
+            });
+        let limit = match probed {
+            Err(CodecError::ResourceLimit(limit)) => limit,
             Err(error) => panic!("unexpected refusal before {operation}: {error:?}"),
             Ok(_) => panic!("missing resource boundary: {operation}"),
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, operation);
+        let need = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("resource need fits");
+        let error = cadmpeg_core::decode::test_support::without_probe(|| run(need - 1)).err();
+        if matches!(&error, Some(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == dimension
+                && refusal.operation == operation
+                && refusal.used + refusal.additional == need)
+        {
+            return error.expect("matched normal policy refusal");
         }
+        mismatch = Some((limit, error));
     }
-    panic!("resource route exceeds the boundary count: {operation}");
+    panic!("{operation}: no stable normal policy replay: {mismatch:?}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resource_limit_at;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    #[test]
+    fn normal_policy_replay_suspends_enclosing_probes() {
+        let error = cadmpeg_core::decode::test_support::at_charge(
+            ResourceDimension::WorkUnits,
+            "before",
+            0,
+            || {
+                resource_limit_at(ResourceDimension::WorkUnits, "target", |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::desktop();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    ctx.charge_work(3, "before")?;
+                    ctx.charge_work(7, "target")
+                })
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "target" && limit.used == 3 && limit.additional == 7 && limit.limit == 9)
+        );
+    }
+
+    #[test]
+    fn resource_boundary_uses_one_probe_and_one_normal_policy_run() {
+        let mut calls = 0;
+        let error = resource_limit_at(ResourceDimension::WorkUnits, "target", |cap| {
+            calls += 1;
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::desktop();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            ctx.charge_work(1, "before")?;
+            ctx.charge_work(2, "before")?;
+            ctx.charge_work(7, "target")
+        });
+        assert_eq!(calls, 2);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "target"
+                && limit.used == 3 && limit.additional == 7 && limit.limit == 9)
+        );
+    }
+
+    #[test]
+    fn cached_setup_replays_the_stable_normal_policy_boundary() {
+        let mut cached = false;
+        let mut calls = 0;
+        let error = resource_limit_at(ResourceDimension::WorkUnits, "target", |cap| {
+            calls += 1;
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::desktop();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            if !cached {
+                ctx.charge_work(9, "prime cache")?;
+                cached = true;
+            }
+            ctx.charge_work(3, "before")?;
+            ctx.charge_work(20, "target")
+        });
+        assert_eq!(calls, 4);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "target" && limit.used == 3 && limit.additional == 20 && limit.limit == 22)
+        );
+    }
 }
