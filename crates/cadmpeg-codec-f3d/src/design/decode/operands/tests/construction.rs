@@ -623,9 +623,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(start_face.role(), DesignOperandRole::ROLE_0X5);
     assert_eq!(start_face.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
+        &cadmpeg_test_support::service_decode_context(),
         &from_face_scope,
         std::slice::from_mut(&mut start_face),
-    );
+    )
+    .expect("Extrude face roles");
     assert_eq!(
         start_face.extrude_role(),
         Some(DesignExtrudeOperandRole::Faces(
@@ -669,9 +671,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(legacy_to_face.role(), DesignOperandRole::ROLE_0X12);
     assert_eq!(legacy_to_face.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
+        &cadmpeg_test_support::service_decode_context(),
         &to_face_scope,
         std::slice::from_mut(&mut legacy_to_face),
-    );
+    )
+    .expect("Extrude face roles");
     assert_eq!(
         legacy_to_face.extrude_role(),
         Some(DesignExtrudeOperandRole::Faces(
@@ -800,9 +804,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(auxiliary.role(), DesignOperandRole::FACES);
     assert_eq!(auxiliary.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
+        &cadmpeg_test_support::service_decode_context(),
         &scope,
         std::slice::from_mut(&mut auxiliary),
-    );
+    )
+    .expect("Extrude face roles");
     assert_eq!(
         auxiliary.extrude_role(),
         Some(DesignExtrudeOperandRole::Faces(

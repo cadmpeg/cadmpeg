@@ -115,9 +115,11 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         .expect("class-296 two-sided-to-faces construction group");
     assert_eq!(group.extrude_role(), None);
     crate::design::decode::operands::assign_extrude_face_roles(
+        &cadmpeg_test_support::service_decode_context(),
         &scope,
         std::slice::from_mut(&mut group),
-    );
+    )
+    .expect("Extrude face roles");
     assert_eq!(
         group.extrude_role(),
         Some(DesignExtrudeOperandRole::Faces(

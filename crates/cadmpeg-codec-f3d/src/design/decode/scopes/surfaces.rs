@@ -472,17 +472,16 @@ fn boundary_edge_record_indices(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
 ) -> Result<Vec<u32>, CodecError> {
-    let references = scope.reference_members();
-    let mut edges = ctx.collection_vec(
-        references.len().saturating_sub(2),
+    ctx.collect_vec(
+        admit_reference_values(
+            ctx,
+            scope.reference_members(),
+            "copy F3D surface boundary edges",
+        )?
+        .skip(2)
+        .copied(),
         "f3d surface boundary edges",
-    )?;
-    edges.extend(
-        admit_reference_values(ctx, references, "copy F3D surface boundary edges")?
-            .skip(2)
-            .copied(),
-    );
-    Ok(edges)
+    )
 }
 
 pub(super) fn exact_surface_stitch_operation(
@@ -538,24 +537,29 @@ pub(super) fn exact_ruled_surface_operation(
     {
         return Ok(None);
     }
+    let Some(edge_groups_at) = start.checked_add(54) else {
+        return Ok(None);
+    };
     let Some((mut edge_group_record_indices, cursor)) =
-        ruled_surface_reference_list(ctx, bytes, start.saturating_add(54))?
+        ruled_surface_reference_list(ctx, bytes, edge_groups_at)?
     else {
         return Ok(None);
     };
-    if View::u32_le_at(bytes, cursor) != Some(0) {
+    let (Some(0), Some(auxiliary_at)) = (View::u32_le_at(bytes, cursor), cursor.checked_add(4))
+    else {
         return Ok(None);
-    }
+    };
     let Some((auxiliary_record_indices, cursor)) =
-        ruled_surface_reference_list(ctx, bytes, cursor.saturating_add(4))?
+        ruled_surface_reference_list(ctx, bytes, auxiliary_at)?
     else {
         return Ok(None);
     };
-    if View::u32_le_at(bytes, cursor) != Some(0) {
+    let (Some(0), Some(trailing_at)) = (View::u32_le_at(bytes, cursor), cursor.checked_add(4))
+    else {
         return Ok(None);
-    }
+    };
     let Some((trailing_edge_groups, cursor)) =
-        ruled_surface_reference_list(ctx, bytes, cursor.saturating_add(4))?
+        ruled_surface_reference_list(ctx, bytes, trailing_at)?
     else {
         return Ok(None);
     };

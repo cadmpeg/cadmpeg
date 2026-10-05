@@ -7,7 +7,7 @@ use super::shared_frames::marked_record_reference;
 use super::shared_frames::{unique_match, UniqueMatch};
 use crate::container::ContainerScan;
 use crate::design::decode::byte_fields::zeros_at;
-use crate::design::decode::operands::parse_face_operand;
+use crate::design::decode::operands::{parse_face_operand, reference_at};
 use crate::design::decode::record_streams::{in_stream, record_stream};
 use crate::design::decode::sketch::{
     cached_owned_record_offsets, indexed_record_header_at, next_indexed_record_header,
@@ -54,8 +54,7 @@ fn exact_legacy_mirror_scope_count(
     if (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) != ("441", "267") {
         return Ok(None);
     }
-    // Reading the fourth member advances over at most four slots.
-    let Some(&count_record_index) = scope.reference_members().values().nth(3) else {
+    let Some(count_record_index) = reference_at(scope.reference_members(), 3) else {
         return Ok(None);
     };
     let &[start, paired] = records.offsets(count_record_index) else {

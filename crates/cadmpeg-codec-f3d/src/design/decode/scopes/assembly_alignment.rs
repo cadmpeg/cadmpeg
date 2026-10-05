@@ -12,6 +12,7 @@ use super::legacy_operand_paths::CLASS_388_OWNER_REFERENCE_ORDINALS;
 use crate::design::assembly::{AssemblyOperandFrameVariant, AssemblyScopeGeneration};
 use crate::design::decode::assembly::exact_legacy_as_built_421_alignment;
 use crate::design::decode::assembly::exact_legacy_as_built_421_solved_frame;
+use crate::design::decode::operands::reference_at;
 use crate::design::decode::record_streams::{in_stream, record_stream};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::assembly;
@@ -39,7 +40,7 @@ fn scope_references_match_owner_ordinals<const N: usize>(
     lane_owners: &[&DesignParameterOwner],
 ) -> bool {
     ordinals.iter().zip(lane_owners).all(|(ordinal, owner)| {
-        scope.reference_members().values().nth(*ordinal).copied() == Some(owner.record_index())
+        reference_at(scope.reference_members(), *ordinal) == Some(owner.record_index())
     })
 }
 
@@ -216,16 +217,19 @@ pub(super) fn exact_assembly_alignment(
         )?;
     }
     let owner_values = || owners.iter().map(|owner| &owner.value);
-    let lane_class_differs = |class_tag: &'static str, operation| {
+    let lane_class_differs = |class_tag: &'static [u8; 3], operation| {
         ctx.any_by(
             &lanes,
-            |owner| Ok(owner.class_tag().as_str() != class_tag || owner.frame_length() != 103),
+            |owner| {
+                Ok(owner.class_tag().as_str().as_bytes() != class_tag
+                    || owner.frame_length() != 103)
+            },
             operation,
         )
     };
     let owners_match = if legacy_class_388 {
         scope_references_match_owner_ordinals(scope, &CLASS_388_OWNER_REFERENCE_ORDINALS, &lanes)
-            && !lane_class_differs("282", "scan F3D class-388 alignment lanes")?
+            && !lane_class_differs(b"282", "scan F3D class-388 alignment lanes")?
             && scope
                 .reference_members()
                 .values()
@@ -234,7 +238,7 @@ pub(super) fn exact_assembly_alignment(
                 .eq(owner_values())
     } else if legacy_class_383 {
         scope_references_match_owner_ordinals(scope, &CLASS_383_OWNER_REFERENCE_ORDINALS, &lanes)
-            && !lane_class_differs("284", "scan F3D class-383 alignment lanes")?
+            && !lane_class_differs(b"284", "scan F3D class-383 alignment lanes")?
             && scope
                 .reference_members()
                 .values()
@@ -242,7 +246,7 @@ pub(super) fn exact_assembly_alignment(
                 .take(4)
                 .eq(owner_values())
     } else if variable_reference {
-        !lane_class_differs("289", "scan F3D variable alignment lanes")?
+        !lane_class_differs(b"289", "scan F3D variable alignment lanes")?
             && owner_run_count(ctx, scope.reference_members(), &owners)? == 1
     } else {
         scope

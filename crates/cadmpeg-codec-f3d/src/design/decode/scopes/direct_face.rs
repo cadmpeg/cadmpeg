@@ -13,6 +13,7 @@ use super::shared_frames::rigid_transform_at;
 use super::thicken_shell::exact_legacy_thicken_class_347;
 use super::thicken_shell::exact_shell_class_369_261;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
+use crate::design::decode::operands::reference_at;
 use crate::design::decode::sketch::{indexed_record_header_at, IndexedRecordOffsets};
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::direct_face;
@@ -140,7 +141,7 @@ fn thicken_thickness_reference(
         length
             if length == grouped_length
                 && bytes.get(start + 34) == Some(&1)
-                && View::u32_le_at(bytes, start + 35) == references.values().nth(1).copied()
+                && View::u32_le_at(bytes, start + 35) == reference_at(references, 1)
                 && zeros_at::<6>(bytes, start + 39)
                 && matches!(bytes.get(start + 45), Some(0 | 1))
                 && bytes_at::<2>(bytes, start + 46) == Some(&[1, 1])
