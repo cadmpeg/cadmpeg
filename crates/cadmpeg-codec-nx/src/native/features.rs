@@ -3587,11 +3587,7 @@ pub(super) fn canonical_feature_history_links(
     links: Vec<SegmentOmLink>,
 ) -> Result<Vec<SegmentOmLink>, CodecError> {
     let mut history = Vec::new();
-    let mut links = links.into_iter();
-    for _ in ctx.admit_iter(&(0..links.len()), "select NX feature history links")? {
-        let Some(link) = links.next() else {
-            break;
-        };
+    for link in ctx.admit_iter(links, "select NX feature history links")? {
         if link.schema_role == OmSchemaRole::FeatureHistory {
             ctx.reserve_vec(&mut history, 1, "NX feature history links")?;
             history.push(link);
@@ -4767,17 +4763,10 @@ pub(super) fn feature_operation_object_references(
                 record.payload_view(),
                 kind,
             )?;
-            let mut fields = fields.into_iter();
-            for ordinal in
-                ctx.admit_iter(&(0..fields.len()), "visit NX operation object references")?
+            for (ordinal, reference) in ctx
+                .admit_iter(fields, "visit NX operation object references")?
+                .enumerate()
             {
-                let Some(reference) = fields.next() else {
-                    return Err(ctx.refuse_codec_limit(
-                        "visit NX operation object references",
-                        0,
-                        1,
-                    ));
-                };
                 let Some(offset) = u64::try_from(reference.offset())
                     .ok()
                     .and_then(|offset| entry_offset.checked_add(offset))
@@ -4849,13 +4838,10 @@ pub(super) fn feature_operation_common_frames(
             "visit NX feature operation records",
         )? {
             let decoded = crate::om::operation_common_frames(ctx, record.payload_view())?;
-            let mut decoded = decoded.into_iter();
-            for ordinal in
-                ctx.admit_iter(&(0..decoded.len()), "visit NX operation common frames")?
+            for (ordinal, frame) in ctx
+                .admit_iter(decoded, "visit NX operation common frames")?
+                .enumerate()
             {
-                let Some(frame) = decoded.next() else {
-                    return Err(ctx.refuse_codec_limit("visit NX operation common frames", 0, 1));
-                };
                 let Some(offset) = u64::try_from(frame.offset())
                     .ok()
                     .and_then(|offset| entry_offset.checked_add(offset))
@@ -5140,13 +5126,10 @@ pub(super) fn feature_payload_strings(
             "visit NX feature operation records",
         )? {
             let values = crate::om::operation_payload_strings(ctx, record.payload_view())?;
-            let mut values = values.into_iter();
-            for ordinal in
-                ctx.admit_iter(&(0..values.len()), "visit NX operation payload strings")?
+            for (ordinal, value) in ctx
+                .admit_iter(values, "visit NX operation payload strings")?
+                .enumerate()
             {
-                let Some(value) = values.next() else {
-                    return Err(ctx.refuse_codec_limit("visit NX operation payload strings", 0, 1));
-                };
                 let Some(ordinal_u32) = u32::try_from(ordinal).ok() else {
                     continue;
                 };
@@ -5285,17 +5268,10 @@ pub(super) fn feature_body_reference_occurrences(
             "visit NX feature operation records",
         )? {
             let rows = crate::om::operation_body_references(ctx, record.body_view())?;
-            let mut rows = rows.into_iter();
-            for ordinal in
-                ctx.admit_iter(&(0..rows.len()), "visit NX body reference occurrences")?
+            for (ordinal, reference) in ctx
+                .admit_iter(rows, "visit NX body reference occurrences")?
+                .enumerate()
             {
-                let Some(reference) = rows.next() else {
-                    return Err(ctx.refuse_codec_limit(
-                        "visit NX body reference occurrences",
-                        0,
-                        1,
-                    ));
-                };
                 let Some(ordinal_u32) = u32::try_from(ordinal).ok() else {
                     continue;
                 };
@@ -7695,13 +7671,10 @@ fn offset_data_block_bytes<'a, 'ctx>(
     }
     let mut reservation = ctx.reserve_scoped(0, "NX offset block view storage")?;
     let mut blocks = BTreeMap::new();
-    let mut indexed = indexed.into_iter();
-    for section_ordinal in
-        ctx.admit_iter(&(0..indexed.len()), "visit NX offset data block sections")?
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(indexed, "visit NX offset data block sections")?
+        .enumerate()
     {
-        let Some((entry, section)) = indexed.next() else {
-            return Err(ctx.refuse_codec_limit("visit NX offset data block sections", 0, 1));
-        };
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
@@ -7742,14 +7715,13 @@ pub(super) fn feature_sketch_payload_scalars(
         let Some(joined) = JoinedPayload::from_source(ctx, ids, id_count, &blocks)? else {
             continue;
         };
-        let mut fields =
-            crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?.into_iter();
-        for ordinal in
-            ctx.admit_iter(&(0..fields.len()), "visit NX sketch payload scalar fields")?
+        for (ordinal, field) in ctx
+            .admit_iter(
+                crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?,
+                "visit NX sketch payload scalar fields",
+            )?
+            .enumerate()
         {
-            let Some(field) = fields.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX sketch payload scalar fields", 0, 1));
-            };
             let payload_offset = cadmpeg_core::decode::u64_from_index(field.offset);
             let Some(source_offset) = joined.source_offset(ctx, payload_offset)? else {
                 continue;
@@ -8469,13 +8441,10 @@ pub(super) fn offset_store_named_points(
 ) -> Result<Vec<OffsetStoreNamedPoint>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
     let indexed = container.indexed_om_sections(ctx)?;
-    let mut indexed = indexed.into_iter();
-    for section_ordinal in
-        ctx.admit_iter(&(0..indexed.len()), "visit NX named point offset sections")?
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(indexed, "visit NX named point offset sections")?
+        .enumerate()
     {
-        let Some((entry, section)) = indexed.next() else {
-            return Err(ctx.refuse_codec_limit("visit NX named point offset sections", 0, 1));
-        };
         let Some((_, _, records)) = section.as_offset_only() else {
             continue;
         };

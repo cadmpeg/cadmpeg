@@ -3904,12 +3904,7 @@ pub(super) fn parasolid_entity_value_records(
             owned_offsets,
         )?;
         drop(offsets_guard);
-        let integers_count = values.integers.len();
-        let mut integers = values.integers.into_iter();
-        for _ in ctx.admit_iter(&(0..integers_count), "NX Parasolid value records")? {
-            let Some(record) = integers.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(values.integers, "NX Parasolid value records")? {
             ctx.reserve_vec(&mut records.integers, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3927,12 +3922,7 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        let doubles_count = values.doubles.len();
-        let mut doubles = values.doubles.into_iter();
-        for _ in ctx.admit_iter(&(0..doubles_count), "NX Parasolid value records")? {
-            let Some(record) = doubles.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(values.doubles, "NX Parasolid value records")? {
             ctx.reserve_vec(&mut records.doubles, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3950,12 +3940,7 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        let strings_count = values.strings.len();
-        let mut strings = values.strings.into_iter();
-        for _ in ctx.admit_iter(&(0..strings_count), "NX Parasolid value records")? {
-            let Some(record) = strings.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(values.strings, "NX Parasolid value records")? {
             ctx.reserve_vec(&mut records.strings, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -4008,12 +3993,7 @@ pub(super) fn parasolid_entity_value_records(
                 record.value,
             )?;
         }
-        let vectors_count = values.vectors.len();
-        let mut vectors = values.vectors.into_iter();
-        for _ in ctx.admit_iter(&(0..vectors_count), "NX Parasolid value records")? {
-            let Some(record) = vectors.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(values.vectors, "NX Parasolid value records")? {
             retain_vector(
                 ParasolidVectorValueKind::Vectors,
                 "entity-56-vectors",
@@ -4033,12 +4013,7 @@ pub(super) fn parasolid_entity_value_records(
                 record.value,
             )?;
         }
-        let axes_count = values.axes.len();
-        let mut axes = values.axes.into_iter();
-        for _ in ctx.admit_iter(&(0..axes_count), "NX Parasolid value records")? {
-            let Some(record) = axes.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(values.axes, "NX Parasolid value records")? {
             ctx.reserve_vec(&mut records.axes, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -4056,12 +4031,7 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        let tags_count = values.tags.len();
-        let mut tags = values.tags.into_iter();
-        for _ in ctx.admit_iter(&(0..tags_count), "NX Parasolid value records")? {
-            let Some(record) = tags.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(values.tags, "NX Parasolid value records")? {
             ctx.reserve_vec(&mut records.tags, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -4079,12 +4049,7 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        let unicode_count = values.unicode.len();
-        let mut unicode = values.unicode.into_iter();
-        for _ in ctx.admit_iter(&(0..unicode_count), "NX Parasolid value records")? {
-            let Some(record) = unicode.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(values.unicode, "NX Parasolid value records")? {
             ctx.reserve_vec(&mut records.unicode, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,

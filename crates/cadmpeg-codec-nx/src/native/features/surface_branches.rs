@@ -183,13 +183,10 @@ pub(in crate::native) fn feature_surface_construction_branches(
             };
             let family = group.family;
             let header_code = group.header_code;
-            let mut source_branches = group.into_branches().into_iter();
-            for ordinal in
-                ctx.admit_iter(&(0..source_branches.len()), "visit NX surface branches")?
+            for (ordinal, branch) in ctx
+                .admit_iter(group.into_branches(), "visit NX surface branches")?
+                .enumerate()
             {
-                let Some(branch) = source_branches.next() else {
-                    return Err(ctx.refuse_codec_limit("visit NX surface branches", 0, 1));
-                };
                 let Some(order) = u8::try_from(ordinal + 1).ok().and_then(NonZeroU8::new) else {
                     continue;
                 };

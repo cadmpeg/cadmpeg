@@ -139,14 +139,10 @@ pub(in crate::native) fn object_uuid_values(
         let section_ordinal_u32 = u32::try_from(section_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx OM UUID section ordinal", 0, u64::MAX))?;
         let uuid_values = crate::om::uuid_string_values(ctx, storage, first.offset)?;
-        let uuid_values_count = uuid_values.len();
-        let mut uuid_values = uuid_values.into_iter();
-        for _index in
-            ctx.admit_iter(&(0..uuid_values_count), "NX object uuid uuid values visits")?
+        for (_index, value) in ctx
+            .admit_iter(uuid_values, "NX object uuid uuid values visits")?
+            .enumerate()
         {
-            let Some(value) = uuid_values.next() else {
-                break;
-            };
             let Some(frame_end) = value.offset.checked_add(FRAME_LEN) else {
                 continue;
             };
