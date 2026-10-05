@@ -803,11 +803,8 @@ fn exact_base_feature_444_zero_body(
     let Some(metadata_record) = legacy_444_zero_body_metadata(bytes, scope, start) else {
         return Ok(None);
     };
-    if fixed_guid_end(
-        ctx,
-        bytes,
-        start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
-    )? != Some(start + legacy_444_zero_body::ZERO_RUN_3)
+    if fixed_guid_end(bytes, start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT)
+        != Some(start + legacy_444_zero_body::ZERO_RUN_3)
     {
         return Ok(None);
     }

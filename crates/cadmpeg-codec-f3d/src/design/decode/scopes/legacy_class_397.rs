@@ -48,11 +48,10 @@ impl Class397SymmetricFrame {
 }
 
 pub(super) fn exact_symmetric_extrude_prologue(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     frame: ExtrudeScopeFrame<'_>,
     reference_members: &[u32],
-) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+) -> Option<DesignExtrudePrologue> {
     let ExtrudeScopeFrame {
         start,
         paired_at,
@@ -60,7 +59,7 @@ pub(super) fn exact_symmetric_extrude_prologue(
         paired_class_tag,
         reference_count_at,
     } = frame;
-    let Some(prefix) = symmetric_prefix(
+    let prefix = symmetric_prefix(
         bytes,
         start,
         paired_at,
@@ -68,21 +67,17 @@ pub(super) fn exact_symmetric_extrude_prologue(
         paired_class_tag,
         reference_count_at,
         reference_members,
-    ) else {
-        return Ok(None);
-    };
+    )?;
     let guid_offset = start + symmetric::GUID;
-    let Some(guid_end) = fixed_guid_end(ctx, bytes, guid_offset)? else {
-        return Ok(None);
-    };
+    let guid_end = fixed_guid_end(bytes, guid_offset)?;
     let reference_count_offset = start + symmetric::REFERENCE_COUNT;
     if guid_end != guid_offset + 76
         || !zeros_at::<3>(bytes, guid_end)
         || View::u32_le_at(bytes, reference_count_offset) != Some(symmetric::REFERENCE_COUNT_VALUE)
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(prefix))
+    Some(prefix)
 }
 
 /// The prologue fields before the GUID of a class-397 symmetric-distance

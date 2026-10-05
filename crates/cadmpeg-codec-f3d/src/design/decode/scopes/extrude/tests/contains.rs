@@ -242,10 +242,8 @@ fn class_338_extrude_reads_its_fixed_references() {
         .copy_from_slice(&layout::REFERENCE_COUNT_VALUE.to_le_bytes());
     bytes[layout::LEN + 4..layout::LEN + 7].copy_from_slice(b"262");
 
-    let context = cadmpeg_test_support::service_decode_context();
     assert!(matches!(
         super::super::exact_class_338_two_sided_distance_extrude_prologue(
-            &context,
             &bytes,
             ExtrudeScopeFrame {
                 start: 0,
@@ -256,7 +254,7 @@ fn class_338_extrude_reads_its_fixed_references() {
             },
             &REFERENCES
         ),
-        Ok(Some(
+        Some(
             crate::records::feature::extrude::DesignExtrudePrologue::LegacyShifted {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::Join,
                 direction_face_extend_values: [2, 0],
@@ -266,6 +264,6 @@ fn class_338_extrude_reads_its_fixed_references() {
                 ),
                 ..
             }
-        ))
+        )
     ));
 }

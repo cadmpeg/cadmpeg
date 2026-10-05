@@ -42,15 +42,14 @@ const CLASS_388_REFERENCE_COUNT: usize = index_from_u32(class_388_assemble::REFE
 const CLASS_383_REFERENCE_COUNT: usize = 38;
 
 pub(super) fn exact_legacy_class_388_scope(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Result<Option<()>, CodecError> {
+) -> Option<()> {
     if scope.class_tag.as_str() != "388"
         || scope.paired_class_tag.as_str() != "266"
         || scope.frame_length() != u64_from_index(class_388_assemble::LEN)
     {
-        return Ok(None);
+        return None;
     }
     let (Some(members), Ok(start), Ok(paired)) = (
         scope
@@ -59,25 +58,24 @@ pub(super) fn exact_legacy_class_388_scope(
         usize::try_from(scope.byte_offset()),
         usize::try_from(scope.paired_byte_offset()),
     ) else {
-        return Ok(None);
+        return None;
     };
     if paired != start + class_388_assemble::LEN || !class_388_scope_layout(bytes, start) {
-        return Ok(None);
+        return None;
     }
     let identity_at = start + class_388_assemble::COMPONENT_IDENTITY;
-    if fixed_guid_end(ctx, bytes, identity_at)? != Some(identity_at + 76) {
-        return Ok(None);
+    if fixed_guid_end(bytes, identity_at) != Some(identity_at + 76) {
+        return None;
     }
     if fixed_utf16_ascii_eq(
-        ctx,
         bytes,
         start + class_388_assemble::KIND_CODE_UNIT_COUNT,
         "Assemble",
-    )? != Some(start + class_388_assemble::FEATURE_ORDINAL)
+    ) != Some(start + class_388_assemble::FEATURE_ORDINAL)
         || View::u32_le_at(bytes, start + class_388_assemble::FEATURE_ORDINAL)
             != Some(scope.feature_ordinal.get())
     {
-        return Ok(None);
+        return None;
     }
     let entries_match = members
         .into_iter()
@@ -88,7 +86,7 @@ pub(super) fn exact_legacy_class_388_scope(
                 + ordinal * ASSEMBLY_MARKED_REFERENCE_LEN;
             marked_record_reference(bytes, at) == Some(*record_index)
         });
-    Ok(entries_match.then_some(()))
+    entries_match.then_some(())
 }
 
 /// The fixed fields of a class-388 scope frame at `start`: zero runs, flags,
@@ -386,8 +384,7 @@ fn exact_legacy_class_383_operand_path(
     }
     // Every identity record of the operand repeats the leading identity's
     // occurrence and identity GUIDs.
-    let Some(leading_guids) = class_383_identity_guid_units(ctx, bytes, leading_identity_at)?
-    else {
+    let Some(leading_guids) = class_383_identity_guid_units(bytes, leading_identity_at) else {
         return Ok(None);
     };
     for identity_at in [
@@ -395,7 +392,7 @@ fn exact_legacy_class_383_operand_path(
         first_face_identity_at,
         second_face_identity_at,
     ] {
-        if class_383_identity_guid_units(ctx, bytes, identity_at)? != Some(leading_guids) {
+        if class_383_identity_guid_units(bytes, identity_at) != Some(leading_guids) {
             return Ok(None);
         }
     }
@@ -506,20 +503,14 @@ fn exact_legacy_class_383_record_frame(
 
 /// The occurrence and identity GUIDs of the class-383 identity record at
 /// `start`, validated in place without copying.
-fn class_383_identity_guid_units(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-) -> Result<Option<[[u8; 36]; 2]>, CodecError> {
+fn class_383_identity_guid_units(bytes: &[u8], start: usize) -> Option<[[u8; 36]; 2]> {
     let occurrence_at = start + class_383_identity::OCCURRENCE_GUID;
     let identity_at = start + class_383_identity::IDENTITY_GUID;
-    let Some((occurrence, after_occurrence)) = fixed_guid_ascii(ctx, bytes, occurrence_at)? else {
-        return Ok(None);
-    };
+    let (occurrence, after_occurrence) = fixed_guid_ascii(bytes, occurrence_at)?;
     if after_occurrence != identity_at {
-        return Ok(None);
+        return None;
     }
-    Ok(fixed_guid_ascii(ctx, bytes, identity_at)?.map(|(identity, _)| [occurrence, identity]))
+    fixed_guid_ascii(bytes, identity_at).map(|(identity, _)| [occurrence, identity])
 }
 
 /// Whether the first indexed-record header at or after `position` opens at
@@ -599,11 +590,11 @@ pub(super) fn exact_legacy_class_388_operand_paths(
             |offset| Ok(*offset < search_start),
             "find F3D legacy operand locator offsets",
         )?;
+        // Each offset is admitted as the scan reaches it; a second envelope
+        // stops the scan.
         let mut candidate = None;
-        for locator_at in ctx.admit_iter(
-            offsets.get(first..).unwrap_or_default(),
-            "scan F3D legacy operand locator offsets",
-        )? {
+        for locator_at in offsets.get(first..).unwrap_or_default() {
+            ctx.charge_work(1, "scan F3D legacy operand locator offsets")?;
             let Some(envelope) = exact_legacy_class_388_envelope(
                 ctx,
                 bytes,
@@ -664,11 +655,11 @@ fn exact_legacy_class_388_envelope(
         |offset| Ok(*offset < locator_end),
         "find F3D legacy operand wrapper offsets",
     )?;
+    // Each offset is admitted as the scan reaches it; a second wrapper stops
+    // the scan.
     let mut wrapper = None;
-    for wrapper_at in ctx.admit_iter(
-        wrapper_offsets.get(first_wrapper..).unwrap_or_default(),
-        "scan F3D legacy operand wrapper offsets",
-    )? {
+    for wrapper_at in wrapper_offsets.get(first_wrapper..).unwrap_or_default() {
+        ctx.charge_work(1, "scan F3D legacy operand wrapper offsets")?;
         if exact_indexed_header_at(bytes, *wrapper_at, wrapper_record_index) == Some(b"369")
             && wrapper.replace(*wrapper_at).is_some()
         {
@@ -711,7 +702,7 @@ fn exact_legacy_class_388_envelope(
         let path_end = path_at + class_412_path::LEN;
         if exact_indexed_header_at(bytes, path_at, path_record_index) != Some(b"412")
             || !next_header_is(ctx, bytes, path_at + 1, path_end)?
-            || !legacy_class_412_path_layout(ctx, bytes, path_at)?
+            || !legacy_class_412_path_layout(bytes, path_at)
         {
             return Ok(None);
         }
@@ -826,11 +817,7 @@ const CLASS_412_IDENTITY_GUIDS: [usize; 4] = [
 /// occurrence GUID, four identity GUIDs around a separator, and a zero tail.
 /// Each GUID is a counted field of exactly 36 code units, so it ends where the
 /// next member begins.
-fn legacy_class_412_path_layout(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-) -> Result<bool, CodecError> {
+fn legacy_class_412_path_layout(bytes: &[u8], start: usize) -> bool {
     if !zeros_at::<{ class_412_path::PATH_MARKER - 11 }>(bytes, start + 11)
         || bytes.get(start + class_412_path::PATH_MARKER)
             != Some(&class_412_path::PATH_MARKER_VALUE)
@@ -847,17 +834,17 @@ fn legacy_class_412_path_layout(
             start + class_412_path::PATH_TAIL_COUNT + 4,
         )
     {
-        return Ok(false);
+        return false;
     }
     for relative_offset in [class_412_path::OCCURRENCE_GUID]
         .into_iter()
         .chain(CLASS_412_IDENTITY_GUIDS)
     {
-        if fixed_guid_end(ctx, bytes, start + relative_offset)?.is_none() {
-            return Ok(false);
+        if fixed_guid_end(bytes, start + relative_offset).is_none() {
+            return false;
         }
     }
-    Ok(true)
+    true
 }
 
 /// The four identity GUIDs of the validated class-412 path record at `start`,

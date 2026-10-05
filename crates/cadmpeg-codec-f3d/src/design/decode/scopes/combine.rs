@@ -6,7 +6,7 @@ use super::parameter_scope::parameter_scope_payload_length;
 use crate::bytes::lp_utf16_bounded_charged;
 use crate::bytes::take_reference;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
-use crate::design::decode::reference_runs::admit_reference_values;
+use crate::design::decode::reference_runs::reference_position;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::combine_compact_operation_prefix as combine_compact;
 use crate::layout::combine_extended_reference_operation_prefix as combine_extended;
@@ -52,49 +52,62 @@ pub(super) fn exact_combine_operation(
     let mut first_tool = None;
     let mut additional_tools = Vec::new();
     // The run alternates operation and selection records; its length is even.
-    let mut members = admit_reference_values(ctx, references, "scan F3D combine scope references")?;
-    while let (Some(operation_record_index), Some(selection_record_index)) =
-        (members.next(), members.next())
-    {
-        let Some((role, selection_at, selection_end)) = combine_operand(
-            ctx,
-            bytes,
-            records,
-            *operation_record_index,
-            *selection_record_index,
-        )?
-        else {
-            return Ok(None);
-        };
-        match role {
-            CombineOperandRole::Target => {
-                if target.replace(*selection_record_index).is_some() {
-                    return Ok(None);
+    // The scan stops at the first pair that is no operand or a second target.
+    let mut operation_record_index = None;
+    let rejected = reference_position(
+        ctx,
+        references,
+        |member| {
+            let Some(operation_record_index) = operation_record_index.take() else {
+                operation_record_index = Some(*member);
+                return Ok(false);
+            };
+            let selection_record_index = *member;
+            let Some((role, selection_at, selection_end)) = combine_operand(
+                ctx,
+                bytes,
+                records,
+                operation_record_index,
+                selection_record_index,
+            )?
+            else {
+                return Ok(true);
+            };
+            match role {
+                CombineOperandRole::Target => {
+                    if target.replace(selection_record_index).is_some() {
+                        return Ok(true);
+                    }
+                }
+                CombineOperandRole::Tool => {
+                    let selection = DesignCombineBodySelection {
+                        record_index: selection_record_index,
+                        external_identity: exact_combine_external_body_identity(
+                            ctx,
+                            bytes,
+                            selection_at,
+                            selection_end,
+                            scope.record_index,
+                            selection_record_index,
+                        )?,
+                    };
+                    if first_tool.is_none() {
+                        first_tool = Some(selection);
+                    } else {
+                        ctx.push_vec(
+                            &mut additional_tools,
+                            selection,
+                            "f3d Combine additional tools",
+                        )?;
+                    }
                 }
             }
-            CombineOperandRole::Tool => {
-                let selection = DesignCombineBodySelection {
-                    record_index: *selection_record_index,
-                    external_identity: exact_combine_external_body_identity(
-                        ctx,
-                        bytes,
-                        selection_at,
-                        selection_end,
-                        scope.record_index,
-                        *selection_record_index,
-                    )?,
-                };
-                if first_tool.is_none() {
-                    first_tool = Some(selection);
-                } else {
-                    ctx.push_vec(
-                        &mut additional_tools,
-                        selection,
-                        "f3d Combine additional tools",
-                    )?;
-                }
-            }
-        }
+            Ok(false)
+        },
+        "scan F3D combine scope references",
+    )?;
+    if rejected.is_some() {
+        return Ok(None);
     }
     let (Some(target_record_index), Some(first)) = (target, first_tool) else {
         return Ok(None);

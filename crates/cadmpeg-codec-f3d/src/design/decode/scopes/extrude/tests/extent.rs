@@ -85,7 +85,6 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
     bytes[paired_at + 4..paired_at + 7].copy_from_slice(b"262");
 
     let parsed = exact_class_338_two_sided_distance_extrude_prologue(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         ExtrudeScopeFrame {
             start: 0,
@@ -96,7 +95,6 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
         },
         &[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
     )
-    .unwrap()
     .expect("class-338 frame should satisfy its exact admission grammar");
     assert_eq!(parsed.operation(), DesignExtrudeOperation::Cut);
     assert_eq!(parsed.extent(), Some(DesignExtrudeExtent::TwoSidedDistance));
@@ -105,7 +103,6 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
 
     bytes[139] = 0;
     assert!(exact_class_338_two_sided_distance_extrude_prologue(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         ExtrudeScopeFrame {
             start: 0,
@@ -116,6 +113,5 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
         },
         &[4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     )
-    .unwrap()
     .is_none());
 }

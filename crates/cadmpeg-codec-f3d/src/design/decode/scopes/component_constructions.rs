@@ -6,6 +6,7 @@ use std::ops::RangeInclusive;
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
+use super::shared_frames::unique_match;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
@@ -36,24 +37,6 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
-
-/// The only value of `values` that `predicate` selects. The search stops at a
-/// second match, so it visits each value at most once.
-pub(super) fn unique_match<'values, T>(
-    ctx: &DecodeContext<'_>,
-    values: &'values [T],
-    mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
-    operation: &'static str,
-) -> Result<Option<&'values T>, CodecError> {
-    let Some(first) = ctx.position_by(values, &mut predicate, operation)? else {
-        return Ok(None);
-    };
-    let rest = values.get(first + 1..).unwrap_or(&[]);
-    if ctx.any_by(rest, predicate, operation)? {
-        return Ok(None);
-    }
-    Ok(values.get(first))
-}
 
 /// The fixed fields of a class-279 derived-instance scope and its class-310
 /// relation record.
@@ -172,7 +155,7 @@ pub(super) fn exact_derived_instance_construction(
         },
         "find F3D derived-instance carrier occurrence",
     )?
-    else {
+    .one() else {
         return Ok(None);
     };
     Ok(Some(DesignDerivedInstanceConstruction {
@@ -257,18 +240,17 @@ fn matrix_component_insert_prologue(
 }
 
 fn component_insert_prologue(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
     relation_record_index: u32,
-) -> Result<Option<ComponentInsertPrologue>, CodecError> {
+) -> Option<ComponentInsertPrologue> {
     let identity = |occurrence_identity: Option<u64>| {
         occurrence_identity.map(|identity| (SketchPlacementMatrix::IDENTITY, None, identity))
     };
     let class_tag = scope.class_tag.as_str();
     let paired_class_tag = scope.paired_class_tag.as_str();
-    Ok(match (scope.frame_length(), paired_class_tag) {
+    match (scope.frame_length(), paired_class_tag) {
         (frame_length @ (399 | 381 | 395 | 404), _) => matrix_component_insert_prologue(
             bytes,
             frame_length,
@@ -277,54 +259,44 @@ fn component_insert_prologue(
             relation_record_index,
         ),
         (261, "263") if class_tag == "296" => identity(exact_component_insert_identity_scope(
-            ctx,
             bytes,
             start,
             relation_record_index,
-        )?),
+        )),
         (261, "261") if class_tag == "410" => identity(exact_component_insert_identity_scope(
-            ctx,
             bytes,
             start,
             relation_record_index,
-        )?),
+        )),
         (261, "258") if class_tag == "426" => identity(exact_component_insert_identity_scope(
-            ctx,
             bytes,
             start,
             relation_record_index,
-        )?),
+        )),
         (261, "266") if class_tag == "434" => identity(exact_component_insert_identity_scope(
-            ctx,
             bytes,
             start,
             relation_record_index,
-        )?),
+        )),
         (261, "264") if class_tag == "414" => identity(exact_component_insert_identity_scope(
-            ctx,
             bytes,
             start,
             relation_record_index,
-        )?),
-        (257 | 267, "264") if class_tag == "414" => {
-            identity(exact_component_insert_identity_scope_shifted(
-                ctx,
-                bytes,
-                start,
-                relation_record_index,
-            )?)
-        }
+        )),
+        (257 | 267, "264") if class_tag == "414" => identity(
+            exact_component_insert_identity_scope_shifted(bytes, start, relation_record_index),
+        ),
         (389, "264") if class_tag == "414" => {
-            exact_component_insert_scope_414_264_389(ctx, bytes, start, relation_record_index)?
+            exact_component_insert_scope_414_264_389(bytes, start, relation_record_index)
         }
         (257, "262") if class_tag == "283" => {
-            exact_component_insert_scope_283_262_257(ctx, bytes, start, relation_record_index)?
+            exact_component_insert_scope_283_262_257(bytes, start, relation_record_index)
         }
         (385, "262") if class_tag == "283" => {
-            exact_component_insert_scope_283_262_385(ctx, bytes, start, relation_record_index)?
+            exact_component_insert_scope_283_262_385(bytes, start, relation_record_index)
         }
         _ => None,
-    })
+    }
 }
 
 /// The carrier record a 57-byte component relation at `relation_at` names,
@@ -466,7 +438,7 @@ pub(super) fn exact_component_insert_construction(
         return Ok(None);
     };
     let Some((transform, transform_at, occurrence_identity)) =
-        component_insert_prologue(ctx, bytes, scope, start, relation_record_index)?
+        component_insert_prologue(bytes, scope, start, relation_record_index)
     else {
         return Ok(None);
     };
@@ -735,7 +707,7 @@ fn expanded_carrier_roles(
             |_| {
                 let at = role_at;
                 role_at += 1;
-                let Some(after_role) = fixed_guid_end(ctx, bytes, at)? else {
+                let Some(after_role) = fixed_guid_end(bytes, at) else {
                     return Ok(false);
                 };
                 if bytes_at::<12>(bytes, after_role) != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
@@ -776,7 +748,7 @@ fn scanned_carrier_role(
             |_| {
                 let at = role_at;
                 role_at += 1;
-                let Some(after_role) = relaxed_guid_end(ctx, bytes, at)? else {
+                let Some(after_role) = relaxed_guid_end(bytes, at) else {
                     return Ok(false);
                 };
                 if bytes_at::<2>(bytes, after_role) != Some(&[0, 0]) {
@@ -907,10 +879,9 @@ fn exact_component_insert_carrier_334(
 ) -> Result<Option<(String, usize)>, CodecError> {
     if exact_indexed_header_at(bytes, carrier_at, carrier_record_index) != Some(b"334")
         || fixed_guid_end(
-            ctx,
             bytes,
             carrier_at + component_carrier_334::COMPONENT_IDENTITY,
-        )?
+        )
         .is_none()
     {
         return Ok(None);
@@ -921,7 +892,7 @@ fn exact_component_insert_carrier_334(
     };
     if !is_guid_urn_role(bytes, role_start, role_end)
         || !matches!(bytes.get(role_end + 1), Some(1..))
-        || fixed_guid_end(ctx, bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES)?.is_none()
+        || fixed_guid_end(bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES).is_none()
     {
         return Ok(None);
     }
@@ -1001,11 +972,10 @@ fn retain_direct_utf16_role(
 }
 
 fn exact_component_insert_scope_283_262_257(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Result<Option<ComponentInsertPrologue>, CodecError> {
+) -> Option<ComponentInsertPrologue> {
     use component_scope_283_257 as layout;
     let fields = || {
         Some(
@@ -1024,33 +994,24 @@ fn exact_component_insert_scope_283_262_257(
                 && View::u32_le_at(bytes, start + layout::PREVIOUS_HISTORY_STATE_ID)? == u32::MAX,
         )
     };
-    let Some(occurrence_identity) = View::u64_le_at(bytes, start + layout::OCCURRENCE_IDENTITY)
-    else {
-        return Ok(None);
-    };
+    let occurrence_identity = View::u64_le_at(bytes, start + layout::OCCURRENCE_IDENTITY)?;
     if fields() != Some(true)
         || fixed_utf16_ascii_eq(
-            ctx,
             bytes,
             start + layout::NULL_GUID_CODE_UNIT_COUNT,
             NULL_COMPONENT_INSERT_GUID,
-        )? != Some(start + layout::REFERENCE_COUNT - 3)
+        ) != Some(start + layout::REFERENCE_COUNT - 3)
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some((
-        SketchPlacementMatrix::IDENTITY,
-        None,
-        occurrence_identity,
-    )))
+    Some((SketchPlacementMatrix::IDENTITY, None, occurrence_identity))
 }
 
 fn exact_component_insert_scope_283_262_385(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Result<Option<ComponentInsertPrologue>, CodecError> {
+) -> Option<ComponentInsertPrologue> {
     use component_scope_283_385 as layout;
     let fields = || {
         Some(
@@ -1073,29 +1034,27 @@ fn exact_component_insert_scope_283_262_385(
         rigid_transform_at(bytes, transform_at),
         View::u64_le_at(bytes, start + layout::OCCURRENCE_IDENTITY),
     ) else {
-        return Ok(None);
+        return None;
     };
     if fields() != Some(true)
         || fixed_utf16_ascii_eq(
-            ctx,
             bytes,
             start + layout::NULL_GUID_CODE_UNIT_COUNT,
             NULL_COMPONENT_INSERT_GUID,
-        )? != Some(start + layout::REFERENCE_COUNT - 3)
+        ) != Some(start + layout::REFERENCE_COUNT - 3)
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some((transform, Some(transform_at), occurrence_identity)))
+    Some((transform, Some(transform_at), occurrence_identity))
 }
 
 const NULL_COMPONENT_INSERT_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
 fn exact_component_insert_identity_scope(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Result<Option<u64>, CodecError> {
+) -> Option<u64> {
     use component_identity_scope as layout;
     let fields = || {
         Some(
@@ -1110,29 +1069,24 @@ fn exact_component_insert_identity_scope(
                 && View::u32_le_at(bytes, start + layout::OPAQUE_CODE_UNIT_COUNT)? == 36,
         )
     };
-    let Some(occurrence_identity) = View::u64_le_at(bytes, start + layout::OCCURRENCE_IDENTITY)
-    else {
-        return Ok(None);
-    };
+    let occurrence_identity = View::u64_le_at(bytes, start + layout::OCCURRENCE_IDENTITY)?;
     if fields() != Some(true)
         || fixed_utf16_ascii_eq(
-            ctx,
             bytes,
             start + layout::OPAQUE_CODE_UNIT_COUNT,
             NULL_COMPONENT_INSERT_GUID,
-        )? != Some(start + layout::OPAQUE_UTF16_PAYLOAD + 72)
+        ) != Some(start + layout::OPAQUE_UTF16_PAYLOAD + 72)
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(occurrence_identity))
+    Some(occurrence_identity)
 }
 
 fn exact_component_insert_identity_scope_shifted(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Result<Option<u64>, CodecError> {
+) -> Option<u64> {
     use component_identity_shifted as layout;
     let fields = || {
         Some(
@@ -1145,29 +1099,24 @@ fn exact_component_insert_identity_scope_shifted(
                 && bytes_at::<2>(bytes, start + layout::IDENTITY_MARKERS) == Some(&[1, 1]),
         )
     };
-    let Some(occurrence_identity) = View::u64_le_at(bytes, start + layout::OCCURRENCE_IDENTITY)
-    else {
-        return Ok(None);
-    };
+    let occurrence_identity = View::u64_le_at(bytes, start + layout::OCCURRENCE_IDENTITY)?;
     if fields() != Some(true)
         || fixed_utf16_ascii_eq(
-            ctx,
             bytes,
             start + layout::NULL_GUID_CODE_UNIT_COUNT,
             NULL_COMPONENT_INSERT_GUID,
-        )? != Some(start + layout::LEN)
+        ) != Some(start + layout::LEN)
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(occurrence_identity))
+    Some(occurrence_identity)
 }
 
 fn exact_component_insert_scope_414_264_389(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     relation_record_index: u32,
-) -> Result<Option<ComponentInsertPrologue>, CodecError> {
+) -> Option<ComponentInsertPrologue> {
     use component_matrix_414 as layout;
     let fields = || {
         Some(
@@ -1186,19 +1135,18 @@ fn exact_component_insert_scope_414_264_389(
         rigid_transform_at(bytes, transform_at),
         View::u64_le_at(bytes, start + layout::OCCURRENCE_IDENTITY),
     ) else {
-        return Ok(None);
+        return None;
     };
     if fields() != Some(true)
         || fixed_utf16_ascii_eq(
-            ctx,
             bytes,
             start + layout::NULL_GUID_CODE_UNIT_COUNT,
             NULL_COMPONENT_INSERT_GUID,
-        )? != Some(start + layout::LEN)
+        ) != Some(start + layout::LEN)
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some((transform, Some(transform_at), occurrence_identity)))
+    Some((transform, Some(transform_at), occurrence_identity))
 }
 
 /// Whether `identity` is a relaxed GUID, `_` and a `urn:` locator.
@@ -1215,8 +1163,7 @@ fn is_guid_urn_identity(ctx: &DecodeContext<'_>, identity: &str) -> Result<bool,
     let (Some(guid), Some(locator)) = (identity.get(..at), identity.get(at + 1..)) else {
         return Ok(false);
     };
-    Ok(crate::bytes::is_guid_relaxed(guid)
-        && ctx.starts_with(locator, "urn:", "match F3D legacy component insert locator")?)
+    Ok(crate::bytes::is_guid_relaxed(guid) && locator.as_bytes().starts_with(b"urn:"))
 }
 
 /// Scan a legacy class-288 carrier for its role: a GUID, the role GUID, a
@@ -1245,10 +1192,10 @@ fn legacy_component_insert_role(
             |_| {
                 let at = first_at;
                 first_at += 1;
-                let Some(role_at) = fixed_guid_end(ctx, bytes, at)? else {
+                let Some(role_at) = fixed_guid_end(bytes, at) else {
                     return Ok(false);
                 };
-                let Some(after_role) = fixed_guid_end(ctx, bytes, role_at)? else {
+                let Some(after_role) = fixed_guid_end(bytes, role_at) else {
                     return Ok(false);
                 };
                 if bytes_at::<14>(bytes, after_role)
@@ -1256,7 +1203,7 @@ fn legacy_component_insert_role(
                 {
                     return Ok(false);
                 }
-                let Some(after_asset_guid) = fixed_guid_end(ctx, bytes, after_role + 14)? else {
+                let Some(after_asset_guid) = fixed_guid_end(bytes, after_role + 14) else {
                     return Ok(false);
                 };
                 if bytes.get(after_asset_guid) != Some(&0) {
@@ -1370,7 +1317,7 @@ pub(super) fn exact_copy_paste_component_operation(
         },
         "find F3D copied component occurrence",
     )?
-    else {
+    .one() else {
         return Ok(None);
     };
     let Some(source) = unique_match(
@@ -1388,7 +1335,7 @@ pub(super) fn exact_copy_paste_component_operation(
         },
         "find F3D copy source occurrence",
     )?
-    else {
+    .one() else {
         return Ok(None);
     };
     Ok(Some(DesignCopyPasteComponentOperation {
@@ -1504,7 +1451,7 @@ pub(super) fn bind_component_pattern_occurrences(
         },
         "find F3D pattern seed occurrence",
     )?
-    else {
+    .one() else {
         return Ok(());
     };
     let Some(seed_frame) = instances.frames().next().copied() else {
@@ -1553,7 +1500,7 @@ fn unique_pattern_occurrence<'a>(
     ordinal: u32,
     occurrences: &'a [DesignComponentOccurrence],
 ) -> Result<Option<&'a DesignComponentOccurrence>, CodecError> {
-    unique_match(
+    Ok(unique_match(
         ctx,
         occurrences,
         |occurrence| {
@@ -1563,7 +1510,8 @@ fn unique_pattern_occurrence<'a>(
                 && in_stream(ctx, &occurrence.id, stream)?)
         },
         "find F3D pattern occurrence",
-    )
+    )?
+    .one())
 }
 
 /// The only header of `record_index` before `end`. The ascending offsets are

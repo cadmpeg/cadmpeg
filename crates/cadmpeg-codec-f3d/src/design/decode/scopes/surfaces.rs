@@ -5,6 +5,7 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::exact_same_segment_record_reference;
+use super::shared_frames::find_frame;
 use super::shared_frames::marked_record_reference;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::operands::parse_construction_operand_group;
@@ -167,15 +168,20 @@ fn exact_surface_offset_face_groups(
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return Ok(true);
             };
-            let Some(group) = exact_construction_operand_group(
-                ctx,
-                bytes,
-                records,
-                scope,
-                ordinal,
-                record_index,
-            )?
-            else {
+            // Only the group's record index is kept, so the parsed group is
+            // held under scoped storage.
+            let (group, _group_storage) =
+                ctx.with_scoped_storage("f3d surface offset face group candidate", || {
+                    exact_construction_operand_group(
+                        ctx,
+                        bytes,
+                        records,
+                        scope,
+                        ordinal,
+                        record_index,
+                    )
+                })?;
+            let Some(group) = group else {
                 return Ok(false);
             };
             if group.role() != DesignOperandRole::PROFILE
@@ -230,34 +236,48 @@ fn exact_construction_operand_group(
     scope_reference_ordinal: u32,
     record_index: u32,
 ) -> Result<Option<DesignConstructionOperandGroup>, CodecError> {
+    // The search stops at an unreadable header or a second group.
     let mut candidate = None;
-    for (start, _) in records.frames(ctx, record_index)? {
-        let Some(header) = indexed_record_header_at(bytes, start) else {
-            return Ok(None);
-        };
-        // The group parser borrows the frame header; the group keeps its own copy.
-        let (class_tag, _class_tag_storage) =
-            ctx.with_scoped_storage("copy F3D surface offset group class tag", || {
-                retain_class_tag(
-                    ctx,
-                    *header.class_tag,
-                    "copy F3D surface offset group class tag",
-                )
-            })?;
-        let header = RecordFrame {
-            record_index,
-            class_tag,
-            byte_offset: u64_from_index(start),
-        };
-        match parse_construction_operand_group(ctx, bytes, scope, scope_reference_ordinal, &header)?
-        {
-            ConstructionOperandGroupParse::Complete(group) => {
-                if candidate.replace(*group).is_some() {
-                    return Ok(None);
+    let stopped = find_frame(
+        ctx,
+        records,
+        record_index,
+        |start, _| {
+            let Some(header) = indexed_record_header_at(bytes, start) else {
+                return Ok(true);
+            };
+            // The group parser borrows the frame header; the group keeps its own copy.
+            let (class_tag, _class_tag_storage) =
+                ctx.with_scoped_storage("copy F3D surface offset group class tag", || {
+                    retain_class_tag(
+                        ctx,
+                        *header.class_tag,
+                        "copy F3D surface offset group class tag",
+                    )
+                })?;
+            let header = RecordFrame {
+                record_index,
+                class_tag,
+                byte_offset: u64_from_index(start),
+            };
+            match parse_construction_operand_group(
+                ctx,
+                bytes,
+                scope,
+                scope_reference_ordinal,
+                &header,
+            )? {
+                ConstructionOperandGroupParse::Complete(group) => {
+                    Ok(candidate.replace(*group).is_some())
                 }
+                ConstructionOperandGroupParse::NotAGroup
+                | ConstructionOperandGroupParse::Unclosed => Ok(false),
             }
-            ConstructionOperandGroupParse::NotAGroup | ConstructionOperandGroupParse::Unclosed => {}
-        }
+        },
+        "scan F3D surface offset group frames",
+    )?;
+    if stopped.is_some() {
+        return Ok(None);
     }
     Ok(candidate)
 }
@@ -313,36 +333,44 @@ fn exact_surface_boundary_operation(
         return Ok(None);
     }
     let mut candidate = None;
-    for (start, end) in records.frames(ctx, boundary_record_index)? {
-        let Some(tail) = boundary_frame_tail(
-            bytes,
-            start,
-            end,
-            edge_count,
-            boundary_kind,
-            boundary_record_index,
-            scope.record_index,
-        ) else {
-            continue;
-        };
-        // The frame lists the edges in reference-table order after its header.
-        let mut ordinal = 0usize;
-        let mismatch = reference_position(
-            ctx,
-            references,
-            |record_index| {
-                let Some(edge) = ordinal.checked_sub(2) else {
+    let second = find_frame(
+        ctx,
+        records,
+        boundary_record_index,
+        |start, end| {
+            let Some(tail) = boundary_frame_tail(
+                bytes,
+                start,
+                end,
+                edge_count,
+                boundary_kind,
+                boundary_record_index,
+                scope.record_index,
+            ) else {
+                return Ok(false);
+            };
+            // The frame lists the edges in reference-table order after its header.
+            let mut ordinal = 0usize;
+            let mismatch = reference_position(
+                ctx,
+                references,
+                |record_index| {
+                    let Some(edge) = ordinal.checked_sub(2) else {
+                        ordinal += 1;
+                        return Ok(false);
+                    };
                     ordinal += 1;
-                    return Ok(false);
-                };
-                ordinal += 1;
-                Ok(marked_record_reference(bytes, start + 25 + edge * 11) != Some(*record_index))
-            },
-            "validate F3D surface boundary edge references",
-        )?;
-        if mismatch.is_none() && candidate.replace(tail).is_some() {
-            return Ok(None);
-        }
+                    Ok(marked_record_reference(bytes, start + 25 + edge * 11)
+                        != Some(*record_index))
+                },
+                "validate F3D surface boundary edge references",
+            )?;
+            Ok(mismatch.is_none() && candidate.replace(tail).is_some())
+        },
+        "scan F3D surface boundary frames",
+    )?;
+    if second.is_some() {
+        return Ok(None);
     }
     let Some(tail) = candidate else {
         return Ok(None);
@@ -539,7 +567,7 @@ pub(super) fn exact_ruled_surface_operation(
     if edge_group_record_indices.is_empty() {
         return Ok(None);
     }
-    let Some((direction_entity, direction_end)) = fixed_guid_ascii(ctx, bytes, cursor)? else {
+    let Some((direction_entity, direction_end)) = fixed_guid_ascii(bytes, cursor) else {
         return Ok(None);
     };
     if direction_end.checked_add(3) != Some(reference_count_at)
@@ -666,14 +694,17 @@ fn ruled_surface_reference_list(
     if count > MAX_RULED_SURFACE_REFERENCES || end > bytes.len() {
         return Ok(None);
     }
-    let mut records = ctx.collection_vec(count, "f3d ruled surface references")?;
-    for ordinal in ctx.admit_iter(&(0..count), "read F3D ruled surface references")? {
+    // The count is read from the frame, so each reference is admitted as the
+    // scan reaches it; the scan stops at the first unmarked one.
+    let mut records = Vec::new();
+    for ordinal in 0..count {
+        ctx.charge_work(1, "read F3D ruled surface references")?;
         let Some((record_index, _)) =
             exact_same_segment_record_reference(bytes, first + ordinal * 11)
         else {
             return Ok(None);
         };
-        records.push(record_index);
+        ctx.push_vec(&mut records, record_index, "f3d ruled surface references")?;
     }
     Ok(Some((records, end)))
 }

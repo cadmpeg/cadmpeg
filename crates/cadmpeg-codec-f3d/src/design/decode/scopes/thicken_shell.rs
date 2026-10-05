@@ -53,14 +53,10 @@ pub(super) fn exact_legacy_thicken_class_347(
     {
         return Ok(None);
     }
-    if fixed_guid_end(ctx, bytes, start + thicken_347::GUID_CODE_UNIT_COUNT)?
+    if fixed_guid_end(bytes, start + thicken_347::GUID_CODE_UNIT_COUNT)
         != Some(start + thicken_347::ZERO_RUN_3)
-        || fixed_utf16_ascii_eq(
-            ctx,
-            bytes,
-            start + thicken_347::KIND_CODE_UNIT_COUNT,
-            "Thicken",
-        )? != Some(start + thicken_347::FEATURE_ORDINAL)
+        || fixed_utf16_ascii_eq(bytes, start + thicken_347::KIND_CODE_UNIT_COUNT, "Thicken")
+            != Some(start + thicken_347::FEATURE_ORDINAL)
     {
         return Ok(None);
     }
@@ -136,17 +132,12 @@ pub(super) fn exact_shell_class_369_261(
         _ => return Ok(None),
     };
     if fixed_utf16_ascii_eq(
-        ctx,
         bytes,
         start + shell_369_261::GUID_CODE_UNIT_COUNT,
         "00000000-0000-0000-0000-000000000000",
-    )? != Some(start + shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES)
-        || fixed_utf16_ascii_eq(
-            ctx,
-            bytes,
-            start + shell_369_261::KIND_CODE_UNIT_COUNT,
-            "Shell",
-        )? != Some(start + shell_369_261::FEATURE_ORDINAL)
+    ) != Some(start + shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES)
+        || fixed_utf16_ascii_eq(bytes, start + shell_369_261::KIND_CODE_UNIT_COUNT, "Shell")
+            != Some(start + shell_369_261::FEATURE_ORDINAL)
     {
         return Ok(None);
     }

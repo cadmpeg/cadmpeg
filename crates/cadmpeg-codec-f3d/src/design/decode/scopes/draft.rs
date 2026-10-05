@@ -3,7 +3,7 @@
 
 use super::shared_frames::exact_fixed_scalar;
 use crate::design::decode::record_streams::{in_stream, record_stream};
-use crate::design::decode::reference_runs::admit_reference_values;
+use crate::design::decode::reference_runs::reference_position;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::relaxed_guid_end;
 use crate::records::feature::direct_face::DesignDraftOperation;
@@ -39,28 +39,34 @@ pub(super) fn exact_draft_operation_with_owners(
     let scope_stream = record_stream(ctx, &scope.id)?;
     let mut lanes = [None; 2];
     let mut lane_count = 0;
-    for record_index in admit_reference_values(
+    // The scan stops at a third lane.
+    let third_lane = reference_position(
         ctx,
         scope.reference_members(),
+        |record_index| {
+            let Some(lane) = draft_lane(
+                ctx,
+                bytes,
+                records,
+                scope,
+                scope_stream,
+                parameter_owners,
+                *record_index,
+            )?
+            else {
+                return Ok(false);
+            };
+            let Some(slot) = lanes.get_mut(lane_count) else {
+                return Ok(true);
+            };
+            *slot = Some(lane);
+            lane_count += 1;
+            Ok(false)
+        },
         "scan F3D Draft scope references",
-    )? {
-        let Some(lane) = draft_lane(
-            ctx,
-            bytes,
-            records,
-            scope,
-            scope_stream,
-            parameter_owners,
-            *record_index,
-        )?
-        else {
-            continue;
-        };
-        let Some(slot) = lanes.get_mut(lane_count) else {
-            return Ok(None);
-        };
-        *slot = Some(lane);
-        lane_count += 1;
+    )?;
+    if third_lane.is_some() {
+        return Ok(None);
     }
     let [Some(mut first), Some(mut second)] = lanes else {
         return Ok(None);
@@ -146,10 +152,10 @@ pub(super) fn contains_consecutive_guid_pair(
         |_| {
             let candidate = at;
             at += 1;
-            let Some(after_first) = relaxed_guid_end(ctx, bytes, candidate)? else {
+            let Some(after_first) = relaxed_guid_end(bytes, candidate) else {
                 return Ok(false);
             };
-            Ok(relaxed_guid_end(ctx, bytes, after_first)?.is_some())
+            Ok(relaxed_guid_end(bytes, after_first).is_some())
         },
         "scan F3D consecutive GUID pair candidates",
     )

@@ -58,7 +58,7 @@ fn work_point_scope_reference_scan_refuses_work_limit() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D WorkPoint scope references",
+        "scan F3D point-data record indexes",
         0,
         |ctx| {
             exact_work_point_construction_with_ctx(
@@ -74,7 +74,7 @@ fn work_point_scope_reference_scan_refuses_work_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "scan F3D WorkPoint scope references"
+                && limit.operation == "scan F3D point-data record indexes"
     ));
 }
 
@@ -84,7 +84,7 @@ fn work_point_indexed_frames_scan_refuses_work_limit() {
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D indexed record frames",
+        "scan F3D point-data frames",
         0,
         |ctx| {
             exact_work_point_construction_with_ctx(
@@ -100,7 +100,7 @@ fn work_point_indexed_frames_scan_refuses_work_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "scan F3D indexed record frames"
+                && limit.operation == "scan F3D point-data frames"
     ));
 }
 

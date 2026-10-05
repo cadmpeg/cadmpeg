@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
+use super::shared_frames::{unique_match, UniqueMatch};
 use crate::container::ContainerScan;
 use crate::design::decode::byte_fields::zeros_at;
 use crate::design::decode::operands::parse_face_operand;
@@ -241,34 +242,6 @@ fn exact_legacy_mirror_scope_tolerance(
     ))
 }
 
-/// How many values a search selected, keeping the only one.
-enum UniqueMatch<T> {
-    Zero,
-    One(T),
-    Many,
-}
-
-/// Classify the values `predicate` selects. The search stops at the second
-/// selected value and charges only the values it visits.
-fn unique_match<'values, T>(
-    ctx: &DecodeContext<'_>,
-    values: &'values [T],
-    mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
-    operation: &'static str,
-) -> Result<UniqueMatch<&'values T>, CodecError> {
-    let Some(first) = ctx.position_by(values, &mut predicate, operation)? else {
-        return Ok(UniqueMatch::Zero);
-    };
-    let (Some(value), Some(rest)) = (values.get(first), values.get(first + 1..)) else {
-        return Ok(UniqueMatch::Zero);
-    };
-    Ok(if ctx.any_by(rest, predicate, operation)? {
-        UniqueMatch::Many
-    } else {
-        UniqueMatch::One(value)
-    })
-}
-
 /// Index record headers by stream scope and record index. A later header
 /// replaces an earlier one with the same key.
 fn mirror_record_headers<'h>(
@@ -462,30 +435,42 @@ fn mirror_construction(
                 None,
             )
         } else {
-            let entity_selection = crate::design::decode::operands::parse_entity_selection_operand(
-                ctx,
-                bytes,
-                plane_group,
-                0,
-                plane_header,
-            )?
-            .is_some();
+            // Only whether an operand parses matters; the parsed operand is
+            // held under scoped storage and dropped.
+            let (entity_selection, _) =
+                ctx.with_scoped_storage("f3d Mirror plane operand test", || {
+                    Ok::<_, CodecError>(
+                        crate::design::decode::operands::parse_entity_selection_operand(
+                            ctx,
+                            bytes,
+                            plane_group,
+                            0,
+                            plane_header,
+                        )?
+                        .is_some(),
+                    )
+                })?;
             let selects_plane = entity_selection || {
                 let records = stream_record_offsets(ctx, storage, stream_indexes, stream, bytes)?;
-                parse_face_operand(
-                    ctx,
-                    bytes,
-                    records,
-                    crate::design::decode::operands::FaceOperandFrame {
-                        scope,
-                        scope_reference_ordinal: plane_group.scope_reference_ordinal,
-                        group_ownership: Some((plane_group.record_index, 0)),
-                        next_byte_offset: None,
-                        header: plane_header,
-                    },
-                    sources.recipes,
-                )?
-                .is_some()
+                ctx.with_scoped_storage("f3d Mirror plane operand test", || {
+                    Ok::<_, CodecError>(
+                        parse_face_operand(
+                            ctx,
+                            bytes,
+                            records,
+                            crate::design::decode::operands::FaceOperandFrame {
+                                scope,
+                                scope_reference_ordinal: plane_group.scope_reference_ordinal,
+                                group_ownership: Some((plane_group.record_index, 0)),
+                                next_byte_offset: None,
+                                header: plane_header,
+                            },
+                            sources.recipes,
+                        )?
+                        .is_some(),
+                    )
+                })?
+                .0
             };
             if !selects_plane {
                 return Ok(None);
@@ -607,10 +592,10 @@ fn compact_feature_reference(
     {
         return Ok(None);
     }
-    let Some(after_asset_id) = relaxed_guid_end(ctx, bytes, start + 36)? else {
+    let Some(after_asset_id) = relaxed_guid_end(bytes, start + 36) else {
         return Ok(None);
     };
-    let Some(after_context_id) = relaxed_guid_end(ctx, bytes, after_asset_id)? else {
+    let Some(after_context_id) = relaxed_guid_end(bytes, after_asset_id) else {
         return Ok(None);
     };
     if View::u32_le_at(bytes, after_context_id) != Some(2)

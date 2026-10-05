@@ -186,7 +186,7 @@ pub(super) fn exact_solid_primitive(
                         }
                     })
                 }
-                None => exact_shifted_cylinder_primitive_prologue(ctx, bytes, scope, start)?,
+                None => exact_shifted_cylinder_primitive_prologue(bytes, scope, start),
             };
             let Some(prologue) = prologue else {
                 return Ok(None);
@@ -275,11 +275,10 @@ fn shifted_cylinder_references<const N: usize>(
 }
 
 fn exact_shifted_cylinder_primitive_prologue(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Result<Option<ExactShiftedCylinderPrimitivePrologue>, CodecError> {
+) -> Option<ExactShiftedCylinderPrimitivePrologue> {
     let compact = match (
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
@@ -287,11 +286,9 @@ fn exact_shifted_cylinder_primitive_prologue(
     ) {
         ("297" | "375", "258", 352) => true,
         ("297" | "375", "258", 502) | ("414", "272", 502) => false,
-        _ => return Ok(None),
+        _ => return None,
     };
-    let Some(prologue) = shifted_cylinder_prologue_frame(bytes, scope, start, compact) else {
-        return Ok(None);
-    };
+    let prologue = shifted_cylinder_prologue_frame(bytes, scope, start, compact)?;
     let guid_count_at = start
         + if compact {
             shifted_cylinder_352::GUID_CODE_UNIT_COUNT
@@ -304,10 +301,10 @@ fn exact_shifted_cylinder_primitive_prologue(
         } else {
             shifted_cylinder_502::ZERO_RUN_3_AFTER_GUID
         };
-    if fixed_guid_end(ctx, bytes, guid_count_at)? != Some(guid_end_at) {
-        return Ok(None);
+    if fixed_guid_end(bytes, guid_count_at) != Some(guid_end_at) {
+        return None;
     }
-    Ok(Some(prologue))
+    Some(prologue)
 }
 
 /// The fixed fields of a shifted cylinder frame other than its GUID text.

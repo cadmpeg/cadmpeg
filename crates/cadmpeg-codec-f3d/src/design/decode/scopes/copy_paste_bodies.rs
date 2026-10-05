@@ -5,7 +5,7 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
 use crate::design::decode::byte_fields::zeros_at;
-use crate::design::decode::reference_runs::admit_reference_values;
+use crate::design::decode::reference_runs::reference_position;
 use crate::design::decode::sketch::{indexed_record_header_at, IndexedRecordOffsets};
 use crate::design::decode::text::retain_class_tag;
 use crate::records::feature::body_ops;
@@ -64,24 +64,36 @@ pub(super) fn exact_copy_paste_bodies_operation(
     let Some(relations_at) = relation_pairs_at(bytes, relation_at, body_count) else {
         return Ok(None);
     };
-    let mut bodies = ctx.vector_storage(body_count, "f3d CopyPasteBodies bodies")?;
+    let mut bodies = Vec::new();
     // The body group lists every reference after the first, one eleven-byte
     // marked reference each; the relation pairs each with its source and copy.
-    for (ordinal, operand) in
-        admit_reference_values(ctx, references, "scan F3D CopyPasteBodies scope references")?
-            .skip(1)
-            .enumerate()
-    {
-        let Some(body) = copied_body(
-            bytes,
-            operands_at + ordinal * 11,
-            relations_at + ordinal * 30,
-            *operand,
-            ordinal + 1 == body_count,
-        ) else {
-            return Ok(None);
-        };
-        ctx.push_vec(&mut bodies, body, "f3d CopyPasteBodies bodies")?;
+    // The scan stops at the first body that its slots do not hold.
+    let mut position = 0_usize;
+    let unmatched = reference_position(
+        ctx,
+        references,
+        |operand| {
+            let Some(ordinal) = position.checked_sub(1) else {
+                position += 1;
+                return Ok(false);
+            };
+            position += 1;
+            let Some(body) = copied_body(
+                bytes,
+                operands_at + ordinal * 11,
+                relations_at + ordinal * 30,
+                *operand,
+                ordinal + 1 == body_count,
+            ) else {
+                return Ok(true);
+            };
+            ctx.push_vec(&mut bodies, body, "f3d CopyPasteBodies bodies")?;
+            Ok(false)
+        },
+        "scan F3D CopyPasteBodies scope references",
+    )?;
+    if unmatched.is_some() {
+        return Ok(None);
     }
     let body_group_location = body_ops::CopyPasteRecordLocation {
         record_index: body_group_record_index,

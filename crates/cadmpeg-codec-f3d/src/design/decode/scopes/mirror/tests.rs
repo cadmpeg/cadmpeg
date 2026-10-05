@@ -113,23 +113,19 @@ fn compact_mirror_reference_validates_guids_in_place() {
         compact_feature_reference(&ctx, &bytes, &header).unwrap(),
         Some((reference, u64_from_index(identity + 21)))
     );
-    for operation in [
-        "validate F3D counted relaxed GUID",
-        "find F3D indexed record header",
-    ] {
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            operation,
-            0,
-            |ctx| compact_feature_reference(ctx, &bytes, &header),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == operation
-        ));
-    }
+    let operation = "find F3D indexed record header";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| compact_feature_reference(ctx, &bytes, &header),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == operation
+    ));
 }
 
 #[test]

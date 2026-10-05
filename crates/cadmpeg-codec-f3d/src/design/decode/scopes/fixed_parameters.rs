@@ -2,6 +2,7 @@
 //! Exact fixed extrude, fillet and chamfer parameter scopes.
 
 use super::shared_frames::exact_fixed_scalar;
+use super::shared_frames::find_frame;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::FixedScalarFrame;
 use crate::bytes::lp_ascii_filtered_view;
@@ -196,17 +197,19 @@ fn exact_embedded_extrude_distance(
     record_index: u32,
     scope_record_index: u32,
 ) -> Result<Option<FixedScalarFrame<PositiveReal>>, CodecError> {
-    let offsets = records.offsets(record_index);
     let mut found = None;
-    let mut paired_ordinal = 1;
-    let second = ctx.position_by(
-        offsets,
-        |&start| {
-            let paired = offsets.get(paired_ordinal).copied();
-            paired_ordinal += 1;
-            let Some(frame) = paired.and_then(|paired| {
-                embedded_extrude_distance_at(bytes, start, paired, record_index, scope_record_index)
-            }) else {
+    let second = find_frame(
+        ctx,
+        records,
+        record_index,
+        |start, paired| {
+            let Some(frame) = embedded_extrude_distance_at(
+                bytes,
+                start,
+                paired,
+                record_index,
+                scope_record_index,
+            ) else {
                 return Ok(false);
             };
             Ok(found.replace(frame).is_some())

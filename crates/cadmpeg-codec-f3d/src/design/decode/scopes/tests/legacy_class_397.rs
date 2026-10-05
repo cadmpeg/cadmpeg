@@ -58,35 +58,7 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
         &(u32::try_from(REFERENCE_MEMBERS.len()).expect("fixture value fits u32")).to_le_bytes(),
     );
 
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "validate F3D relaxed GUID code units",
-        0,
-        |ctx| {
-            super::super::legacy_class_397::exact_symmetric_extrude_prologue(
-                ctx,
-                &bytes,
-                ExtrudeScopeFrame {
-                    start: 0,
-                    paired_at: layout::LEN,
-                    class_tag: "397",
-                    paired_class_tag: "262",
-                    reference_count_at: layout::REFERENCE_COUNT,
-                },
-                &REFERENCE_MEMBERS,
-            )
-        },
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D relaxed GUID code units"
-                && limit.additional == 72
-    ));
-
     let prologue = super::super::legacy_class_397::exact_symmetric_extrude_prologue(
-        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         ExtrudeScopeFrame {
             start: 0,
@@ -97,7 +69,6 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
         },
         &REFERENCE_MEMBERS,
     )
-    .unwrap()
     .expect("class-397 symmetric shifted Extrude prologue");
     assert_eq!(
         prologue,
@@ -124,7 +95,6 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
         .copy_from_slice(&0u32.to_le_bytes());
     assert!(
         super::super::legacy_class_397::exact_symmetric_extrude_prologue(
-            &cadmpeg_test_support::service_decode_context(),
             &invalid_side,
             ExtrudeScopeFrame {
                 start: 0,
@@ -135,7 +105,6 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
             },
             &REFERENCE_MEMBERS
         )
-        .unwrap()
         .is_none()
     );
 }

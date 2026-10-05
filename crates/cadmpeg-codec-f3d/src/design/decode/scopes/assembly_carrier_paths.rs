@@ -195,7 +195,7 @@ fn exact_class_363_operand_path(
     // The terminal identity repeats the leading one; only the leading GUIDs
     // are kept.
     let Some([terminal_occurrence_guid, terminal_identity_guid]) =
-        class_363_identity_guid_codes(ctx, bytes, terminal_identity.start)?
+        class_363_identity_guid_codes(bytes, terminal_identity.start)
     else {
         return Ok(None);
     };
@@ -287,18 +287,15 @@ fn exact_class_307_joint_origin(
     if !class_307_joint_origin_fields(bytes, start, paired_at) {
         return Ok(None);
     }
-    let Some(identity_end) =
-        fixed_guid_end(ctx, bytes, start + class_307_joint_origin::IDENTITY_GUID)?
+    let Some(identity_end) = fixed_guid_end(bytes, start + class_307_joint_origin::IDENTITY_GUID)
     else {
         return Ok(None);
     };
     let Some(kind_end) = fixed_utf16_ascii_eq(
-        ctx,
         bytes,
         start + class_307_joint_origin::KIND_CODE_UNIT_COUNT,
         "JointOrigin",
-    )?
-    else {
+    ) else {
         return Ok(None);
     };
     if identity_end != start + class_307_joint_origin::REFERENCE_COUNT - 3
@@ -527,23 +524,14 @@ fn exact_class_363_identity_guids(
 
 /// The ASCII code units of the two identity GUIDs of the class-388 identity
 /// record at `start`, validated without a copy.
-fn class_363_identity_guid_codes(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-) -> Result<Option<[[u8; 36]; 2]>, CodecError> {
+fn class_363_identity_guid_codes(bytes: &[u8], start: usize) -> Option<[[u8; 36]; 2]> {
     let (occurrence_at, identity_at) = class_363_identity_guid_positions(start);
-    let Some((occurrence_guid, occurrence_end)) = fixed_guid_ascii(ctx, bytes, occurrence_at)?
-    else {
-        return Ok(None);
-    };
+    let (occurrence_guid, occurrence_end) = fixed_guid_ascii(bytes, occurrence_at)?;
     if occurrence_end != identity_at {
-        return Ok(None);
+        return None;
     }
-    let Some((identity_guid, identity_end)) = fixed_guid_ascii(ctx, bytes, identity_at)? else {
-        return Ok(None);
-    };
-    Ok((identity_end == identity_at + 76).then_some([occurrence_guid, identity_guid]))
+    let (identity_guid, identity_end) = fixed_guid_ascii(bytes, identity_at)?;
+    (identity_end == identity_at + 76).then_some([occurrence_guid, identity_guid])
 }
 
 #[cfg(test)]
@@ -746,12 +734,7 @@ mod tests {
             assert_eq!(occurrence.value.as_str(), guid);
             assert_eq!(identity.value.as_str(), guid);
             assert_eq!(
-                class_363_identity_guid_codes(
-                    &cadmpeg_test_support::service_decode_context(),
-                    &bytes,
-                    0,
-                )
-                .expect("GUID admission"),
+                class_363_identity_guid_codes(&bytes, 0),
                 Some([*guid.as_bytes().first_chunk::<36>().unwrap(); 2])
             );
         }
