@@ -768,11 +768,9 @@ fn legacy_repeated_hole_wizard_classes(
                 .or_insert(Some(feature));
             }
         }
-        let window_size = std::num::NonZeroUsize::new(3)
-            .ok_or_else(|| ctx.refuse_codec_limit("scan SLDPRT legacy hole windows", 1, 0))?;
         for records in ctx
             .admit_iter(&history.features, "scan SLDPRT legacy hole windows")?
-            .windows(window_size)
+            .windows(const { crate::nonzero(3) })
         {
             let [operation, first_sketch, second_sketch] = records else {
                 continue;

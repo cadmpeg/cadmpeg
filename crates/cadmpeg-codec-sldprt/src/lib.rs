@@ -128,6 +128,17 @@ mod writer_transform;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
+
+/// A nonzero scan width named by a constant.
+///
+/// Call it inside `const { .. }`: a zero width then fails the build instead of
+/// adding a runtime refusal that no input can reach.
+pub(crate) const fn nonzero(width: usize) -> std::num::NonZeroUsize {
+    match std::num::NonZeroUsize::new(width) {
+        Some(width) => width,
+        None => panic!("a scan width is nonzero"),
+    }
+}
 use cadmpeg_ir::ContainerSummary;
 use std::io::Write;
 
