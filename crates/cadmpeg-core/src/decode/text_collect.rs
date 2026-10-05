@@ -61,28 +61,6 @@ impl<T: TextFragment + ?Sized> TextFragment for &T {
 }
 
 impl DecodeContext<'_> {
-    /// Appends scoped text through the existing charged UTF-8 append operation.
-    pub fn append_scoped(
-        &self,
-        reservation: &mut ScopedReservation<'_>,
-        output: &mut String,
-        suffix: &str,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        reservation.with_storage(|| self.append_retained(output, suffix, operation))
-    }
-
-    /// Appends a scoped character through the existing charged scalar append.
-    pub fn push_scoped_char(
-        &self,
-        reservation: &mut ScopedReservation<'_>,
-        output: &mut String,
-        value: char,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        reservation.with_storage(|| self.push_retained_char(output, value, operation))
-    }
-
     fn append_fragment<S: TextFragment>(
         &self,
         output: &mut String,

@@ -108,7 +108,7 @@ fn string_appends_refuse_before_mutation_in_each_storage_dimension() {
         let mut text = String::new();
         let mut storage = ctx.reserve_scoped(0, "scope").expect("empty scope");
         let result = if scoped {
-            ctx.push_scoped_char(&mut storage, &mut text, 'é', "append")
+            storage.with_storage(|| ctx.push_retained_char(&mut text, 'é', "append"))
         } else {
             ctx.push_retained_char(&mut text, 'é', "append")
         };
@@ -116,8 +116,8 @@ fn string_appends_refuse_before_mutation_in_each_storage_dimension() {
             panic!("resource refusal")
         };
         assert!(text.is_empty());
-        let CodecError::ResourceLimit(repeated) = ctx
-            .append_scoped(&mut storage, &mut text, "a", "later")
+        let CodecError::ResourceLimit(repeated) = storage
+            .with_storage(|| ctx.append_retained(&mut text, "a", "later"))
             .expect_err("sticky refusal")
         else {
             panic!("resource refusal")
