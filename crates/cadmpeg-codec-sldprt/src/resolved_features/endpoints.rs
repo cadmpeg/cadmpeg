@@ -2117,6 +2117,7 @@ pub(super) fn inferred_point_coordinates_by_index(
     // scalar form. They are admitted here only to solve omitted point
     // coordinates; generic operand resolution still requires a marker match.
     const SOLVER_POINT_REFERENCE_TAGS: [u16; 2] = [0x8100, 0x820f];
+    let mut candidates_storage = ctx.reserve_scoped(0, POINT_SOLVER_OPERATION)?;
     let mut candidates = Vec::new();
     for marker in &lane.sketch_entities {
         charge_endpoint_work(
@@ -2136,8 +2137,7 @@ pub(super) fn inferred_point_coordinates_by_index(
         else {
             continue;
         };
-        reserve_point_solver_vec(ctx, &mut candidates, 1)?;
-        candidates.push(point);
+        candidates_storage.with_storage(|| ctx.push_vec(&mut candidates, point, POINT_SOLVER_OPERATION))?;
     }
     ctx.sort_unstable_by_key(
         &mut candidates,
@@ -2149,11 +2149,12 @@ pub(super) fn inferred_point_coordinates_by_index(
         },
         "sldprt point solver candidates sort",
     )?;
-    charge_endpoint_work(ctx, candidates.len(), 64, POINT_SOLVER_OPERATION)?;
-    candidates.dedup_by(|left, right| {
-        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
-    });
 
+    ctx.dedup_by(&mut candidates, |left, right| {
+        Ok(same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]))
+    }, "deduplicate SLDPRT inferred point coordinates")?;
+
+    let mut constraints_storage = ctx.reserve_scoped(0, POINT_SOLVER_OPERATION)?;
     let mut constraints = Vec::new();
     for scalar in &lane.scalars {
         charge_endpoint_work(
@@ -2169,14 +2170,13 @@ pub(super) fn inferred_point_coordinates_by_index(
         };
         if scalar.feature_ref.as_deref() != Some(feature) || scalar.role != FeatureInputScalarRole::Driving || scalar.value.get() < 0.0
             || ![first, second].iter().all(|operand| matches!(operand.kind, FeatureInputOperandKind::Native(tag) if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value()))) { continue; }
-        reserve_point_solver_vec(ctx, &mut constraints, 1)?;
-        constraints.push((
+        constraints_storage.with_storage(|| ctx.push_vec(&mut constraints, (
             [
                 u32::from(first.entity_index),
                 u32::from(second.entity_index),
             ],
             scalar.value.get(),
-        ));
+        ), POINT_SOLVER_OPERATION))?;
     }
     let mut indices = HashSet::new();
     for (endpoints, _) in &constraints {
@@ -2186,20 +2186,16 @@ pub(super) fn inferred_point_coordinates_by_index(
     }
     let mut domains = HashMap::new();
     for index in indices {
-        charge_endpoint_work(ctx, candidates.len(), 4, POINT_SOLVER_OPERATION)?;
         let mut domain = Vec::new();
-        reserve_point_solver_vec(ctx, &mut domain, candidates.len())?;
-        domain.extend_from_slice(&candidates);
+        ctx.extend_from_slice(&mut domain, &candidates, POINT_SOLVER_OPERATION)?;
         reserve_point_solver_map(ctx, &mut domains)?;
         domains.insert(index, domain);
     }
     loop {
         let mut previous = HashMap::new();
         for (&index, domain) in &domains {
-            charge_endpoint_work(ctx, domain.len(), 4, POINT_SOLVER_OPERATION)?;
             let mut copied = Vec::new();
-            reserve_point_solver_vec(ctx, &mut copied, domain.len())?;
-            copied.extend_from_slice(domain);
+            ctx.extend_from_slice(&mut copied, domain, POINT_SOLVER_OPERATION)?;
             reserve_point_solver_map(ctx, &mut previous)?;
             previous.insert(index, copied);
         }
@@ -2278,9 +2274,9 @@ fn point_distance_component_has_solution(
 ) -> Result<bool, CodecError> {
     let mut component = HashSet::new();
     insert_point_solver_index(ctx, &mut component, seed)?;
+    let mut pending_storage = ctx.reserve_scoped(0, POINT_SOLVER_OPERATION)?;
     let mut pending = Vec::new();
-    reserve_point_solver_vec(ctx, &mut pending, 1)?;
-    pending.push(seed);
+    pending_storage.with_storage(|| ctx.push_vec(&mut pending, seed, POINT_SOLVER_OPERATION))?;
     while let Some(index) = pending.pop() {
         for (endpoints, _) in constraints {
             ctx.charge_work(8, POINT_SOLVER_OPERATION)?;
@@ -2289,8 +2285,7 @@ fn point_distance_component_has_solution(
             }
             for endpoint in endpoints {
                 if insert_point_solver_index(ctx, &mut component, *endpoint)? {
-                    reserve_point_solver_vec(ctx, &mut pending, 1)?;
-                    pending.push(*endpoint);
+                    pending_storage.with_storage(|| ctx.push_vec(&mut pending, *endpoint, POINT_SOLVER_OPERATION))?;
                 }
             }
         }
@@ -2582,9 +2577,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
             continue;
         }
         for (endpoint, coordinates) in [(*first, coordinates[0]), (*second, coordinates[1])] {
-            reserve_endpoint_identity_map(ctx, &mut degrees, endpoint.id(), OPERATION)?;
-            let entry = degrees
-                .entry(endpoint.id())
+            let entry = ctx.entry_hash_map(&mut degrees, endpoint.id(), OPERATION)?
                 .or_insert((0, coordinates, endpoint.offset()));
             if entry.1 != coordinates {
                 return Ok(None);
@@ -2983,7 +2976,7 @@ pub(super) fn coordinate_roster_arc_center(
         OPERATION,
     )?;
     sort_endpoint_points(ctx, &mut centers, OPERATION)?;
-    centers.dedup();
+    ctx.dedup_vec(&mut centers, "deduplicate SLDPRT endpoint centers")?;
     let [center] = centers.as_slice() else {
         return Ok(None);
     };
@@ -3050,9 +3043,9 @@ pub(super) fn legacy_marker104_arc_center(
         });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
     sort_endpoint_points(ctx, &mut centers, OPERATION)?;
-    centers.dedup_by(|left, right| {
-        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
-    });
+    ctx.dedup_by(&mut centers, |left, right| {
+        Ok(same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]))
+    }, "deduplicate SLDPRT marker104 arc centers")?;
     let [center] = centers.as_slice() else {
         return Ok(None);
     };
@@ -3128,7 +3121,7 @@ pub(super) fn legacy_compact_diameter_arc_center(
         });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
     sort_endpoint_points(ctx, &mut centers, OPERATION)?;
-    centers.dedup();
+    ctx.dedup_vec(&mut centers, "deduplicate SLDPRT endpoint centers")?;
     let [center] = centers.as_slice() else {
         return Ok(None);
     };
@@ -3977,9 +3970,9 @@ pub(super) fn compact_profile_full_circle(
         },
         "sldprt ellipse radial points sort",
     )?;
-    radials.dedup_by(|left, right| {
-        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
-    });
+    ctx.dedup_by(&mut radials, |left, right| {
+        Ok(same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]))
+    }, "deduplicate SLDPRT ellipse radial coordinates")?;
     Ok((|| {
         let [radial] = radials.as_slice() else {
             return None;
@@ -4493,10 +4486,8 @@ pub(super) fn copy_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "copy SLDPRT resolved curve endpoints";
-    charge_endpoint_work(ctx, markers.len(), 4, OPERATION)?;
     let mut copied = Vec::new();
-    ctx.reserve_vec(&mut copied, markers.len(), OPERATION)?;
-    copied.extend_from_slice(markers);
+    ctx.extend_from_slice(&mut copied, markers, OPERATION)?;
     Ok(copied)
 }
 
@@ -6071,7 +6062,7 @@ pub(super) fn unique_arc_center_marker(
     });
     let mut centers = collect_endpoint_values(ctx, eligible, OPERATION)?;
     ctx.sort_unstable_by(&mut centers, |value| &value.0, Ord::cmp, OPERATION)?;
-    centers.dedup_by_key(|(center, _)| *center);
+    ctx.dedup_by_key(&mut centers, |(center, _)| Ok(*center), "deduplicate SLDPRT unique arc center cells")?;
     let [(_, center)] = centers.as_slice() else {
         return Ok(None);
     };

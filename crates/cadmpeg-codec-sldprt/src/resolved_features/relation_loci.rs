@@ -1813,14 +1813,14 @@ fn repeated_dimensioned_circular_entities(
         return Ok(None);
     }
     let mut entities = Vec::new();
-    ctx.reserve_vec(&mut entities, count, OPERATION)?;
+    ctx.reserve_capacity(&mut entities, count, OPERATION)?;
     for entity in sketch_entities {
         if matches(entity)? {
-            entities.push(super::transforms::copy_sketch_entity_identity(
+            ctx.push_vec(&mut entities, super::transforms::copy_sketch_entity_identity(
                 ctx,
                 entity.id(),
                 OPERATION,
-            )?);
+            )?, OPERATION)?;
         }
     }
     Ok(Some(entities))
@@ -2277,9 +2277,9 @@ pub(super) fn canonical_profile_loci(
         },
         OPERATION,
     )?;
-    indexed.dedup_by(|(_, left_point, _), (_, right_point, _)| {
-        quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM)
-    });
+    ctx.dedup_by(&mut indexed, |(_, left_point, _), (_, right_point, _)| {
+        Ok(quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM))
+    }, "deduplicate SLDPRT canonical profile loci")?;
     let mut loci = Vec::new();
     ctx.reserve_vec(&mut loci, indexed.len(), OPERATION)?;
     for (_, point, locus) in indexed {
@@ -2843,21 +2843,7 @@ fn unique_dynamic_marker_point_pair(
                 loci_by_marker,
                 sketch_entities,
             )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(additions.len())
-                    .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        SketchLocus,
-                    >(
-                    )))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            ctx.reserve_vec(
-                &mut candidates,
-                additions.len(),
-                "append SLDPRT dynamic point candidates",
-            )?;
-            candidates.extend(additions);
+            ctx.extend_vec(&mut candidates, additions, "append SLDPRT dynamic point candidates")?;
         }
         Ok(candidates)
     };
@@ -3137,7 +3123,7 @@ fn unique_dynamic_direct_point_roster_pair(
 
 const DYNAMIC_POINT_LOCUS_QUANTUM: f64 = 1.0e-8;
 
-fn deduplicate_physical_loci<T>(
+fn deduplicate_physical_loci<T: cadmpeg_core::decode::cost::DecodeCost>(
     ctx: &DecodeContext<'_>,
     candidates: &mut Vec<T>,
     point: impl Fn(&T) -> Result<Option<Point2>, cadmpeg_core::CodecError>,
@@ -3480,7 +3466,7 @@ fn dynamic_line_operand_candidates(
     entities.truncate(write);
     if entities.len() > 1 {
         ctx.sort_unstable_by(&mut entities, |value| value, Ord::cmp, OPERATION)?;
-        entities.dedup();
+        ctx.dedup_vec(&mut entities, "deduplicate SLDPRT marker entities")?;
     }
     Ok(entities)
 }
@@ -3740,7 +3726,7 @@ fn dynamic_marker_line_candidates(
         }
     }
     ctx.sort_unstable_by(&mut candidates, |value| value, Ord::cmp, OPERATION)?;
-    candidates.dedup();
+    ctx.dedup_vec(&mut candidates, "deduplicate SLDPRT marker line candidates")?;
     Ok(candidates)
 }
 
@@ -4649,12 +4635,18 @@ pub(super) fn profile_axis_for_relation(
 }
 
 fn qualified_point_loci<'a>(
+    ctx: &DecodeContext<'_>,
     marker_id: &str,
     loci_by_marker: &'a HashMap<String, Vec<SketchLocus>>,
-) -> Option<&'a [SketchLocus]> {
-    loci_by_marker.iter().find_map(|(key, loci)| {
-        (key.strip_suffix(":qualified-point") == Some(marker_id)).then_some(loci.as_slice())
-    })
+) -> Result<Option<&'a [SketchLocus]>, cadmpeg_core::CodecError> {
+    for (key, loci) in loci_by_marker {
+        if ctx.strip_suffix(key, ":qualified-point", "strip SLDPRT qualified point suffix")?
+            == Some(marker_id)
+        {
+            return Ok(Some(loci.as_slice()));
+        }
+    }
+    Ok(None)
 }
 
 pub(super) fn marker_point_locus(
@@ -4665,7 +4657,7 @@ pub(super) fn marker_point_locus(
 ) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker point locus";
     charge_profile_marker_lookup(ctx, marker_id, markers_by_id, loci_by_marker, OPERATION)?;
-    if let Some(loci) = qualified_point_loci(marker_id, loci_by_marker) {
+    if let Some(loci) = qualified_point_loci(ctx, marker_id, loci_by_marker)? {
         if let Some(locus) = unique_locus(ctx, loci)? {
             return Ok(Some(locus));
         }
@@ -4764,7 +4756,7 @@ fn qualified_or_linked_point_locus(
         }
     }
     charge_profile_marker_lookup(ctx, marker_id, markers_by_id, loci_by_marker, OPERATION)?;
-    if let Some(loci) = qualified_point_loci(marker_id, loci_by_marker) {
+    if let Some(loci) = qualified_point_loci(ctx, marker_id, loci_by_marker)? {
         return unique_locus(ctx, loci);
     }
     let Some(locus) = marker_point_locus(ctx, marker_id, markers_by_id, loci_by_marker)? else {
@@ -5012,7 +5004,7 @@ pub(super) fn single_marker_line_entity(
         Ord::cmp,
         "sort SLDPRT single marker line entities",
     )?;
-    entities.dedup();
+    ctx.dedup_vec(&mut entities, "deduplicate SLDPRT marker entities")?;
     if entities.len() == 1 {
         return Ok(entities.into_iter().next());
     }
@@ -5348,7 +5340,7 @@ fn sort_profile_loci(
         |left, right| locus_key(left).cmp(&locus_key(right)),
         operation,
     )?;
-    loci.dedup();
+    ctx.dedup_vec(loci, "deduplicate SLDPRT profile loci")?;
     Ok(())
 }
 
@@ -5458,6 +5450,7 @@ pub(super) fn profile_loci_by_marker(
         |key: &&str| key.len(),
         "index SLDPRT feature profile sketches",
     )?;
+    let mut profile_locus_storage = ctx.reserve_scoped(0, BUILD_OPERATION)?;
     let mut profile_loci = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
     let mut line_midpoints = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
     let geometry_by_entity = collect_profile_locus_map(
@@ -5509,15 +5502,7 @@ pub(super) fn profile_loci_by_marker(
         let points = sketch_entity_locus_points(entity);
         let count = points.iter().flatten().count();
         if count != 0 {
-            reserve_profile_locus_map_slot(
-                ctx,
-                &mut profile_loci,
-                &&entity.sketch,
-                sketch_key_bytes,
-                cadmpeg_core::decode::u64_from_index(entity.sketch.as_str().len()),
-                BUILD_OPERATION,
-            )?;
-            let loci = profile_loci.entry(&entity.sketch).or_default();
+            let loci = ctx.entry_hash_map(&mut profile_loci, &entity.sketch, BUILD_OPERATION)?.or_default();
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(loci.len())
                     .checked_add(cadmpeg_core::decode::u64_from_index(count))
@@ -5531,21 +5516,13 @@ pub(super) fn profile_loci_by_marker(
                     })?,
                 BUILD_OPERATION,
             )?;
-            ctx.reserve_vec(loci, count, BUILD_OPERATION)?;
+            profile_locus_storage.with_storage(|| ctx.reserve_capacity(loci, count, BUILD_OPERATION))?;
             for (point, role) in points.into_iter().flatten() {
-                loci.push((point, role.copy_locus(ctx, entity.id(), BUILD_OPERATION)?));
+                profile_locus_storage.with_storage(|| ctx.push_vec(loci, (point, role.copy_locus(ctx, entity.id(), BUILD_OPERATION)?), BUILD_OPERATION))?;
             }
         }
         if let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() {
-            reserve_profile_locus_map_slot(
-                ctx,
-                &mut line_midpoints,
-                &&entity.sketch,
-                sketch_key_bytes,
-                cadmpeg_core::decode::u64_from_index(entity.sketch.as_str().len()),
-                BUILD_OPERATION,
-            )?;
-            let midpoints = line_midpoints.entry(&entity.sketch).or_default();
+            let midpoints = ctx.entry_hash_map(&mut line_midpoints, &entity.sketch, BUILD_OPERATION)?.or_default();
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(midpoints.len())
                     .checked_add(1)
@@ -5774,17 +5751,9 @@ pub(super) fn profile_loci_by_marker(
                 )?;
                 endpoint_marker_keys
                     .insert(ctx.format_retained(format_args!("{key}"), ENDPOINT_OPERATION)?);
-                reserve_profile_locus_map_slot(
-                    ctx,
-                    &mut result,
-                    &key,
-                    result_key_byte_bound,
-                    cadmpeg_core::decode::u64_from_index(key.len()),
-                    ENDPOINT_OPERATION,
-                )?;
                 append_profile_endpoint_locus(
                     ctx,
-                    result.entry(key).or_default(),
+                    ctx.entry_hash_map(&mut result, key, ENDPOINT_OPERATION)?.or_default(),
                     entity.id(),
                     role,
                     source_entity_bytes,
@@ -5794,17 +5763,7 @@ pub(super) fn profile_loci_by_marker(
         }
     }
     for marker in endpoint_marker_keys {
-        ctx.charge_work(
-            result_key_byte_bound
-                .checked_add(cadmpeg_core::decode::u64_from_index(marker.len()))
-                .and_then(|bytes| bytes.checked_mul(4))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(ENDPOINT_OPERATION, u64::MAX - 1, u64::MAX)
-                })?,
-            ENDPOINT_OPERATION,
-        )?;
-        if let Some(loci) = result.get_mut(&marker) {
+        if let Some(loci) = ctx.get_mut_hash_map(&mut result, &marker, "lookup SLDPRT marker endpoint loci")? {
             canonicalize_physical_loci(ctx, loci, sketch_entities, QUANTUM)?;
         }
     }
@@ -5844,15 +5803,7 @@ pub(super) fn profile_loci_by_marker(
                 GROUP_OPERATION,
             )?;
             if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
-                reserve_profile_locus_map_slot(
-                    ctx,
-                    &mut markers_by_feature,
-                    &feature,
-                    feature_key_bytes,
-                    cadmpeg_core::decode::u64_from_index(feature.len()),
-                    GROUP_OPERATION,
-                )?;
-                let group = markers_by_feature.entry(feature).or_default();
+                let group = ctx.entry_hash_map(&mut markers_by_feature, feature, GROUP_OPERATION)?.or_default();
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(group.len())
                         .checked_add(1)
@@ -6518,10 +6469,11 @@ pub(super) fn unique_linked_endpoint_locus(
             sum.checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
         })
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let mut group_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut groups = Vec::<
         HashMap<GridPoint, Vec<(&SketchEntityId, super::transforms::SketchLocusRole)>>,
     >::new();
-    ctx.reserve_vec(&mut groups, marker.links().len(), OPERATION)?;
+    group_storage.with_storage(|| ctx.reserve_capacity(&mut groups, marker.links().len(), OPERATION))?;
     let mut sketch: Option<&cadmpeg_ir::sketches::SketchId> = None;
     for link in marker.links() {
         let entities = marker_entities(
@@ -6599,7 +6551,7 @@ pub(super) fn unique_linked_endpoint_locus(
         if endpoints.is_empty() {
             return Ok(None);
         }
-        groups.push(endpoints);
+        group_storage.with_storage(|| ctx.push_vec(&mut groups, endpoints, OPERATION))?;
     }
     let Some(first) = groups.first() else {
         return Ok(None);
@@ -6748,26 +6700,7 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
                 OPERATION,
             )?;
             if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
-                if !markers_by_feature.contains_key(feature) {
-                    ctx.charge_collection_items(1, OPERATION)?;
-                    if markers_by_feature.len() == markers_by_feature.capacity() {
-                        for key in markers_by_feature.keys() {
-                            ctx.charge_work(
-                                u64::try_from(key.len())
-                                    .ok()
-                                    .and_then(|len| len.checked_add(1))
-                                    .ok_or_else(|| {
-                                        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                                    })?,
-                                OPERATION,
-                            )?;
-                        }
-                    }
-                    markers_by_feature
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                }
-                let markers = markers_by_feature.entry(feature).or_default();
+                let markers = ctx.entry_hash_map(&mut markers_by_feature, feature, OPERATION)?.or_default();
                 ctx.reserve_vec(markers, 1, OPERATION)?;
                 markers.push(marker);
             }

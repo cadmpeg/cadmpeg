@@ -1235,3 +1235,82 @@ fn draft_face_selection_refuses_retained_limit() {
             && limit.operation == "format SLDPRT draft surface selection set")
     );
 }
+
+#[test]
+fn relation_diameter_expression_propagates_format_work_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(
+        super::super::relation_display_parameter_value(
+            &ctx, crate::records::FeatureInputRelationFamily::CircleDiameter, 2.0,
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "format SLDPRT relation display parameter"
+    ));
+    let (value, display, expression) = super::super::relation_display_parameter_value(
+        &cadmpeg_test_support::service_decode_context(),
+        crate::records::FeatureInputRelationFamily::CircleDiameter,
+        2.0,
+    ).unwrap().expect("finite diameter");
+    assert_eq!(expression, "<MOD-DIAM>2000mm");
+    assert_eq!(display, Some(cadmpeg_ir::features::DimensionDisplay::Diameter));
+    assert!(matches!(value, cadmpeg_ir::features::ParameterValue::Length(length) if length.get() == 2000.0));
+}
+
+#[test]
+fn surface_lane_group_entry_propagates_slot_refusal() {
+    let selection = full_round_selection();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::super::surface_selections_by_lane(&ctx, &[&selection], "group SLDPRT test surface lanes"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "group SLDPRT test surface lanes"
+    ));
+    let grouped = super::super::surface_selections_by_lane(
+        &cadmpeg_test_support::service_decode_context(), &[&selection, &selection],
+        "group SLDPRT test surface lanes",
+    ).unwrap();
+    assert_eq!(grouped.len(), 1);
+    let entries = grouped.get(selection.parent.as_str()).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(std::ptr::eq(entries[0], &selection));
+    assert!(std::ptr::eq(entries[1], &selection));
+}
+
+#[test]
+fn existing_parameter_ordinal_lookup_propagates_work_refusal() {
+    let (parameters, features, _, lanes) = parameter_scalar_binding_fixture();
+    crate::test_support::work_refusal_at("lookup SLDPRT existing parameter ordinal", |ctx| {
+        synthesize_display_relation_parameters(ctx, &mut parameters.clone(), &features, &lanes)
+    });
+    let mut actual = parameters.clone();
+    synthesize_display_relation_parameters(
+        &cadmpeg_test_support::service_decode_context(), &mut actual, &features, &lanes,
+    ).unwrap();
+    assert_eq!(actual.len(), 1);
+    assert_eq!(actual[0].id, parameters[0].id);
+    assert_eq!(actual[0].ordinal, 0);
+}
+
+#[test]
+fn display_parameter_ordinal_lookup_propagates_work_refusal() {
+    let (parameters, features, lanes) = display_relation_synthesis_fixture();
+    crate::test_support::work_refusal_at("lookup SLDPRT display parameter ordinal", |ctx| {
+        synthesize_display_relation_parameters(ctx, &mut parameters.clone(), &features, &lanes)
+    });
+    let mut actual = parameters;
+    synthesize_display_relation_parameters(
+        &cadmpeg_test_support::service_decode_context(), &mut actual, &features, &lanes,
+    ).unwrap();
+    assert_eq!(actual.len(), 1);
+    assert_eq!(actual[0].ordinal, 0);
+    assert_eq!(actual[0].owner.as_ref(), Some(&features[0].id));
+}

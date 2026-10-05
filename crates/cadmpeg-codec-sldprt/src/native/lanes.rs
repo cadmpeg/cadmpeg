@@ -12,10 +12,11 @@ pub(super) fn admit(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for lane in ctx.admit_iter(&native.feature_input_lanes, "scan SLDPRT admit values").map_err(cadmpeg_core::CodecError::from)? {
         if !crate::resolved_features::names::class_declarations_match(
+            ctx,
             &lane.native_payload,
             &lane.id,
             &lane.classes,
-        ) {
+        )? {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "SolidWorks feature-input class index does not match its native payload".into(),
             ));
@@ -25,10 +26,11 @@ pub(super) fn admit(
         // edit of a stored lane, so any disagreement here is a false statement
         // about the payload and is refused.
         if !crate::resolved_features::names::object_names_structure_match(
+            ctx,
             &lane.native_payload,
             &lane.id,
             &lane.names,
-        ) {
+        )? {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "SolidWorks feature-input name structure does not match its native payload".into(),
             ));

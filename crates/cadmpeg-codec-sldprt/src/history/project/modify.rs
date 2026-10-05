@@ -168,8 +168,8 @@ pub(crate) fn fillet_radius_parameter_has_native_display(ctx: &cadmpeg_core::dec
     Ok(is_fillet(ctx, feature)?
         && if variable_fillet(feature) {
             crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
-                feature, name,
-            )
+                ctx, feature, name,
+            )?
             .is_some()
         } else {
             name == "D1"

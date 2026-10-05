@@ -1324,6 +1324,16 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             .expect("principal axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 1.0]])
     );
+    crate::test_support::work_refusal_at("collect SLDPRT principal axis candidates", |ctx| {
+        profile_roster_principal_axis_endpoints(ctx, &lane, "profile-native", &markers)
+    });
+    assert!(super::profile_roster_implicit_axis_endpoints(&ctx, &lane, "profile-native", &markers)
+        .unwrap().is_none());
+    for operation in ["collect SLDPRT implicit axis curves", "collect SLDPRT implicit axis endpoints"] {
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            super::profile_roster_implicit_axis_endpoints(ctx, &lane, "profile-native", &markers)
+        });
+    }
 }
 
 #[test]
@@ -1423,6 +1433,10 @@ fn revolution_consumes_the_preceding_profile_object() {
         feature.source_id = None;
         feature.properties.clear();
     }
+    crate::test_support::work_refusal_at("deduplicate SLDPRT revolution profile sources", |ctx| {
+        let mut candidates = histories.clone();
+        super::enrich_history_revolution_inputs(ctx, &mut candidates, std::slice::from_ref(&lane))
+    });
     enrich_history_revolution_inputs_test(&mut histories, &[lane]);
     assert_eq!(
         histories[0].features[1].properties.get("Profile"),
@@ -1432,4 +1446,188 @@ fn revolution_consumes_the_preceding_profile_object() {
         histories[0].features[3].properties.get("Profile"),
         Some(&"29".into())
     );
+}
+
+#[test]
+fn linear_pattern_dimension_lookup_propagates_work_refusal() {
+    let mut histories = single_revolution_history();
+    let feature = &mut histories[0].features[0];
+    feature.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_const!("D1"), "3".into()),
+        (cadmpeg_core::nonblank_const!("D2"), "25".into()),
+    ]);
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: [(0, "moNumberDim_c"), (200, "ParallelPlaneDistanceDim_c")]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (offset, name))| crate::records::FeatureInputClass {
+                id: format!("class#{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset,
+                name: name.into(),
+            }).collect(),
+        names: [(50, "D1"), (250, "D2")]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (offset, value))| FeatureInputName {
+                id: format!("name#{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset,
+                object_id: Some(ObjectId::Absent),
+                value: value.into(),
+            }).collect(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        super::typed_linear_pattern_dimensions(&ctx, feature, &lane, 0, 400),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "look up SLDPRT linear pattern dimensions"
+    ));
+    let (spacing, count) = super::typed_linear_pattern_dimensions(
+        &cadmpeg_test_support::service_decode_context(), feature, &lane, 0, 400,
+    ).unwrap().expect("two typed dimensions");
+    assert_eq!(count, 3);
+    assert_eq!(spacing.get(), 25.0);
+}
+
+#[test]
+fn line_reference_direction_propagates_slot_refusal() {
+    let mut payload = vec![0; 224];
+    payload[136..144].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+    payload[148..152].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
+    payload[200..208].copy_from_slice(&1.0f64.to_le_bytes());
+    for dimension in [cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+            _ => panic!("test dimension"),
+        }
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::line_reference_direction(&ctx, &payload, 0),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == dimension
+                    && limit.operation == "collect SLDPRT line reference directions"
+                    && ctx.resource_refusal() == Some(limit)));
+    }
+    let direction = super::line_reference_direction(
+        &cadmpeg_test_support::service_decode_context(), &payload, 0,
+    ).unwrap().expect("declared direction");
+    assert_eq!(*direction.as_raw(), Vector3::new(1.0, 0.0, 0.0));
+}
+
+#[test]
+fn existing_revolution_vote_lookup_propagates_work_refusal() {
+    let mut votes = std::collections::HashMap::from([(String::from("feature"), vec![1_u32])]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One visit precedes hashing the existing feature identity.
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::push_revolution_vote(&ctx, &mut votes, "feature", 2, "lookup SLDPRT test revolution vote"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "lookup SLDPRT test revolution vote"
+    ));
+    assert_eq!(votes["feature"], [1]);
+    super::push_revolution_vote(
+        &cadmpeg_test_support::service_decode_context(), &mut votes, "feature", 2,
+        "lookup SLDPRT test revolution vote",
+    ).unwrap();
+    assert_eq!(votes["feature"], [1, 2]);
+}
+
+#[test]
+fn revolution_identity_lookups_propagate_work_refusal() {
+    let histories = single_revolution_history();
+    for operation in [
+        "lookup SLDPRT revolution feature name count",
+        "lookup SLDPRT revolution profile owner",
+    ] {
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            let mut candidates = histories.clone();
+            super::enrich_history_revolution_inputs(ctx, &mut candidates, &[])
+        });
+    }
+    let mut candidates = histories;
+    super::enrich_history_revolution_inputs(
+        &cadmpeg_test_support::service_decode_context(), &mut candidates, &[],
+    ).unwrap();
+    assert_eq!(candidates[0].features[0].id, "revolution");
+    assert_eq!(candidates[0].features[0].name, "Revolution");
+}
+
+#[test]
+fn linear_pattern_count_processing_propagates_work_refusal() {
+    let mut histories = single_revolution_history();
+    let feature = &mut histories[0].features[0];
+    feature.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_const!("D1"), "3".into()),
+        (cadmpeg_core::nonblank_const!("D2"), "25".into()),
+    ]);
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: [(0, "moNumberDim_c"), (200, "ParallelPlaneDistanceDim_c")]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (offset, name))| crate::records::FeatureInputClass {
+                id: format!("class#{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset,
+                name: name.into(),
+            }).collect(),
+        names: [(50, "D1"), (250, "D2")]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (offset, value))| FeatureInputName {
+                id: format!("name#{ordinal}"),
+                parent: "lane".into(),
+                ordinal: u32::try_from(ordinal).unwrap(),
+                offset,
+                object_id: Some(ObjectId::Absent),
+                value: value.into(),
+            }).collect(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    crate::test_support::work_refusal_at("parse SLDPRT linear pattern count", |ctx| {
+        super::typed_linear_pattern_dimensions(ctx, feature, &lane, 0, 400)
+    });
+    let (spacing, count) = super::typed_linear_pattern_dimensions(
+        &cadmpeg_test_support::service_decode_context(), feature, &lane, 0, 400,
+    ).unwrap().expect("two typed dimensions");
+    assert_eq!(count, 3);
+    assert_eq!(spacing.get(), 25.0);
 }

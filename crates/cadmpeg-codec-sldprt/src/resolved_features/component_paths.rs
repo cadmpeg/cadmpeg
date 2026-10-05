@@ -356,8 +356,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         };
         for (_, (name, feature)) in &objects {
             if object_kind(name, feature) == NativeClassKind::Extrusion {
-                ctx.reserve_map(&mut profiles, 1, "index SLDPRT adjacent profiles")?;
-                let votes = profiles.entry(feature.id.as_str()).or_default();
+                let votes = ctx.entry_hash_map(&mut profiles, feature.id.as_str(), "index SLDPRT adjacent profiles")?.or_default();
                 ctx.reserve_vec(votes, 1, "collect SLDPRT adjacent profile votes")?;
                 votes.push(ProfileVote::Missing);
             }
@@ -374,7 +373,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                     Some((*first, *second, 0))
                 }
                 (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature)
-                    if is_dissectable(first) || is_dissected_profile_feature(second) =>
+                    if is_dissectable(first) || is_dissected_profile_feature(ctx, second)? =>
                 {
                     Some((*second, *first, 1))
                 }
@@ -421,8 +420,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             }
         }
         for (profile, extrusion, strength) in associations {
-            let Some(vote) = profiles
-                .get_mut(extrusion.id.as_str())
+            let Some(vote) = ctx.get_mut_hash_map(&mut profiles, extrusion.id.as_str(), "resolve SLDPRT adjacent profile votes")?
                 .and_then(|votes| votes.last_mut())
             else {
                 continue;
@@ -535,7 +533,10 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
         let mut children = HashSet::new();
         for value in encoded.split(',') {
             ctx.charge_work(1, "parse SLDPRT profile block children")?;
-            let Ok(source) = value.trim().parse::<u32>() else {
+            let Ok(source) = ctx.parse_text::<u32>(
+                value.trim(),
+                "parse SLDPRT profile child identity",
+            )? else {
                 return Ok(false);
             };
             if source == 0 || children.contains(&source) {
@@ -576,12 +577,14 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
                         u64::MAX,
                     )
                 })?;
-                let Some(definition) = feature
-                    .properties
-                    .get("BlockDefinition")
-                    .and_then(|source| source.parse::<u32>().ok())
-                    .filter(|source| *source != 0)
-                else {
+                let definition = match feature.properties.get("BlockDefinition") {
+                    Some(source) => ctx
+                        .parse_text::<u32>(source, "parse SLDPRT sketch block definition identity")?
+                        .ok()
+                        .filter(|source| *source != 0),
+                    None => None,
+                };
+                let Some(definition) = definition else {
                     continue;
                 };
                 ctx.reserve_set(
@@ -603,15 +606,24 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
     Ok(referenced_definitions.is_empty() || referenced_definitions == definitions)
 }
 
-pub(crate) fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
-    feature.properties.get("Description") == Some(&feature.name)
-        && feature
-            .name
-            .rsplit_once('<')
-            .and_then(|(_, suffix)| suffix.strip_suffix('>'))
-            .is_some_and(|ordinal| {
-                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-            })
+pub(crate) fn is_dissected_profile_feature(
+    ctx: &DecodeContext<'_>,
+    feature: &crate::records::Feature,
+) -> Result<bool, CodecError> {
+    if feature.properties.get("Description") != Some(&feature.name) {
+        return Ok(false);
+    }
+    let Some((_, suffix)) = ctx.rsplit_once(
+        &feature.name,
+        "<",
+        "split SLDPRT dissected profile ordinal",
+    )? else {
+        return Ok(false);
+    };
+    let ordinal = ctx.strip_suffix(suffix, ">", "strip SLDPRT dissected profile ordinal suffix")?;
+    Ok(ordinal.is_some_and(|ordinal| {
+        !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+    }))
 }
 
 pub(crate) fn project_dissected_sketches(
@@ -658,12 +670,14 @@ pub(crate) fn project_dissected_sketches(
                     | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 ..
             })
-        ) && feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| native_features.get(native))
-            .is_some_and(|native| is_dissected_profile_feature(native))
+        )
     }) {
+        let Some(native) = feature.native_ref.as_deref().and_then(|native| native_features.get(native)) else {
+            continue;
+        };
+        if !is_dissected_profile_feature(ctx, native)? {
+            continue;
+        }
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(feature.dependencies.len()),
             "resolve SLDPRT dissected profile owner",
@@ -845,27 +859,24 @@ fn append_compact_edge_path_charged(
         for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             if index != 0 {
-                ctx.try_reserve_retained_text(value, 1, OPERATION)?;
-                value.push(',');
+                ctx.push_retained_char(value, ',', "format SLDPRT compact edge local id separator")?;
             }
             let digits = edge_id.to_string();
             ctx.try_reserve_retained_text(value, digits.len(), OPERATION)?;
-            value.push_str(&digits);
+            ctx.append_retained(value, &digits, OPERATION)?;
         }
     } else {
         for (index, component) in selection.components.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             if index != 0 {
-                ctx.try_reserve_retained_text(value, 1, OPERATION)?;
-                value.push(',');
+                ctx.push_retained_char(value, ',', "format SLDPRT compact edge component separator")?;
             }
             if let Some(id) = component.local_id {
                 let digits = id.to_string();
                 ctx.try_reserve_retained_text(value, digits.len(), OPERATION)?;
-                value.push_str(&digits);
+                ctx.append_retained(value, &digits, OPERATION)?;
             } else {
-                ctx.try_reserve_retained_text(value, 1, OPERATION)?;
-                value.push('_');
+                ctx.push_retained_char(value, '_', "format SLDPRT compact edge absent component")?;
             }
         }
     }
@@ -903,12 +914,11 @@ pub(crate) fn compact_edge_selection_set_value_charged(
             for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
                 ctx.charge_work(1, OPERATION)?;
                 if index != 0 {
-                    ctx.try_reserve_retained_text(&mut value, 1, OPERATION)?;
-                    value.push(',');
+                    ctx.push_retained_char(&mut value, ',', "format SLDPRT compact edge set local id separator")?;
                 }
                 let digits = edge_id.to_string();
                 ctx.try_reserve_retained_text(&mut value, digits.len(), OPERATION)?;
-                value.push_str(&digits);
+                ctx.append_retained(&mut value, &digits, OPERATION)?;
             }
             return Ok(value);
         }
@@ -916,8 +926,7 @@ pub(crate) fn compact_edge_selection_set_value_charged(
     for (index, selection) in selections.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
         if index != 0 {
-            ctx.try_reserve_retained_text(&mut value, 1, OPERATION)?;
-            value.push(';');
+            ctx.push_retained_char(&mut value, ';', "format SLDPRT compact edge selection separator")?;
         }
         append_compact_edge_path_charged(ctx, &mut value, selection)?;
     }
@@ -936,12 +945,11 @@ pub(crate) fn compact_body_selection_value_charged(
     for (index, body_id) in local_body_ids.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
         if index != 0 {
-            ctx.try_reserve_retained_text(&mut value, 1, OPERATION)?;
-            value.push(',');
+            ctx.push_retained_char(&mut value, ',', "format SLDPRT compact body local id separator")?;
         }
         let digits = body_id.to_string();
         ctx.try_reserve_retained_text(&mut value, digits.len(), OPERATION)?;
-        value.push_str(&digits);
+        ctx.append_retained(&mut value, &digits, OPERATION)?;
     }
     Ok(value)
 }

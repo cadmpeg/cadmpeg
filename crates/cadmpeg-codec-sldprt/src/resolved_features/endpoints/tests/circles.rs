@@ -357,6 +357,9 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     ];
     let markers = entities.iter().collect::<Vec<_>>();
 
+    crate::test_support::work_refusal_at("deduplicate SLDPRT ellipse radial coordinates", |ctx| {
+        super::compact_profile_full_circle(ctx, &payload, &entities[3], &markers)
+    });
     assert_eq!(
         super::compact_profile_full_circle(
             &cadmpeg_test_support::service_decode_context(),
