@@ -2986,10 +2986,16 @@ pub(super) fn intersection_side(
     uv: Option<(&[cadmpeg_ir::units::FiniteVector<2>], &[f64])>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<IntcurveSupportSide, cadmpeg_core::CodecError> {
-    let surface = surface_xmt
-        .and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)))
-        .map(|surface| surface.try_clone_for_decode(ctx, "nx intersection support identity"))
-        .transpose()?;
+    let surface = match surface_xmt {
+        Some(xmt) => ctx.get_btree_map(
+            surfaces_by_xmt,
+            &u32::from(xmt),
+            "nx intersection support lookup",
+        )?,
+        None => None,
+    }
+    .map(|surface| surface.try_clone_for_decode(ctx, "nx intersection support identity"))
+    .transpose()?;
     let lanes = if let (Some(surface_id), Some((uv, parameters))) = (&surface, uv) {
         let geometry = ctx
             .find_by(
@@ -4172,5 +4178,36 @@ mod tests {
         let refined =
             refine_across_the_overflowing_step(&ir, &offset).expect("the halved step converges");
         assert!((refined.u - 0.3).abs() <= 1.0e-9, "{refined:?}");
+    }
+
+    #[test]
+    fn intersection_side_charges_its_support_lookup() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        const OPERATION: &str = "nx intersection support lookup";
+        let surface =
+            SurfaceId::mint("test:model:entity#synthetic:side-support").expect("identity grammar");
+        let surfaces_by_xmt = std::collections::BTreeMap::from([(7_u32, surface)]);
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            OPERATION,
+            |ctx| {
+                let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
+                super::intersection_side(
+                    ctx,
+                    &CadIr::empty(),
+                    &surfaces_by_xmt,
+                    crate::framing::xmt_reference::NonNullXmt::try_from(7).ok(),
+                    None,
+                    &geometry_budget,
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == OPERATION
+        ));
     }
 }
