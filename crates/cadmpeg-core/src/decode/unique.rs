@@ -4,27 +4,34 @@
 use super::cost::DecodeCost;
 use super::{DecodeContext, ScopedReservation};
 use crate::CodecError;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 impl DecodeContext<'_> {
-    /// Builds a scoped table for keyed lookup. A repeated key keeps a `None`
-    /// tombstone, so a third occurrence cannot restore it; a key that occurred
-    /// once maps to `Some`. The table is not scanned.
+    /// Builds a scoped table for keyed lookup that holds only the keys that
+    /// occurred once, each mapped to `Some`. A repeated key is removed and
+    /// remembered in a scoped side set, so a third occurrence cannot restore
+    /// it. Neither table is scanned.
     pub fn unique_index<K: Eq + Hash + DecodeCost, V>(
         &self,
         entries: impl IntoIterator<Item = (K, V)>,
         operation: &'static str,
     ) -> Result<(HashMap<K, Option<V>>, ScopedReservation<'_>), CodecError> {
         let mut table = HashMap::<K, Option<V>>::new();
+        let mut repeated = HashSet::<K>::new();
         let mut storage = self.reserve_scoped(0, operation)?;
         let mut entries = entries.into_iter();
         loop {
             let Some((key, value)) = self.next_charged(&mut entries, operation)? else {
                 break;
             };
-            if let Some(previous) = self.get_mut_hash_map(&mut table, &key, operation)? {
-                *previous = None;
+            if self.remove_hash_map(&mut table, &key, operation)?.is_some() {
+                // discarded-value: the key was absent from the repeated set.
+                let _ =
+                    storage.with_storage(|| self.insert_hash_set(&mut repeated, key, operation))?;
+                continue;
+            }
+            if !repeated.is_empty() && self.contains_hash_set(&repeated, &key, operation)? {
                 continue;
             }
             // discarded-value: the key was absent before the admitted insertion.
@@ -43,18 +50,22 @@ mod tests {
     use crate::CodecError;
 
     #[test]
-    fn unique_index_removes_all_duplicate_occurrences_in_one_table() {
+    fn unique_index_removes_every_repeated_key() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        policy.limits.max_materialized_bytes =
-            u64_from_index(4 * (std::mem::size_of::<(u32, Option<i32>)>() + 32));
+        // Two table entries and one remembered repeated key.
+        policy.limits.max_collection_items = 3;
+        policy.limits.max_materialized_bytes = u64_from_index(
+            4 * (std::mem::size_of::<(u32, Option<i32>)>() + 32)
+                + 4 * (std::mem::size_of::<u32>() + 32),
+        );
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (table, storage) = ctx
             .unique_index([(1_u32, 2), (1, 3), (1, 4), (2, 5)], "unique test")
             .expect("two slots");
+        assert_eq!(table.len(), 1);
         assert_eq!(table.get(&2), Some(&Some(5)));
-        assert_eq!(table.get(&1), Some(&None));
+        assert!(!table.contains_key(&1));
         drop((table, storage));
         ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released table")
             .expect("storage released");
