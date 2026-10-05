@@ -14,9 +14,7 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 
-const SELECTIONS: &str = "nx feature completeness selections";
 const DEPENDENCIES: &str = "nx feature completeness dependencies";
-const REFERENCES: &str = "nx feature completeness references";
 
 pub(super) fn hole_feature_is_incomplete<A: CompletenessAdmission>(
     admission: &A,
@@ -60,12 +58,12 @@ pub(super) fn hole_feature_is_incomplete<A: CompletenessAdmission>(
     let placements_incomplete = placements.is_some() && !placements_complete;
     let location_unresolved = !placements_complete
         && match profile {
-            Some(profile) => planar_profile_ref_is_incomplete(admission, profile)?,
+            Some(_) => profile_incomplete,
             None => true,
         };
     let orientation_unresolved = !placements_complete
         && match face {
-            Some(face) => face_selection_is_incomplete(admission, face)?,
+            Some(_) => face_incomplete,
             None => true,
         };
     Ok(profile_incomplete
@@ -173,20 +171,13 @@ pub(super) fn revolve_feature_is_incomplete<A: CompletenessAdmission>(
         || matches!(op, BooleanOp::Unresolved))
 }
 
-fn historical_vertex_is_incomplete<A: CompletenessAdmission>(
-    admission: &A,
-    vertex: &VertexSelection,
-) -> Result<bool, A::Error> {
+/// Whether a vertex operand is unresolved. Generated and historical vertices
+/// are complete: their identities and native references are nonblank by
+/// construction.
+fn vertex_selection_is_incomplete(vertex: &VertexSelection) -> bool {
     match vertex {
-        VertexSelection::Generated { .. } => Ok(false),
-        VertexSelection::Historical {
-            state,
-            vertex,
-            native,
-        } => Ok(admission.is_blank(state.as_str(), REFERENCES)?
-            || admission.is_blank(vertex.as_str(), REFERENCES)?
-            || admission.is_blank(native.as_str(), REFERENCES)?),
-        VertexSelection::Unresolved | VertexSelection::Native(_) => Ok(true),
+        VertexSelection::Generated { .. } | VertexSelection::Historical { .. } => false,
+        VertexSelection::Unresolved | VertexSelection::Native(_) => true,
     }
 }
 
@@ -197,9 +188,7 @@ pub(super) fn termination_is_incomplete<A: CompletenessAdmission>(
     match termination {
         LinearTermination::Unresolved {} => Ok(true),
         LinearTermination::ToFace { face, .. } => face_selection_is_incomplete(admission, face),
-        LinearTermination::ToVertex { vertex } => {
-            historical_vertex_is_incomplete(admission, vertex)
-        }
+        LinearTermination::ToVertex { vertex } => Ok(vertex_selection_is_incomplete(vertex)),
         LinearTermination::OffsetFromFace { face, .. } => {
             face_selection_is_incomplete(admission, face)
         }
@@ -232,9 +221,7 @@ fn angular_termination_is_incomplete<A: CompletenessAdmission>(
     match termination {
         AngularTermination::Unresolved {} => Ok(true),
         AngularTermination::ToFace { face, .. } => face_selection_is_incomplete(admission, face),
-        AngularTermination::ToVertex { vertex } => {
-            historical_vertex_is_incomplete(admission, vertex)
-        }
+        AngularTermination::ToVertex { vertex } => Ok(vertex_selection_is_incomplete(vertex)),
         AngularTermination::OffsetFromFace { face, .. } => {
             face_selection_is_incomplete(admission, face)
         }
@@ -429,14 +416,9 @@ pub(crate) fn body_selection_is_incomplete<A: CompletenessAdmission>(
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
             selection_ids_are_incomplete(admission, bodies)
         }
-        BodySelection::ResolvedSet { .. } => Ok(false),
-        BodySelection::Local { bodies, native } => Ok(admission.is_blank(native, REFERENCES)?
-            || selection_ids_are_incomplete(admission, bodies)?
-            || admission.any_by(
-                bodies,
-                |body| admission.is_blank(body, REFERENCES),
-                SELECTIONS,
-            )?),
+        // Local members are nonempty, distinct and nonblank, and the native
+        // reference is nonblank, by construction.
+        BodySelection::ResolvedSet { .. } | BodySelection::Local { .. } => Ok(false),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }

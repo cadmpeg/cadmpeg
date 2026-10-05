@@ -113,7 +113,10 @@ pub(super) fn emit_topology(
     })?;
     let mut valid_face_xmts = BTreeSet::new();
     for &shell in ctx.admit_iter(&body_shells, "nx valid topology faces")? {
-        if let Some(faces) = graph.shell_face_xmts(ctx, shell)? {
+        let (faces, _faces_storage) = ctx.with_scoped_storage("nx topology shell faces", || {
+            graph.shell_face_xmts(ctx, shell)
+        })?;
+        if let Some(faces) = faces {
             for &face in ctx.admit_iter(&faces, "nx valid topology faces")? {
                 storage.with_storage(|| {
                     ctx.insert_btree_set(&mut valid_face_xmts, face, "nx valid topology faces")

@@ -4155,13 +4155,13 @@ struct PcurveSampleSeed {
     seed: Option<Point2>,
 }
 
-fn transferred_pcurve_sample_with_budget<'a>(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+fn transferred_pcurve_sample_with_budget<'a, 'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
     transferred_pcurve_fit: &TransferredPcurveFit<'_, 'a>,
     pcurve_sample_seed: &PcurveSampleSeed,
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     blend_parameter_grids: &mut BlendParameterGridCache<'a, '_>,
 ) -> Result<Option<TransferredPcurveSample>, cadmpeg_core::CodecError> {
     let &PcurveSampleSeed { parameter, seed } = pcurve_sample_seed;
@@ -4545,18 +4545,18 @@ struct TransferSegment {
     depth: usize,
 }
 
-struct TransferOutput<'inputs, 'a, 'g, 's> {
+struct TransferOutput<'inputs, 'a, 'g, 's, 'k> {
     samples: &'inputs mut Vec<TransferredPcurveSample>,
     sample_storage: &'inputs mut cadmpeg_core::decode::ScopedReservation<'s>,
-    contact_seeds: &'inputs mut BlendContactSeedCache,
+    contact_seeds: &'inputs mut BlendContactSeedCache<'k>,
     blend_parameter_grids: &'inputs mut BlendParameterGridCache<'a, 'g>,
 }
 
-fn append_transferred_pcurve_segment_with_budget<'a>(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+fn append_transferred_pcurve_segment_with_budget<'a, 'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
     transferred_pcurve_fit: &TransferredPcurveFit<'_, 'a>,
     transfer_segment: &TransferSegment,
-    transfer_output: TransferOutput<'_, 'a, '_, '_>,
+    transfer_output: TransferOutput<'_, 'a, '_, '_, 'k>,
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {

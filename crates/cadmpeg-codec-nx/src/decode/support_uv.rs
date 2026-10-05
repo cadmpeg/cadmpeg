@@ -1374,17 +1374,27 @@ fn complete_support_uv_wave(
                 else {
                     continue;
                 };
+                let missing = [
+                    pcurve_requires_completion(
+                        ctx,
+                        context.sides()[0]
+                            .pcurve
+                            .as_ref()
+                            .map(|pcurve| &pcurve.geometry),
+                    )?,
+                    pcurve_requires_completion(
+                        ctx,
+                        context.sides()[1]
+                            .pcurve
+                            .as_ref()
+                            .map(|pcurve| &pcurve.geometry),
+                    )?,
+                ];
                 for side in 0..2 {
                     if support_uv_budget_exhausted(support_budget) {
                         break;
                     }
-                    if !pcurve_requires_completion(
-                        ctx,
-                        context.sides()[side]
-                            .pcurve
-                            .as_ref()
-                            .map(|pcurve| &pcurve.geometry),
-                    )? {
+                    if !missing[side] {
                         continue;
                     }
                     let Some(surface_id) = &context.sides()[side].surface else {
@@ -1409,10 +1419,9 @@ fn complete_support_uv_wave(
                     else {
                         continue;
                     };
-                    let source_chart_available = match source_pcurve {
-                        Some(pcurve) => !pcurve_requires_completion(ctx, Some(&pcurve.geometry))?,
-                        None => false,
-                    };
+                    // An absent pcurve requires completion, so an available
+                    // source chart is also a present one.
+                    let source_chart_available = !missing[1 - side];
                     let linear_offset_surface = match &surface.geometry {
                         SurfaceGeometry::Procedural { construction, .. } => model_index
                             .procedural_surfaces(construction.as_str(), geometry_budget.charges)?
@@ -2196,12 +2205,8 @@ fn complete_coupled_support_uv(
             }
             let mut sourced_procedural_support = false;
             for side in 0..2 {
-                let source_chart_available = match context.sides()[1 - side].pcurve.as_ref() {
-                    Some(pcurve) => !pcurve_requires_completion(ctx, Some(&pcurve.geometry))?,
-                    None => false,
-                };
                 if missing[side]
-                    && source_chart_available
+                    && !missing[1 - side]
                     && model_index
                         .surfaces(surfaces[side].as_str(), geometry_budget.charges)?
                         .is_some_and(|surface| {

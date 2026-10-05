@@ -390,6 +390,63 @@ mod tests {
     }
 
     #[test]
+    fn blend_contact_seed_cache_retains_no_identity_text() {
+        let support =
+            SurfaceId::mint("test:model:entity#synthetic:seed-support").expect("identity grammar");
+        let spine =
+            CurveId::mint("test:model:entity#synthetic:seed-spine").expect("identity grammar");
+        let offset_surface =
+            SurfaceId::mint("test:model:entity#synthetic:seed-offset").expect("identity grammar");
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
+            |ctx| {
+                let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
+                let mut cache = BlendContactSeedCache::default();
+                for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
+                    let parameter = cadmpeg_core::convert::f64_from_index(parameter)
+                        .expect("fixture integer is exactly representable");
+                    cache
+                        .remember(
+                            (&support, &spine, &offset_surface),
+                            parameter,
+                            Point2::new(parameter, -parameter),
+                            &geometry_budget,
+                        )
+                        .expect("a seed retains no storage");
+                }
+                assert_eq!(cache.entries.len(), MAX_BLEND_CONTACT_SEEDS);
+            },
+        );
+    }
+
+    #[test]
+    fn de_casteljau_work_charges_every_combination_and_refuses_overflow() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        const OPERATION: &str = "test de Casteljau work";
+        for (count, pairs) in [(2, 1), (4, 6), (5, 10)] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                ResourceDimension::WorkUnits,
+                OPERATION,
+                |ctx| super::charge_de_casteljau_work(ctx, count, OPERATION).map_err(Into::into),
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.additional == pairs
+            ));
+        }
+        crate::test_support::with_decode_context(|ctx| {
+            let limit = super::charge_de_casteljau_work(ctx, usize::MAX, OPERATION)
+                .expect_err("work beyond usize is refused");
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(limit.operation, OPERATION);
+        });
+    }
+
+    #[test]
     fn numerical_seventh_common_weights_preserve_closest_point() {
         use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 
@@ -1891,11 +1948,11 @@ impl BlendSurfaceFrameCache {
 
 const MAX_BLEND_CONTACT_SEEDS: usize = 8;
 
-struct BlendContactSeed {
-    support: String,
-    spine: String,
+struct BlendContactSeed<'k> {
+    support: &'k SurfaceId,
+    spine: &'k CurveId,
     parameter: f64,
-    offset_surface: String,
+    offset_surface: &'k SurfaceId,
     parameters: Point2,
 }
 
@@ -1904,31 +1961,34 @@ struct BlendContactSeed {
 /// Seeds are scoped by the target support, its spine, and the offset carrier.
 /// Keeping a small nearest-parameter set makes adaptive endpoint and midpoint
 /// sampling local without allowing a model-wide cache to select a branch from
-/// an unrelated intersection.
+/// an unrelated intersection. A seed borrows its chart identities for the
+/// cache's lifetime, so the cache holds no identity text of its own.
 #[derive(Default)]
-pub(super) struct BlendContactSeedCache {
-    entries: Vec<BlendContactSeed>,
+pub(super) struct BlendContactSeedCache<'k> {
+    entries: Vec<BlendContactSeed<'k>>,
 }
 
-impl BlendContactSeedCache {
+impl<'k> BlendContactSeedCache<'k> {
     /// Whether `seed` belongs to the chart of `support`, `spine` and
     /// `offset_surface`.
     fn same_chart(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        seed: &BlendContactSeed,
+        seed: &BlendContactSeed<'_>,
         support: &SurfaceId,
         spine: &CurveId,
         offset_surface: &SurfaceId,
     ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
         const OPERATION: &str = "nx blend contact seed lookup";
-        Ok(same_text(ctx, &seed.support, support.as_str(), OPERATION)?
-            && same_text(ctx, &seed.spine, spine.as_str(), OPERATION)?
-            && same_text(
-                ctx,
-                &seed.offset_surface,
-                offset_surface.as_str(),
-                OPERATION,
-            )?)
+        Ok(
+            same_text(ctx, seed.support.as_str(), support.as_str(), OPERATION)?
+                && same_text(ctx, seed.spine.as_str(), spine.as_str(), OPERATION)?
+                && same_text(
+                    ctx,
+                    seed.offset_surface.as_str(),
+                    offset_surface.as_str(),
+                    OPERATION,
+                )?,
+        )
     }
 
     /// The parameters of the chart seed nearest `parameter`; the first of
@@ -1941,7 +2001,7 @@ impl BlendContactSeedCache {
         parameter: f64,
         offset_surface: &SurfaceId,
     ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-        let mut nearest: Option<&BlendContactSeed> = None;
+        let mut nearest: Option<&BlendContactSeed<'_>> = None;
         for seed in &self.entries {
             if !seed.parameter.is_finite()
                 || !Self::same_chart(ctx, seed, support, spine, offset_surface)?
@@ -1966,7 +2026,7 @@ impl BlendContactSeedCache {
     /// last of its seeds farthest from `parameter`.
     fn remember(
         &mut self,
-        (support, spine, offset_surface): (&SurfaceId, &CurveId, &SurfaceId),
+        (support, spine, offset_surface): (&'k SurfaceId, &'k CurveId, &'k SurfaceId),
         parameter: f64,
         parameters: Point2,
         geometry_budget: &GeometryWorkBudget<'_>,
@@ -1981,15 +2041,10 @@ impl BlendContactSeedCache {
             }
         }
         let seed = BlendContactSeed {
-            support: ctx
-                .copy_retained_text_limit(support.as_str(), "nx blend contact support identity")?,
-            spine: ctx
-                .copy_retained_text_limit(spine.as_str(), "nx blend contact spine identity")?,
+            support,
+            spine,
             parameter,
-            offset_surface: ctx.copy_retained_text_limit(
-                offset_surface.as_str(),
-                "nx blend contact offset identity",
-            )?,
+            offset_surface,
             parameters,
         };
         if self.entries.len() < MAX_BLEND_CONTACT_SEEDS {
@@ -2300,13 +2355,13 @@ fn blend_surface_frame_with_index_and_budget(
     )
 }
 
-fn blend_surface_frame_with_index_and_budget_and_options(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+fn blend_surface_frame_with_index_and_budget_and_options<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     u: f64,
     depth: usize,
     allow_offset_contact: bool,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<BlendSurfaceFrame>, cadmpeg_core::decode::ResourceLimit> {
     if depth >= 32 {
@@ -2427,13 +2482,13 @@ struct SpineContactLocation<'inputs> {
     radius: f64,
 }
 
-fn spine_contact_direction_with_index_and_budget_and_options(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    spine_contact_location: &SpineContactLocation<'_>,
+fn spine_contact_direction_with_index_and_budget_and_options<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
+    spine_contact_location: &SpineContactLocation<'k>,
     center: Point3,
     depth: usize,
     allow_offset_contact: bool,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
     let Some(contact) = spine_contact_point_with_index_and_budget_and_options(
@@ -2758,11 +2813,13 @@ pub(super) struct SourcePcurveSample<'inputs> {
 /// analytic and offset supports, the serialized spine contact chart remains
 /// the fast path, with a bounded 3D closest-point fallback.  Every result is
 /// certified by reproducing the source sample on the target support.
-pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache<
+    'k,
+>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
     source_pcurve_sample: &SourcePcurveSample<'_>,
     target: BoundaryInverseTarget,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let &SourcePcurveSample {
@@ -2873,13 +2930,13 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     certify(parameter)
 }
 
-pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+pub(super) fn blend_surface_parameters_from_point_with_index_and_budget<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: f64,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     // A circular blend sample can lie on the finite continuation of either
@@ -3891,11 +3948,24 @@ fn scalar_bernstein_sign_variations(
         .1)
 }
 
-/// The de Casteljau work of `count` controls: one level of `count - 1`
-/// combinations, then one fewer at each further level.
-fn de_casteljau_work(count: usize) -> Option<u64> {
-    let pairs = count.checked_mul(count.checked_sub(1)?)? / 2;
-    Some(cadmpeg_core::decode::u64_from_index(pairs))
+/// Charge the de Casteljau work of `count` controls: one level of
+/// `count - 1` combinations, then one fewer at each further level, for
+/// `count * (count - 1) / 2` in all. Work beyond `usize` is charged as
+/// `u64::MAX`, which no finite work limit admits.
+fn charge_de_casteljau_work(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+    let pairs = if count.is_multiple_of(2) {
+        (count / 2).checked_mul(count.saturating_sub(1))
+    } else {
+        count.checked_mul(count / 2)
+    };
+    ctx.charge_work_limit(
+        pairs.map_or(u64::MAX, cadmpeg_core::decode::u64_from_index),
+        operation,
+    )
 }
 
 fn subdivide_scalar_bezier_span<'ctx>(
@@ -3908,9 +3978,7 @@ fn subdivide_scalar_bezier_span<'ctx>(
     let mut levels = span.controls;
     let mut first = ScopedValues::with_capacity(ctx, count, "nx first Bezier subdivision")?;
     let mut second = ScopedValues::with_capacity(ctx, count, "nx second Bezier subdivision")?;
-    if let Some(work) = de_casteljau_work(count) {
-        ctx.charge_work_limit(work, "nx Bezier subdivision")?;
-    }
+    charge_de_casteljau_work(ctx, count, "nx Bezier subdivision")?;
     for level in ctx.admit_iter(&(0..count), "nx Bezier subdivision levels")? {
         first.values.push(levels[0]);
         second.values.push(levels[count - level - 1]);
@@ -3945,9 +4013,7 @@ fn scalar_bezier_value(
     let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = ScopedValues::copy_of(ctx, controls, "nx scalar Bezier evaluation")?;
-    if let Some(work) = de_casteljau_work(values.len()) {
-        ctx.charge_work_limit(work, "nx scalar Bezier evaluation")?;
-    }
+    charge_de_casteljau_work(ctx, values.len(), "nx scalar Bezier evaluation")?;
     for level in 1..values.len() {
         for index in 0..values.len() - level {
             values[index] = (1.0 - fraction) * values[index] + fraction * values[index + 1];
@@ -3966,9 +4032,7 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
     let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = ScopedValues::copy_of(ctx, controls, "nx rational Bezier evaluation")?;
-    if let Some(work) = de_casteljau_work(values.len()) {
-        ctx.charge_work_limit(work, "nx rational Bezier evaluation")?;
-    }
+    charge_de_casteljau_work(ctx, values.len(), "nx rational Bezier evaluation")?;
     for level in 1..values.len() {
         for index in 0..values.len() - level {
             values[index] = std::array::from_fn(|axis| {
@@ -4161,12 +4225,12 @@ fn spine_contact_point_with_index_and_budget(
 
 // Keep the support relation, recursion policy, bounded seed cache, and work
 // slice together so nested contact evaluation cannot hide an allocation.
-fn spine_contact_point_with_index_and_budget_and_options(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    spine_contact_location: &SpineContactLocation<'_>,
+fn spine_contact_point_with_index_and_budget_and_options<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
+    spine_contact_location: &SpineContactLocation<'k>,
     depth: usize,
     allow_offset_contact: bool,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let &SpineContactLocation {
@@ -4254,11 +4318,11 @@ fn spine_contact_point_with_index_and_budget_and_options(
     .transpose()
 }
 
-fn spine_contact_point_from_offset_side_with_index_and_budget(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    spine_contact_location: &SpineContactLocation<'_>,
+fn spine_contact_point_from_offset_side_with_index_and_budget<'k>(
+    index: &'k cadmpeg_ir::index::ModelIndex<'_>,
+    spine_contact_location: &SpineContactLocation<'k>,
     depth: usize,
-    contact_seeds: &mut BlendContactSeedCache,
+    contact_seeds: &mut BlendContactSeedCache<'k>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
     let &SpineContactLocation {
