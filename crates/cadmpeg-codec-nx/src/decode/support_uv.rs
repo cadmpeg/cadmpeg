@@ -1581,16 +1581,6 @@ fn complete_support_uv_wave(
                                             }
                                         }
                                         SurfaceGeometry::Procedural { .. } => {
-                                            let solve_blend_parameters = if source_chart_available {
-                                                blend_surface_parameters_for_fit_with_source_continuation_and_budget
-                                            } else {
-                                                blend_surface_parameters_for_fit_with_grid_and_budget
-                                            };
-                                            let solve_grid_parameters = if source_chart_available {
-                                                blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget
-                                            } else {
-                                                blend_surface_parameters_from_grid_for_fit_and_budget
-                                            };
                                             let mut parameters = None;
                                             if source_chart_available {
                                                 if let Some((source_pcurve, source_surface)) =
@@ -1663,7 +1653,8 @@ geometry_budget,
                                                 };
                                             }
                                             if parameters.is_none() {
-                                                parameters = solve_blend_parameters(
+                                                parameters = if source_chart_available {
+                                                    blend_surface_parameters_for_fit_with_source_continuation_and_budget(
                                                     &model_index,
                                                     surface_id,
                                                     *point,
@@ -1671,7 +1662,18 @@ geometry_budget,
                                                     effective_fit_tolerance,
                                                     BlendParameterGrid::Disabled,
                                                     geometry_budget,
-                                                )?;
+                                                                                                    )?
+                                                } else {
+                                                    blend_surface_parameters_for_fit_with_grid_and_budget(
+                                                    &model_index,
+                                                    surface_id,
+                                                    *point,
+                                                    seed,
+                                                    effective_fit_tolerance,
+                                                    BlendParameterGrid::Disabled,
+                                                    geometry_budget,
+                                                                                                    )?
+                                                };
                                             }
                                             if parameters.is_none() {
                                                 if let BlendParameterGrid::Provided(grid) =
@@ -1681,14 +1683,25 @@ geometry_budget,
                                                         geometry_budget,
                                                     )?
                                                 {
-                                                    parameters = solve_grid_parameters(
+                                                    parameters = if source_chart_available {
+                                                        blend_surface_parameters_from_grid_for_fit_with_source_continuation_and_budget(
                                                         &model_index,
                                                         surface_id,
                                                         *point,
                                                         effective_fit_tolerance,
                                                         grid,
                                                         geometry_budget,
-                                                    )?;
+                                                                                                            )?
+                                                    } else {
+                                                        blend_surface_parameters_from_grid_for_fit_and_budget(
+                                                        &model_index,
+                                                        surface_id,
+                                                        *point,
+                                                        effective_fit_tolerance,
+                                                        grid,
+                                                        geometry_budget,
+                                                                                                            )?
+                                                    };
                                                 }
                                             }
                                             parameters.map(|parameters| (parameters, true))
