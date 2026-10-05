@@ -1581,7 +1581,7 @@ fn intersection_pcurve_index<'ir>(
 
 /// Index each procedural curve construction by the curve that carries it. A
 /// construction carried by more than one curve has no owner.
-fn procedural_curve_owners<'ir, 'c>(
+pub(super) fn procedural_curve_owners<'ir, 'c>(
     ctx: &'c DecodeContext<'_>,
     curves: &'ir [Curve],
 ) -> Result<

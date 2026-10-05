@@ -3,8 +3,8 @@
 
 use super::emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology, keep_marks,
-    retain_marked, retain_unknown_stream_data, retain_unresolved_topology_carriers, source_meta,
-    surface_tag, unknown_stream_metadata,
+    procedural_curve_owners, retain_marked, retain_unknown_stream_data,
+    retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream_metadata,
 };
 use super::geometry_work::{
     GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
@@ -1982,11 +1982,7 @@ fn reach_procedural_carriers<'m>(
             .filter_map(|surface| Some((surface.geometry.procedural_construction()?, &surface.id))),
         "nx procedural surface owners",
     )?;
-    let (curve_owners, _curve_owner_storage) = ctx.unique_index(
-        ctx.admit_iter(curves, "nx procedural curve owners")?
-            .filter_map(|curve| Some((curve.geometry.procedural_construction()?, &curve.id))),
-        "nx procedural curve owners",
-    )?;
+    let (curve_owners, _curve_owner_storage) = procedural_curve_owners(ctx, curves)?;
     loop {
         ctx.charge_work(1, operation)?;
         let previous = (used_surfaces.len(), used_curves.len());
