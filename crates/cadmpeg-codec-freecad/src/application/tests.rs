@@ -493,9 +493,14 @@ fn application_property_hash_refuses_work_and_digest_storage() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // The pointer sort reads two scalar range endpoints per key; ten units remain before XML hashing.
+    // The owner lookup's first table bounds four buckets of control bytes, alignment and
+    // trailing controls. The pointer sort then reads two scalar range endpoints per key;
+    // ten units remain before XML hashing.
     let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-    policy.limits.max_work_units = 2 + (index_bytes + 4 * index_bytes) * 2 * 8 + 10;
+    let owner_lookup = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<(&str, Vec<&crate::native::PropertyRecord>)>() + 15 + 4 + 16,
+    );
+    policy.limits.max_work_units = owner_lookup + 2 + (index_bytes + 4 * index_bytes) * 2 * 8 + 10;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     assert!(
@@ -566,9 +571,18 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
     let entries = [entry];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Two pointer records, complete range keys, two stable-run visits and 22 XML bytes own all work.
+    // The owner and entry lookups each bound one four-bucket table (control bytes, alignment
+    // and trailing controls). Two pointer records, complete range keys, two stable-run visits
+    // and 22 XML bytes own the remaining work.
     let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-    policy.limits.max_work_units = 4 + 2 * (index_bytes + 4 * index_bytes) * 3 * 8 + 2 + 22;
+    let owner_lookup = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<(&str, Vec<&crate::native::PropertyRecord>)>() + 15 + 4 + 16,
+    );
+    let entry_lookup = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<(&str, &crate::native::EntryRecord)>() + 15 + 4 + 16,
+    );
+    policy.limits.max_work_units =
+        owner_lookup + entry_lookup + 4 + 2 * (index_bytes + 4 * index_bytes) * 3 * 8 + 2 + 22;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     let records = super::wire_records(&ctx, &objects, &properties, &entries)

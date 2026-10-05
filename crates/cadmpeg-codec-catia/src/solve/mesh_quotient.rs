@@ -13930,11 +13930,19 @@ fn boundary_component_face_keys_refuse_unadmitted_scan() {
         },
     ])];
     let candidates = [Vec::new()];
-    // Three hash insertions read each scalar key twice; initialization precedes two singleton sorts.
+    // Three hash insertions read each scalar key twice and each grows an empty
+    // table, bounded by four buckets: buckets times element size, 15 bytes of
+    // group padding, one control byte per bucket and the 16-byte trailer.
+    // Initialization precedes two singleton sorts.
+    let four_buckets = |element: usize| u64::try_from(4 * element + 15 + 4 + 16).expect("bytes");
+    let hash_growth = four_buckets(std::mem::size_of::<(usize, usize)>())
+        + four_buckets(std::mem::size_of::<(usize, usize)>())
+        + four_buckets(std::mem::size_of::<(usize, (usize, Vec<usize>))>());
     let index_bytes = u64::try_from(std::mem::size_of::<usize>()).expect("index bytes");
     let group_bytes =
         u64::try_from(std::mem::size_of::<(usize, Vec<usize>)>()).expect("group bytes");
-    let before_keys = 4 + 4 + 6 * index_bytes + 16 * (index_bytes + group_bytes + 4 * index_bytes);
+    let before_keys =
+        4 + 4 + hash_growth + 6 * index_bytes + 16 * (index_bytes + group_bytes + 4 * index_bytes);
     crate::test_support::with_work_limit(before_keys, |ctx| {
         let mut quotient = MeshQuotient::new(vec![
             Arc::new(HashSet::from([0, 1])),
