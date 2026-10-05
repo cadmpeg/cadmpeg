@@ -1266,7 +1266,7 @@ fn reversed_pole_rows<T: Copy>(
     rows: &[T],
 ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
     let mut reversed = ctx.copy_slice(rows, "nx reversed pcurve poles")?;
-    reversed.reverse();
+    ctx.reverse(&mut reversed, "nx reversed pcurve poles")?;
     Ok(reversed)
 }
 
@@ -1277,7 +1277,10 @@ fn reflected_pcurve_knots(
     upper: FiniteReal,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut reversed = ctx.collection_vec(knots.len(), "nx reversed pcurve knots")?;
-    for knot in knots.finite_knots().rev() {
+    for (_, knot) in ctx
+        .admit_iter(knots.as_slice(), "nx reversed pcurve knots")?
+        .zip(knots.finite_knots().rev())
+    {
         let Some(reflected) = cadmpeg_ir::math::reflect_parameter(knot, lower, upper) else {
             return Ok(None);
         };
