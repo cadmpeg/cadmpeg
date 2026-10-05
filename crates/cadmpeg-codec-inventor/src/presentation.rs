@@ -414,20 +414,7 @@ fn project_face_bindings(
     let mut appearance_copy_storage =
         ctx.reserve_scoped(0, "Inventor temporary face appearance identities")?;
     let mut appearance_ids = std::collections::HashMap::<(&str, u32), AppearanceId>::new();
-    let mut ordered_storage = ctx.reserve_scoped(0, "order Inventor presentation faces")?;
-    let mut ordered_face_keys = ordered_storage.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(face_keys, "visit Inventor ordered face keys")?,
-            "order Inventor presentation faces",
-        )
-    })?;
-    ctx.sort_unstable_by(
-        &mut ordered_face_keys,
-        |value| &value.0,
-        Ord::cmp,
-        "Inventor presentation face keys sort",
-    )?;
-    for &(face_id, key) in ctx.admit_iter(&ordered_face_keys, "visit Inventor ordered faces")? {
+    for (face_id, key) in ctx.admit_iter(face_keys, "visit Inventor ordered faces")? {
         let mut matching_faces_storage = ctx.reserve_scoped(0, "match Inventor graphics face")?;
         let mut matching_faces = Vec::new();
         for face in ctx.admit_iter(
@@ -2376,17 +2363,9 @@ mod tests {
         let face_keys = BTreeMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two face-key traversals, an eight-byte hash key, five iterator/sort visits, and two sort levels precede the scan.
-        let id_len = face_keys
-            .keys()
-            .next()
-            .expect("one face key")
-            .as_str()
-            .len();
-        let pair_bytes = std::mem::size_of::<(&FaceId, &u64)>();
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(
-            2 * face_keys.len() + 8 + 5 + (pair_bytes + 2 * id_len) * 2 * 8,
-        );
+        // Two face-key traversals and an eight-byte hash key precede the scan.
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(2 * face_keys.len() + 8);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
