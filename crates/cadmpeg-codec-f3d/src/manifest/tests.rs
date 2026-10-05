@@ -69,8 +69,8 @@ fn manifest_entry_name_index_refuses_collection_limit() {
         version: TOP_LEVEL_MANIFEST_VERSION.to_owned(),
         asset_folder_bases: vec!["Design Base".to_owned()],
     };
-    let error =
-        resolve_design_folder(&ctx, &manifest, ["Design Base/Manifest.dat"], |_| None).unwrap_err();
+    let error = resolve_design_folder(&ctx, &manifest, ["Design Base/Manifest.dat"], |_| Ok(None))
+        .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D manifest entry names"));
 }
@@ -99,7 +99,7 @@ fn manifest_active_name_refuses_materialization_limit() {
         asset_folder_bases: vec!["Design".to_owned()],
     };
     let error =
-        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| None).unwrap_err();
+        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| Ok(None)).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "name F3D active asset"));
 }
@@ -116,7 +116,7 @@ fn manifest_member_name_refuses_materialization_limit() {
         asset_folder_bases: vec!["Design".to_owned()],
     };
     let error =
-        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| None).unwrap_err();
+        resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| Ok(None)).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "name F3D asset manifest"));
 }
@@ -220,7 +220,7 @@ fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
         &cadmpeg_test_support::service_decode_context(),
         &manifest,
         entries.keys().map(String::as_str),
-        |name| entries.get(name).map(Vec::as_slice),
+        |name| Ok(entries.get(name).map(Vec::as_slice)),
     )
     .unwrap();
     assert_eq!(folder, "Design Base[Active]");
@@ -254,7 +254,7 @@ fn active_guid_can_be_shared_by_a_non_design_asset() {
         &cadmpeg_test_support::service_decode_context(),
         &manifest,
         entries.keys().map(String::as_str),
-        |name| entries.get(name).map(Vec::as_slice),
+        |name| Ok(entries.get(name).map(Vec::as_slice)),
     )
     .unwrap();
     assert_eq!(folder, "Design Base");
@@ -341,9 +341,12 @@ fn top_level_manifest_rejects_trailing_bytes() {
 #[test]
 fn generated_asset_manifest_has_a_joinable_header() {
     let bytes = generated_design_asset().unwrap();
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str(GENERATED_DESIGN_ASSET_BASE));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header
+        .base_name
+        .eq_str(&ctx, GENERATED_DESIGN_ASSET_BASE)
+        .unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -373,9 +376,9 @@ fn revision_zero_design_asset_has_no_named_capability_registry() {
     push_ascii(&mut bytes, "Design").unwrap();
     push_ascii(&mut bytes, "Design").unwrap();
 
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str("Legacy Design"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header.base_name.eq_str(&ctx, "Legacy Design").unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -410,9 +413,9 @@ fn revision_ten_design_asset_carries_linked_document_triples() {
     push_ascii(&mut bytes, "Design").unwrap();
     push_ascii(&mut bytes, "Design").unwrap();
 
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str("Linked Design"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header.base_name.eq_str(&ctx, "Linked Design").unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -431,9 +434,9 @@ fn revision_fourteen_uses_the_ascii_subtype_header() {
     bytes.push(0);
     push_ascii(&mut bytes, "").unwrap();
 
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str("Design 14"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header.base_name.eq_str(&ctx, "Design 14").unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -460,9 +463,12 @@ fn current_revisions_use_the_current_asset_header() {
         bytes.push(0);
         push_ascii(&mut bytes, "").unwrap();
 
-        let header =
-            parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-        assert!(header.base_name.eq_str("Intermediate Design"));
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let header = parse_asset_header(&ctx, &bytes).unwrap();
+        assert!(header
+            .base_name
+            .eq_str(&ctx, "Intermediate Design")
+            .unwrap());
         assert_eq!(
             header.kind,
             AssetKind::Design {
@@ -489,9 +495,9 @@ fn an_unknown_revision_uses_the_current_asset_header() {
     bytes.push(0);
     push_ascii(&mut bytes, "").unwrap();
 
-    let header =
-        parse_asset_header(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
-    assert!(header.base_name.eq_str("Future Design"));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let header = parse_asset_header(&ctx, &bytes).unwrap();
+    assert!(header.base_name.eq_str(&ctx, "Future Design").unwrap());
     assert_eq!(
         header.kind,
         AssetKind::Design {
@@ -569,7 +575,10 @@ fn manifest_discarded_fields_and_failed_tails_do_not_retain_text() {
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let header = parse_asset_header(ctx, &asset).unwrap();
-        assert!(header.base_name.eq_str(GENERATED_DESIGN_ASSET_BASE));
+        assert!(header
+            .base_name
+            .eq_str(ctx, GENERATED_DESIGN_ASSET_BASE)
+            .unwrap());
         assert_eq!(
             header.kind,
             AssetKind::Design {
@@ -594,4 +603,55 @@ fn failed_manifest_tail_preserves_scoped_refusal() {
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && failure.operation == "describe malformed F3D manifest"));
     });
+}
+
+#[test]
+fn manifest_entry_lookup_preserves_resource_refusal() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let manifest = super::TopLevelManifest {
+        version: TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+        asset_folder_bases: vec!["Design".to_owned()],
+    };
+    let error = resolve_design_folder(&ctx, &manifest, ["Design/Manifest.dat"], |_| {
+        Err(ctx.refuse_codec_limit("look up F3D asset manifest entry", 0, 1))
+    })
+    .unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "look up F3D asset manifest entry"));
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("lookup must refuse");
+    };
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+#[test]
+fn manifest_count_ranges_propagate_work_refusals() {
+    let top = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let asset = generated_design_asset().unwrap();
+    for (bytes, operation, top_level) in [
+        (top.as_slice(), "visit F3D manifest registry entries", true),
+        (top.as_slice(), "visit F3D manifest asset folders", true),
+        (
+            asset.as_slice(),
+            "visit F3D manifest capability entries",
+            false,
+        ),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                if top_level {
+                    parse_top_level(ctx, bytes).map(|_| ())
+                } else {
+                    parse_asset_header(ctx, bytes).map(|_| ())
+                }
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.operation == operation));
+    }
 }

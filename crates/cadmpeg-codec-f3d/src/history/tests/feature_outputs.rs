@@ -39,13 +39,15 @@ fn feature_output_error(
     histories: &[crate::history_records::AsmHistory],
     bodies: &[cadmpeg_ir::topology::Body],
     max_items: u64,
-    max_retained: u64,
+    max_materialized_bytes: u64,
 ) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained;
+    policy.limits.max_retained_bytes = u64::MAX;
+    // Temporary copied body IDs stay in the live scoped reservation.
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::super::bind_feature_outputs(&ctx, &mut [], &[], histories, bodies).unwrap_err()
 }
@@ -322,6 +324,54 @@ fn changed_topology_members_refuse_collection_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D changed topology members")
     );
+}
+
+#[test]
+fn changed_topology_family_member_scans_refuse_work() {
+    use crate::history_records::AsmHistoricalTopologyDelta;
+
+    let mut delta = AsmHistoricalTopologyDelta::default();
+    delta.bodies.inserted.push(1);
+    delta.bodies.updated.push(2);
+    delta.bodies.deleted.push(3);
+    for (deleted, skip) in [(false, 0), (false, 1), (true, 0)] {
+        let operation = "scan F3D changed topology family members";
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            skip,
+            |ctx| super::super::changed_family_refs(ctx, &delta, deleted).map(|_| ()),
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn affected_history_body_scan_refuses_work() {
+    let operation = "scan F3D affected history bodies";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            let (mut feature, scope, history, body) = output_binding_inputs();
+            super::super::bind_feature_outputs(
+                ctx,
+                std::slice::from_mut(&mut feature),
+                &[scope],
+                &[history],
+                &[body],
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]

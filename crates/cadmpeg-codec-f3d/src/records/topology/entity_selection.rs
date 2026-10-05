@@ -524,6 +524,22 @@ pub(crate) struct DesignEntitySelectionFaceCandidate {
     pub(crate) face_slot: i64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEntitySelectionFaceCandidate {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let history_id = self.history_id.decode_cost(ctx, operation)?;
+        let historical = self.historical.decode_cost(ctx, operation)?;
+        let face_slot = self.face_slot.decode_cost(ctx, operation)?;
+        history_id
+            .checked_add(historical)
+            .and_then(|bytes| bytes.checked_add(face_slot))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+    }
+}
+
 /// Legacy Boolean-Loft body carrier paired with a role-`0x8` body group.
 ///
 /// The carrier is a scope-owned, role-less frame. It is retained separately
@@ -843,6 +859,26 @@ pub(crate) struct DesignEntitySelectionEdgeCandidate {
     pub(crate) historical_entity_ref: i64,
     /// Edges incident to the stable entity in the feature-input topology.
     pub(crate) edge_slots: Vec<i64>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEntitySelectionEdgeCandidate {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.identity_ordinal,
+                &self.local_id,
+                &self.historical_entity_kind,
+                &self.historical_entity_ref,
+                &self.edge_slots,
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

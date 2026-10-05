@@ -1188,7 +1188,7 @@ pub(super) fn validate_source_less_wire_ownership(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
         &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
+        &crate::writer::primitives::WRITING_POLICY,
     )?;
 
     let model = &target.model;

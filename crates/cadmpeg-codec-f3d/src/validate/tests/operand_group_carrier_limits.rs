@@ -223,3 +223,33 @@ fn operand_group_exact_identity_member_has_no_finding() {
         assert!(findings.is_empty());
     })
 }
+
+#[test]
+fn operand_group_identity_scan_preserves_work_refusal() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native_with_identity();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One outer construction-group visit precedes the identity scan.
+        policy.limits.max_work_units = 1;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        let error = super::super::validate_operand_group_carriers(
+            &ctx,
+            &mut Vec::new(),
+            &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D operand group identity members" && decode.resource_refusal() == Some(limit))
+        );
+    })
+}

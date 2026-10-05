@@ -84,10 +84,10 @@ impl DesignDimensionNullLocusPairs {
         ctx: &DecodeContext<'_>,
         entries: Vec<dimension_null_locus_wire::Entry>,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        let mut pairs = ctx.collection_vec(entries.len(), "load F3D null locus pairs")?;
-        for entry in entries {
-            pairs.push(entry.0);
-        }
+        let pairs = ctx.collect_vec(
+            entries.into_iter().map(|entry| entry.0),
+            "load F3D null locus pairs",
+        )?;
         Self::try_from(pairs).map_err(cadmpeg_ir::NativeConvertError::InvalidCollection)
     }
 }

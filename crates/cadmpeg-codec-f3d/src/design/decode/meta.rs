@@ -72,11 +72,15 @@ fn is_feature_timeline_type(design_type: &SegmentTypeData) -> bool {
 }
 
 /// The name prefix of `entry` when it is a Design `MetaStream`.
-fn design_meta_prefix<'a>(scan: &ContainerScan, entry: &'a ContainerEntry) -> Option<&'a str> {
-    if !scan.is_design_stream(entry, ContainerRole::Metastream) {
-        return None;
+fn design_meta_prefix<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    entry: &'a ContainerEntry,
+) -> Result<Option<&'a str>, CodecError> {
+    if !scan.is_design_stream(ctx, entry, ContainerRole::Metastream)? {
+        return Ok(None);
     }
-    entry.name.strip_suffix(META_STREAM_SUFFIX)
+    Ok(entry.name.strip_suffix(META_STREAM_SUFFIX))
 }
 
 /// The first archive entry named `prefix` followed by `suffix`. Only names of
@@ -129,7 +133,7 @@ pub(crate) fn decode_types(
 ) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
     for entry in ctx.admit_iter(&scan.entries, "scan F3D Design MetaStream entries")? {
-        if design_meta_prefix(scan, entry).is_none() {
+        if design_meta_prefix(ctx, scan, entry)?.is_none() {
             continue;
         }
         let meta = scan.parsed_metastream(ctx, &entry.name)?;
@@ -180,7 +184,8 @@ fn copy_design_type(
         design_type.byte_offset,
         "f3d design type id suffix",
     )?;
-    SegmentType::try_new(
+    SegmentType::try_new_charged(
+        ctx,
         id,
         SegmentTypeData {
             byte_offset: design_type.byte_offset,
@@ -192,7 +197,7 @@ fn copy_design_type(
             module,
             entities,
         },
-    )
+    )?
     .map_err(CodecError::Malformed)
 }
 
@@ -394,7 +399,7 @@ fn bind_referenced_component_uuids(
 ) -> Result<(), CodecError> {
     for marker in ctx.admit_iter(&(0..bytes.len()), "scan F3D component naming references")? {
         let mut uuid_offset = marker;
-        let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
+        let Some(reference) = take_reference(ctx, bytes, &mut uuid_offset)? else {
             continue;
         };
         let Some((component_record_index, Some(inline_type_guid))) = reference.local() else {
@@ -447,7 +452,7 @@ pub(crate) fn decode_component_naming_spaces(
         &scan.entries,
         "scan F3D component naming MetaStream entries",
     )? {
-        let Some(prefix) = design_meta_prefix(scan, entry) else {
+        let Some(prefix) = design_meta_prefix(ctx, scan, entry)? else {
             continue;
         };
         let meta = scan.parsed_metastream(ctx, &entry.name)?;
@@ -459,7 +464,7 @@ pub(crate) fn decode_component_naming_spaces(
             continue;
         }
         let bulk_name = paired_bulk_entry_name(ctx, scan, prefix)?;
-        let bytes = scan.entry_bytes(bulk_name)?;
+        let bytes = scan.entry_bytes(ctx, bulk_name)?;
         let mut bindings = ComponentBindings {
             bulk_name,
             by_component: BTreeMap::new(),
@@ -913,33 +918,51 @@ struct TimelineHead<'a> {
 
 /// The header with `expected` class code and entity ID at `start`, a bounded
 /// graphic ASCII payload, two zero bytes and the context reference.
-fn timeline_head(bytes: &[u8], start: usize, expected: (u32, u64)) -> Option<TimelineHead<'_>> {
+fn timeline_head<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    start: usize,
+    expected: (u32, u64),
+) -> Result<Option<TimelineHead<'a>>, CodecError> {
     let (expected_class_code, expected_entity_id) = expected;
-    let header = indexed_record_header_at(bytes, start)?;
-    let after_tag = start.checked_add(7)?;
-    if header.class_code != expected_class_code
-        || View::u64_le_at(bytes, after_tag)? != expected_entity_id
-    {
-        return None;
+    let Some(header) = indexed_record_header_at(bytes, start) else {
+        return Ok(None);
+    };
+    let Some(after_tag) = start.checked_add(7) else {
+        return Ok(None);
+    };
+    let Some(entity_id) = View::u64_le_at(bytes, after_tag) else {
+        return Ok(None);
+    };
+    if header.class_code != expected_class_code || entity_id != expected_entity_id {
+        return Ok(None);
     }
-    let (_, payload) = lp_ascii_filtered_view(
-        bytes,
-        after_tag.checked_add(8)?,
-        0..=2000,
-        u8::is_ascii_graphic,
-    )?;
+    let Some(payload_at) = after_tag.checked_add(8) else {
+        return Ok(None);
+    };
+    let Some((_, payload)) =
+        lp_ascii_filtered_view(ctx, bytes, payload_at, 0..=2000, u8::is_ascii_graphic)?
+    else {
+        return Ok(None);
+    };
     if !zeros_at::<2>(bytes, payload) {
-        return None;
+        return Ok(None);
     }
-    let mut at = payload.checked_add(2)?;
-    let context_reference_offset = at.checked_add(1)?;
-    let context_reference = take_reference(bytes, &mut at)?;
-    Some(TimelineHead {
+    let Some(mut at) = payload.checked_add(2) else {
+        return Ok(None);
+    };
+    let Some(context_reference_offset) = at.checked_add(1) else {
+        return Ok(None);
+    };
+    let Some(context_reference) = take_reference(ctx, bytes, &mut at)? else {
+        return Ok(None);
+    };
+    Ok(Some(TimelineHead {
         class_tag: header.class_tag,
         context_reference_offset,
         context_reference,
         item_count_offset: at,
-    })
+    }))
 }
 
 fn parse_feature_timeline_record(
@@ -952,7 +975,7 @@ fn parse_feature_timeline_record(
     type_guids_by_entity: &HashMap<u64, Vec<&DesignRelaxedGuidText>>,
 ) -> Result<Option<DesignFeatureTimeline>, CodecError> {
     let (_, expected_entity_id) = expected;
-    let Some(head) = timeline_head(bytes, frame.start, expected) else {
+    let Some(head) = timeline_head(ctx, bytes, frame.start, expected)? else {
         return Ok(None);
     };
     let Some(context_record_index) =
@@ -985,7 +1008,7 @@ fn parse_feature_timeline_record(
         let Some(target_offset) = at.checked_add(1) else {
             return Ok(None);
         };
-        let Some(reference) = take_reference(bytes, &mut at) else {
+        let Some(reference) = take_reference(ctx, bytes, &mut at)? else {
             return Ok(None);
         };
         let Some(target) = local_reference(ctx, &reference, type_guids_by_entity)? else {
@@ -1101,7 +1124,7 @@ pub(crate) fn decode_feature_timelines(
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
     let mut out = Vec::new();
     for entry in ctx.admit_iter(&scan.entries, "scan F3D feature-timeline MetaStreams")? {
-        let Some(prefix) = design_meta_prefix(scan, entry) else {
+        let Some(prefix) = design_meta_prefix(ctx, scan, entry)? else {
             continue;
         };
         let meta = scan.parsed_metastream(ctx, &entry.name)?;
@@ -1123,7 +1146,7 @@ pub(crate) fn decode_feature_timelines(
             ));
         }
         let bulk_name = paired_bulk_entry_name(ctx, scan, prefix)?;
-        let bytes = scan.entry_bytes(bulk_name)?;
+        let bytes = scan.entry_bytes(ctx, bulk_name)?;
         let mut index_reservation = ctx.reserve_scoped(0, "index F3D timeline types")?;
         let mut type_guids_by_entity = HashMap::<u64, Vec<&DesignRelaxedGuidText>>::new();
         for design_type in ctx.admit_iter(&meta.types, "index F3D timeline types")? {

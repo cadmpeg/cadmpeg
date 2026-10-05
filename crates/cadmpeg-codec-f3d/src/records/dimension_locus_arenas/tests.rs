@@ -37,6 +37,39 @@ fn null_locus_entry_conversion_refuses_collection_limit() {
 }
 
 #[test]
+fn null_locus_entry_conversion_refuses_source_work_after_valid_output() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let expected = pair(true);
+    let entries = vec![crate::records::dimension_null_locus_wire::Entry(pair(true))];
+    let result = crate::test_support::with_decode_context(|ctx| {
+        DesignDimensionNullLocusPairs::from_entries_charged(ctx, entries)
+    })
+    .expect("valid null-locus entry converts");
+    assert_eq!(&*result, &[expected]);
+
+    let refusal = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "load F3D null locus pairs",
+        0,
+        |ctx| {
+            DesignDimensionNullLocusPairs::from_entries_charged(
+                ctx,
+                vec![crate::records::dimension_null_locus_wire::Entry(pair(true))],
+            )
+            .map(|_| ())
+            .map_err(cadmpeg_core::CodecError::from)
+        },
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "load F3D null locus pairs"
+    ));
+}
+
+#[test]
 fn nonnull_arena_rejects_null_form_at_construction_and_deserialization() {
     let null_pair = pair(true);
     assert!(DesignDimensionLocusPairs::try_from(vec![null_pair.clone()]).is_err());

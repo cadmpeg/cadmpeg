@@ -69,8 +69,12 @@ pub(super) enum ClassifiedMember<'a> {
 }
 
 impl ArchiveSession<'_> {
-    pub(super) fn member_scan(&self, path: &str) -> Result<&ContainerScan<'_>, CodecError> {
-        match self.members.get(path) {
+    pub(super) fn member_scan(
+        &self,
+        ctx: &DecodeContext<'_>,
+        path: &str,
+    ) -> Result<&ContainerScan<'_>, CodecError> {
+        match ctx.get_btree_map(&self.members, path, "look up F3Z member scan")? {
             Some(ClassifiedMember::Scanned(scan)) => Ok(scan),
             Some(ClassifiedMember::Unreadable(message)) => Err(CodecError::malformed(
                 format_args!("f3z document member {path} could not be scanned: {message}"),
@@ -88,7 +92,7 @@ fn insert_member_charged<'a>(
     path: &str,
     member: ClassifiedMember<'a>,
 ) -> Result<(), CodecError> {
-    if let Some(existing) = members.get_mut(path) {
+    if let Some(existing) = ctx.get_mut_btree_map(members, path, "replace F3Z member scan")? {
         *existing = member;
         return Ok(());
     }
@@ -103,7 +107,7 @@ pub(super) fn model_root(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<(String, Option<String>), CodecError> {
-    let manifest_bytes = scan.entry_bytes(MANIFEST_ENTRY)?;
+    let manifest_bytes = scan.entry_bytes(ctx, MANIFEST_ENTRY)?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(manifest_bytes.len()),
         "validate F3Z JSON UTF-8",
@@ -134,13 +138,12 @@ pub(super) fn classify_members<'a>(
         .try_clone_for_decode(ctx, "copy dialect layers")?;
     let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
-    for member_path in scan
-        .entries
-        .iter()
-        .map(|entry| entry.name.as_str())
-        .filter(|name| crate::container::is_f3d_name(name))
-    {
-        let member_view = scan.entry_view(member_path).ok_or_else(|| {
+    for entry in ctx.admit_iter(&scan.entries, "classify F3Z document members")? {
+        let member_path = entry.name.as_str();
+        if !crate::container::is_f3d_name(ctx, member_path)? {
+            continue;
+        }
+        let member_view = scan.entry_view(ctx, member_path)?.ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "f3z document member {member_path} is not readable"
             ))
@@ -216,7 +219,10 @@ pub(super) fn merge_member_layers(
     member_path: &str,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    for matched in member.iter() {
+    let mut storage = ctx.reserve_scoped(0, "stage F3Z dialect layer references")?;
+    let matched_layers = storage
+        .with_storage(|| ctx.collect_vec(member.iter(), "stage F3Z dialect layer references"))?;
+    for matched in ctx.admit_iter(&matched_layers, "scan F3Z dialect layers")? {
         let matched = matched.try_clone_for_decode(ctx, "copy dialect layers")?;
         let instance = match matched.instance() {
             Some(nested) => ctx.format_retained(
@@ -238,7 +244,7 @@ pub(super) fn merge_member_layers(
                 Ok(()) => Ok(()),
                 Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(layer)) => Err(layer),
                 Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => {
-                    return Err(limit.into())
+                    return Err(CodecError::ResourceLimit(limit))
                 }
             }
         {
@@ -262,14 +268,14 @@ fn model_root_member(
     scan: &ContainerScan<'_>,
     archive_root: &str,
 ) -> Result<(String, Option<String>), CodecError> {
-    if crate::container::is_f3d_name(archive_root) {
+    if crate::container::is_f3d_name(ctx, archive_root)? {
         return Ok((
             ctx.copy_retained_text(archive_root, "retain F3Z model root")?,
             None,
         ));
     }
 
-    let description_bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
+    let description_bytes = scan.entry_bytes(ctx, DESIGN_DESCRIPTION_ENTRY)?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(description_bytes.len()),
         "validate F3Z JSON UTF-8",
@@ -290,9 +296,12 @@ fn model_root_member(
             ))
         })?;
     let mut candidates = Vec::new();
-    for graph in description.design_description.design_graphs {
+    for graph in ctx.admit_iter(
+        &description.design_description.design_graphs,
+        "scan F3Z design graphs",
+    )? {
         let mut root = None;
-        for object in &graph.design_objects {
+        for object in ctx.admit_iter(&graph.design_objects, "scan F3Z root objects")? {
             let mut is_root = false;
             for id in &graph.root_ids {
                 ctx.charge_work(1, "match F3Z root object ID")?;
@@ -315,17 +324,19 @@ fn model_root_member(
         let Some(root) = root else {
             continue;
         };
-        for object in &graph.design_objects {
-            if !object.content_type.eq_ignore_ascii_case("f3d")
-                || !crate::container::is_f3d_name(&object.relative_path)
-                || scan.entry_view(&object.relative_path).is_none()
+        for object in ctx.admit_iter(&graph.design_objects, "scan F3Z derived model objects")? {
+            if !ctx.eq_ignore_ascii_case(
+                &object.content_type,
+                "f3d",
+                "classify F3Z object content type",
+            )? || !crate::container::is_f3d_name(ctx, &object.relative_path)?
+                || scan.entry_view(ctx, &object.relative_path)?.is_none()
             {
                 continue;
             }
             let mut derived = false;
-            for reference in root
-                .references
-                .iter()
+            for reference in ctx
+                .admit_iter(&root.references, "scan F3Z root references")?
                 .filter(|reference| reference.reference_type == "DERIVED")
             {
                 for id in &reference.ids {
@@ -354,7 +365,7 @@ fn model_root_member(
         Ord::cmp,
         "sort F3Z model candidates",
     )?;
-    candidates.dedup();
+    ctx.dedup_vec(&mut candidates, "deduplicate F3Z model candidates")?;
     match candidates.as_slice() {
         [model_root] => Ok((
             ctx.copy_retained_text(model_root, "retain F3Z selected model root")?,
@@ -406,18 +417,21 @@ mod tests {
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
                 cadmpeg_core::decode::ResourceDimension::RecursionDepth,
             ] {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(
-                            scan.entry_bytes("Manifest.json").unwrap().len(),
-                        );
-                    }
-                    cadmpeg_core::decode::ResourceDimension::RecursionDepth => {
-                        policy.limits.max_recursion_depth = 1;
-                    }
-                    _ => unreachable!(),
+                if dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits {
+                    let error = crate::test_support::resource_refusal_at(
+                        dimension,
+                        "parse F3Z manifest JSON",
+                        0,
+                        |ctx| super::model_root(ctx, &scan),
+                    );
+                    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                        panic!("manifest scan must refuse");
+                    };
+                    assert_eq!(limit.operation, "parse F3Z manifest JSON");
+                    continue;
                 }
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_recursion_depth = 1;
                 crate::test_support::with_decode_policy(&policy, |ctx| {
                     let error = super::model_root(ctx, &scan).unwrap_err();
                     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {

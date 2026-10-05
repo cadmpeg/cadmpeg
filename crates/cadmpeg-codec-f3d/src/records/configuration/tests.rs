@@ -244,7 +244,11 @@ fn configuration_payload_retains_absence_empty_fields_and_extension_values() {
         let payload = json!({"configurations": {"v": {"unknown": value}}, "unknown": value});
         let expected = wire("table", &["v"], payload.clone());
         let admitted: DesignConfiguration = serde_json::from_value(expected.clone()).unwrap();
-        assert_eq!(admitted.unknown_member_count(), 2);
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| admitted.unknown_member_count(ctx))
+                .unwrap(),
+            2
+        );
         assert_eq!(serde_json::to_value(&admitted).unwrap(), expected);
         assert_eq!(
             serde_json::from_slice::<Value>(&encode_configuration_payload(&admitted).unwrap())
@@ -279,6 +283,7 @@ fn configuration_scalar_projection_preserves_exact_text() {
     let (_, variant) = &admitted.variants()[0];
     let actual: Vec<_> = variant
         .parameters()
+        .iter()
         .map(|(key, value)| {
             (
                 key.as_str(),

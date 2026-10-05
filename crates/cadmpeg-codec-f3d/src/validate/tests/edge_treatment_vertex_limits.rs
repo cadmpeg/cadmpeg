@@ -125,11 +125,15 @@ fn vertex_operand_invalid_finding_refuses_collection_limit() {
 fn vertex_operand_invalid_entity_refuses_retained_limit() {
     let native = operand();
     let stream = super::super::design_stream(&native.id);
-    let expected_id = crate::ids::native_scoped_id(
-        stream,
-        "edge-treatment-vertex-operand",
-        native.recipe.byte_offset(),
-    );
+    let expected_id = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scoped_id(
+            ctx,
+            stream,
+            "edge-treatment-vertex-operand",
+            native.recipe.byte_offset(),
+        )
+        .expect("test F3D native identity")
+    });
     let error = vertex_error(false, u64::MAX, u64::try_from(expected_id.len()).unwrap());
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

@@ -17,6 +17,7 @@ pub(in crate::brep) fn position<T>(
     let mut low = 0;
     let mut high = rows.len();
     while low < high {
+        ctx.charge_work(1, "compare F3D BREP graph ID")?;
         let middle = usize::midpoint(low, high);
         match compare(ctx, key(&rows[middle]), query, "compare F3D BREP graph ID")? {
             Ordering::Less => low = middle + 1,

@@ -87,6 +87,16 @@ use cadmpeg_core::decode::{
 use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 /// The kind of `scope`, except a native kind, whose name is not copied.
 fn known_scope_kind(scope: &DesignParameterScope) -> Option<DesignFeatureKind> {
     (!matches!(scope.payload(), DesignScopePayload::Native(_))).then(|| scope.kind())
@@ -404,11 +414,12 @@ pub(crate) fn decode_edge_operands(
             }
         }
         let member_indices = member_indices.into_sorted(ctx, MEMBER_OPERATION)?;
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, cache, stream, bytes))?;
@@ -514,11 +525,12 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, cache, stream, bytes))?;
@@ -676,11 +688,12 @@ pub(crate) fn bind_work_point_input_carriers(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_owned_record_offsets(ctx, cache, stream, bytes))?;
@@ -894,11 +907,12 @@ pub(crate) fn bind_work_plane_constructions(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_owned_record_offsets(ctx, cache, stream, bytes))?;
@@ -1089,11 +1103,12 @@ pub(crate) fn decode_edge_identity_operands(
         else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for (ordinal, record_index) in ctx
             .admit_iter(group.members(), "scan F3D edge identity group members")?
             .map(|member| member.value)
@@ -1286,7 +1301,8 @@ pub(crate) fn decode_face_operands(
             scope_family(scope),
             Some(DesignFeatureFamily::OffsetFaces | DesignFeatureFamily::Shell)
         ) && group.role() == DesignOperandRole::ROLE_0X10;
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
@@ -1296,7 +1312,7 @@ pub(crate) fn decode_face_operands(
             &mut batches,
             FaceOperandBatch {
                 stream,
-                bytes: scan.entry_bytes(&entry.name)?,
+                bytes: scan.entry_bytes(ctx, &entry.name)?,
                 scope,
                 source: FaceOperandSource::Group {
                     group,
@@ -1350,7 +1366,8 @@ pub(crate) fn decode_face_operands(
         {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
@@ -1360,7 +1377,7 @@ pub(crate) fn decode_face_operands(
             &mut batches,
             FaceOperandBatch {
                 stream,
-                bytes: scan.entry_bytes(&entry.name)?,
+                bytes: scan.entry_bytes(ctx, &entry.name)?,
                 scope,
                 source: FaceOperandSource::Scope { legacy_as_built },
             },
@@ -1530,11 +1547,12 @@ pub(crate) fn decode_face_source_groups(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, cache, stream, bytes))?;
@@ -1906,7 +1924,7 @@ fn tagged_operand_faces(
         let cadmpeg_ir::attributes::AttributeTarget::Face(face) = &tag.target else {
             continue;
         };
-        if !crate::ids::same_native_occurrence(&tag.id, owner_id)
+        if !crate::ids::same_native_occurrence(ctx, &tag.id, owner_id)?
             || !ctx.contains(&tag.design_references, &design_reference, operation)?
         {
             continue;
@@ -2060,13 +2078,14 @@ pub(crate) fn edge_operand_candidate_faces(
         let cadmpeg_ir::attributes::AttributeTarget::Face(face) = &tag.target else {
             continue;
         };
-        if owner_id.is_some_and(|owner_id| !crate::ids::same_native_occurrence(&tag.id, owner_id))
-            || !ctx.contains(
-                &tag.design_references,
-                &design_reference,
-                "find F3D edge operand candidate design reference",
-            )?
-        {
+        if match owner_id {
+            Some(owner_id) => !crate::ids::same_native_occurrence(ctx, &tag.id, owner_id)?,
+            None => false,
+        } || !ctx.contains(
+            &tag.design_references,
+            &design_reference,
+            "find F3D edge operand candidate design reference",
+        )? {
             continue;
         }
         ctx.push_vec(
@@ -2103,11 +2122,12 @@ pub(crate) fn bind_sketch_profiles(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         // Each reference is admitted as the search reaches it; the search
         // stops at a second profile.
         let mut unique = None;
@@ -2173,11 +2193,12 @@ pub(crate) fn decode_extrude_selection_groups(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for (ordinal, record_index) in admit_reference_values(
             ctx,
             scope.reference_members(),
@@ -2304,11 +2325,12 @@ pub(crate) fn decode_construction_operand_groups(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut unclosed = Vec::new();
         for (ordinal, record_index) in admit_reference_values(
             ctx,
@@ -2413,11 +2435,12 @@ pub(crate) fn decode_loft_legacy_body_carriers(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(header) = headers.get(ctx, stream, record_index)? else {
             continue;
         };
@@ -2484,11 +2507,12 @@ struct LegacyLoftBodyCarrierFrame<'a> {
 /// Read the class-`322`/`262` or class-`411`/`266` legacy Loft body carrier
 /// frame at `header` with fixed work.
 fn legacy_loft_body_carrier_frame<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     scope_record_index: u32,
     header: &DesignRecordHeader,
-) -> Option<LegacyLoftBodyCarrierFrame<'a>> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+) -> Result<Option<LegacyLoftBodyCarrierFrame<'a>>, CodecError> {
+    let start = try_some!(usize::try_from(header.byte_offset).ok());
     let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.code() {
         322 => {
             let pair_matches = |at: usize| {
@@ -2496,86 +2520,97 @@ fn legacy_loft_body_carrier_frame<'a>(
                     paired.record_index == header.record_index && paired.class_tag == b"262"
                 })
             };
-            if pair_matches(start.checked_add(legacy_loft_322::LEN)?) {
+            if pair_matches(try_some!(start.checked_add(legacy_loft_322::LEN))) {
                 (b"262", legacy_loft_322::LEN, false)
-            } else if pair_matches(start.checked_add(legacy_loft_322_tail::LEN)?) {
+            } else if pair_matches(try_some!(start.checked_add(legacy_loft_322_tail::LEN))) {
                 (b"262", legacy_loft_322_tail::LEN, true)
             } else {
-                return None;
+                return Ok(None);
             }
         }
         411 => (b"266", legacy_loft_411::LEN, true),
-        _ => return None,
+        _ => return Ok(None),
     };
-    let parsed_header = indexed_record_header_at(bytes, start)?;
+    let parsed_header = try_some!(indexed_record_header_at(bytes, start));
     if parsed_header.record_index != header.record_index
-        || !zeros_at::<10>(bytes, start.checked_add(legacy_loft_322::ZERO_RUN_10)?)
-        || bytes.get(start.checked_add(legacy_loft_322::PRESENCE)?) != Some(&1)
-        || View::u32_le_at(
+        || !zeros_at::<10>(
             bytes,
-            start.checked_add(legacy_loft_322::OWNER_SCOPE_RECORD_INDEX)?,
-        )? != scope_record_index
-        || !zeros_at::<6>(bytes, start.checked_add(legacy_loft_322::ZERO_RUN_6)?)
-        || View::u32_le_at(bytes, start.checked_add(legacy_loft_322::MEMBER_COUNT)?)? != 1
+            try_some!(start.checked_add(legacy_loft_322::ZERO_RUN_10)),
+        )
+        || bytes.get(try_some!(start.checked_add(legacy_loft_322::PRESENCE))) != Some(&1)
+        || try_some!(View::u32_le_at(
+            bytes,
+            try_some!(start.checked_add(legacy_loft_322::OWNER_SCOPE_RECORD_INDEX)),
+        )) != scope_record_index
+        || !zeros_at::<6>(
+            bytes,
+            try_some!(start.checked_add(legacy_loft_322::ZERO_RUN_6)),
+        )
+        || try_some!(View::u32_le_at(
+            bytes,
+            try_some!(start.checked_add(legacy_loft_322::MEMBER_COUNT))
+        )) != 1
     {
-        return None;
+        return Ok(None);
     }
-    let mut cursor = start.checked_add(legacy_loft_322::MEMBER_REFERENCE)?;
+    let mut cursor = try_some!(start.checked_add(legacy_loft_322::MEMBER_REFERENCE));
     let member_offset = cursor;
-    let (member, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
-        return None;
+    let (member, _) = try_some!(take_record_reference(ctx, bytes, &mut cursor)?);
+    if cursor != try_some!(start.checked_add(legacy_loft_322::OPAQUE_INDEX)) {
+        return Ok(None);
     }
-    let opaque_index = u8::try_from(View::u32_le_at(bytes, cursor)?)
+    let opaque_index = try_some!(u8::try_from(try_some!(View::u32_le_at(bytes, cursor)))
         .ok()
-        .and_then(std::num::NonZeroU8::new)?;
-    cursor = cursor.checked_add(4)?;
-    let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, cursor)?)?;
-    cursor = cursor.checked_add(8)?;
-    if View::u32_le_at(bytes, cursor)? != u32::from(opaque_index.get()) {
-        return None;
+        .and_then(std::num::NonZeroU8::new));
+    cursor = try_some!(cursor.checked_add(4));
+    let opaque_scalar = try_some!(cadmpeg_ir::scalar::FiniteReal::new(try_some!(
+        View::f64_le_at(bytes, cursor)
+    )));
+    cursor = try_some!(cursor.checked_add(8));
+    if try_some!(View::u32_le_at(bytes, cursor)) != u32::from(opaque_index.get()) {
+        return Ok(None);
     }
-    cursor = cursor.checked_add(4)?;
-    let (next_next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::FLAGS)?
+    cursor = try_some!(cursor.checked_add(4));
+    let (next_next_record_index, _) = try_some!(take_record_reference(ctx, bytes, &mut cursor)?);
+    if cursor != try_some!(start.checked_add(legacy_loft_322::FLAGS))
         || bytes_at::<2>(bytes, cursor) != Some(&[0, 0])
     {
-        return None;
+        return Ok(None);
     }
-    cursor = cursor.checked_add(2)?;
-    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::LEN)? {
-        return None;
+    cursor = try_some!(cursor.checked_add(2));
+    let (next_record_index, _) = try_some!(take_record_reference(ctx, bytes, &mut cursor)?);
+    if cursor != try_some!(start.checked_add(legacy_loft_322::LEN)) {
+        return Ok(None);
     }
     let trailing_scope_reference_offset = if has_trailing_scope {
-        if cursor != start.checked_add(legacy_loft_322_tail::TAIL_ZERO)?
+        if cursor != try_some!(start.checked_add(legacy_loft_322_tail::TAIL_ZERO))
             || bytes.get(cursor) != Some(&0)
         {
-            return None;
+            return Ok(None);
         }
-        cursor = cursor.checked_add(1)?;
-        if cursor != start.checked_add(legacy_loft_322_tail::TRAILING_SCOPE_REFERENCE)? {
-            return None;
+        cursor = try_some!(cursor.checked_add(1));
+        if cursor != try_some!(start.checked_add(legacy_loft_322_tail::TRAILING_SCOPE_REFERENCE)) {
+            return Ok(None);
         }
         let reference_offset = cursor;
-        let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
+        let (record_index, _) = try_some!(take_record_reference(ctx, bytes, &mut cursor)?);
         if record_index != scope_record_index {
-            return None;
+            return Ok(None);
         }
-        Some(u64::try_from(reference_offset).ok()?)
+        Some(try_some!(u64::try_from(reference_offset).ok()))
     } else {
         None
     };
-    let paired_byte_offset = start.checked_add(frame_length)?;
+    let paired_byte_offset = try_some!(start.checked_add(frame_length));
     if cursor != paired_byte_offset {
-        return None;
+        return Ok(None);
     }
-    let paired_header = indexed_record_header_at(bytes, paired_byte_offset)?;
+    let paired_header = try_some!(indexed_record_header_at(bytes, paired_byte_offset));
     if paired_header.record_index != header.record_index || paired_header.class_tag != paired_class
     {
-        return None;
+        return Ok(None);
     }
-    Some(LegacyLoftBodyCarrierFrame {
+    Ok(Some(LegacyLoftBodyCarrierFrame {
         member,
         member_offset,
         opaque_index,
@@ -2585,7 +2620,7 @@ fn legacy_loft_body_carrier_frame<'a>(
         trailing_scope_reference_offset,
         paired_byte_offset,
         paired_class_tag: paired_header.class_tag,
-    })
+    }))
 }
 
 /// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
@@ -2595,7 +2630,8 @@ fn parse_loft_legacy_body_carrier(
     scope: &DesignParameterScope,
     header: &DesignRecordHeader,
 ) -> Result<Option<DesignLoftLegacyBodyCarrier>, CodecError> {
-    let Some(frame) = legacy_loft_body_carrier_frame(bytes, scope.record_index, header) else {
+    let Some(frame) = legacy_loft_body_carrier_frame(ctx, bytes, scope.record_index, header)?
+    else {
         return Ok(None);
     };
     let Ok(start) = usize::try_from(header.byte_offset) else {
@@ -3200,7 +3236,7 @@ fn parse_construction_operand_group_at(
             continue;
         }
         *present = true;
-        let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
+        let Some((record_index, offset)) = take_record_reference(ctx, bytes, &mut cursor)? else {
             return Ok(NotAGroup);
         };
         ctx.push_vec(
@@ -3280,7 +3316,7 @@ fn parse_construction_operand_group_at(
             }
             tail += 4;
         }
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+        if take_record_reference(ctx, bytes, &mut tail)?.map(|(index, _)| index)
             != record_index.checked_add(2)
         {
             continue;
@@ -3296,7 +3332,7 @@ fn parse_construction_operand_group_at(
             // always the byte before the terminating zero.
             let variant = flags[flag_bytes - 2] != 0;
             let mut after = tail + flag_bytes;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+            if take_record_reference(ctx, bytes, &mut after)?.map(|(index, _)| index)
                 != record_index.checked_add(1)
             {
                 continue;
@@ -3305,7 +3341,7 @@ fn parse_construction_operand_group_at(
                 continue;
             }
             after += 1;
-            if take_record_reference(bytes, &mut after).map(|(index, _)| index)
+            if take_record_reference(ctx, bytes, &mut after)?.map(|(index, _)| index)
                 != Some(scope.record_index)
             {
                 continue;
@@ -3321,12 +3357,13 @@ fn parse_construction_operand_group_at(
         }
     }
     if let Some(legacy_tail) = legacy_body_group_tail(
+        ctx,
         bytes,
         scope,
         (record_index, class_tag.code()),
         cursor,
         opaque_index.get(),
-    ) {
+    )? {
         if closed.replace(legacy_tail).is_some() {
             return Ok(Unclosed);
         }
@@ -3425,7 +3462,7 @@ fn take_counted_record_references(
     let mut references = Vec::new();
     for _ in 0..count {
         ctx.charge_work(1, operation)?;
-        let Some((value, offset)) = take_record_reference(bytes, cursor) else {
+        let Some((value, offset)) = take_record_reference(ctx, bytes, cursor)? else {
             return Ok(None);
         };
         ctx.push_vec(
@@ -3441,12 +3478,13 @@ fn take_counted_record_references(
 /// terminating zero. The class and feature gates keep this admission separate
 /// from the terminated flag-block grammar used by other construction groups.
 fn legacy_body_group_tail<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     scope: &DesignParameterScope,
     (record_index, class_code): (u32, u32),
     cursor: usize,
     opaque_index: u32,
-) -> Option<(bool, usize, &'a [u8; 3])> {
+) -> Result<Option<(bool, usize, &'a [u8; 3])>, CodecError> {
     let is_move = matches!(scope.payload(), DesignScopePayload::Move(_));
     let body_scope = is_move || matches!(scope.payload(), DesignScopePayload::RemoveBody);
     let legacy_move_class_328 = is_move && class_code == 328;
@@ -3454,57 +3492,60 @@ fn legacy_body_group_tail<'a>(
         257 | 323 | 338 if body_scope => ([1, 1], true),
         328 if is_move => ([1, 1], true),
         282 | 302 if body_scope => ([0, 1], false),
-        _ => return None,
+        _ => return Ok(None),
     };
     let mut tail = cursor;
-    if View::u32_le_at(bytes, tail)? != opaque_index {
-        return None;
+    if try_some!(View::u32_le_at(bytes, tail)) != opaque_index {
+        return Ok(None);
     }
     tail += 4;
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+    if take_record_reference(ctx, bytes, &mut tail)?.map(|(index, _)| index)
         != record_index.checked_add(2)
     {
-        return None;
+        return Ok(None);
     }
     if legacy_move_class_328 {
         if bytes.get(tail) != Some(&0) {
-            return None;
+            return Ok(None);
         }
         tail += 1;
         if bytes_at::<2>(bytes, tail) != Some(&flag_pair) {
-            return None;
+            return Ok(None);
         }
         tail += 2;
-        if View::u64_le_at(bytes, tail)? != u64::from(record_index.checked_add(1)?)
+        if try_some!(View::u64_le_at(bytes, tail))
+            != u64::from(try_some!(record_index.checked_add(1)))
             || !zeros_at::<3>(bytes, tail + 8)
         {
-            return None;
+            return Ok(None);
         }
         tail += 11;
     } else {
         if bytes_at::<2>(bytes, tail) != Some(&flag_pair) {
-            return None;
+            return Ok(None);
         }
         tail += 2;
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
+        if take_record_reference(ctx, bytes, &mut tail)?.map(|(index, _)| index)
             != record_index.checked_add(1)
         {
-            return None;
+            return Ok(None);
         }
         if bytes.get(tail) != Some(&0) {
-            return None;
+            return Ok(None);
         }
         tail += 1;
     }
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index) != Some(scope.record_index) {
-        return None;
+    if take_record_reference(ctx, bytes, &mut tail)?.map(|(index, _)| index)
+        != Some(scope.record_index)
+    {
+        return Ok(None);
     }
-    let paired = indexed_record_header_at(bytes, tail)?;
+    let paired = try_some!(indexed_record_header_at(bytes, tail));
     if (legacy_move_class_328 && paired.class_tag != b"263") || paired.record_index != record_index
     {
-        return None;
+        return Ok(None);
     }
-    Some((variant, tail, paired.class_tag))
+    Ok(Some((variant, tail, paired.class_tag)))
 }
 
 /// Bind exact typed records selected by construction-group trailing runs.
@@ -3535,11 +3576,12 @@ pub(crate) fn bind_construction_operand_trailing_records(
         let Some(stream) = record_stream(ctx, &group.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut trailing_transforms = Vec::new();
         let mut trailing_dual_transforms = Vec::new();
         let mut trailing_flags = Vec::new();
@@ -3648,11 +3690,12 @@ pub(crate) fn bind_construction_operand_paths(
         let Some(stream) = record_stream(ctx, &group.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let mut auxiliary_paths = Vec::new();
         for record in ctx.admit_iter(
             &group.frame.auxiliary_records,
@@ -3700,72 +3743,75 @@ fn parse_construction_operand_path(
         following_byte_offset: u64,
         following_class_tag: &'a [u8; 3],
     }
-    let Some(frame) = (|| {
-        let start = usize::try_from(header.byte_offset).ok()?;
-        if !zeros_at::<10>(bytes, start.checked_add(11)?)
-            || bytes.get(start.checked_add(21)?) != Some(&1)
+    let Some(frame) = (|| -> Result<Option<PathFrame<'_>>, CodecError> {
+        let start = try_some!(usize::try_from(header.byte_offset).ok());
+        if !zeros_at::<10>(bytes, try_some!(start.checked_add(11)))
+            || bytes.get(try_some!(start.checked_add(21))) != Some(&1)
         {
-            return None;
+            return Ok(None);
         }
-        let entity_ref_at = start.checked_add(22)?;
-        let entity_ref = View::u64_le_at(bytes, entity_ref_at)?;
-        let placement_at = start.checked_add(30)?;
-        let (placement, mut cursor) = if bytes_at::<3>(bytes, placement_at)? == &[0; 3] {
-            let transform = crate::design::decode::scopes::shared_frames::rigid_transform_at(
-                bytes,
-                start.checked_add(33)?,
-            )?;
-            if bytes.get(start.checked_add(161)?) != Some(&0) {
-                return None;
+        let entity_ref_at = try_some!(start.checked_add(22));
+        let entity_ref = try_some!(View::u64_le_at(bytes, entity_ref_at));
+        let placement_at = try_some!(start.checked_add(30));
+        let (placement, mut cursor) = if try_some!(bytes_at::<3>(bytes, placement_at)) == &[0; 3] {
+            let transform = try_some!(
+                crate::design::decode::scopes::shared_frames::rigid_transform_at(
+                    bytes,
+                    try_some!(start.checked_add(33)),
+                )
+            );
+            if bytes.get(try_some!(start.checked_add(161))) != Some(&0) {
+                return Ok(None);
             }
             (
                 crate::records::topology::construction::DesignConstructionPathPlacement::Transform(
                     transform,
                 ),
-                start.checked_add(162)?,
+                try_some!(start.checked_add(162)),
             )
         } else {
-            let variant = match bytes_at::<4>(bytes, placement_at)? {
+            let variant = match try_some!(bytes_at::<4>(bytes, placement_at)) {
                 [0, 0, variant @ (0 | 1), 0] => *variant != 0,
-                _ => return None,
+                _ => return Ok(None),
             };
             (
                 crate::records::topology::construction::DesignConstructionPathPlacement::Compact(
                     variant,
                 ),
-                start.checked_add(34)?,
+                try_some!(start.checked_add(34)),
             )
         };
         let (scope_record_index, scope_record_index_offset) =
-            take_record_reference(bytes, &mut cursor)?;
+            try_some!(take_record_reference(ctx, bytes, &mut cursor)?);
         if scope_record_index != expected_scope_record_index {
-            return None;
+            return Ok(None);
         }
         let (nested_record_index, nested_record_index_offset) =
-            take_record_reference(bytes, &mut cursor)?;
-        if nested_record_index != header.record_index.checked_add(2)?
+            try_some!(take_record_reference(ctx, bytes, &mut cursor)?);
+        if nested_record_index != try_some!(header.record_index.checked_add(2))
             || !zeros_at::<6>(bytes, cursor)
         {
-            return None;
+            return Ok(None);
         }
-        let following_at = cursor.checked_add(6)?;
-        let following = indexed_record_header_at(bytes, following_at)?;
-        if following.record_index != header.record_index.checked_add(1)? {
-            return None;
+        let following_at = try_some!(cursor.checked_add(6));
+        let following = try_some!(indexed_record_header_at(bytes, following_at));
+        if following.record_index != try_some!(header.record_index.checked_add(1)) {
+            return Ok(None);
         }
-        Some(PathFrame {
+        Ok(Some(PathFrame {
             entity_ref,
-            entity_ref_offset: u64::try_from(entity_ref_at).ok()?,
+            entity_ref_offset: try_some!(u64::try_from(entity_ref_at).ok()),
             placement,
             scope_record_index,
             scope_record_index_offset,
             nested_record_index,
             nested_record_index_offset,
             following_record_index: following.record_index,
-            following_byte_offset: u64::try_from(following_at).ok()?,
+            following_byte_offset: try_some!(u64::try_from(following_at).ok()),
             following_class_tag: following.class_tag,
-        })
-    })() else {
+        }))
+    })()?
+    else {
         return Ok(None);
     };
     let following_class_tag = crate::design::decode::text::retain_class_tag(
@@ -3919,11 +3965,24 @@ fn parse_construction_operand_dual_transform(
 /// Take one reference naming a record of the same segment, advancing `at` past
 /// every byte it owns. Returns the record index and the byte offset of the low
 /// word of the target entity id.
-fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
-    let target_at = at.checked_add(1)?;
-    let reference = take_reference(bytes, at)?;
-    let (target, _) = reference.local()?;
-    Some((u32::try_from(target).ok()?, u64::try_from(target_at).ok()?))
+fn take_record_reference(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<(u32, u64)>, CodecError> {
+    let Some(target_at) = at.checked_add(1) else {
+        return Ok(None);
+    };
+    let Some(reference) = take_reference(ctx, bytes, at)? else {
+        return Ok(None);
+    };
+    let Some((target, _)) = reference.local() else {
+        return Ok(None);
+    };
+    let (Ok(target), Ok(target_at)) = (u32::try_from(target), u64::try_from(target_at)) else {
+        return Ok(None);
+    };
+    Ok(Some((target, target_at)))
 }
 
 /// Decode the persistent identity frame named by each construction-operand group.
@@ -3949,7 +4008,8 @@ pub(crate) fn decode_construction_operand_identities(
         let Some(stream) = record_stream(ctx, &group.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
@@ -3969,7 +4029,7 @@ pub(crate) fn decode_construction_operand_identities(
         if *parsed {
             continue;
         }
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(mut identity) =
             parse_construction_operand_identity(ctx, bytes, group, wrapper_header)?
         else {
@@ -4656,11 +4716,12 @@ pub(crate) fn decode_extrude_selection_members(
         let Some(stream) = record_stream(ctx, &group.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for (ordinal, record_index) in ctx
             .admit_iter(group.members(), "scan F3D extrude selection references")?
             .map(|member| member.value)
@@ -4708,11 +4769,12 @@ pub(crate) fn decode_entity_selection_operands(
         let Some(stream) = record_stream(ctx, &group.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         for (ordinal, record_index) in ctx
             .admit_iter(group.members(), "scan F3D entity selection references")?
             .map(|member| member.value)
@@ -5389,11 +5451,12 @@ pub(crate) fn decode_body_recipe_operands(
         )? {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, cache, stream, bytes))?;
@@ -5428,11 +5491,12 @@ pub(crate) fn decode_body_recipe_operands(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, cache, stream, bytes))?;
@@ -5945,7 +6009,7 @@ pub(crate) fn bind_body_recipe_operand_candidates(
                 let mut occurrence_tags = Vec::new();
                 for tag in ctx.admit_iter(tags, "scan F3D body recipe tags")? {
                     if matches!(tag.target, AttributeTarget::Face(_))
-                        && crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                        && crate::ids::same_native_occurrence(ctx, &tag.id, &operand.id)?
                     {
                         ctx.push_vec(&mut occurrence_tags, tag, "f3d body recipe occurrence tags")?;
                     }
@@ -6287,7 +6351,7 @@ fn extrude_identity_tail(
         }
     } else if bytes_at::<3>(bytes, slot_end) == Some(&[0; 3]) {
         let mut cursor = slot_end + 3;
-        match take_record_reference(bytes, &mut cursor) {
+        match take_record_reference(ctx, bytes, &mut cursor)? {
             Some((next_record_index, _)) => graphic_class_tag_end(ctx, bytes, cursor)?
                 .filter(|after_next_tag| {
                     View::u32_le_at(bytes, *after_next_tag) == Some(next_record_index)

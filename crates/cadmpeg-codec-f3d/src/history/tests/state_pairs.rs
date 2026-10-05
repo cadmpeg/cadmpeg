@@ -168,15 +168,26 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         states: vec![state(id, current, Some(2)), state(id, 2, None)],
     };
     let histories = [history("first", 7), history("second", 9)];
-    let (resolved, current, previous) =
-        unique_history_state_pair(&histories, 9, 2).expect("state-local pair");
+    let (resolved, current, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 9, 2)
+    })
+    .unwrap()
+    .expect("state-local pair");
     assert_eq!(resolved.id, "second");
     assert_eq!(current.state_id, 9);
     assert_eq!(previous.state_id, 2);
-    assert!(unique_history_state(&histories, 2).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state(decode_ctx, &histories, 2)
+    })
+    .unwrap()
+    .is_none());
 
     let duplicate_pair = [history("first", 9), history("second", 9)];
-    assert!(unique_history_state_pair(&duplicate_pair, 9, 2).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &duplicate_pair, 9, 2)
+    })
+    .unwrap()
+    .is_none());
 
     let indirect = AsmHistory {
         id: "indirect".into(),
@@ -193,8 +204,11 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         ..history("direct", 23)
     };
     let histories = [indirect, direct];
-    let (resolved, _, _) = unique_history_state_pair(&histories, 23, 11)
-        .expect("direct transition takes precedence over a reachable pair");
+    let (resolved, _, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 23, 11)
+    })
+    .unwrap()
+    .expect("direct transition takes precedence over a reachable pair");
     assert_eq!(resolved.id, "direct");
 }
 
@@ -292,9 +306,12 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     .unwrap();
     assert_eq!(bindings[&scope.id], histories[1].id);
     assert_eq!(
-        bound_scope_history(&scope.id, &bindings, &histories)
-            .expect("scope binding resolves one history")
-            .id,
+        crate::test_support::with_decode_context(|decode_ctx| {
+            bound_scope_history(decode_ctx, &scope.id, &bindings, &histories)
+        })
+        .unwrap()
+        .expect("scope binding resolves one history")
+        .id,
         histories[1].id
     );
 
@@ -355,6 +372,33 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     })
     .unwrap();
     assert_eq!(bindings[&scope.id], histories[1].id);
+
+    let unmatched_binding =
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire::<String> {
+            id: format!("{stream}:design-body-binding#0"),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 1,
+            asm_body_key_offset: 0,
+            entity_suffix: 150,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.unmatched.smbh".into(),
+            blob_name_offset: 16,
+            body: None,
+        })
+        .unwrap();
+    let bindings = crate::test_support::with_decode_context(|decode_ctx| {
+        bind_scope_histories(
+            decode_ctx,
+            &scopes,
+            std::slice::from_ref(&unmatched_binding),
+            std::slice::from_ref(&operand),
+            &histories,
+        )
+    })
+    .unwrap();
+    assert_eq!(bindings[&scope.id], histories[1].id);
 }
 
 #[test]
@@ -390,13 +434,19 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         ],
     };
     let histories = [history];
-    let (resolved, current, previous) =
-        unique_history_state_pair(&histories, 10, 6).expect("raw direct state pair");
+    let (resolved, current, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 10, 6)
+    })
+    .unwrap()
+    .expect("raw direct state pair");
     assert_eq!(resolved.id, "history");
     assert_eq!(current.state_id, 10);
     assert_eq!(previous.state_id, 6);
-    let (_, current, previous) =
-        unique_history_state_pair(&histories, 10, 4).expect("raw reachable state pair");
+    let (_, current, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &histories, 10, 4)
+    })
+    .unwrap()
+    .expect("raw reachable state pair");
     assert_eq!(current.state_id, 10);
     assert_eq!(previous.state_id, 4);
     let mut omitted_predecessor = crate::records::feature::scope::DesignParameterScope::empty(
@@ -410,7 +460,10 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         })
         .unwrap();
     assert_eq!(
-        effective_scope_previous_history_state_id(&omitted_predecessor, &histories),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            effective_scope_previous_history_state_id(decode_ctx, &omitted_predecessor, &histories)
+        })
+        .unwrap(),
         Some(6)
     );
 
@@ -450,7 +503,10 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         records: Default::default(),
         topology: Default::default(),
     });
-    assert!(unique_history_state_pair(&[inconsistent], 10, 6).is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        unique_history_state_pair(decode_ctx, &[inconsistent], 10, 6).map(|pair| pair.is_none())
+    })
+    .unwrap());
 }
 
 use crate::history_records::{
@@ -800,7 +856,14 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
     .unwrap()
     .is_empty());
     let identities = crate::test_support::with_decode_context(|decode_ctx| {
-        HistoricalIdentityIndex::build(decode_ctx, std::slice::from_ref(&missing_carrier), [11])
+        HistoricalIdentityIndex::build(
+            decode_ctx,
+            std::slice::from_ref(&missing_carrier),
+            decode_ctx
+                .admit_iter(&[11], "scan F3D identity local IDs")
+                .expect("test identity local ID admission"),
+            |local_id| std::iter::once(*local_id).chain(None),
+        )
     })
     .unwrap();
     assert_eq!(
@@ -1104,9 +1167,11 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
     let histories = [history("history-a"), history("history-b")];
     let bindings = HashMap::from([("scope".into(), "history-b".into())]);
 
-    let (selected, state, previous) =
-        bound_history_state_pair("scope", 11, 9, &bindings, &histories)
-            .expect("scope-bound repeated state pair");
+    let (selected, state, previous) = crate::test_support::with_decode_context(|decode_ctx| {
+        bound_history_state_pair(decode_ctx, "scope", 11, 9, &bindings, &histories)
+    })
+    .unwrap()
+    .expect("scope-bound repeated state pair");
     assert_eq!(selected.id, "history-b");
     assert_eq!(state.parent, "history-b");
     assert_eq!(previous.parent, "history-b");
@@ -1614,19 +1679,18 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             .collect::<Vec<_>>(),
         [Some([vec![7, 8], vec![7, 8]]), None]
     );
-    assert!(incident_loop_counts_satisfy_sides(
-        &[4, 5],
-        &[Some(5), Some(4)]
-    ));
-    assert!(!incident_loop_counts_satisfy_sides(
-        &[5, 6],
-        &[Some(5), Some(5)]
-    ));
-    assert!(incident_loop_counts_satisfy_sides(
-        &[5, 5],
-        &[Some(5), Some(5)]
-    ));
-    assert!(incident_loop_counts_satisfy_sides(&[5], &[None, Some(5)]));
+    crate::test_support::with_decode_context(|decode_ctx| {
+        assert!(
+            incident_loop_counts_satisfy_sides(decode_ctx, &[4, 5], &[Some(5), Some(4)]).unwrap()
+        );
+        assert!(
+            !incident_loop_counts_satisfy_sides(decode_ctx, &[5, 6], &[Some(5), Some(5)]).unwrap()
+        );
+        assert!(
+            incident_loop_counts_satisfy_sides(decode_ctx, &[5, 5], &[Some(5), Some(5)]).unwrap()
+        );
+        assert!(incident_loop_counts_satisfy_sides(decode_ctx, &[5], &[None, Some(5)]).unwrap());
+    });
     assert_eq!(topology.edge_vertices[0].start_vertex, 8);
     assert_eq!(topology.edge_vertices[0].end_vertex, 9);
     assert_eq!(topology.face_surfaces[0].carrier, 20);
@@ -1831,3 +1895,18 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
 }
 
 mod identity;
+
+#[test]
+fn recipe_selector_side_count_scan_refuses_work_limit() {
+    let operation = "scan F3D recipe selector required sides";
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode| incident_loop_counts_satisfy_sides(decode, &[5], &[Some(5)]),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}

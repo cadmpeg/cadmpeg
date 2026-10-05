@@ -423,6 +423,22 @@ fn xref_direct_transform_conversion_refuses_collection_limit() {
     );
 }
 
+fn component_insert_scope(
+    stream: &str,
+    construction: crate::records::feature::assembly_features::DesignComponentInsertConstruction,
+) -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+    };
+    let scope_id = format!("{stream}:design-parameter-scope#0");
+    let mut scope = DesignParameterScope::empty(&scope_id, DesignFeatureKind::ComponentInsert, 0);
+    let DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() else {
+        panic!("expected Component Insert payload");
+    };
+    *slot = Some(construction);
+    scope
+}
+
 #[test]
 fn xref_component_insert_selection_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -438,7 +454,7 @@ fn xref_component_insert_selection_refuses_collection_limit() {
         };
     let error = super::select_component_insert_transforms(
         &ctx,
-        [("stream", &construction)],
+        &[component_insert_scope("stream", construction)],
         "stream",
         "role",
     )
@@ -526,48 +542,32 @@ fn xref_stream_scope_refuses_retained_limit() {
         XREF_ROLE,
         identity,
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (scan_ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
-    let scan = crate::container::scan(&scan_ctx, root).unwrap();
     let table_bytes = redirections_json("root.f3d", &[("part.f3d", XREF_ROLE)]);
-    let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
-    let limit_arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
-    // MetaStream parsing and serializer lookup retain their header fields.
-
-    // Both placement attempts retain one class tag and two copies of the role.
-
-    limit_policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(
+    // Each run scans afresh: the scan memoizes parsed MetaStreams, so a scan
+    // shared between runs would skip that parse after the first one.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "retain F3D native scope",
         |cap| {
-            let mut table = table.clone();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (scan_ctx, root) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy)
+                    .unwrap();
+            let scan = crate::container::scan(&scan_ctx, root).unwrap();
+            let mut table = super::parse(&scan_ctx, table_bytes.as_bytes()).unwrap();
+            let limit_arena = cadmpeg_core::decode::DecodeArena::new();
             let mut limit_policy = cadmpeg_core::decode::DecodePolicy::service();
-            // MetaStream parsing and serializer lookup retain their header fields.
-
-            // Both placement attempts retain one class tag and two copies of the role.
-
             limit_policy.limits.max_retained_bytes = cap;
-            let limit_ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            let (limit_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
                 &[],
                 &limit_arena,
                 &limit_policy,
             )
-            .unwrap()
-            .0;
+            .unwrap();
             super::bind_occurrences(&limit_ctx, &scan, &mut table, &[])
         },
-    ) {
-        cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-        error => panic!("unexpected refusal: {error:?}"),
-    };
-    let limit_ctx =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limit_arena, &limit_policy)
-            .unwrap()
-            .0;
-    let error = super::bind_occurrences(&limit_ctx, &scan, &mut table, &[]).unwrap_err();
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D native scope")
@@ -938,12 +938,12 @@ fn reflected_matrix_is_reported_by_complete_document_admission() {
 #[test]
 fn component_reference_data_is_an_open_json_object() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (value, _reservation) = super::parse_component_reference_data(
+    let parsed = super::parse_component_reference_data(
         &ctx,
         br#"{"schema":7,"references":[{"id":"component"}],"extension":{"x":true}}"#,
     )
     .expect("open component-reference object");
-    assert_eq!(value["schema"], 7);
+    assert_eq!(parsed.0["schema"], 7);
     assert!(super::parse_component_reference_data(&ctx, br"[]").is_err());
     assert!(super::parse_component_reference_data(&ctx, b"not-json").is_err());
 }
@@ -1853,12 +1853,33 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     );
     assert_eq!(
         super::superseded_placement_count(
+            &cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&direct),
             std::slice::from_ref(&structured),
             "role"
-        ),
+        )
+        .unwrap(),
         1
     );
+}
+
+#[test]
+fn grouped_component_identity_preserves_ascii_scan_refusal() {
+    let bytes = [3, 0, 0, 0, b'3', b'8', b'2'];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap()
+        .0;
+
+    let error =
+        super::grouped_component_insert_identity(&ctx, &bytes, 0, bytes.len(), 0).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "filter F3D ASCII bytes"
+    ));
 }
 
 #[test]
@@ -1910,10 +1931,10 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
     assert_eq!(
         super::select_component_insert_transforms(
             &cadmpeg_test_support::service_decode_context(),
-            [
-                ("stream", &selected_construction),
-                ("stream", &ignored_construction),
-                ("other-stream", &selected_construction),
+            &[
+                component_insert_scope("stream", selected_construction.clone()),
+                component_insert_scope("stream", ignored_construction),
+                component_insert_scope("other-stream", selected_construction),
             ],
             "stream",
             "role"

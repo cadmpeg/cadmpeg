@@ -104,6 +104,34 @@ fn native_entity_reference_finding_refuses_retained_limit() {
 }
 
 #[test]
+fn native_validation_finding_message_refuses_retained_limit() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = crate::native::F3dNative::default();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        let error = ctx
+            .push_constant_finding(
+                &mut Vec::new(),
+                super::super::Check::NativeLinks,
+                "fixed validation finding message",
+                None,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D validation finding message")
+        );
+    })
+}
+
+#[test]
 fn native_sketch_relation_finding_refuses_retained_limit() {
     crate::test_support::with_decode_context(|service_ctx| {
         use crate::records::identity::ReferenceRun;
@@ -1143,4 +1171,71 @@ fn companion_entity_refuses_retained_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
     );
+}
+
+#[test]
+fn sketch_relation_owner_comparison_preserves_work_refusal() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use crate::records::identity::ReferenceRun;
+        use crate::records::sketch_relations::{
+            SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMembers,
+            SketchRelationReturnMembers,
+        };
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let service = cadmpeg_test_support::service_decode_context();
+        let relation = SketchRelation::try_new(SketchRelationDraft {
+            id: "f3d:Design/BulkStream.dat:sketch-relation#1".into(),
+            record_index: 1,
+            class_tag: crate::records::references::DesignClassTag::try_from("296".to_owned())
+                .unwrap(),
+            byte_offset: 10,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: Some(
+                cadmpeg_core::text::NonBlankString::try_from("sketch_1".to_owned()).unwrap(),
+            ),
+            auxiliary_references: ReferenceRun::from_columns(vec![1], vec![4], "auxiliary")
+                .unwrap(),
+            rectangular_counted_reference_count: None,
+            members: SketchRelationMembers::from_indices(&service, std::iter::empty()).unwrap(),
+            owner_reference_offset: 8,
+            definition: SketchRelationDefinition::new(0, None).unwrap(),
+            entity_genesis: None,
+            return_members: SketchRelationReturnMembers::from_indices(&service, std::iter::empty())
+                .unwrap(),
+            raw_bytes: vec![0; 24],
+        })
+        .unwrap();
+        let mut native = crate::native::F3dNative::default();
+        native.sketch_relations.push(relation);
+        native
+            .design_entity_headers
+            .push(validation_entity_header(Vec::new()));
+        let arena = DecodeArena::new();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let mut findings = Vec::new();
+        super::super::validate_sketch_relations(&ctx, &mut findings).unwrap();
+        assert!(findings.is_empty());
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "compare F3D sketch relation owner identities",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+                ctx.decode = &decode;
+                let result = super::super::validate_sketch_relations(&ctx, &mut Vec::new());
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                    assert_eq!(decode.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D sketch relation owner identities")
+        );
+    });
 }

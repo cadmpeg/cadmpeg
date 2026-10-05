@@ -296,3 +296,167 @@ fn face_operand_rejects_overflowed_node_offset() {
         if message == "F3D face recipe node offset overflows")
     );
 }
+
+#[test]
+fn thread_face_group_membership_refuses_work_limit() {
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::{
+            scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload},
+            thread::{
+                DesignThreadConstruction, DesignThreadDiameters, DesignThreadForm,
+                DesignThreadNominalSize,
+            },
+        },
+        identity::{Located, ReferenceRun},
+        recipes::{ConstructionRecipe, ConstructionRecipeKind},
+        references::DesignClassTag,
+        topology::{
+            body_recipe::DesignOperandGroup,
+            construction::{
+                DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+                DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+                DesignConstructionOperandRole,
+            },
+            extrude_selection::DesignOperandRole,
+            face::{DesignFaceOperand, DesignFaceOperandDraft},
+        },
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let recipe_id = format!("{stream}:construction-recipe#0");
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#10"),
+        DesignFeatureKind::Thread,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.payload = DesignScopePayload::Thread(Some(DesignThreadConstruction {
+                form: DesignThreadForm::Standard,
+                designation_offset: 38,
+                designation: cadmpeg_core::text::NonBlankString::try_from("M30x3.5").unwrap(),
+                nominal_size: DesignThreadNominalSize::try_from("30.0".to_owned()).unwrap(),
+                profile: cadmpeg_core::text::NonBlankString::try_from("ISO Metric profile")
+                    .unwrap(),
+                pitch: cadmpeg_ir::scalar::PositiveReal::new(0.35).unwrap(),
+                face_group_record_indices: vec![100],
+                diameters: DesignThreadDiameters::new(3.0, 2.5, 2.75).unwrap(),
+            }));
+            draft.reference_members = ReferenceRun::unlocated(vec![100, 101]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+        id: format!("{stream}:design-construction-operand-group#100"),
+        scope_record_index: 10,
+        scope_reference_ordinal: 0,
+        record_index: 100,
+        byte_offset: 1_000,
+        class_tag: DesignClassTag::try_from("277".to_owned()).unwrap(),
+        members: vec![Located {
+            value: 101,
+            offset: 1_026,
+        }],
+        lost_edge_references: Vec::new(),
+        frame: DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 1_021,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 1_058,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 1_062,
+                variant: false,
+            },
+        )
+        .unwrap(),
+        operand_role: DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10),
+        role_offset: 1_040,
+        paired_class_tag: DesignClassTag::try_from("258".to_owned()).unwrap(),
+        paired_byte_offset: 1_080,
+    })
+    .unwrap();
+    let recipe_byte_offset = 1_147;
+    let recipe_program_offset = recipe_byte_offset + 24;
+    let operand = DesignFaceOperand::try_new(DesignFaceOperandDraft {
+        id: format!("{stream}:design-face-operand#101"),
+        scope_record_index: 10,
+        scope_reference_ordinal: 0,
+        group: Some(DesignOperandGroup {
+            group_record_index: 100,
+            group_member_ordinal: 0,
+        }),
+        record_index: 101,
+        byte_offset: 1_100,
+        class_tag: DesignClassTag::try_from("365".to_owned()).unwrap(),
+        paired_byte_offset: 1_116,
+        paired_class_tag: DesignClassTag::try_from("366".to_owned()).unwrap(),
+        recipe_record_index: 104,
+        recipe_record_byte_offset: recipe_byte_offset - 15,
+        recipe_id: recipe_id.clone(),
+        recipe_prefix_offset: recipe_byte_offset - 4,
+        recipe_references: Vec::new(),
+        recipe_prefix_bytes: Vec::new(),
+        recipe_kind: ConstructionRecipeKind::BoundedFace,
+        recipe_program_offset,
+        recipe_program: vec![0, -1],
+        recipe_nodes: Vec::new(),
+        candidate_faces: Vec::new(),
+        unreferenced_candidate_faces: Vec::new(),
+        alternate_selector_candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        changed_candidate_faces: Vec::new(),
+        historical_support_contexts: Vec::new(),
+        resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
+        next_record_index: 106,
+        next_byte_offset: recipe_program_offset + 8,
+    })
+    .unwrap();
+    let native = crate::native::F3dNative {
+        design_construction_operand_groups: vec![group],
+        design_face_operands: vec![operand.clone()],
+        design_parameter_scopes: vec![scope],
+        design_record_headers: vec![DesignRecordHeader {
+            id: format!("{stream}:design-record-header#101"),
+            record_index: 101,
+            class_tag: DesignClassTag::try_from("365".to_owned()).unwrap(),
+            byte_offset: 1_100,
+        }],
+        construction_recipes: vec![ConstructionRecipe {
+            id: recipe_id,
+            byte_offset: recipe_byte_offset,
+            kind: ConstructionRecipeKind::BoundedFace,
+            design: None,
+            recipe_index: 0,
+            record_index: None,
+        }],
+        ..Default::default()
+    };
+    let expected = [operand];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D thread face operand group",
+        0,
+        |decode| {
+            let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+            let ctx = super::super::Ctx::new(&ir, &native, decode)?;
+            super::super::validate_face_operands(&ctx, &mut Vec::new(), &expected).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "find F3D thread face operand group"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
+}

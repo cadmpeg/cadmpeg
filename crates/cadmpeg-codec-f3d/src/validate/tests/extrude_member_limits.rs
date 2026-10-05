@@ -93,12 +93,12 @@ fn with_matching_identity(native: &mut crate::native::F3dNative) {
     );
 }
 
-fn member_error(
+fn member_result(
     valid: bool,
     identity: bool,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> Result<(), cadmpeg_core::CodecError> {
     crate::test_support::with_decode_context(|service_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -113,8 +113,21 @@ fn member_error(
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
-        super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err()
+        super::super::validate_extrude_selection_members(&ctx, &mut Vec::new())
     })
+}
+
+/// Refuse `operation` at its collection boundary, with every earlier item admitted.
+fn member_collection_refusal(
+    valid: bool,
+    identity: bool,
+    operation: &str,
+) -> cadmpeg_core::CodecError {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| member_result(valid, identity, cap, u64::MAX),
+    )
 }
 
 #[test]
@@ -156,14 +169,19 @@ fn extrude_member_history_states_refuse_collection_limit() {
                 transition: None,
             }],
         });
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 4;
-        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-        ctx.decode = &decode;
-        let error =
-            super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "index F3D Extrude selection history states",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+                ctx.decode = &decode;
+                super::super::validate_extrude_selection_members(&ctx, &mut Vec::new())
+            },
+        );
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Extrude selection history states")
@@ -173,7 +191,7 @@ fn extrude_member_history_states_refuse_collection_limit() {
 
 #[test]
 fn extrude_member_identity_index_refuses_collection_limit() {
-    let error = member_error(true, true, 0, u64::MAX);
+    let error = member_collection_refusal(true, true, "collect F3D Extrude selection identities");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D Extrude selection identities")
@@ -182,7 +200,7 @@ fn extrude_member_identity_index_refuses_collection_limit() {
 
 #[test]
 fn extrude_member_slot_refuses_collection_limit() {
-    let error = member_error(true, false, 2, u64::MAX);
+    let error = member_collection_refusal(true, false, "index F3D Extrude selection member slots");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Extrude selection member slots")
@@ -191,7 +209,8 @@ fn extrude_member_slot_refuses_collection_limit() {
 
 #[test]
 fn extrude_member_record_refuses_collection_limit() {
-    let error = member_error(true, false, 3, u64::MAX);
+    let error =
+        member_collection_refusal(true, false, "index F3D Extrude selection member records");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Extrude selection member records")
@@ -200,7 +219,7 @@ fn extrude_member_record_refuses_collection_limit() {
 
 #[test]
 fn extrude_member_invalid_finding_refuses_collection_limit() {
-    let error = member_error(false, false, 2, u64::MAX);
+    let error = member_collection_refusal(false, false, "collect F3D native validation findings");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -212,7 +231,7 @@ fn extrude_member_invalid_entity_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         "retain F3D validation entity",
-        |cap| Err::<(), cadmpeg_core::CodecError>(member_error(false, false, u64::MAX, cap)),
+        |cap| member_result(false, false, u64::MAX, cap),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

@@ -35,6 +35,16 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 /// Reference members of a class-388 `Assemble` scope.
 const CLASS_388_REFERENCE_COUNT: usize = index_from_u32(class_388_assemble::REFERENCE_COUNT_VALUE);
 
@@ -399,22 +409,28 @@ fn exact_legacy_class_383_operand_path(
     let scope_at = usize::try_from(scope.byte_offset()).ok();
     let locator = scope_at
         .and_then(|at| at.checked_add(spec.scope_operand_reference_offset))
-        .and_then(|at| exact_same_segment_record_reference(bytes, at));
+        .map(|at| exact_same_segment_record_reference(ctx, bytes, at))
+        .transpose()?
+        .flatten();
     let Some((locator_record_index, locator_reference_offset)) =
         locator.filter(|(record_index, _)| *record_index == carrier_record_index)
     else {
         return Ok(None);
     };
-    let Some((_, locator_scope_reference_offset)) =
-        exact_same_segment_record_reference(bytes, carrier_at + class_383_carrier::SCOPE_REFERENCE)
-            .filter(|(record_index, _)| *record_index == scope.record_index)
-    else {
+    let Some((_, locator_scope_reference_offset)) = exact_same_segment_record_reference(
+        ctx,
+        bytes,
+        carrier_at + class_383_carrier::SCOPE_REFERENCE,
+    )?
+    .filter(|(record_index, _)| *record_index == scope.record_index) else {
         return Ok(None);
     };
     let Some((_, wrapper_reference_offset)) = exact_same_segment_record_reference(
+        ctx,
         bytes,
         leading_at + class_383_leading::IDENTITY_REFERENCE,
-    ) else {
+    )?
+    else {
         return Ok(None);
     };
     let occurrence_guid_offset =
@@ -580,7 +596,9 @@ pub(super) fn exact_legacy_class_388_operand_paths(
     ]) {
         let Some((locator_record_index, locator_reference_offset)) = scope_at
             .checked_add(relative_offset)
-            .and_then(|at| exact_same_segment_record_reference(bytes, at))
+            .map(|at| exact_same_segment_record_reference(ctx, bytes, at))
+            .transpose()?
+            .flatten()
         else {
             return Ok(None);
         };
@@ -641,7 +659,8 @@ fn exact_legacy_class_388_envelope(
     locator_at: usize,
 ) -> Result<Option<LegacyClass388Envelope>, CodecError> {
     let locator_end = locator_at + path_locator::LEN;
-    let Some(locator) = legacy_path_locator(bytes, scope, locator_record_index, locator_at) else {
+    let Some(locator) = legacy_path_locator(ctx, bytes, scope, locator_record_index, locator_at)?
+    else {
         return Ok(None);
     };
     if !next_header_is(ctx, bytes, locator_at + 1, locator_end)? {
@@ -708,9 +727,10 @@ fn exact_legacy_class_388_envelope(
         }
         let Some((referenced_path_record_index, reference_offset)) =
             exact_same_segment_record_reference(
+                ctx,
                 bytes,
                 wrapper_at + path_reference_offset + ordinal * 11,
-            )
+            )?
         else {
             return Ok(None);
         };
@@ -744,31 +764,37 @@ fn exact_legacy_class_388_envelope(
 /// The fixed fields of the class-451 locator frame at `locator_at`: its
 /// scope backlink offset and the wrapper it references.
 fn legacy_path_locator(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     locator_record_index: u32,
     locator_at: usize,
-) -> Option<(u64, (u32, u64))> {
+) -> Result<Option<(u64, (u32, u64))>, CodecError> {
     if exact_indexed_header_at(bytes, locator_at, locator_record_index) != Some(b"451")
         || !zeros_at::<{ path_locator::NONZERO_RECORD_REFERENCE - path_locator::ZERO_RUN_10 }>(
             bytes,
             locator_at + path_locator::ZERO_RUN_10,
         )
-        || exact_same_segment_record_reference(
+        || try_some!(exact_same_segment_record_reference(
+            ctx,
             bytes,
             locator_at + path_locator::NONZERO_RECORD_REFERENCE,
-        )?
+        )?)
         .0 == 0
         || bytes.get(locator_at + path_locator::ZERO_32) != Some(&0)
         || rigid_transform_at(bytes, locator_at + path_locator::TRANSFORM).is_none()
         || bytes.get(locator_at + path_locator::ZERO_161) != Some(&0)
     {
-        return None;
+        return Ok(None);
     }
-    let (scope_record_index, locator_scope_reference_offset) =
-        exact_same_segment_record_reference(bytes, locator_at + path_locator::SCOPE_BACKLINK)?;
-    let wrapper =
-        exact_same_segment_record_reference(bytes, locator_at + path_locator::WRAPPER_REFERENCE)?;
+    let (scope_record_index, locator_scope_reference_offset) = try_some!(
+        exact_same_segment_record_reference(ctx, bytes, locator_at + path_locator::SCOPE_BACKLINK)?
+    );
+    let wrapper = try_some!(exact_same_segment_record_reference(
+        ctx,
+        bytes,
+        locator_at + path_locator::WRAPPER_REFERENCE
+    )?);
     if scope_record_index != scope.record_index
         || wrapper.0 == 0
         || View::u32_le_at(bytes, locator_at + path_locator::CONSTANT_TWO) != Some(2)
@@ -777,9 +803,9 @@ fn legacy_path_locator(
             locator_at + path_locator::ZERO_TAIL_2,
         )
     {
-        return None;
+        return Ok(None);
     }
-    Some((locator_scope_reference_offset, wrapper))
+    Ok(Some((locator_scope_reference_offset, wrapper)))
 }
 
 /// The path count, frame length and path-reference offset of the class-369

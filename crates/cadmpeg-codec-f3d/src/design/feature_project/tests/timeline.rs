@@ -85,10 +85,14 @@ fn history_state_predecessors_are_component_qualified() {
     let scopes = vec![first, local_predecessor.clone(), second.clone()];
     let naming_space = |component_record_index, context_uuid: &str| {
         crate::records::recipes::DesignComponentNamingSpace {
-            id: crate::ids::native_design_component_naming_space_id(
-                bulk_stream,
-                component_record_index,
-            ),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_component_naming_space_id(
+                    ctx,
+                    bulk_stream,
+                    component_record_index,
+                )
+                .expect("test F3D native identity")
+            }),
             byte_offset: component_record_index,
             component_record_index,
             context_uuid: context_uuid.to_owned().try_into().expect("GUID"),
@@ -105,7 +109,7 @@ fn history_state_predecessors_are_component_qualified() {
     .unwrap();
 
     let predecessor = crate::test_support::with_decode_context(|decode_ctx| {
-        graph.predecessor(decode_ctx, &second, |_| true)
+        graph.predecessor(decode_ctx, &second, |_| Ok(true))
     })
     .expect("component-qualified state chain");
     let crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor) = predecessor
@@ -1305,7 +1309,7 @@ fn predecessor_stream_refuses_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| true) else {
+    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| Ok(true)) else {
         panic!("expected predecessor stream refusal");
     };
     assert!(matches!(error, CodecError::ResourceLimit(failure)
@@ -1326,7 +1330,7 @@ fn predecessor_visited_scope_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| false) else {
+    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| Ok(false)) else {
         panic!("expected predecessor visited-scope refusal");
     };
     assert!(matches!(error, CodecError::ResourceLimit(failure)
@@ -1853,4 +1857,30 @@ fn projected_feature_name_refuses_retained_limit() {
 #[test]
 fn projected_feature_source_tag_refuses_retained_limit() {
     assert_projected_feature_refusal("f3d projected feature source tag", true);
+}
+
+#[test]
+fn predecessor_predicate_preserves_resource_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let scopes = history_graph_limit_fixture();
+    let graph = crate::test_support::with_decode_context(|decode_ctx| {
+        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])
+    })
+    .unwrap();
+    let projected = std::collections::HashSet::from([scopes[0].id.as_str()]);
+    let operation = "find F3D projected predecessor test scope";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| {
+            graph.predecessor(ctx, &scopes[1], |candidate| {
+                ctx.contains_hash_set(&projected, candidate.id.as_str(), operation)
+            })
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits)
+    );
 }

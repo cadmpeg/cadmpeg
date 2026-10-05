@@ -19,7 +19,7 @@ fn xref_design_text_refuses_retained_transition() {
 
 #[test]
 fn xref_reference_text_refuses_retained_transition() {
-    let reference = serde_json::from_slice::<crate::xref::ReferenceJson>(br#"{"type":"XREF","from":"root.f3d","relativePath":"part.f3d","properties":[{"neutronRole":{"dataType":"STRING","value":"role"}},{"neutronData":{"dataType":"STRING","value":"data"}}]}"#).unwrap();
+    let mut reference = serde_json::from_slice::<crate::xref::ReferenceJson>(br#"{"type":"XREF","from":"root.f3d","relativePath":"part.f3d","properties":[{"neutronRole":{"dataType":"STRING","value":"role"}},{"neutronData":{"dataType":"STRING","value":"data"}}]}"#).unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64_from_index("f3d:xref:reference#0".len());
     crate::test_support::with_decode_policy(&policy, |ctx| {

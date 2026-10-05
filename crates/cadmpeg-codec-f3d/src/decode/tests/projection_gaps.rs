@@ -1284,3 +1284,111 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     assert_eq!(ir.model.faces[0].color, Some(material));
     assert_eq!(ir.model.faces[1].color, None);
 }
+
+#[test]
+fn projection_body_binding_scan_preserves_work_refusal() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    native.design_body_bindings.push(
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire::<String> {
+            id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 0,
+            asm_body_key_offset: 0,
+            entity_suffix: 1,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.snapshot.smb".into(),
+            blob_name_offset: 16,
+            body: None,
+        })
+        .unwrap(),
+    );
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D projection design_body_bindings",
+        0,
+        |ctx| super::super::design_projection_gaps(ctx, &ir, &native),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D projection design_body_bindings")
+    );
+}
+
+#[test]
+fn appearance_attribute_guid_scan_preserves_work_refusal() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    use cadmpeg_ir::ids::{AttributeId, FaceId};
+
+    let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let ir = std::cell::RefCell::new(cadmpeg_ir::document::CadIr::empty());
+    ir.borrow_mut().model.attributes.push(SourceAttribute {
+        id: AttributeId::mint("f3d:test:attribute#appearance-guid").unwrap(),
+        target: AttributeTarget::Face(FaceId::mint("f3d:test:face#appearance-guid").unwrap()),
+        name: "ATTRIB_CUSTOM-attrib".into(),
+        values: vec![
+            AttributeValue::String("NEUTRON_Material_attrib_def".into()),
+            AttributeValue::String(face_guid.into()),
+        ],
+    });
+    let assignment = crate::materials::FaceAppearanceAssignment {
+        face_guid: face_guid.into(),
+        visual_guid: crate::records::references::DesignVisualToken::try_from(
+            "11111111-2222-3333-4444-555555555555_Post2015".to_owned(),
+        )
+        .unwrap(),
+        color: None,
+    };
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D face material GUID case",
+        0,
+        |ctx| {
+            let mut ir = ir.borrow_mut();
+            super::super::resolve_face_appearance_bindings(
+                ctx,
+                &mut *ir,
+                std::slice::from_ref(&assignment),
+            )
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D face material GUID case")
+    );
+}
+
+#[test]
+fn repeated_face_assignment_token_comparison_preserves_work_refusal() {
+    let visual_guid = crate::records::references::DesignVisualToken::try_from(
+        "11111111-2222-3333-4444-555555555555_Post2015".to_owned(),
+    )
+    .unwrap();
+    let assignments = [
+        crate::materials::FaceAppearanceAssignment {
+            face_guid: "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb".into(),
+            visual_guid: visual_guid.clone(),
+            color: None,
+        },
+        crate::materials::FaceAppearanceAssignment {
+            face_guid: "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb".into(),
+            visual_guid,
+            color: None,
+        },
+    ];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D face appearance assignment visual tokens",
+        0,
+        |ctx| {
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            super::super::resolve_face_appearance_bindings(ctx, &mut ir, &assignments)
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "compare F3D face appearance assignment visual tokens")
+    );
+}

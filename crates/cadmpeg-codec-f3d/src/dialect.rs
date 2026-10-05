@@ -139,8 +139,12 @@ impl F3dDialect {
         const OPERATION: &str = "classify F3D manifest dialect";
         let mut declared = BTreeMap::new();
         let key = cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION);
-        ctx.admit_btree_entry(&declared, &key, OPERATION)?;
-        declared.insert(key, ctx.copy_retained_text(version, OPERATION)?);
+        ctx.insert_btree_map(
+            &mut declared,
+            key,
+            ctx.copy_retained_text(version, OPERATION)?,
+            OPERATION,
+        )?;
         let dialect = if version == TOP_LEVEL_MANIFEST_VERSION {
             Self::Manifest3200
         } else {
@@ -162,11 +166,12 @@ impl F3dDialect {
         const OPERATION: &str = "classify F3Z root document members";
         let mut declared = BTreeMap::new();
         let key = cadmpeg_core::nonblank_const!(DECLARED_ROOT_DOCUMENT_MEMBERS);
-        ctx.admit_btree_entry(&declared, &key, OPERATION)?;
-        declared.insert(
+        ctx.insert_btree_map(
+            &mut declared,
             key,
             ctx.join_retained(root_document_members, MEMBER_SEPARATOR, OPERATION)?,
-        );
+            OPERATION,
+        )?;
         Self::F3zMultiDocument.matched(ctx, declared)
     }
 
@@ -206,7 +211,7 @@ pub(crate) fn classify_layers(
                 Ok(()) => Ok(()),
                 Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(layer)) => Err(layer),
                 Err(cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit)) => {
-                    return Err(limit.into())
+                    return Err(CodecError::ResourceLimit(limit))
                 }
             }
         {
@@ -221,12 +226,19 @@ pub(crate) fn classify_layers(
         }
         Ok(())
     };
-    let instance = if scan.breps.len() + crate::container::text_brep_names(scan).count() > 1 {
+    let text_brep_count =
+        crate::container::text_brep_names(ctx, scan)?.try_fold(0usize, |count, name| {
+            name?;
+            count
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("count F3D text BREP carriers", 0, u64::MAX))
+        })?;
+    let instance = if scan.breps.len() + text_brep_count > 1 {
         LayerInstance::Tagged
     } else {
         LayerInstance::Sole
     };
-    for brep in &scan.breps {
+    for brep in ctx.admit_iter(&scan.breps, "classify F3D BREP dialect layers")? {
         let header = brep.kernel.as_ref().map_or(
             cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
             crate::container::KernelFraming::as_header_ref,
@@ -235,27 +247,29 @@ pub(crate) fn classify_layers(
             ctx, header, &brep.name, instance,
         )?)?;
     }
-    for name in crate::container::text_brep_names(scan) {
-        let matched = match scan.text_breps.get(name) {
-            Some(crate::container::TextBrepFraming::Parsed(stream)) => {
-                let header = stream.header.as_kernel_header(ctx)?;
-                let reference = match stream.terminator {
-                    cadmpeg_asm::sat::Terminator::Asm => {
-                        cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)
-                    }
-                    cadmpeg_asm::sat::Terminator::Acis => {
-                        cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
-                    }
-                };
-                cadmpeg_asm::dialect::classify_layer(ctx, reference, name, instance)?
-            }
-            _ => cadmpeg_asm::dialect::classify_layer(
-                ctx,
-                cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
-                name,
-                instance,
-            )?,
-        };
+    for name in crate::container::text_brep_names(ctx, scan)? {
+        let name = name?;
+        let matched =
+            match ctx.get_hash_map(&scan.text_breps, name, "look up F3D text-BREP framing")? {
+                Some(crate::container::TextBrepFraming::Parsed(stream)) => {
+                    let header = stream.header.as_kernel_header(ctx)?;
+                    let reference = match stream.terminator {
+                        cadmpeg_asm::sat::Terminator::Asm => {
+                            cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)
+                        }
+                        cadmpeg_asm::sat::Terminator::Acis => {
+                            cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
+                        }
+                    };
+                    cadmpeg_asm::dialect::classify_layer(ctx, reference, name, instance)?
+                }
+                _ => cadmpeg_asm::dialect::classify_layer(
+                    ctx,
+                    cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+                    name,
+                    instance,
+                )?,
+            };
         add_layer(matched)?;
     }
     Ok((layers, losses))
@@ -267,15 +281,18 @@ pub(crate) fn dialect_losses(
     layers: &DialectLayers,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    for matched in layers.iter().filter(|matched| matched.format() == FORMAT) {
+    for matched in ctx.admit_iter(layers, "collect F3D primary dialect losses")? {
+        if matched.format() != FORMAT {
+            continue;
+        }
         if let Some(loss) = dialect_loss(ctx, matched)? {
             ctx.push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
         }
     }
-    for matched in layers
-        .iter()
-        .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
-    {
+    for matched in ctx.admit_iter(layers, "collect F3D kernel dialect losses")? {
+        if matched.format() != cadmpeg_asm::dialect::FORMAT {
+            continue;
+        }
         if let Some(loss) = kernel_dialect_loss(ctx, matched)? {
             ctx.push_vec(&mut losses, loss, "collect F3D dialect recovery losses")?;
         }

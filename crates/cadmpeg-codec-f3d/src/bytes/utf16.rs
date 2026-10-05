@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validated UTF-16 text borrowed from a counted source field.
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use std::fmt::Write;
 
@@ -12,18 +12,29 @@ pub(crate) struct Utf16View<'a> {
 }
 
 impl<'a> Utf16View<'a> {
-    pub(crate) fn new(raw: &'a [u8]) -> Option<Self> {
+    /// Validate counted UTF-16LE code units after admitting their scan.
+    pub(crate) fn new(ctx: &DecodeContext<'_>, raw: &'a [u8]) -> Result<Option<Self>, CodecError> {
         if !raw.len().is_multiple_of(2) {
-            return None;
+            return Ok(None);
         }
+        ctx.charge_work(u64_from_index(raw.len()), "validate F3D UTF-16 text")?;
         let mut view = View::over_retained(raw);
         let mut utf8_len = 0usize;
         for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-            utf8_len = utf8_len.checked_add(character.ok()?.len_utf8())?;
+            let Ok(character) = character else {
+                return Ok(None);
+            };
+            // Each code unit decodes to at most three UTF-8 bytes per two
+            // input bytes, so the sum cannot exceed `isize::MAX`.
+            let Some(next) = utf8_len.checked_add(character.len_utf8()) else {
+                return Ok(None);
+            };
+            utf8_len = next;
         }
-        Some(Self { raw, utf8_len })
+        Ok(Some(Self { raw, utf8_len }))
     }
 
+    /// The decoded characters. Consumers admit their own traversal.
     pub(crate) fn chars(self) -> impl Iterator<Item = char> + 'a {
         let mut view = View::over_retained(self.raw);
         // Construction validates every code unit before this iterator is available.
@@ -32,28 +43,50 @@ impl<'a> Utf16View<'a> {
     pub(crate) fn is_empty(self) -> bool {
         self.utf8_len == 0
     }
+    /// Whether this is a 36-character hyphenated hexadecimal GUID. The check
+    /// reads at most 36 characters.
     pub(crate) fn is_guid_hyphenated(self) -> bool {
         self.len() == 36 && self.guid_prefix()
     }
+    /// UTF-8 length of the decoded text.
     pub(crate) fn len(self) -> usize {
         self.utf8_len
     }
-    pub(crate) fn eq_str(self, text: &str) -> bool {
-        self.chars().eq(text.chars())
+    /// Whether the decoded text equals `text`. Unequal lengths need no scan.
+    pub(crate) fn eq_str(self, ctx: &DecodeContext<'_>, text: &str) -> Result<bool, CodecError> {
+        if self.len() != text.len() {
+            return Ok(false);
+        }
+        ctx.charge_work(u64_from_index(text.len()), "compare F3D UTF-16 text")?;
+        Ok(self.chars().eq(text.chars()))
     }
-    pub(crate) fn eq_ignore_ascii_case(self, other: Self) -> bool {
-        self.chars()
+    /// Whether both texts are equal under ASCII case folding. Unequal lengths
+    /// need no scan.
+    pub(crate) fn eq_ignore_ascii_case(
+        self,
+        ctx: &DecodeContext<'_>,
+        other: Self,
+    ) -> Result<bool, CodecError> {
+        if self.len() != other.len() {
+            return Ok(false);
+        }
+        ctx.charge_work(u64_from_index(self.len()), "compare F3D UTF-16 text")?;
+        Ok(self
+            .chars()
             .map(|character| character.to_ascii_lowercase())
             .eq(other
                 .chars()
-                .map(|character| character.to_ascii_lowercase()))
+                .map(|character| character.to_ascii_lowercase())))
     }
+    /// Whether this is a 36- to 38-character GUID-like token. The check reads
+    /// at most 38 characters.
     pub(crate) fn is_guid_relaxed(self) -> bool {
         matches!(self.len(), 36..=38)
             && self.chars().all(|character| {
                 character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
             })
     }
+    /// Whether the first 36 characters form a hyphenated hexadecimal GUID.
     fn guid_prefix(self) -> bool {
         self.len() >= 36
             && self.chars().take(36).enumerate().all(|(index, character)| {
@@ -64,6 +97,8 @@ impl<'a> Utf16View<'a> {
                 }
             })
     }
+    /// Whether this is a GUID followed by `_urn:`. The check reads at most 41
+    /// characters.
     pub(crate) fn is_guid_urn_role(self) -> bool {
         self.guid_prefix() && self.chars().skip(36).take(5).eq("_urn:".chars())
     }
@@ -114,14 +149,82 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
+    fn units(text: &str) -> Vec<u8> {
+        text.encode_utf16().flat_map(u16::to_le_bytes).collect()
+    }
+
+    #[test]
+    fn utf16_validation_refuses_before_scanning() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        assert!(
+            matches!(Utf16View::new(&ctx, &[b'A', 0]), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "validate F3D UTF-16 text")
+        );
+    }
+
+    #[test]
+    fn utf16_comparisons_charge_only_equal_lengths() {
+        let raw = units("Ab");
+        let longer = units("aBc");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Exactly the two validations: 4 + 6 bytes.
+        policy.limits.max_work_units = 10;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        let view = Utf16View::new(&ctx, &raw).unwrap().unwrap();
+        let longer = Utf16View::new(&ctx, &longer).unwrap().unwrap();
+        assert!(!view.eq_str(&ctx, "Abc").unwrap());
+        assert!(!view.eq_ignore_ascii_case(&ctx, longer).unwrap());
+        assert!(
+            matches!(view.eq_str(&ctx, "Ab"), Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "compare F3D UTF-16 text")
+        );
+    }
+
+    #[test]
+    fn utf16_guid_shapes_need_no_admission() {
+        let guid = "01234567-89AB-CDEF-0123-456789ABCDEF";
+        crate::test_support::with_decode_context(|ctx| {
+            let raw = units(guid);
+            let view = Utf16View::new(ctx, &raw).unwrap().unwrap();
+            assert!(view.is_guid_hyphenated());
+            assert!(view.is_guid_relaxed());
+            let role = units(&format!("{guid}_urn:"));
+            assert!(Utf16View::new(ctx, &role)
+                .unwrap()
+                .unwrap()
+                .is_guid_urn_role());
+            for text in [
+                format!("{}😀", "0".repeat(32)),
+                format!("{}é", "0".repeat(34)),
+            ] {
+                assert_eq!(text.len(), 36);
+                let raw = units(&text);
+                let view = Utf16View::new(ctx, &raw).unwrap().unwrap();
+                assert!(!view.is_guid_hyphenated());
+                assert!(!view.is_guid_relaxed());
+            }
+            let unicode_role = units(&format!("{guid}_urn😀"));
+            assert!(!Utf16View::new(ctx, &unicode_role)
+                .unwrap()
+                .unwrap()
+                .is_guid_urn_role());
+        });
+    }
+
     #[test]
     fn borrowed_utf16_retained_copy_refuses_exact_utf8_budget() {
-        let view = Utf16View::new(&[0, 8]).unwrap();
+        let raw = [0, 8];
         for retained in [2, 3] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = retained;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let view = Utf16View::new(&ctx, &raw).unwrap().unwrap();
             let result = view.to_retained(&ctx, "F3D UTF-16 test");
             if retained == 2 {
                 assert!(matches!(result, Err(CodecError::ResourceLimit(limit))

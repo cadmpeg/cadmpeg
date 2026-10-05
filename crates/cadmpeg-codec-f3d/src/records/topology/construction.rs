@@ -35,6 +35,25 @@ pub(crate) enum DesignConstructionOperandRole {
     },
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandRole {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let bytes = match self {
+            Self::Other(role) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&role.raw(), ctx, operation)?
+            }
+            Self::ExtrudeFaces { .. } => 2,
+            Self::ExtrudeBodiesA | Self::ExtrudeBodiesB | Self::ExtrudeProfile => 0,
+        };
+        1_u64
+            .checked_add(bytes)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
+}
+
 impl DesignConstructionOperandRole {
     /// The source role code.
     fn source(self) -> DesignOperandRole {
@@ -90,6 +109,34 @@ pub(crate) struct DesignConstructionOperandGroup {
     paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
     pub(crate) paired_byte_offset: u64,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandGroup {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            (
+                &self.id,
+                &self.scope_record_index,
+                &self.scope_reference_ordinal,
+                &self.record_index,
+                &self.byte_offset,
+                &self.class_tag,
+            ),
+            (
+                &self.members,
+                &self.lost_edge_references,
+                &self.frame,
+                &self.operand_role,
+                &self.paired_class_tag,
+                &self.paired_byte_offset,
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 #[cfg(test)]
@@ -425,6 +472,33 @@ pub(crate) struct DesignConstructionOperandGroupFrame {
     opaque_scalar: cadmpeg_ir::scalar::NonNegativeReal,
     /// Boolean tail variant.
     pub(crate) variant: bool,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandGroupFrame {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            (
+                &self.member_count_offset,
+                &self.auxiliary_records,
+                &self.auxiliary_paths,
+                &self.trailing_records,
+                &self.trailing_transforms,
+                &self.trailing_dual_transforms,
+            ),
+            (
+                &self.trailing_flags,
+                &self.opaque_index,
+                &self.opaque_index_offset,
+                &self.opaque_scalar.get(),
+                &self.variant,
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 #[cfg(test)]
@@ -825,6 +899,23 @@ pub(crate) struct DesignConstructionOperandFlag {
     pub(crate) value_offset: u64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandFlag {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            &self.record_index,
+            &self.byte_offset,
+            &self.class_tag,
+            &self.value,
+            &self.value_offset,
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 /// Affine placement named by a construction-operand group's trailing run.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignConstructionOperandTransformDraft")]
@@ -836,6 +927,22 @@ pub(crate) struct DesignConstructionOperandTransform {
     pub(crate) transform: SketchPlacementMatrix,
     /// Per-file dynamic following-record class tag.
     pub(crate) following_class_tag: DesignClassTag,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandTransform {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            &self.frame,
+            &self.class_tag,
+            &self.transform,
+            &self.following_class_tag,
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 #[cfg(test)]
@@ -1007,6 +1114,29 @@ pub(crate) struct DesignConstructionOperandDualTransform {
     pub(crate) second_transform_offset: u64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandDualTransform {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            (
+                &self.record_index,
+                &self.byte_offset,
+                &self.class_tag,
+                &self.first_transform,
+            ),
+            (
+                &self.first_transform_offset,
+                &self.second_transform,
+                &self.second_transform_offset,
+            ),
+        )
+            .decode_cost(ctx, operation)
+    }
+}
+
 /// One persistent-entity step in a construction operand's selection path.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignConstructionOperandPathWire")]
@@ -1022,6 +1152,24 @@ pub(crate) struct DesignConstructionOperandPath {
     pub(crate) scope_record_index: u32,
     /// Per-file dynamic following-record class tag.
     pub(crate) following_class_tag: DesignClassTag,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionOperandPath {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (
+            &self.frame,
+            &self.class_tag,
+            &self.entity_ref,
+            &self.placement,
+            &self.scope_record_index,
+            &self.following_class_tag,
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 #[cfg(test)]
@@ -1338,6 +1486,22 @@ impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
 pub(crate) enum DesignConstructionPathPlacement {
     Transform(SketchPlacementMatrix),
     Compact(bool),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignConstructionPathPlacement {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let bytes = match self {
+            Self::Transform(transform) => transform.decode_cost(ctx, operation)?,
+            Self::Compact(value) => value.decode_cost(ctx, operation)?,
+        };
+        1_u64
+            .checked_add(bytes)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+    }
 }
 
 /// Nested identity chain named by a construction-operand group.

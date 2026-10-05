@@ -16,7 +16,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 mod graph_ops;
 
@@ -26,8 +26,15 @@ fn merge_brep_counts(
     source: BTreeMap<String, usize>,
 ) -> Result<(), CodecError> {
     for (kind, count) in source {
-        ctx.admit_btree_entry(target, &kind, "merge F3D BREP statistic kinds")?;
-        *target.entry(kind).or_default() += count;
+        if let Some(total) =
+            ctx.get_mut_btree_map(target, kind.as_str(), "merge F3D BREP statistic kinds")?
+        {
+            *total = total.checked_add(count).ok_or_else(|| {
+                ctx.refuse_codec_limit("merge F3D BREP statistic counts", 0, u64::MAX)
+            })?;
+        } else {
+            ctx.insert_btree_map(target, kind, count, "merge F3D BREP statistic kinds")?;
+        }
     }
     Ok(())
 }
@@ -87,7 +94,7 @@ impl Brep {
         let mut persistent_design_links = Vec::new();
         let mut persistent_subentity_tags = Vec::new();
         let mut creation_timestamps = Vec::new();
-        for attribute in &asm.attributes {
+        for attribute in ctx.admit_iter(&asm.attributes, "scan F3D BREP attributes")? {
             if let Some(link) = sketch_curve_link(ctx, attribute)? {
                 ctx.push_vec(
                     &mut sketch_curve_links,
@@ -95,20 +102,16 @@ impl Brep {
                     "collect F3D sketch curve links",
                 )?;
             }
-            for link in self::persistent_design_links(ctx, attribute)? {
-                ctx.push_vec(
-                    &mut persistent_design_links,
-                    link,
-                    "collect F3D persistent design links",
-                )?;
-            }
-            for tag in self::persistent_subentity_tags(ctx, attribute)? {
-                ctx.push_vec(
-                    &mut persistent_subentity_tags,
-                    tag,
-                    "collect F3D persistent subentity tags",
-                )?;
-            }
+            ctx.extend_vec(
+                &mut persistent_design_links,
+                self::persistent_design_links(ctx, attribute)?,
+                "collect F3D persistent design links",
+            )?;
+            ctx.extend_vec(
+                &mut persistent_subentity_tags,
+                self::persistent_subentity_tags(ctx, attribute)?,
+                "collect F3D persistent subentity tags",
+            )?;
             if let Some(timestamp) = creation_timestamp(ctx, attribute)? {
                 ctx.push_vec(
                     &mut creation_timestamps,
@@ -130,14 +133,14 @@ impl Brep {
     pub(crate) fn body_selectors(
         &self,
         ctx: &DecodeContext<'_>,
-    ) -> Result<HashMap<BodyId, u64>, CodecError> {
-        let ordinal_mode = self
-            .asm
-            .body_native_keys
-            .iter()
-            .all(|body| body.asm_body_key.is_none());
-        let mut selectors = HashMap::new();
-        for body in &self.asm.body_native_keys {
+    ) -> Result<BTreeMap<BodyId, u64>, CodecError> {
+        let ordinal_mode = ctx.all_by(
+            &self.asm.body_native_keys,
+            |body| Ok(body.asm_body_key.is_none()),
+            "scan F3D ordinal body key mode",
+        )?;
+        let mut selectors = BTreeMap::new();
+        for body in ctx.admit_iter(&self.asm.body_native_keys, "scan F3D body keys")? {
             let selector = if ordinal_mode {
                 Some(u64::from(body.body_ordinal))
             } else {
@@ -150,8 +153,12 @@ impl Brep {
                 .body
                 .try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
 
-            ctx.reserve_map(&mut selectors, 1, "index F3D BREP body selectors")?;
-            selectors.insert(id, selector);
+            ctx.insert_btree_map(
+                &mut selectors,
+                id,
+                selector,
+                "index F3D BREP body selectors",
+            )?;
         }
         Ok(selectors)
     }
@@ -162,10 +169,10 @@ impl Brep {
     pub(crate) fn body_selectors_for(
         &self,
         ctx: &DecodeContext<'_>,
-        selectors: &HashSet<u64>,
-    ) -> Result<HashMap<BodyId, u64>, cadmpeg_core::CodecError> {
-        let mut resolved = HashMap::new();
-        for selector in selectors {
+        selectors: &BTreeSet<u64>,
+    ) -> Result<BTreeMap<BodyId, u64>, cadmpeg_core::CodecError> {
+        let mut resolved = BTreeMap::new();
+        for selector in ctx.admit_iter(selectors, "scan F3D body selectors")? {
             let Some(body) =
                 resolve_body_selector(ctx, self.asm.body_native_keys.iter(), *selector)?
             else {
@@ -173,8 +180,12 @@ impl Brep {
             };
             let id = (body).try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
 
-            ctx.reserve_map(&mut resolved, 1, "index F3D selected BREP bodies")?;
-            if let Some(previous) = resolved.insert(id, *selector) {
+            if let Some(previous) = ctx.insert_btree_map(
+                &mut resolved,
+                id,
+                *selector,
+                "index F3D selected BREP bodies",
+            )? {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "F3D body {} is selected by both {previous} and {selector}",
                     body.as_str()
@@ -381,13 +392,16 @@ struct SketchLinkPayload {
 /// role, form `2` as six integers with a trailing `0`, and form `0` as the five
 /// members alone. All three write the same five members in the same order, so
 /// each yields one link.
-fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
+fn sketch_link_payload(
+    ctx: &DecodeContext<'_>,
+    values: &[AttributeValue],
+) -> Result<Option<SketchLinkPayload>, CodecError> {
     let [AttributeValue::Integer(1), AttributeValue::Integer(1), AttributeValue::Integer(form), payload @ ..] =
         values
     else {
-        return None;
+        return Ok(None);
     };
-    match (*form, payload) {
+    Ok(match (*form, payload) {
         (3, [AttributeValue::String(field)]) => {
             let mut fields = field.split_ascii_whitespace();
             let (
@@ -408,16 +422,33 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
                 fields.next(),
             )
             else {
-                return None;
+                return Ok(None);
             };
             // `ref_b` reaches the full unsigned 64-bit range, so it is read
             // unsigned; every other member is signed.
             Some(SketchLinkPayload {
-                sketch_curve_id: sketch_curve_id.parse().ok()?,
-                ref_b: ref_b.parse().ok()?,
-                sense: sense.parse().ok()?,
-                role: role.parse().ok()?,
-                closure: closure.parse().ok()?,
+                sketch_curve_id: match ctx
+                    .parse_text(sketch_curve_id, "parse F3D sketch link sketch_curve_id")?
+                {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
+                ref_b: match ctx.parse_text(ref_b, "parse F3D sketch link ref_b")? {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
+                sense: match ctx.parse_text(sense, "parse F3D sketch link sense")? {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
+                role: match ctx.parse_text(role, "parse F3D sketch link role")? {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
+                closure: match ctx.parse_text(closure, "parse F3D sketch link closure")? {
+                    Ok(value) => value,
+                    Err(_) => return Ok(None),
+                },
             })
         }
         (
@@ -429,13 +460,16 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
             [AttributeValue::Integer(sketch_curve_id), AttributeValue::Integer(ref_b), AttributeValue::Integer(sense), AttributeValue::Integer(role), AttributeValue::Integer(closure)],
         ) => Some(SketchLinkPayload {
             sketch_curve_id: *sketch_curve_id,
-            ref_b: u64::try_from(*ref_b).ok()?,
+            ref_b: match u64::try_from(*ref_b) {
+                Ok(value) => value,
+                Err(_) => return Ok(None),
+            },
             sense: *sense,
             role: *role,
             closure: *closure,
         }),
         _ => None,
-    }
+    })
 }
 
 /// Locate a Fusion family marker under the caller's scan and comparison allowance.
@@ -468,7 +502,7 @@ fn sketch_curve_link(
     let Some(family) = attribute_family(ctx, attribute, "sketch_attrib_def")? else {
         return Ok(None);
     };
-    let Some(payload) = sketch_link_payload(&attribute.values[family + 1..]) else {
+    let Some(payload) = sketch_link_payload(ctx, &attribute.values[family + 1..])? else {
         return Ok(None);
     };
     Ok(Some(SketchCurveLink {
@@ -573,7 +607,7 @@ fn persistent_subentity_tags(
     };
     let mut position: usize = 0;
     let mut groups = Vec::new();
-    for ordinal in 0..group_count {
+    for ordinal in ctx.admit_iter(&(0..group_count), "visit F3D persistent subentity groups")? {
         let Some(
             [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(0), AttributeValue::Integer(reference_count)],
         ) = rest.get(position..position + 4)
@@ -716,7 +750,10 @@ fn creation_timestamp(
     let Some(AttributeValue::Float(unix_microseconds)) = attribute.values.get(family + 2) else {
         return Ok(None);
     };
-    let Some(record_index) = attribute_key(attribute).parse().ok() else {
+    let Some(record_index) = ctx
+        .parse_text(attribute_key(attribute), "parse F3D timestamp record key")?
+        .ok()
+    else {
         return Ok(None);
     };
     Ok(Some(CreationTimestamp {

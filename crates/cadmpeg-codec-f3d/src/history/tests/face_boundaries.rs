@@ -320,6 +320,37 @@ fn bounded_face_rules_refuse_collection_limit() {
 }
 
 #[test]
+fn bounded_face_boundary_checks_propagate_work_refusal() {
+    for operation in [
+        "scan F3D bounded treatment boundaries",
+        "scan F3D duplicate treatment boundaries",
+        "find F3D treatment boundary face",
+        "scan F3D treatment boundary loops",
+        "scan F3D bounded treatment edge boundaries",
+        "scan F3D bounded treatment edge loops",
+        "scan F3D bounded treatment boundary members",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |decode| {
+                let (mut identities, face) = bounded_face_rule_fixture();
+                bind_edge_identity_bounded_face_rules(
+                    decode,
+                    &mut identities,
+                    std::slice::from_ref(&face),
+                )
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
+    }
+}
+
+#[test]
 fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     let (mut identities, face) = bounded_face_rule_fixture();
     crate::test_support::with_decode_context(|decode_ctx| {
@@ -341,4 +372,34 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     })
     .unwrap();
     assert!(identities[0].resolved_edge_slots.is_empty());
+}
+
+#[test]
+fn bounded_face_identity_comparisons_propagate_work_refusal() {
+    for operation in [
+        "find F3D bounded treatment face operand",
+        "find additional F3D bounded treatment face operand",
+        "compare F3D bounded treatment operand streams",
+        "compare F3D bounded treatment operand class tags",
+        "compare F3D bounded treatment preceding faces",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |decode| {
+                let (mut identities, face) = bounded_face_rule_fixture();
+                let faces = if operation == "find additional F3D bounded treatment face operand" {
+                    vec![face.clone(), face]
+                } else {
+                    vec![face]
+                };
+                bind_edge_identity_bounded_face_rules(decode, &mut identities, &faces)
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
+    }
 }

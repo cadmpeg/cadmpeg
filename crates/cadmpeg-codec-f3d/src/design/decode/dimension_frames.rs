@@ -767,11 +767,12 @@ pub(crate) fn decode_dimension_recipe_records(
         )? {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(payload) = companion.payload() else {
             continue;
         };
@@ -1531,9 +1532,10 @@ fn bind_recipe_reference_candidates_from<'t>(
             &tag.design_references,
             &reference.design_reference,
             "find F3D dimension recipe design reference",
-        )? && owner_id
-            .is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id)))
-        {
+        )? && match owner_id {
+            Some(owner_id) => crate::ids::same_native_occurrence(ctx, &tag.id, owner_id)?,
+            None => true,
+        }) {
             continue;
         }
         let matching_selector = tag.selector == reference.selector;
@@ -1854,11 +1856,12 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
         )? {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, scope)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
             continue;
         };
@@ -2128,11 +2131,12 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
         {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, scope)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
             continue;
         };
@@ -2328,11 +2332,12 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
         {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let (intervals, _interval_storage) = annotation_intervals(
             ctx,
             stream,
@@ -3007,10 +3012,10 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
         })?;
     let mut pass_tables = None;
     let mut out = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D dimension presentation streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D dimension presentation streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
         let (_stream_reservation, stream) =
             crate::design::decode::sketch::native_scope_scoped(ctx, &entry.name)?;
         let Some(prefix) = stream.strip_suffix(BULK_STREAM_FILE) else {
@@ -3044,7 +3049,7 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
                 type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID)
             }))
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let stream_records = records.get(ctx, &entry.name, bytes)?;
         let headers = stream_records.headers_in(ctx, 0, bytes.len())?;
         let is_presentation_record = |at: &usize| -> Result<bool, CodecError> {
@@ -3466,11 +3471,12 @@ pub(crate) fn decode_dimension_locus_groups<'a>(
         )? {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, scope)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
             continue;
         };

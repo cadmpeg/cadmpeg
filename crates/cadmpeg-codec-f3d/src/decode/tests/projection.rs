@@ -148,9 +148,13 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
                 .unwrap(),
         })
     );
-    assert!(!feature_definition_is_incomplete(
-        features[0].evaluation.definition()
-    ));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            features[0].evaluation.definition()
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -421,9 +425,27 @@ fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
         )
     };
 
-    assert!(!feature_definition_is_incomplete(&native("Canvas")));
-    assert!(!feature_definition_is_incomplete(&native("Decal")));
-    assert!(feature_definition_is_incomplete(&native("Fillet")));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &native("Canvas")
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &native("Decal")
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &native("Fillet")
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -469,9 +491,13 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
         native_ref: None,
     });
 
-    assert!(!feature_definition_is_incomplete(
-        ir.model.features[0].evaluation.definition()
-    ));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            ir.model.features[0].evaluation.definition()
+        ))
+        .expect("completeness admission")
+    );
     assert_eq!(
         design_projection_gaps(&ir, &F3dNative::default()).incomplete_features,
         0
@@ -502,26 +528,46 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
     let profile_start = serde_json::json!({"kind": "profile_plane"});
     let blind = serde_json::json!({"kind": "blind", "length": 10.0});
 
-    assert!(!feature_definition_is_incomplete(&extrude(
-        sketch_profile.clone(),
-        profile_start.clone(),
-        blind.clone(),
-    )));
-    assert!(feature_definition_is_incomplete(&extrude(
-        serde_json::json!({"kind": "native", "value": "native:profile"}),
-        profile_start.clone(),
-        blind.clone(),
-    )));
-    assert!(feature_definition_is_incomplete(&extrude(
-        sketch_profile.clone(),
-        serde_json::json!({"kind": "unresolved"}),
-        blind,
-    )));
-    assert!(feature_definition_is_incomplete(&extrude(
-        sketch_profile,
-        profile_start,
-        serde_json::json!({"kind": "to_face", "face": {"kind": "unresolved"}}),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &extrude(sketch_profile.clone(), profile_start.clone(), blind.clone(),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &extrude(
+                serde_json::json!({"kind": "native", "value": "native:profile"}),
+                profile_start.clone(),
+                blind.clone(),
+            )
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &extrude(
+                sketch_profile.clone(),
+                serde_json::json!({"kind": "unresolved"}),
+                blind,
+            )
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &extrude(
+                sketch_profile,
+                profile_start,
+                serde_json::json!({"kind": "to_face", "face": {"kind": "unresolved"}}),
+            )
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -545,7 +591,12 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
             "extent": {"kind": "blind", "length": 10.0}
         }))
         .expect("complete Hole definition");
-    assert!(!feature_definition_is_incomplete(&complete));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode, &complete
+        ))
+        .expect("completeness admission")
+    );
 
     let mut missing_placement = complete.clone();
     let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -555,7 +606,13 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
         panic!("Hole definition");
     };
     *placements = None;
-    assert!(feature_definition_is_incomplete(&missing_placement));
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &missing_placement
+        ))
+        .expect("completeness admission")
+    );
 
     let mut native_support = complete.clone();
     let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -567,7 +624,13 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
     *face = Some(cadmpeg_ir::features::FaceSelection::Native(
         "native:support".into(),
     ));
-    assert!(feature_definition_is_incomplete(&native_support));
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &native_support
+        ))
+        .expect("completeness admission")
+    );
 
     let mut missing_extent = complete;
     let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -577,7 +640,13 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
         panic!("Hole definition");
     };
     *extent = None;
-    assert!(feature_definition_is_incomplete(&missing_extent));
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &missing_extent
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -634,28 +703,52 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
         })
     };
 
-    assert!(!feature_definition_is_incomplete(&surface(
-        FaceSelection::Faces(Vec::new()),
-        SurfaceContinuity::Contact,
-        Some(false),
-    )));
-    assert!(feature_definition_is_incomplete(&surface(
-        FaceSelection::Faces(Vec::new()),
-        SurfaceContinuity::Contact,
-        None,
-    )));
-    assert!(feature_definition_is_incomplete(&surface(
-        FaceSelection::Faces(Vec::new()),
-        SurfaceContinuity::Tangent,
-        Some(true),
-    )));
-    assert!(!feature_definition_is_incomplete(&surface(
-        FaceSelection::Faces(vec![
-            FaceId::mint("test:model:face#support").expect("identity grammar")
-        ]),
-        SurfaceContinuity::Curvature,
-        Some(true),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &surface(
+                FaceSelection::Faces(Vec::new()),
+                SurfaceContinuity::Contact,
+                Some(false),
+            )
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &surface(
+                FaceSelection::Faces(Vec::new()),
+                SurfaceContinuity::Contact,
+                None,
+            )
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &surface(
+                FaceSelection::Faces(Vec::new()),
+                SurfaceContinuity::Tangent,
+                Some(true),
+            )
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &surface(
+                FaceSelection::Faces(vec![
+                    FaceId::mint("test:model:face#support").expect("identity grammar")
+                ]),
+                SurfaceContinuity::Curvature,
+                Some(true),
+            )
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -694,24 +787,48 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
         }))
     };
 
-    assert!(!feature_definition_is_incomplete(&base_flange(
-        serde_json::json!({"kind": "sketch", "value": "test:model:sketch#1"}),
-    )));
-    assert!(feature_definition_is_incomplete(&base_flange(
-        serde_json::json!({"kind": "native", "value": "native:profile"}),
-    )));
-    assert!(!feature_definition_is_incomplete(&edge_flange(
-        serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
-    )));
-    assert!(feature_definition_is_incomplete(&edge_flange(
-        serde_json::json!({"kind": "native", "value": "native:edges"}),
-    )));
-    assert!(!feature_definition_is_incomplete(&hem(
-        serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
-    )));
-    assert!(feature_definition_is_incomplete(&hem(
-        serde_json::json!({"kind": "native", "value": "native:edges"}),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &base_flange(serde_json::json!({"kind": "sketch", "value": "test:model:sketch#1"}),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &base_flange(serde_json::json!({"kind": "native", "value": "native:profile"}),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &edge_flange(serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &edge_flange(serde_json::json!({"kind": "native", "value": "native:edges"}),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &hem(serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &hem(serde_json::json!({"kind": "native", "value": "native:edges"}),)
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -731,40 +848,64 @@ fn selected_face_and_edge_features_require_neutral_operands() {
         }))
     };
 
-    assert!(!feature_definition_is_incomplete(&fillet(
-        serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),
-    )));
-    assert!(feature_definition_is_incomplete(&fillet(
-        serde_json::json!({"kind": "native", "value": "native:edges"}),
-    )));
-    assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "delete_face",
-            "faces": {"kind": "faces", "value": ["test:model:face#1"]},
-            "heal": true
-        }),
-    )));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "delete_face",
-            "faces": {"kind": "native", "value": "native:faces"},
-            "heal": true
-        }),
-    )));
-    assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "offset_surface",
-            "faces": {"kind": "faces", "value": ["test:model:face#1"]},
-            "distance": 2.0
-        }),
-    )));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "offset_surface",
-            "faces": {"kind": "faces", "value": ["test:model:face#1"]},
-            "distance": null
-        }),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &fillet(serde_json::json!({"kind": "edges", "value": ["test:model:edge#1"]}),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &fillet(serde_json::json!({"kind": "native", "value": "native:edges"}),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "delete_face",
+                "faces": {"kind": "faces", "value": ["test:model:face#1"]},
+                "heal": true
+            }),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "delete_face",
+                "faces": {"kind": "native", "value": "native:faces"},
+                "heal": true
+            }),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "offset_surface",
+                "faces": {"kind": "faces", "value": ["test:model:face#1"]},
+                "distance": 2.0
+            }),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "offset_surface",
+                "faces": {"kind": "faces", "value": ["test:model:face#1"]},
+                "distance": null
+            }),)
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -774,56 +915,80 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
             .expect("construction definition")
     };
 
-    assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"definition": "form", "cages": ["test:model:subd#1"]}),
-    )));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"definition": "form", "cages": []}),
-    )));
-    assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "block",
-            "dimensions": [30.0, 40.0, 20.0],
-            "placement": [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0]
-            ],
-            "op": "join"
-        }),
-    )));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "block",
-            "dimensions": [30.0, 40.0, 20.0],
-            "placement": null,
-            "op": "join"
-        }),
-    )));
-    assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "primitive",
-            "solid": {
-                "kind": "cylinder",
-                "radius": 15.0,
-                "height": 7.0,
-                "angle": std::f64::consts::TAU
-            },
-            "op": "join"
-        }),
-    )));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "primitive",
-            "solid": {
-                "kind": "cylinder",
-                "radius": 15.0,
-                "height": 7.0,
-                "angle": std::f64::consts::TAU
-            },
-            "op": "unresolved"
-        }),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({"definition": "form", "cages": ["test:model:subd#1"]}),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({"definition": "form", "cages": []}),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "block",
+                "dimensions": [30.0, 40.0, 20.0],
+                "placement": [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0]
+                ],
+                "op": "join"
+            }),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "block",
+                "dimensions": [30.0, 40.0, 20.0],
+                "placement": null,
+                "op": "join"
+            }),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "primitive",
+                "solid": {
+                    "kind": "cylinder",
+                    "radius": 15.0,
+                    "height": 7.0,
+                    "angle": std::f64::consts::TAU
+                },
+                "op": "join"
+            }),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "primitive",
+                "solid": {
+                    "kind": "cylinder",
+                    "radius": 15.0,
+                    "height": 7.0,
+                    "angle": std::f64::consts::TAU
+                },
+                "op": "unresolved"
+            }),)
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -845,21 +1010,30 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         },
         "path": {"kind": "edges", "value": ["test:model:edge#path"]}
     }));
-    assert!(!feature_definition_is_incomplete(&sweep));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "sweep",
-            "shape": {
-                "mode": "solid",
-                "op": "join",
-                "section": {
-                    "kind": "profile",
-                    "value": {"kind": "native", "value": "native:section"}
-                }
-            },
-            "path": {"kind": "edges", "value": ["test:model:edge#path"]}
-        }),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode, &sweep
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "sweep",
+                "shape": {
+                    "mode": "solid",
+                    "op": "join",
+                    "section": {
+                        "kind": "profile",
+                        "value": {"kind": "native", "value": "native:section"}
+                    }
+                },
+                "path": {"kind": "edges", "value": ["test:model:edge#path"]}
+            }),)
+        ))
+        .expect("completeness admission")
+    );
 
     let chamfer = definition(serde_json::json!({
         "definition": "chamfer",
@@ -868,16 +1042,25 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
             "spec": {"kind": "distance", "distance": 2.0}
         }]
     }));
-    assert!(!feature_definition_is_incomplete(&chamfer));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "chamfer",
-            "groups": [{
-                "edges": {"kind": "native", "value": "native:edges"},
-                "spec": {"kind": "distance", "distance": 2.0}
-            }]
-        }),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode, &chamfer
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "chamfer",
+                "groups": [{
+                    "edges": {"kind": "native", "value": "native:edges"},
+                    "spec": {"kind": "distance", "distance": 2.0}
+                }]
+            }),)
+        ))
+        .expect("completeness admission")
+    );
 
     let combine = definition(serde_json::json!({
         "definition": "combine",
@@ -887,17 +1070,26 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         },
         "op": "cut"
     }));
-    assert!(!feature_definition_is_incomplete(&combine));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "combine",
-            "operands": {
-                "target": {"kind": "native", "value": "native:target"},
-                "tools": {"kind": "bodies", "value": ["test:model:body#tool"]}
-            },
-            "op": "cut"
-        }),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode, &combine
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "combine",
+                "operands": {
+                    "target": {"kind": "native", "value": "native:target"},
+                    "tools": {"kind": "bodies", "value": ["test:model:body#tool"]}
+                },
+                "op": "cut"
+            }),)
+        ))
+        .expect("completeness admission")
+    );
 
     let revolve = definition(serde_json::json!({
         "definition": "revolve",
@@ -915,25 +1107,34 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         },
         "op": "new_body"
     }));
-    assert!(!feature_definition_is_incomplete(&revolve));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "revolve",
-            "construction": {
-                "state": "resolved",
-                "profile": {"kind": "native", "value": "native:profile"},
-                "axis": {
-                    "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-                    "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode, &revolve
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "revolve",
+                "construction": {
+                    "state": "resolved",
+                    "profile": {"kind": "native", "value": "native:profile"},
+                    "axis": {
+                        "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                        "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+                    },
+                    "extent": {
+                        "kind": "one_sided",
+                        "termination": {"kind": "angle", "angle": std::f64::consts::PI}
+                    }
                 },
-                "extent": {
-                    "kind": "one_sided",
-                    "termination": {"kind": "angle", "angle": std::f64::consts::PI}
-                }
-            },
-            "op": "new_body"
-        }),
-    )));
+                "op": "new_body"
+            }),)
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -953,20 +1154,34 @@ fn datum_point_completeness_requires_a_resolved_construction_rule() {
             .expect("DatumPoint definition")
     };
 
-    assert!(!feature_definition_is_incomplete(&definition(Some(
-        serde_json::json!({
-            "kind": "circle_center",
-            "edge": {"kind": "edges", "value": ["test:model:edge#1"]}
-        }),
-    ))));
-    assert!(feature_definition_is_incomplete(&definition(None)));
-    assert!(feature_definition_is_incomplete(&definition(Some(
-        serde_json::json!({
-            "kind": "distance_on_edge",
-            "edge": {"kind": "native", "value": "native:edge"},
-            "fraction": 0.5
-        }),
-    ))));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(Some(serde_json::json!({
+                "kind": "circle_center",
+                "edge": {"kind": "edges", "value": ["test:model:edge#1"]}
+            }),))
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(None)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(Some(serde_json::json!({
+                "kind": "distance_on_edge",
+                "edge": {"kind": "native", "value": "native:edge"},
+                "fraction": 0.5
+            }),))
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -976,16 +1191,20 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
             .expect("datum-plane definition")
     };
 
-    assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "datum_plane",
-            "frame": {
-                "origin": {"x": 0.0, "y": 0.0, "z": 5.0},
-                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
-                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
-            }
-        }),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "datum_plane",
+                "frame": {
+                    "origin": {"x": 0.0, "y": 0.0, "z": 5.0},
+                    "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                    "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
+                }
+            }),)
+        ))
+        .expect("completeness admission")
+    );
     let three_point = |points: [serde_json::Value; 3]| {
         serde_json::json!({
             "definition": "datum_three_point_plane",
@@ -997,40 +1216,62 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
             "points": points
         })
     };
-    assert!(!feature_definition_is_incomplete(&definition(three_point(
-        std::array::from_fn(|index| serde_json::json!({
-            "kind": "historical",
-            "value": {
-                "state": "test:model:feature-input#state:1",
-                "vertex": format!("test:model:vertex#{index}"),
-                "native": format!("native:{index}")
-            }
-        })),
-    ))));
-    assert!(feature_definition_is_incomplete(&definition(three_point(
-        std::array::from_fn(
-            |index| serde_json::json!({"kind": "native", "value": format!("native:{index}")})
-        ),
-    ))));
-    assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "datum_principal_plane",
-            "plane": "top"
-        }),
-    )));
-    assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "datum_offset_plane",
-            "reference": {"reference": "feature", "feature": "test:model:feature#plane"},
-            "distance": 5.0
-        }),
-    )));
-    assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({
-            "definition": "datum_offset_plane",
-            "distance": 5.0
-        }),
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(three_point(std::array::from_fn(
+                |index| serde_json::json!({
+                    "kind": "historical",
+                    "value": {
+                        "state": "test:model:feature-input#state:1",
+                        "vertex": format!("test:model:vertex#{index}"),
+                        "native": format!("native:{index}")
+                    }
+                })
+            ),))
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(three_point(std::array::from_fn(
+                |index| serde_json::json!({"kind": "native", "value": format!("native:{index}")})
+            ),))
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "datum_principal_plane",
+                "plane": "top"
+            }),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "datum_offset_plane",
+                "reference": {"reference": "feature", "feature": "test:model:feature#plane"},
+                "distance": 5.0
+            }),)
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(serde_json::json!({
+                "definition": "datum_offset_plane",
+                "distance": 5.0
+            }),)
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -1071,10 +1312,13 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         })
     };
 
-    assert!(!feature_definition_is_incomplete(&definition(
-        construction.clone(),
-        CoilResult::NewBody {},
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(construction.clone(), CoilResult::NewBody {},)
+        ))
+        .expect("completeness admission")
+    );
 
     let mut native_placement = construction.clone();
     native_placement.placement = CoilPlacement::Native {
@@ -1083,10 +1327,13 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         ))
         .unwrap(),
     };
-    assert!(feature_definition_is_incomplete(&definition(
-        native_placement,
-        CoilResult::NewBody {},
-    )));
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(native_placement, CoilResult::NewBody {},)
+        ))
+        .expect("completeness admission")
+    );
 
     let native_target = definition(
         construction.clone(),
@@ -1095,7 +1342,13 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
             targets: BodySelection::Native("native:target".into()),
         },
     );
-    assert!(feature_definition_is_incomplete(&native_target));
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &native_target
+        ))
+        .expect("completeness admission")
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
@@ -1117,19 +1370,25 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
     assert_eq!(gaps.incomplete_features, 1);
     assert_eq!(gaps.body_selections, 1);
 
-    assert!(!feature_definition_is_incomplete(&definition(
-        construction,
-        CoilResult::Boolean {
-            operation: cadmpeg_ir::features::BooleanKind::Cut,
-            targets: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(
-                    vec![BodyId::mint("test:model:body#1").expect("identity grammar")],
-                    &cadmpeg_test_support::service_decode_context()
-                )
-                .expect("distinct bodies")
-            ),
-        },
-    )));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &definition(
+                construction,
+                CoilResult::Boolean {
+                    operation: cadmpeg_ir::features::BooleanKind::Cut,
+                    targets: BodySelection::Bodies(
+                        cadmpeg_ir::features::DistinctMembers::try_from(
+                            vec![BodyId::mint("test:model:body#1").expect("identity grammar")],
+                            &cadmpeg_test_support::service_decode_context()
+                        )
+                        .expect("distinct bodies")
+                    ),
+                },
+            )
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -1146,7 +1405,12 @@ fn draft_completeness_requires_material_side() {
             "outward": true
         }))
         .expect("complete neutral-plane Draft");
-    assert!(!feature_definition_is_incomplete(&complete));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode, &complete
+        ))
+        .expect("completeness admission")
+    );
 
     let mut incomplete = complete;
     let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1156,7 +1420,13 @@ fn draft_completeness_requires_material_side() {
         panic!("Draft definition");
     };
     *outward = None;
-    assert!(feature_definition_is_incomplete(&incomplete));
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &incomplete
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -1182,7 +1452,12 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
         "op": "join"
     }))
     .expect("resolved Loft definition");
-    assert!(!feature_definition_is_incomplete(&resolved));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode, &resolved
+        ))
+        .expect("completeness admission")
+    );
 
     let unresolved: FeatureDefinition = serde_json::from_value(serde_json::json!({
         "definition": "loft",
@@ -1197,7 +1472,13 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
         "op": "join"
     }))
     .expect("unresolved Loft definition");
-    assert!(feature_definition_is_incomplete(&unresolved));
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &unresolved
+        ))
+        .expect("completeness admission")
+    );
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
@@ -1268,8 +1549,9 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (_storage, families) = incomplete_feature_families(&ctx, &ir).unwrap();
     assert_eq!(
-        incomplete_feature_families(&ctx, &ir).unwrap(),
+        families,
         std::collections::BTreeMap::from([("EdgeFlange", 2), ("Hem", 1)])
     );
 }
@@ -1303,6 +1585,45 @@ fn incomplete_feature_family_index_refuses_collection_limit() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = incomplete_feature_families(&ctx, &ir).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index incomplete F3D feature families")
+    );
+}
+
+#[test]
+fn incomplete_feature_family_index_preserves_scoped_storage_refusal() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("synthetic:test:feature#1").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("EdgeFlange".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "EdgeFlange".into(),
+                parameters: Default::default(),
+            }),
+        ),
+        native_ref: None,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = incomplete_feature_families(&ctx, &ir).unwrap_err();
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = &error else {
+        panic!("expected resource refusal: {error}");
+    };
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index incomplete F3D feature families")
@@ -1395,23 +1716,35 @@ fn body_copy_features_require_resolved_body_selection() {
         .expect("distinct bodies"),
         native: "native:body-selection".into(),
     };
-    assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: resolved.clone(),
-        })
-    ));
-    assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::InsertBodies {
-            bodies: cadmpeg_ir::features::InsertedBodies::Resolved {
-                native: "native:body-selection".into(),
-            },
-        })
-    ));
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                bodies: resolved.clone(),
+            })
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &FeatureDefinition::Operation(FeatureOperation::InsertBodies {
+                bodies: cadmpeg_ir::features::InsertedBodies::Resolved {
+                    native: "native:body-selection".into(),
+                },
+            })
+        ))
+        .expect("completeness admission")
+    );
 
     let unresolved = BodySelection::Native("native:body-selection".into());
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies: unresolved })
-    ));
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies: unresolved })
+        ))
+        .expect("completeness admission")
+    );
 }
 
 #[test]
@@ -1431,25 +1764,349 @@ fn split_body_requires_resolved_target_and_tool_selections() {
         faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
         native: "native:tool".into(),
     };
-    assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            targets: resolved_target.clone(),
-            tools: resolved_tool,
-        })
-    ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            targets: resolved_target.clone(),
-            tools: FaceSelection::Native("native:tool".into()),
-        })
-    ));
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            targets: BodySelection::Native("native:target".into()),
-            tools: FaceSelection::Resolved {
-                faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
-                native: "native:tool".into(),
+    assert!(
+        !crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                targets: resolved_target.clone(),
+                tools: resolved_tool,
+            })
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                targets: resolved_target.clone(),
+                tools: FaceSelection::Native("native:tool".into()),
+            })
+        ))
+        .expect("completeness admission")
+    );
+    assert!(
+        crate::test_support::with_decode_context(|decode| feature_definition_is_incomplete(
+            decode,
+            &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                targets: BodySelection::Native("native:target".into()),
+                tools: FaceSelection::Resolved {
+                    faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
+                    native: "native:tool".into(),
+                },
+            })
+        ))
+        .expect("completeness admission")
+    );
+}
+
+#[test]
+fn mesh_feature_scope_search_and_tessellation_scan_preserve_work_refusal() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
+    let scope = DesignParameterScope::empty(
+        scope_id,
+        crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature,
+        10,
+    );
+    let feature = Feature {
+        id: FeatureId::mint("f3d:test:feature#mesh-search").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Base Mesh Feature".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Base Mesh Feature".into(),
+                parameters: Default::default(),
+            }),
+        ),
+        native_ref: Some(scope_id.into()),
+    };
+    let projection = MeshProjection {
+        count: 1,
+        tessellations_by_scope: std::collections::HashMap::from([(
+            ("f3d:Design/BulkStream.dat".into(), 10),
+            vec!["tessellation:one".into()],
+        )]),
+    };
+    for operation in [
+        "find F3D mesh feature scope",
+        "compare F3D mesh feature scope identities",
+        "scan F3D mesh feature tessellations",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                bind_mesh_feature_definitions(
+                    ctx,
+                    &mut [feature.clone()],
+                    std::slice::from_ref(&scope),
+                    &projection,
+                )
             },
-        })
-    ));
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
+    }
+}
+
+#[test]
+fn triangle_attribute_selector_range_refuses_work_after_valid_output() {
+    let triangles = [[0, 1, 2]];
+    crate::test_support::with_decode_context(|ctx| {
+        let attribute = crate::paramesh::triangle_domain_test_attribute(ctx)
+            .expect("triangle-domain attribute");
+        let mut unresolved = std::collections::BTreeMap::new();
+        let channels = mesh_attribute_channels(
+            ctx,
+            std::slice::from_ref(&attribute),
+            3,
+            &triangles,
+            &mut unresolved,
+        )
+        .expect("valid triangle attribute");
+        assert!(unresolved.is_empty());
+        assert_eq!(channels.len(), 1);
+        assert!(matches!(
+            wire::field::<cadmpeg_ir::tessellation::ChannelAddressing>(&channels[0], "addressing"),
+            cadmpeg_ir::tessellation::ChannelAddressing::Triangle { .. }
+        ));
+        assert_eq!(channels[0].indices(), [0]);
+    });
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D mesh triangle attribute selectors",
+        0,
+        |ctx| {
+            let attribute = crate::paramesh::triangle_domain_test_attribute(ctx)?;
+            let mut unresolved = std::collections::BTreeMap::new();
+            mesh_attribute_channels(
+                ctx,
+                std::slice::from_ref(&attribute),
+                3,
+                &triangles,
+                &mut unresolved,
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D mesh triangle attribute selectors")
+    );
+}
+
+#[test]
+fn mesh_texture_assignment_source_scan_refuses_work_after_valid_output() {
+    let textures = one_mesh_texture();
+    with_test_ctx(|ctx| {
+        let assignments = mesh_texture_assignments(ctx, Some(&[1]), &textures, 1)
+            .expect("valid mesh texture assignment");
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].triangles, [0]);
+    });
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D mesh texture assignment rows",
+        0,
+        |ctx| mesh_texture_assignments(ctx, Some(&[1]), &textures, 1).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D mesh texture assignment rows")
+    );
+}
+
+#[test]
+fn corner_shaded_mesh_admits_the_triangle_source() {
+    use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+    use cadmpeg_ir::tessellation::{ShadedTriangle, TessellationMesh};
+
+    let vertices = vec![FinitePoint3::ZERO; 3];
+    let triangles = vec![[0, 1, 2]];
+    let normals = vec![FiniteVector3::ZERO; 3];
+    let expected = TessellationMesh::CornerShadedList {
+        vertices: vertices.clone(),
+        triangles: vec![ShadedTriangle {
+            corners: [0, 1, 2],
+            normals: [FiniteVector3::ZERO; 3],
+        }],
+    };
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            super::super::corner_shaded_mesh(
+                ctx,
+                "body#7",
+                vertices.clone(),
+                triangles.clone(),
+                Some(normals.clone()),
+            )
+            .expect("valid corner-shaded mesh"),
+            expected
+        );
+    });
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D corner-shaded triangle rows",
+        0,
+        |ctx| {
+            super::super::corner_shaded_mesh(
+                ctx,
+                "body#7",
+                vertices.clone(),
+                triangles.clone(),
+                Some(normals.clone()),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D corner-shaded triangle rows")
+    );
+}
+
+#[test]
+fn corner_shaded_mesh_admits_the_normal_source() {
+    use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+
+    let vertices = vec![FinitePoint3::ZERO; 3];
+    let triangles = vec![[0, 1, 2]];
+    let normals = vec![FiniteVector3::ZERO; 3];
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::corner_shaded_mesh(
+            ctx,
+            "body#7",
+            vertices.clone(),
+            triangles.clone(),
+            Some(normals.clone()),
+        )
+        .expect("valid corner-shaded mesh");
+    });
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "scan F3D corner-shaded normal values",
+        0,
+        |ctx| {
+            super::super::corner_shaded_mesh(
+                ctx,
+                "body#7",
+                vertices.clone(),
+                triangles.clone(),
+                Some(normals.clone()),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "scan F3D corner-shaded normal values")
+    );
+}
+
+#[test]
+fn corner_shaded_mesh_output_refuses_retained_bytes() {
+    use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+
+    let vertices = vec![FinitePoint3::ZERO; 3];
+    let triangles = vec![[0, 1, 2]];
+    let normals = vec![FiniteVector3::ZERO; 3];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "collect F3D corner-shaded triangles",
+        0,
+        |ctx| {
+            super::super::corner_shaded_mesh(
+                ctx,
+                "body#7",
+                vertices.clone(),
+                triangles.clone(),
+                Some(normals.clone()),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D corner-shaded triangles")
+    );
+}
+
+#[test]
+fn corner_shaded_mesh_output_refuses_collection_items() {
+    use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+
+    let vertices = vec![FinitePoint3::ZERO; 3];
+    let triangles = vec![[0, 1, 2]];
+    let normals = vec![FiniteVector3::ZERO; 3];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D corner-shaded triangles",
+        0,
+        |ctx| {
+            super::super::corner_shaded_mesh(
+                ctx,
+                "body#7",
+                vertices.clone(),
+                triangles.clone(),
+                Some(normals.clone()),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D corner-shaded triangles")
+    );
+}
+
+#[test]
+fn corner_shaded_mesh_preserves_unshaded_and_malformed_lane_results() {
+    use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+    use cadmpeg_ir::tessellation::TessellationMesh;
+
+    let vertices = vec![FinitePoint3::ZERO; 3];
+    let triangles = vec![[0, 1, 2]];
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            super::super::corner_shaded_mesh(
+                ctx,
+                "body#7",
+                vertices.clone(),
+                triangles.clone(),
+                None,
+            )
+            .expect("valid unshaded mesh"),
+            TessellationMesh::List {
+                vertices: vertices.clone(),
+                triangles: triangles.clone(),
+            }
+        );
+
+        let error = super::super::corner_shaded_mesh(
+            ctx,
+            "body#7",
+            vertices,
+            triangles,
+            Some(Vec::<FiniteVector3>::new()),
+        )
+        .expect_err("a short corner-normal lane is malformed");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message == "paramesh body record body#7: 3 triangle corner(s) against 0 corner normal(s)"
+        ));
+    });
 }

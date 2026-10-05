@@ -515,13 +515,13 @@ impl PresentationEnvelope<'_> {
             return Ok(None);
         }
         let mut reference_at = after_token;
-        let Some(brep_container_entity) = local_reference(bytes, &mut reference_at) else {
+        let Some(brep_container_entity) = local_reference(ctx, bytes, &mut reference_at)? else {
             return Ok(None);
         };
-        if local_reference_value(bytes, &mut reference_at) != Some(LocalReference::Null) {
+        if local_reference_value(ctx, bytes, &mut reference_at)? != Some(LocalReference::Null) {
             return Ok(None);
         }
-        let Some(scene_node_entity) = local_reference(bytes, &mut reference_at) else {
+        let Some(scene_node_entity) = local_reference(ctx, bytes, &mut reference_at)? else {
             return Ok(None);
         };
         if entity_suffix.checked_add(1) != Some(scene_node_entity)
@@ -628,7 +628,7 @@ impl PresentationEnvelope<'_> {
         }
 
         let mut physical_reference_at = after_token;
-        if local_reference(bytes, &mut physical_reference_at).is_none() {
+        if local_reference(ctx, bytes, &mut physical_reference_at)?.is_none() {
             return Ok(None);
         }
         let Some(node_guid_at) = skip_zeros(bytes, physical_reference_at, end) else {
@@ -648,7 +648,7 @@ impl PresentationEnvelope<'_> {
             return Ok(None);
         }
         let mut node_reference_at = after_node_guid;
-        let Some(node_entity) = local_reference(bytes, &mut node_reference_at) else {
+        let Some(node_entity) = local_reference(ctx, bytes, &mut node_reference_at)? else {
             return Ok(None);
         };
         if entity_suffix.checked_add(1) != Some(node_entity) {
@@ -765,20 +765,30 @@ enum LocalReference {
     Target(u64),
 }
 
-fn local_reference_value(bytes: &[u8], at: &mut usize) -> Option<LocalReference> {
-    let reference = take_reference(bytes, at)?;
-    match reference {
+fn local_reference_value(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<LocalReference>, CodecError> {
+    let Some(reference) = take_reference(ctx, bytes, at)? else {
+        return Ok(None);
+    };
+    Ok(match reference {
         crate::bytes::Reference::Null => Some(LocalReference::Null),
         crate::bytes::Reference::Local { target, .. } => Some(LocalReference::Target(target)),
         _ => None,
-    }
+    })
 }
 
-fn local_reference(bytes: &[u8], at: &mut usize) -> Option<u64> {
-    match local_reference_value(bytes, at)? {
-        LocalReference::Target(target) if target != 0 => Some(target),
-        LocalReference::Null | LocalReference::Target(_) => None,
-    }
+fn local_reference(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: &mut usize,
+) -> Result<Option<u64>, CodecError> {
+    Ok(match local_reference_value(ctx, bytes, at)? {
+        Some(LocalReference::Target(target)) if target != 0 => Some(target),
+        Some(LocalReference::Null | LocalReference::Target(_)) | None => None,
+    })
 }
 
 /// The offset of the visual GUID after a record tail that starts at

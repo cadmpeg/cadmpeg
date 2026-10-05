@@ -75,7 +75,10 @@ fn resolved_body_binding(
 ) -> crate::records::bodies::DesignBodyBinding {
     crate::records::bodies::DesignBodyBinding::try_from(
         crate::records::bodies::DesignBodyBindingWire::<String> {
-            id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_body_binding_id(ctx, stream, asm_key_offset)
+                    .expect("test F3D native identity")
+            }),
             stream: stream.into(),
             pair_count: 1,
             pair_ordinal: 0,
@@ -391,7 +394,7 @@ fn definition_catalog_uses_asset_and_schema_identity() {
     }
 
     crate::test_support::with_decode_context(|ctx| {
-        let mut definitions = std::collections::HashMap::new();
+        let mut definitions = std::collections::BTreeMap::new();
         merge_definition_catalog_record(
             ctx,
             &mut definitions,
@@ -412,13 +415,13 @@ fn definition_catalog_uses_asset_and_schema_identity() {
             definition("Prism-256", "Metal/Stainless"),
         )
         .unwrap();
-        let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
-        assert_eq!(definitions[&key].category, None);
+        assert_eq!(definitions["Prism-256"]["PrismMetalSchema"], None);
 
         let mut second_schema = definition("Prism-256", "Metal/Steel");
         second_schema.schema = "GenericSchema".into();
         merge_definition_catalog_record(ctx, &mut definitions, second_schema).unwrap();
-        assert_eq!(definitions.len(), 2);
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions["Prism-256"].len(), 2);
     });
 }
 
@@ -446,7 +449,10 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     let second_body =
         cadmpeg_ir::ids::BodyId::mint("f3d:brep/second/brep:entity#1").expect("identity grammar");
     let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", second_body.as_str());
-    let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
+    let owner = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scoped_id(ctx, stream, "material-assignment", 500)
+            .expect("test F3D native identity")
+    });
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
         id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#second")
@@ -667,19 +673,45 @@ fn visual_preset_fallback_requires_one_record() {
 fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
     let mut record = vec![0; 120];
     record[102] = 2;
-    assert_eq!(super::generic_connection_delta(&record, 0), None);
+    assert_eq!(
+        super::generic_connection_delta(
+            &cadmpeg_test_support::service_decode_context(),
+            &record,
+            0,
+        )
+        .unwrap(),
+        None
+    );
 
     record[102] = 1;
     record[104..108].copy_from_slice(&1u32.to_le_bytes());
     record[108..112].copy_from_slice(&16u32.to_le_bytes());
-    assert_eq!(super::generic_connection_delta(&record, 0), None);
+    assert_eq!(
+        super::generic_connection_delta(
+            &cadmpeg_test_support::service_decode_context(),
+            &record,
+            0,
+        )
+        .unwrap(),
+        None
+    );
 }
 
 #[test]
 fn decoded_color_requires_finite_normalized_channels() {
-    assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
+    assert!(super::decoded_color(
+        &cadmpeg_test_support::service_decode_context(),
+        [0.0, 0.25, 0.5, 1.0]
+    )
+    .unwrap()
+    .is_some());
     for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
-        assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
+        assert!(super::decoded_color(
+            &cadmpeg_test_support::service_decode_context(),
+            [invalid, 0.25, 0.5, 1.0]
+        )
+        .unwrap()
+        .is_none());
     }
 }
 
@@ -726,7 +758,9 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
         );
         let record = appearance_record(schema, properties);
         assert_eq!(
-            super::appearance_base_color(&record).map(cadmpeg_ir::topology::Color::g),
+            super::appearance_base_color(&cadmpeg_test_support::service_decode_context(), &record)
+                .unwrap()
+                .map(cadmpeg_ir::topology::Color::g),
             Some(0.25),
             "{schema} selects {primary_id}"
         );
@@ -752,7 +786,9 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
     );
     let record = appearance_record("PrismOpaqueSchema", properties);
     assert_eq!(
-        super::appearance_base_color(&record).map(cadmpeg_ir::topology::Color::g),
+        super::appearance_base_color(&cadmpeg_test_support::service_decode_context(), &record)
+            .unwrap()
+            .map(cadmpeg_ir::topology::Color::g),
         Some(0.625)
     );
 }
@@ -1643,10 +1679,10 @@ fn protein_revision_suffix_distinguishes_visual_record_identity() {
     };
     assert!(
         !token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015")
-            .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17"))
+            .eq_ignore_ascii_case(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17"))
     );
     assert!(token("7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015")
-        .matches(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015")));
+        .eq_ignore_ascii_case(&token("7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015")));
     assert!(crate::records::references::DesignVisualToken::try_from(
         "not-a-guid_Post2015".to_owned()
     )
@@ -1775,3 +1811,28 @@ mod assignment_losses;
 mod limits;
 
 mod appearance_assignments;
+
+#[test]
+fn appearance_payload_comparison_preserves_work_refusal() {
+    let left = opaque_appearance("test-preset");
+    let mut right = left.clone();
+    assert!(crate::test_support::with_decode_context(|decode| {
+        super::appearance_equal(decode, &left, &right)
+    })
+    .unwrap());
+    right.name = Some("Different preset".to_owned());
+    assert!(!crate::test_support::with_decode_context(|decode| {
+        super::appearance_equal(decode, &left, &right)
+    })
+    .unwrap());
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D appearance names",
+        0,
+        |decode| super::appearance_equal(decode, &left, &right),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "compare F3D appearance names")
+    );
+}

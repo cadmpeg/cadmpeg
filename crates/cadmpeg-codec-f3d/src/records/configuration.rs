@@ -187,14 +187,15 @@ impl ConfigurationVariant {
         })
     }
 
-    pub(crate) fn parameters(&self) -> impl Iterator<Item = (&String, &ConfigurationScalar)> {
-        self.parameters
-            .iter()
-            .flat_map(|parameters| parameters.iter())
+    /// Parameter values by parameter name; empty when the variant names none.
+    pub(crate) fn parameters(&self) -> &BTreeMap<String, ConfigurationScalar> {
+        static NONE: BTreeMap<String, ConfigurationScalar> = BTreeMap::new();
+        self.parameters.as_ref().unwrap_or(&NONE)
     }
 
-    pub(crate) fn suppressed(&self) -> impl Iterator<Item = &String> {
-        self.suppressed.iter().flatten()
+    /// Names of the features this variant suppresses.
+    pub(crate) fn suppressed(&self) -> &[String] {
+        self.suppressed.as_deref().unwrap_or(&[])
     }
 
     pub(crate) fn material(&self) -> Option<&str> {
@@ -672,19 +673,32 @@ impl DesignConfiguration {
         }
     }
 
-    pub(crate) fn unknown_member_count(&self) -> usize {
+    pub(crate) fn unknown_member_count(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<usize, CodecError> {
         match &self.payload {
-            ConfigurationPayload::Rule(payload) => payload
+            ConfigurationPayload::Rule(payload) => Ok(payload
                 .keys()
                 .filter(|key| !matches!(key.as_str(), "when" | "activate"))
-                .count(),
+                .count()),
             ConfigurationPayload::Table { extensions, .. } => {
-                extensions.len()
-                    + self
-                        .variants()
-                        .iter()
-                        .map(|(_, variant)| variant.extensions.len())
-                        .sum::<usize>()
+                let operation = "count F3D configuration extension members";
+                let mut count = extensions.len();
+                for (_, variant) in ctx.admit_iter(
+                    self.variants(),
+                    "scan F3D configuration variants for members",
+                )? {
+                    let members = variant.extensions.len();
+                    count = count.checked_add(members).ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            operation,
+                            cadmpeg_core::decode::u64_from_index(count),
+                            cadmpeg_core::decode::u64_from_index(members),
+                        )
+                    })?;
+                }
+                Ok(count)
             }
         }
     }

@@ -94,7 +94,7 @@ fn native_owner_index_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::owner_indices(&ctx, ["first", "second"].into_iter()).unwrap_err();
+    let error = super::owner_indices(&ctx, &["first", "second"], |id| *id).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -115,7 +115,7 @@ fn native_owner_index_refuses_retained_key_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::owner_indices(&ctx, ["key"].into_iter())
+            super::owner_indices(&ctx, &["key"], |id| *id)
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from)
         },
@@ -124,7 +124,7 @@ fn native_owner_index_refuses_retained_key_limit() {
         error => panic!("unexpected refusal: {error:?}"),
     };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::owner_indices(&ctx, ["key"].into_iter()).unwrap_err();
+    let error = super::owner_indices(&ctx, &["key"], |id| *id).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1691,4 +1691,203 @@ fn nested_protein_decode_honors_operator_per_expand_ceiling() {
         ),
         "{error:?}"
     );
+}
+
+#[test]
+fn native_owner_lookup_preserves_work_refusal() {
+    let owners = std::collections::HashMap::from([("owner".to_owned(), 0)]);
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "find F3D native record owner",
+        0,
+        |decode| {
+            super::group_by_owner(
+                decode,
+                vec![("child", "owner")],
+                &owners,
+                1,
+                |row| row.0,
+                |row| row.1,
+            )
+            .map_err(cadmpeg_core::CodecError::from)
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "find F3D native record owner")
+    );
+}
+
+#[test]
+fn native_owner_scan_and_hash_preserve_work_refusal() {
+    for operation in ["scan F3D native owners", "index F3D native owners"] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |decode| {
+                super::owner_indices(decode, &["owner"], |id| *id)
+                    .map_err(cadmpeg_core::CodecError::from)
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
+    }
+}
+
+fn native_sketch_relation_fixture() -> crate::records::sketch_relations::SketchRelation {
+    use crate::records::sketch_relations::{
+        SketchRelation, SketchRelationDefinition, SketchRelationDraft,
+    };
+
+    SketchRelation::try_new(SketchRelationDraft {
+        id: "f3d:test:sketch-relation#1".into(),
+        record_index: 1,
+        class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned()).unwrap(),
+        byte_offset: 0,
+        state_offset: 0,
+        owner_reference: 1,
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::try_from("0_1").unwrap()),
+        auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
+        rectangular_counted_reference_count: None,
+        members: Vec::new().try_into().unwrap(),
+        owner_reference_offset: 0,
+        definition: SketchRelationDefinition::new(0, None).unwrap(),
+        entity_genesis: None,
+        return_members: Vec::new().try_into().unwrap(),
+        raw_bytes: vec![0; 160],
+    })
+    .unwrap()
+}
+
+fn native_history_namespace() -> cadmpeg_ir::NativeNamespace {
+    use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmHistory, AsmTopologyCache};
+
+    let history_id = "f3d:test:history#1";
+    let state_id = "f3d:test:state#1";
+    let history = AsmHistory {
+        id: history_id.into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: Vec::new(),
+    };
+    let state = AsmDeltaState {
+        id: state_id.into(),
+        parent: history_id.into(),
+        byte_offset: 0,
+        state_id: 1,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: 0,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        entity_versions: Vec::new(),
+        topology_cache: AsmTopologyCache::Absent,
+        transition: None,
+    };
+    let board = AsmBulletinBoard {
+        id: "f3d:test:board#1".into(),
+        parent: state_id.into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 0,
+        changes: Vec::new(),
+    };
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::test_support::with_decode_context(|ctx| {
+        namespace
+            .set_arena(ctx, "asm_histories", &[history])
+            .unwrap();
+        namespace
+            .set_arena(ctx, "asm_delta_states", &[state])
+            .unwrap();
+        namespace
+            .set_arena(ctx, "asm_bulletin_boards", &[board])
+            .unwrap();
+    });
+    namespace
+}
+
+#[test]
+fn native_sketch_relation_collection_preserves_work_refusal() {
+    let wire = super::SketchRelationSerde::from(native_sketch_relation_fixture());
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::test_support::with_decode_context(|ctx| {
+        namespace
+            .set_arena(ctx, "sketch_relations", &[wire])
+            .unwrap();
+    });
+
+    let loaded = crate::test_support::with_decode_context(|ctx| {
+        super::F3dNative::load_charged(ctx, &namespace)
+    })
+    .unwrap();
+    assert_eq!(loaded.sketch_relations.len(), 1);
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "load sketch relations",
+        0,
+        |ctx| super::F3dNative::load_charged(ctx, &namespace).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "load sketch relations"
+    ));
+}
+
+#[test]
+fn native_board_attachment_collection_preserves_work_refusal() {
+    let namespace = native_history_namespace();
+    let loaded = crate::test_support::with_decode_context(|ctx| {
+        super::F3dNative::load_charged(ctx, &namespace)
+    })
+    .unwrap();
+    assert_eq!(loaded.asm_histories.len(), 1);
+    assert_eq!(loaded.asm_histories[0].states.len(), 1);
+    assert_eq!(loaded.asm_histories[0].states[0].bulletin_boards.len(), 1);
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "attach F3D history boards",
+        0,
+        |ctx| super::F3dNative::load_charged(ctx, &namespace).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "attach F3D history boards"
+    ));
+}
+
+#[test]
+fn native_state_attachment_collection_preserves_work_refusal() {
+    let namespace = native_history_namespace();
+    let loaded = crate::test_support::with_decode_context(|ctx| {
+        super::F3dNative::load_charged(ctx, &namespace)
+    })
+    .unwrap();
+    assert_eq!(loaded.asm_histories.len(), 1);
+    assert_eq!(loaded.asm_histories[0].states.len(), 1);
+    assert_eq!(loaded.asm_histories[0].states[0].bulletin_boards.len(), 1);
+
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "attach F3D history states",
+        0,
+        |ctx| super::F3dNative::load_charged(ctx, &namespace).map(|_| ()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "attach F3D history states"
+    ));
 }

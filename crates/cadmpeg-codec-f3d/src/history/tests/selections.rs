@@ -31,6 +31,7 @@ use crate::history::selection::complete_compact_edge_treatment_deletions;
 use crate::history::selection::entity_selection_face_candidates;
 use crate::history::singleton_body_revision_across_state_chain;
 use crate::history::singleton_revised_input_body_across_state_chain;
+use crate::history::stable_ref;
 use crate::history::TopologyStableBodyRevision;
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
@@ -552,11 +553,59 @@ fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
             None
         );
     });
-    assert_eq!(
-        historical_body_slot("f3d:history-input:body#80:escaped-feature:35:2"),
-        Some(2)
-    );
-    assert_eq!(historical_body_slot("f3d:brep:entity#2"), None);
+    with_history_decode_context(|ctx| {
+        assert_eq!(
+            historical_body_slot(ctx, "f3d:history-input:body#80:escaped-feature:35:2").unwrap(),
+            Some(2)
+        );
+        assert_eq!(
+            historical_body_slot(ctx, "f3d:brep:entity#2").unwrap(),
+            None
+        );
+    });
+}
+
+#[test]
+fn historical_body_slot_text_queries_refuse_work_limits() {
+    for operation in [
+        "strip F3D historical body identity prefix",
+        "split F3D historical body slot",
+        "parse F3D historical body slot",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                historical_body_slot(ctx, "f3d:history-input:body#80:escaped-feature:35:2")
+                    .map(|_| ())
+            },
+        );
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+    }
+}
+
+#[test]
+fn stable_ref_text_queries_refuse_work_limits() {
+    with_history_decode_context(|ctx| {
+        assert_eq!(stable_ref(ctx, "f3d:brep:entity#7:tail").unwrap(), Some(7));
+        assert_eq!(stable_ref(ctx, "f3d:brep:entity#invalid").unwrap(), None);
+        assert_eq!(stable_ref(ctx, "f3d:brep:entity").unwrap(), None);
+    });
+    for operation in [
+        "split F3D stable entity identity",
+        "parse F3D stable entity reference",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| stable_ref(ctx, "f3d:brep:entity#7").map(|_| ()),
+        );
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+    }
 }
 
 fn with_combine_collection_limit<T>(
@@ -877,7 +926,8 @@ fn combine_external_tools_refuse_collection_limit() {
     });
     assert!(matches!(
         result,
-        Err(cadmpeg_core::CodecError::ResourceLimit { .. })
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "collect F3D Combine external tools"
     ));
 }
 
@@ -919,18 +969,26 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
 fn active_brep_face_namespace_accepts_default_or_matching_named_source() {
     use cadmpeg_ir::ids::FaceId;
 
-    assert!(active_brep_face_matches_source(
-        &FaceId::mint("f3d:brep:entity#17").expect("identity grammar"),
-        "history"
-    ));
-    assert!(active_brep_face_matches_source(
-        &FaceId::mint("f3d:brep/history/brep:entity#17").expect("identity grammar"),
-        "history"
-    ));
-    assert!(!active_brep_face_matches_source(
-        &FaceId::mint("f3d:brep/other/brep:entity#17").expect("identity grammar"),
-        "history"
-    ));
+    crate::test_support::with_decode_context(|decode| {
+        assert!(active_brep_face_matches_source(
+            decode,
+            &FaceId::mint("f3d:brep:entity#17").expect("identity grammar"),
+            "history"
+        )
+        .unwrap());
+        assert!(active_brep_face_matches_source(
+            decode,
+            &FaceId::mint("f3d:brep/history/brep:entity#17").expect("identity grammar"),
+            "history"
+        )
+        .unwrap());
+        assert!(!active_brep_face_matches_source(
+            decode,
+            &FaceId::mint("f3d:brep/other/brep:entity#17").expect("identity grammar"),
+            "history"
+        )
+        .unwrap());
+    });
 }
 
 #[test]
@@ -1062,6 +1120,77 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
             .collect::<Vec<_>>(),
         [Some(5), Some(6), Some(7)]
     );
+}
+
+fn snapshot_revision_scan_state() -> AsmDeltaState {
+    let state_id = "snapshot-state".to_string();
+    let board_id = "snapshot-board".to_string();
+    AsmDeltaState {
+        id: state_id.clone(),
+        parent: "snapshot-history".into(),
+        byte_offset: 0,
+        state_id: 1,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: 0,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: vec![AsmBulletinBoard {
+            id: board_id.clone(),
+            parent: state_id.clone(),
+            byte_offset: 0,
+            owner_ref: 0,
+            number: 1,
+            changes: vec![AsmEntityChange {
+                id: "snapshot-change".into(),
+                parent: board_id,
+                byte_offset: 0,
+                kind: AsmEntityChangeKind::Delete { old: 1 },
+            }],
+        }],
+        records: vec![AsmHistoryRecord {
+            id: "snapshot-record".into(),
+            parent: state_id,
+            revision_id: None,
+            byte_offset: 0,
+            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                index: 0,
+                name: "edge".into(),
+                entity_references: Vec::new(),
+            },
+            raw_bytes: vec![0x11],
+        }],
+        entity_versions: Vec::new(),
+        topology_cache: crate::history_records::AsmTopologyCache::Absent,
+        transition: None,
+    }
+}
+
+#[test]
+fn snapshot_revision_source_scans_refuse_work() {
+    for operation in [
+        "scan F3D snapshot reference states",
+        "scan F3D snapshot reference boards",
+        "scan F3D snapshot reference changes",
+        "scan F3D snapshot record states",
+        "scan F3D snapshot records",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                let mut state = snapshot_revision_scan_state();
+                bind_snapshot_revision_ids(ctx, std::slice::from_mut(&mut state))
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
 }
 
 #[test]
@@ -1304,23 +1433,23 @@ fn materialized_record_table_normalizes_revision_references() {
     .expect("archived record frames")
     .try_into()
     .expect("one archived record");
-    let table = with_history_decode_context(|ctx| {
+    with_history_decode_context(|ctx| {
         let archive = historical_record_archive(
             ctx,
             std::slice::from_ref(&state),
             &active,
-            HashMap::from([(2, framed)]),
+            std::collections::BTreeMap::from([(2, framed)]),
         )
         .expect("history archive budget")
         .expect("complete historical record archive");
-        materialize_record_table(ctx, &state, &archive)
+        let table = materialize_record_table(ctx, &state, &archive)
             .expect("historical table budget")
-            .expect("complete historical RecordTable")
-    });
+            .expect("complete historical RecordTable");
 
-    assert_eq!(table.len(), 2);
-    assert_eq!(table[1].index, 1);
-    assert_eq!(&*table[1].tokens, [cadmpeg_asm::sab::Token::Ref(1)]);
+        assert_eq!(table.records.len(), 2);
+        assert_eq!(table.records[1].index, 1);
+        assert_eq!(&*table.records[1].tokens, [cadmpeg_asm::sab::Token::Ref(1)]);
+    });
 }
 
 #[test]
@@ -1411,24 +1540,26 @@ fn qualified_history_marker_remains_an_archived_record() {
     .expect("archived record frames")
     .try_into()
     .expect("one archived record");
-    let archive = with_history_decode_context(|ctx| {
-        historical_record_archive(
+    with_history_decode_context(|ctx| {
+        let archive = historical_record_archive(
             ctx,
             std::slice::from_ref(&state),
             &active,
-            HashMap::from([(2, framed)]),
+            std::collections::BTreeMap::from([(2, framed)]),
         )
         .expect("history archive budget")
-        .expect("qualified history marker is an archived record")
+        .expect("qualified history marker is an archived record");
+        let record = archive
+            .records
+            .get(&2)
+            .expect("marker revision is retained");
+        assert_eq!(record.name, "End-of-ASM-History-Section");
+        assert_eq!(record.index, 1);
+        assert!(record.tokens.contains(&cadmpeg_asm::sab::Token::Ref(1)));
     });
-    let record = archive.get(&2).expect("marker revision is retained");
-    assert_eq!(record.name, "End-of-ASM-History-Section");
-    assert_eq!(record.index, 1);
-    assert!(record.tokens.contains(&cadmpeg_asm::sab::Token::Ref(1)));
 }
 
-#[test]
-fn reverse_history_builds_complete_entity_version_maps() {
+fn reverse_history_state_fixture() -> Vec<AsmDeltaState> {
     let state = |node_index, previous_ref, next_ref, old_ref, new_ref| {
         let board_id = format!("board-{node_index}");
         AsmDeltaState {
@@ -1489,6 +1620,19 @@ fn reverse_history_builds_complete_entity_version_maps() {
         })
         .into();
 
+    states
+}
+
+fn reverse_history_delete_fixture() -> Vec<AsmDeltaState> {
+    let mut states = reverse_history_state_fixture();
+    states[0].bulletin_boards[0].changes[0].kind = AsmEntityChangeKind::Delete { old: 4 };
+    states
+}
+
+#[test]
+fn reverse_history_builds_complete_entity_version_maps() {
+    let mut states = reverse_history_state_fixture();
+
     with_history_decode_context(|ctx| bind_historical_entity_versions(ctx, &mut states).unwrap());
 
     assert_eq!(
@@ -1516,6 +1660,74 @@ fn reverse_history_builds_complete_entity_version_maps() {
         ]
     );
     assert_eq!(states[2].entity_versions[1].record_ref, 4);
+}
+
+#[test]
+fn reverse_history_update_revision_search_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let operation = "find archived F3D revision for update";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_state_fixture()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn reverse_history_delete_revision_search_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let operation = "find archived F3D revision for delete";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_delete_fixture()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn reverse_history_update_key_comparison_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let operation = "update F3D historical version";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_state_fixture()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn reverse_history_delete_insertion_propagates_collection_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let operation = "restore F3D historical version";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| bind_historical_entity_versions(ctx, &mut reverse_history_delete_fixture()),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]
@@ -1743,4 +1955,6 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
     );
 }
 
+mod combine_external_limits;
 mod extrude_profile;
+mod grouped_reference_face_candidate;

@@ -23,6 +23,26 @@ pub(crate) struct DesignHistoricalFaceSupportContext {
     pub(crate) changed_preceding_face_slots: Vec<i64>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalFaceSupportContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.active_face_slot,
+                &self.surface_slot,
+                &self.preceding_face_slots,
+                &self.preceding_face_boundaries,
+                &self.changed_preceding_face_slots,
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Historical edge-boundary context for one ordered edge-recipe prefix reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignEdgeRecipeReferenceContext {
@@ -60,6 +80,36 @@ pub(crate) struct DesignEdgeRecipeReferenceContext {
     pub(crate) changed_reference_edge_slots: Vec<i64>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeRecipeReferenceContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    &self.reference_ordinal,
+                    &self.result_faces,
+                    &self.result_face_boundaries,
+                    &self.result_shared_edge_slots,
+                    &self.preceding_faces,
+                    &self.preceding_face_boundaries,
+                ),
+                (
+                    &self.preceding_support_face_slots,
+                    &self.preceding_support_face_boundaries,
+                    &self.shared_edge_slots,
+                    &self.changed_shared_edge_slots,
+                    &self.changed_reference_edge_slots,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Ordered loop topology retained for one historical face.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignHistoricalFaceBoundaryContext {
@@ -69,12 +119,40 @@ pub(crate) struct DesignHistoricalFaceBoundaryContext {
     pub(crate) loops: Vec<DesignHistoricalFaceLoopContext>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalFaceBoundaryContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.face_slot, &self.loops),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Ordered topology and available geometry of one historical face loop.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignHistoricalFaceLoopWire")]
 pub(crate) struct DesignHistoricalFaceLoopContext {
     pub(crate) loop_slot: i64,
     pub(crate) boundary: DesignHistoricalLoopBoundary,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalFaceLoopContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.loop_slot, &self.boundary),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -102,10 +180,47 @@ pub(crate) enum DesignHistoricalLoopBoundary {
     Positions(Vec<DesignHistoricalLoopPosition>),
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopBoundary {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Coedges(rows) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0_u8, rows), ctx, operation)
+            }
+            Self::Vertices(rows) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(1_u8, rows), ctx, operation)
+            }
+            Self::Points(rows) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(2_u8, rows), ctx, operation)
+            }
+            Self::Positions(rows) => {
+                cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(3_u8, rows), ctx, operation)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignHistoricalLoopCoedge {
     pub(crate) coedge_slot: i64,
     pub(crate) edge_slot: i64,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopCoedge {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.coedge_slot, &self.edge_slot),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -114,16 +229,58 @@ pub(crate) struct DesignHistoricalLoopVertex {
     pub(crate) vertex_slot: i64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopVertex {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.coedge, &self.vertex_slot),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignHistoricalLoopPoint {
     pub(crate) vertex: DesignHistoricalLoopVertex,
     pub(crate) point_slot: i64,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopPoint {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.vertex, &self.point_slot),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignHistoricalLoopPosition {
     pub(crate) point: DesignHistoricalLoopPoint,
     pub(crate) position: Point3,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalLoopPosition {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.point, &self.position),
+            ctx,
+            operation,
+        )
+    }
 }
 
 impl DesignHistoricalLoopBoundary {
@@ -416,6 +573,41 @@ pub(crate) struct DesignHistoricalEdgeLoopContext {
     pub(crate) previous_edge_slot: i64,
     /// Stable edge slot used by the following coedge.
     pub(crate) next_edge_slot: i64,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalEdgeContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.edge_slot, &self.incident_loops),
+            ctx,
+            operation,
+        )
+    }
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignHistoricalEdgeLoopContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.coedge_slot,
+                &self.loop_slot,
+                &self.face_slot,
+                &self.boundary_edge_count,
+                &self.coedge_ordinal,
+                (&self.previous_edge_slot, &self.next_edge_slot),
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[cfg(test)]
