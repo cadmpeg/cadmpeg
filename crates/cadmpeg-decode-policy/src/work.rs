@@ -208,6 +208,17 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some((definition, operands)) = self.call(expression) else {
             return;
         };
+        if let Some(removal) = crate::hash_tables::removal(self.tcx, definition) {
+            self.report(
+                expression.span,
+                "uncharged_decode_work",
+                &format!(
+                    "hash table {removal}: a removal leaves a deleted slot that hash growth accounting cannot see; replacement: {}",
+                    crate::hash_tables::REMOVAL_REPLACEMENT
+                ),
+            );
+            return;
+        }
         if let Some(traversal) = crate::hash_tables::traversal(
             self.tcx,
             definition,

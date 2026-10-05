@@ -194,3 +194,17 @@ pub fn derived_order_insertion(
 ) -> Result<bool, CodecError> {
     ctx.insert_btree_set(values, key, "derived order insertion")
 }
+
+pub fn removals(
+    _ctx: &DecodeContext<'_>,
+    map: &mut HashMap<String, u8>,
+    set: &mut HashSet<u32>,
+    key: String,
+) -> usize {
+    let mut removed = usize::from(map.remove("a").is_some()); // finding: uncharged_decode_work
+    removed += usize::from(set.take(&1).is_some()); // finding: uncharged_decode_work
+    if let std::collections::hash_map::Entry::Occupied(entry) = map.entry(key) { // finding: uncharged_decode_work
+        removed += usize::from(entry.remove()); // finding: uncharged_decode_work
+    }
+    removed
+}

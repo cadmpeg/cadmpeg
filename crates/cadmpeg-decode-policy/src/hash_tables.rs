@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Keyed hash-table operations and the traversals decode code does not perform.
 //!
-//! Decode code uses `HashMap` and `HashSet` only for keyed lookup, insertion
-//! and removal. Their iteration order is unspecified and a scan walks the
+//! Decode code uses `HashMap` and `HashSet` only for keyed lookup and
+//! insertion. Their iteration order is unspecified and a scan walks the
 //! allocated table, whose extent has no exact public bound, so traversal,
 //! whole-table comparison, cloning, scan-retain and drain are reported with
-//! the ordered replacement. A keyed operation hashes and compares its key
+//! the ordered replacement. A removal leaves a deleted slot that `capacity()`
+//! no longer counts, so core's growth charge, which reads `capacity()`,
+//! would miss buckets; removals are reported too. A keyed operation hashes and compares its key
 //! through `Hash` and `PartialEq` callbacks; core charges the key's
 //! `DecodeCost` for them, which covers a field-wise derived or standard
 //! implementation. Collision probing is not charged per probe, so the table
@@ -25,7 +27,7 @@ const MAP: &[&str] = &["collections", "hash", "map", "HashMap"];
 const SET: &[&str] = &["collections", "hash", "set", "HashSet"];
 
 /// The replacement named for a hash-table traversal.
-pub(crate) const TRAVERSAL_REPLACEMENT: &str = "BTreeMap or BTreeSet for collections that decode traverses or compares, or Vec; keep HashMap and HashSet for keyed lookup, insertion and removal through DecodeContext operations";
+pub(crate) const TRAVERSAL_REPLACEMENT: &str = "BTreeMap or BTreeSet for collections that decode traverses or compares, or Vec; keep HashMap and HashSet for keyed lookup and insertion through DecodeContext operations";
 
 fn collection_kind<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Option<CollectionKind> {
     let ty::Adt(owner, _) = types::reveal_opaque(tcx, value).peel_refs().kind() else {
@@ -101,6 +103,26 @@ pub(crate) fn traversal<'tcx>(
         name.as_str() == *method && types::physical_item_path(tcx, owner, crate_name, parts)
     })
     .map(|(_, _, method)| method)
+}
+
+/// The replacement named for a removal from a hash table.
+pub(crate) const REMOVAL_REPLACEMENT: &str = "BTreeMap or BTreeSet for collections that decode shrinks; keep HashMap and HashSet insert-only";
+
+/// Returns the removal a call performs on a hash table, if any. A removal
+/// leaves a deleted slot that `capacity()` no longer counts, so later growth
+/// can reallocate from more buckets than core's growth charge can see.
+pub(crate) fn removal(tcx: TyCtxt<'_>, callee: DefId) -> Option<&'static str> {
+    const ENTRY: &[&str] = &["collections", "hash", "map", "OccupiedEntry"];
+    for method in ["remove", "remove_entry"] {
+        if types::physical_inherent_method(tcx, callee, "std", MAP, method)
+            || types::physical_inherent_method(tcx, callee, "std", ENTRY, method)
+        {
+            return Some(method);
+        }
+    }
+    ["remove", "take"]
+        .into_iter()
+        .find(|method| types::physical_inherent_method(tcx, callee, "std", SET, method))
 }
 
 /// Returns whether a binary comparison compares a hash table as a whole.
@@ -205,17 +227,14 @@ fn context_lookup_route(tcx: TyCtxt<'_>, context: DefId) -> Option<(CollectionKi
         ("get_hash_map", CollectionKind::Map, "get"),
         ("get_mut_hash_map", CollectionKind::Map, "get_mut"),
         ("contains_key_hash_map", CollectionKind::Map, "contains_key"),
-        ("remove_hash_map", CollectionKind::Map, "remove"),
         (
             "get_key_value_hash_map",
             CollectionKind::Map,
             "get_key_value",
         ),
-        ("remove_entry_hash_map", CollectionKind::Map, "remove_entry"),
         ("insert_hash_map", CollectionKind::Map, "insert"),
         ("contains_hash_set", CollectionKind::Set, "contains"),
         ("get_hash_set", CollectionKind::Set, "get"),
-        ("remove_hash_set", CollectionKind::Set, "remove"),
         ("insert_hash_set", CollectionKind::Set, "insert"),
         ("insert_string_set", CollectionKind::Set, "insert"),
     ]
@@ -507,7 +526,7 @@ fn derived_impls<'tcx>(
     !candidates.is_empty()
         && candidates.into_iter().all(|implementation| {
             tcx.is_automatically_derived(implementation)
-                && derive_expansion(tcx.def_span(implementation))
+                && derive_expansion(tcx, tcx.def_span(implementation))
         })
 }
 
@@ -539,10 +558,14 @@ fn random_state(tcx: TyCtxt<'_>, builder: Ty<'_>) -> bool {
             && arguments.is_empty())
 }
 
-/// The span comes from a derive macro's expansion.
-pub(crate) fn derive_expansion(span: rustc_span::Span) -> bool {
+/// The span comes from the expansion of a standard library derive, whose
+/// implementation is field-wise; a third-party derive may emit any body.
+pub(crate) fn derive_expansion(tcx: TyCtxt<'_>, span: rustc_span::Span) -> bool {
+    let expansion = span.ctxt().outer_expn_data();
     matches!(
-        span.ctxt().outer_expn_data().kind,
+        expansion.kind,
         rustc_span::hygiene::ExpnKind::Macro(rustc_span::hygiene::MacroKind::Derive, _)
-    )
+    ) && expansion
+        .macro_def_id
+        .is_some_and(|definition| tcx.crate_name(definition.krate).as_str() == "core")
 }
