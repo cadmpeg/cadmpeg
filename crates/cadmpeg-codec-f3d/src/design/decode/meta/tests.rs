@@ -92,16 +92,16 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (3, "f3d design type table"),
-        (4, "f3d design type registered entities"),
+    for operation in [
+        "f3d design type table",
+        "f3d design type registered entities",
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = with_scan(&archive, |scan| super::decode_types(&ctx, scan))
-            .err()
-            .unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| with_scan(&archive, |scan| super::decode_types(ctx, scan)),
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
