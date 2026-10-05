@@ -213,14 +213,18 @@ fn scoped_reallocation_admits_old_and_new_buffers_together() {
 
 #[test]
 fn hash_reallocation_admits_both_bucket_allocations_before_growth() {
-    let old = 4 * std::mem::size_of::<u64>() + 15 + 4 + 16;
-    let grown = 8 * std::mem::size_of::<u64>() + 15 + 8 + 16;
+    let bytes = |buckets: usize| buckets * std::mem::size_of::<u64>() + 15 + buckets + 16;
+    // A set sized for three admits storage for six, eight buckets. Growing it
+    // to four admits storage for eight, sixteen buckets, less the four-bucket
+    // storage of its counted capacity, and keeps that sixteen-bucket bound live
+    // for the old table while the new one is filled.
+    let admitted = bytes(8) + bytes(16) - bytes(4);
+    let overlap = bytes(16);
     for fits in [false, true] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Both bucket arrays include alignment padding and control bytes.
         policy.limits.max_materialized_bytes =
-            u64::try_from(old + grown - usize::from(!fits)).expect("bound");
+            u64::try_from(admitted + overlap - usize::from(!fits)).expect("bound");
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (mut values, mut storage) = ctx.temporary_set::<u64>(3, "initial").expect("initial");
@@ -231,7 +235,7 @@ fn hash_reallocation_admits_both_bucket_allocations_before_growth() {
             growth.expect("both tables admitted");
             assert!(values.capacity() > capacity);
             let _probe = ctx
-                .reserve_scoped(u64::try_from(old).expect("bound"), "released overlap")
+                .reserve_scoped(u64::try_from(overlap).expect("bound"), "released overlap")
                 .expect("old table released");
         } else {
             let CodecError::ResourceLimit(first) = growth.expect_err("overlap refuses") else {
@@ -241,8 +245,8 @@ fn hash_reallocation_admits_both_bucket_allocations_before_growth() {
             assert_eq!(
                 (first.used, first.additional),
                 (
-                    u64::try_from(grown).expect("bound"),
-                    u64::try_from(old).expect("bound")
+                    u64::try_from(admitted).expect("bound"),
+                    u64::try_from(overlap).expect("bound")
                 )
             );
             assert_eq!(values.capacity(), capacity);
@@ -271,4 +275,41 @@ fn text_reallocation_refuses_before_old_buffer_overlap() {
     assert_eq!((first.used, first.additional), (0, 4));
     assert_eq!(text.capacity(), 4);
     assert_eq!(text, "abcd");
+}
+
+#[test]
+fn hash_growth_after_removals_admits_the_real_allocation() {
+    let bytes = |buckets: usize| buckets * std::mem::size_of::<u64>() + 15 + buckets + 16;
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let mut values = HashSet::<u64>::new();
+    for value in 0..14_336 {
+        ctx.insert_hash_set(&mut values, value, "fill")
+            .expect("fill");
+    }
+    for value in 0..14_300 {
+        assert!(ctx
+            .remove_hash_set(&mut values, &value, "remove")
+            .expect("remove"));
+    }
+    // Insertions into deleted slots leave capacity() at the entry count while
+    // the table keeps its 16384 buckets.
+    let mut next = 1_000_000;
+    while values.capacity() > values.len() {
+        ctx.insert_hash_set(&mut values, next, "refill")
+            .expect("refill");
+        next += 1;
+    }
+    assert!(values.len() > 14_336 / 2);
+    ctx.insert_hash_set(&mut values, next, "grow")
+        .expect("grow");
+    // Hashbrown resized from the real capacity to 32768 buckets.
+    assert_eq!(values.capacity(), 28_672);
+    let CodecError::ResourceLimit(limit) =
+        ctx.charge_retained(u64::MAX, "probe").expect_err("probe")
+    else {
+        panic!("refusal")
+    };
+    assert!(limit.used >= u64::try_from(bytes(32_768)).expect("bound"));
 }

@@ -103,11 +103,12 @@ fn rehash_charges_stored_visits_and_key_bytes() {
     else {
         panic!("resource refusal")
     };
-    // Three rehash visits, three measuring visits, six key bytes and the old bucket storage move.
-    let old_storage = 4 * std::mem::size_of::<(&str, i32)>() + 15 + 4 + 16;
+    // Three rehash visits, three measuring visits, six key bytes and the
+    // movement bound: storage for twice the new length of four, sixteen buckets.
+    let moved = 16 * std::mem::size_of::<(&str, i32)>() + 15 + 16 + 16;
     assert_eq!(
         limit.used,
-        12 + u64::try_from(old_storage).expect("test operation succeeds")
+        12 + u64::try_from(moved).expect("test operation succeeds")
     );
 }
 

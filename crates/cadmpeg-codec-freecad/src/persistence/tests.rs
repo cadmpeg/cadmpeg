@@ -37,12 +37,18 @@ fn persistence_object_identity_refuses_at_retained_limit() {
 
 #[test]
 fn persistence_object_data_name_refuses_at_matching_retained_limit() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Body"/></Objects><ObjectData Count="1"><Object name="Body"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    // The name outweighs the lookup table, so the table's growth, which peaks at twice the
+    // table bound while the new table is filled, is admitted before the name is charged.
+    let name = "B".repeat(256);
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="{name}"/></Objects><ObjectData Count="1"><Object name="{name}"><Properties Count="0"/></Object></ObjectData></Document>"#
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // One object-data hash allocation: four buckets, four control bytes,
     // sixteen trailing controls and at most fifteen alignment bytes.
     let lookup = 4 * std::mem::size_of::<(String, roxmltree::Node<'_, '_>)>() + 4 + 31;
+    assert!(name.len() > lookup);
     let nodes = 2 * document.bytes().filter(|byte| *byte == b'<').count() + 2;
     let attributes = document.bytes().filter(|byte| *byte == b'=').count();
     // Core XML admission keeps its tree bound live during graph construction.
@@ -54,7 +60,7 @@ fn persistence_object_data_name_refuses_at_matching_retained_limit() {
         + 8 * document.len()
         + 1024;
     policy.limits.max_materialized_bytes =
-        cadmpeg_core::decode::u64_from_index(xml + lookup + "Body".len() - 1);
+        cadmpeg_core::decode::u64_from_index(xml + lookup + name.len() - 1);
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
             .expect("source context");

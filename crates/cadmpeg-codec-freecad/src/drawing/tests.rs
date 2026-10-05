@@ -87,14 +87,17 @@ fn drawing_native_identity_refuses_at_retained_limit() {
 
 #[test]
 fn drawing_model_identity_refuses_at_retained_limit() {
-    let record = resource_drawing_record();
+    let mut record = resource_drawing_record();
+    // The identity text outweighs the lookup table, so the table's growth, which peaks at
+    // twice the table bound while the new table is filled, is admitted before the text.
+    record.object = format!("fcstd:native:object#{}", "P".repeat(256));
+    let lookup = 4 * std::mem::size_of::<(&str, cadmpeg_ir::drawings::DrawingId)>() + 35;
+    assert!(crate::native::model_id("drawing", &record.object, "entity").len() > lookup);
     // Temporary identity lookup slots and text use the materialized budget.
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<(&str, cadmpeg_ir::drawings::DrawingId)>()
-            + 35
-            + crate::native::model_id("drawing", &record.object, "entity").len(),
+        lookup + crate::native::model_id("drawing", &record.object, "entity").len(),
     ) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
