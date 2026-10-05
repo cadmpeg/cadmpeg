@@ -1652,7 +1652,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("hole lane fits service policy");
-    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
+    enrich_history_parameters(&ctx, &mut histories, std::slice::from_ref(&lane), true)
         .expect("hole parameter enrichment succeeds");
     assert_eq!(histories[0].features[1].parameters["depth"], "6.8mm");
     enrich_history_hole_constructions(&hole_ctx, &mut histories, &[lane]).unwrap();
@@ -1905,8 +1905,13 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("hole lane fits service policy");
-    enrich_history_parameters(&ctx, std::slice::from_mut(&mut history), [&lane], true)
-        .expect("hole parameter enrichment succeeds");
+    enrich_history_parameters(
+        &ctx,
+        std::slice::from_mut(&mut history),
+        std::slice::from_ref(&lane),
+        true,
+    )
+    .expect("hole parameter enrichment succeeds");
     assert_eq!(
         history.features[0].parameters.get("D1").map(String::as_str),
         Some("6.283185307179586rad")
