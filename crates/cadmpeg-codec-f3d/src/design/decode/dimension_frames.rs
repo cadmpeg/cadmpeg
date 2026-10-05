@@ -2994,7 +2994,7 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
                 "f3d dimension presentation segment types",
             )
         })?;
-    let pass_tables = std::cell::OnceCell::new();
+    let mut pass_tables = None;
     let mut out = Vec::new();
     for entry in ctx
         .admit_iter(&scan.entries, "scan F3D dimension presentation streams")?
@@ -3035,46 +3035,47 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream_records = records.get(ctx, &entry.name, bytes)?;
-        let mut stream_tables = None;
-        for &at in ctx.admit_iter(
-            stream_records.headers_in(ctx, 0, bytes.len())?,
+        let headers = stream_records.headers_in(ctx, 0, bytes.len())?;
+        let is_presentation_record = |at: &usize| -> Result<bool, CodecError> {
+            Ok(match indexed_record_header_at(bytes, *at) {
+                Some(header) => {
+                    type_guid_of(header.class_code)?.is_some_and(is_dimension_presentation_type)
+                }
+                None => false,
+            })
+        };
+        // The stream's tables are built at its first presentation record.
+        let Some(first) = ctx.position_by(
+            headers,
+            is_presentation_record,
+            "scan F3D dimension presentation records",
+        )?
+        else {
+            continue;
+        };
+        let pass = match &mut pass_tables {
+            Some(pass) => &*pass,
+            slot @ None => &*slot.insert(PresentationPassTables::build(ctx, inputs, entities)?),
+        };
+        let (tables, _tables_storage) =
+            ctx.with_scoped_storage("f3d dimension presentation stream tables", || {
+                PresentationStreamTables::build(
+                    ctx,
+                    &stream,
+                    stream_records,
+                    pass,
+                    &parameter_index,
+                )
+            })?;
+        for at in ctx.admit_iter(
+            headers.get(first..).unwrap_or(&[]),
             "scan F3D dimension presentation records",
         )? {
-            let Some(header) = indexed_record_header_at(bytes, at) else {
-                continue;
-            };
-            if !type_guid_of(header.class_code)?.is_some_and(is_dimension_presentation_type) {
+            if !is_presentation_record(at)? {
                 continue;
             }
-            if pass_tables.get().is_none() {
-                // The cell is empty, so the value is stored.
-                let _ = pass_tables.set(PresentationPassTables::build(ctx, inputs, entities)?);
-            }
-            if let (None, Some(pass)) = (&stream_tables, pass_tables.get()) {
-                stream_tables = Some(ctx.with_scoped_storage(
-                    "f3d dimension presentation stream tables",
-                    || {
-                        PresentationStreamTables::build(
-                            ctx,
-                            &stream,
-                            stream_records,
-                            pass,
-                            &parameter_index,
-                        )
-                    },
-                )?);
-            }
-            let Some((tables, _)) = stream_tables.as_ref() else {
-                continue;
-            };
             let Some((mut frame, frame_storage)) = parse_scoped(ctx, || {
-                parse_dimension_presentation_frame(
-                    ctx,
-                    bytes,
-                    header.offset,
-                    tables,
-                    is_paired_class,
-                )
+                parse_dimension_presentation_frame(ctx, bytes, *at, &tables, is_paired_class)
             })?
             else {
                 continue;
@@ -3467,7 +3468,7 @@ pub(crate) fn decode_dimension_locus_groups<'a>(
         let stream_records = records.get(ctx, &entry.name, bytes)?;
         find_dimension_locus_groups(
             ctx,
-            LocusGroupStream {
+            &LocusGroupStream {
                 name: &entry.name,
                 bytes,
                 records: stream_records,
@@ -3503,7 +3504,7 @@ struct LocusGroupStream<'a> {
 /// candidate's storage stays scoped until its group is kept.
 fn find_dimension_locus_groups(
     ctx: &DecodeContext<'_>,
-    stream: LocusGroupStream<'_>,
+    stream: &LocusGroupStream<'_>,
     (start, end): (usize, usize),
     companion_record_index: u32,
     out: &mut Vec<DesignDimensionLocusGroup>,

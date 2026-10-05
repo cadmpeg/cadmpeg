@@ -482,7 +482,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "f3d dimension locus groups",
         1,
-        |ctx| find_dimension_locus_groups(ctx, stream(), (0, bytes.len()), 240, &mut Vec::new()),
+        |ctx| find_dimension_locus_groups(ctx, &stream(), (0, bytes.len()), 240, &mut Vec::new()),
     );
     assert!(matches!(
         refusal,
@@ -491,7 +491,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     ));
     let service = cadmpeg_test_support::service_decode_context();
     let mut groups = Vec::new();
-    find_dimension_locus_groups(&service, stream(), (0, bytes.len()), 240, &mut groups).unwrap();
+    find_dimension_locus_groups(&service, &stream(), (0, bytes.len()), 240, &mut groups).unwrap();
     assert_eq!(
         groups
             .iter()
