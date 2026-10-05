@@ -509,15 +509,11 @@ pub(crate) fn append_design_intent_losses(
         ctx.reserve_scoped_vec(&mut scope_storage, &mut in_scope, 1, SCOPE)?;
         in_scope.push(active);
     }
-    let scoped_features = || {
-        ctx.admit_iter(&ir.model.features, SCOPE).map(|features| {
-            features
-                .zip(&in_scope)
-                .filter(|(_, active)| **active)
-                .map(|(feature, _)| feature)
-        })
-    };
-    let unresolved_suppression_count = scoped_features()?
+    let unresolved_suppression_count = ctx
+        .admit_iter(&ir.model.features, SCOPE)?
+        .zip(&in_scope)
+        .filter(|(_, active)| **active)
+        .map(|(feature, _)| feature)
         .filter(|feature| feature.suppressed.is_none())
         .count();
     if unresolved_suppression_count != 0 {
@@ -603,7 +599,12 @@ pub(crate) fn append_design_intent_losses(
     let mut lookup_storage = ctx.reserve_scoped(0, "NX report feature lookup")?;
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
     let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
-    for feature in scoped_features()? {
+    for feature in ctx
+        .admit_iter(&ir.model.features, SCOPE)?
+        .zip(&in_scope)
+        .filter(|(_, active)| **active)
+        .map(|(feature, _)| feature)
+    {
         match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => tally(
                 ctx,
@@ -674,7 +675,12 @@ pub(crate) fn append_design_intent_losses(
     }
     let mut features_by_id = None;
     let mut sketches_by_id = None;
-    for feature in scoped_features()? {
+    for feature in ctx
+        .admit_iter(&ir.model.features, SCOPE)?
+        .zip(&in_scope)
+        .filter(|(_, active)| **active)
+        .map(|(feature, _)| feature)
+    {
         let is_exact_empty_base = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, native },
@@ -1004,7 +1010,12 @@ pub(crate) fn append_design_intent_losses(
     let mut sketch_feature_count = 0usize;
     let mut unresolved_sketch_feature_count = 0usize;
     let mut active_sketch_ids = BTreeSet::new();
-    for feature in scoped_features()? {
+    for feature in ctx
+        .admit_iter(&ir.model.features, SCOPE)?
+        .zip(&in_scope)
+        .filter(|(_, active)| **active)
+        .map(|(feature, _)| feature)
+    {
         let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) =
             feature.evaluation.definition()
         else {
