@@ -5,7 +5,7 @@ use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::byte_fields::zeros_at;
 use crate::design::decode::image::embedded_image_asset;
-use crate::design::decode::record_streams::{in_stream, record_stream};
+use crate::design::decode::record_streams::{has_stream, record_stream};
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::{
     indexed_record_header_at, next_indexed_record_header, next_indexed_record_offset,
@@ -64,14 +64,12 @@ pub(crate) fn project_decal_images(
         if image.mapping_mode != crate::records::decal::DesignDecalMappingMode::FitToFaces {
             continue;
         }
-        let Some(image_stream) = record_stream(ctx, &image.id)? else {
-            continue;
-        };
+        let image_stream = record_stream(ctx, &image.id)?;
         let Some(scope) = ctx.find_by(
             scopes,
             |scope| {
                 Ok(scope.record_index == image.scope_record_index()
-                    && in_stream(ctx, &scope.id, image_stream)?)
+                    && has_stream(ctx, &scope.id, image_stream)?)
             },
             "find F3D Decal image scopes",
         )?
@@ -85,7 +83,7 @@ pub(crate) fn project_decal_images(
                     && group.record_index == image.target_group_record_index
                     && group.role() == DECAL_TARGET_ROLE
                     && group.members().len() == 1
-                    && in_stream(ctx, &group.id, image_stream)?)
+                    && has_stream(ctx, &group.id, image_stream)?)
             },
             "find F3D Decal operand groups",
         )?
@@ -101,7 +99,7 @@ pub(crate) fn project_decal_images(
                 Ok(operand.scope_record_index == scope.record_index
                     && operand.owner.group() == Some((group.record_index, 0))
                     && operand.record_index() == member.value
-                    && in_stream(ctx, &operand.id, image_stream)?)
+                    && has_stream(ctx, &operand.id, image_stream)?)
             },
             "find F3D Decal recipe operands",
         )?
@@ -129,7 +127,11 @@ pub(crate) fn project_decal_images(
         if faces.is_empty() {
             continue;
         }
-        let Some(asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
+        // The asset is retained only when it is the first with its ID.
+        let (asset, asset_storage) = ctx.with_scoped_storage("f3d Decal assets", || {
+            embedded_image_asset(ctx, scan, image.asset.name())
+        })?;
+        let Some(asset) = asset else {
             continue;
         };
         let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
@@ -178,6 +180,7 @@ pub(crate) fn project_decal_images(
                 opacity: None,
             }));
         if !known_asset {
+            asset_storage.commit()?;
             ctx.push_vec(&mut assets, asset, "f3d Decal assets")?;
         }
     }
