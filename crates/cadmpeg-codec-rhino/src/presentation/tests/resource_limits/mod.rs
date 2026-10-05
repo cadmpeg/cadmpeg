@@ -1258,9 +1258,8 @@ fn group_member_workspace_refuses_materialized_limit() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let mut workspace = ctx
-            .reserve_scoped(0, "Rhino group member workspace")
-            .expect("empty workspace");
+        let mut workspace =
+            crate::presentation::group_member_workspace(&ctx).expect("empty workspace");
         let mut members = HashMap::new();
         let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
             crate::presentation::admit_group_member(&ctx, &mut workspace, &mut members, 7, 0)
