@@ -77,3 +77,38 @@ fn identity_cache_comparisons_admit_only_the_bytes_inspected() {
         }
     }
 }
+
+#[test]
+fn identity_sort_visits_ordered_values_without_sorting() {
+    let mut values = ["a", "b", "c"];
+    // Two adjacent pairs and the end probe, each pair comparing one byte.
+    let work = 3 + 2 * 2;
+    for allowance in [work - 1, work] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result =
+            super::stable_sort_by_identity(&ctx, &mut values, |value| value, "ordered identities");
+        if allowance < work {
+            assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits));
+        } else {
+            result.unwrap();
+            ctx.finish_session().unwrap();
+        }
+        assert_eq!(values, ["a", "b", "c"]);
+    }
+}
+
+#[test]
+fn identity_sort_orders_unordered_values_and_keeps_ties_in_input_order() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut values = [("b", 0), ("a", 1), ("b", 2), ("a", 3)];
+    super::stable_sort_by_identity(&ctx, &mut values, |value| value.0, "unordered identities")
+        .unwrap();
+    assert_eq!(values, [("a", 1), ("a", 3), ("b", 0), ("b", 2)]);
+}
