@@ -21,7 +21,7 @@ pub(crate) mod view;
 
 #[cfg(test)]
 thread_local! {
-    static TYPED_RECORD_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static TYPED_RECORD_READ_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -507,14 +507,24 @@ impl NativeRecord {
         self.fields.get(name).cloned()
     }
 
+    /// Read the record as a codec-owned type, admitting the read first.
+    ///
+    /// The reader borrows the stored value directly; only the typed result is
+    /// built.
     fn to_typed<T: DeserializeOwned>(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<T, NativeConvertError> {
-        let record = copy_value_for_decode(ctx, self)?;
+        admit_typed_record(ctx, self.id.as_str(), &self.fields)?;
+        let mut storage = ctx.reserve_scoped(0, TYPED_READ)?;
+        let id = Value::String(ctx.copy_scoped_text(self.id.as_str(), &mut storage, TYPED_READ)?);
         #[cfg(test)]
-        TYPED_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
-        match serde_json::from_value(record) {
+        TYPED_RECORD_READ_COUNT.with(|count| count.set(count.get() + 1));
+        let members = std::iter::once(("id", &id))
+            .chain(self.fields.iter().map(|(key, value)| (key.as_str(), value)));
+        match T::deserialize(
+            serde::de::value::MapDeserializer::<_, serde_json::Error>::new(members),
+        ) {
             Ok(value) => Ok(value),
             Err(source) => Err(NativeConvertError::ReadRecord {
                 id: self
@@ -526,21 +536,80 @@ impl NativeRecord {
     }
 }
 
+const TYPED_READ: &str = "load typed native record";
+
+/// Admits a typed reader's visit to a record: its `id` member and its fields.
+fn admit_typed_record(
+    ctx: &DecodeContext<'_>,
+    id: &str,
+    fields: &Map<String, Value>,
+) -> Result<(), CodecError> {
+    ctx.charge_work(1, TYPED_READ)?;
+    let _depth = ctx.enter_nested(TYPED_READ)?;
+    let members = fields
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit(TYPED_READ, u64::MAX - 1, u64::MAX))?;
+    admit_typed_members(ctx, members)?;
+    admit_typed_text(ctx, "id")?;
+    admit_typed_text(ctx, id)?;
+    for (key, value) in ctx.admit_iter(fields, TYPED_READ)? {
+        admit_typed_text(ctx, key)?;
+        admit_typed_value(ctx, value)?;
+    }
+    Ok(())
+}
+
+/// Admits a typed reader's visit to one stored value and everything in it.
+///
+/// A reader visits every value once and copies every text it keeps, so a
+/// value pays one visit and a text pays its bytes as work and as retained
+/// storage. Each sequence or object member pays one collection item and one
+/// stored value's width, the storage a reader's own collections take, and
+/// each container is entered as deep as the reader descends.
+fn admit_typed_value(ctx: &DecodeContext<'_>, value: &Value) -> Result<(), CodecError> {
+    ctx.charge_work(1, TYPED_READ)?;
+    match value {
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
+        Value::String(text) => admit_typed_text(ctx, text)?,
+        Value::Array(items) => {
+            let _depth = ctx.enter_nested(TYPED_READ)?;
+            admit_typed_members(ctx, items.len())?;
+            for item in ctx.admit_iter(items, TYPED_READ)? {
+                admit_typed_value(ctx, item)?;
+            }
+        }
+        Value::Object(members) => {
+            let _depth = ctx.enter_nested(TYPED_READ)?;
+            admit_typed_members(ctx, members.len())?;
+            for (key, item) in ctx.admit_iter(members, TYPED_READ)? {
+                admit_typed_text(ctx, key)?;
+                admit_typed_value(ctx, item)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn admit_typed_text(ctx: &DecodeContext<'_>, text: &str) -> Result<(), CodecError> {
+    ctx.charge_work(u64_from_index(text.len()), TYPED_READ)?;
+    ctx.charge_retained(u64_from_index(text.len()), TYPED_READ)
+}
+
+fn admit_typed_members(ctx: &DecodeContext<'_>, count: usize) -> Result<(), CodecError> {
+    let bytes = count
+        .checked_mul(std::mem::size_of::<Value>())
+        .map(u64_from_index)
+        .ok_or_else(|| ctx.refuse_codec_limit(TYPED_READ, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_collection_items(u64_from_index(count), TYPED_READ)?;
+    ctx.charge_retained(bytes, TYPED_READ)
+}
+
 #[derive(Serialize)]
 struct DigestUnknown<'a> {
     id: &'a str,
     #[serde(skip_serializing_if = "<[Value]>::is_empty")]
     links: &'a [Value],
-}
-
-/// Copies a value through the canonical serializer's charged allocations.
-fn copy_value_for_decode<T: Serialize + ?Sized>(
-    ctx: &DecodeContext<'_>,
-    value: &T,
-) -> Result<Value, NativeConvertError> {
-    let copied = value.serialize(canon::CanonValue::for_record_with_sink(ctx, None));
-    ctx.charge_work(0, "construct canonical native value")?;
-    Ok(copied.map_err(|error| error.into_native(ctx))?.into_value())
 }
 
 /// Adds an arena name to a semantic typed-record refusal.
@@ -618,10 +687,8 @@ impl JsonSchema for NativeRecord {
 /// canonical records never has to read them back out of a namespace. Each
 /// record is converted before the next is read, and a record the source could
 /// not state stops the walk with that record's own error. Equal identities can
-/// occur before document validation, so ordering must preserve their input
-/// order. A fallibly reserved index permutation orders records by identity and
-/// original ordinal. Its storage is admitted against the caller's temporary-byte
-/// budget before sorting.
+/// occur before document validation, so the sort is stable and keeps their
+/// input order.
 pub fn arena_from<T, E, I>(ctx: &DecodeContext<'_>, records: I) -> Result<Vec<NativeRecord>, E>
 where
     T: Serialize,
@@ -660,56 +727,13 @@ where
         };
         converted.push(record);
     }
-    let scratch_bytes = converted
-        .len()
-        .checked_mul(std::mem::size_of::<usize>())
-        .map(cadmpeg_core::decode::u64_from_index)
-        .ok_or_else(|| {
-            E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-                "sort native records scratch size",
-                u64::MAX - 1,
-                u64::MAX,
-            )))
-        })?;
-    let _sort_scratch = ctx
-        .reserve_scoped(scratch_bytes, "sort native records")
-        .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-    let operation = "sort native records";
-    let count = u64::try_from(converted.len()).map_err(|_| {
-        E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-            operation,
-            u64::MAX - 1,
-            u64::MAX,
-        )))
-    })?;
-    ctx.charge_collection_items(count, operation)
-        .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-    let mut order = Vec::new();
-    order.try_reserve_exact(converted.len()).map_err(|_| {
-        E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-            operation,
-            u64::MAX - 1,
-            u64::MAX,
-        )))
-    })?;
-    order.extend(0..converted.len());
-    ctx.sort_unstable_by_key(
-        &mut order,
-        |value| (converted[*value].id(), *value),
-        Ord::cmp,
-        operation,
+    crate::ids::comparison::stable_sort_by_identity(
+        ctx,
+        &mut converted,
+        NativeRecord::id,
+        "sort native records",
     )
     .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-    for start in 0..order.len() {
-        let mut cursor = start;
-        while order[cursor] != start {
-            let next = order[cursor];
-            converted.swap(cursor, next);
-            order[cursor] = cursor;
-            cursor = next;
-        }
-        order[cursor] = cursor;
-    }
     Ok(converted)
 }
 
@@ -915,10 +939,10 @@ impl Native {
     ) -> Result<(), cadmpeg_core::CodecError> {
         for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
-                ctx.stable_sort_by(
+                crate::ids::comparison::stable_sort_by_identity(
+                    ctx,
                     records,
-                    |record| record.id(),
-                    Ord::cmp,
+                    NativeRecord::id,
                     "finalize native arena",
                 )?;
             }

@@ -136,33 +136,20 @@ fn native_writer_refuses_before_serializing_later_field() {
 }
 
 #[test]
-fn native_arena_sort_scratch_refuses_materialized_limit_before_stable_sort() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+fn native_arena_stable_sort_keeps_identity_ties_past_insertion_sort() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let records = [
-        serde_json::json!({"id":"test:native:record#same","ordinal":1}),
-        serde_json::json!({"id":"test:native:record#same","ordinal":2}),
-        serde_json::json!({"id":"test:native:record#first","ordinal":3}),
-    ];
-    let scratch = u64::try_from(records.len() * std::mem::size_of::<usize>()).unwrap();
+    // More records than the in-place insertion sort handles, out of order and
+    // in tied pairs, so the stable sort orders them through its index scratch.
+    let records = (0..24_usize)
+        .map(|ordinal| {
+            serde_json::json!({
+                "id": format!("test:native:record#{:02}", 23 - ordinal / 2),
+                "ordinal": ordinal,
+            })
+        })
+        .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = scratch - 1;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::native::arena_from(
-        &limited,
-        records
-            .iter()
-            .map(Ok::<_, crate::native::NativeConvertError>),
-    )
-    .unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
-    else {
-        panic!("sort scratch refusal must remain a resource limit")
-    };
-    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.operation, "sort native records");
-
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let sorted = crate::native::arena_from(
@@ -172,9 +159,10 @@ fn native_arena_sort_scratch_refuses_materialized_limit_before_stable_sort() {
             .map(Ok::<_, crate::native::NativeConvertError>),
     )
     .unwrap();
-    assert_eq!(sorted[0].id(), "test:native:record#first");
-    assert_eq!(sorted[1].field("ordinal"), Some(serde_json::json!(1)));
-    assert_eq!(sorted[2].field("ordinal"), Some(serde_json::json!(2)));
+    for (position, record) in sorted.iter().enumerate() {
+        let ordinal = 22 - 2 * (position / 2) + position % 2;
+        assert_eq!(record.field("ordinal"), Some(serde_json::json!(ordinal)));
+    }
 }
 
 #[test]
@@ -233,11 +221,11 @@ fn native_arena_typed_load_refuses_retained_limit_before_value_clone() {
     policy.limits.max_retained_bytes =
         cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<serde_json::Value>()) - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::TYPED_RECORD_CLONE_COUNT.with(|count| count.set(0));
+    super::TYPED_RECORD_READ_COUNT.with(|count| count.set(0));
     let error = namespace
         .arena_as_for_decode::<serde_json::Value>(&limited, "records")
         .unwrap_err();
-    super::TYPED_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 0));
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -268,11 +256,11 @@ fn native_arena_typed_load_refuses_collection_limit_before_vec_growth() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::TYPED_RECORD_CLONE_COUNT.with(|count| count.set(0));
+    super::TYPED_RECORD_READ_COUNT.with(|count| count.set(0));
     let error = namespace
         .arena_as_for_decode::<serde_json::Value>(&limited, "records")
         .unwrap_err();
-    super::TYPED_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    super::TYPED_RECORD_READ_COUNT.with(|count| assert_eq!(count.get(), 0));
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1157,7 +1145,7 @@ fn native_json_writer_has_no_storage_charge() {
 }
 
 #[test]
-fn native_sort_uses_only_index_permutation_storage() {
+fn small_native_arena_sort_needs_no_scratch() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let records = [
         serde_json::json!({"id":"test:native:record#same","ordinal":1}),
@@ -1166,8 +1154,7 @@ fn native_sort_uses_only_index_permutation_storage() {
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes =
-        cadmpeg_core::decode::u64_from_index(records.len() * std::mem::size_of::<usize>());
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let sorted = crate::native::arena_from(
         &ctx,

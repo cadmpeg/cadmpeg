@@ -182,10 +182,10 @@ fn reduced_unknowns(
             }
         }
     }
-    ctx.stable_sort_by(
+    crate::ids::comparison::stable_sort_by_identity(
+        ctx,
         &mut reduced,
-        |value| value.id(),
-        Ord::cmp,
+        NativeRecord::id,
         "sort reduced digest unknowns",
     )?;
     Ok(reduced)
@@ -282,10 +282,10 @@ fn sorted_records<'a>(
     records: &'a [NativeRecord],
 ) -> Result<Vec<&'a NativeRecord>, CodecError> {
     let mut refs = ctx.collect_vec(records.iter(), "borrow digest native arena")?;
-    ctx.stable_sort_by(
+    crate::ids::comparison::stable_sort_by_identity(
+        ctx,
         &mut refs,
         |value| value.id(),
-        Ord::cmp,
         "sort digest native arena",
     )?;
     Ok(refs)
