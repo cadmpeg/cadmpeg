@@ -952,7 +952,7 @@ impl Identity {
                 + namespace.scope().len()
                 + namespace.kind().len()
                 + key.as_str().len()
-                + 4,
+                + 3,
         );
         value.push_str(namespace.format());
         value.push(':');

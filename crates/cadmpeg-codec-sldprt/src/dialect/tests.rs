@@ -149,7 +149,7 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     let host = SldprtDialect::classify(Some("13100"));
     let kernel = cadmpeg_parasolid::classify_layer(
         &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST_1_9999")
+        cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), "SCH_TEST_1_9999".into()).expect("service token admission")
             .expect("the fixture text is a schema token"),
         cadmpeg_parasolid::Carrier::new("block@7:body+3".to_owned()),
         cadmpeg_core::dialect::LayerInstance::Sole,

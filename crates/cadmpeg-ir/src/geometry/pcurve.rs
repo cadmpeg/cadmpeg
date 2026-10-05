@@ -12,6 +12,7 @@ use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::topology::ParameterInterval;
 use crate::transform::Transform2;
 use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
@@ -1823,6 +1824,71 @@ pub struct PcurveNurbs {
     poles: PcurveNurbsPoles<FinitePoint2>,
     #[serde(default)]
     periodic: bool,
+}
+
+fn pcurve_cost_sum(
+    ctx: &DecodeContext<'_>,
+    left: u64,
+    right: u64,
+    operation: &'static str,
+) -> Result<u64, CodecError> {
+    left.checked_add(right)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
+}
+
+impl DecodeCost for WeightedPole2<FinitePoint2> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (self.point.get(), self.weight.get()).decode_cost(ctx, operation)
+    }
+}
+
+impl DecodeCost for PcurveNurbsPoles<FinitePoint2> {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        match self {
+            Self::Polynomial { points } => {
+                let mut bytes = 1_u64;
+                for point in ctx.admit_iter(points, operation)? {
+                    bytes = pcurve_cost_sum(
+                        ctx,
+                        bytes,
+                        point.get().decode_cost(ctx, operation)?,
+                        operation,
+                    )?;
+                }
+                Ok(bytes)
+            }
+            Self::Rational { points } => {
+                let mut bytes = 1_u64;
+                for pole in ctx.admit_iter(points, operation)? {
+                    bytes =
+                        pcurve_cost_sum(ctx, bytes, pole.decode_cost(ctx, operation)?, operation)?;
+                }
+                Ok(bytes)
+            }
+        }
+    }
+}
+
+impl DecodeCost for PcurveNurbs {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            self.degree,
+            (self.knots.as_slice(), (&self.poles, self.periodic)),
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 impl PcurveNurbs {

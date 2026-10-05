@@ -96,7 +96,7 @@ fn stream(subtype: crate::parasolid::ParasolidSubtype, schema: &str, inflated: V
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(
-                cadmpeg_parasolid::OwnedSchemaToken::try_from(schema)
+                cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), schema.into()).expect("service token admission")
                     .expect("the fixture text is a schema token"),
             ),
         },
