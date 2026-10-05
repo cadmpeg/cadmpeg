@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::super::ExtrudeScopeFrame;
 use super::assert_work_refusal;
 
 const SINGLE_REFERENCE: [u32; 1] = [55];
@@ -246,12 +247,14 @@ fn class_338_extrude_reads_its_fixed_references() {
         super::super::exact_class_338_two_sided_distance_extrude_prologue(
             &context,
             &bytes,
-            0,
-            layout::LEN,
-            "338",
-            "262",
-            layout::REFERENCE_COUNT,
-            &REFERENCES,
+            ExtrudeScopeFrame {
+                start: 0,
+                paired_at: layout::LEN,
+                class_tag: "338",
+                paired_class_tag: "262",
+                reference_count_at: layout::REFERENCE_COUNT
+            },
+            &REFERENCES
         ),
         Ok(Some(
             crate::records::feature::extrude::DesignExtrudePrologue::LegacyShifted {

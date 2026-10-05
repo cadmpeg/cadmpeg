@@ -95,7 +95,7 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
                     "BulkStream.dat",
                     &header,
                     &record,
-                    parsed,
+                    &parsed,
                     definition,
                 )
             })
@@ -112,7 +112,7 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
                 "BulkStream.dat",
                 &header,
                 &record,
-                parsed,
+                &parsed,
                 definition,
             )
             .expect_err("resource limit must refuse relation assembly")
@@ -136,7 +136,7 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
         "BulkStream.dat",
         &header,
         &record,
-        parsed,
+        &parsed,
         definition,
     )
     .expect("relation admission");

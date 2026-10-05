@@ -468,8 +468,7 @@ fn mirror_construction(
                 plane_group,
                 0,
                 plane_header,
-            )
-            ?
+            )?
             .is_some();
             let selects_plane = entity_selection || {
                 let records = stream_record_offsets(ctx, storage, stream_indexes, stream, bytes)?;

@@ -240,7 +240,7 @@ fn exact_construction_operand_group(
             ctx.with_scoped_storage("copy F3D surface offset group class tag", || {
                 retain_class_tag(
                     ctx,
-                    header.class_tag,
+                    *header.class_tag,
                     "copy F3D surface offset group class tag",
                 )
             })?;

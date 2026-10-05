@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
+use super::extrude::ExtrudeScopeFrame;
 use crate::bytes::f64s_at;
 use crate::design::decode::byte_fields::zeros_at;
 use crate::design::decode::text::fixed_guid_end;
@@ -49,13 +50,16 @@ impl Class397SymmetricFrame {
 pub(super) fn exact_symmetric_extrude_prologue(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-    start: usize,
-    paired_at: usize,
-    class_tag: &str,
-    paired_class_tag: &str,
-    reference_count_at: usize,
+    frame: ExtrudeScopeFrame<'_>,
     reference_members: &[u32],
 ) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+    let ExtrudeScopeFrame {
+        start,
+        paired_at,
+        class_tag,
+        paired_class_tag,
+        reference_count_at,
+    } = frame;
     let Some(prefix) = symmetric_prefix(
         bytes,
         start,

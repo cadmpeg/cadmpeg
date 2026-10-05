@@ -16,7 +16,7 @@ use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates_charged, contiguous_i32_program,
     decode_recipe_references_charged, recipe_record_prefix,
 };
-use crate::design::decode::record_streams::{in_stream, record_stream};
+use crate::design::decode::record_streams::{in_stream, record_stream, StreamOffsets};
 use crate::design::decode::reference_runs::{admit_reference_values, reference_position};
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::parameter_scope::payload_prologue;
@@ -248,7 +248,7 @@ fn groups_by_scope<'a, 'c>(
 fn sorted_stream_offsets<'a, 'c>(
     ctx: &'c DecodeContext<'_>,
     headers: &'a [DesignRecordHeader],
-) -> Result<(Vec<(&'a str, u64)>, ScopedReservation<'c>), CodecError> {
+) -> Result<StreamOffsets<'a, 'c>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "f3d edge operand stream offset")?;
     let mut offsets = Vec::new();
     for header in ctx.admit_iter(headers, "index F3D edge operand offsets")? {
@@ -1460,7 +1460,7 @@ pub(crate) fn decode_face_source_groups(
             let Some(carrier) = carrier else {
                 continue;
             };
-            let Some(layout) = face_source_carrier_layout(carrier.class_tag) else {
+            let Some(layout) = face_source_carrier_layout(*carrier.class_tag) else {
                 continue;
             };
             let Some(paired) = reference_headers
@@ -1520,12 +1520,12 @@ pub(crate) fn decode_face_source_groups(
             };
             let carrier_class_tag = crate::design::decode::text::retain_class_tag(
                 ctx,
-                carrier.class_tag,
+                *carrier.class_tag,
                 "copy F3D face source carrier class tag",
             )?;
             let paired_class_tag = crate::design::decode::text::retain_class_tag(
                 ctx,
-                paired.class_tag,
+                *paired.class_tag,
                 "copy F3D face source paired class tag",
             )?;
             let id = design_record_id_charged(
@@ -1668,8 +1668,8 @@ pub(crate) struct FaceSourceCarrierLayout {
     paired_class_tag: &'static [u8; 3],
 }
 
-fn face_source_carrier_layout(class_tag: &[u8; 3]) -> Option<FaceSourceCarrierLayout> {
-    match class_tag {
+fn face_source_carrier_layout(class_tag: [u8; 3]) -> Option<FaceSourceCarrierLayout> {
+    match &class_tag {
         b"398" => Some(FaceSourceCarrierLayout {
             source_count: 4,
             source_reference_offset: 36,
@@ -1699,7 +1699,7 @@ pub(crate) fn face_source_carrier_spec(
     class_tag: &str,
     paired_class_tag: &str,
 ) -> Option<FaceSourceCarrierLayout> {
-    let layout = face_source_carrier_layout(<&[u8; 3]>::try_from(class_tag.as_bytes()).ok()?)?;
+    let layout = face_source_carrier_layout(<[u8; 3]>::try_from(class_tag.as_bytes()).ok()?)?;
     <&[u8; 3]>::try_from(paired_class_tag.as_bytes())
         .is_ok_and(|paired| paired == layout.paired_class_tag)
         .then_some(layout)
@@ -2534,7 +2534,7 @@ fn parse_loft_legacy_body_carrier(
     };
     let paired_class_tag = crate::design::decode::text::retain_class_tag(
         ctx,
-        frame.paired_class_tag,
+        *frame.paired_class_tag,
         "copy F3D legacy Loft paired class tag",
     )?;
     let class_tag = header
@@ -3278,7 +3278,7 @@ fn parse_construction_operand_group_at(
     };
     let paired_class_tag = crate::design::decode::text::retain_class_tag(
         ctx,
-        paired_class_tag,
+        *paired_class_tag,
         "copy F3D construction operand paired class tag",
     )?;
     let class_tag =
@@ -3671,7 +3671,7 @@ fn parse_construction_operand_path(
     };
     let following_class_tag = crate::design::decode::text::retain_class_tag(
         ctx,
-        frame.following_class_tag,
+        *frame.following_class_tag,
         "copy F3D construction path following class tag",
     )?;
     let class_tag = header
@@ -3752,7 +3752,7 @@ fn parse_construction_operand_transform(
     };
     let following_class_tag = crate::design::decode::text::retain_class_tag(
         ctx,
-        frame.following_class_tag,
+        *frame.following_class_tag,
         "copy F3D construction transform following class tag",
     )?;
     let class_tag = header
@@ -4117,7 +4117,7 @@ fn parse_construction_operand_identity(
         };
         let class_tag = crate::design::decode::text::retain_class_tag(
             ctx,
-            current_class_tag,
+            *current_class_tag,
             "copy F3D construction identity wrapper class tag",
         )?;
         ctx.push_vec(
@@ -4142,7 +4142,7 @@ fn parse_construction_operand_identity(
     }
     let mut tracking_path = None;
     if let Some(frame) = construction_tracking_path_frame(bytes, current_at, current_record_index) {
-        if let Some(path) = construction_tracking_path(ctx, &frame, current_class_tag)? {
+        if let Some(path) = construction_tracking_path(ctx, &frame, *current_class_tag)? {
             current_at = frame.following_at;
             current_record_index = frame.following_record_index;
             current_class_tag = frame.following_class_tag;
@@ -4183,7 +4183,7 @@ fn parse_construction_operand_identity(
     };
     let following_class_tag = crate::design::decode::text::retain_class_tag(
         ctx,
-        current_class_tag,
+        *current_class_tag,
         "copy F3D construction identity following class tag",
     )?;
     Ok(DesignConstructionOperandIdentity::try_new(
@@ -4287,7 +4287,7 @@ fn construction_tracking_path_frame(
 fn construction_tracking_path(
     ctx: &DecodeContext<'_>,
     frame: &TrackingPathFrame<'_>,
-    wrapper_class_tag: &[u8; 3],
+    wrapper_class_tag: [u8; 3],
 ) -> Result<Option<DesignConstructionTrackingPath>, CodecError> {
     let offset = |at: usize| u64::try_from(at).ok();
     let (
@@ -4320,7 +4320,7 @@ fn construction_tracking_path(
             carrier_record_index: frame.carrier_record_index,
             carrier_byte_offset,
             carrier_class_tag: copy(
-                frame.carrier_class_tag,
+                *frame.carrier_class_tag,
                 "copy F3D tracking path carrier class tag",
             )?,
             primary_identity: frame.primary_identity,
@@ -4334,7 +4334,7 @@ fn construction_tracking_path(
             following_record_index: frame.following_record_index,
             following_byte_offset,
             following_class_tag: copy(
-                frame.following_class_tag,
+                *frame.following_class_tag,
                 "copy F3D tracking path following class tag",
             )?,
         },
@@ -4358,7 +4358,7 @@ fn parse_construction_tracking_path(
     ) else {
         return Ok(None);
     };
-    construction_tracking_path(ctx, &frame, wrapper_class_tag)
+    construction_tracking_path(ctx, &frame, *wrapper_class_tag)
 }
 
 enum TrackingIdentityField {
@@ -4406,12 +4406,12 @@ struct ExtrudeSelectionTail<'a> {
 }
 
 /// Read the selection-group tail at `position` with fixed work.
-fn extrude_selection_tail<'a>(
-    bytes: &'a [u8],
+fn extrude_selection_tail(
+    bytes: &[u8],
     position: usize,
     scope_record_index: u32,
     record_index: u32,
-) -> Option<ExtrudeSelectionTail<'a>> {
+) -> Option<ExtrudeSelectionTail<'_>> {
     let field = |relative: usize| position.checked_add(relative);
     let opaque_index = View::u32_le_at(bytes, position)?;
     let opaque_scalar = View::f64_le_at(bytes, field(4)?)?;
@@ -4522,7 +4522,7 @@ fn parse_extrude_selection_group(
     };
     let paired_class_tag = crate::design::decode::text::retain_class_tag(
         ctx,
-        tail.paired_class_tag,
+        *tail.paired_class_tag,
         "copy F3D extrude selection paired class tag",
     )?;
     let class_tag = header
@@ -7958,6 +7958,7 @@ pub(super) fn parse_face_operand(
     )
 }
 
+#[cfg(test)]
 pub(in crate::design) fn has_typed_edge_treatment_group(
     kind: &crate::records::feature::scope::DesignFeatureKind,
 ) -> bool {

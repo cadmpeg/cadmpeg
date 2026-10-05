@@ -85,12 +85,12 @@ pub(super) fn exact_copy_paste_bodies_operation(
     }
     let body_group_location = body_ops::CopyPasteRecordLocation {
         record_index: body_group_record_index,
-        class_tag: retain_class_tag(ctx, body_group.class_tag, "copy F3D class tag")?,
+        class_tag: retain_class_tag(ctx, *body_group.class_tag, "copy F3D class tag")?,
         byte_offset: u64_from_index(body_group_at),
     };
     let relation_location = body_ops::CopyPasteRecordLocation {
         record_index: relation_record_index,
-        class_tag: retain_class_tag(ctx, relation.class_tag, "copy F3D class tag")?,
+        class_tag: retain_class_tag(ctx, *relation.class_tag, "copy F3D class tag")?,
         byte_offset: u64_from_index(relation_at),
     };
     match DesignCopyPasteBodiesOperation::try_new_charged(

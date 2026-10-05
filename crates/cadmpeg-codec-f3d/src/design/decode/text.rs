@@ -42,10 +42,10 @@ pub(in crate::design::decode) fn rsplit_once_ascii<'text>(
 /// validated into retained storage.
 pub(in crate::design::decode) fn retain_class_tag(
     ctx: &DecodeContext<'_>,
-    value: &[u8; 3],
+    value: [u8; 3],
     operation: &'static str,
 ) -> Result<crate::records::references::DesignClassTag, CodecError> {
-    let text = std::str::from_utf8(value)
+    let text = std::str::from_utf8(&value)
         .map_err(|_| CodecError::malformed("F3D class tag must be three ASCII digits"))?;
     crate::records::references::DesignClassTag::try_from(ctx.copy_retained_text(text, operation)?)
         .map_err(CodecError::Malformed)

@@ -925,7 +925,7 @@ impl ParameterOwnerLayout<'_> {
     fn retain(self, ctx: &DecodeContext<'_>) -> Result<ParsedParameterOwner, CodecError> {
         Ok(ParsedParameterOwner {
             frame_length: self.frame_length,
-            class_tag: retain_class_tag(ctx, self.class_tag, "copy F3D class tag")?,
+            class_tag: retain_class_tag(ctx, *self.class_tag, "copy F3D class tag")?,
             record_index: self.record_index,
             scope_record_index: self.scope_record_index,
             local_ordinal: self.local_ordinal,
@@ -1279,7 +1279,7 @@ impl ParsedParameterCompanion<'_> {
         let Some(timestamp_offset) = self.timestamp_micros_offset.absolute(frame_start) else {
             return Ok(None);
         };
-        let class_tag = retain_class_tag(ctx, self.class_tag, "copy F3D class tag")?;
+        let class_tag = retain_class_tag(ctx, *self.class_tag, "copy F3D class tag")?;
         let id = design_record_id_charged(
             ctx,
             stream,

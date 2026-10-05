@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged stream-scope tests on native record identifiers.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 /// The stream scope of a native record ID: the text before its last `:`.
@@ -34,3 +34,8 @@ pub(in crate::design::decode) fn in_stream(
         "match F3D record stream scope",
     )
 }
+
+/// Record offsets keyed by stream scope, in scope and offset order, with the
+/// scoped reservation that holds them.
+pub(in crate::design::decode) type StreamOffsets<'records, 'ctx> =
+    (Vec<(&'records str, u64)>, ScopedReservation<'ctx>);

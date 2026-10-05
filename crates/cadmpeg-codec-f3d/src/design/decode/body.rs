@@ -10,7 +10,7 @@ use crate::design::body::{
 };
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::presentation::BrowserNodeRecord;
-use crate::design::decode::record_streams::record_stream;
+use crate::design::decode::record_streams::{record_stream, StreamOffsets};
 use crate::design::decode::reference_runs::{admit_reference_values, reference_position};
 use crate::design::decode::sketch::{
     native_scope_scoped, next_indexed_record_header, next_indexed_record_offset,
@@ -267,7 +267,7 @@ pub(crate) fn decode_body_bounds(
 fn entity_offsets_by_stream<'entities, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     entities: &'entities [DesignEntityHeader],
-) -> Result<(Vec<(&'entities str, u64)>, ScopedReservation<'ctx>), CodecError> {
+) -> Result<StreamOffsets<'entities, 'ctx>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "index F3D entity offsets by stream")?;
     let mut offsets = Vec::new();
     for entity in ctx.admit_iter(entities, "index F3D entity offsets by stream")? {
@@ -358,6 +358,10 @@ fn body_bound_record_offsets(
     Ok(Some([first, second, third]))
 }
 
+/// The values of a repeated bounds frame and the offset of its first value in
+/// each of the three records.
+type BoundFrame = ([FiniteReal; 6], [usize; 3]);
+
 /// The one bounds frame of the first record that repeats exactly once in each
 /// later record: its values and the offset of its first value in each record.
 /// A second repeated frame in the first record makes the cache ambiguous.
@@ -365,12 +369,12 @@ fn unique_body_bound_frame(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: [(usize, usize); 3],
-) -> Result<Option<([FiniteReal; 6], [usize; 3])>, CodecError> {
+) -> Result<Option<BoundFrame>, CodecError> {
     let [(first_start, first_end), second, third] = records;
     let Some(last) = first_end.checked_sub(BOUNDS_FRAME_LEN - 1) else {
         return Ok(None);
     };
-    let Some((at, values, value_offsets)) =
+    let Some((at, (values, value_offsets))) =
         find_repeated_body_bound_frame(ctx, bytes, first_start, last, [second, third])?
     else {
         return Ok(None);
@@ -390,7 +394,7 @@ fn find_repeated_body_bound_frame(
     from: usize,
     to: usize,
     later: [(usize, usize); 2],
-) -> Result<Option<(usize, [FiniteReal; 6], [usize; 3])>, CodecError> {
+) -> Result<Option<(usize, BoundFrame)>, CodecError> {
     let Some(openings) = bytes.get(from..to) else {
         return Ok(None);
     };
@@ -417,7 +421,7 @@ fn find_repeated_body_bound_frame(
             let Some(third_at) = only_frame_in(ctx, bytes, frame, third)? else {
                 return Ok(None);
             };
-            Ok(Some((at, values, [at + 1, second_at + 1, third_at + 1])))
+            Ok(Some((at, (values, [at + 1, second_at + 1, third_at + 1]))))
         },
         "find F3D body-bound frame",
     )
@@ -837,7 +841,7 @@ fn local_reference_candidates(
     let mut candidates = [None; 4];
     let mut end = at;
     if let Some((target, inline_type_guid)) =
-        take_reference(bytes, &mut end).and_then(|reference| reference.into_local())
+        take_reference(bytes, &mut end).and_then(crate::bytes::Reference::into_local)
     {
         let candidate = LocalReferenceCandidate {
             target,
@@ -3386,7 +3390,7 @@ mod tests {
             assert_eq!(
                 bounds
                     .iter()
-                    .map(|bounds| bounds.entity_suffix())
+                    .map(crate::records::bodies::DesignBodyBounds::entity_suffix)
                     .collect::<Vec<_>>(),
                 [7, 20]
             );

@@ -1077,7 +1077,7 @@ fn parse_feature_timeline_record(
             return Ok(None);
         }
     };
-    let class_tag = retain_class_tag(ctx, head.class_tag, "copy F3D class tag")?;
+    let class_tag = retain_class_tag(ctx, *head.class_tag, "copy F3D class tag")?;
     let Some(record_index) = std::num::NonZeroU64::new(expected_entity_id) else {
         return Ok(None);
     };

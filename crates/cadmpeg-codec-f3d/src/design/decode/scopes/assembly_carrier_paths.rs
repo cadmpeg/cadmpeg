@@ -228,16 +228,16 @@ fn exact_class_363_operand_path(
     let link = DesignAssemblyOperandPathLink {
         locator_reference_offset: frame.reference_offset,
         locator_record_index: frame.reference_record_index,
-        locator_class_tag: retain_class_tag(ctx, b"363", CLASS_TAG_OPERATION)?,
+        locator_class_tag: retain_class_tag(ctx, *b"363", CLASS_TAG_OPERATION)?,
         locator_byte_offset: u64_from_index(carrier_at),
         locator_scope_reference_offset,
         wrapper_record_index: leading_identity_record_index,
         wrapper_reference_offset,
-        wrapper_class_tag: retain_class_tag(ctx, b"388", CLASS_TAG_OPERATION)?,
+        wrapper_class_tag: retain_class_tag(ctx, *b"388", CLASS_TAG_OPERATION)?,
         wrapper_byte_offset: u64_from_index(leading_identity.start),
         path_reference_offset: occurrence_guid.offset,
     };
-    let class_tag = retain_class_tag(ctx, b"386", CLASS_TAG_OPERATION)?;
+    let class_tag = retain_class_tag(ctx, *b"386", CLASS_TAG_OPERATION)?;
     let mut occurrence_guids = Vec::new();
     ctx.push_vec(
         &mut occurrence_guids,
@@ -308,9 +308,9 @@ fn exact_class_307_joint_origin(
     }
     Ok(Some(DesignAssemblyOperandQualifier::JointOrigin {
         scope_record_index: frame.reference_record_index,
-        class_tag: retain_class_tag(ctx, b"307", CLASS_TAG_OPERATION)?,
+        class_tag: retain_class_tag(ctx, *b"307", CLASS_TAG_OPERATION)?,
         byte_offset: u64_from_index(start),
-        paired_class_tag: retain_class_tag(ctx, b"264", CLASS_TAG_OPERATION)?,
+        paired_class_tag: retain_class_tag(ctx, *b"264", CLASS_TAG_OPERATION)?,
         paired_byte_offset: u64_from_index(paired_at),
     }))
 }

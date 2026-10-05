@@ -49,8 +49,7 @@ fn mesh_scope_diagnostic_lists_refuse_collection_items() {
             "Synthetic/BulkStream.dat",
             &mut no_asset,
         )
-        .err()
-        .expect("disagreeing scope body list");
+        .expect_err("disagreeing scope body list");
         assert!(matches!(
             error,
             CodecError::Malformed(message)

@@ -328,7 +328,7 @@ fn exact_assembly_axial_operand_target(
                             construction_record_index: component.construction_record_index,
                             construction_class_tag: retain_class_tag(
                                 ctx,
-                                component.construction_class_tag,
+                                *component.construction_class_tag,
                                 "copy F3D axial assembly construction class tag",
                             )?,
                             construction_byte_offset: component.construction_byte_offset,
@@ -336,7 +336,7 @@ fn exact_assembly_axial_operand_target(
                             axis_record_index_offsets: component.axis_record_index_offsets,
                             construction_paired_class_tag: retain_class_tag(
                                 ctx,
-                                component.construction_paired_class_tag,
+                                *component.construction_paired_class_tag,
                                 "copy F3D axial assembly construction class tag",
                             )?,
                             construction_paired_byte_offset: component
@@ -748,16 +748,16 @@ fn exact_assembly_axial_selector(
     }
     Ok(Some(DesignAssemblyAxialSelectorIdentity {
         axis_record_index,
-        axis_class_tag: retain_class_tag(ctx, axis.class_tag, CLASS_TAG_OPERATION)?,
+        axis_class_tag: retain_class_tag(ctx, *axis.class_tag, CLASS_TAG_OPERATION)?,
         axis_byte_offset: u64_from_index(axis.byte_offset),
-        axis_paired_class_tag: retain_class_tag(ctx, axis.paired_class_tag, CLASS_TAG_OPERATION)?,
+        axis_paired_class_tag: retain_class_tag(ctx, *axis.paired_class_tag, CLASS_TAG_OPERATION)?,
         axis_paired_byte_offset: u64_from_index(axis.paired_byte_offset),
         selector_record_index,
-        selector_class_tag: retain_class_tag(ctx, prefix.class_tag, CLASS_TAG_OPERATION)?,
+        selector_class_tag: retain_class_tag(ctx, *prefix.class_tag, CLASS_TAG_OPERATION)?,
         selector_byte_offset: u64_from_index(selector_at),
         selector_paired_class_tag: retain_class_tag(
             ctx,
-            prefix.paired_class_tag,
+            *prefix.paired_class_tag,
             CLASS_TAG_OPERATION,
         )?,
         selector_paired_byte_offset: u64_from_index(selector_paired_at),
@@ -779,7 +779,7 @@ fn exact_assembly_axial_selector(
         external_link_name_offset: external.link_name_offset,
         external_version: external.version,
         role_record_index,
-        role_class_tag: retain_class_tag(ctx, role_class_tag, CLASS_TAG_OPERATION)?,
+        role_class_tag: retain_class_tag(ctx, *role_class_tag, CLASS_TAG_OPERATION)?,
         role_byte_offset: u64_from_index(role_at),
         occurrence_role,
         occurrence_role_offset: u64_from_index(occurrence_role_at + 4),
