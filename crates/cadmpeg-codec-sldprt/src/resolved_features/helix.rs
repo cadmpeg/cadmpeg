@@ -32,83 +32,78 @@ pub(super) fn fit_helix_polyline(
         );
         parameters[index + 1] = parameters[index] + delta.norm();
     }
-    (|| -> Result<Option<(Point3, Vector3, f64, f64)>, CodecError> {
-        let Some(total) = parameters.last().copied() else {
-            return Ok(None);
-        };
-        if !total.is_finite() || total <= 0.0 {
-            return Ok(None);
-        }
-        let angle = std::f64::consts::TAU * revolutions * if clockwise { -1.0 } else { 1.0 };
-        let mut normal = [[0.0; 4]; 4];
-        let mut rhs = [[0.0; 3]; 4];
-        for (point, distance) in ctx
-            .admit_iter(points, "fit SLDPRT helix normal equations")?
-            .zip(
-                ctx.admit_iter(&parameters, "fit SLDPRT helix normal equations")?
-                    .copied(),
-            )
-        {
-            let t = distance / total;
-            let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
-            for i in 0..4 {
-                for j in 0..4 {
-                    normal[i][j] += row[i] * row[j];
-                }
-                rhs[i][0] += row[i] * point.x;
-                rhs[i][1] += row[i] * point.y;
-                rhs[i][2] += row[i] * point.z;
+    let Some(total) = parameters.last().copied() else {
+        return Ok(None);
+    };
+    if !total.is_finite() || total <= 0.0 {
+        return Ok(None);
+    }
+    let angle = std::f64::consts::TAU * revolutions * if clockwise { -1.0 } else { 1.0 };
+    let mut normal = [[0.0; 4]; 4];
+    let mut rhs = [[0.0; 3]; 4];
+    for (point, distance) in ctx
+        .admit_iter(points, "fit SLDPRT helix normal equations")?
+        .zip(parameters.iter().copied())
+    {
+        let t = distance / total;
+        let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
+        for i in 0..4 {
+            for j in 0..4 {
+                normal[i][j] += row[i] * row[j];
             }
+            rhs[i][0] += row[i] * point.x;
+            rhs[i][1] += row[i] * point.y;
+            rhs[i][2] += row[i] * point.z;
         }
-        let Some(x) = solve_four(ctx, normal, rhs)? else {
-            return Ok(None);
-        };
-        let cosine = Vector3::new(x[2][0], x[2][1], x[2][2]);
-        let sine = Vector3::new(x[3][0], x[3][1], x[3][2]);
-        let mut axis = cosine.cross(sine);
-        let axis_length = axis.norm();
-        if !axis_length.is_finite() || axis_length <= 0.0 {
-            return Ok(None);
+    }
+    let Some(x) = solve_four(normal, rhs) else {
+        return Ok(None);
+    };
+    let cosine = Vector3::new(x[2][0], x[2][1], x[2][2]);
+    let sine = Vector3::new(x[3][0], x[3][1], x[3][2]);
+    let mut axis = cosine.cross(sine);
+    let axis_length = axis.norm();
+    if !axis_length.is_finite() || axis_length <= 0.0 {
+        return Ok(None);
+    }
+    axis = Vector3::new(
+        axis.x / axis_length,
+        axis.y / axis_length,
+        axis.z / axis_length,
+    );
+    let radial_cosine = subtract_axis(cosine, axis);
+    let radial_sine = subtract_axis(sine, axis);
+    let radius_estimate = (radial_cosine.norm() + radial_sine.norm()) * 0.5;
+    if !radius_estimate.is_finite() || radius_estimate <= 0.0 {
+        return Ok(None);
+    }
+    let mut max_error = 0.0f64;
+    for (point, distance) in ctx
+        .admit_iter(points, "fit SLDPRT helix residual")?
+        .zip(parameters.iter().copied())
+    {
+        let t = distance / total;
+        let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
+        for (coordinate, actual) in [point.x, point.y, point.z].into_iter().enumerate() {
+            let fitted = (0..4).map(|i| row[i] * x[i][coordinate]).sum::<f64>();
+            max_error = max_error.max((fitted - actual).abs());
         }
-        axis = Vector3::new(
-            axis.x / axis_length,
-            axis.y / axis_length,
-            axis.z / axis_length,
-        );
-        let radial_cosine = subtract_axis(cosine, axis);
-        let radial_sine = subtract_axis(sine, axis);
-        let radius_estimate = (radial_cosine.norm() + radial_sine.norm()) * 0.5;
-        if !radius_estimate.is_finite() || radius_estimate <= 0.0 {
-            return Ok(None);
-        }
-        let mut max_error = 0.0f64;
-        for (point, distance) in ctx.admit_iter(points, "fit SLDPRT helix residual")?.zip(
-            ctx.admit_iter(&parameters, "fit SLDPRT helix residual")?
-                .copied(),
-        ) {
-            let t = distance / total;
-            let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
-            for (coordinate, actual) in [point.x, point.y, point.z].into_iter().enumerate() {
-                let fitted = (0..4).map(|i| row[i] * x[i][coordinate]).sum::<f64>();
-                max_error = max_error.max((fitted - actual).abs());
-            }
-        }
-        if max_error > radius_estimate * HELIX_MAX_RELATIVE_RESIDUAL {
-            return Ok(None);
-        }
-        let Some((origin, radius)) = fit_circle_on_axis(ctx, points, axis)? else {
-            return Ok(None);
-        };
-        let Some(last) = points.last() else {
-            return Ok(None);
-        };
-        let displacement = Vector3::new(
-            last.x - points[0].x,
-            last.y - points[0].y,
-            last.z - points[0].z,
-        );
-        Ok(Some((origin, axis, radius, displacement.dot(axis))))
-    })()
+    }
+    if max_error > radius_estimate * HELIX_MAX_RELATIVE_RESIDUAL {
+        return Ok(None);
+    }
+    let Some((origin, radius)) = fit_circle_on_axis(ctx, points, axis)? else {
+        return Ok(None);
+    };
+    let Some(last) = points.last() else {
+        return Ok(None);
+    };
+    let displacement = Vector3::new(
+        last.x - points[0].x,
+        last.y - points[0].y,
+        last.z - points[0].z,
+    );
+    Ok(Some((origin, axis, radius, displacement.dot(axis))))
 }
 
 fn fit_circle_on_axis(
@@ -166,7 +161,7 @@ fn fit_circle_on_axis(
             }
         }
     }
-    let Some(solution) = solve_three(ctx, normal, rhs)? else {
+    let Some(solution) = solve_three(normal, rhs) else {
         return Ok(None);
     };
     let center_u = -solution[0] * 0.5;
@@ -195,33 +190,21 @@ fn fit_circle_on_axis(
     Ok(origin.is_finite().then_some((origin, radius)))
 }
 
-fn solve_three(
-    ctx: &DecodeContext<'_>,
-    mut matrix: [[f64; 3]; 3],
-    mut rhs: [f64; 3],
-) -> Result<Option<[f64; 3]>, CodecError> {
+fn solve_three(mut matrix: [[f64; 3]; 3], mut rhs: [f64; 3]) -> Option<[f64; 3]> {
     for column in 0usize..3 {
-        let Some(pivot) = ctx
-            .admit_iter(&(column..3), "fit SLDPRT circle pivot search")?
-            .max_by(|left, right| {
-                matrix[*left][column]
-                    .abs()
-                    .total_cmp(&matrix[*right][column].abs())
-            })
-        else {
-            return Ok(None);
-        };
+        let pivot = (column..3).max_by(|left, right| {
+            matrix[*left][column]
+                .abs()
+                .total_cmp(&matrix[*right][column].abs())
+        })?;
         if matrix[pivot][column].abs() <= 1.0e-14 {
-            return Ok(None);
+            return None;
         }
         matrix.swap(column, pivot);
         rhs.swap(column, pivot);
         let scale = matrix[column][column];
-        for value_index in ctx.admit_iter(
-            &(column..matrix[column].len()),
-            "fit SLDPRT circle pivot row",
-        )? {
-            matrix[column][value_index] /= scale;
+        for value in &mut matrix[column][column..] {
+            *value /= scale;
         }
         rhs[column] /= scale;
         for row in 0..3 {
@@ -236,7 +219,7 @@ fn solve_three(
             rhs[row] -= factor * rhs[column];
         }
     }
-    Ok(Some(rhs))
+    Some(rhs)
 }
 
 fn subtract_axis(vector: Vector3, axis: Vector3) -> Vector3 {
@@ -248,33 +231,21 @@ fn subtract_axis(vector: Vector3, axis: Vector3) -> Vector3 {
     )
 }
 
-fn solve_four(
-    ctx: &DecodeContext<'_>,
-    mut matrix: [[f64; 4]; 4],
-    mut rhs: [[f64; 3]; 4],
-) -> Result<Option<[[f64; 3]; 4]>, CodecError> {
+fn solve_four(mut matrix: [[f64; 4]; 4], mut rhs: [[f64; 3]; 4]) -> Option<[[f64; 3]; 4]> {
     for column in 0usize..4 {
-        let Some(pivot) = ctx
-            .admit_iter(&(column..4), "fit SLDPRT helix pivot search")?
-            .max_by(|left, right| {
-                matrix[*left][column]
-                    .abs()
-                    .total_cmp(&matrix[*right][column].abs())
-            })
-        else {
-            return Ok(None);
-        };
+        let pivot = (column..4).max_by(|left, right| {
+            matrix[*left][column]
+                .abs()
+                .total_cmp(&matrix[*right][column].abs())
+        })?;
         if matrix[pivot][column].abs() <= 1.0e-14 {
-            return Ok(None);
+            return None;
         }
         matrix.swap(column, pivot);
         rhs.swap(column, pivot);
         let scale = matrix[column][column];
-        for value_index in ctx.admit_iter(
-            &(column..matrix[column].len()),
-            "fit SLDPRT helix pivot row",
-        )? {
-            matrix[column][value_index] /= scale;
+        for value in &mut matrix[column][column..] {
+            *value /= scale;
         }
         for value in &mut rhs[column] {
             *value /= scale;
@@ -294,7 +265,7 @@ fn solve_four(
             }
         }
     }
-    Ok(Some(rhs))
+    Some(rhs)
 }
 
 #[cfg(test)]
@@ -323,21 +294,11 @@ mod tests {
 
     #[test]
     fn helix_fit_refuses_work_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let points = [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 6];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Six parameter-fill visits precede the five admitted segment visits.
-        policy.limits.max_work_units = 10;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let error = super::fit_helix_polyline(&ctx, &points, revolutions(1.0), false)
-            .expect_err("fit exceeds work limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "fit SLDPRT helix work"
-        ));
+        let error = crate::test_support::work_refusal_at("fit SLDPRT helix work", |ctx| {
+            super::fit_helix_polyline(ctx, &points, revolutions(1.0), false)
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
     // Four points of the exact circle of radius 5 about `(-5, 0, 0)` in the
