@@ -116,16 +116,11 @@ pub(super) fn exact_legacy_as_built_421_alignment(
     if as_built_421_scope_frame(bytes, scope, start, references).is_none() {
         return Ok(None);
     }
-    for owner in lanes {
-        if owner.frame_length() != 103
-            || !ctx.equal_bytes(
-                owner.class_tag().as_bytes(),
-                generation.owner_class_tag().as_bytes(),
-                "match F3D legacy AsBuilt alignment owner class",
-            )?
-        {
-            return Ok(None);
-        }
+    // Owner class tags hold three digits, so each comparison is constant.
+    if lanes.iter().any(|owner| {
+        owner.frame_length() != 103 || owner.class_tag().as_str() != generation.owner_class_tag()
+    }) {
+        return Ok(None);
     }
     let [offset_x, offset_y, offset_z, angle, limit_first, limit_second] = lanes;
     let [_, _, _, _, x_reference, y_reference, z_reference, angle_reference, _, first_limit_reference, second_limit_reference] =
@@ -454,18 +449,22 @@ fn exact_legacy_as_built_face_selection(
             .and_then(|offset| u64::try_from(offset).ok()),
         _ => None,
     };
+    // Each candidate is parsed under its own scoped reservation; only the
+    // selection that is returned becomes retained.
     let selection_at = |byte_offset: usize| {
-        exact_legacy_as_built_selection_at(
-            ctx,
-            bytes,
-            records,
-            scope,
-            scope_reference_ordinal,
-            (record_index, expected_class_tag),
-            byte_offset,
-            next_byte_offset,
-            recipes,
-        )
+        ctx.with_scoped_storage("f3d legacy AsBuilt face selection candidates", || {
+            exact_legacy_as_built_selection_at(
+                ctx,
+                bytes,
+                records,
+                scope,
+                scope_reference_ordinal,
+                (record_index, expected_class_tag),
+                byte_offset,
+                next_byte_offset,
+                recipes,
+            )
+        })
     };
     // Exactly one header of the record index must carry a complete selection.
     let offsets = records.offsets(record_index);
@@ -474,7 +473,8 @@ fn exact_legacy_as_built_face_selection(
     let Some(first) = ctx.position_by(
         offsets,
         |byte_offset| {
-            found = selection_at(*byte_offset)?;
+            let (selection, storage) = selection_at(*byte_offset)?;
+            found = selection.map(|selection| (selection, storage));
             Ok(found.is_some())
         },
         operation,
@@ -485,12 +485,16 @@ fn exact_legacy_as_built_face_selection(
     let later = offsets.get(first + 1..).unwrap_or(&[]);
     if ctx.any_by(
         later,
-        |byte_offset| Ok(selection_at(*byte_offset)?.is_some()),
+        |byte_offset| Ok(selection_at(*byte_offset)?.0.is_some()),
         operation,
     )? {
         return Ok(None);
     }
-    Ok(found)
+    let Some((selection, storage)) = found else {
+        return Ok(None);
+    };
+    storage.commit()?;
+    Ok(Some(selection))
 }
 
 /// The legacy As-built face selection whose indexed header is at
@@ -514,7 +518,13 @@ fn exact_legacy_as_built_selection_at(
     if indexed_class_at(bytes, header_offset) != Some(expected_class_tag) {
         return Ok(None);
     }
-    let id = ctx.copy_retained_text(&scope.id, "f3d legacy AsBuilt selection header ID")?;
+    // The header ID lives only while the face operand is parsed.
+    let mut id_storage = ctx.reserve_scoped(0, "f3d legacy AsBuilt selection header ID")?;
+    let id = ctx.copy_scoped_text(
+        &scope.id,
+        &mut id_storage,
+        "f3d legacy AsBuilt selection header ID",
+    )?;
     let class_tag = retain_class_tag(
         ctx,
         *expected_class_tag,
@@ -575,7 +585,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     #[test]
-    fn legacy_as_built_selection_header_id_refuses_retained_limit() {
+    fn legacy_as_built_selection_candidate_copies_are_scoped() {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"307");
@@ -586,12 +596,44 @@ mod tests {
             crate::records::feature::scope::DesignFeatureKind::AsBuilt,
             42,
         );
+        for (operation, additional) in [
+            (
+                "f3d legacy AsBuilt selection header ID",
+                u64_from_index(scope.id.len()),
+            ),
+            ("copy F3D As-built selection class tag", 3),
+        ] {
+            let refusal = crate::test_support::resource_refusal_at(
+                ResourceDimension::MaterializedBytes,
+                operation,
+                0,
+                |ctx| {
+                    exact_legacy_as_built_face_selection(
+                        ctx,
+                        &bytes,
+                        &records,
+                        &scope,
+                        0,
+                        (77, b"307"),
+                        &[],
+                    )
+                    .map(|_| ())
+                },
+            );
+            assert!(matches!(
+                refusal,
+                cadmpeg_core::CodecError::ResourceLimit(failure)
+                    if failure.dimension == ResourceDimension::MaterializedBytes
+                        && failure.operation == operation
+                        && failure.additional == additional
+            ));
+        }
+        // The candidate has no face operand, so nothing becomes retained.
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = u64_from_index(scope.id.len()) - 1;
-
+        policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = exact_legacy_as_built_face_selection(
+        assert!(exact_legacy_as_built_face_selection(
             &ctx,
             &bytes,
             &records,
@@ -599,13 +641,9 @@ mod tests {
             0,
             (77, b"307"),
             &[],
-        );
-        assert!(matches!(
-            result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "f3d legacy AsBuilt selection header ID"
-        ));
+        )
+        .unwrap()
+        .is_none());
     }
 
     #[test]
@@ -635,43 +673,5 @@ mod tests {
         )
         .unwrap()
         .is_none());
-    }
-
-    #[test]
-    fn legacy_as_built_selection_class_tag_copy_refuses_retained_bytes() {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"307");
-        bytes.extend_from_slice(&77u32.to_le_bytes());
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-        let scope = crate::records::feature::scope::DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-            crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-            42,
-        );
-        let refusal = crate::test_support::resource_refusal_at(
-            ResourceDimension::RetainedBytes,
-            "copy F3D As-built selection class tag",
-            0,
-            |ctx| {
-                exact_legacy_as_built_face_selection(
-                    ctx,
-                    &bytes,
-                    &records,
-                    &scope,
-                    0,
-                    (77, b"307"),
-                    &[],
-                )
-                .map(|_| ())
-            },
-        );
-        assert!(matches!(
-            refusal,
-            cadmpeg_core::CodecError::ResourceLimit(failure)
-                if failure.dimension == ResourceDimension::RetainedBytes
-                    && failure.operation == "copy F3D As-built selection class tag"
-                    && failure.additional == 3
-        ));
     }
 }
