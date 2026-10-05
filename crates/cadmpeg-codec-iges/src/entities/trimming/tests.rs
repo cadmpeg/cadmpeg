@@ -875,11 +875,11 @@ fn boundary_vertex_clustering_refuses_pairwise_work_before_comparisons() {
     .map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
     for (cap, operation, used) in [
         (2, "iges boundary clustering comparisons", 0),
-        // Pair, initialization and root visits use 26 units; sizes add three fills and roots add node moves and two queries.
+        // Pair, initialization and root visits use 26 units; sizes add three fills and roots add node moves and two one-entry queries.
         (
-            26 + 3 + 4 * (11 * 32 + 18 * 8) + 2 * 11 * 8 + 2,
+            26 + 3 + 4 * (11 * 32 + 18 * 8) + 2 * 8 + 2,
             "iges boundary cluster transitivity comparisons",
-            26 + 3 + 4 * (11 * 32 + 18 * 8) + 2 * 11 * 8,
+            26 + 3 + 4 * (11 * 32 + 18 * 8) + 2 * 8,
         ),
     ] {
         let arena = DecodeArena::new();

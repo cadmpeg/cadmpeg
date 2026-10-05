@@ -1390,7 +1390,10 @@ fn feature_name_index_refuses_caller_scoped_limit() {
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    // The feature ID set holds its four-bucket table (group padding, control
+    // bytes and trailer included) while it is filled; the next index needs more.
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<FeatureId>() + 15 + 4 + 16);
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let mut report = super::empty_report(true);
@@ -1468,7 +1471,10 @@ fn global_parameter_owner_refuses_caller_scoped_limit() {
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
+    // The feature ID set holds its four-bucket table (group padding, control
+    // bytes and trailer included) while it is filled; the next index needs more.
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<FeatureId>() + 15 + 4 + 16);
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let mut report = super::empty_report(true);

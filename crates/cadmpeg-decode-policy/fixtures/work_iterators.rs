@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pub struct DecodeContext;
+pub use decode::context::DecodeContext;
 impl DecodeContext {
     fn charge_work(&self, _count: u64, _operation: &str) -> Result<(), ()> {
         Ok(())
@@ -24,6 +24,9 @@ impl DecodeContext {
     }
 }
 pub mod decode {
+    pub mod context {
+        pub struct DecodeContext;
+    }
     pub mod scan {
         pub struct AdmittedIter<I> {
             pub source: I,

@@ -8,6 +8,7 @@ use std::hash::Hash;
 use crate::CodecError;
 
 use super::cost::DecodeCost;
+use super::extend_source::ExtendSource;
 use super::text::TextSource;
 
 use super::{
@@ -77,7 +78,7 @@ pub(super) enum LinearGrowth {
 impl DecodeContext<'_> {
     /// Charges the next source step before it can yield or run an adapter.
     /// Callers supply a fixed-step source or adapters over admitted bases.
-    pub(crate) fn next_charged<I: Iterator>(
+    pub fn next_charged<I: Iterator>(
         &self,
         values: &mut I,
         operation: &'static str,
@@ -301,8 +302,9 @@ impl DecodeContext<'_> {
         work_operation: &'static str,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), work_operation)?;
-        reservation.with_storage(|| self.insert_btree_set(values, value, operation))
+        reservation.with_storage(|| {
+            self.insert_btree_set_with_lookup(values, value, work_operation, operation)
+        })
     }
 
     /// Inserts a vacant scoped tree entry after charging lookup work and node storage.
@@ -315,7 +317,6 @@ impl DecodeContext<'_> {
         work_operation: &'static str,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), work_operation)?;
         reservation.with_storage(|| {
             if self.contains_key_btree_map(values, &key, work_operation)? {
                 return Ok(false);
@@ -335,7 +336,6 @@ impl DecodeContext<'_> {
         owned_bytes: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.charge_work(u64_from_index(groups.len()) + 1, operation)?;
         reservation.with_storage(|| {
             if let Some(values) = self.get_mut_btree_map(groups, &key, operation)? {
                 self.reserve_vec(values, 1, operation)?;
@@ -409,12 +409,6 @@ impl DecodeContext<'_> {
                 let Some((key, value)) = self.next_charged(&mut input, operation)? else {
                     break;
                 };
-                self.charge_work(
-                    u64_from_index(entries.len())
-                        .checked_add(1)
-                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
-                    operation,
-                )?;
                 self.insert_btree_map(&mut entries, key, value, operation)?;
             }
             Ok::<(), CodecError>(())
@@ -561,14 +555,15 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
-    /// Moves owned items into a vector after charging their slots.
+    /// Moves owned items or copies borrowed `Copy` values after admitting
+    /// their moves and the vector's growth.
     pub fn extend_vec<T>(
         &self,
         target: &mut Vec<T>,
-        mut source: Vec<T>,
+        source: impl ExtendSource<T>,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.append_vec(target, &mut source, operation)
+        source.extend_into(self, target, operation)
     }
 
     /// Collects iterator values with a charged slot for each value.
@@ -611,11 +606,36 @@ impl DecodeContext<'_> {
         values: impl IntoIterator<Item = Result<T, E>>,
         operation: &'static str,
     ) -> Result<Vec<T>, E> {
+        self.try_collect_vec_with(values, operation, |out, value| {
+            self.push_vec(out, value, operation).map_err(E::from)
+        })
+    }
+
+    /// Collects temporary slots while producer allocations remain retained.
+    /// Keep the returned reservation alive with the vector.
+    pub fn try_collect_scoped_vec<'ctx, T, E: From<CodecError>>(
+        &'ctx self,
+        values: impl IntoIterator<Item = Result<T, E>>,
+        operation: &'static str,
+    ) -> Result<(Vec<T>, ScopedReservation<'ctx>), E> {
+        let mut reservation = self.reserve_scoped(0, operation)?;
+        let output = self.try_collect_vec_with(values, operation, |out, value| {
+            self.push_scoped_vec(&mut reservation, out, value, operation)
+                .map_err(E::from)
+        })?;
+        Ok((output, reservation))
+    }
+
+    fn try_collect_vec_with<T, E: From<CodecError>>(
+        &self,
+        values: impl IntoIterator<Item = Result<T, E>>,
+        operation: &'static str,
+        mut push: impl FnMut(&mut Vec<T>, T) -> Result<(), E>,
+    ) -> Result<Vec<T>, E> {
         let mut out = Vec::new();
         let mut input = values.into_iter();
         while let Some(value) = self.next_charged(&mut input, operation)? {
-            self.push_vec(&mut out, value?, operation)
-                .map_err(E::from)?;
+            push(&mut out, value?)?;
         }
         Ok(out)
     }
@@ -638,7 +658,6 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), operation)?;
         if self.contains_hash_set(values, &value, operation)? {
             return Ok(false);
         }
@@ -654,8 +673,6 @@ impl DecodeContext<'_> {
         value: &str,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), operation)?;
-        self.charge_work(u64_from_index(value.len()), operation)?;
         if self.contains_hash_set(values, value, operation)? {
             return Ok(false);
         }
@@ -1086,13 +1103,33 @@ impl DecodeContext<'_> {
         })
     }
 
-    /// Copies a retained set after charging storage and entries.
-    pub fn copy_retained_set<T: Copy + Eq + Hash + DecodeCost>(
+    /// Charges rehashing every stored key when hash-table growth reallocates.
+    /// Fixed-cost keys are charged without visiting the table. Variable-cost
+    /// keys are measured where they are stored, and their sum, with one visit
+    /// per key, is charged as one amount, so the unspecified visit order
+    /// changes neither the total nor where a refusal falls. A key whose own
+    /// measurement admits child traversal charges that inside the walk.
+    /// The caller charges growth first. When the table reallocates, that work
+    /// bounds the old table's storage, at least two units per bucket, which
+    /// pays for this measuring walk and the rehash's own walk. When it rehashes
+    /// in place, both walks are paid by the insertions that filled its deleted
+    /// slots, as `charge_hash_growth` states.
+    fn charge_rehash<'keys, K: DecodeCost + 'keys>(
         &self,
-        values: &HashSet<T>,
+        len: usize,
+        keys: impl Iterator<Item = &'keys K>,
         operation: &'static str,
-    ) -> Result<HashSet<T>, CodecError> {
-        self.collect_hash_set(self.admit_iter(values, operation)?.copied(), operation)
+    ) -> Result<(), CodecError> {
+        let len = u64_from_index(len);
+        self.charge_work(len, operation)?;
+        if let Some(bytes) = K::FIXED_BYTES {
+            return self.charge_work(self.cost_product(len, bytes, operation)?, operation);
+        }
+        let mut bytes = len;
+        for key in keys {
+            bytes = self.cost_sum(bytes, key.decode_cost(self, operation)?, operation)?;
+        }
+        self.charge_work(bytes, operation)
     }
 
     // SwissTable has a maximum 7/8 load, power-of-two bucket storage, and
@@ -1125,6 +1162,21 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.retained_size_overflow_limit(operation))
     }
 
+    // `capacity()` is the live entries plus the remaining growth allowance; a
+    // removal leaves a deleted slot that counts in neither, so the real table
+    // can hold more buckets than `capacity()` implies. Hashbrown grows only
+    // when the new length exceeds `capacity()`. It then reallocates only when
+    // the new length exceeds half the real capacity, to the larger of the new
+    // length and the real capacity plus one: at most twice the new length.
+    // Otherwise it rehashes in place and allocates nothing. Storage for twice
+    // the new length therefore bounds both the old table it walks and the new
+    // table it allocates. Charging that bound as work, and its excess over the
+    // storage of `capacity()` as retained bytes, keeps the retained total at
+    // or above the real allocation, because earlier growth already charged at
+    // least the old table. An in-place rehash walks every bucket of a table
+    // whose deleted slots each came from an insertion since the last rehash,
+    // and it runs only when those slots are at least half the real capacity,
+    // so the insertions that filled them pay for the walk.
     fn charge_hash_growth<T>(
         &self,
         len: usize,
@@ -1143,11 +1195,16 @@ impl DecodeContext<'_> {
             2..=3 => 7,
             _ => 3,
         };
-        let old = self.hash_storage_bytes::<T>(capacity, operation)?;
-        let bytes = self.hash_storage_bytes::<T>(required.max(minimum), operation)? - old;
-        self.charge_work_limit(u64_from_index(old), operation)?;
+        let largest = required
+            .checked_mul(2)
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?
+            .max(minimum);
+        let bound = self.hash_storage_bytes::<T>(largest, operation)?;
+        let counted = self.hash_storage_bytes::<T>(capacity, operation)?;
+        let bytes = bound - counted;
+        self.charge_work_limit(u64_from_index(bound), operation)?;
         self.charge_retained_limit(u64_from_index(bytes), operation)?;
-        let overlap = self.reserve_scoped_limit(u64_from_index(old), operation)?;
+        let overlap = self.reserve_scoped_limit(u64_from_index(bound), operation)?;
         Ok((bytes, overlap))
     }
 
@@ -1172,14 +1229,11 @@ impl DecodeContext<'_> {
             .len()
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
-        if required > values.capacity() {
-            self.charge_work(u64_from_index(values.len()), operation)?;
-            for key in self.admit_iter(values, operation)? {
-                self.charge_key(key, 1, operation)?;
-            }
-        }
         let (bytes, _growth) =
             self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
+        if required > values.capacity() {
+            self.charge_rehash(values.len(), values.iter(), operation)?;
+        }
         values.try_reserve(count).map_err(|_| {
             self.budget
                 .retained_allocation_failed(u64_from_index(bytes), operation)
@@ -1207,14 +1261,11 @@ impl DecodeContext<'_> {
             .len()
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
-        if required > values.capacity() {
-            self.charge_work(u64_from_index(values.len()), operation)?;
-            for key in self.admit_iter(values, operation)? {
-                self.charge_key(key.0, 1, operation)?;
-            }
-        }
         let (bytes, _growth) =
             self.charge_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?;
+        if required > values.capacity() {
+            self.charge_rehash(values.len(), values.keys(), operation)?;
+        }
         values.try_reserve(count).map_err(|_| {
             self.budget
                 .retained_allocation_failed(u64_from_index(bytes), operation)
@@ -1241,21 +1292,18 @@ impl DecodeContext<'_> {
         self.tree_node_bytes::<K, V>(nodes, operation)
     }
 
-    // An insertion can split every node on its path and add a new root.
-    // The path has at most log2(len) + 1 nodes since every level branches.
+    // An insertion can split every node on its path and add a new root; a
+    // removal can rebalance every node on its path. The path has at most the
+    // tree's height in nodes.
     fn tree_mutation_bytes<K, V>(
         &self,
         len: usize,
         operation: &'static str,
     ) -> Result<u64, ResourceLimit> {
-        let nodes = if len == 0 {
-            1
-        } else {
-            usize::try_from(len.ilog2())
-                .map_err(|_| self.retained_size_overflow_limit(operation))?
-                .checked_add(2)
-                .ok_or_else(|| self.retained_size_overflow_limit(operation))?
-        };
+        let nodes = usize::try_from(Self::tree_height(len))
+            .ok()
+            .and_then(|height| height.checked_add(1))
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         self.tree_node_bytes::<K, V>(nodes, operation)
     }
 
@@ -1331,8 +1379,17 @@ impl DecodeContext<'_> {
         value: T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.charge_work(u64_from_index(values.len()), operation)?;
-        if self.contains_btree_set(values, &value, operation)? {
+        self.insert_btree_set_with_lookup(values, value, operation, operation)
+    }
+
+    fn insert_btree_set_with_lookup<T: Ord + DecodeCost>(
+        &self,
+        values: &mut BTreeSet<T>,
+        value: T,
+        lookup_operation: &'static str,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if self.contains_btree_set(values, &value, lookup_operation)? {
             return Ok(false);
         }
         self.admit_btree_node_storage::<T, ()>(values.len(), operation)?;
@@ -1663,6 +1720,7 @@ impl DecodeContext<'_> {
         length: usize,
         operation: &'static str,
     ) -> Result<String, CodecError> {
+        self.validate_vector_length::<u8>(0, length, operation)?;
         self.charge_retained(u64_from_index(length), operation)?;
         let mut value = String::new();
         value.try_reserve_exact(length).map_err(|_| {

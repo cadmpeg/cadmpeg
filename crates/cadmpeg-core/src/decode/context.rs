@@ -234,7 +234,7 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<String, ResourceLimit> {
         let bytes = super::u64_from_index(text.len());
-        self.budget.charge_work_limit(bytes, operation)?;
+        self.charge_work_limit(bytes, operation)?;
         self.budget.charge_retained_limit(bytes, operation)?;
         let mut copy = String::new();
         copy.try_reserve_exact(text.len()).map_err(|_| {
