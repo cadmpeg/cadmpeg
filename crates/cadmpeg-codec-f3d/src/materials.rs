@@ -362,7 +362,11 @@ fn patch_instance_colors(
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
     let frames = cadmpeg_protein::framing::record_frames_for_edit(bytes)?;
-    let schema_driven = cadmpeg_protein::has_schemas(protein);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        protein, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
+    let schema_driven = cadmpeg_protein::has_schemas(&ctx, protein)?;
     let decoded = if schema_driven {
         let outcome = cadmpeg_protein::decode_frames_for_edit(protein, &frames)?;
         notes.extend(outcome.rejected.iter().map(|rejected| {
