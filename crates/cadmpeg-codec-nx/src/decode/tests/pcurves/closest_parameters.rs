@@ -214,11 +214,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
 
 #[test]
 fn polynomial_root_isolation_retains_repeated_real_roots() {
-    let roots = crate::test_support::with_decode_context(|ctx| {
-        real_polynomial_roots(ctx, &[-1.0, 3.5, -3.0, -0.5, 1.0])
-    })
-    .expect("roots are admitted")
-    .expect("finite quartic roots");
+    let roots = real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0]).expect("finite quartic roots");
 
     assert_eq!(roots.len(), 3);
     for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {
@@ -302,7 +298,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
 }
 
 #[test]
-fn coincident_pcurve_interval_probe_refuses_session_work_limit() {
+fn coincident_pcurve_geometry_probe_refuses_session_work_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
@@ -334,10 +330,12 @@ fn coincident_pcurve_interval_probe_refuses_session_work_limit() {
         .expect("finite line pcurve"),
     );
 
+    // Each separation probe and each probed interval is one unit of the
+    // adaptive geometry budget, which draws on the session work allowance.
     let error = crate::test_support::resource_refusal_at(
         &[],
         ResourceDimension::WorkUnits,
-        "nx coincident pcurve interval probe",
+        "work_budget",
         |ctx| {
             crate::decode::pcurves::coincident_pcurve_pair(
                 ctx,
@@ -355,6 +353,6 @@ fn coincident_pcurve_interval_probe_refuses_session_work_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "nx coincident pcurve interval probe"
+                && limit.operation == "work_budget"
     ));
 }
