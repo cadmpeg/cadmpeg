@@ -241,16 +241,22 @@ fn configuration_json_escaped_text_scratch_refuses_capacity_rounding() {
 fn configuration_json_iteration_refusals_propagate() {
     for (bytes, operation) in [
         (b"[null]".as_slice(), "f3d configuration JSON array scan"),
-        (br#"{"a":null}"#.as_slice(), "f3d configuration JSON object scan"),
+        (
+            br#"{"a":null}"#.as_slice(),
+            "f3d configuration JSON object scan",
+        ),
     ] {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, |cap| {
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 parse_configuration_payload(&ctx, "table.dsgcfg", bytes)
-            });
+            },
+        );
         assert!(matches!(error, CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::WorkUnits && failure.operation == operation));
     }

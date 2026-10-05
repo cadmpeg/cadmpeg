@@ -1,100 +1,84 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer uniquely named Design image resources into neutral assets.
 
-use cadmpeg_core::container::ContainerRole;
+use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::native_scope_charged;
-use cadmpeg_core::decode::DecodeContext;
+use crate::design::decode::record_streams::in_stream;
+use crate::design::decode::sketch::{
+    append_percent_encoded, native_scope_charged, native_scope_scoped, percent_encoded_len,
+    IndexedRecordOffsets,
+};
+use crate::design::decode::text::rsplit_once_ascii;
+use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
-use std::fmt::Write;
 
+/// The neutral asset ID of a Design resource entry: the asset namespace, the
+/// encoded name length, `:` and the percent-encoded name.
 pub(super) fn neutral_asset_id_charged(
     ctx: &DecodeContext<'_>,
     entry_name: &str,
 ) -> Result<cadmpeg_ir::assets::AssetId, CodecError> {
     const PREFIX: &str = "f3d:model:asset#";
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    let mut encoded_len = 0usize;
-    for character in entry_name.chars() {
-        let bytes = character.len_utf8();
-        let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            bytes.checked_mul(3)
-        } else {
-            Some(bytes)
-        }
-        .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
-        encoded_len = encoded_len
-            .checked_add(width)
-            .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
-    }
-    let mut digits = 1usize;
-    let mut remaining = encoded_len;
-    while remaining >= 10 {
-        remaining /= 10;
-        digits += 1;
-    }
+    const OPERATION: &str = "f3d asset identifier";
+    let encoded_len = percent_encoded_len(ctx, entry_name, "measure F3D asset identifier")?;
+    let digits = encoded_len
+        .checked_ilog10()
+        .map_or(1, |log| index_from_u32(log) + 1);
     let capacity = PREFIX
         .len()
         .checked_add(digits)
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(encoded_len))
-        .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
-
-    let mut id = ctx.retained_string(capacity, "f3d asset identifier")?;
-    id.push_str(PREFIX);
-    write!(&mut id, "{encoded_len}:")
-        .map_err(|_| CodecError::malformed("F3D asset identifier formatting failed"))?;
-    for character in entry_name.chars() {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut bytes = [0u8; 4];
-            for byte in character.encode_utf8(&mut bytes).as_bytes() {
-                id.push('%');
-                id.push(char::from(HEX[usize::from(byte >> 4)]));
-                id.push(char::from(HEX[usize::from(byte & 0x0f)]));
-            }
-        } else {
-            id.push(character);
-        }
-    }
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+    let mut id = ctx.retained_string(capacity, OPERATION)?;
+    ctx.append_retained(&mut id, PREFIX, OPERATION)?;
+    ctx.append_formatted_retained(&mut id, format_args!("{encoded_len}:"), OPERATION)?;
+    append_percent_encoded(ctx, entry_name, &mut id, OPERATION)?;
     cadmpeg_ir::assets::AssetId::mint(id)
         .map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
 
+/// The only Design image entry whose file name is `asset_name`.
+pub(super) fn embedded_image_entry<'scan>(
+    ctx: &DecodeContext<'_>,
+    scan: &'scan ContainerScan,
+    asset_name: &str,
+) -> Result<Option<&'scan ContainerEntry>, CodecError> {
+    const OPERATION: &str = "find F3D embedded image entry";
+    let mut found = None;
+    for entry in ctx.admit_iter(&scan.entries, OPERATION)? {
+        if !scan.is_design_asset_entry(entry, ContainerRole::Image) {
+            continue;
+        }
+        let file_name = rsplit_once_ascii(ctx, &entry.name, b'/', OPERATION)?
+            .map_or(entry.name.as_str(), |(_, file_name)| file_name);
+        if ctx.equal_bytes(file_name.as_bytes(), asset_name.as_bytes(), OPERATION)?
+            && found.replace(entry).is_some()
+        {
+            return Ok(None);
+        }
+    }
+    Ok(found)
+}
+
+/// The neutral asset `id` holding the bytes of the image `entry`, named
+/// `asset_name`.
 pub(super) fn embedded_image_asset(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    entry: &ContainerEntry,
     asset_name: &str,
-) -> Result<Option<Asset>, CodecError> {
-    let mut entries = scan.entries.iter().filter(|entry| {
-        scan.is_design_asset_entry(entry, ContainerRole::Image)
-            && entry.name.rsplit('/').next() == Some(asset_name)
-    });
-    let (Some(entry), None) = (entries.next(), entries.next()) else {
-        return Ok(None);
-    };
-    let media_type = std::path::Path::new(asset_name)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .and_then(|extension| {
-            if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
-                Some("image/jpeg")
-            } else if extension.eq_ignore_ascii_case("png") {
-                Some("image/png")
-            } else {
-                None
-            }
-        })
-        .map(str::to_owned);
+    id: cadmpeg_ir::assets::AssetId,
+) -> Result<Asset, CodecError> {
+    let media_type = image_media_type(ctx, asset_name)?.map(str::to_owned);
     let data = ctx.copy_retained(scan.entry_bytes(&entry.name)?, "f3d embedded image data")?;
-    let name =
-        String::from_utf8(ctx.copy_retained(asset_name.as_bytes(), "f3d embedded image name")?)
-            .map_err(|_| CodecError::Malformed("asset name must be UTF-8".into()))?;
+    let name = ctx.copy_retained_text(asset_name, "f3d embedded image name")?;
     let native_ref = native_scope_charged(ctx, &entry.name)?;
-    Ok(Some(Asset::try_new(
+    Asset::try_new(
         ctx,
-        neutral_asset_id_charged(ctx, &entry.name)?,
+        id,
         Some(name),
         media_type,
         AssetContent::Embedded {
@@ -102,10 +86,40 @@ pub(super) fn embedded_image_asset(
                 .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
         },
         Some(native_ref),
-    )?))
+    )
+}
+
+/// The media type a file name's extension states. A name that starts with its
+/// only `.` has no extension. Each extension test reads at most the four
+/// bytes of a candidate.
+fn image_media_type(
+    ctx: &DecodeContext<'_>,
+    file_name: &str,
+) -> Result<Option<&'static str>, CodecError> {
+    const OPERATION: &str = "classify F3D embedded image extension";
+    let Some((stem, extension)) = rsplit_once_ascii(ctx, file_name, b'.', OPERATION)? else {
+        return Ok(None);
+    };
+    if stem.is_empty() {
+        return Ok(None);
+    }
+    for (candidate, media_type) in [
+        ("jpg", "image/jpeg"),
+        ("jpeg", "image/jpeg"),
+        ("png", "image/png"),
+    ] {
+        if extension.eq_ignore_ascii_case(candidate) {
+            return Ok(Some(media_type));
+        }
+    }
+    Ok(None)
 }
 
 /// Decode image scopes in their owning streams, ordered by native identity.
+/// A stream with an owner scope is indexed once, under a scoped reservation,
+/// and every scope of the stream is parsed against that index. Each parsed
+/// image is held under its own scoped reservation until the duplicates of its
+/// identity are dropped; the kept images become retained.
 pub(super) fn decode_scoped_images<T>(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -114,36 +128,64 @@ pub(super) fn decode_scoped_images<T>(
     mut parse: impl FnMut(
         &DecodeContext<'_>,
         &[u8],
+        &IndexedRecordOffsets,
         &str,
         &crate::records::feature::scope::DesignParameterScope,
     ) -> Result<Option<T>, CodecError>,
     id: impl Fn(&T) -> &str,
 ) -> Result<Vec<T>, CodecError> {
-    let mut images = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
+    let mut scratch = ctx.reserve_scoped(0, "f3d scoped image candidates")?;
+    let mut parsed = Vec::new();
+    for entry in ctx
+        .admit_iter(&scan.entries, "scan F3D image stream entries")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = native_scope_charged(ctx, &entry.name)?;
-        for scope in scopes.iter().filter(|scope| {
-            scope.kind().as_str() == kind.as_str()
-                && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
-        }) {
-            if let Some(image) = parse(ctx, bytes, &entry.name, scope)? {
-                ctx.reserve_vec(&mut images, 1, "f3d scoped image records")?;
-                images.push(image);
+        let (_stream_storage, stream) = native_scope_scoped(ctx, &entry.name)?;
+        let mut stream_records = None;
+        for scope in ctx.admit_iter(scopes, "scan F3D image owner scopes")? {
+            // The kind is a literal name, so the comparison is constant.
+            if scope.kind_name() != kind.as_str() || !in_stream(ctx, &scope.id, &stream)? {
+                continue;
+            }
+            let (records, _records_storage) = match &mut stream_records {
+                Some(records) => records,
+                slot @ None => slot.insert(IndexedRecordOffsets::build_scoped(ctx, bytes)?),
+            };
+            let (image, storage) = ctx.with_scoped_storage("f3d scoped image records", || {
+                parse(ctx, bytes, records, &entry.name, scope)
+            })?;
+            if let Some(image) = image {
+                ctx.push_scoped_vec(
+                    &mut scratch,
+                    &mut parsed,
+                    (image, storage),
+                    "f3d scoped image candidates",
+                )?;
             }
         }
     }
     ctx.stable_sort_by(
-        &mut images[..],
-        |value| id(value),
+        &mut parsed[..],
+        |(image, _)| id(image),
         Ord::cmp,
         "sort f3d design image 1",
     )?;
-    images.dedup_by(|a, b| id(a) == id(b));
+    let mut images = Vec::new();
+    for (image, storage) in parsed {
+        ctx.charge_work(1, "dedup f3d design images")?;
+        if let Some(kept) = images.last() {
+            if ctx.equal_bytes(
+                id(kept).as_bytes(),
+                id(&image).as_bytes(),
+                "dedup f3d design images",
+            )? {
+                continue;
+            }
+        }
+        storage.commit()?;
+        ctx.push_vec(&mut images, image, "f3d scoped image records")?;
+    }
     Ok(images)
 }
 
@@ -171,6 +213,16 @@ mod tests {
         zip.write_all(DATA).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
+            let asset = |ctx: &DecodeContext<'_>| {
+                let entry = super::embedded_image_entry(ctx, scan, NAME)?.expect("image entry");
+                super::embedded_image_asset(
+                    ctx,
+                    scan,
+                    entry,
+                    NAME,
+                    crate::ids::neutral_asset_id(ENTRY),
+                )
+            };
             for (limit, operation) in [
                 (0, "f3d embedded image data"),
                 (u64_from_index(DATA.len()), "f3d embedded image name"),
@@ -185,16 +237,28 @@ mod tests {
 
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 assert!(matches!(
-                    super::embedded_image_asset(&ctx, scan, NAME),
+                    asset(&ctx),
                     Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                         if failure.dimension == ResourceDimension::RetainedBytes
                             && failure.operation == operation
                 ));
             }
+            let extension_error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                "classify F3D embedded image extension",
+                0,
+                |ctx| asset(ctx).map(|_| ()),
+            );
+            assert!(matches!(
+                extension_error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "classify F3D embedded image extension"
+                        // The reverse search admits the name and the pattern.
+                        && limit.additional == u64_from_index(NAME.len() + 1)
+            ));
             crate::design::test_support::with_test_decode_context(|ctx| {
-                assert!(super::embedded_image_asset(ctx, scan, NAME)
-                    .unwrap()
-                    .is_some());
+                assert_eq!(asset(ctx).unwrap().id, crate::ids::neutral_asset_id(ENTRY));
             });
         });
     }
@@ -245,26 +309,33 @@ mod tests {
         let kind = crate::records::feature::scope::DesignFeatureKind::Fillet;
         with_scan(&archive, |scan| {
             for (dimension, operation) in [
-                (ResourceDimension::RetainedBytes, "f3d native stream key"),
+                (
+                    ResourceDimension::MaterializedBytes,
+                    "f3d scoped native stream key",
+                ),
+                (
+                    ResourceDimension::CollectionItems,
+                    "f3d scoped image candidates",
+                ),
                 (
                     ResourceDimension::CollectionItems,
                     "f3d scoped image records",
                 ),
             ] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                if dimension == ResourceDimension::RetainedBytes {
-                    policy.limits.max_retained_bytes = 0;
-                } else {
-                    policy.limits.max_collection_items = 0;
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let error =
+                    crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+                        super::decode_scoped_images(
+                            ctx,
+                            scan,
+                            std::slice::from_ref(&scope),
+                            &kind,
+                            |_, _, _, _, _| Ok(Some(17_u32)),
+                            |_| "image",
+                        )
+                    });
                 assert!(matches!(
-                    super::decode_scoped_images(
-                        &ctx, scan, std::slice::from_ref(&scope), &kind,
-                        |_, _, _, _| Ok(Some(17_u32)), |_| "image",
-                    ),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(failure)
                         if failure.dimension == dimension && failure.operation == operation
                 ));
             }
@@ -274,7 +345,7 @@ mod tests {
                     scan,
                     std::slice::from_ref(&scope),
                     &kind,
-                    |_, _, _, _| Ok(Some(17_u32)),
+                    |_, _, _, _, _| Ok(Some(17_u32)),
                     |_| "image",
                 )
                 .unwrap();

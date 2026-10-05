@@ -534,20 +534,20 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         visual_preset: None,
     };
 
-    assert!(
-        super::appearance_for_assignment(&cadmpeg_ir::index::StandardIndex, std::slice::from_ref(&appearance), &assignment)
-            .expect("valid preset-less assignment")
-            .is_none()
-    );
+    assert!(crate::writer::primitives::with_writing_context(|ctx| {
+        super::appearance_for_assignment(ctx, std::slice::from_ref(&appearance), &assignment)
+    })
+    .expect("valid preset-less assignment")
+    .is_none());
 
     assignment.visual_guid =
         crate::records::references::DesignVisualToken::try_from(appearance_guid.to_owned())
             .unwrap();
-    assert!(
-        super::appearance_for_assignment(&cadmpeg_ir::index::StandardIndex, std::slice::from_ref(&appearance), &assignment)
-            .expect("exact visual-token assignment")
-            .is_some()
-    );
+    assert!(crate::writer::primitives::with_writing_context(|ctx| {
+        super::appearance_for_assignment(ctx, std::slice::from_ref(&appearance), &assignment)
+    })
+    .expect("exact visual-token assignment")
+    .is_some());
 
     assignment.visual_guid = crate::records::references::DesignVisualToken::try_from(
         "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
@@ -558,11 +558,11 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         offset: 0,
     });
     appearance.name = Some("Prism-017".into());
-    assert!(
-        super::appearance_for_assignment(&cadmpeg_ir::index::StandardIndex, std::slice::from_ref(&appearance), &assignment)
-            .expect("present preset-name fallback")
-            .is_some()
-    );
+    assert!(crate::writer::primitives::with_writing_context(|ctx| {
+        super::appearance_for_assignment(ctx, std::slice::from_ref(&appearance), &assignment)
+    })
+    .expect("present preset-name fallback")
+    .is_some());
 }
 
 #[test]
@@ -587,11 +587,15 @@ fn complete_visual_token_selects_one_revision_record() {
         appearance("f3d:test:appearance#revised", revised_token),
     ];
 
-    let selected = super::appearance_for_visual_token(&cadmpeg_ir::index::StandardIndex,
-        &appearances,
-        &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(),
-        None,
-    )
+    let selected = crate::writer::primitives::with_writing_context(|ctx| {
+        super::appearance_for_visual_token(
+            ctx,
+            &appearances,
+            &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned())
+                .unwrap(),
+            None,
+        )
+    })
     .expect("unique complete visual token")
     .expect("revised appearance exists");
     assert_eq!(selected.id.as_str(), "f3d:test:appearance#revised");
@@ -599,24 +603,28 @@ fn complete_visual_token_selects_one_revision_record() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(super::appearance_for_visual_token(&ctx, &appearances,
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        matches!(super::appearance_for_visual_token(&ctx, &appearances,
         &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(), None),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && failure.operation == "f3d visual token revision step"));
+                && failure.operation == "f3d appearance visual token search")
+    );
 
     let duplicates = [
         appearance("f3d:test:appearance#first", revised_token),
         appearance("f3d:test:appearance#second", revised_token),
     ];
     assert!(matches!(
-        super::appearance_for_visual_token(&cadmpeg_ir::index::StandardIndex,
+        crate::writer::primitives::with_writing_context(|ctx| super::appearance_for_visual_token(
+            ctx,
             &duplicates,
             &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned())
                 .unwrap(),
             None
-        ),
+        )),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -642,14 +650,15 @@ fn visual_preset_fallback_requires_one_record() {
     ];
 
     assert!(matches!(
-        super::appearance_for_visual_token(&cadmpeg_ir::index::StandardIndex,
+        crate::writer::primitives::with_writing_context(|ctx| super::appearance_for_visual_token(
+            ctx,
             &appearances,
             &crate::records::references::DesignVisualToken::try_from(
                 "11111111-2222-3333-4444-555555555555".to_owned()
             )
             .unwrap(),
             Some("Prism-017"),
-        ),
+        )),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
@@ -1606,7 +1615,7 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let visibility =
+        let (visibility, _storage) =
             crate::design::decode::body::decode_all_body_visibility(&ctx, scan).unwrap();
         assert_eq!(
             visibility

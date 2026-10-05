@@ -2,63 +2,27 @@
 //! Stable Design identities and library markers for body presentation records.
 
 use crate::bytes::is_guid_prefix;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 
 /// Width of the GUID prefix in a serialized visual token.
 pub(crate) const GUID_LEN: usize = 36;
 const POST_2015_SUFFIX: &str = "_Post2015";
 
-/// Select fallible decode admission or infallible reconstruction for token grammar.
-pub(crate) trait VisualTokenAdmission {
-    type Error;
-    fn next_revision<'value>(&self, value: &'value str, prefix: &str)
-        -> Result<Option<&'value str>, Self::Error>;
-    fn finish<T>(&self, result: Result<T, Self::Error>) -> Result<T, CodecError>;
-}
-
-impl VisualTokenAdmission for DecodeContext<'_> {
-    type Error = CodecError;
-    fn next_revision<'value>(&self, value: &'value str, prefix: &str)
-        -> Result<Option<&'value str>, CodecError> {
-        self.charge_work(1, "f3d visual token revision step")?;
-        self.strip_prefix(value, prefix, "f3d visual token revision prefix")
-    }
-    fn finish<T>(&self, result: Result<T, CodecError>) -> Result<T, CodecError> {
-        result
-    }
-}
-
-impl VisualTokenAdmission for cadmpeg_ir::index::StandardIndex {
-    type Error = std::convert::Infallible;
-    fn next_revision<'value>(&self, value: &'value str, prefix: &str)
-        -> Result<Option<&'value str>, Self::Error> {
-        Ok(value.strip_prefix(prefix))
-    }
-    fn finish<T>(&self, result: Result<T, Self::Error>) -> Result<T, CodecError> {
-        match result {
-            Ok(value) => Ok(value),
-            Err(error) => match error {},
-        }
-    }
-}
-
 /// Parse a visual token as a GUID followed by zero or more `_Post2015`
 /// revision markers.
-pub(crate) fn visual_token<A: VisualTokenAdmission>(
-    admission: &A,
-    value: &str,
-) -> Result<Option<usize>, A::Error> {
+///
+/// The scan reads at most `value.len()` bytes. Decode callers charge that
+/// extent before calling; serde reconstruction and writers call it directly.
+pub(crate) fn visual_token(value: &str) -> Option<usize> {
     if !is_guid_prefix(value) {
-        return Ok(None);
+        return None;
     }
     let mut suffix = &value[GUID_LEN..];
     let mut post_2015_revisions = 0;
-    while let Some(rest) = admission.next_revision(suffix, POST_2015_SUFFIX)? {
+    while let Some(rest) = suffix.strip_prefix(POST_2015_SUFFIX) {
         suffix = rest;
         post_2015_revisions += 1;
     }
-    Ok(suffix.is_empty().then_some(post_2015_revisions))
+    suffix.is_empty().then_some(post_2015_revisions)
 }
 
 /// Stable Design type of a body record that owns its presentation envelope.
@@ -95,59 +59,42 @@ pub(crate) const MODERN_APPEARANCE_LIBRARY_IDS: [&str; 2] = [
 ];
 
 /// Whether a token names a physical material rather than one of its aspects.
-pub(super) fn is_physical_material_token(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-) -> Result<bool, CodecError> {
-    Ok(value.starts_with("PrismMaterial")
-        && !ctx.contains_text(value, "_physmat_aspects", "f3d physical material token aspects")?)
+///
+/// Callers pass tokens read with a 256-unit bound, so the scan is bounded by a
+/// constant.
+pub(super) fn is_physical_material_token(value: &str) -> bool {
+    value.starts_with("PrismMaterial") && !value.contains("_physmat_aspects")
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn visual_token_retains_revision_depth_as_record_identity() {
-        crate::test_support::with_decode_context(|ctx| {
-            let base = super::visual_token(ctx, "11111111-2222-3333-4444-555555555555")
-                .unwrap().expect("base visual token");
-            let revised = super::visual_token(ctx,
-                "11111111-2222-3333-4444-555555555555_Post2015_Post2015")
-                .unwrap().expect("revision-suffixed visual token");
-            let revised_case_variant = super::visual_token(ctx,
-                "11111111-2222-3333-4444-555555555555_post2015_post2015").unwrap();
-            assert_ne!(base, revised);
-            assert_eq!(revised, 2);
-            assert!(revised_case_variant.is_none());
-            assert!(super::visual_token(ctx,
-                "11111111-2222-3333-4444-555555555555_unrecognized").unwrap().is_none());
-        });
+        let base =
+            super::visual_token("11111111-2222-3333-4444-555555555555").expect("base visual token");
+        let revised = super::visual_token("11111111-2222-3333-4444-555555555555_Post2015_Post2015")
+            .expect("revision-suffixed visual token");
+        let revised_case_variant =
+            super::visual_token("11111111-2222-3333-4444-555555555555_post2015_post2015");
+        assert_ne!(base, revised);
+        assert_eq!(revised, 2);
+        assert!(revised_case_variant.is_none());
+        assert!(super::visual_token("11111111-2222-3333-4444-555555555555_unrecognized").is_none());
     }
 
     #[test]
-    fn presentation_token_work_refusals_propagate() {
+    fn visual_token_admission_refuses_before_the_grammar_scan() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        for (limit, operation) in [(0, "f3d visual token revision step"), (1, "f3d visual token revision prefix")] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = super::visual_token(&ctx, "11111111-2222-3333-4444-555555555555_Post2015");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::WorkUnits && failure.operation == operation));
-        }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(crate::records::references::DesignVisualToken::new(&ctx,
+        assert!(
+            matches!(crate::records::references::DesignVisualToken::new(&ctx,
             "11111111-2222-3333-4444-555555555555_Post2015".to_owned()),
             Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::WorkUnits
-                && failure.operation == "f3d visual token revision step"));
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(super::is_physical_material_token(&ctx, "PrismMaterial_sample"),
-            Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::WorkUnits
-                && failure.operation == "f3d physical material token aspects"));
+                && failure.operation == "f3d visual token grammar")
+        );
     }
 }

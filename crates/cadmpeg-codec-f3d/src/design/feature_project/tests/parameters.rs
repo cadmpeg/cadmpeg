@@ -241,10 +241,14 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     .unwrap();
     parameter.id = "f3d:native/BulkStream.dat:parameter#45".into();
     parameter.record_index = 45;
-    let mut owner = parse_parameter_owner(&parameter_owner_frame())
-        .unwrap()
-        .into_record("Design/BulkStream.dat", 0)
-        .unwrap();
+    let mut owner = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .unwrap()
+    .into_record("Design/BulkStream.dat", 0)
+    .unwrap();
     {
         let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
         wire.id = "f3d:native/BulkStream.dat:parameter-owner#44".into();
@@ -369,10 +373,14 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     parameter.id = "f3d:native:parameter#45".into();
     parameter.record_index = 45;
     parameter.source_ordinal = 17;
-    let mut owner = parse_parameter_owner(&parameter_owner_frame())
-        .unwrap()
-        .into_record("Design/BulkStream.dat", 0)
-        .unwrap();
+    let mut owner = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .unwrap()
+    .into_record("Design/BulkStream.dat", 0)
+    .unwrap();
     {
         let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
         wire.id = "f3d:native:parameter-owner#44".into();
@@ -604,10 +612,14 @@ fn parameter_expressions_project_feature_dependencies() {
         parameter
     };
     let owner = |record_index, scope_record_index, parameter_record_index| {
-        let mut owner = parse_parameter_owner(&parameter_owner_frame())
-            .expect("generated parameter owner is canonical")
-            .into_record("Design/BulkStream.dat", 0)
-            .unwrap();
+        let mut owner = parse_parameter_owner(
+            &cadmpeg_test_support::service_decode_context(),
+            &parameter_owner_frame(),
+        )
+        .expect("service decode context")
+        .expect("generated parameter owner is canonical")
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
         {
             let mut wire =
                 crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
@@ -795,22 +807,38 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
 #[test]
 fn parameter_display_kind_queries_refuse_work_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    for (kind, operation) in [("Diameter Dimension", "f3d parameter diameter display kind"),
-        ("Radius Dimension", "f3d parameter radius display kind")] {
-        let mut parameter = parse_design_parameter_record(&parameter_record(Some(44), "10 mm", kind,
-            Some("mm"), "Size", 1.0)).unwrap();
+    for (kind, operation) in [
+        ("Diameter Dimension", "f3d parameter diameter display kind"),
+        ("Radius Dimension", "f3d parameter radius display kind"),
+    ] {
+        let mut parameter = parse_design_parameter_record(&parameter_record(
+            Some(44),
+            "10 mm",
+            kind,
+            Some("mm"),
+            "Size",
+            1.0,
+        ))
+        .unwrap();
         parameter.id = "f3d:native:parameter#size".into();
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let timelines = crate::design::test_support::synthetic_feature_timelines(&[]);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(&ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: std::slice::from_ref(&parameter), timelines: &timelines,
-                    ..Default::default()
-                })
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let timelines = crate::design::test_support::synthetic_feature_timelines(&[]);
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    &ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        native: std::slice::from_ref(&parameter),
+                        timelines: &timelines,
+                        ..Default::default()
+                    },
+                )
+            },
+        );
     }
 }

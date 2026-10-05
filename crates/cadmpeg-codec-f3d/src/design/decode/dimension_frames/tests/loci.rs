@@ -3,6 +3,7 @@
 use super::super::{
     find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
     parse_dimension_locus_group, parse_dimension_locus_pair, parse_dimension_null_locus_pair,
+    LocusGroupStream,
 };
 use super::TEST_LINEAR_TOLERANCE;
 use crate::design::decode::parameters::parse_design_parameter_record;
@@ -17,7 +18,6 @@ use cadmpeg_ir::sketches::{
     SketchAxis, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId,
 };
-use std::collections::HashSet;
 
 #[test]
 fn dimension_locus_pair_resolves_two_typed_geometry_records() {
@@ -39,8 +39,18 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     bytes.extend_from_slice(b"273");
     bytes.extend_from_slice(&233u32.to_le_bytes());
 
-    let mut pair = parse_dimension_locus_pair(&bytes, 0, 228, &HashSet::from([192, 194]))
-        .expect("paired dimension locus frame");
+    let mut pair = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_dimension_locus_pair(
+            ctx,
+            &bytes,
+            0,
+            228,
+            &[192, 194],
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        )
+    })
+    .expect("paired dimension locus frame")
+    .expect("valid dimension locus frame");
     pair.id = "f3d:Design/BulkStream.dat:design-dimension-locus-pair#0".into();
     assert_eq!(pair.companion_record_index, 228);
     assert_eq!(pair.record_index, 233);
@@ -79,21 +89,37 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
             companion_record_index: 302,
         })
         .unwrap();
+    let governing =
+        |owners: &[DesignParameterOwner],
+         parameters: &[crate::records::parameters::DesignParameter]| {
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                crate::design::decode::dimension_frames::GoverningCompanions::build(
+                    ctx, owners, parameters,
+                )
+                .and_then(|governing| governing.governing(ctx, &pair.id, pair.paired_byte_offset()))
+                .unwrap()
+            })
+        };
     assert_eq!(
-        crate::design::decode::dimension_frames::following_dimension_companion_record_index(
-            &pair.id,
-            pair.paired_byte_offset(),
+        governing(
             std::slice::from_ref(&owner),
-            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&parameter)
         ),
         Some(302)
     );
     assert_eq!(
-        crate::design::decode::dimension_frames::following_dimension_companion_record_index(
-            &pair.id,
-            pair.paired_byte_offset(),
-            &[owner.clone(), owner],
-            std::slice::from_ref(&parameter),
+        governing(
+            &[owner.clone(), owner.clone()],
+            std::slice::from_ref(&parameter)
+        ),
+        None
+    );
+    // Two parameters of one stream scope and record index leave the owner no
+    // unique parameter, so no companion governs the frame.
+    assert_eq!(
+        governing(
+            std::slice::from_ref(&owner),
+            &[parameter.clone(), parameter]
         ),
         None
     );
@@ -104,21 +130,40 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     nested.extend_from_slice(&229u32.to_le_bytes());
     nested.extend_from_slice(&bytes);
     let nested_end = nested.len();
-    let nested = find_dimension_locus_pair(&nested, 0, nested_end, 228, &HashSet::from([192, 194]))
-        .expect("nested paired dimension locus frame");
+    let nested = crate::design::test_support::with_test_decode_context(|ctx| {
+        find_dimension_locus_pair(
+            ctx,
+            &nested,
+            0,
+            nested_end,
+            228,
+            &[192, 194],
+            &crate::design::test_support::indexed_record_offsets_for_test(&nested),
+        )
+        .map(|found| found.map(|(pair, _)| pair))
+    })
+    .expect("nested paired dimension locus frame")
+    .expect("valid nested dimension locus frame");
     assert_eq!(nested.byte_offset(), 11);
     assert_eq!(nested.paired_byte_offset(), 91);
 
     let mut competing = bytes.clone();
     competing.extend_from_slice(&bytes);
-    assert!(find_dimension_locus_pair(
-        &competing,
-        0,
-        competing.len(),
-        228,
-        &HashSet::from([192, 194]),
-    )
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            find_dimension_locus_pair(
+                ctx,
+                &competing,
+                0,
+                competing.len(),
+                228,
+                &[192, 194],
+                &crate::design::test_support::indexed_record_offsets_for_test(&competing),
+            )
+            .map(|found| found.is_none())
+        })
+        .expect("competing dimension locus frames")
+    );
 }
 
 #[test]
@@ -138,8 +183,18 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     bytes.extend_from_slice(b"273");
     bytes.extend_from_slice(&1394u32.to_le_bytes());
 
-    let pair = parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1109]))
-        .expect("null-locus dimension frame");
+    let pair = crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_dimension_null_locus_pair(
+            ctx,
+            &bytes,
+            0,
+            1290,
+            &[1109],
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        )
+    })
+    .expect("null-locus dimension frame")
+    .expect("valid null-locus dimension frame");
     assert_eq!(pair.companion_record_index, 1290);
     assert_eq!(pair.governing_companion_record_index, 1290);
     assert_eq!(pair.record_index, 1394);
@@ -149,7 +204,20 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(pair.loci()[1].role, 7);
     assert_eq!(pair.paired_class_tag.as_str(), "273");
 
-    assert!(parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1110]),).is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_dimension_null_locus_pair(
+                ctx,
+                &bytes,
+                0,
+                1290,
+                &[1110],
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            )
+        })
+        .expect("wrong dimension locus reference")
+        .is_none()
+    );
 
     let mut nested = Vec::new();
     nested.extend_from_slice(&3u32.to_le_bytes());
@@ -157,9 +225,20 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     nested.extend_from_slice(&229u32.to_le_bytes());
     nested.extend_from_slice(&bytes);
     let nested_end = nested.len();
-    let nested =
-        find_dimension_null_locus_pair(&nested, 0, nested_end, 1290, &HashSet::from([1109]))
-            .expect("null-locus frame following another indexed frame");
+    let nested = crate::design::test_support::with_test_decode_context(|ctx| {
+        find_dimension_null_locus_pair(
+            ctx,
+            &nested,
+            0,
+            nested_end,
+            1290,
+            &[1109],
+            &crate::design::test_support::indexed_record_offsets_for_test(&nested),
+        )
+        .map(|found| found.map(|(pair, _)| pair))
+    })
+    .expect("null-locus frame following another indexed frame")
+    .expect("valid nested null-locus frame");
     assert_eq!(nested.byte_offset(), 11);
     assert_eq!(nested.paired_byte_offset(), 85);
 
@@ -282,8 +361,8 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         &bytes,
         0,
         240,
-        &HashSet::from([175, 217]),
-        &HashSet::from([172]),
+        &[175, 217],
+        &[172],
     )
     .expect("counted dimension locus frame")
     .expect("admitted dimension locus frame");
@@ -319,10 +398,10 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             parse_dimension_locus_group(
-                &ctx, &bytes, 0, 240, &HashSet::from([175, 217]),
-                &HashSet::from([172]),
+                &ctx, &bytes, 0, 240, &[175, 217],
+                &[172],
             ),
-            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                 if failure.operation == operation
         ));
     }
@@ -390,29 +469,29 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"315");
     bytes.extend_from_slice(&251u32.to_le_bytes());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 4;
-    let (limited, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let stream = || LocusGroupStream {
+        name: "Design1/BulkStream.dat",
+        bytes: &bytes,
+        records: &records,
+        geometry_indices: &[175, 217],
+        sketch_entities: &[172],
+    };
+    // The second group's output slot is admitted before it is kept.
+    let refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d dimension locus groups",
+        1,
+        |ctx| find_dimension_locus_groups(ctx, &stream(), (0, bytes.len()), 240, &mut Vec::new()),
+    );
     assert!(matches!(
-        find_dimension_locus_groups(
-            &limited, &bytes, 0, bytes.len(), 240,
-            &HashSet::from([175, 217]), &HashSet::from([172]),
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d dimension locus group candidates"
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.operation == "f3d dimension locus groups"
     ));
-    let groups = find_dimension_locus_groups(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        0,
-        bytes.len(),
-        240,
-        &HashSet::from([175, 217]),
-        &HashSet::from([172]),
-    )
-    .unwrap();
+    let service = cadmpeg_test_support::service_decode_context();
+    let mut groups = Vec::new();
+    find_dimension_locus_groups(&service, &stream(), (0, bytes.len()), 240, &mut groups).unwrap();
     assert_eq!(
         groups
             .iter()

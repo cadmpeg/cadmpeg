@@ -32,8 +32,11 @@ pub(crate) fn project_local_components(
                 "f3d component native occurrence key",
             )?;
             ctx.make_ascii_lowercase(&mut key, "f3d component occurrence key case")?;
-            match ctx.entry_btree_map(&mut native_by_guid, key,
-                "f3d component native occurrence index")? {
+            match ctx.entry_btree_map(
+                &mut native_by_guid,
+                key,
+                "f3d component native occurrence index",
+            )? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(Some(occurrence));
                 }
@@ -61,7 +64,14 @@ pub(crate) fn project_local_components(
                     guid.value.as_str(),
                     "f3d component assembly occurrence lookup",
                 )?;
-                let root = ctx.get_btree_map(&native_by_guid, &key, "f3d component assembly occurrence lookup")?.copied().flatten();
+                let root = ctx
+                    .get_btree_map(
+                        &native_by_guid,
+                        &key,
+                        "f3d component assembly occurrence lookup",
+                    )?
+                    .copied()
+                    .flatten();
                 drop(key);
                 drop(reservation);
                 let Some(root) = root else {
@@ -142,7 +152,8 @@ pub(crate) fn project_local_components(
         }
     }
 
-    let mut occurrences = ctx.collect_vec(occurrences.into_values(), "f3d component occurrence output")?;
+    let mut occurrences =
+        ctx.collect_vec(occurrences.into_values(), "f3d component occurrence output")?;
     for ordinal in ctx.admit_iter(&(0..occurrences.len()), "f3d component occurrence ordinals")? {
         occurrences[ordinal].ordinal = u32::try_from(ordinal).map_err(|_| {
             cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32")
@@ -162,12 +173,19 @@ pub(crate) fn project_derived_instance_features(
         let Some(construction) = scope.derived_instance_construction() else {
             continue;
         };
-        let Some(index) = ctx.position_by(features, |feature| {
-            match feature.native_ref.as_deref() {
-                Some(reference) => ctx.equal(reference, scope.id.as_str(), "f3d component feature reference"),
+        let Some(index) = ctx.position_by(
+            &*features,
+            |feature| match feature.native_ref.as_deref() {
+                Some(reference) => ctx.equal(
+                    reference,
+                    scope.id.as_str(),
+                    "f3d component feature reference",
+                ),
                 None => Ok(false),
-            }
-        }, "f3d component feature search")? else {
+            },
+            "f3d component feature search",
+        )?
+        else {
             continue;
         };
         let feature = &mut features[index];
@@ -209,12 +227,19 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
         let Some(construction) = scope.component_insert_construction() else {
             continue;
         };
-        let Some(index) = ctx.position_by(features, |feature| {
-            match feature.native_ref.as_deref() {
-                Some(reference) => ctx.equal(reference, scope.id.as_str(), "f3d component feature reference"),
+        let Some(index) = ctx.position_by(
+            &*features,
+            |feature| match feature.native_ref.as_deref() {
+                Some(reference) => ctx.equal(
+                    reference,
+                    scope.id.as_str(),
+                    "f3d component feature reference",
+                ),
                 None => Ok(false),
-            }
-        }, "f3d component feature search")? else {
+            },
+            "f3d component feature search",
+        )?
+        else {
             continue;
         };
         let feature = &mut features[index];
@@ -295,7 +320,11 @@ fn project_occurrence(
     let transform = neutral_transform(transform)?;
     project_component(ctx, lookup_storage, components, component_guid)?;
     let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
-    if !ctx.contains_key_btree_map(occurrences, occurrence_id.as_str(), "f3d component occurrence lookup")? {
+    if !ctx.contains_key_btree_map(
+        occurrences,
+        occurrence_id.as_str(),
+        "f3d component occurrence lookup",
+    )? {
         let key = lookup_storage.with_storage(|| -> Result<String, cadmpeg_core::CodecError> {
             let key =
                 ctx.copy_retained_text(occurrence_id.as_str(), "f3d component occurrence map key")?;
@@ -306,8 +335,12 @@ fn project_occurrence(
             occurrence_guid.as_str(),
             "f3d component native occurrence lookup",
         )?;
-        let native_ref = ctx.get_btree_map(native_by_guid, &native_key,
-            "f3d component native occurrence lookup")?
+        let native_ref = ctx
+            .get_btree_map(
+                native_by_guid,
+                &native_key,
+                "f3d component native occurrence lookup",
+            )?
             .copied()
             .flatten()
             .map(|occurrence| {
@@ -316,25 +349,28 @@ fn project_occurrence(
             .transpose()?;
         drop(native_key);
         drop(reservation);
-        lookup_storage.with_storage(|| ctx.insert_btree_map(occurrences,
-            key,
-            Occurrence {
-                id: occurrence_id,
-                prototype: PrototypeReference::Local {
-                    definition: component_id,
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                occurrences,
+                key,
+                Occurrence {
+                    id: occurrence_id,
+                    prototype: PrototypeReference::Local {
+                        definition: component_id,
+                    },
+                    parent: OccurrenceParent::Root {},
+                    ordinal: 0,
+                    transform,
+                    linked_prototype: None,
+                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+                    name: None,
+                    visible: None,
+                    link: None,
+                    native_ref,
                 },
-                parent: OccurrenceParent::Root {},
-                ordinal: 0,
-                transform,
-                linked_prototype: None,
-                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                name: None,
-                visible: None,
-                link: None,
-                native_ref,
-            },
-            "f3d component occurrence map entry",
-        ))?;
+                "f3d component occurrence map entry",
+            )
+        })?;
     }
     Ok(())
 }
@@ -346,27 +382,34 @@ fn project_component(
     component_guid: &crate::records::mesh::DesignRelaxedGuidText,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let component_id = crate::ids::neutral_component_id(component_guid);
-    if !ctx.contains_key_btree_map(components, component_id.as_str(), "f3d component definition lookup")? {
+    if !ctx.contains_key_btree_map(
+        components,
+        component_id.as_str(),
+        "f3d component definition lookup",
+    )? {
         let key = lookup_storage.with_storage(|| -> Result<String, cadmpeg_core::CodecError> {
             let key =
                 ctx.copy_retained_text(component_id.as_str(), "f3d component definition map key")?;
             Ok(key)
         })?;
-        lookup_storage.with_storage(|| ctx.insert_btree_map(components,
-            key,
-            ProductDefinition {
-                id: component_id,
-                kind: ProductDefinitionKind::Part,
-                source_name: None,
-                label: None,
-                description: None,
-                part_number: None,
-                bom_properties: BTreeMap::new(),
-                bodies: Vec::new(),
-                native_ref: None,
-            },
-            "f3d component definition map entry",
-        ))?;
+        lookup_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                components,
+                key,
+                ProductDefinition {
+                    id: component_id,
+                    kind: ProductDefinitionKind::Part,
+                    source_name: None,
+                    label: None,
+                    description: None,
+                    part_number: None,
+                    bom_properties: BTreeMap::new(),
+                    bodies: Vec::new(),
+                    native_ref: None,
+                },
+                "f3d component definition map entry",
+            )
+        })?;
     }
     Ok(())
 }
@@ -915,8 +958,14 @@ mod tests {
             native_ref: None,
         };
         feature.native_ref = Some(scope.id.clone());
-        crate::test_support::with_decode_context(|ctx|
-            super::project_derived_instance_features(ctx, std::slice::from_mut(&mut feature), &[scope])).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            super::project_derived_instance_features(
+                ctx,
+                std::slice::from_mut(&mut feature),
+                &[scope],
+            )
+        })
+        .unwrap();
         assert_eq!(
             *feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::InsertComponent {
@@ -928,22 +977,34 @@ mod tests {
     }
     #[test]
     fn component_projection_work_refusals_propagate() {
-        for operation in ["f3d component native occurrences", "f3d component occurrence key case",
-            "f3d component native occurrence index", "f3d component scopes",
-            "f3d component definition lookup", "f3d component occurrence lookup",
-            "f3d component native occurrence lookup", "f3d component occurrence output",
-            "f3d component occurrence ordinals", "f3d component output"] {
+        for operation in [
+            "f3d component native occurrences",
+            "f3d component occurrence key case",
+            "f3d component native occurrence index",
+            "f3d component scopes",
+            "f3d component definition lookup",
+            "f3d component occurrence lookup",
+            "f3d component native occurrence lookup",
+            "f3d component occurrence output",
+            "f3d component occurrence ordinals",
+            "f3d component output",
+        ] {
             let (scope, occurrence) = one_component_fixture();
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
                 |cap| {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_work_units = cap;
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                    super::project_local_components(&ctx, &[scope.clone(), scope.clone()],
-                        &[occurrence.clone(), occurrence.clone()])
-                });
+                    super::project_local_components(
+                        &ctx,
+                        &[scope.clone(), scope.clone()],
+                        &[occurrence.clone(), occurrence.clone()],
+                    )
+                },
+            );
         }
     }
-
 }
