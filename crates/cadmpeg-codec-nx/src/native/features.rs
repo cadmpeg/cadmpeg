@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-history record extractors and their record types.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 pub(super) mod construction_records;
@@ -131,23 +130,43 @@ pub(super) fn feature_operation_chronological_labels<'a>(
     let mut section_reservation = ctx.reserve_scoped(0, "NX feature label sections")?;
     for label in ctx.admit_iter(labels, "index NX feature label sections")? {
         let section_key = label.section_link.as_str();
-        section_reservation.with_storage(|| {
-            ctx.admit_btree_entry(&sections, &section_key, "NX feature label sections")
-        })?;
-
-        sections
-            .entry(section_key)
-            .and_modify(|first| *first = (*first).min(label.source_offset))
-            .or_insert(label.source_offset);
+        if let Some(first) =
+            ctx.get_mut_btree_map(&mut sections, &section_key, "NX feature label sections")?
+        {
+            *first = (*first).min(label.source_offset);
+        } else {
+            section_reservation.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut sections,
+                    section_key,
+                    label.source_offset,
+                    "NX feature label sections",
+                )
+            })?;
+        }
     }
-    let mut ordered = ctx.collection_vec(labels.len(), "NX chronological feature labels")?;
-    ordered.extend(labels);
+    let mut keyed = Vec::new();
+    let mut keyed_reservation = ctx.reserve_scoped(0, "NX chronological feature label keys")?;
+    for label in ctx.admit_iter(labels, "key NX chronological feature labels")? {
+        let first = *ctx
+            .get_btree_map(
+                &sections,
+                &label.section_link.as_str(),
+                "find NX feature label section",
+            )?
+            .ok_or_else(|| ctx.refuse_codec_limit("find NX feature label section", 0, 1))?;
+        ctx.push_scoped_vec(
+            &mut keyed_reservation,
+            &mut keyed,
+            (first, label),
+            "NX chronological feature label keys",
+        )?;
+    }
     ctx.stable_sort_by_key(
-        &mut ordered,
-        |value| {
-            let record = *value;
+        &mut keyed,
+        |&(first, record)| {
             (
-                sections.get(record.section_link.as_str()),
+                first,
                 record.section_link.as_str(),
                 std::cmp::Reverse(record.source_offset),
             )
@@ -155,6 +174,10 @@ pub(super) fn feature_operation_chronological_labels<'a>(
         Ord::cmp,
         "sort NX chronological feature labels",
     )?;
+    let mut ordered = ctx.vector_storage(keyed.len(), "NX chronological feature labels")?;
+    for &(_, label) in ctx.admit_iter(&keyed, "collect NX chronological feature labels")? {
+        ctx.push_vec(&mut ordered, label, "NX chronological feature labels")?;
+    }
     Ok(ordered)
 }
 
@@ -3610,58 +3633,35 @@ pub(super) fn canonical_feature_history_links(
     Ok(canonical)
 }
 
-/// Return unique content-backed identities for the offset-store ordinals used
-/// by operation-header slots.
 ///
-/// A slot ordinal is local to one offset store and can drift when a record is
-/// inserted. The map is usable only when the ordinal resolves to exactly one
-/// column block across all offset stores and that block has a unique
-/// content-backed identity. An ambiguous or duplicate block remains absent.
-fn operation_header_block_identities(
-    ctx: &DecodeContext<'_>,
+/// Duplicate ordinals leave the index; a block without a content identity
+/// stays present with no identity.
+type OperationBlockIdentities = HashMap<u32, Option<Option<String>>>;
+
+fn operation_header_block_identities<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     container: &Container,
-) -> Result<BTreeMap<u32, Option<String>>, CodecError> {
-    let mut identities = BTreeMap::<u32, Option<String>>::new();
-    let mut blocks = data_blocks(ctx, container)?.into_iter();
-    for _ in ctx.admit_iter(&(0..blocks.len()), "index NX operation block identities")? {
-        let Some(block) = blocks.next() else {
-            return Err(ctx.refuse_codec_limit("index NX operation block identities", 0, 1));
-        };
-        if block.role == DataBlockRole::Column {
-            ctx.admit_btree_entry(
-                &identities,
-                &block.block_ordinal,
-                "NX operation block identity ordinals",
-            )?;
-            match identities.entry(block.block_ordinal) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(
-                            std::mem::size_of::<(u32, Option<String>)>() * 4,
-                        ),
-                        "retain NX operation block identity ordinals",
-                    )?;
-                    entry.insert(block.stable_identity);
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    entry.insert(None);
-                }
-            }
-        }
-    }
-    Ok(identities)
+) -> Result<(OperationBlockIdentities, ScopedReservation<'ctx>), CodecError> {
+    let blocks = data_blocks(ctx, container)?;
+    ctx.unique_index(
+        blocks
+            .into_iter()
+            .filter(|block| block.role == DataBlockRole::Column)
+            .map(|block| (block.block_ordinal, block.stable_identity)),
+        "index NX operation block identities",
+    )
 }
 
 /// Return the record-order-independent identity encoded by one operation
-/// header.
+/// header, formatted into `reservation`.
 ///
 /// Every non-null slot must resolve through the complete offset-store map.
-/// An all-null tuple, an unresolved slot, or a duplicated content identity has
-/// no operation identity witness.
+/// An all-null tuple or an unresolved slot has no operation identity witness.
 fn operation_header_identity_key(
     ctx: &DecodeContext<'_>,
     object_indices: [Option<u32>; 4],
-    block_identities: &BTreeMap<u32, Option<String>>,
+    block_identities: &OperationBlockIdentities,
+    reservation: &mut ScopedReservation<'_>,
 ) -> Result<Option<String>, CodecError> {
     if !object_indices.iter().any(Option::is_some) {
         return Ok(None);
@@ -3669,81 +3669,86 @@ fn operation_header_identity_key(
     let mut slots = ["null"; 4];
     for (slot, index) in slots.iter_mut().zip(object_indices) {
         if let Some(index) = index {
-            let Some(Some(identity)) = block_identities.get(&index) else {
+            let Some(Some(Some(identity))) = ctx.get_hash_map(
+                block_identities,
+                &index,
+                "find NX operation header block identity",
+            )?
+            else {
                 return Ok(None);
             };
             *slot = identity;
         }
     }
-    let prefix = "nx:feature-history:operation-header-identity#content:";
-    let length = slots
-        .iter()
-        .try_fold(prefix.len() + 3, |length, slot| {
-            length.checked_add(slot.len())
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("retain NX operation header identity", 0, 1))?;
-    let mut identity = ctx.retained_string(length, "retain NX operation header identity")?;
-    identity.push_str(prefix);
-    identity.push_str(slots[0]);
-    for slot in slots.iter().skip(1) {
-        identity.push('-');
-        identity.push_str(slot);
+    let [first, second, third, fourth] = slots;
+    ctx.format_scoped_text(
+        reservation,
+        format_args!(
+            "nx:feature-history:operation-header-identity#content:{first}-{second}-{third}-{fourth}"
+        ),
+        "NX operation header keys",
+    )
+    .map(Some)
+}
+
+/// Return the retained identity of each key that no other key equals, and
+/// `None` for an absent or repeated key.
+fn unique_operation_header_identities<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    keys: &[Option<String>],
+) -> Result<(Vec<Option<String>>, ScopedReservation<'ctx>), CodecError> {
+    let (unique, _unique_storage) = ctx.unique_index(
+        keys.iter()
+            .filter_map(|key| key.as_deref().map(|key| (key, ()))),
+        "count NX operation header keys",
+    )?;
+    let (mut identities, mut identities_storage) =
+        ctx.scoped_vector_storage(keys.len(), "NX operation header identities")?;
+    for key in ctx.admit_iter(keys, "assign NX operation header identities")? {
+        let identity = match key {
+            Some(key)
+                if ctx
+                    .get_hash_map(&unique, &key.as_str(), "find NX operation header key")?
+                    .is_some() =>
+            {
+                Some(ctx.copy_retained_text(key, "retain NX operation header identity")?)
+            }
+            _ => None,
+        };
+        ctx.push_scoped_vec(
+            &mut identities_storage,
+            &mut identities,
+            identity,
+            "NX operation header identities",
+        )?;
     }
-    Ok(Some(identity))
+    Ok((identities, identities_storage))
 }
 
 fn assign_operation_header_identities(
     ctx: &DecodeContext<'_>,
     labels: &mut [FeatureOperationLabel],
-    block_identities: &BTreeMap<u32, Option<String>>,
+    block_identities: &OperationBlockIdentities,
 ) -> Result<(), CodecError> {
+    let mut keys = Vec::new();
     let mut keys_guard = ctx.reserve_scoped(0, "reserve NX operation header keys")?;
-    let mut keys =
-        keys_guard.with_storage(|| ctx.collection_vec(labels.len(), "NX operation header keys"))?;
-    for label in ctx.admit_iter(labels, "index NX operation header keys")? {
-        keys.push(operation_header_identity_key(
+    let mut text_guard = ctx.reserve_scoped(0, "reserve NX operation header key text")?;
+    for label in ctx.admit_iter(&*labels, "index NX operation header keys")? {
+        let key = operation_header_identity_key(
             ctx,
             label.objects.values(),
             block_identities,
-        )?);
+            &mut text_guard,
+        )?;
+        ctx.push_scoped_vec(&mut keys_guard, &mut keys, key, "NX operation header keys")?;
     }
-
-    let mut counts_guard = ctx.reserve_scoped(0, "reserve NX operation header counts")?;
-    let mut counts = BTreeMap::<String, usize>::new();
-    for key in ctx
-        .admit_iter(keys.as_slice(), "count NX operation header keys")?
-        .filter_map(|key| key.as_ref())
-    {
-        if !counts.contains_key(key.as_str()) {
-            let mut copy = String::new();
-            counts_guard.with_storage(|| {
-                ctx.try_reserve_retained_text(
-                    &mut copy,
-                    key.len(),
-                    "allocate NX operation header count key",
-                )
-            })?;
-            copy.push_str(key);
-            counts_guard.with_storage(|| {
-                ctx.insert_btree_map(&mut counts, copy, 0, "NX operation header counts")
-            })?;
-        }
-        let count = counts
-            .get_mut(key.as_str())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX operation header count key", 0, 1))?;
-        *count = count
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("count NX operation headers", 0, 1))?;
-    }
-    let mut keys = keys.into_iter();
+    let (identities, _identities_storage) = unique_operation_header_identities(ctx, &keys)?;
+    let mut identities = identities.into_iter();
     for index in ctx.admit_iter(&(0..labels.len()), "assign NX operation header identities")? {
         let Some(label) = labels.get_mut(index) else {
             return Err(ctx.refuse_codec_limit("assign NX operation header identities", 0, 1));
         };
-        let Some(key) = keys.next() else {
-            return Err(ctx.refuse_codec_limit("assign NX operation header identities", 0, 1));
-        };
-        label.stable_identity = key.filter(|key| counts.get(key.as_str()) == Some(&1));
+        label.stable_identity = identities.next().flatten();
     }
     Ok(())
 }
@@ -3755,40 +3760,18 @@ fn format_feature_history_id(
     operation_ordinal: usize,
     subordinal: Option<usize>,
 ) -> Result<String, CodecError> {
-    fn decimal_width(mut value: usize) -> usize {
-        let mut digits = 1;
-        while value >= 10 {
-            value /= 10;
-            digits += 1;
-        }
-        digits.max(10)
+    match subordinal {
+        Some(subordinal) => ctx.format_retained(
+            format_args!(
+                "nx:feature-history:{kind}#{section_key}-{operation_ordinal:010}-{subordinal:010}"
+            ),
+            "retain NX feature history identity",
+        ),
+        None => ctx.format_retained(
+            format_args!("nx:feature-history:{kind}#{section_key}-{operation_ordinal:010}"),
+            "retain NX feature history identity",
+        ),
     }
-    let prefix = "nx:feature-history:";
-    let mut length = prefix
-        .len()
-        .checked_add(kind.len())
-        .and_then(|length| length.checked_add(1))
-        .and_then(|length| length.checked_add(section_key.len()))
-        .and_then(|length| length.checked_add(1))
-        .and_then(|length| length.checked_add(decimal_width(operation_ordinal)))
-        .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature history identity", 0, 1))?;
-    if let Some(subordinal) = subordinal {
-        length = length
-            .checked_add(1)
-            .and_then(|length| length.checked_add(decimal_width(subordinal)))
-            .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature history identity", 0, 1))?;
-    }
-    let mut id = ctx.retained_string(length, "retain NX feature history identity")?;
-    write!(
-        &mut id,
-        "{prefix}{kind}#{section_key}-{operation_ordinal:010}"
-    )
-    .map_err(|_| ctx.refuse_codec_limit("format NX feature history identity", 0, 1))?;
-    if let Some(subordinal) = subordinal {
-        write!(&mut id, "-{subordinal:010}")
-            .map_err(|_| ctx.refuse_codec_limit("format NX feature history identity", 0, 1))?;
-    }
-    Ok(id)
 }
 
 fn format_feature_child_id(
@@ -3797,23 +3780,85 @@ fn format_feature_child_id(
     suffix: &'static str,
     ordinal: usize,
 ) -> Result<String, CodecError> {
-    let digits = match ordinal.checked_ilog10() {
-        Some(digits) => usize::try_from(digits)
-            .map_err(|_| ctx.refuse_codec_limit("NX feature child identity width", 0, 1))?
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX feature child identity width", 0, 1))?,
-        None => 1,
-    }
-    .max(10);
-    let length = parent
-        .len()
-        .checked_add(suffix.len())
-        .and_then(|length| length.checked_add(digits))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX feature child identity", 0, 1))?;
-    let mut id = ctx.retained_string(length, "NX feature child identity")?;
-    write!(&mut id, "{parent}{suffix}{ordinal:010}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX feature child identity", 0, 1))?;
-    Ok(id)
+    ctx.format_retained(
+        format_args!("{parent}{suffix}{ordinal:010}"),
+        "NX feature child identity",
+    )
+}
+
+/// Return the key after the last `#` of a record identity, or `unknown`.
+fn identity_key<'a>(
+    ctx: &DecodeContext<'_>,
+    id: &'a str,
+    operation: &'static str,
+) -> Result<&'a str, CodecError> {
+    Ok(ctx
+        .rsplit_once(id, "#", operation)?
+        .map_or("unknown", |(_, key)| key))
+}
+
+/// Operation-header inputs grouped by owning operation label, in input order.
+type InputGroups<'a> = HashMap<&'a str, Vec<&'a FeatureInputBlock>>;
+
+fn inputs_by_operation_label<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    inputs: &'a [FeatureInputBlock],
+) -> Result<(InputGroups<'a>, ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("NX feature input operation index", || {
+        let mut grouped = InputGroups::new();
+        for input in ctx.admit_iter(inputs, "index NX feature inputs by operation")? {
+            ctx.push_hash_group(
+                &mut grouped,
+                input.operation_label.as_str(),
+                input,
+                "NX feature input operation index",
+                "NX feature input operation members",
+            )?;
+        }
+        Ok::<_, CodecError>(grouped)
+    })
+}
+
+/// Operation-header inputs grouped by resolved data block, in input order.
+fn inputs_by_data_block<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    inputs: &'a [FeatureInputBlock],
+) -> Result<(InputGroups<'a>, ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("NX feature input block index", || {
+        let mut grouped = InputGroups::new();
+        for input in ctx.admit_iter(inputs, "index NX feature inputs by block")? {
+            ctx.push_hash_group(
+                &mut grouped,
+                input.data_block.as_str(),
+                input,
+                "NX feature input block index",
+                "NX feature input block members",
+            )?;
+        }
+        Ok::<_, CodecError>(grouped)
+    })
+}
+
+/// Sketch reference fields grouped by owning operation label, in field order.
+type SketchReferenceGroups<'a> = HashMap<&'a str, Vec<&'a FeatureSketchReference>>;
+
+fn sketch_references_by_operation<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    references: &'a [FeatureSketchReference],
+) -> Result<(SketchReferenceGroups<'a>, ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("NX sketch reference operation index", || {
+        let mut grouped = SketchReferenceGroups::new();
+        for reference in ctx.admit_iter(references, "index NX sketch references")? {
+            ctx.push_hash_group(
+                &mut grouped,
+                reference.operation_label.as_str(),
+                reference,
+                "NX sketch reference operation index",
+                "NX sketch reference operation members",
+            )?;
+        }
+        Ok::<_, CodecError>(grouped)
+    })
 }
 
 /// Decode ordered operation labels from feature-history record areas.
@@ -3821,7 +3866,8 @@ pub(super) fn feature_operation_labels(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureOperationLabel>, cadmpeg_core::CodecError> {
-    let block_identities = operation_header_block_identities(ctx, history.container())?;
+    let (block_identities, _block_identities_storage) =
+        operation_header_block_identities(ctx, history.container())?;
     let mut labels = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -3830,7 +3876,6 @@ pub(super) fn feature_operation_labels(
         let entry_offset = history_section.entry_offset;
         let link = &history_section.link;
         let records = &history_section.records;
-        ctx.reserve_vec(&mut labels, records.len(), "NX feature operation labels")?;
         for &(ordinal, record) in ctx.admit_iter(records, "visit NX feature label records")? {
             let label = record.label();
             let ordinal_u32 = u32::try_from(ordinal)
@@ -3841,7 +3886,7 @@ pub(super) fn feature_operation_labels(
                     label.header.end_offset(),
                 ))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX feature operation label offset", 0, 1))?;
-            labels.push(FeatureOperationLabel {
+            let item = FeatureOperationLabel {
                 id,
                 section_link: ctx
                     .copy_retained_text(&link.id, "retain NX feature operation section link")?,
@@ -3851,7 +3896,8 @@ pub(super) fn feature_operation_labels(
                 objects: label.header.objects(),
                 stable_identity: None,
                 source_offset,
-            });
+            };
+            ctx.push_vec(&mut labels, item, "NX feature operation labels")?;
         }
     }
     assign_operation_header_identities(ctx, &mut labels, &block_identities)?;
@@ -3932,9 +3978,7 @@ pub(super) fn feature_boolean_operations(
                 source_offset: entry_offset
                     + cadmpeg_core::decode::u64_from_index(operation.offset),
             };
-            ctx.charge_collection_items(1, "NX Boolean operations")?;
-            ctx.reserve_capacity(&mut operations, 1, "allocate NX Boolean operations")?;
-            operations.push(item);
+            ctx.push_vec(&mut operations, item, "NX Boolean operations")?;
         }
     }
     Ok(operations)
@@ -3945,9 +3989,11 @@ pub(super) fn feature_operation_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureOperationRecord>, cadmpeg_core::CodecError> {
-    let block_identities = operation_header_block_identities(ctx, history.container())?;
-    let mut identity_counts = BTreeMap::<String, usize>::new();
-    let mut counts_reservation = ctx.reserve_scoped(0, "NX operation record identity counts")?;
+    let (block_identities, _block_identities_storage) =
+        operation_header_block_identities(ctx, history.container())?;
+    let mut keys = Vec::new();
+    let mut keys_reservation = ctx.reserve_scoped(0, "NX operation header keys")?;
+    let mut key_text = ctx.reserve_scoped(0, "NX operation header key text")?;
     let mut records = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -3958,11 +4004,6 @@ pub(super) fn feature_operation_records(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let stable_identity = operation_header_identity_key(
-                ctx,
-                record.label().header.objects().values(),
-                &block_identities,
-            )?;
             let Some(span) = entry_offset
                 .checked_add(cadmpeg_core::decode::u64_from_index(record.offset()))
                 .zip(
@@ -3980,31 +4021,18 @@ pub(super) fn feature_operation_records(
             else {
                 continue;
             };
-            if let Some(key) = &stable_identity {
-                if let Some(count) = ctx.get_mut_btree_map(
-                    &mut identity_counts,
-                    key.as_str(),
-                    "count NX operation record identities",
-                )? {
-                    *count = count.checked_add(1).ok_or_else(|| {
-                        ctx.refuse_codec_limit("count NX operation record identities", 0, 1)
-                    })?;
-                } else {
-                    let copy = ctx.copy_scoped_text(
-                        key,
-                        &mut counts_reservation,
-                        "allocate NX operation record identity key",
-                    )?;
-                    counts_reservation.with_storage(|| {
-                        ctx.insert_btree_map(
-                            &mut identity_counts,
-                            copy,
-                            1,
-                            "NX operation record identity counts",
-                        )
-                    })?;
-                }
-            }
+            let key = operation_header_identity_key(
+                ctx,
+                record.label().header.objects().values(),
+                &block_identities,
+                &mut key_text,
+            )?;
+            ctx.push_scoped_vec(
+                &mut keys_reservation,
+                &mut keys,
+                key,
+                "NX operation header keys",
+            )?;
             let ordinal = u32::try_from(operation_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX operation record ordinal", 0, 1))?;
             let item = FeatureOperationRecord {
@@ -4033,34 +4061,19 @@ pub(super) fn feature_operation_records(
                     record.payload(),
                     "NX retained record digest",
                 )?,
-                stable_identity,
+                stable_identity: None,
                 span,
             };
-            ctx.charge_collection_items(1, "NX feature operation records")
-                .and_then(|()| {
-                    ctx.reserve_capacity(&mut records, 1, "allocate NX feature operation records")
-                })?;
-            records.push(item);
+            ctx.push_vec(&mut records, item, "NX feature operation records")?;
         }
     }
-    for index in ctx.admit_iter(
-        &(0..records.len()),
-        "clear NX ambiguous operation record identities",
-    )? {
+    let (identities, _identities_storage) = unique_operation_header_identities(ctx, &keys)?;
+    let mut identities = identities.into_iter();
+    for index in ctx.admit_iter(&(0..records.len()), "assign NX operation record identities")? {
         let Some(record) = records.get_mut(index) else {
-            break;
+            return Err(ctx.refuse_codec_limit("assign NX operation record identities", 0, 1));
         };
-        let Some(key) = record.stable_identity.as_deref() else {
-            continue;
-        };
-        if ctx.get_btree_map(
-            &identity_counts,
-            key,
-            "find NX operation record identity count",
-        )? != Some(&1)
-        {
-            record.stable_identity = None;
-        }
+        record.stable_identity = identities.next().flatten();
     }
     Ok(records)
 }
@@ -4254,11 +4267,7 @@ pub(super) fn feature_operation_body_writes(
                     )?,
                     frame,
                 };
-                ctx.charge_collection_items(1, "NX operation body writes")
-                    .and_then(|()| {
-                        ctx.reserve_capacity(&mut writes, 1, "allocate NX operation body writes")
-                    })?;
-                writes.push(item);
+                ctx.push_vec(&mut writes, item, "NX operation body writes")?;
             }
         }
     }
@@ -4350,10 +4359,27 @@ pub(super) fn feature_operation_body_identity_segment_uses(
 
 const BODY_HISTORY_TERMINAL_STREAM_ROLE: u32 = 16;
 
+/// Plain cached-body bindings by stream ordinal; an ordinal bound twice is
+/// absent.
+type PlainStreamBindings<'a> = HashMap<u32, Option<&'a SegmentBodyBinding>>;
+
+fn plain_stream_bindings<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    bindings: &'a [SegmentBodyBinding],
+) -> Result<(PlainStreamBindings<'a>, ScopedReservation<'ctx>), CodecError> {
+    ctx.unique_index(
+        bindings
+            .iter()
+            .filter(|binding| binding.stream_kind == crate::parasolid::StreamKind::Plain)
+            .map(|binding| (binding.stream_ordinal, binding)),
+        "index NX body-history stream bindings",
+    )
+}
+
 fn body_history_partition_stream(
     ctx: &DecodeContext<'_>,
     binding: &SegmentBodyBinding,
-    bindings: &[SegmentBodyBinding],
+    plain_bindings: &PlainStreamBindings<'_>,
     streams: &[crate::parasolid::Stream],
 ) -> Result<Option<u32>, CodecError> {
     if binding.stream_kind != crate::parasolid::StreamKind::Plain {
@@ -4374,26 +4400,28 @@ fn body_history_partition_stream(
     let Some(search_streams) = streams.get(search_start..) else {
         return Ok(None);
     };
-    let Some(partition_relative) = ctx
-        .admit_iter(search_streams, "find NX body-history partition stream")?
-        .enumerate()
-        .find_map(|(ordinal, stream)| {
-            (stream.kind() == crate::parasolid::StreamKind::Partition).then_some(ordinal)
-        })
+    let Some(partition_relative) = ctx.position_by(
+        search_streams,
+        |stream| Ok(stream.kind() == crate::parasolid::StreamKind::Partition),
+        "find NX body-history partition stream",
+    )?
     else {
         return Ok(None);
     };
     let partition_ordinal = search_start
         .checked_add(partition_relative)
         .ok_or_else(|| ctx.refuse_codec_limit("find NX body-history partition stream", 0, 1))?;
-    let run_start = ctx
-        .admit_iter(
-            &streams[..stream_ordinal],
-            "find NX body-history plain run start",
-        )?
-        .enumerate()
-        .rposition(|(_, stream)| stream.kind() != crate::parasolid::StreamKind::Plain)
-        .map_or(0, |ordinal| ordinal + 1);
+    let mut run_start = 0;
+    for ordinal in (0..stream_ordinal).rev() {
+        ctx.charge_work(1, "find NX body-history plain run start")?;
+        if streams
+            .get(ordinal)
+            .is_some_and(|stream| stream.kind() != crate::parasolid::StreamKind::Plain)
+        {
+            run_start = ordinal + 1;
+            break;
+        }
+    }
     let Some(run_streams) = streams.get(run_start..partition_ordinal) else {
         return Ok(None);
     };
@@ -4409,16 +4437,18 @@ fn body_history_partition_stream(
         &(run_start..partition_ordinal),
         "visit NX body-history run streams",
     )? {
-        let mut matches = ctx
-            .admit_iter(bindings, "match NX body-history stream bindings")?
-            .filter(|candidate| {
-                candidate.stream_kind == crate::parasolid::StreamKind::Plain
-                    && usize::try_from(candidate.stream_ordinal).ok() == Some(ordinal)
-            });
-        let Some(candidate) = matches.next() else {
+        let Ok(ordinal) = u32::try_from(ordinal) else {
             return Ok(None);
         };
-        if matches.next().is_some() || terminal_role == Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) {
+        let Some(&Some(candidate)) = ctx.get_hash_map(
+            plain_bindings,
+            &ordinal,
+            "match NX body-history stream bindings",
+        )?
+        else {
+            return Ok(None);
+        };
+        if terminal_role == Some(BODY_HISTORY_TERMINAL_STREAM_ROLE) {
             return Ok(None);
         }
         terminal_role = Some(candidate.stream_role);
@@ -4427,6 +4457,79 @@ fn body_history_partition_stream(
         return Ok(None);
     }
     Ok(u32::try_from(partition_ordinal).ok())
+}
+
+/// Parasolid GROUP records and members indexed by GROUP node, in input order.
+struct PartitionGroupIndex<'a, 'ctx> {
+    groups: HashMap<u32, Vec<&'a crate::native::parasolid::ParasolidGroupRecord>>,
+    members: HashMap<u32, Vec<&'a crate::native::parasolid::ParasolidGroupMember>>,
+    _groups_storage: ScopedReservation<'ctx>,
+    _members_storage: ScopedReservation<'ctx>,
+}
+
+impl<'a, 'ctx> PartitionGroupIndex<'a, 'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        groups: &'a [crate::native::parasolid::ParasolidGroupRecord],
+        group_members: &'a [crate::native::parasolid::ParasolidGroupMember],
+    ) -> Result<Self, CodecError> {
+        let (groups, _groups_storage) =
+            ctx.with_scoped_storage("NX body GROUP node index", || {
+                let mut grouped =
+                    HashMap::<u32, Vec<&crate::native::parasolid::ParasolidGroupRecord>>::new();
+                for group in ctx.admit_iter(groups, "index NX body GROUP records")? {
+                    ctx.push_hash_group(
+                        &mut grouped,
+                        group.node_id,
+                        group,
+                        "NX body GROUP node index",
+                        "NX body GROUP node records",
+                    )?;
+                }
+                Ok::<_, CodecError>(grouped)
+            })?;
+        let (members, _members_storage) =
+            ctx.with_scoped_storage("NX body GROUP member node index", || {
+                let mut grouped =
+                    HashMap::<u32, Vec<&crate::native::parasolid::ParasolidGroupMember>>::new();
+                for member in ctx.admit_iter(group_members, "index NX body GROUP members")? {
+                    ctx.push_hash_group(
+                        &mut grouped,
+                        member.group_node_id,
+                        member,
+                        "NX body GROUP member node index",
+                        "NX body GROUP node members",
+                    )?;
+                }
+                Ok::<_, CodecError>(grouped)
+            })?;
+        Ok(Self {
+            groups,
+            members,
+            _groups_storage,
+            _members_storage,
+        })
+    }
+
+    fn groups_of(
+        &self,
+        ctx: &DecodeContext<'_>,
+        node: u32,
+    ) -> Result<&[&'a crate::native::parasolid::ParasolidGroupRecord], CodecError> {
+        Ok(ctx
+            .get_hash_map(&self.groups, &node, "find NX body GROUP records")?
+            .map_or(&[][..], Vec::as_slice))
+    }
+
+    fn members_of(
+        &self,
+        ctx: &DecodeContext<'_>,
+        node: u32,
+    ) -> Result<&[&'a crate::native::parasolid::ParasolidGroupMember], CodecError> {
+        Ok(ctx
+            .get_hash_map(&self.members, &node, "find NX body GROUP members")?
+            .map_or(&[][..], Vec::as_slice))
+    }
 }
 
 /// Resolve body-write GROUP nodes only inside their complete body-history unit.
@@ -4455,6 +4558,8 @@ pub(super) fn feature_operation_body_partition_uses(
             .map(|binding| (binding.id.as_str(), binding)),
         "index NX body partition bindings",
     )?;
+    let (plain_bindings, _plain_bindings_storage) = plain_stream_bindings(ctx, bindings)?;
+    let group_index = PartitionGroupIndex::new(ctx, groups, group_members)?;
     let mut output = Vec::new();
     for image_use in ctx.admit_iter(image_uses, "visit NX body partition image uses")? {
         let Some(&Some(write)) = ctx.get_hash_map(
@@ -4474,16 +4579,18 @@ pub(super) fn feature_operation_body_partition_uses(
             continue;
         };
         let Some(partition_stream_ordinal) =
-            body_history_partition_stream(ctx, binding, bindings, streams)?
+            body_history_partition_stream(ctx, binding, &plain_bindings, streams)?
         else {
             continue;
         };
         let mut parasolid_group_records = Vec::new();
         for group in ctx
-            .admit_iter(groups, "collect NX body partition group records")?
+            .admit_iter(
+                group_index.groups_of(ctx, write.frame.group_node().value())?,
+                "collect NX body partition group records",
+            )?
             .filter(|group| {
                 group.origin.partition_stream_ordinal() == Some(partition_stream_ordinal)
-                    && group.node_id == write.frame.group_node().value()
             })
         {
             ctx.reserve_vec(
@@ -4497,11 +4604,11 @@ pub(super) fn feature_operation_body_partition_uses(
         }
         let mut parasolid_group_members = Vec::new();
         for member in ctx
-            .admit_iter(group_members, "collect NX body partition group members")?
-            .filter(|member| {
-                member.partition_stream_ordinal == partition_stream_ordinal
-                    && member.group_node_id == write.frame.group_node().value()
-            })
+            .admit_iter(
+                group_index.members_of(ctx, write.frame.group_node().value())?,
+                "collect NX body partition group members",
+            )?
+            .filter(|member| member.partition_stream_ordinal == partition_stream_ordinal)
         {
             ctx.reserve_vec(
                 &mut parasolid_group_members,
@@ -4553,6 +4660,7 @@ pub(super) fn feature_body_write_group_partition_uses(
         .len()
         .checked_add(unlabeled_writes.len())
         .ok_or_else(|| ctx.refuse_codec_limit("join NX body-write group partitions", 0, 1))?;
+    let group_index = PartitionGroupIndex::new(ctx, groups, group_members)?;
     let mut output = Vec::new();
     for ordinal in ctx.admit_iter(
         &(0..candidates),
@@ -4574,10 +4682,10 @@ pub(super) fn feature_body_write_group_partition_uses(
         let group_node = write.frame.group_node().value();
         let mut partition = None;
         let mut valid = true;
-        for group in ctx
-            .admit_iter(groups, "validate NX body-write group partition ownership")?
-            .filter(|group| group.node_id == group_node)
-        {
+        for group in ctx.admit_iter(
+            group_index.groups_of(ctx, group_node)?,
+            "validate NX body-write group partition ownership",
+        )? {
             match (partition, group.origin.partition_stream_ordinal()) {
                 (None, Some(ordinal)) => partition = Some(ordinal),
                 (Some(expected), Some(actual)) if expected == actual => {}
@@ -4594,10 +4702,10 @@ pub(super) fn feature_body_write_group_partition_uses(
             continue;
         }
         let mut parasolid_group_records = Vec::new();
-        for group in ctx
-            .admit_iter(groups, "collect NX body-write group partition records")?
-            .filter(|group| group.node_id == group_node)
-        {
+        for group in ctx.admit_iter(
+            group_index.groups_of(ctx, group_node)?,
+            "collect NX body-write group partition records",
+        )? {
             ctx.reserve_vec(
                 &mut parasolid_group_records,
                 1,
@@ -4609,13 +4717,10 @@ pub(super) fn feature_body_write_group_partition_uses(
         let mut parasolid_group_members = Vec::new();
         for member in ctx
             .admit_iter(
-                group_members,
+                group_index.members_of(ctx, group_node)?,
                 "collect NX body-write group partition members",
             )?
-            .filter(|member| {
-                member.partition_stream_ordinal == partition_stream_ordinal
-                    && member.group_node_id == group_node
-            })
+            .filter(|member| member.partition_stream_ordinal == partition_stream_ordinal)
         {
             ctx.reserve_vec(
                 &mut parasolid_group_members,
@@ -4908,31 +5013,48 @@ pub(super) fn feature_operation_state_journal_uses(
     terminal_frames: &[FeatureOperationTerminalFrame],
     journal_groups: &[OmOperationStateJournalGroup],
 ) -> Result<Vec<FeatureOperationStateJournalUse>, CodecError> {
+    let (records_by_id, _records_storage) = ctx.unique_index(
+        records.iter().map(|record| (record.id.as_str(), record)),
+        "index NX operation journal records",
+    )?;
+    let (labels_by_id, _labels_storage) = ctx.unique_index(
+        labels.iter().map(|label| (label.id.as_str(), label)),
+        "index NX operation journal labels",
+    )?;
+    let (groups_by_section, _groups_storage) = ctx.collect_scoped_btree_groups(
+        journal_groups
+            .iter()
+            .map(|group| (group.section_link.as_str(), group)),
+        "index NX operation journal groups",
+    )?;
     let mut uses = Vec::new();
     for frame in ctx.admit_iter(terminal_frames, "visit NX operation terminal frames")? {
-        let mut label = None;
-        for record in ctx
-            .admit_iter(records, "match NX operation terminal records")?
-            .rev()
-            .filter(|record| record.id == frame.operation_record)
-        {
-            label = ctx
-                .admit_iter(labels, "match NX operation journal labels")?
-                .rev()
-                .find(|label| label.id == record.operation_label);
-            if label.is_some() {
-                break;
-            }
-        }
-        let Some(label) = label else {
+        let Some(&Some(record)) = ctx.get_hash_map(
+            &records_by_id,
+            &frame.operation_record.as_str(),
+            "match NX operation terminal records",
+        )?
+        else {
+            continue;
+        };
+        let Some(&Some(label)) = ctx.get_hash_map(
+            &labels_by_id,
+            &record.operation_label.as_str(),
+            "match NX operation journal labels",
+        )?
+        else {
             continue;
         };
         let mut matching_row = None;
         let mut ambiguous = false;
-        for group in ctx
-            .admit_iter(journal_groups, "match NX operation journal groups")?
-            .filter(|group| group.section_link == label.section_link)
-        {
+        let section_groups = ctx
+            .get_btree_map(
+                &groups_by_section,
+                &label.section_link.as_str(),
+                "match NX operation journal groups",
+            )?
+            .map_or(&[][..], Vec::as_slice);
+        for &group in ctx.admit_iter(section_groups, "match NX operation journal groups")? {
             let rows = group.frame.rows();
             for row_ordinal in
                 ctx.admit_iter(&(0..rows.len()), "match NX operation journal rows")?
@@ -4962,29 +5084,26 @@ pub(super) fn feature_operation_state_journal_uses(
         let Some((group, journal_row_ordinal, row)) = matching_row else {
             continue;
         };
-        let operation_key = frame
-            .operation_record
-            .strip_prefix("nx:feature-history:operation-record#")
+        let operation_key = ctx
+            .strip_prefix(
+                &frame.operation_record,
+                "nx:feature-history:operation-record#",
+                "NX operation journal record key",
+            )?
             .unwrap_or(frame.operation_record.as_str());
-        let journal_key = group
-            .id
-            .strip_prefix("nx:feature-history:operation-state-journal-group#")
+        let journal_key = ctx
+            .strip_prefix(
+                &group.id,
+                "nx:feature-history:operation-state-journal-group#",
+                "NX operation journal group key",
+            )?
             .unwrap_or(group.id.as_str());
-        let prefix = "nx:feature-history:operation-state-journal-use#";
-        let id_len = prefix
-            .len()
-            .checked_add(operation_key.len())
-            .and_then(|length| length.checked_add(journal_key.len()))
-            .and_then(|length| length.checked_add(12))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1)
-            })?;
-        let mut id = ctx.retained_string(id_len, "NX operation journal use identity")?;
-        write!(
-            &mut id,
-            "{prefix}{operation_key}-{journal_key}-{journal_row_ordinal:010}"
-        )
-        .map_err(|_| ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1))?;
+        let id = ctx.format_retained(
+            format_args!(
+                "nx:feature-history:operation-state-journal-use#{operation_key}-{journal_key}-{journal_row_ordinal:010}"
+            ),
+            "NX operation journal use identity",
+        )?;
         ctx.reserve_vec(&mut uses, 1, "NX operation journal uses")?;
         uses.push(FeatureOperationStateJournalUse {
             id,
@@ -5060,8 +5179,13 @@ pub(super) fn feature_payload_strings(
                         None,
                     )?,
                     ordinal: ordinal_u32,
-                    value: crate::payload_text::PayloadText::new(text)
-                        .map_err(|error| CodecError::InvalidInput(error.to_string()))?,
+                    value: crate::payload_text::PayloadText::new(text).map_err(|error| {
+                        ctx.format_retained(
+                            format_args!("{error}"),
+                            "NX feature payload string error",
+                        )
+                        .map_or_else(|limit| limit, CodecError::InvalidInput)
+                    })?,
                     source_offset,
                 });
             }
@@ -5131,10 +5255,13 @@ pub(super) fn unique_feature_body_references<'a>(
     let mut ambiguous_reservation = ctx.reserve_scoped(0, "NX ambiguous body references")?;
     for reference in ctx.admit_iter(references, "index NX body references")? {
         let key = reference.operation_label.as_str();
-        if ambiguous.contains(key) {
+        if ctx.contains_btree_set(&ambiguous, key, "NX ambiguous body references")? {
             continue;
         }
-        if unique.remove(key).is_some() {
+        if ctx
+            .remove_btree_map(&mut unique, key, "NX unique body references")?
+            .is_some()
+        {
             ambiguous_reservation.with_storage(|| {
                 ctx.insert_btree_set(&mut ambiguous, key, "NX ambiguous body references")
             })?;
@@ -5217,27 +5344,6 @@ pub(super) fn feature_body_reference_occurrences(
 /// field's persistent identity. A primary-index match, a missing or duplicate
 /// data-block use, a missing or ambiguous store, a missing or duplicate object
 /// frame, or a duplicate segment alias remains unresolved.
-fn unique_offset_store_body_frame<'a>(
-    ctx: &DecodeContext<'_>,
-    reference: &FeatureBodyReference,
-    data_block_use: &FeatureBodyDataBlockUse,
-    object_frames: &'a [DataBlockObjectFrame],
-) -> Result<Option<&'a DataBlockObjectFrame>, CodecError> {
-    crate::native::unique_by(
-        ctx,
-        object_frames,
-        |frame| {
-            Ok(frame.object.atom.value() == reference.body.value()
-                && ctx.equal(
-                    frame.data_block.as_str(),
-                    data_block_use.data_block.as_str(),
-                    "match NX body object frames",
-                )?)
-        },
-        "match NX body object frames",
-    )
-}
-
 pub(super) fn feature_body_segment_uses(
     ctx: &DecodeContext<'_>,
     references: &[FeatureBodyReference],
@@ -5275,14 +5381,19 @@ pub(super) fn feature_body_segment_uses(
             })?;
         }
     }
-    let (offset_store_operations, _offset_store_operations_storage) = ctx
-        .with_scoped_storage("NX local offset_store_operations storage", || {
-            feature_input_store_operations(ctx, inputs, blocks)
-        })?;
     let (store_sections, _store_sections_storage) = ctx
         .with_scoped_storage("NX local store_sections storage", || {
             feature_input_store_sections(ctx, inputs, blocks)
         })?;
+    let (frames_by_block_object, _frames_storage) = ctx.unique_index(
+        object_frames.iter().map(|frame| {
+            (
+                (frame.data_block.as_str(), frame.object.atom.value()),
+                frame,
+            )
+        }),
+        "index NX body object frames",
+    )?;
     let mut output = Vec::new();
     for reference in ctx.admit_iter(references, "join NX body segment references")? {
         let operation_label = reference.operation_label.as_str();
@@ -5310,8 +5421,8 @@ pub(super) fn feature_body_segment_uses(
             .copied();
         let binding = match offset_store_use {
             None => {
-                if ctx.contains_btree_set(
-                    &offset_store_operations,
+                if ctx.contains_key_btree_map(
+                    &store_sections,
                     operation_label,
                     "join NX body segment references",
                 )? {
@@ -5339,7 +5450,12 @@ pub(super) fn feature_body_segment_uses(
                 {
                     continue;
                 }
-                if unique_offset_store_body_frame(ctx, reference, data_block_use, object_frames)?
+                if ctx
+                    .get_hash_map(
+                        &frames_by_block_object,
+                        &(data_block_use.data_block.as_str(), reference.body.value()),
+                        "match NX body object frames",
+                    )?
                     .is_none()
                 {
                     continue;
@@ -5413,53 +5529,64 @@ pub(super) fn feature_input_store_operations(
     Ok(operations)
 }
 
+/// Index data blocks by identity; a repeated identity keeps the last block.
+fn blocks_by_last_id<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    blocks: &'a [crate::native::om::DataBlock],
+) -> Result<
+    (
+        HashMap<&'a str, &'a crate::native::om::DataBlock>,
+        ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.with_scoped_storage("NX input-store block index", || {
+        ctx.collect_hash_map(
+            blocks.iter().map(|block| (block.id.as_str(), block)),
+            "NX input-store block index",
+        )
+    })
+}
+
 /// Group resolved operation-header inputs by their indexed offset-store section.
 fn feature_input_store_sections(
     ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
 ) -> Result<BTreeMap<String, BTreeSet<u32>>, CodecError> {
-    let mut block_reservation = ctx.reserve_scoped(0, "NX input-store block index")?;
-    let mut blocks_by_id = BTreeMap::new();
-    for block in ctx.admit_iter(blocks, "index NX input-store blocks")? {
-        block_reservation.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut blocks_by_id,
-                block.id.as_str(),
-                block,
-                "NX input-store block index",
-            )
-        })?;
-    }
+    let (blocks_by_id, _blocks_storage) = blocks_by_last_id(ctx, blocks)?;
     let mut sections_by_operation = BTreeMap::<String, BTreeSet<u32>>::new();
     for input in ctx.admit_iter(inputs, "join NX input-store sections")? {
-        let Some(block) = blocks_by_id.get(input.data_block.as_str()) else {
+        let Some(block) = ctx
+            .get_hash_map(
+                &blocks_by_id,
+                &input.data_block.as_str(),
+                "find NX input-store block",
+            )?
+            .copied()
+        else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX input-store section identities")?;
-
-        if let Some(sections) = sections_by_operation.get_mut(input.operation_label.as_str()) {
-            if !sections.contains(&block.section_ordinal) {
-                ctx.admit_btree_node_storage::<u32, ()>(
-                    sections.len(),
-                    "NX input-store section identities",
-                )?;
-            }
-            sections.insert(block.section_ordinal);
+        if let Some(sections) = ctx.get_mut_btree_map(
+            &mut sections_by_operation,
+            input.operation_label.as_str(),
+            "NX input-store operation groups",
+        )? {
+            ctx.insert_btree_set(
+                sections,
+                block.section_ordinal,
+                "NX input-store section identities",
+            )?;
             continue;
         }
-        let key_len = input.operation_label.len();
-
-        let mut label = String::new();
-        ctx.try_reserve_retained_text(
-            &mut label,
-            key_len,
-            "allocate NX input-store operation label",
-        )?;
-        label.push_str(&input.operation_label);
+        let label =
+            ctx.copy_retained_text(&input.operation_label, "NX input-store operation label")?;
         let mut sections = BTreeSet::new();
-        ctx.admit_btree_node_storage::<u32, ()>(0, "NX input-store section identities")?;
-        sections.insert(block.section_ordinal);
+        ctx.insert_btree_set(
+            &mut sections,
+            block.section_ordinal,
+            "NX input-store section identities",
+        )?;
         ctx.insert_btree_map(
             &mut sections_by_operation,
             label,
@@ -5477,27 +5604,50 @@ pub(super) fn feature_body_data_block_uses(
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
 ) -> Result<Vec<FeatureBodyDataBlockUse>, CodecError> {
+    let (unique_operations, _unique_operations_storage) = ctx.unique_index(
+        references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), ())),
+        "index NX feature body reference operations",
+    )?;
+    let (blocks_by_id, _blocks_by_id_storage) = blocks_by_last_id(ctx, blocks)?;
+    let (blocks_by_position, _blocks_by_position_storage) = ctx.unique_index(
+        blocks
+            .iter()
+            .map(|block| ((block.section_ordinal, block.block_ordinal), block)),
+        "index NX feature body offset-store blocks",
+    )?;
+    let (inputs_by_operation, _inputs_storage) = inputs_by_operation_label(ctx, inputs)?;
     let mut uses = Vec::new();
     for reference in ctx.admit_iter(references, "visit NX feature body block references")? {
+        let operation_label = reference.operation_label.as_str();
         if ctx
-            .admit_iter(references, "check NX feature body reference uniqueness")?
-            .filter(|candidate| candidate.operation_label == reference.operation_label)
-            .take(2)
-            .count()
-            != 1
+            .get_hash_map(
+                &unique_operations,
+                &operation_label,
+                "check NX feature body reference uniqueness",
+            )?
+            .is_none()
         {
             continue;
         }
+        let operation_inputs = ctx
+            .get_hash_map(
+                &inputs_by_operation,
+                &operation_label,
+                "match NX feature body input blocks",
+            )?
+            .map_or(&[][..], Vec::as_slice);
         let mut section_ordinal = None;
         let mut ambiguous_section = false;
-        for input in ctx
-            .admit_iter(inputs, "match NX feature body input blocks")?
-            .filter(|input| input.operation_label == reference.operation_label)
-        {
+        for input in ctx.admit_iter(operation_inputs, "match NX feature body input blocks")? {
             let Some(block) = ctx
-                .admit_iter(blocks, "match NX feature input offset-store blocks")?
-                .rev()
-                .find(|block| block.id == input.data_block)
+                .get_hash_map(
+                    &blocks_by_id,
+                    &input.data_block.as_str(),
+                    "match NX feature input offset-store blocks",
+                )?
+                .copied()
             else {
                 continue;
             };
@@ -5510,52 +5660,28 @@ pub(super) fn feature_body_data_block_uses(
         let Some(section_ordinal) = section_ordinal.filter(|_| !ambiguous_section) else {
             continue;
         };
-        let mut matches = ctx
-            .admit_iter(blocks, "match NX feature body offset-store blocks")?
-            .filter(|block| {
-                block.section_ordinal == section_ordinal
-                    && block.block_ordinal == reference.body.value()
-            });
-        let Some(block) = matches.next() else {
+        let Some(&Some(block)) = ctx.get_hash_map(
+            &blocks_by_position,
+            &(section_ordinal, reference.body.value()),
+            "match NX feature body offset-store blocks",
+        )?
+        else {
             continue;
         };
-        if matches.next().is_some() {
-            continue;
-        }
-        let old = "body-reference";
-        let new = "body-data-block-use";
-        let (prefix, suffix) = if let Some(position) = reference.id.find(old) {
-            (
-                &reference.id[..position],
-                &reference.id[position + old.len()..],
-            )
-        } else {
-            (reference.id.as_str(), "")
-        };
-        let id_len = prefix
-            .len()
-            .checked_add(suffix.len())
-            .and_then(|length| {
-                length.checked_add(if prefix.len() == reference.id.len() {
-                    0
-                } else {
-                    new.len()
-                })
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature body block use id", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "retain NX feature body block use id")?;
-        id.push_str(prefix);
-        if prefix.len() != reference.id.len() {
-            id.push_str(new);
-        }
-        id.push_str(suffix);
-        ctx.reserve_vec(&mut uses, 1, "NX feature body block uses")?;
-        uses.push(FeatureBodyDataBlockUse {
+        let id = replace_operation_text(
+            ctx,
+            &reference.id,
+            "body-reference",
+            "body-data-block-use",
+            "retain NX feature body block use id",
+        )?;
+        let item = FeatureBodyDataBlockUse {
             id,
             feature_body_reference: ctx
                 .copy_retained_text(&reference.id, "retain NX feature body reference id")?,
             data_block: ctx.copy_retained_text(&block.id, "retain NX feature body block id")?,
-        });
+        };
+        ctx.push_vec(&mut uses, item, "NX feature body block uses")?;
     }
     Ok(uses)
 }
@@ -5629,23 +5755,30 @@ pub(super) fn feature_input_block_identity_groups(
     let mut member_reservation = ctx.reserve_scoped(0, "NX input block group members")?;
     let mut by_block = BTreeMap::<&str, Vec<&FeatureInputBlock>>::new();
     for input in ctx.admit_iter(inputs, "group NX feature input blocks")? {
-        if !by_block.contains_key(input.data_block.as_str()) {
+        let key = input.data_block.as_str();
+        if let Some(members) =
+            ctx.get_mut_btree_map(&mut by_block, key, "NX input block group index")?
+        {
+            ctx.reserve_scoped_vec(
+                &mut member_reservation,
+                members,
+                1,
+                "NX input block group members",
+            )?;
+            members.push(input);
+        } else {
+            let mut members = Vec::new();
+            ctx.reserve_scoped_vec(
+                &mut member_reservation,
+                &mut members,
+                1,
+                "NX input block group members",
+            )?;
+            members.push(input);
             map_reservation.with_storage(|| {
-                ctx.admit_btree_entry(
-                    &by_block,
-                    &input.data_block.as_str(),
-                    "NX input block group index",
-                )
+                ctx.insert_btree_map(&mut by_block, key, members, "NX input block group index")
             })?;
         }
-        let members = by_block.entry(input.data_block.as_str()).or_default();
-        ctx.reserve_scoped_vec(
-            &mut member_reservation,
-            members,
-            1,
-            "NX input block group members",
-        )?;
-        members.push(input);
     }
     let mut group_reservation = ctx.reserve_scoped(0, "NX input block group order")?;
     let mut groups = Vec::new();
@@ -5659,7 +5792,13 @@ pub(super) fn feature_input_block_identity_groups(
         };
         let distinct_operations = ctx.any_by(
             members.as_slice(),
-            |member| Ok(member.operation_label != first.operation_label),
+            |member| {
+                Ok(!ctx.equal(
+                    member.operation_label.as_str(),
+                    first.operation_label.as_str(),
+                    "check NX feature input group operations",
+                )?)
+            },
             "check NX feature input group operations",
         )?;
         if !distinct_operations {
@@ -5711,20 +5850,10 @@ pub(super) fn feature_input_block_identity_groups(
                 source_offset: member.source_offset,
             });
         }
-        let prefix = "nx:feature-history:input-block-identity-group#";
-        let mut value = ordinal;
-        let mut digits = 1usize;
-        while value >= 10 {
-            value /= 10;
-            digits += 1;
-        }
-        let id_len = prefix
-            .len()
-            .checked_add(digits.max(10))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX input block identity group id", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "NX input block identity group id")?;
-        write!(&mut id, "{prefix}{ordinal:010}")
-            .map_err(|_| ctx.refuse_codec_limit("format NX input block identity group id", 0, 1))?;
+        let id = ctx.format_retained(
+            format_args!("nx:feature-history:input-block-identity-group#{ordinal:010}"),
+            "NX input block identity group id",
+        )?;
         ctx.reserve_vec(&mut output, 1, "NX input block identity groups")?;
         output.push(FeatureInputBlockIdentityGroup {
             id,
@@ -5734,64 +5863,6 @@ pub(super) fn feature_input_block_identity_groups(
     }
     drop(member_reservation);
     Ok(output)
-}
-
-fn visit_column_slots<'a>(
-    ctx: &DecodeContext<'_>,
-    index_rows: &'a [DataBlockIndexRow],
-    linked_rows: &'a [DataBlockLinkedIndexRow],
-    target_rows: &'a [DataBlockTargetIndexRow],
-    mut visit: impl FnMut(
-        &'a str,
-        &'a str,
-        ColumnIndexRowKind,
-        ColumnRowSlot,
-        u64,
-    ) -> Result<(), CodecError>,
-) -> Result<(), CodecError> {
-    for row in ctx.admit_iter(index_rows, "visit NX column index rows")? {
-        for (slot, token) in ColumnRowSlot::ALL.into_iter().zip(row.frame.indices()) {
-            ctx.charge_work(1, "scan NX column row slots")?;
-            visit(
-                token.target,
-                &row.id,
-                ColumnIndexRowKind::Index,
-                slot,
-                token.offset,
-            )?;
-        }
-    }
-    for row in ctx.admit_iter(linked_rows, "visit NX column linked rows")? {
-        for (slot, token) in ColumnRowSlot::ALL
-            .into_iter()
-            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
-        {
-            ctx.charge_work(1, "scan NX column row slots")?;
-            visit(
-                token.target,
-                &row.id,
-                ColumnIndexRowKind::LinkedIndex,
-                slot,
-                token.offset,
-            )?;
-        }
-    }
-    for row in ctx.admit_iter(target_rows, "visit NX column target rows")? {
-        for (slot, token) in ColumnRowSlot::ALL
-            .into_iter()
-            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
-        {
-            ctx.charge_work(1, "scan NX column row slots")?;
-            visit(
-                token.target,
-                &row.id,
-                ColumnIndexRowKind::TargetIndex,
-                slot,
-                token.offset,
-            )?;
-        }
-    }
-    Ok(())
 }
 
 /// One column-row slot addressing a data block.
@@ -5819,24 +5890,74 @@ fn column_slots_by_target<'a, 'ctx>(
     const OPERATION: &str = "index NX column row slots";
     let mut reservation = ctx.reserve_scoped(0, OPERATION)?;
     let mut slots = BTreeMap::new();
-    visit_column_slots(
-        ctx,
-        index_rows,
-        linked_rows,
-        target_rows,
-        |target, row, row_kind, row_slot, source_offset| {
-            let use_ = ColumnSlotUse {
-                row,
-                row_kind,
-                row_slot,
-                source_offset,
-            };
-            reservation.with_storage(|| {
-                ctx.push_btree_group(&mut slots, target, use_, OPERATION, OPERATION)
-            })
-        },
-    )?;
+    for row in ctx.admit_iter(index_rows, "visit NX column index rows")? {
+        for (slot, token) in ColumnRowSlot::ALL.into_iter().zip(row.frame.indices()) {
+            push_column_slot(
+                ctx,
+                &mut reservation,
+                &mut slots,
+                token.target,
+                ColumnSlotUse {
+                    row: &row.id,
+                    row_kind: ColumnIndexRowKind::Index,
+                    row_slot: slot,
+                    source_offset: token.offset,
+                },
+            )?;
+        }
+    }
+    for row in ctx.admit_iter(linked_rows, "visit NX column linked rows")? {
+        for (slot, token) in ColumnRowSlot::ALL
+            .into_iter()
+            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
+        {
+            push_column_slot(
+                ctx,
+                &mut reservation,
+                &mut slots,
+                token.target,
+                ColumnSlotUse {
+                    row: &row.id,
+                    row_kind: ColumnIndexRowKind::LinkedIndex,
+                    row_slot: slot,
+                    source_offset: token.offset,
+                },
+            )?;
+        }
+    }
+    for row in ctx.admit_iter(target_rows, "visit NX column target rows")? {
+        for (slot, token) in ColumnRowSlot::ALL
+            .into_iter()
+            .zip(std::iter::once(row.frame.target_index()).chain(row.frame.indices()))
+        {
+            push_column_slot(
+                ctx,
+                &mut reservation,
+                &mut slots,
+                token.target,
+                ColumnSlotUse {
+                    row: &row.id,
+                    row_kind: ColumnIndexRowKind::TargetIndex,
+                    row_slot: slot,
+                    source_offset: token.offset,
+                },
+            )?;
+        }
+    }
     Ok((slots, reservation))
+}
+
+/// Charge and record one column-row slot under the block it addresses.
+fn push_column_slot<'a>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut ScopedReservation<'_>,
+    slots: &mut BTreeMap<&'a str, Vec<ColumnSlotUse<'a>>>,
+    target: &'a str,
+    use_: ColumnSlotUse<'a>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "index NX column row slots";
+    ctx.charge_work(1, "scan NX column row slots")?;
+    reservation.with_storage(|| ctx.push_btree_group(slots, target, use_, OPERATION, OPERATION))
 }
 
 /// The table listing each column row, or `None` for a row listed more than once.
@@ -6043,22 +6164,34 @@ pub(super) fn feature_input_column_targets(
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
 ) -> Result<Vec<FeatureInputColumnTarget>, CodecError> {
-    let mut output = Vec::new();
-    for input in ctx.admit_iter(inputs, "visit NX input column target inputs")? {
-        let mut targets = ctx
-            .admit_iter(uses, "match NX input column target uses")?
+    let (target_uses, _target_uses_storage) = ctx.unique_index(
+        uses.iter()
             .filter(|use_| {
-                use_.input_block == input.id
-                    && use_.row_slot == ColumnRowSlot::Zero
+                use_.row_slot == ColumnRowSlot::Zero
                     && use_.row_kind != ColumnIndexRowKind::Index
                     && use_.column_table.is_some()
-            });
-        let Some(target) = targets.next() else {
+            })
+            .map(|use_| (use_.input_block.as_str(), use_)),
+        "index NX input column target uses",
+    )?;
+    let (linked_by_id, _linked_storage) = ctx.unique_index(
+        linked_rows.iter().map(|row| (row.id.as_str(), row)),
+        "index NX input column linked rows",
+    )?;
+    let (target_by_id, _target_storage) = ctx.unique_index(
+        target_rows.iter().map(|row| (row.id.as_str(), row)),
+        "index NX input column target rows",
+    )?;
+    let mut output = Vec::new();
+    for input in ctx.admit_iter(inputs, "visit NX input column target inputs")? {
+        let Some(&Some(target)) = ctx.get_hash_map(
+            &target_uses,
+            &input.id.as_str(),
+            "match NX input column target uses",
+        )?
+        else {
             continue;
         };
-        if targets.next().is_some() {
-            continue;
-        }
         let Some(column_table) = target.column_table.as_ref() else {
             continue;
         };
@@ -6066,15 +6199,14 @@ pub(super) fn feature_input_column_targets(
             .row_kind
         {
             ColumnIndexRowKind::LinkedIndex => {
-                let mut rows = ctx
-                    .admit_iter(linked_rows, "match NX input column linked rows")?
-                    .filter(|row| row.id == target.column_row);
-                let Some(row) = rows.next() else {
+                let Some(&Some(row)) = ctx.get_hash_map(
+                    &linked_by_id,
+                    &target.column_row.as_str(),
+                    "match NX input column linked rows",
+                )?
+                else {
                     continue;
                 };
-                if rows.next().is_some() {
-                    continue;
-                }
                 let [first, second, third] = row.frame.indices().map(|token| {
                     ctx.copy_retained_text(token.target, "NX input column target field data block")
                 });
@@ -6092,15 +6224,14 @@ pub(super) fn feature_input_column_targets(
                 )
             }
             ColumnIndexRowKind::TargetIndex => {
-                let mut rows = ctx
-                    .admit_iter(target_rows, "match NX input column target rows")?
-                    .filter(|row| row.id == target.column_row);
-                let Some(row) = rows.next() else {
+                let Some(&Some(row)) = ctx.get_hash_map(
+                    &target_by_id,
+                    &target.column_row.as_str(),
+                    "match NX input column target rows",
+                )?
+                else {
                     continue;
                 };
-                if rows.next().is_some() {
-                    continue;
-                }
                 let [first, second, third] = row.frame.indices().map(|token| {
                     ctx.copy_retained_text(token.target, "NX input column target field data block")
                 });
@@ -6114,15 +6245,11 @@ pub(super) fn feature_input_column_targets(
             }
             ColumnIndexRowKind::Index => continue,
         };
-        let key = input.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let prefix = "nx:feature-history:input-column-target#";
-        let id_len = prefix
-            .len()
-            .checked_add(key.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX input column target identity", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "NX input column target identity")?;
-        id.push_str(prefix);
-        id.push_str(key);
+        let key = identity_key(ctx, &input.id, "NX input column target identity")?;
+        let id = ctx.format_retained(
+            format_args!("nx:feature-history:input-column-target#{key}"),
+            "NX input column target identity",
+        )?;
         ctx.reserve_vec(&mut output, 1, "NX input column targets")?;
         output.push(FeatureInputColumnTarget {
             id,
@@ -6158,6 +6285,7 @@ pub(super) fn feature_datum_csys_constructions(
 ) -> Result<Vec<FeatureDatumCsysConstruction>, cadmpeg_core::CodecError> {
     let indexed = history.container().indexed_om_sections(ctx)?;
     let inputs = feature_input_blocks(ctx, history)?;
+    let (inputs_by_operation, _inputs_storage) = inputs_by_operation_label(ctx, &inputs)?;
     let mut constructions = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -6179,21 +6307,27 @@ pub(super) fn feature_datum_csys_constructions(
                 operation_ordinal,
                 None,
             )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(inputs.len()),
-                "resolve NX datum CSYS input prefix",
-            )?;
+            let operation_inputs = ctx
+                .get_hash_map(
+                    &inputs_by_operation,
+                    &operation_label.as_str(),
+                    "resolve NX datum CSYS input prefix",
+                )?
+                .map_or(&[][..], Vec::as_slice);
             let mut input_prefix = None;
-            for input in &inputs {
-                if input.operation_label != operation_label {
-                    continue;
-                }
-                let Some((prefix, _)) = input.data_block.rsplit_once(":block#") else {
+            for input in ctx.admit_iter(operation_inputs, "resolve NX datum CSYS input prefix")? {
+                let Some((prefix, _)) = ctx.rsplit_once(
+                    &input.data_block,
+                    ":block#",
+                    "resolve NX datum CSYS input prefix",
+                )?
+                else {
                     continue;
                 };
                 match input_prefix {
                     None => input_prefix = Some(prefix),
-                    Some(existing) if existing == prefix => {}
+                    Some(existing)
+                        if ctx.equal(existing, prefix, "resolve NX datum CSYS input prefix")? => {}
                     Some(_) => continue 'records,
                 }
             }
@@ -6208,9 +6342,14 @@ pub(super) fn feature_datum_csys_constructions(
                 else {
                     return Ok(None);
                 };
-                Ok((data_block.rsplit_once(":block#").map(|(prefix, _)| prefix)
-                    == Some(input_prefix))
-                .then_some(data_block))
+                let Some((prefix, _)) =
+                    ctx.rsplit_once(&data_block, ":block#", "resolve NX datum CSYS block prefix")?
+                else {
+                    return Ok(None);
+                };
+                let matches =
+                    ctx.equal(prefix, input_prefix, "resolve NX datum CSYS block prefix")?;
+                Ok(matches.then_some(data_block))
             })?
             else {
                 continue;
@@ -6272,15 +6411,11 @@ pub(super) fn feature_datum_plane_payloads(
         };
         let lanes = crate::om::datum_index::scan(ctx, joined.bytes())?;
         let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
-        let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let prefix = "nx:feature-history:datum-plane-payload#";
-        let id_len = prefix
-            .len()
-            .checked_add(key.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX datum plane payload identity", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "NX datum plane payload identity")?;
-        id.push_str(prefix);
-        id.push_str(key);
+        let key = identity_key(ctx, &header.id, "NX datum plane payload identity")?;
+        let id = ctx.format_retained(
+            format_args!("nx:feature-history:datum-plane-payload#{key}"),
+            "NX datum plane payload identity",
+        )?;
         let operation_label = ctx.copy_retained_text(
             &header.operation_label,
             "NX datum plane payload operation label",
@@ -6311,17 +6446,10 @@ pub(super) fn feature_datum_csys_payloads(
         let first = &construction.frame.members()[0].1;
         let second = &construction.frame.members()[1].1;
 
-        let copy = |value: &str| -> Result<String, CodecError> {
-            let mut id = String::new();
-            ctx.try_reserve_retained_text(
-                &mut id,
-                value.len(),
-                "allocate NX datum CSYS source block identity",
-            )?;
-            id.push_str(value);
-            Ok(id)
-        };
-        let data_blocks = [copy(first)?, copy(second)?];
+        let data_blocks = [
+            ctx.copy_retained_text(first, "NX datum CSYS source block identity")?,
+            ctx.copy_retained_text(second, "NX datum CSYS source block identity")?,
+        ];
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
@@ -6406,29 +6534,42 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
-    construction_payload_frames(
-        ctx,
-        container,
-        payloads,
-        |payload| payload.content.blocks(),
-        |bytes| crate::om::binary64_pair::object_pairs(ctx, bytes),
-        |payload, ordinal, pair, source_offset| {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.blocks().iter().map(|block| &block.id),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
+        else {
+            continue;
+        };
+        let source_offset = |relative: usize| {
+            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
+        };
+        let mut rows = crate::om::binary64_pair::object_pairs(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
+            let Some(pair) = rows.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
+            };
             let Some(frame) = pair.into_wire_frame() else {
-                return Ok(None);
+                continue;
             };
             let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                return Ok(None);
+                continue;
             };
             let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                return Ok(None);
+                continue;
             };
             let Some(source) = source_offset(pair.offset())? else {
-                return Ok(None);
+                continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar pair ordinal", 0, 1))?;
-            Ok(Some(FeaturePayloadScalarPair {
+            let record = FeaturePayloadScalarPair {
                 id,
                 operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
@@ -6442,9 +6583,12 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(
                 ordinal,
                 value_source_offsets: [first, second],
                 source_offset: source,
-            }))
-        },
-    )
+            };
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode complete signed Q1.55 pair frames from reconstructed datum-CSYS payloads.
@@ -6453,31 +6597,44 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Result<Vec<FeatureDatumCsysPayloadFixedPair>, CodecError> {
-    construction_payload_frames(
-        ctx,
-        container,
-        payloads,
-        |payload| payload.content.blocks(),
-        |bytes| crate::om::datum_csys_payload_fixed_pairs(ctx, bytes),
-        |payload, ordinal, pair, source_offset| {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.blocks().iter().map(|block| &block.id),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
+        else {
+            continue;
+        };
+        let source_offset = |relative: usize| {
+            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
+        };
+        let mut rows = crate::om::datum_csys_payload_fixed_pairs(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
+            let Some(pair) = rows.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
+            };
             let Some(position) =
                 PairPosition::new(pair.form, cadmpeg_core::decode::u64_from_index(pair.offset))
             else {
-                return Ok(None);
+                continue;
             };
             let Some(source) = source_offset(pair.offset)? else {
-                return Ok(None);
+                continue;
             };
             let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                return Ok(None);
+                continue;
             };
             let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                return Ok(None);
+                continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS fixed pair ordinal", 0, 1))?;
-            Ok(Some(FeatureDatumCsysPayloadFixedPair {
+            let record = FeatureDatumCsysPayloadFixedPair {
                 id,
                 operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
@@ -6490,9 +6647,12 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(
                 position,
                 source_offset: source,
                 value_source_offsets: [first, second],
-            }))
-        },
-    )
+            };
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode complete shifted-binary64 fields from reconstructed datum-CSYS payloads.
@@ -6501,20 +6661,34 @@ pub(super) fn feature_datum_csys_payload_scalars(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Result<Vec<FeaturePayloadScalar>, CodecError> {
-    construction_payload_frames(
-        ctx,
-        container,
-        payloads,
-        |payload| payload.content.blocks(),
-        |bytes| crate::om::construction_payload_scalar_fields(ctx, bytes),
-        |payload, ordinal, scalar, source_offset| {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.blocks().iter().map(|block| &block.id),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
+        else {
+            continue;
+        };
+        let source_offset = |relative: usize| {
+            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
+        };
+        let mut rows =
+            crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
+            let Some(scalar) = rows.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
+            };
             let Some(source) = source_offset(scalar.offset)? else {
-                return Ok(None);
+                continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-scalar-", ordinal)?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar ordinal", 0, 1))?;
-            Ok(Some(FeaturePayloadScalar {
+            let record = FeaturePayloadScalar {
                 id,
                 operation_label: ctx
                     .copy_retained_text(&payload.operation_label, "NX datum CSYS scalar label")?,
@@ -6527,9 +6701,12 @@ pub(super) fn feature_datum_csys_payload_scalars(
                 scalar: scalar.scalar,
                 payload_offset: cadmpeg_core::decode::u64_from_index(scalar.offset),
                 source_offset: source,
-            }))
-        },
-    )
+            };
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode the final three descriptor lanes of datum coordinate systems.
@@ -6548,7 +6725,9 @@ pub(super) fn feature_datum_csys_descriptors(
         ] {
             let reference_ordinal = u8::from(slot);
             let data_block = &construction.frame.members()[usize::from(reference_ordinal)].1;
-            let Some(&(bytes, source_offset)) = blocks.get(data_block) else {
+            let Some(&(bytes, source_offset)) =
+                ctx.get_btree_map(&blocks, data_block, "find NX descriptor block bytes")?
+            else {
                 continue;
             };
             let Some(descriptor) = crate::om::datum_csys_descriptor_block(ctx, bytes)? else {
@@ -6592,14 +6771,32 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
     plane_descriptors: &[FeatureDatumPlaneDescriptor],
     csys_descriptors: &[FeatureDatumCsysDescriptor],
 ) -> Result<Vec<FeatureDatumPlaneCsysIdentityUse>, CodecError> {
+    let (csys_by_identity, _csys_storage) =
+        ctx.with_scoped_storage("NX datum CSYS descriptor identity index", || {
+            let mut grouped = HashMap::<&str, Vec<&FeatureDatumCsysDescriptor>>::new();
+            for csys in ctx.admit_iter(csys_descriptors, "index NX datum CSYS descriptors")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    csys.descriptor.descriptor().identity().as_str(),
+                    csys,
+                    "NX datum CSYS descriptor identity index",
+                    "NX datum CSYS descriptor identity members",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
     let mut uses = Vec::new();
     for plane in ctx.admit_iter(plane_descriptors, "visit NX datum plane descriptors")? {
-        for csys in ctx.admit_iter(csys_descriptors, "match NX datum CSYS descriptors")? {
-            if csys.descriptor.descriptor().identity().as_str() != plane.descriptor.identity() {
-                continue;
-            }
-            let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-            let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let matching = ctx
+            .get_hash_map(
+                &csys_by_identity,
+                &plane.descriptor.identity(),
+                "match NX datum CSYS descriptors",
+            )?
+            .map_or(&[][..], Vec::as_slice);
+        for csys in ctx.admit_iter(matching, "match NX datum CSYS descriptors")? {
+            let plane_key = identity_key(ctx, &plane.id, "NX datum descriptor identity use")?;
+            let csys_key = identity_key(ctx, &csys.id, "NX datum descriptor identity use")?;
             let id = ctx.format_retained(
                 format_args!(
                     "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
@@ -6610,8 +6807,14 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
                 csys.descriptor.descriptor().identity().as_str(),
                 "NX datum descriptor shared identity",
             )?;
-            let identity = CsysIdentity::try_from(identity_text)
-                .map_err(|error| CodecError::Malformed(error.to_owned()))?;
+            let identity = match CsysIdentity::try_from(identity_text) {
+                Ok(identity) => identity,
+                Err(error) => {
+                    return Err(CodecError::Malformed(
+                        ctx.copy_retained_text(error, "NX datum descriptor identity error")?,
+                    ));
+                }
+            };
             let datum_plane_descriptor =
                 ctx.copy_retained_text(&plane.id, "NX datum identity plane descriptor")?;
             let datum_plane_operation_label =
@@ -6641,29 +6844,43 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
-    construction_payload_frames(
-        ctx,
-        container,
-        payloads,
-        |payload| payload.content.blocks(),
-        |bytes| crate::om::binary64_pair::datum_plane_pairs(ctx, bytes),
-        |payload, ordinal, pair, source_offset| {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.blocks().iter().map(|block| &block.id),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
+        else {
+            continue;
+        };
+        let source_offset = |relative: usize| {
+            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
+        };
+        let mut rows =
+            crate::om::binary64_pair::datum_plane_pairs(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
+            let Some(pair) = rows.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
+            };
             let Some(frame) = pair.into_wire_frame() else {
-                return Ok(None);
+                continue;
             };
             let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                return Ok(None);
+                continue;
             };
             let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                return Ok(None);
+                continue;
             };
             let Some(source) = source_offset(pair.offset())? else {
-                return Ok(None);
+                continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX datum plane scalar pair ordinal", 0, 1))?;
-            Ok(Some(FeaturePayloadScalarPair {
+            let record = FeaturePayloadScalarPair {
                 id,
                 operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
@@ -6677,9 +6894,12 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(
                 ordinal,
                 value_source_offsets: [first, second],
                 source_offset: source,
-            }))
-        },
-    )
+            };
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode atomically resolved datum-plane descriptor blocks.
@@ -6697,7 +6917,9 @@ pub(super) fn feature_datum_plane_descriptors(
             .filter_map(|data_block| *data_block)
             .enumerate()
         {
-            let Some(&(bytes, source_offset)) = blocks.get(data_block) else {
+            let Some(&(bytes, source_offset)) =
+                ctx.get_btree_map(&blocks, data_block, "find NX descriptor block bytes")?
+            else {
                 continue;
             };
             let Some(descriptor) = crate::om::datum_plane_descriptor_block(ctx, bytes)? else {
@@ -6738,11 +6960,15 @@ pub(super) fn feature_datum_plane_block_uses(
     headers: &[FeatureDatumPlaneHeader],
     inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureDatumPlaneBlockUse>, CodecError> {
+    let (inputs_by_block, _inputs_storage) = inputs_by_data_block(ctx, inputs)?;
     let mut uses = Vec::new();
     for header in ctx.admit_iter(headers, "visit NX datum plane block-use headers")? {
-        let construction_key = header
-            .operation_label
-            .rsplit_once('#')
+        let construction_key = ctx
+            .rsplit_once(
+                &header.operation_label,
+                "#",
+                "NX datum plane block use identity",
+            )?
             .map_or(header.operation_label.as_str(), |(_, key)| key);
         for lane in [DatumPlaneBlockLane::Descriptor, DatumPlaneBlockLane::Object] {
             let data_blocks = header.resolved_data_block_slots(lane);
@@ -6751,13 +6977,20 @@ pub(super) fn feature_datum_plane_block_uses(
                 .filter_map(|data_block| *data_block)
                 .enumerate()
             {
-                for input in ctx
-                    .admit_iter(inputs, "join NX datum plane input blocks")?
-                    .filter(|input| input.data_block.as_str() == data_block.as_str())
-                {
-                    let input_key = input
-                        .operation_label
-                        .rsplit_once('#')
+                let matching = ctx
+                    .get_hash_map(
+                        &inputs_by_block,
+                        &data_block.as_str(),
+                        "join NX datum plane input blocks",
+                    )?
+                    .map_or(&[][..], Vec::as_slice);
+                for input in ctx.admit_iter(matching, "join NX datum plane input blocks")? {
+                    let input_key = ctx
+                        .rsplit_once(
+                            &input.operation_label,
+                            "#",
+                            "NX datum plane block use identity",
+                        )?
                         .map_or(input.operation_label.as_str(), |(_, key)| key);
                     let lane_key = match lane {
                         DatumPlaneBlockLane::Descriptor => "descriptor",
@@ -6809,26 +7042,37 @@ pub(super) fn feature_datum_csys_block_uses(
     constructions: &[FeatureDatumCsysConstruction],
     inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureDatumCsysBlockUse>, CodecError> {
+    let (inputs_by_block, _inputs_storage) = inputs_by_data_block(ctx, inputs)?;
     let mut uses = Vec::new();
     for construction in
         ctx.admit_iter(constructions, "visit NX datum CSYS block-use constructions")?
     {
+        let construction_key = ctx
+            .rsplit_once(
+                &construction.operation_label,
+                "#",
+                "NX datum CSYS block use identity",
+            )?
+            .map_or(construction.operation_label.as_str(), |(_, key)| key);
         for (reference_ordinal, reference) in DatumCsysSlot::ALL
             .into_iter()
             .zip(construction.frame.members())
         {
             let data_block = &reference.1;
-            for input in ctx
-                .admit_iter(inputs, "join NX datum CSYS input blocks")?
-                .filter(|input| input.data_block == *data_block)
-            {
-                let construction_key = construction
-                    .operation_label
-                    .rsplit_once('#')
-                    .map_or(construction.operation_label.as_str(), |(_, key)| key);
-                let input_key = input
-                    .operation_label
-                    .rsplit_once('#')
+            let matching = ctx
+                .get_hash_map(
+                    &inputs_by_block,
+                    &data_block.as_str(),
+                    "join NX datum CSYS input blocks",
+                )?
+                .map_or(&[][..], Vec::as_slice);
+            for input in ctx.admit_iter(matching, "join NX datum CSYS input blocks")? {
+                let input_key = ctx
+                    .rsplit_once(
+                        &input.operation_label,
+                        "#",
+                        "NX datum CSYS block use identity",
+                    )?
                     .map_or(input.operation_label.as_str(), |(_, key)| key);
                 let id = ctx.format_retained(format_args!(
                     "nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
@@ -6872,31 +7116,49 @@ pub(super) fn feature_sketch_records(
     inputs: &[FeatureInputBlock],
     references: &[FeatureSketchReference],
 ) -> Result<Vec<FeatureSketchRecord>, CodecError> {
+    let (records_by_label, _records_storage) = ctx.unique_index(
+        records
+            .iter()
+            .map(|record| (record.operation_label.as_str(), record)),
+        "index NX sketch operation records",
+    )?;
+    let (inputs_by_operation, _inputs_storage) = inputs_by_operation_label(ctx, inputs)?;
+    let (references_by_operation, _references_storage) =
+        sketch_references_by_operation(ctx, references)?;
     let mut sketches = Vec::new();
-    for label in ctx
-        .admit_iter(labels, "visit NX sketch operation labels")?
-        .filter(|label| label.value == "SKETCH")
-    {
-        let mut operation_records = ctx
-            .admit_iter(records, "resolve NX sketch operation record")?
-            .filter(|record| record.operation_label == label.id);
-        let Some(record) = operation_records.next() else {
-            continue;
-        };
-        if operation_records.next().is_some() {
+    for label in ctx.admit_iter(labels, "visit NX sketch operation labels")? {
+        if !ctx.equal(
+            label.value.as_str(),
+            "SKETCH",
+            "visit NX sketch operation labels",
+        )? {
             continue;
         }
+        let Some(&Some(record)) = ctx.get_hash_map(
+            &records_by_label,
+            &label.id.as_str(),
+            "resolve NX sketch operation record",
+        )?
+        else {
+            continue;
+        };
 
         let mut input_blocks = Vec::new();
         let mut input_reservation = ctx.reserve_scoped(0, "sort NX sketch input blocks")?;
-        for input in ctx
-            .admit_iter(inputs, "resolve NX sketch input blocks")?
-            .filter(|input| input.operation_label == label.id)
-        {
-            input_reservation.with_storage(|| {
-                ctx.reserve_vec(&mut input_blocks, 1, "NX sketch input block order")
-            })?;
-            input_blocks.push(input);
+        let matching_inputs = ctx
+            .get_hash_map(
+                &inputs_by_operation,
+                &label.id.as_str(),
+                "resolve NX sketch input blocks",
+            )?
+            .map_or(&[][..], Vec::as_slice);
+        for &input in ctx.admit_iter(matching_inputs, "resolve NX sketch input blocks")? {
+            ctx.push_scoped_vec(
+                &mut input_reservation,
+                &mut input_blocks,
+                input,
+                "NX sketch input block order",
+            )?;
         }
         ctx.stable_sort_by(
             &mut input_blocks,
@@ -6907,14 +7169,20 @@ pub(super) fn feature_sketch_records(
 
         let mut payload_references = Vec::new();
         let mut reference_reservation = ctx.reserve_scoped(0, "sort NX sketch references")?;
-        for reference in ctx
-            .admit_iter(references, "resolve NX sketch references")?
-            .filter(|reference| reference.operation_label == label.id)
-        {
-            reference_reservation.with_storage(|| {
-                ctx.reserve_vec(&mut payload_references, 1, "NX sketch reference order")
-            })?;
-            payload_references.push(reference);
+        let matching_references = ctx
+            .get_hash_map(
+                &references_by_operation,
+                &label.id.as_str(),
+                "resolve NX sketch references",
+            )?
+            .map_or(&[][..], Vec::as_slice);
+        for &reference in ctx.admit_iter(matching_references, "resolve NX sketch references")? {
+            ctx.push_scoped_vec(
+                &mut reference_reservation,
+                &mut payload_references,
+                reference,
+                "NX sketch reference order",
+            )?;
         }
         ctx.stable_sort_by_key(
             &mut payload_references,
@@ -6981,19 +7249,27 @@ pub(super) fn feature_sketch_construction_inputs(
     sketches: &[FeatureSketchRecord],
     references: &[FeatureSketchReference],
 ) -> Result<Vec<FeatureSketchConstructionInputs>, CodecError> {
+    let (references_by_operation, _references_storage) =
+        sketch_references_by_operation(ctx, references)?;
     let mut inputs = Vec::new();
     for sketch in ctx.admit_iter(sketches, "visit NX sketch records")? {
         let mut field = Vec::new();
         let mut field_reservation =
             ctx.reserve_scoped(0, "sort NX sketch construction references")?;
-        for reference in ctx
-            .admit_iter(references, "resolve NX sketch construction references")?
-            .filter(|reference| reference.operation_label == sketch.operation_label)
-        {
-            field_reservation.with_storage(|| {
-                ctx.reserve_vec(&mut field, 1, "NX sketch construction reference order")
-            })?;
-            field.push(reference);
+        let matching = ctx
+            .get_hash_map(
+                &references_by_operation,
+                &sketch.operation_label.as_str(),
+                "resolve NX sketch construction references",
+            )?
+            .map_or(&[][..], Vec::as_slice);
+        for &reference in ctx.admit_iter(matching, "resolve NX sketch construction references")? {
+            ctx.push_scoped_vec(
+                &mut field_reservation,
+                &mut field,
+                reference,
+                "NX sketch construction reference order",
+            )?;
         }
         ctx.stable_sort_by_key(
             &mut field,
@@ -7152,29 +7428,42 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
-    construction_payload_frames(
-        ctx,
-        container,
-        payloads,
-        |payload| payload.content.blocks(),
-        |bytes| crate::om::binary64_pair::sketch_pairs(ctx, bytes),
-        |payload, ordinal, pair, source_offset| {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.blocks().iter().map(|block| &block.id),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
+        else {
+            continue;
+        };
+        let source_offset = |relative: usize| {
+            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
+        };
+        let mut rows = crate::om::binary64_pair::sketch_pairs(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
+            let Some(pair) = rows.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
+            };
             let Some(frame) = pair.into_wire_frame() else {
-                return Ok(None);
+                continue;
             };
             let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                return Ok(None);
+                continue;
             };
             let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                return Ok(None);
+                continue;
             };
             let Some(source) = source_offset(pair.offset())? else {
-                return Ok(None);
+                continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-coordinate-pair-", ordinal)?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch coordinate pair ordinal", 0, 1))?;
-            Ok(Some(FeaturePayloadScalarPair {
+            let record = FeaturePayloadScalarPair {
                 id,
                 operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
@@ -7188,9 +7477,12 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(
                 ordinal,
                 value_source_offsets: [first, second],
                 source_offset: source,
-            }))
-        },
-    )
+            };
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode exact scaled shifted-binary64 pair frames from reconstructed sketch payloads.
@@ -7199,31 +7491,44 @@ pub(super) fn feature_sketch_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadFixedPair>, CodecError> {
-    construction_payload_frames(
-        ctx,
-        container,
-        payloads,
-        |payload| payload.content.blocks(),
-        |bytes| crate::om::sketch_payload_fixed_pairs(ctx, bytes),
-        |payload, ordinal, pair, source_offset| {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.blocks().iter().map(|block| &block.id),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
+        else {
+            continue;
+        };
+        let source_offset = |relative: usize| {
+            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
+        };
+        let mut rows = crate::om::sketch_payload_fixed_pairs(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
+            let Some(pair) = rows.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
+            };
             let Some(position) =
                 PairPosition::new(pair.form, cadmpeg_core::decode::u64_from_index(pair.offset))
             else {
-                return Ok(None);
+                continue;
             };
             let Some(source) = source_offset(pair.offset)? else {
-                return Ok(None);
+                continue;
             };
             let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                return Ok(None);
+                continue;
             };
             let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                return Ok(None);
+                continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch fixed pair ordinal", 0, 1))?;
-            Ok(Some(FeatureSketchPayloadFixedPair {
+            let record = FeatureSketchPayloadFixedPair {
                 id,
                 operation_label: ctx
                     .copy_retained_text(&payload.operation_label, "NX sketch fixed pair label")?,
@@ -7234,9 +7539,12 @@ pub(super) fn feature_sketch_payload_fixed_pairs(
                 position,
                 source_offset: source,
                 value_source_offsets: [first, second],
-            }))
-        },
-    )
+            };
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode exact mixed scaled shifted-binary64/binary32 pair frames from reconstructed sketch payloads.
@@ -7245,32 +7553,45 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadMixedPair>, CodecError> {
-    construction_payload_frames(
-        ctx,
-        container,
-        payloads,
-        |payload| payload.content.blocks(),
-        |bytes| crate::om::sketch_payload_mixed_pairs(ctx, bytes),
-        |payload, ordinal, pair, source_offset| {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.blocks().iter().map(|block| &block.id),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
+        else {
+            continue;
+        };
+        let source_offset = |relative: usize| {
+            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
+        };
+        let mut rows = crate::om::sketch_payload_mixed_pairs(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
+            let Some(pair) = rows.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
+            };
             let Some(position) = PairPosition::new(
                 MixedPairForm,
                 cadmpeg_core::decode::u64_from_index(pair.offset),
             ) else {
-                return Ok(None);
+                continue;
             };
             let Some(source) = source_offset(pair.offset)? else {
-                return Ok(None);
+                continue;
             };
             let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                return Ok(None);
+                continue;
             };
             let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                return Ok(None);
+                continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-mixed-pair-", ordinal)?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch mixed pair ordinal", 0, 1))?;
-            Ok(Some(FeatureSketchPayloadMixedPair {
+            let record = FeatureSketchPayloadMixedPair {
                 id,
                 operation_label: ctx
                     .copy_retained_text(&payload.operation_label, "NX sketch mixed pair label")?,
@@ -7281,9 +7602,12 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
                 position,
                 source_offset: source,
                 value_source_offsets: [first, second],
-            }))
-        },
-    )
+            };
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 type OffsetDataBlocks<'a> = BTreeMap<String, (&'a [u8], u64)>;
@@ -7310,8 +7634,6 @@ fn offset_data_block_bytes_for_section<'a>(
     control: &crate::om::EntityRecord<'a>,
     records: &[crate::om::EntityRecord<'a>],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use std::fmt::Write;
-
     let block_count = records
         .len()
         .checked_add(1)
@@ -7325,36 +7647,11 @@ fn offset_data_block_bytes_for_section<'a>(
             };
             record
         };
-        let prefix = "nx:om-data-blocks-";
-        let infix = ":block#";
-        let length = prefix
-            .len()
-            .checked_add(
-                section_ordinal
-                    .checked_ilog10()
-                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-            )
-            .and_then(|length| length.checked_add(infix.len()))
-            .and_then(|length| {
-                length.checked_add(
-                    block_ordinal
-                        .checked_ilog10()
-                        .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
-                )
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view key length", 0, 1))?;
-
-        ctx.charge_work(
-            u64::from(usize::BITS - blocks.len().leading_zeros()),
-            "index NX offset block view",
+        let key = ctx.format_scoped_text(
+            reservation,
+            format_args!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
+            "NX offset block view storage",
         )?;
-
-        let mut key = String::new();
-        reservation.with_storage(|| {
-            ctx.try_reserve_retained_text(&mut key, length, "NX offset block view storage")
-        })?;
-        write!(&mut key, "{prefix}{section_ordinal}{infix}{block_ordinal}")
-            .map_err(|_| ctx.refuse_codec_limit("format NX offset block view key", 0, 1))?;
         let offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(block.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view source offset", 0, 1))?;
@@ -7457,9 +7754,11 @@ pub(super) fn feature_sketch_payload_scalars(
                 "sketch-construction-payload",
                 "NX sketch scalar construction payload",
             )?;
-            let key = construction_payload
-                .rsplit_once('#')
-                .map_or("unknown", |(_, key)| key);
+            let key = identity_key(
+                ctx,
+                &construction_payload,
+                "NX sketch payload scalar identity",
+            )?;
             let id = ctx.format_retained(
                 format_args!("nx:feature-history:sketch-payload-scalar#{key}-{ordinal:010}"),
                 "NX sketch payload scalar identity",
@@ -7492,24 +7791,37 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadScalarLane>, CodecError> {
-    construction_payload_frames(
-        ctx,
-        container,
-        payloads,
-        |payload| payload.content.blocks(),
-        |bytes| crate::om::sketch_payload_scalar_lanes(ctx, bytes),
-        |payload, ordinal, lane, source_offset| {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.blocks().iter().map(|block| &block.id),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
+        else {
+            continue;
+        };
+        let source_offset = |relative: usize| {
+            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
+        };
+        let mut rows = crate::om::sketch_payload_scalar_lanes(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
+            let Some(lane) = rows.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
+            };
             let Ok(header_offset) = usize::try_from(lane.offset()) else {
-                return Ok(None);
+                continue;
             };
             let Some(header_source) = source_offset(header_offset)? else {
-                return Ok(None);
+                continue;
             };
             let Ok(terminator_offset) = usize::try_from(lane.end()) else {
-                return Ok(None);
+                continue;
             };
             let Some(terminator_source) = source_offset(terminator_offset)? else {
-                return Ok(None);
+                continue;
             };
             let Some(lane) = lane.try_map_locations(ctx, |offset, ()| {
                 let Ok(offset) = usize::try_from(offset) else {
@@ -7518,12 +7830,12 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
                 source_offset(offset)
             })?
             else {
-                return Ok(None);
+                continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-scalar-lane-", ordinal)?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch scalar lane ordinal", 0, 1))?;
-            Ok(Some(FeatureSketchPayloadScalarLane {
+            let record = FeatureSketchPayloadScalarLane {
                 id,
                 operation_label: ctx
                     .copy_retained_text(&payload.operation_label, "NX sketch scalar lane label")?,
@@ -7533,9 +7845,12 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
                 lane,
                 source_offset: header_source,
                 terminator_source_offset: terminator_source,
-            }))
-        },
-    )
+            };
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode exact compact-code name fields across reconstructed sketch payloads.
@@ -7553,38 +7868,26 @@ pub(super) fn feature_sketch_payload_names(
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX sketch name source blocks", 0, 1))?;
 
-        let (mut ids, _ids_reservation) =
-            ctx.temporary_vec(count, "NX sketch name source blocks")?;
-        ids.extend(construction.members.iter().map(|member| &member.data_block));
-        ids.push(&construction.terminal_data_block);
-        let Some(joined) =
-            JoinedPayload::from_source(ctx, ids.iter().copied(), ids.len(), &blocks)?
-        else {
+        let ids = construction
+            .members
+            .iter()
+            .map(|member| &member.data_block)
+            .chain(std::iter::once(&construction.terminal_data_block));
+        let Some(joined) = JoinedPayload::from_source(ctx, ids, count, &blocks)? else {
             continue;
         };
-        let old = "sketch-construction-inputs";
-        let new = "sketch-construction-payload";
-        let construction_payload = if let Some(start) = construction.id.find(old) {
-            let end = start
-                .checked_add(old.len())
-                .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload identity", 0, 1))?;
-            let length = construction
-                .id
-                .len()
-                .checked_sub(old.len())
-                .and_then(|length| length.checked_add(new.len()))
-                .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload identity", 0, 1))?;
-            let mut id = ctx.retained_string(length, "NX sketch payload identity")?;
-            id.push_str(&construction.id[..start]);
-            id.push_str(new);
-            id.push_str(&construction.id[end..]);
-            id
-        } else {
-            ctx.copy_retained_text(&construction.id, "NX sketch payload identity")?
-        };
-        let key = construction_payload
-            .rsplit_once('#')
-            .map_or("unknown", |(_, key)| key);
+        let construction_payload = replace_operation_text(
+            ctx,
+            &construction.id,
+            "sketch-construction-inputs",
+            "sketch-construction-payload",
+            "NX sketch payload identity",
+        )?;
+        let key = identity_key(
+            ctx,
+            &construction_payload,
+            "NX sketch payload name identity",
+        )?;
         let mut fields = crate::om::name_field::scan(ctx, joined.bytes())?.into_iter();
         for ordinal in ctx.admit_iter(&(0..fields.len()), "visit NX sketch payload names")? {
             let Some(field) = fields.next() else {
@@ -7620,31 +7923,6 @@ pub(super) fn feature_sketch_payload_names(
 }
 
 /// Join complete name-delimited intervals to their framed scalar fields.
-fn sorted_payload_refs<'ctx, 'a, T>(
-    ctx: &'ctx DecodeContext<'_>,
-    source: &'a [T],
-    include: impl Fn(&T) -> bool,
-    key: impl Fn(&T) -> u64,
-) -> Result<(Vec<&'a T>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
-    let count = ctx
-        .admit_iter(source, "scan NX sketch payload record references")?
-        .filter(|record| include(record))
-        .count();
-    let (mut references, reservation) =
-        ctx.temporary_vec(count, "NX sketch payload record references")?;
-    references.extend(
-        ctx.admit_iter(source, "scan NX sketch payload record references")?
-            .filter(|record| include(record)),
-    );
-    ctx.stable_sort_by_key(
-        &mut references,
-        |value| key(value),
-        Ord::cmp,
-        "sort NX sketch payload record references",
-    )?;
-    Ok((references, reservation))
-}
-
 pub(super) fn feature_sketch_payload_named_records(
     ctx: &DecodeContext<'_>,
     payloads: &[FeatureConstructionPayload],
@@ -7653,70 +7931,186 @@ pub(super) fn feature_sketch_payload_named_records(
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
     mixed_pairs: &[FeatureSketchPayloadMixedPair],
 ) -> Result<Vec<FeatureSketchPayloadNamedRecord>, CodecError> {
+    let (mut names_by_payload, _names_storage) =
+        ctx.with_scoped_storage("NX sketch payload name index", || {
+            let mut grouped = HashMap::<&str, Vec<&FeaturePayloadName>>::new();
+            for name in ctx.admit_iter(names, "index NX sketch payload names")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    name.construction_payload.as_str(),
+                    name,
+                    "NX sketch payload name index",
+                    "NX sketch payload name members",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
+    let (mut scalars_by_payload, _scalars_storage) =
+        ctx.with_scoped_storage("NX sketch payload scalar index", || {
+            let mut grouped = HashMap::<&str, Vec<&FeaturePayloadScalar>>::new();
+            for scalar in ctx.admit_iter(scalars, "index NX sketch payload scalars")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    scalar.payload.id(),
+                    scalar,
+                    "NX sketch payload scalar index",
+                    "NX sketch payload scalar members",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
+    let (mut fixed_by_payload, _fixed_storage) =
+        ctx.with_scoped_storage("NX sketch payload fixed pair index", || {
+            let mut grouped = HashMap::<&str, Vec<&FeatureSketchPayloadFixedPair>>::new();
+            for pair in ctx.admit_iter(fixed_pairs, "index NX sketch payload fixed pairs")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    pair.construction_payload.as_str(),
+                    pair,
+                    "NX sketch payload fixed pair index",
+                    "NX sketch payload fixed pair members",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
+    let (mut mixed_by_payload, _mixed_storage) =
+        ctx.with_scoped_storage("NX sketch payload mixed pair index", || {
+            let mut grouped = HashMap::<&str, Vec<&FeatureSketchPayloadMixedPair>>::new();
+            for pair in ctx.admit_iter(mixed_pairs, "index NX sketch payload mixed pairs")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    pair.construction_payload.as_str(),
+                    pair,
+                    "NX sketch payload mixed pair index",
+                    "NX sketch payload mixed pair members",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
     let mut records = Vec::new();
     for payload in ctx.admit_iter(payloads, "visit NX sketch payload records")? {
-        let (payload_names, _names_reservation) = sorted_payload_refs(
-            ctx,
-            names,
-            |name| name.construction_payload == payload.id,
-            |name| name.frame.offset(),
-        )?;
+        let payload_key = payload.id.as_str();
+        let payload_names = match ctx.get_mut_hash_map(
+            &mut names_by_payload,
+            &payload_key,
+            "find NX sketch payload names",
+        )? {
+            Some(group) => {
+                ctx.stable_sort_by_key(
+                    group,
+                    |name| name.frame.offset(),
+                    Ord::cmp,
+                    "sort NX sketch payload record references",
+                )?;
+                group.as_slice()
+            }
+            None => &[],
+        };
+        let payload_scalars = match ctx.get_mut_hash_map(
+            &mut scalars_by_payload,
+            &payload_key,
+            "find NX sketch payload scalars",
+        )? {
+            Some(group) => {
+                ctx.stable_sort_by_key(
+                    group,
+                    |scalar| scalar.payload_offset,
+                    Ord::cmp,
+                    "sort NX sketch payload record references",
+                )?;
+                group.as_slice()
+            }
+            None => &[],
+        };
+        let payload_fixed = match ctx.get_mut_hash_map(
+            &mut fixed_by_payload,
+            &payload_key,
+            "find NX sketch payload fixed pairs",
+        )? {
+            Some(group) => {
+                ctx.stable_sort_by_key(
+                    group,
+                    |pair| pair.position.offset(),
+                    Ord::cmp,
+                    "sort NX sketch payload record references",
+                )?;
+                group.as_slice()
+            }
+            None => &[],
+        };
+        let payload_mixed = match ctx.get_mut_hash_map(
+            &mut mixed_by_payload,
+            &payload_key,
+            "find NX sketch payload mixed pairs",
+        )? {
+            Some(group) => {
+                ctx.stable_sort_by_key(
+                    group,
+                    |pair| pair.position.offset(),
+                    Ord::cmp,
+                    "sort NX sketch payload record references",
+                )?;
+                group.as_slice()
+            }
+            None => &[],
+        };
+        let key = identity_key(ctx, &payload.id, "NX sketch payload record identity")?;
         for (ordinal, name) in ctx
-            .admit_iter(payload_names.as_slice(), "visit NX sketch payload names")?
+            .admit_iter(payload_names, "visit NX sketch payload names")?
             .enumerate()
         {
-            let end = payload_names
-                .get(ordinal + 1)
-                .map_or(payload.content.byte_len(ctx)?, |next| next.frame.offset());
-            let (scalar_fields, _scalars_reservation) = sorted_payload_refs(
-                ctx,
-                scalars,
-                |scalar| {
-                    scalar.payload.id() == payload.id
-                        && scalar.payload_offset > name.frame.offset()
-                        && scalar.payload_offset < end
-                },
-                |scalar| scalar.payload_offset,
+            let start = name.frame.offset();
+            let end = match payload_names.get(ordinal + 1) {
+                Some(next) => next.frame.offset(),
+                None => payload.content.byte_len(ctx)?,
+            };
+            let first_scalar = ctx.partition_point(
+                payload_scalars,
+                |scalar| Ok(scalar.payload_offset <= start),
+                "find NX sketch payload record scalars",
             )?;
-            let (record_fixed_pairs, _fixed_reservation) = sorted_payload_refs(
-                ctx,
-                fixed_pairs,
-                |pair| {
-                    pair.construction_payload == payload.id
-                        && pair.position.offset() > name.frame.offset()
-                        && pair.position.offset() < end
-                },
-                |pair| pair.position.offset(),
+            let end_scalar = ctx.partition_point(
+                payload_scalars,
+                |scalar| Ok(scalar.payload_offset < end),
+                "find NX sketch payload record scalars",
             )?;
-            let (record_mixed_pairs, _mixed_reservation) = sorted_payload_refs(
-                ctx,
-                mixed_pairs,
-                |pair| {
-                    pair.construction_payload == payload.id
-                        && pair.position.offset() > name.frame.offset()
-                        && pair.position.offset() < end
-                },
-                |pair| pair.position.offset(),
+            let scalar_range = payload_scalars.get(first_scalar..end_scalar).unwrap_or(&[]);
+            let first_fixed = ctx.partition_point(
+                payload_fixed,
+                |pair| Ok(pair.position.offset() <= start),
+                "find NX sketch payload record fixed pairs",
             )?;
-            let key = payload
-                .id
-                .rsplit_once('#')
-                .map_or("unknown", |(_, key)| key);
+            let end_fixed = ctx.partition_point(
+                payload_fixed,
+                |pair| Ok(pair.position.offset() < end),
+                "find NX sketch payload record fixed pairs",
+            )?;
+            let fixed_range = payload_fixed.get(first_fixed..end_fixed).unwrap_or(&[]);
+            let first_mixed = ctx.partition_point(
+                payload_mixed,
+                |pair| Ok(pair.position.offset() <= start),
+                "find NX sketch payload record mixed pairs",
+            )?;
+            let end_mixed = ctx.partition_point(
+                payload_mixed,
+                |pair| Ok(pair.position.offset() < end),
+                "find NX sketch payload record mixed pairs",
+            )?;
+            let mixed_range = payload_mixed.get(first_mixed..end_mixed).unwrap_or(&[]);
             let id = format_feature_history_id(ctx, "sketch-payload-record", key, ordinal, None)?;
             let scalar_fields = ctx.collect_retained_texts(
-                scalar_fields.iter().map(|scalar| scalar.id.as_str()),
+                scalar_range.iter().map(|scalar| scalar.id.as_str()),
                 "NX sketch payload record IDs",
             )?;
             let fixed_pairs = ctx.collect_retained_texts(
-                record_fixed_pairs.iter().map(|pair| pair.id.as_str()),
+                fixed_range.iter().map(|pair| pair.id.as_str()),
                 "NX sketch payload record IDs",
             )?;
             let mixed_pairs = ctx.collect_retained_texts(
-                record_mixed_pairs.iter().map(|pair| pair.id.as_str()),
+                mixed_range.iter().map(|pair| pair.id.as_str()),
                 "NX sketch payload record IDs",
             )?;
-            ctx.reserve_vec(&mut records, 1, "NX sketch payload named records")?;
-            records.push(FeatureSketchPayloadNamedRecord {
+            let item = FeatureSketchPayloadNamedRecord {
                 id,
                 operation_label: ctx.copy_retained_text(
                     &payload.operation_label,
@@ -7728,12 +8122,32 @@ pub(super) fn feature_sketch_payload_named_records(
                 scalar_fields,
                 fixed_pairs,
                 mixed_pairs,
-                payload_start_offset: name.frame.offset(),
+                payload_start_offset: start,
                 payload_end_offset: end,
-            });
+            };
+            ctx.push_vec(&mut records, item, "NX sketch payload named records")?;
         }
     }
     Ok(records)
+}
+
+/// Index payload names by identity; a repeated identity keeps the last name.
+fn payload_names_by_last_id<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    names: &'a [FeaturePayloadName],
+) -> Result<
+    (
+        HashMap<&'a str, &'a FeaturePayloadName>,
+        ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.with_scoped_storage("NX sketch name index", || {
+        ctx.collect_hash_map(
+            names.iter().map(|name| (name.id.as_str(), name)),
+            "NX sketch name index",
+        )
+    })
 }
 
 /// Decode complete `Point<decimal>` records with exactly two scalar fields.
@@ -7743,18 +8157,35 @@ pub(super) fn feature_sketch_points(
     names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
 ) -> Result<Vec<FeatureSketchPoint>, CodecError> {
+    let (names_by_id, _names_storage) = payload_names_by_last_id(ctx, names)?;
+    let (scalars_by_id, _scalars_storage) =
+        ctx.with_scoped_storage("NX sketch scalar index", || {
+            ctx.collect_hash_map(
+                scalars.iter().map(|scalar| (scalar.id.as_str(), scalar)),
+                "NX sketch scalar index",
+            )
+        })?;
     let mut points = Vec::new();
     for record in ctx.admit_iter(records, "visit NX sketch point records")? {
         let Some(name) = ctx
-            .admit_iter(names, "find NX sketch point name")?
-            .rev()
-            .find(|candidate| candidate.id == record.name_field)
+            .get_hash_map(
+                &names_by_id,
+                &record.name_field.as_str(),
+                "find NX sketch point name",
+            )?
+            .copied()
         else {
             continue;
         };
-        if name.operation_label != record.operation_label
-            || name.construction_payload != record.construction_payload
-        {
+        if !ctx.equal(
+            name.operation_label.as_str(),
+            record.operation_label.as_str(),
+            "match NX sketch point name",
+        )? || !ctx.equal(
+            name.construction_payload.as_str(),
+            record.construction_payload.as_str(),
+            "match NX sketch point name",
+        )? {
             continue;
         }
         if parse_sketch_point_name(ctx, name.frame.value())?.is_none() {
@@ -7764,24 +8195,36 @@ pub(super) fn feature_sketch_points(
             continue;
         };
         let Some(first) = ctx
-            .admit_iter(scalars, "find NX sketch point first scalar")?
-            .rev()
-            .find(|candidate| candidate.id == *first_id)
+            .get_hash_map(
+                &scalars_by_id,
+                &first_id.as_str(),
+                "find NX sketch point first scalar",
+            )?
+            .copied()
         else {
             continue;
         };
         let Some(second) = ctx
-            .admit_iter(scalars, "find NX sketch point second scalar")?
-            .rev()
-            .find(|candidate| candidate.id == *second_id)
+            .get_hash_map(
+                &scalars_by_id,
+                &second_id.as_str(),
+                "find NX sketch point second scalar",
+            )?
+            .copied()
         else {
             continue;
         };
         let mut matches_record = true;
         for scalar in [first, second] {
-            if scalar.operation_label != record.operation_label
-                || scalar.payload.id() != record.construction_payload.as_str()
-            {
+            if !ctx.equal(
+                scalar.operation_label.as_str(),
+                record.operation_label.as_str(),
+                "match NX sketch point scalar",
+            )? || !ctx.equal(
+                scalar.payload.id(),
+                record.construction_payload.as_str(),
+                "match NX sketch point scalar",
+            )? {
                 matches_record = false;
                 break;
             }
@@ -7789,7 +8232,7 @@ pub(super) fn feature_sketch_points(
         if !matches_record {
             continue;
         }
-        let key = record.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let key = identity_key(ctx, &record.id, "NX sketch point identity")?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:sketch-point#{key}"),
             "NX sketch point identity",
@@ -7820,6 +8263,14 @@ pub(super) fn feature_sketch_fixed_points(
     names: &[FeaturePayloadName],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
 ) -> Result<Vec<FeatureSketchFixedPoint>, CodecError> {
+    let (names_by_id, _names_storage) = payload_names_by_last_id(ctx, names)?;
+    let (pairs_by_id, _pairs_storage) =
+        ctx.with_scoped_storage("NX sketch fixed pair index", || {
+            ctx.collect_hash_map(
+                fixed_pairs.iter().map(|pair| (pair.id.as_str(), pair)),
+                "NX sketch fixed pair index",
+            )
+        })?;
     let mut points = Vec::new();
     for record in ctx.admit_iter(records, "visit NX sketch fixed point records")? {
         if !record.scalar_fields.is_empty() || !record.mixed_pairs.is_empty() {
@@ -7831,9 +8282,12 @@ pub(super) fn feature_sketch_fixed_points(
             "visit NX sketch fixed pair references",
         )? {
             let Some(pair) = ctx
-                .admit_iter(fixed_pairs, "find NX sketch fixed pair")?
-                .rev()
-                .find(|candidate| candidate.id == *fixed_pair_id)
+                .get_hash_map(
+                    &pairs_by_id,
+                    &fixed_pair_id.as_str(),
+                    "find NX sketch fixed pair",
+                )?
+                .copied()
             else {
                 continue;
             };
@@ -7852,23 +8306,38 @@ pub(super) fn feature_sketch_fixed_points(
             continue;
         };
         let Some(name) = ctx
-            .admit_iter(names, "find NX sketch fixed point name")?
-            .rev()
-            .find(|candidate| candidate.id == record.name_field)
+            .get_hash_map(
+                &names_by_id,
+                &record.name_field.as_str(),
+                "find NX sketch fixed point name",
+            )?
+            .copied()
         else {
             continue;
         };
-        if name.operation_label != record.operation_label
-            || name.construction_payload != record.construction_payload
-        {
+        if !ctx.equal(
+            name.operation_label.as_str(),
+            record.operation_label.as_str(),
+            "match NX sketch fixed point name",
+        )? || !ctx.equal(
+            name.construction_payload.as_str(),
+            record.construction_payload.as_str(),
+            "match NX sketch fixed point name",
+        )? {
             continue;
         }
         if parse_sketch_point_name(ctx, name.frame.value())?.is_none() {
             continue;
         }
-        if pair.operation_label != record.operation_label
-            || pair.construction_payload != record.construction_payload
-        {
+        if !ctx.equal(
+            pair.operation_label.as_str(),
+            record.operation_label.as_str(),
+            "match NX sketch fixed point pair",
+        )? || !ctx.equal(
+            pair.construction_payload.as_str(),
+            record.construction_payload.as_str(),
+            "match NX sketch fixed point pair",
+        )? {
             continue;
         }
         let [Some(first), Some(second)] = pair
@@ -7912,30 +8381,37 @@ pub(super) fn feature_sketch_point_groups(
     ctx: &DecodeContext<'_>,
     points: &[FeatureSketchPoint],
 ) -> Result<Vec<FeatureSketchPointGroup>, CodecError> {
-    let mut grouped = BTreeSet::new();
-    let mut grouped_reservation = ctx.reserve_scoped(0, "index NX sketch point groups")?;
+    let (points_by_key, _points_storage) =
+        ctx.with_scoped_storage("NX sketch point group index", || {
+            let mut grouped = HashMap::<(&str, &str), Vec<&FeatureSketchPoint>>::new();
+            for point in ctx.admit_iter(points, "index NX sketch point groups")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    (point.operation_label.as_str(), point.name.as_str()),
+                    point,
+                    "NX sketch point group index",
+                    "NX sketch point group witnesses",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
     let mut groups = Vec::new();
     for point in ctx.admit_iter(points, "visit NX sketch points for grouping")? {
-        let key = (point.operation_label.as_str(), point.name.as_str());
-        if grouped.contains(&key) {
+        let witnesses = ctx
+            .get_hash_map(
+                &points_by_key,
+                &(point.operation_label.as_str(), point.name.as_str()),
+                "find NX sketch point group",
+            )?
+            .map_or(&[][..], Vec::as_slice);
+        if !witnesses
+            .first()
+            .is_some_and(|first| std::ptr::eq(*first, point))
+        {
             continue;
         }
-
-        grouped_reservation.with_storage(|| {
-            ctx.insert_btree_set(&mut grouped, key, "NX sketch point group keys")
-        })?;
-        let matches = |candidate: &&FeatureSketchPoint| {
-            candidate.operation_label == point.operation_label && candidate.name == point.name
-        };
-        let count = ctx
-            .admit_iter(points, "count NX sketch point group members")?
-            .filter(&matches)
-            .count();
         let mut coordinates_differ = false;
-        for candidate in ctx
-            .admit_iter(points, "check NX sketch point group coordinates")?
-            .filter(&matches)
-        {
+        for candidate in ctx.admit_iter(witnesses, "check NX sketch point group coordinates")? {
             if ctx
                 .admit_iter(
                     &*candidate.coordinates,
@@ -7952,31 +8428,25 @@ pub(super) fn feature_sketch_point_groups(
             continue;
         }
 
-        let mut members = ctx.collection_vec(count, "NX sketch point group members")?;
-        for witness in ctx
-            .admit_iter(points, "copy NX sketch point group members")?
-            .filter(&matches)
-        {
-            members.push(ctx.copy_retained_text(&witness.id, "NX sketch point group member")?);
+        let mut members = ctx.vector_storage(witnesses.len(), "NX sketch point group members")?;
+        for witness in ctx.admit_iter(witnesses, "copy NX sketch point group members")? {
+            let member = ctx.copy_retained_text(&witness.id, "NX sketch point group member")?;
+            ctx.push_vec(&mut members, member, "NX sketch point group members")?;
         }
-        let prefix = "nx:feature-history:sketch-point-group#";
-        let key = point.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-        let length = prefix
-            .len()
-            .checked_add(key.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point group identity", 0, 1))?;
-        let mut id = ctx.retained_string(length, "NX sketch point group identity")?;
-        id.push_str(prefix);
-        id.push_str(key);
-        ctx.reserve_vec(&mut groups, 1, "NX sketch point groups")?;
-        groups.push(FeatureSketchPointGroup {
+        let key = identity_key(ctx, &point.id, "NX sketch point group identity")?;
+        let id = ctx.format_retained(
+            format_args!("nx:feature-history:sketch-point-group#{key}"),
+            "NX sketch point group identity",
+        )?;
+        let item = FeatureSketchPointGroup {
             id,
             operation_label: ctx
                 .copy_retained_text(&point.operation_label, "NX sketch point group label")?,
             name: ctx.copy_retained_text(&point.name, "NX sketch point group name")?,
             points: members,
             coordinates: point.coordinates,
-        });
+        };
+        ctx.push_vec(&mut groups, item, "NX sketch point groups")?;
     }
     Ok(groups)
 }
@@ -8079,35 +8549,53 @@ pub(super) fn feature_sketch_named_point_block_uses(
     references: &[FeatureSketchReference],
     points: &[OffsetStoreNamedPoint],
 ) -> Result<Vec<FeatureSketchNamedPointBlockUse>, CodecError> {
+    let (points_by_block, _points_storage) =
+        ctx.with_scoped_storage("NX sketch named point block index", || {
+            let mut grouped = HashMap::<&str, Vec<(&OffsetStoreNamedPoint, usize)>>::new();
+            for point in ctx.admit_iter(points, "index NX sketch named point blocks")? {
+                for (ordinal, block) in ctx
+                    .admit_iter(
+                        point.data_blocks.as_slice(),
+                        "index NX named point data blocks",
+                    )?
+                    .enumerate()
+                {
+                    ctx.push_hash_group(
+                        &mut grouped,
+                        block.as_str(),
+                        (point, ordinal),
+                        "NX sketch named point block index",
+                        "NX sketch named point block members",
+                    )?;
+                }
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
     let mut uses = Vec::new();
     for reference in ctx.admit_iter(references, "visit NX sketch named point references")? {
         let Some(data_block) = reference.data_block.as_deref() else {
             continue;
         };
-        for point in ctx.admit_iter(points, "join NX sketch named points")? {
-            let mut point_block_ordinal = None;
-            for (ordinal, block) in ctx
-                .admit_iter(
-                    point.data_blocks.as_slice(),
-                    "find NX named point data block",
-                )?
-                .enumerate()
-            {
-                if block == data_block {
-                    point_block_ordinal = Some(ordinal);
-                    break;
-                }
-            }
-            let Some(point_block_ordinal) = point_block_ordinal else {
+        let matching = ctx
+            .get_hash_map(&points_by_block, &data_block, "join NX sketch named points")?
+            .map_or(&[][..], Vec::as_slice);
+        let mut previous: Option<&OffsetStoreNamedPoint> = None;
+        for &(point, point_block_ordinal) in
+            ctx.admit_iter(matching, "join NX sketch named points")?
+        {
+            if previous.is_some_and(|earlier| std::ptr::eq(earlier, point)) {
                 continue;
-            };
-            let operation_key = reference
-                .operation_label
-                .rsplit_once('#')
+            }
+            previous = Some(point);
+            let operation_key = ctx
+                .rsplit_once(
+                    &reference.operation_label,
+                    "#",
+                    "NX sketch named point block use identity",
+                )?
                 .map_or(reference.operation_label.as_str(), |(_, key)| key);
-            let point_key = point
-                .id
-                .rsplit_once('#')
+            let point_key = ctx
+                .rsplit_once(&point.id, "#", "NX sketch named point block use identity")?
                 .map_or(point.id.as_str(), |(_, key)| key);
             let id = ctx.format_retained(format_args!(
                 "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
@@ -8145,7 +8633,8 @@ fn block_key<'block>(
     ctx: &DecodeContext<'_>,
     block: &'block str,
 ) -> Result<Option<(&'block str, u32)>, CodecError> {
-    let Some((store, ordinal)) = block.rsplit_once(":block#") else {
+    let Some((store, ordinal)) = ctx.rsplit_once(block, ":block#", "split NX sketch block key")?
+    else {
         return Ok(None);
     };
     let Ok(ordinal) = ctx.parse_text::<u32>(ordinal, "parse NX sketch block ordinal")? else {
@@ -8160,33 +8649,63 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
     references: &[FeatureSketchReference],
     points: &[OffsetStoreNamedPoint],
 ) -> Result<Vec<FeatureSketchPrecedingNamedPointUse>, CodecError> {
-    use std::collections::btree_map::Entry;
-
     let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureSketchReference>>::new();
     let mut index_reservation =
         ctx.reserve_scoped(0, "index NX preceding named-point references")?;
     for reference in ctx.admit_iter(references, "index NX preceding named-point references")? {
-        ctx.charge_work(
-            u64::from(usize::BITS - references_by_operation.len().leading_zeros()),
-            "index NX preceding named-point references",
-        )?;
         let operation_key = reference.operation_label.as_str();
-        index_reservation.with_storage(|| {
-            ctx.admit_btree_entry(
-                &references_by_operation,
-                &operation_key,
-                "NX preceding named-point operation index",
-            )
-        })?;
-        let group = match references_by_operation.entry(operation_key) {
-            Entry::Vacant(entry) => entry.insert(Vec::new()),
-            Entry::Occupied(entry) => entry.into_mut(),
-        };
-
-        index_reservation
-            .with_storage(|| ctx.reserve_vec(group, 1, "NX preceding named-point references"))?;
-        group.push(reference);
+        if let Some(group) = ctx.get_mut_btree_map(
+            &mut references_by_operation,
+            operation_key,
+            "NX preceding named-point operation index",
+        )? {
+            ctx.reserve_scoped_vec(
+                &mut index_reservation,
+                group,
+                1,
+                "NX preceding named-point references",
+            )?;
+            group.push(reference);
+        } else {
+            let mut group = Vec::new();
+            ctx.reserve_scoped_vec(
+                &mut index_reservation,
+                &mut group,
+                1,
+                "NX preceding named-point references",
+            )?;
+            group.push(reference);
+            index_reservation.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut references_by_operation,
+                    operation_key,
+                    group,
+                    "NX preceding named-point operation index",
+                )
+            })?;
+        }
     }
+    let mut last_blocks = Vec::new();
+    let mut last_blocks_reservation =
+        ctx.reserve_scoped(0, "index NX preceding named-point blocks")?;
+    for point in ctx.admit_iter(points, "index NX preceding named-point blocks")? {
+        let Some(last_block) = point.data_blocks.last() else {
+            continue;
+        };
+        let Some((point_store, point_ordinal)) = block_key(ctx, last_block)? else {
+            continue;
+        };
+        ctx.push_scoped_vec(
+            &mut last_blocks_reservation,
+            &mut last_blocks,
+            ((point_store, point_ordinal), point),
+            "NX preceding named-point block index",
+        )?;
+    }
+    let (points_by_last_block, _points_by_last_block_storage) = ctx.unique_index(
+        last_blocks.iter().copied(),
+        "index NX preceding named-point blocks",
+    )?;
     let mut uses = Vec::new();
     let mut grouped_references = references_by_operation.into_iter();
     for _ in ctx.admit_iter(
@@ -8235,31 +8754,26 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
         let Some((first_store, first_ordinal)) = block_key(ctx, first_block)? else {
             continue;
         };
-        let mut candidate = None;
-        for point in ctx.admit_iter(points, "match NX preceding named point")? {
-            let Some(last_block) = point.data_blocks.last() else {
-                continue;
-            };
-            let Some((point_store, point_ordinal)) = block_key(ctx, last_block)? else {
-                continue;
-            };
-            if point_store == first_store
-                && point_ordinal.checked_add(1) == Some(first_ordinal)
-                && candidate.replace(point).is_some()
-            {
-                candidate = None;
-                break;
-            }
-        }
-        let Some(point) = candidate else {
+        let Some(previous_ordinal) = first_ordinal.checked_sub(1) else {
             continue;
         };
-        let operation_key = operation_label
-            .rsplit_once('#')
+        let Some(&Some(point)) = ctx.get_hash_map(
+            &points_by_last_block,
+            &(first_store, previous_ordinal),
+            "match NX preceding named point",
+        )?
+        else {
+            continue;
+        };
+        let operation_key = ctx
+            .rsplit_once(
+                operation_label,
+                "#",
+                "NX preceding named-point use identity",
+            )?
             .map_or(operation_label, |(_, key)| key);
-        let point_key = point
-            .id
-            .rsplit_once('#')
+        let point_key = ctx
+            .rsplit_once(&point.id, "#", "NX preceding named-point use identity")?
             .map_or(point.id.as_str(), |(_, key)| key);
         let id = ctx.format_retained(
             format_args!(
@@ -8312,52 +8826,73 @@ pub(super) fn feature_sketch_point_uses(
     named_points: &[OffsetStoreNamedPoint],
     block_uses: &[FeatureSketchNamedPointBlockUse],
 ) -> Result<Vec<FeatureSketchPointUse>, CodecError> {
-    let mut uses = Vec::new();
-    for (block_use_index, block_use) in ctx
-        .admit_iter(block_uses, "visit NX sketch named-point block uses")?
-        .enumerate()
-    {
-        let mut duplicate = false;
-        for earlier in ctx.admit_iter(
-            &block_uses[..block_use_index],
-            "find earlier NX sketch point uses",
-        )? {
-            if earlier.operation_label == block_use.operation_label
-                && earlier.named_point == block_use.named_point
-            {
-                duplicate = true;
-                break;
+    let (block_uses_by_point, _block_uses_storage) =
+        ctx.with_scoped_storage("NX sketch point block use index", || {
+            let mut grouped = HashMap::<(&str, &str), Vec<&FeatureSketchNamedPointBlockUse>>::new();
+            for block_use in ctx.admit_iter(block_uses, "index NX sketch point block uses")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    (
+                        block_use.operation_label.as_str(),
+                        block_use.named_point.as_str(),
+                    ),
+                    block_use,
+                    "NX sketch point block use index",
+                    "NX sketch point block use members",
+                )?;
             }
-        }
-        if duplicate {
+            Ok::<_, CodecError>(grouped)
+        })?;
+    let (named_points_by_id, _named_points_storage) =
+        ctx.with_scoped_storage("NX sketch named point index", || {
+            ctx.collect_hash_map(
+                named_points.iter().map(|point| (point.id.as_str(), point)),
+                "NX sketch named point index",
+            )
+        })?;
+    let (point_groups_by_name, _point_groups_storage) = ctx.unique_index(
+        point_groups
+            .iter()
+            .map(|group| ((group.operation_label.as_str(), group.name.as_str()), group)),
+        "index NX sketch point groups",
+    )?;
+    let mut uses = Vec::new();
+    for block_use in ctx.admit_iter(block_uses, "visit NX sketch named-point block uses")? {
+        let group_key = (
+            block_use.operation_label.as_str(),
+            block_use.named_point.as_str(),
+        );
+        let Some(group) = ctx.get_hash_map(
+            &block_uses_by_point,
+            &group_key,
+            "collect NX sketch point block uses",
+        )?
+        else {
+            continue;
+        };
+        if !group
+            .first()
+            .is_some_and(|first| std::ptr::eq(*first, block_use))
+        {
             continue;
         }
-        let mut named_point = None;
-        for point in ctx
-            .admit_iter(named_points, "find NX sketch named point")?
-            .rev()
-        {
-            if point.id == block_use.named_point {
-                named_point = Some(point);
-                break;
-            }
-        }
-        let Some(named_point) = named_point else {
+        let Some(&named_point) = ctx.get_hash_map(
+            &named_points_by_id,
+            &block_use.named_point.as_str(),
+            "find NX sketch named point",
+        )?
+        else {
             continue;
         };
         let mut point_block_uses = Vec::new();
         let mut order_reservation = ctx.reserve_scoped(0, "sort NX sketch point block uses")?;
-        for candidate in ctx
-            .admit_iter(block_uses, "collect NX sketch point block uses")?
-            .filter(|candidate| {
-                candidate.operation_label == block_use.operation_label
-                    && candidate.named_point == block_use.named_point
-            })
-        {
-            order_reservation.with_storage(|| {
-                ctx.reserve_vec(&mut point_block_uses, 1, "NX sketch point block use order")
-            })?;
-            point_block_uses.push(candidate);
+        for &candidate in ctx.admit_iter(group.as_slice(), "collect NX sketch point block uses")? {
+            ctx.push_scoped_vec(
+                &mut order_reservation,
+                &mut point_block_uses,
+                candidate,
+                "NX sketch point block use order",
+            )?;
         }
         ctx.stable_sort_by(
             &mut point_block_uses,
@@ -8377,16 +8912,15 @@ pub(super) fn feature_sketch_point_uses(
             Ord::cmp,
             "sort NX sketch point block uses",
         )?;
-        let mut matching_point_groups = ctx
-            .admit_iter(point_groups, "find NX sketch point group")?
-            .filter(|group| {
-                group.operation_label == block_use.operation_label && group.name == named_point.name
-            });
-        let point_group = match (matching_point_groups.next(), matching_point_groups.next()) {
-            (Some(group), None) => Some(group),
-            _ => None,
-        };
-        let Some(point_group) = point_group else {
+        let Some(&Some(point_group)) = ctx.get_hash_map(
+            &point_groups_by_name,
+            &(
+                block_use.operation_label.as_str(),
+                named_point.name.as_str(),
+            ),
+            "find NX sketch point group",
+        )?
+        else {
             continue;
         };
         if ctx
@@ -8456,10 +8990,30 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
     constructions: &[FeatureDatumCsysConstruction],
     scalars: &[FeaturePayloadScalar],
 ) -> Result<Vec<FeatureSketchDatumCsysDependency>, CodecError> {
-    #[derive(PartialEq, Eq)]
+    #[derive(Clone, Copy)]
     enum BorrowedRelation<'a> {
         Shared(&'a str),
         Consecutive(&'a str, &'a str),
+    }
+    fn same_relation(
+        ctx: &DecodeContext<'_>,
+        left: BorrowedRelation<'_>,
+        right: BorrowedRelation<'_>,
+    ) -> Result<bool, CodecError> {
+        const OPERATION: &str = "compare NX sketch datum block relations";
+        Ok(match (left, right) {
+            (BorrowedRelation::Shared(left), BorrowedRelation::Shared(right)) => {
+                ctx.equal(left, right, OPERATION)?
+            }
+            (
+                BorrowedRelation::Consecutive(left_point, left_construction),
+                BorrowedRelation::Consecutive(right_point, right_construction),
+            ) => {
+                ctx.equal(left_point, right_point, OPERATION)?
+                    && ctx.equal(left_construction, right_construction, OPERATION)?
+            }
+            _ => false,
+        })
     }
     let (ordered_labels, _ordered_labels_storage) = ctx
         .with_scoped_storage("NX local ordered_labels storage", || {
@@ -8495,42 +9049,79 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             )
         })?;
     }
+    let (scalars_by_offset, _scalars_storage) =
+        ctx.with_scoped_storage("NX sketch datum scalar index", || {
+            let mut grouped = HashMap::<(&str, u64), Vec<&FeaturePayloadScalar>>::new();
+            for scalar in ctx.admit_iter(scalars, "index NX sketch datum scalars")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    (scalar.operation_label.as_str(), scalar.source_offset),
+                    scalar,
+                    "NX sketch datum scalar index",
+                    "NX sketch datum scalar members",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
     let mut dependencies = Vec::new();
     for construction in ctx.admit_iter(constructions, "visit NX sketch datum constructions")? {
-        let Some(consumer_position) = positions.get(construction.operation_label.as_str()) else {
+        let Some(&consumer_position) = ctx.get_btree_map(
+            &positions,
+            construction.operation_label.as_str(),
+            "find NX sketch datum consumer position",
+        )?
+        else {
             continue;
         };
+        let construction_first_block = &construction.frame.members()[0].1;
+        let mut construction_block_key = None;
         let mut candidate: Option<(usize, BorrowedRelation<'_>)> = None;
         let mut ambiguous = false;
         'point_uses: for (point_use_index, point_use) in ctx
             .admit_iter(point_uses, "match NX sketch datum point uses")?
             .enumerate()
         {
-            let Some(producer_position) = positions.get(point_use.operation_label.as_str()) else {
+            let Some(&producer_position) = ctx.get_btree_map(
+                &positions,
+                point_use.operation_label.as_str(),
+                "find NX sketch datum producer position",
+            )?
+            else {
                 continue;
             };
             if producer_position >= consumer_position {
                 continue;
             }
-            let Some(point) = points.get(point_use.named_point.as_str()) else {
+            let Some(&point) = ctx.get_btree_map(
+                &points,
+                point_use.named_point.as_str(),
+                "find NX sketch datum named point",
+            )?
+            else {
                 continue;
             };
-            for shared_block in ctx
-                .admit_iter(
-                    construction.frame.members(),
+            for (_, binding) in ctx.admit_iter(
+                construction.frame.members(),
+                "match NX sketch datum frame blocks",
+            )? {
+                if !ctx.contains(
+                    point.data_blocks.as_slice(),
+                    binding,
                     "match NX sketch datum frame blocks",
-                )?
-                .map(|(_, binding)| binding)
-                .filter(|block| point.data_blocks.as_slice().contains(block))
-            {
-                let relation = BorrowedRelation::Shared(shared_block);
-                let is_new_ambiguity =
-                    candidate
-                        .as_ref()
-                        .is_some_and(|(existing_index, existing_relation)| {
-                            point_uses[*existing_index].id != point_use.id
-                                || *existing_relation != relation
-                        });
+                )? {
+                    continue;
+                }
+                let relation = BorrowedRelation::Shared(binding);
+                let is_new_ambiguity = match &candidate {
+                    Some((existing_index, existing_relation)) => {
+                        !ctx.equal(
+                            point_uses[*existing_index].id.as_str(),
+                            point_use.id.as_str(),
+                            "compare NX sketch datum point uses",
+                        )? || !same_relation(ctx, *existing_relation, relation)?
+                    }
+                    None => false,
+                };
                 if is_new_ambiguity {
                     ambiguous = true;
                     break 'point_uses;
@@ -8540,26 +9131,34 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             let Some(point_last_block) = point.data_blocks.last() else {
                 continue;
             };
-            let construction_first_block = &construction.frame.members()[0].1;
             let point_block_key = block_key(ctx, point_last_block)?;
-            let construction_block_key = block_key(ctx, construction_first_block)?;
+            let construction_block_key = match construction_block_key {
+                Some(key) => key,
+                None => *construction_block_key.insert(block_key(ctx, construction_first_block)?),
+            };
             if let (
                 Some((point_store, point_ordinal)),
                 Some((construction_store, construction_ordinal)),
             ) = (point_block_key, construction_block_key)
             {
-                if point_store == construction_store
-                    && point_ordinal.checked_add(1) == Some(construction_ordinal)
+                if ctx.equal(
+                    point_store,
+                    construction_store,
+                    "compare NX sketch datum block stores",
+                )? && point_ordinal.checked_add(1) == Some(construction_ordinal)
                 {
                     let relation =
                         BorrowedRelation::Consecutive(point_last_block, construction_first_block);
-                    let is_new_ambiguity =
-                        candidate
-                            .as_ref()
-                            .is_some_and(|(existing_index, existing_relation)| {
-                                point_uses[*existing_index].id != point_use.id
-                                    || *existing_relation != relation
-                            });
+                    let is_new_ambiguity = match &candidate {
+                        Some((existing_index, existing_relation)) => {
+                            !ctx.equal(
+                                point_uses[*existing_index].id.as_str(),
+                                point_use.id.as_str(),
+                                "compare NX sketch datum point uses",
+                            )? || !same_relation(ctx, *existing_relation, relation)?
+                        }
+                        None => false,
+                    };
                     if is_new_ambiguity {
                         ambiguous = true;
                     } else {
@@ -8581,16 +9180,24 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
         let Some(reference) = point_use.references.first() else {
             continue;
         };
-        let point = points[point_use.named_point.as_str()];
+        let Some(&point) = ctx.get_btree_map(
+            &points,
+            point_use.named_point.as_str(),
+            "find NX sketch datum named point",
+        )?
+        else {
+            continue;
+        };
         let mut scalar_aliases = Vec::new();
         for (coordinate_ordinal, value) in point.values.iter().enumerate() {
-            for scalar in ctx
-                .admit_iter(scalars, "match NX sketch datum scalars")?
-                .filter(|scalar| {
-                    scalar.operation_label == construction.operation_label
-                        && scalar.source_offset == value.source_offset
-                })
-            {
+            let matching = ctx
+                .get_hash_map(
+                    &scalars_by_offset,
+                    &(construction.operation_label.as_str(), value.source_offset),
+                    "match NX sketch datum scalars",
+                )?
+                .map_or(&[][..], Vec::as_slice);
+            for scalar in ctx.admit_iter(matching, "match NX sketch datum scalars")? {
                 let datum_csys_scalar =
                     ctx.copy_retained_text(&scalar.id, "NX sketch datum scalar identity")?;
                 ctx.reserve_vec(&mut scalar_aliases, 1, "NX sketch datum scalar aliases")?;
@@ -8660,7 +9267,7 @@ fn parse_sketch_point_name(
     ctx: &DecodeContext<'_>,
     value: &str,
 ) -> Result<Option<u32>, CodecError> {
-    let Some(suffix) = value.strip_prefix("Point") else {
+    let Some(suffix) = ctx.strip_prefix(value, "Point", "parse NX sketch point name")? else {
         return Ok(None);
     };
     if suffix.is_empty()
@@ -8745,18 +9352,44 @@ pub(super) fn feature_parameter_bindings(
     references: &[DataBlockReference],
     expressions: &[ParameterFormula],
 ) -> Result<Vec<FeatureParameterBinding>, CodecError> {
+    let (references_by_block, _references_storage) =
+        ctx.with_scoped_storage("NX parameter binding reference index", || {
+            let mut grouped = HashMap::<&str, Vec<&DataBlockReference>>::new();
+            for reference in ctx.admit_iter(references, "index NX parameter binding references")? {
+                ctx.push_hash_group(
+                    &mut grouped,
+                    reference.data_block.as_str(),
+                    reference,
+                    "NX parameter binding reference index",
+                    "NX parameter binding reference members",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
+    let (expressions_by_declaration, _expressions_storage) = ctx.unique_index(
+        expressions.iter().filter_map(|expression| {
+            expression
+                .declaration
+                .as_deref()
+                .map(|declaration| (declaration, expression))
+        }),
+        "index NX parameter binding expressions",
+    )?;
     let mut bindings = Vec::new();
     for input in ctx.admit_iter(inputs, "visit NX parameter binding inputs")? {
-        for reference in ctx
-            .admit_iter(references, "scan NX parameter binding references")?
-            .filter(|reference| reference.data_block == input.data_block)
-        {
+        let matching = ctx
+            .get_hash_map(
+                &references_by_block,
+                &input.data_block.as_str(),
+                "scan NX parameter binding references",
+            )?
+            .map_or(&[][..], Vec::as_slice);
+        for &reference in ctx.admit_iter(matching, "scan NX parameter binding references")? {
             let Some(expression_declaration) = &reference.target_expression_declaration else {
                 continue;
             };
-            let operation_key = input
-                .operation_label
-                .rsplit_once('#')
+            let operation_key = ctx
+                .rsplit_once(&input.operation_label, "#", "NX parameter binding identity")?
                 .map_or(input.operation_label.as_str(), |(_, key)| key);
             let id = ctx.format_retained(
                 format_args!(
@@ -8771,13 +9404,12 @@ pub(super) fn feature_parameter_bindings(
                 ctx.copy_retained_text(&input.data_block, "NX parameter binding input block")?;
             let declaration =
                 ctx.copy_retained_text(expression_declaration, "NX parameter binding declaration")?;
-            let mut matching_expressions = ctx
-                .admit_iter(expressions, "scan NX parameter binding expressions")?
-                .filter(|candidate| {
-                    candidate.declaration.as_deref() == Some(expression_declaration.as_str())
-                });
-            let expression = match (matching_expressions.next(), matching_expressions.next()) {
-                (Some(expression), None) => {
+            let expression = match ctx.get_hash_map(
+                &expressions_by_declaration,
+                &expression_declaration.as_str(),
+                "scan NX parameter binding expressions",
+            )? {
+                Some(&Some(expression)) => {
                     Some(ctx.copy_retained_text(&expression.id, "NX parameter binding expression")?)
                 }
                 _ => None,
@@ -8804,30 +9436,47 @@ pub(super) fn feature_parameter_uses(
     ctx: &DecodeContext<'_>,
     bindings: &[FeatureParameterBinding],
 ) -> Result<Vec<FeatureParameterUse>, CodecError> {
+    let (bindings_by_use, _bindings_storage) =
+        ctx.with_scoped_storage("NX parameter use index", || {
+            let mut grouped = HashMap::<(&str, &str), Vec<&FeatureParameterBinding>>::new();
+            for binding in ctx.admit_iter(bindings, "index NX parameter-use bindings")? {
+                let Some(expression) = binding.expression.as_deref() else {
+                    continue;
+                };
+                ctx.push_hash_group(
+                    &mut grouped,
+                    (binding.operation_label.as_str(), expression),
+                    binding,
+                    "NX parameter use index",
+                    "NX parameter use members",
+                )?;
+            }
+            Ok::<_, CodecError>(grouped)
+        })?;
     let mut uses = Vec::new();
-    for (ordinal, binding) in ctx
-        .admit_iter(bindings, "visit NX parameter bindings")?
-        .enumerate()
-    {
+    for binding in ctx.admit_iter(bindings, "visit NX parameter bindings")? {
         let Some(expression) = binding.expression.as_deref() else {
             continue;
         };
-        if ctx.any_by(
-            &bindings[..ordinal],
-            |candidate| {
-                Ok(candidate.operation_label == binding.operation_label
-                    && candidate.expression.as_deref() == Some(expression))
-            },
+        let Some(group) = ctx.get_hash_map(
+            &bindings_by_use,
+            &(binding.operation_label.as_str(), expression),
             "find earlier NX parameter bindings",
-        )? {
+        )?
+        else {
+            continue;
+        };
+        if !group
+            .first()
+            .is_some_and(|first| std::ptr::eq(*first, binding))
+        {
             continue;
         }
-        let operation_key = binding
-            .operation_label
-            .rsplit_once('#')
+        let operation_key = ctx
+            .rsplit_once(&binding.operation_label, "#", "NX parameter use identity")?
             .map_or(binding.operation_label.as_str(), |(_, key)| key);
-        let expression_key = expression
-            .rsplit_once('#')
+        let expression_key = ctx
+            .rsplit_once(expression, "#", "NX parameter use identity")?
             .map_or(expression, |(_, key)| key);
         let id = ctx.format_retained(
             format_args!("nx:feature-history:parameter-use#{operation_key}-{expression_key}"),
@@ -8837,13 +9486,7 @@ pub(super) fn feature_parameter_uses(
             ctx.copy_retained_text(&binding.operation_label, "NX parameter use operation")?;
         let expression_id = ctx.copy_retained_text(expression, "NX parameter use expression")?;
         let mut occurrences = Vec::new();
-        for candidate in ctx
-            .admit_iter(bindings, "collect NX parameter-use bindings")?
-            .filter(|candidate| {
-                candidate.operation_label == binding.operation_label
-                    && candidate.expression.as_deref() == Some(expression)
-            })
-        {
+        for candidate in ctx.admit_iter(group.as_slice(), "collect NX parameter-use bindings")? {
             let binding_id = ctx.copy_retained_text(&candidate.id, "NX parameter use binding")?;
             ctx.reserve_vec(&mut occurrences, 1, "NX parameter use bindings")?;
             occurrences.push(FeatureParameterUseBinding {
