@@ -678,6 +678,16 @@ pub(crate) fn check_imported<'tcx>(
                     }
                 }
             }
+            if let Some(false) = normalized_lookup.and_then(|(receiver, query)| {
+                crate::hash_tables::bounded_raw_ordered_lookup(tcx, *definition, receiver, query)
+            }) {
+                reporter.report(
+                    root.span,
+                    "unproven_decode_charge",
+                    "B-tree key operation has an unproven Ord callback or stored Borrow",
+                );
+                continue;
+            }
             if crate::hash_tables::is_hash_lookup_context(tcx, instance.def_id()) {
                 let concrete_lookup = normalized_lookup.and_then(|(receiver, query)| {
                     crate::hash_tables::bounded_context_lookup(
@@ -1077,6 +1087,8 @@ pub(crate) fn check_imported<'tcx>(
             // A consumer over a prepaid iterator was charged by the admission;
             // its own callbacks must still be checked bodies.
             let prepaid_consumer = summary.work == external::Work::Iterator
+                && operation_name
+                    .is_none_or(|name| crate::work::early_exit_search(name.as_str()).is_none())
                 && reporter.prepaid_iterator(receiver)
                 && reporter.consumer_callbacks_checked(
                     &args

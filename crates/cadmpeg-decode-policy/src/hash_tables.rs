@@ -161,6 +161,41 @@ pub(crate) fn bounded_raw_lookup<'tcx>(
     Some(bounded_lookup(tcx, kind, receiver, query))
 }
 
+/// A physical std keyed operation whose key, query or builder is still a
+/// type parameter; the concrete instances prove it.
+pub(crate) fn generic_raw_lookup<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    callee: DefId,
+    receiver: Ty<'tcx>,
+    query: Ty<'tcx>,
+) -> bool {
+    raw_lookup_route(tcx, callee).is_some()
+        && (receiver.has_non_region_param() || query.has_non_region_param())
+}
+
+/// The keyed replacement for `table[key]` on a standard map, which hashes or
+/// compares the key through `ops::Index` without a charge.
+pub(crate) fn keyed_index_replacement<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    base: Ty<'tcx>,
+) -> Option<&'static str> {
+    let ty::Adt(owner, _) = types::reveal_opaque(tcx, base).peel_refs().kind() else {
+        return None;
+    };
+    if types::physical_item_path(tcx, owner.did(), "std", MAP) {
+        Some("DecodeContext::get_hash_map")
+    } else if types::physical_item_path(
+        tcx,
+        owner.did(),
+        "alloc",
+        &["collections", "btree", "map", "BTreeMap"],
+    ) {
+        Some("DecodeContext::get_btree_map")
+    } else {
+        None
+    }
+}
+
 pub(crate) fn is_raw_hash_lookup(tcx: TyCtxt<'_>, callee: DefId) -> bool {
     raw_lookup_route(tcx, callee).is_some()
 }
@@ -275,21 +310,87 @@ fn supported_borrow_pair<'tcx>(tcx: TyCtxt<'tcx>, stored: Ty<'tcx>, query: Ty<'t
             && matches!(query.kind(), ty::Slice(element) if Some(*element) == inner)
 }
 
+/// The key callbacks an operation invokes.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Callbacks {
+    /// `PartialEq`, as `DecodeContext::equal` invokes it.
+    Equality,
+    /// `Hash` and `PartialEq`, as a hash table invokes them.
+    Hash,
+    /// `Ord`, as a B-tree invokes it.
+    Order,
+}
+
 /// Returns whether equality on this concrete value is field-wise, so the
 /// operands' `DecodeCost` bounds its comparison.
 pub(crate) fn bounded_equality<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> bool {
-    bounded_tree(tcx, value, false, &mut Vec::new())
+    bounded_tree(tcx, value, Callbacks::Equality, &mut Vec::new())
 }
 
 /// Returns whether hashing and equality on this concrete key are field-wise.
 fn bounded_key<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> bool {
-    bounded_tree(tcx, value, true, &mut Vec::new())
+    bounded_tree(tcx, value, Callbacks::Hash, &mut Vec::new())
+}
+
+/// Returns whether ordering on this concrete key is field-wise, so the key's
+/// `DecodeCost` bounds each comparison a B-tree makes.
+fn bounded_order<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> bool {
+    bounded_tree(tcx, value, Callbacks::Order, &mut Vec::new())
+}
+
+/// Identifies a physical std B-tree keyed operation and proves the concrete
+/// key's `Ord` callback and its borrowed query. A generic key is proven where
+/// a concrete instance supplies it.
+pub(crate) fn bounded_raw_ordered_lookup<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    callee: DefId,
+    receiver: Ty<'tcx>,
+    query: Ty<'tcx>,
+) -> Option<bool> {
+    const TREE_MAP: &[&str] = &["collections", "btree", "map", "BTreeMap"];
+    const TREE_SET: &[&str] = &["collections", "btree", "set", "BTreeSet"];
+    let map = [
+        "get",
+        "get_mut",
+        "contains_key",
+        "remove",
+        "get_key_value",
+        "remove_entry",
+        "insert",
+        "entry",
+    ]
+    .into_iter()
+    .any(|method| types::physical_inherent_method(tcx, callee, "alloc", TREE_MAP, method));
+    let set = ["contains", "get", "remove", "take", "replace", "insert"]
+        .into_iter()
+        .any(|method| types::physical_inherent_method(tcx, callee, "alloc", TREE_SET, method));
+    if !map && !set {
+        return None;
+    }
+    if receiver.has_non_region_param() || query.has_non_region_param() {
+        return None;
+    }
+    let ty::Adt(_, arguments) = types::reveal_opaque(tcx, receiver).peel_refs().kind() else {
+        return Some(false);
+    };
+    let Some(key) = arguments.types().next() else {
+        return Some(false);
+    };
+    let query = match types::reveal_opaque(tcx, query).kind() {
+        ty::Ref(_, query, _) => types::reveal_opaque(tcx, *query),
+        _ => types::reveal_opaque(tcx, query),
+    };
+    Some(
+        bounded_order(tcx, key)
+            && bounded_order(tcx, query)
+            && supported_borrow_pair(tcx, key, query),
+    )
 }
 
 fn bounded_tree<'tcx>(
     tcx: TyCtxt<'tcx>,
     value: Ty<'tcx>,
-    hashed: bool,
+    callbacks: Callbacks,
     seen: &mut Vec<Ty<'tcx>>,
 ) -> bool {
     let value = types::reveal_opaque(tcx, value).peel_refs();
@@ -304,10 +405,10 @@ fn bounded_tree<'tcx>(
     seen.push(value);
     let bounded = match value.kind() {
         ty::Bool | ty::Char | ty::Int(_) | ty::Uint(_) | ty::Float(_) | ty::Str => true,
-        ty::Array(element, _) | ty::Slice(element) => bounded_tree(tcx, *element, hashed, seen),
+        ty::Array(element, _) | ty::Slice(element) => bounded_tree(tcx, *element, callbacks, seen),
         ty::Tuple(fields) => fields
             .iter()
-            .all(|field| bounded_tree(tcx, field, hashed, seen)),
+            .all(|field| bounded_tree(tcx, field, callbacks, seen)),
         ty::Adt(owner, arguments) if types::standard(tcx, owner.did()) => {
             let arguments: Vec<_> = arguments.types().collect();
             if types::physical_item_path(tcx, owner.did(), "alloc", &["string", "String"]) {
@@ -320,16 +421,50 @@ fn bounded_tree<'tcx>(
             {
                 arguments
                     .first()
-                    .is_some_and(|inner| bounded_tree(tcx, *inner, hashed, seen))
+                    .is_some_and(|inner| bounded_tree(tcx, *inner, callbacks, seen))
+            } else if callbacks == Callbacks::Order
+                && types::physical_item_path(
+                    tcx,
+                    owner.did(),
+                    "alloc",
+                    &["collections", "btree", "map", "BTreeMap"],
+                )
+            {
+                // Maps order lexicographically by entry.
+                arguments
+                    .iter()
+                    .all(|inner| bounded_tree(tcx, *inner, callbacks, seen))
             } else {
                 false
             }
         }
+        // `serde_value::Value` orders by variant and then by its contents, so
+        // a comparison reads no more than the smaller operand.
+        ty::Adt(owner, _)
+            if callbacks == Callbacks::Order
+                && types::physical_item_path(tcx, owner.did(), "serde_value", &["Value"]) =>
+        {
+            true
+        }
         ty::Adt(owner, arguments) => {
-            (!hashed || derived_impls(tcx, value, owner.did(), &["hash", "Hash"]))
-                && derived_impls(tcx, value, owner.did(), &["cmp", "PartialEq"])
+            let derived = match callbacks {
+                Callbacks::Equality => {
+                    derived_impls(tcx, value, owner.did(), &["cmp", "PartialEq"])
+                }
+                Callbacks::Hash => {
+                    derived_impls(tcx, value, owner.did(), &["hash", "Hash"])
+                        && derived_impls(tcx, value, owner.did(), &["cmp", "PartialEq"])
+                }
+                Callbacks::Order => derived_impls(tcx, value, owner.did(), &["cmp", "Ord"]),
+            };
+            derived
                 && owner.all_fields().all(|field| {
-                    bounded_tree(tcx, field.ty(tcx, arguments).skip_norm_wip(), hashed, seen)
+                    bounded_tree(
+                        tcx,
+                        field.ty(tcx, arguments).skip_norm_wip(),
+                        callbacks,
+                        seen,
+                    )
                 })
         }
         _ => false,
@@ -367,11 +502,12 @@ fn derived_impls<'tcx>(
         })
         .filter(|implementation| !partial_eq || partial_eq_self_impl(tcx, *implementation, value))
         .collect();
-    // A derive expansion marks its impl; a hand-written marker is not derived.
+    // A derive expansion marks its impl; a hand-written marker, including one
+    // a declarative macro emits, is not derived.
     !candidates.is_empty()
         && candidates.into_iter().all(|implementation| {
             tcx.is_automatically_derived(implementation)
-                && tcx.def_span(implementation).from_expansion()
+                && derive_expansion(tcx.def_span(implementation))
         })
 }
 
@@ -401,4 +537,12 @@ fn random_state(tcx: TyCtxt<'_>, builder: Ty<'_>) -> bool {
     matches!(builder.kind(), ty::Adt(owner, arguments)
         if types::physical_item_path(tcx, owner.did(), "std", &["hash", "random", "RandomState"])
             && arguments.is_empty())
+}
+
+/// The span comes from a derive macro's expansion.
+pub(crate) fn derive_expansion(span: rustc_span::Span) -> bool {
+    matches!(
+        span.ctxt().outer_expn_data().kind,
+        rustc_span::hygiene::ExpnKind::Macro(rustc_span::hygiene::MacroKind::Derive, _)
+    )
 }

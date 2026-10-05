@@ -5,9 +5,9 @@
 //! `size_of::<T>()`. `json_bound` charges six `serde_json::Value` slots per
 //! counted value and 4096 bytes per object entry. The pinned `String` is three
 //! target `usize` words (`Vec<u8>`); a `Value::String` variant therefore gives
-//! a target-layout lower bound for `Value`. Keep these limits aligned with
-//! `cadmpeg-core/src/decode/tree.rs`'s `json_bound` and
-//! `JSON_MAP_ENTRY_BOUND` constants.
+//! a target-layout lower bound for `Value`. A test reads
+//! `cadmpeg-core/src/decode/tree.rs` and fails when its `JSON_MAP_ENTRY_BOUND`
+//! differs from `MAP_ENTRY_BYTES`.
 use crate::types;
 use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt};
 use rustc_span::def_id::DefId;
@@ -676,4 +676,20 @@ fn layout_size_align<'tcx>(tcx: TyCtxt<'tcx>, value: Ty<'tcx>) -> Option<(u64, u
     tcx.layout_of(ty::TypingEnv::fully_monomorphized().as_query_input(value))
         .ok()
         .map(|layout| (layout.size.bytes(), layout.align.abi.bytes()))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn map_entry_bound_matches_core() {
+        let tree = include_str!("../../cadmpeg-core/src/decode/tree.rs");
+        let declaration = format!(
+            "const JSON_MAP_ENTRY_BOUND: u64 = {};",
+            super::MAP_ENTRY_BYTES
+        );
+        assert!(
+            tree.contains(&declaration),
+            "core's JSON map entry bound differs from the checker's"
+        );
+    }
 }

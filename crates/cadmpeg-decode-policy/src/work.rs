@@ -118,6 +118,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let ExprKind::Binary(operator, left, right) = expression.kind {
             if matches!(
                 operator.node,
+                BinOpKind::BitOr | BinOpKind::BitAnd | BinOpKind::BitXor | BinOpKind::Sub
+            ) && (crate::hash_tables::whole_table(self.tcx, self.expr_ty(left))
+                || crate::hash_tables::whole_table(self.tcx, self.expr_ty(right)))
+            {
+                self.hash_table_traversal(expression, "set operator");
+                return;
+            }
+            if matches!(
+                operator.node,
                 BinOpKind::Eq
                     | BinOpKind::Ne
                     | BinOpKind::Lt
@@ -180,6 +189,20 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     }
                     self.work_report(expression, expression.span, shape, paid, "comparison");
                 }
+            }
+        }
+        if let ExprKind::Index(base, _, _) = expression.kind {
+            if let Some(replacement) =
+                crate::hash_tables::keyed_index_replacement(self.tcx, self.expr_ty(base))
+            {
+                self.report(
+                    expression.span,
+                    "uncharged_decode_work",
+                    &format!(
+                        "keyed index hashes or compares its key without charging it; replacement: {replacement}"
+                    ),
+                );
+                return;
             }
         }
         let Some((definition, operands)) = self.call(expression) else {
@@ -245,6 +268,31 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let key_work_paid = self.key_work_paid(&operands, name);
         if key_work_paid {
             self.record_key_work_proof(expression);
+        }
+        // Core's generic keyed operations are proven at each concrete instance
+        // its callers import.
+        let core_body = self
+            .tcx
+            .crate_name(rustc_span::def_id::LOCAL_CRATE)
+            .as_str()
+            == "cadmpeg_core";
+        if let Some((receiver, query)) =
+            operands.first().zip(operands.get(1)).filter(|_| !core_body)
+        {
+            if crate::hash_tables::generic_raw_lookup(
+                self.tcx,
+                definition,
+                self.expr_ty(receiver),
+                self.expr_ty(query),
+            ) {
+                // Each concrete instance proves its own key callbacks and builder.
+                self.report(
+                    expression.span,
+                    "unproven_decode_charge",
+                    "hash lookup with a generic key, query or builder: each concrete instance must use standard or derived key callbacks and the random hasher",
+                );
+                return;
+            }
         }
         if operands
             .first()
@@ -609,6 +657,18 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
         }
         if consumers && self.prepaid_iterator(value) {
+            if let Some(search) = early_exit_search(name) {
+                // Admission charged every visit, but the search may stop at
+                // the first; the core search charges only the visits it makes.
+                self.report(
+                    expression.span,
+                    "unproven_decode_charge",
+                    &format!(
+                        "{name} stops early over an admission that charged every visit; replacement: DecodeContext::{search}"
+                    ),
+                );
+                return;
+            }
             // Admission charged every base visit before the first step; the
             // consumer's own callbacks must be checked bodies.
             let callbacks: Vec<_> = operands
@@ -1273,4 +1333,17 @@ impl<'tcx> Visitor<'tcx> for ShrinkGuard<'_, '_, 'tcx> {
         }
         walk_expr(self, expression);
     }
+}
+
+/// The core search that charges only the visits an early-exit consumer makes.
+pub(crate) fn early_exit_search(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "any" => "any_by",
+        "all" => "all_by",
+        "find" => "find_by",
+        "position" => "position_by",
+        "find_map" => "find_map",
+        "rposition" => "rposition_by",
+        _ => return None,
+    })
 }
