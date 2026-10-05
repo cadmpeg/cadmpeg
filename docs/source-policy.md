@@ -844,9 +844,12 @@ removals can split and merge a whole path each time; the per-level removal
 charge pays for that. Insertion charges no work proportional to the stored
 length.
 
-A sort first compares neighbours, each comparison charged one step and both
-operands' key costs, and returns when the input is already in order. A stable
-sort of more than twenty values sorts an index array, whose sort admits the
-comparisons and index moves once, and then moves each value along its
-permutation cycle, two values per charged swap. Truncating, clearing, filling or
+A sort's charge does not depend on the input's order, so a decode that sorts
+values gathered in an unspecified order still charges deterministically.
+`is_sorted_by` compares neighbours, each comparison charged one step and both
+operands' key costs, and stops at the first pair out of order; code whose input
+order is deterministic uses it to skip a sort. A stable sort of more than twenty
+values sorts an index array, whose sort admits the comparisons and index moves
+once, and then moves each value along its permutation cycle, admitting two
+value moves per value. Truncating, clearing, filling or
 compacting a vector charges nothing for the values it releases.

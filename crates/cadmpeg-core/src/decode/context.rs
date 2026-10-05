@@ -511,9 +511,6 @@ impl<'a> DecodeContext<'a> {
         mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        if self.sorted_by(values, projection, &mut compare, operation)? {
-            return Ok(());
-        }
         // Small runs use adjacent swaps, so their stable order needs no scratch.
         if values.len() <= 20 {
             self.admit_sort(values, projection, operation)?;
@@ -561,14 +558,16 @@ impl<'a> DecodeContext<'a> {
             self.charge_work(1, operation)?;
             destinations[source] = destination;
         }
-        let swap_work = super::u64_from_index(std::mem::size_of::<T>())
+        // The cycles take at most one swap per value, each moving two values.
+        let moved = super::u64_from_index(std::mem::size_of::<T>())
             .checked_mul(2)
-            .and_then(|bytes| bytes.checked_add(1))
+            .and_then(|bytes| bytes.checked_mul(count))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.charge_work(moved, operation)?;
         for index in 0..values.len() {
             self.charge_work(1, operation)?;
             while destinations[index] != index {
-                self.charge_work(swap_work, operation)?;
+                self.charge_work(1, operation)?;
                 let destination = destinations[index];
                 values.swap(index, destination);
                 destinations.swap(index, destination);

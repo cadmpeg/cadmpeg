@@ -118,33 +118,37 @@ impl DecodeContext<'_> {
         &self,
         values: &mut [T],
         projection: &P,
-        mut compare: impl FnMut(&T, &T) -> Ordering,
+        compare: impl FnMut(&T, &T) -> Ordering,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        if self.sorted_by(values, projection, &mut compare, operation)? {
-            return Ok(());
-        }
         self.admit_sort(values, projection, operation)?;
         values.sort_unstable_by(compare);
         Ok(())
     }
 
     /// Tests whether values are already in order with one pass of neighbour
-    /// comparisons, each charged by both operands' key costs, so ordered input
-    /// pays for that pass instead of a sort.
-    pub(super) fn sorted_by<T, P: SortProjection<T>>(
+    /// comparisons, each charged one step and both operands' key costs, and
+    /// stops at the first pair out of order. Input in a deterministic order
+    /// can skip a sort when this holds; its charge depends on that order, so
+    /// it is not part of the sorts themselves, whose charge does not.
+    pub fn is_sorted_by<T, K: DecodeCost + ?Sized>(
         &self,
         values: &[T],
-        projection: &P,
-        compare: &mut impl FnMut(&T, &T) -> Ordering,
+        key: impl Fn(&T) -> &K,
+        mut compare: impl FnMut(&K, &K) -> Ordering,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         for pair in values.windows(2) {
             self.charge_work(1, operation)?;
-            let left = projection.project(&pair[0]).decode_cost(self, operation)?;
-            let right = projection.project(&pair[1]).decode_cost(self, operation)?;
-            self.charge_work(self.cost_sum(left, right, operation)?, operation)?;
-            if compare(&pair[1], &pair[0]).is_lt() {
+            let left = key(&pair[0]);
+            let right = key(&pair[1]);
+            let work = self.cost_sum(
+                left.decode_cost(self, operation)?,
+                right.decode_cost(self, operation)?,
+                operation,
+            )?;
+            self.charge_work(work, operation)?;
+            if compare(right, left).is_lt() {
                 return Ok(false);
             }
         }
@@ -194,12 +198,8 @@ mod tests {
     #[test]
     fn variable_sort_keys_admit_the_largest_operand_for_every_comparison() {
         let arena = DecodeArena::new();
-        // The first neighbour comparison finds the input unsorted: one step and
-        // both keys, nine bytes. The sort then makes six measuring visits plus
-        // three levels of slot moves and two maximum keys per comparison.
-        let precheck = 1 + 8 + 1;
-        let total = precheck
-            + 6
+        // Six measuring visits plus three levels of slot moves and two maximum keys per comparison.
+        let total = 6
             + (3 * u64::try_from(std::mem::size_of::<&str>()).expect("test operation succeeds")
                 + 2 * 3 * 8)
                 * 3
@@ -223,9 +223,9 @@ mod tests {
             let CodecError::ResourceLimit(first) = result.expect_err("operation refuses") else {
                 panic!("resource refusal")
             };
-            assert_eq!(first.used, precheck + 6);
-            assert_eq!(first.additional, total - precheck - 6);
-            assert_eq!(comparisons.get(), 1);
+            assert_eq!(first.used, 6);
+            assert_eq!(first.additional, total - 6);
+            assert_eq!(comparisons.get(), 0);
             assert_eq!(values, ["bbbbbbbb", "a", "c"]);
             assert_eq!(ctx.resource_refusal(), Some(first));
         }
@@ -277,25 +277,24 @@ mod tests {
     }
 
     #[test]
-    fn sorted_input_pays_one_neighbour_pass_instead_of_a_sort() {
+    fn sorted_check_pays_the_neighbour_pass_it_makes() {
         // Three neighbour comparisons, each one step and two eight-byte keys.
         let need = 3 * (1 + 8 + 8);
-        for stable in [false, true] {
-            for (limit, fits) in [(need - 1, false), (need, true)] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = limit;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("test operation succeeds");
-                let mut values = [1_u64, 2, 3, 4];
-                let result = if stable {
-                    ctx.stable_sort_by(&mut values, |value| value, Ord::cmp, "sorted")
-                } else {
-                    ctx.sort_unstable_by(&mut values, |value| value, Ord::cmp, "sorted")
-                };
-                assert_eq!(result.is_ok(), fits);
-                assert_eq!(values, [1, 2, 3, 4]);
-            }
+        for (limit, fits) in [(need - 1, false), (need, true)] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("test operation succeeds");
+            let values = [1_u64, 2, 3, 4];
+            let result = ctx.is_sorted_by(&values, |value| value, Ord::cmp, "sorted");
+            assert_eq!(result.ok(), fits.then_some(true));
         }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test operation succeeds");
+        assert!(!ctx
+            .is_sorted_by(&[2_u64, 1, 3], |value| value, Ord::cmp, "unsorted")
+            .expect("one comparison"));
     }
 }
