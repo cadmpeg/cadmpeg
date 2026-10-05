@@ -119,7 +119,7 @@ fn dimension_presentation_sketch_scopes_refuse_collection_limit() {
 
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            crate::design::decode::dimension_frames::decode_dimension_presentation_frames(&ctx, &inputs, &[]),
+            crate::design::decode::dimension_frames::decode_dimension_presentation_frames(&ctx, &inputs, &[], &[]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d dimension presentation sketch scopes"

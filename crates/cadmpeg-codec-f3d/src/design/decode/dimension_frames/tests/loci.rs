@@ -3,6 +3,7 @@
 use super::super::{
     find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
     parse_dimension_locus_group, parse_dimension_locus_pair, parse_dimension_null_locus_pair,
+    LocusGroupStream,
 };
 use super::TEST_LINEAR_TOLERANCE;
 use crate::design::decode::parameters::parse_design_parameter_record;
@@ -468,23 +469,27 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"315");
     bytes.extend_from_slice(&251u32.to_le_bytes());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 4;
-    let (limited, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let stream = || LocusGroupStream {
+        name: "Design1/BulkStream.dat",
+        bytes: &bytes,
+        geometry_indices: &[175, 217],
+        sketch_entities: &[172],
+    };
+    // The second group's output slot is admitted before it is kept.
+    let refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d dimension locus groups",
+        1,
+        |ctx| find_dimension_locus_groups(ctx, stream(), (0, bytes.len()), 240, &mut Vec::new()),
+    );
     assert!(matches!(
-        find_dimension_locus_groups(
-            &limited, &bytes, 0, bytes.len(), 240,
-            &[175, 217], &[172],
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d dimension locus group candidates"
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.operation == "f3d dimension locus groups"
     ));
     let service = cadmpeg_test_support::service_decode_context();
-    let (groups, _) =
-        find_dimension_locus_groups(&service, &bytes, 0, bytes.len(), 240, &[175, 217], &[172])
-            .unwrap();
+    let mut groups = Vec::new();
+    find_dimension_locus_groups(&service, stream(), (0, bytes.len()), 240, &mut groups).unwrap();
     assert_eq!(
         groups
             .iter()

@@ -1350,10 +1350,6 @@ fn sketch_graph_collections_and_text_refuse_limits() {
             "f3d sketch graph record owner",
         ),
         (
-            ResourceDimension::CollectionItems,
-            "f3d sketch relation operands",
-        ),
-        (
             ResourceDimension::RetainedBytes,
             "f3d sketch relation owner text",
         ),

@@ -22,7 +22,7 @@ use crate::layout::sketch_container_visibility_member_prefix as visibility_membe
 use crate::records::{
     admission::RecordAdmission,
     decal::DesignRecordHeader,
-    entity_header::{DesignEntityHeader, DESIGN_MODULE_SKETCH},
+    entity_header::{DesignEntityHeader, SegmentType, DESIGN_MODULE_SKETCH},
     feature::scope::DesignParameterScope,
     references::{LostEdgeReference, PersistentReference, PersistentReferenceKind},
     sketch_geometry::{
@@ -44,11 +44,14 @@ use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use std::collections::HashMap;
 
-use super::meta::{
-    decode_types, design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag,
-};
+use super::meta::{design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag};
 
 const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
+
+/// File name of a Design segment's type-table stream.
+pub(super) const META_STREAM_FILE: &str = "MetaStream.dat";
+/// File name of a Design segment's record stream.
+pub(super) const BULK_STREAM_FILE: &str = "BulkStream.dat";
 
 /// Byte offsets of every indexed-record header in one `BulkStream`, in byte
 /// order and grouped by the record index carried at header offset seven.
@@ -1601,22 +1604,20 @@ fn parse_legacy_sketch_container_members(
 pub(crate) fn decode_entity_headers(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    types: &[SegmentType],
 ) -> Result<Vec<DesignEntityHeader>, CodecError> {
-    const META_SUFFIX: &str = "MetaStream.dat";
-    const BULK_SUFFIX: &str = "BulkStream.dat";
     let mut out = Vec::new();
     // Entity ids are unique per Design stream, not archive-wide. Both tables
     // are keyed by the segment's stream prefix, the text before its stream
     // file name.
     let mut tables = ctx.reserve_scoped(0, "f3d entity header tables")?;
     let mut entity_modules = HashMap::<&str, HashMap<u64, &str>>::new();
-    let types = decode_types(ctx, scan)?;
     let mut legacy_sketch_candidates = HashMap::<&str, Vec<u32>>::new();
-    for design_type in ctx.admit_iter(&types, "scan F3D sketch design types")? {
+    for design_type in ctx.admit_iter(types, "scan F3D sketch design types")? {
         let Some(stream) = record_streams::record_stream(ctx, design_type.id())? else {
             continue;
         };
-        let Some(prefix) = stream.strip_suffix(META_SUFFIX) else {
+        let Some(prefix) = stream.strip_suffix(META_STREAM_FILE) else {
             continue;
         };
         for &entity_id in reference_runs::admit_reference_values(
@@ -1660,13 +1661,13 @@ pub(crate) fn decode_entity_headers(
         let bytes = scan.entry_bytes(&entry.name)?;
         // Modules come from the type table of this stream's own `MetaStream`.
         let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
-        let stream_modules = match scope.strip_suffix(BULK_SUFFIX) {
+        let stream_modules = match scope.strip_suffix(BULK_STREAM_FILE) {
             Some(prefix) => ctx.get_hash_map(&entity_modules, prefix, "find F3D entity modules")?,
             None => None,
         };
         // Legacy sketch candidates of this stream, which skip the suffixes its
         // entity headers already name.
-        let entry_prefix = entry.name.strip_suffix(BULK_SUFFIX);
+        let entry_prefix = entry.name.strip_suffix(BULK_STREAM_FILE);
         let has_legacy_candidates = match entry_prefix {
             Some(prefix) => ctx
                 .get_hash_map(
@@ -1867,8 +1868,11 @@ fn insert_entity_module<'a>(
     let stream_modules = ctx
         .entry_hash_map(entity_modules, stream, "f3d entity module stream")?
         .or_default();
-    if !ctx.contains_key_hash_map(stream_modules, &entity_id, "f3d entity module index")? {
-        ctx.insert_hash_map(stream_modules, entity_id, module, "f3d entity module index")?;
+    // The first registration of an entity names its module.
+    if let std::collections::hash_map::Entry::Vacant(slot) =
+        ctx.entry_hash_map(stream_modules, entity_id, "f3d entity module index")?
+    {
+        slot.insert(module);
     }
     Ok(())
 }
@@ -2051,13 +2055,13 @@ struct RelationStream<'scan, 'types, 'ctx> {
 pub(crate) fn decode_sketch_relations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    types: &[SegmentType],
     records: &[DesignRecordHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
     let mut out = Vec::new();
     // A record carries no class identity of its own: its class tag selects an
     // entry in its segment's own type table, and only that entry's GUID names
     // the class across segments.
-    let types = decode_types(ctx, scan)?;
     let mut storage = ctx.reserve_scoped(0, "f3d sketch relation streams")?;
     let mut streams = Vec::new();
     for entry in ctx
@@ -2065,7 +2069,7 @@ pub(crate) fn decode_sketch_relations(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let types_by_class_tag =
-            storage.with_storage(|| stream_types_by_class_tag(ctx, &types, &entry.name))?;
+            storage.with_storage(|| stream_types_by_class_tag(ctx, types, &entry.name))?;
         let (scope_storage, scope) = native_scope_scoped(ctx, &entry.name)?;
         ctx.push_scoped_vec(
             &mut storage,
@@ -4727,51 +4731,29 @@ pub(crate) fn bind_sketch_graph(
         .iter_mut()
         .zip(ctx.admit_iter(&relation_scopes, "resolve F3D sketch relation operands")?)
     {
-        // `resolve_members` takes an infallible resolver, so each operand is
-        // looked up beforehand, in the order it visits them: the members, then
-        // the return members, each in run order. Each looked-up operand keeps
-        // its record index, and a visit in another order is refused.
-        let mut resolved_storage = ctx.reserve_scoped(0, "f3d sketch relation operands")?;
-        let mut resolved = Vec::new();
-        let record_indices = ctx
-            .admit_iter(&relation.members()[..], "scan F3D sketch relation members")?
-            .map(|member| member.reference.record_index())
-            .chain(
-                ctx.admit_iter(
-                    &relation.return_members()[..],
-                    "scan F3D sketch relation return members",
-                )?
-                .map(|member| member.reference.record_index()),
-            );
-        for record_index in record_indices {
-            let operand = ctx
-                .get_hash_map(
+        // `resolve_members` takes an infallible resolver. The first refused
+        // lookup is kept and returned after the resolver finishes; later
+        // visits do no further lookups.
+        let mut refusal = None;
+        relation.resolve_members(ctx, |record_index| {
+            let operand = match refusal {
+                Some(_) => None,
+                None => match ctx.get_hash_map(
                     &operands,
                     &(scope, record_index),
                     "find F3D sketch relation operand",
-                )?
-                .cloned()
-                .unwrap_or(SketchRelationOperand::Record { record_index });
-            ctx.push_scoped_vec(
-                &mut resolved_storage,
-                &mut resolved,
-                (record_index, operand),
-                "f3d sketch relation operands",
-            )?;
-        }
-        let mut resolved = resolved.into_iter();
-        let mut in_order = true;
-        relation.resolve_members(ctx, |record_index| match resolved.next() {
-            Some((resolved_index, operand)) if resolved_index == record_index => operand,
-            _ => {
-                in_order = false;
-                SketchRelationOperand::Record { record_index }
-            }
+                ) {
+                    Ok(operand) => operand.cloned(),
+                    Err(error) => {
+                        refusal = Some(error);
+                        None
+                    }
+                },
+            };
+            operand.unwrap_or(SketchRelationOperand::Record { record_index })
         })?;
-        if !in_order {
-            return Err(CodecError::malformed(
-                "F3D sketch relation members were resolved out of run order",
-            ));
+        if let Some(error) = refusal {
+            return Err(error);
         }
     }
     Ok(())
