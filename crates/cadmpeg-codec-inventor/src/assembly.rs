@@ -186,7 +186,11 @@ pub(crate) fn project_occurrences(
             )?;
             continue;
         };
-        if !occurrence_records.contains_key(&source.occurrence_id) {
+        if occurrence_records
+            .get(&source.occurrence_id)
+            .and_then(Option::as_ref)
+            .is_none()
+        {
             count_unresolved(
                 ctx,
                 &mut unresolved_placements,
