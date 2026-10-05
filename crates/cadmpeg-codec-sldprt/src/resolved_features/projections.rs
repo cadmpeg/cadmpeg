@@ -331,11 +331,13 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     if !owned {
                         continue;
                     }
-                    let name_matches = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
+                    let name_matches = if let Some(name) = names_by_id.get(scalar.name.as_str()) {
                         name.value == parameter.name
-                            && value_only_scalar_offset(&lane.native_payload, name)
+                            && value_only_scalar_offset(ctx, &lane.native_payload, name)?
                                 != usize::try_from(scalar.offset).ok()
-                    });
+                    } else {
+                        false
+                    };
                     if name_matches {
                         ctx.reserve_vec(&mut scalars, 1, OPERATION)?;
                         scalars.push(scalar);
@@ -486,7 +488,10 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         ctx.reserve_vec(&mut lane_refs, 1, "collect SLDPRT display relation lanes")?;
         lane_refs.push(lane);
     }
-    let owned = owned_relation_parameters(ctx, features, parameters, lane_refs.iter().copied())?;
+    let (owned, _owned_storage) = ctx
+        .with_scoped_storage("SLDPRT relation ownership index", || {
+            owned_relation_parameters(ctx, features, parameters, &lane_refs)
+        })?;
     let mut features_by_native_ref = HashMap::new();
     for feature in features {
         ctx.charge_work(1, OPERATION)?;
@@ -745,7 +750,10 @@ pub(crate) fn type_display_relation_parameters(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "group SLDPRT display relation families";
 
-    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
+    let (ownership, _ownership_storage) = ctx
+        .with_scoped_storage("SLDPRT relation ownership index", || {
+            owned_relation_parameters(ctx, features, parameters, lanes)
+        })?;
     let mut families = HashMap::<&cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
     for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
         ctx.charge_work(1, OPERATION)?;
@@ -2308,12 +2316,14 @@ pub(crate) fn project_draft_operands(
                 let Some(operands) = candidates.get(native_ref) else {
                     return Ok(());
                 };
-                let Some(first) = operands
-                    .first()
-                    .filter(|first| operands.iter().all(|item| same_draft_operands(first, item)))
-                else {
+                let Some(first) = operands.first() else {
                     return Ok(());
                 };
+                for item in operands {
+                    if !same_draft_operands(ctx, first, item)? {
+                        return Ok(());
+                    }
+                }
                 let pull_direction = first.pull_direction;
 
                 let FeatureDefinition::Operation(FeatureOperation::Draft { faces, anchor, .. }) =

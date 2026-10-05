@@ -624,7 +624,7 @@ impl FeatureInputLaneWire {
         let entities = ctx.try_collect_vec(
             self.sketch_entities.into_iter().map(|entity| {
                 ctx.charge_work(1, "admit SLDPRT inline sketch marker")?;
-                SketchInputEntity::try_from_wire(entity, &self.native_payload)
+                SketchInputEntity::try_from_wire(ctx, entity, &self.native_payload)?
                     .map_err(cadmpeg_core::CodecError::malformed)
             }),
             "admit SLDPRT inline sketch entities",
@@ -651,10 +651,15 @@ impl FeatureInputLaneWire {
 impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
     type Error = String;
     fn try_from(wire: FeatureInputLaneWire) -> Result<Self, Self::Error> {
+        let admission = crate::resolved_features::markers::StandardMarkerAdmission;
         let sketch_entities = wire
             .sketch_entities
             .into_iter()
-            .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
+            .map(|entity| {
+                crate::resolved_features::markers::standard_marker_result(
+                    SketchInputEntity::try_from_wire(&admission, entity, &wire.native_payload),
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let relation_instances = wire
             .relation_instances
@@ -881,6 +886,20 @@ pub(crate) struct FeatureInputComponentPathEntry {
     pub(crate) local_id: Option<u32>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputComponentPathEntry {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.instance, self.type_signature, self.local_id),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// A declared sketch-relation family and its attached scalar record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputRelationBinding {
@@ -1062,6 +1081,33 @@ pub(crate) struct FeatureInputReference {
     pub(crate) class_ref: Option<String>,
     /// Local object index carried by the cell.
     pub(crate) object_index: u16,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputReference {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.feature_ref.as_deref(),
+                    self.ordinal,
+                ),
+                (
+                    self.offset,
+                    self.kind,
+                    self.class_ref.as_deref(),
+                    self.object_index,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 /// One serialized UTF-16 object name in a feature-input stream.
@@ -1323,6 +1369,26 @@ pub(crate) struct FeatureInputClass {
     pub(crate) name: String,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputClass {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                self.id.as_str(),
+                self.parent.as_str(),
+                self.ordinal,
+                self.offset,
+                self.name.as_str(),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 impl FeatureInputClass {
     pub(crate) fn role(&self) -> FeatureInputClassRole {
         crate::classification::native_object_class(&self.name).role()
@@ -1425,6 +1491,36 @@ pub(crate) struct SketchInputEntity {
     pub(crate) links: Option<SketchInputLinks>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputEntity {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.feature_ref.as_deref(),
+                    self.ordinal,
+                    self.offset,
+                    self.object_index,
+                ),
+                (
+                    self.local_id,
+                    &self.kind,
+                    self.state_value.map(cadmpeg_ir::scalar::FiniteReal::get),
+                    self.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get),
+                    &self.links,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
 #[derive(Deserialize)]
 pub(crate) struct SketchInputEntityWire {
@@ -1483,6 +1579,20 @@ pub(crate) struct SketchInputEntityWire {
 pub(crate) struct SketchInputLinks {
     selector: u16,
     entries: Vec<SketchInputLink>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputLinks {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.selector, &self.entries),
+            ctx,
+            operation,
+        )
+    }
 }
 
 impl SketchInputLinks {
@@ -1618,63 +1728,75 @@ impl SketchInputEntity {
         updated
     }
 
-    pub(crate) fn try_from_wire(
+    pub(crate) fn try_from_wire<A: crate::resolved_features::markers::MarkerAdmission>(
+        admission: &A,
         wire: SketchInputEntityWire,
         payload: &[u8],
-    ) -> Result<Self, String> {
-        let mut entity = Self::try_new(
+    ) -> Result<Result<Self, String>, A::Error> {
+        let mut entity = match Self::try_new(
+            admission,
             wire.id,
             wire.parent,
             wire.ordinal,
             wire.offset,
             wire.kind,
             payload,
-        )
-        .map_err(str::to_string)?;
+        )? {
+            Ok(entity) => entity,
+            Err(error) => return Ok(Err(error.to_string())),
+        };
         if wire.object_index != entity.object_index {
-            return Err(
+            return Ok(Err(
                 "SolidWorks feature-input object index does not match its native payload".into(),
-            );
+            ));
         }
         if wire.local_id != entity.local_id {
-            return Err(
+            return Ok(Err(
                 "SolidWorks feature-input local object id does not match its native payload".into(),
-            );
+            ));
         }
         entity.feature_ref = wire.feature_ref;
         entity.state_value = wire.state_value;
         entity.coordinates_m = wire.coordinates_m;
         entity.links = wire.links;
-        Ok(entity)
+        Ok(Ok(entity))
     }
 
-    pub(crate) fn try_new(
+    pub(crate) fn try_new<A: crate::resolved_features::markers::MarkerAdmission>(
+        admission: &A,
         id: String,
         parent: String,
         ordinal: u32,
         offset: u64,
         kind: SketchInputKind,
         payload: &[u8],
-    ) -> Result<Self, &'static str> {
-        let position = usize::try_from(offset).map_err(|_| "sketch entity offset exceeds usize")?;
+    ) -> Result<Result<Self, &'static str>, A::Error> {
+        let Ok(position) = usize::try_from(offset) else {
+            return Ok(Err("sketch entity offset exceeds usize"));
+        };
         if position >= payload.len()
             || !crate::resolved_features::markers::sketch_marker_at(payload, position)
         {
-            return Err("sketch entity offset is not a marker in native_payload");
+            return Ok(Err("sketch entity offset is not a marker in native_payload"));
         }
-        Ok(Self {
+        let local_id = crate::resolved_features::markers::marker_local_id(
+            admission,
+            payload,
+            position,
+        )?;
+        Ok(Ok(Self {
             id,
             parent,
             feature_ref: None,
             ordinal,
             offset,
             object_index: crate::resolved_features::markers::marker_object_index(payload, position),
-            local_id: crate::resolved_features::markers::marker_local_id(payload, position),
+            local_id,
             kind,
             state_value: None,
             coordinates_m: None,
             links: None,
-        })
+        }))
     }
 
     /// Re-admit this record against the payload it references.
@@ -1683,24 +1805,36 @@ impl SketchInputEntity {
     /// checked JSON route alone does not protect `store` or native rewrite.
     /// Keep the payload-derived marker identity tied to the record at every
     /// outbound boundary.
-    pub(crate) fn validate_against_payload(&self, payload: &[u8]) -> Result<(), &'static str> {
-        let expected = Self::try_new(
+    pub(crate) fn validate_against_payload<
+        A: crate::resolved_features::markers::MarkerAdmission,
+    >(
+        &self,
+        admission: &A,
+        payload: &[u8],
+    ) -> Result<Result<(), &'static str>, A::Error> {
+        let expected = match Self::try_new(
+            admission,
             self.id.clone(),
             self.parent.clone(),
             self.ordinal,
             self.offset,
             self.kind,
             payload,
-        )?;
+        )? {
+            Ok(expected) => expected,
+            Err(error) => return Ok(Err(error)),
+        };
         if self.object_index != expected.object_index {
-            return Err("SolidWorks feature-input object index does not match its native payload");
+            return Ok(Err(
+                "SolidWorks feature-input object index does not match its native payload",
+            ));
         }
         if self.local_id != expected.local_id {
-            return Err(
+            return Ok(Err(
                 "SolidWorks feature-input local object id does not match its native payload",
-            );
+            ));
         }
-        Ok(())
+        Ok(Ok(()))
     }
 
     #[cfg(test)]
@@ -1725,7 +1859,17 @@ impl SketchInputEntity {
         payload[position..position + 5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload[position + 5..position + 13].fill(0xff);
         payload[position + 13..position + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        Self::try_new(id.into(), parent.into(), ordinal, offset, kind, &payload).unwrap()
+        let admission = crate::resolved_features::markers::StandardMarkerAdmission;
+        crate::resolved_features::markers::standard_marker_result(Self::try_new(
+            &admission,
+            id.into(),
+            parent.into(),
+            ordinal,
+            offset,
+            kind,
+            &payload,
+        ))
+        .unwrap()
     }
 
     #[cfg(test)]
@@ -1746,6 +1890,20 @@ pub(crate) struct SketchInputLink {
     pub(crate) entity_ref: String,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputLink {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.local_id, self.entity_ref.as_str()),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Kind of sketch entity referenced by a native feature-input marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "SketchInputKindWire", into = "SketchInputKindWire")]
@@ -1764,6 +1922,24 @@ pub(crate) enum SketchInputKind {
     Native(sketch_code::NativeSketchCode),
     /// A low code retained under a native handle layout, such as a slot handle.
     NativeHandle(sketch_code::LowMarkerCode),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputKind {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Point | Self::LineOrCircle | Self::Arc | Self::ConstrainedPoint => Ok(1),
+            Self::Relation(_) | Self::NativeHandle(_) => Ok(2),
+            Self::Native(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, value.value()),
+                ctx,
+                operation,
+            ),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2519,13 +2695,17 @@ mod tests {
         payload[..5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload[5..13].fill(0xff);
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        let mut entity = SketchInputEntity::try_new(
-            "marker".into(),
-            "lane".into(),
-            0,
-            0,
-            SketchInputKind::Point,
-            &payload,
+        let admission = crate::resolved_features::markers::StandardMarkerAdmission;
+        let mut entity = crate::resolved_features::markers::standard_marker_result(
+            SketchInputEntity::try_new(
+                &admission,
+                "marker".into(),
+                "lane".into(),
+                0,
+                0,
+                SketchInputKind::Point,
+                &payload,
+            ),
         )
         .expect("marker fixture");
         entity.links = SketchInputLinks::new(
@@ -2605,13 +2785,17 @@ mod tests {
         payload[..5].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload[5..13].fill(0xff);
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        let mut entity = SketchInputEntity::try_new(
-            "marker".into(),
-            "lane".into(),
-            0,
-            0,
-            SketchInputKind::Point,
-            &payload,
+        let admission = crate::resolved_features::markers::StandardMarkerAdmission;
+        let mut entity = crate::resolved_features::markers::standard_marker_result(
+            SketchInputEntity::try_new(
+                &admission,
+                "marker".into(),
+                "lane".into(),
+                0,
+                0,
+                SketchInputKind::Point,
+                &payload,
+            ),
         )
         .expect("marker fixture");
         entity.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.25, -2.5]);

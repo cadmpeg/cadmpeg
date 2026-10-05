@@ -450,10 +450,9 @@ impl SldprtNative {
                     )?,
                 ));
             };
-            entities.push(
-                crate::records::SketchInputEntity::try_from_wire(wire, payload)
-                    .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?,
-            );
+            let entity = crate::records::SketchInputEntity::try_from_wire(ctx, wire, payload)?
+                .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
+            entities.push(entity);
         }
         if let Some(record) = ctx.admit_iter(&classes[..], "scan SLDPRT load_charged values").map_err(cadmpeg_core::CodecError::from)?.try_fold(None, |found, candidate| { if found.is_some() { return Ok::<_, cadmpeg_core::CodecError>(found); } let record = &candidate; Ok(( !ctx.contains_hash_set(&(lane_ids), record.parent.as_str(), "test SLDPRT hashed identity")? ).then_some(candidate)) })?
         {
@@ -1534,12 +1533,21 @@ fn resolved_scalar_operand_markers<'a>(
     lane: &'a FeatureInputLane,
     scalar: &crate::records::FeatureInputScalar,
 ) -> Result<Vec<Option<&'a crate::records::SketchInputEntity>>, cadmpeg_ir::NativeConvertError> {
+    let (entities, _entity_storage) =
+        ctx.with_scoped_storage("SLDPRT scalar operand candidates", || {
+            ctx.collect_vec(
+                ctx.admit_iter(
+                    &lane.sketch_entities,
+                    "scan SLDPRT scalar operand candidates",
+                )?
+                .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
+                "collect SLDPRT scalar operand markers",
+            )
+        })?;
     Ok(
         crate::resolved_features::operands::resolve_scalar_operand_markers(
             ctx,
-            lane.sketch_entities
-                .iter()
-                .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
+            &entities,
             &scalar.operands,
         )?,
     )

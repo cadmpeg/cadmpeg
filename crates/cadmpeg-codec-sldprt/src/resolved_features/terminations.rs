@@ -74,7 +74,7 @@ impl FaceReference {
                 ..
             }
             | Self::Canonical(reference) => {
-                Self::Canonical(copy_termination_text(ctx, reference, operation)?)
+                Self::Canonical(ctx.copy_retained_text(reference, operation)?)
             }
             Self::Lane {
                 canonical: None, ..
@@ -93,14 +93,14 @@ impl FaceReference {
                 reference,
                 canonical,
             } => Self::Lane {
-                reference: copy_termination_text(ctx, reference, operation)?,
+                reference: ctx.copy_retained_text(reference, operation)?,
                 canonical: canonical
                     .as_deref()
-                    .map(|text| copy_termination_text(ctx, text, operation))
+                    .map(|text| ctx.copy_retained_text(text, operation))
                     .transpose()?,
             },
             Self::Canonical(reference) => {
-                Self::Canonical(copy_termination_text(ctx, reference, operation)?)
+                Self::Canonical(ctx.copy_retained_text(reference, operation)?)
             }
             Self::Unresolved => Self::Unresolved,
         })
@@ -127,7 +127,7 @@ impl TerminationVote {
             Self::ThroughAll => Self::ThroughAll,
             Self::ThroughNext => Self::ThroughNext,
             Self::ToVertex { reference } => Self::ToVertex {
-                reference: copy_termination_text(ctx, reference, operation)?,
+                reference: ctx.copy_retained_text(reference, operation)?,
             },
             Self::Face {
                 condition,
@@ -136,7 +136,7 @@ impl TerminationVote {
             } => Self::Face {
                 condition: *condition,
                 reference: reference.copy_charged(ctx, operation)?,
-                identity: copy_termination_text(ctx, identity, operation)?,
+                identity: ctx.copy_retained_text(identity, operation)?,
             },
         })
     }
@@ -168,8 +168,13 @@ impl TerminationVote {
         }
     }
 
-    fn agrees_with(&self, other: &Self) -> bool {
-        match (self, other) {
+    fn agrees_with(
+        &self,
+        other: &Self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(match (self, other) {
             (Self::Blind { depth_m: a }, Self::Blind { depth_m: b }) => {
                 a.map(f64::to_bits) == b.map(f64::to_bits)
             }
@@ -178,7 +183,9 @@ impl TerminationVote {
             | (Self::ThroughAllBoth, Self::ThroughAllBoth)
             | (Self::ThroughAll, Self::ThroughAll)
             | (Self::ThroughNext, Self::ThroughNext) => true,
-            (Self::ToVertex { reference: a }, Self::ToVertex { reference: b }) => a == b,
+            (Self::ToVertex { reference: a }, Self::ToVertex { reference: b }) => {
+                ctx.equal(a, b, operation)?
+            }
             (
                 Self::Face {
                     condition: a,
@@ -190,9 +197,9 @@ impl TerminationVote {
                     identity: b_id,
                     ..
                 },
-            ) => a == b && a_id == b_id,
+            ) => *a == *b && ctx.equal(a_id, b_id, operation)?,
             _ => false,
-        }
+        })
     }
 }
 
@@ -202,18 +209,15 @@ pub(crate) fn enrich_history_extrusion_terminations(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "enrich SLDPRT extrusion terminations";
+    let mut temporary = ctx.reserve_scoped(0, OPERATION)?;
     let mut terminations = HashMap::<String, Vec<Option<TerminationVote>>>::new();
-    for lane in lanes {
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        let mut lane_temporary = ctx.reserve_scoped(0, OPERATION)?;
         let mut names_by_id = HashMap::new();
-        for name in &lane.names {
-            ctx.charge_work(
-                u64_from_index(name.id.len())
-                    .checked_mul(2)
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            ctx.insert_hash_map(&mut names_by_id, name.id.as_str(), name, OPERATION)?;
+        for name in ctx.admit_iter(&lane.names, OPERATION)? {
+            lane_temporary.with_storage(|| {
+                ctx.insert_hash_map(&mut names_by_id, name.id.as_str(), name, OPERATION)
+            })?;
         }
         let scan_end = if lane.native_payload.len() >= 103 {
             lane.native_payload.len() - 103
@@ -227,160 +231,177 @@ pub(crate) fn enrich_history_extrusion_terminations(
             OPERATION,
         )?;
         let mut grouped_blind = HashMap::<String, usize>::new();
-        for offset in
-            (0..scan_end).filter(|offset| compact_extrusion_blind_at(&lane.native_payload, *offset))
-        {
-            ctx.charge_work(u64_from_index(lane.scalars.len()), OPERATION)?;
-            let Some(scalar) = lane
-                .scalars
-                .iter()
-                .filter(|scalar| scalar.offset > u64_from_index(offset))
-                .min_by_key(|scalar| scalar.offset)
+        let scan = &lane.native_payload[..scan_end];
+        for (offset, _) in ctx.admit_iter(scan, OPERATION)?.enumerate() {
+            if !compact_extrusion_blind_at(ctx, &lane.native_payload, offset)? {
+                continue;
+            }
+            let mut scalar = None;
+            for candidate in ctx.admit_iter(&lane.scalars, OPERATION)? {
+                if candidate.offset > u64_from_index(offset)
+                    && scalar.is_none_or(|current: &crate::records::FeatureInputScalar| {
+                        candidate.offset < current.offset
+                    })
+                {
+                    scalar = Some(candidate);
+                }
+            }
+            let Some(scalar) = scalar else {
+                continue;
+            };
+            let Some(name) = ctx.get_hash_map(&names_by_id, scalar.name.as_str(), OPERATION)?
             else {
                 continue;
             };
-            ctx.charge_work(u64_from_index(scalar.name.len()), OPERATION)?;
-            let Some(name) = names_by_id.get(scalar.name.as_str()) else {
-                continue;
-            };
             let mut owners = Vec::new();
-            for feature in histories.iter().flat_map(|history| &history.features) {
-                ctx.charge_work(
-                    u64_from_index(feature.input_class.as_ref().map_or(0, String::len))
-                        .checked_add(u64_from_index(feature.xml_tag.len()))
-                        .and_then(|work| work.checked_add(1))
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                if !is_extrusion_end_spec_owner(feature) || feature.parameters.len() != 1 {
-                    continue;
-                }
-                ctx.charge_work(u64_from_index(name.value.len()), OPERATION)?;
-                let Some(value) = feature.parameters.get(name.value.as_str()) else {
-                    continue;
-                };
-                ctx.charge_work(
-                    u64_from_index(value.len())
-                        .checked_mul(17)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                if crate::history::literals::parse_dimension_length_mm(value).is_some_and(|value| {
-                    (value.get() - scalar.value.get() * 1000.0).abs()
-                        <= EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9
-                }) {
-                    ctx.reserve_vec(&mut owners, 1, OPERATION)?;
-                    owners.push(feature);
+            let mut owners_storage = ctx.reserve_scoped(0, OPERATION)?;
+            for history in ctx.admit_iter(histories, OPERATION)? {
+                for feature in ctx.admit_iter(&history.features, OPERATION)? {
+                    ctx.charge_work(
+                        u64_from_index(feature.input_class.as_ref().map_or(0, String::len))
+                            .checked_add(u64_from_index(feature.xml_tag.len()))
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                            })?,
+                        OPERATION,
+                    )?;
+                    if !is_extrusion_end_spec_owner(feature) || feature.parameters.len() != 1 {
+                        continue;
+                    }
+                    let Some(value) =
+                        ctx.get_btree_map(&feature.parameters, name.value.as_str(), OPERATION)?
+                    else {
+                        continue;
+                    };
+                    ctx.charge_work(
+                        u64_from_index(value.len()).checked_mul(17).ok_or_else(|| {
+                            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                        })?,
+                        OPERATION,
+                    )?;
+                    if crate::history::literals::parse_dimension_length_mm(value).is_some_and(
+                        |value| {
+                            (value.get() - scalar.value.get() * 1000.0).abs()
+                                <= EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9
+                        },
+                    ) {
+                        owners_storage
+                            .with_storage(|| ctx.push_vec(&mut owners, feature, OPERATION))?;
+                    }
                 }
             }
             let [owner] = owners.as_slice() else {
                 continue;
             };
-            ctx.charge_work(u64_from_index(owner.id.len()), OPERATION)?;
-            if !grouped_blind.contains_key(owner.id.as_str()) {
-                let key = copy_termination_text(ctx, &owner.id, OPERATION)?;
-                ctx.insert_hash_map(&mut grouped_blind, key, 0, OPERATION)?;
+            if !ctx.contains_key_hash_map(&grouped_blind, owner.id.as_str(), OPERATION)? {
+                let key =
+                    lane_temporary.with_storage(|| ctx.copy_retained_text(&owner.id, OPERATION))?;
+                lane_temporary
+                    .with_storage(|| ctx.insert_hash_map(&mut grouped_blind, key, 0, OPERATION))?;
             }
-            let count = grouped_blind.get_mut(owner.id.as_str()).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("missing admitted blind vote count")
-            })?;
+            let count = ctx
+                .get_mut_hash_map(&mut grouped_blind, owner.id.as_str(), OPERATION)?
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("missing admitted blind vote count")
+                })?;
             *count = count
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
-        let objects = history_object_offsets(ctx, histories, lane, OPERATION)?;
-        for (index, (start, feature_id)) in objects.iter().enumerate() {
-            for feature in histories.iter().flat_map(|history| &history.features) {
-                let work = u64_from_index(feature.id.len())
-                    .checked_add(u64_from_index(feature_id.len()))
-                    .and_then(|work| {
-                        work.checked_add(u64_from_index(
-                            feature.input_class.as_ref().map_or(0, String::len),
-                        ))
-                    })
-                    .and_then(|work| work.checked_add(u64_from_index(feature.xml_tag.len())))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
+        let mut object_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let objects = object_storage
+            .with_storage(|| history_object_offsets(ctx, histories, lane, OPERATION))?;
+        for (index, (start, feature_id)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
+            let mut found_feature = None;
+            'histories: for history in ctx.admit_iter(histories, OPERATION)? {
+                for candidate in ctx.admit_iter(&history.features, OPERATION)? {
+                    let work =
+                        u64_from_index(candidate.input_class.as_ref().map_or(0, String::len))
+                            .checked_add(u64_from_index(candidate.xml_tag.len()))
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                            })?;
+                    ctx.charge_work(work, OPERATION)?;
+                    if ctx.equal(&candidate.id, feature_id, OPERATION)? {
+                        found_feature = Some(candidate);
+                        break 'histories;
+                    }
+                }
             }
-            let Some(feature) = histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .find(|feature| feature.id == *feature_id)
-            else {
+            let Some(feature) = found_feature else {
                 continue;
             };
             if !is_extrusion_end_spec_owner(feature) {
                 continue;
             }
-            for (_, next_id) in &objects[index + 1..] {
-                let work = u64_from_index(next_id.len())
-                    .checked_add(u64_from_index(feature_id.len()))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(
-                    work.checked_mul(2)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                for candidate in histories.iter().flat_map(|history| &history.features) {
-                    let work = u64_from_index(candidate.id.len())
-                        .checked_add(u64_from_index(next_id.len()))
-                        .and_then(|work| {
-                            work.checked_add(u64_from_index(
-                                candidate.input_class.as_ref().map_or(0, String::len),
-                            ))
-                        })
-                        .and_then(|work| work.checked_add(u64_from_index(candidate.xml_tag.len())))
-                        .and_then(|work| work.checked_add(u64_from_index(candidate.kind.len())))
-                        .and_then(|work| work.checked_add(u64_from_index(candidate.name.len())))
-                        .and_then(|work| work.checked_add(1))
-                        .and_then(|work| work.checked_mul(2))
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                    ctx.charge_work(work, OPERATION)?;
-                }
-            }
             let is_cosmetic_thread = |candidate: &crate::records::Feature| {
-                native_object_class(candidate.input_class.as_deref().unwrap_or_default())
-                    == NativeClassKind::CosmeticThread
+                let class = candidate.input_class.as_deref().unwrap_or_default();
+                ctx.charge_work(u64_from_index(class.len()), OPERATION)?;
+                Ok::<_, cadmpeg_core::CodecError>(
+                    native_object_class(class) == NativeClassKind::CosmeticThread,
+                )
             };
-            let has_depth =
-                feature.parameters.contains_key("Depth") || feature.parameters.contains_key("D1");
+            let has_depth = ctx.contains_key_btree_map(&feature.parameters, "Depth", OPERATION)?
+                || ctx.contains_key_btree_map(&feature.parameters, "D1", OPERATION)?;
             let Ok(start) = usize::try_from(*start) else {
                 continue;
             };
             // Cosmetic-thread children may be serialized between an extrusion
             // object and its end spec. Other following objects still delimit
             // the scan so a later feature cannot supply the termination.
-            let end_spec_end = objects[index + 1..]
-                .iter()
-                .find(|(_, next_id)| {
-                    if next_id == feature_id {
-                        return false;
+            let mut end_spec_end = lane.native_payload.len();
+            for (offset, next_id) in ctx.admit_iter(&objects[index + 1..], OPERATION)? {
+                if ctx.equal(next_id, feature_id, OPERATION)? {
+                    continue;
+                }
+                let mut next_feature = None;
+                'next_histories: for history in ctx.admit_iter(histories, OPERATION)? {
+                    for candidate in ctx.admit_iter(&history.features, OPERATION)? {
+                        if ctx.equal(&candidate.id, next_id, OPERATION)? {
+                            next_feature = Some(candidate);
+                            break 'next_histories;
+                        }
                     }
-                    !histories
-                        .iter()
-                        .flat_map(|history| &history.features)
-                        .find(|candidate| candidate.id == *next_id)
-                        .is_some_and(is_cosmetic_thread)
-                })
-                .and_then(|object| usize::try_from(object.0).ok())
-                .unwrap_or(lane.native_payload.len());
+                }
+                let cosmetic_thread = match next_feature {
+                    Some(candidate) => is_cosmetic_thread(candidate)?,
+                    None => false,
+                };
+                if !cosmetic_thread {
+                    end_spec_end = usize::try_from(*offset).unwrap_or(lane.native_payload.len());
+                    break;
+                }
+            }
             let mut end_index = index + 1;
             while let Some((_, next_id)) = objects.get(end_index) {
-                if next_id == feature_id {
+                ctx.charge_work(1, OPERATION)?;
+                if ctx.equal(next_id, feature_id, OPERATION)? {
                     end_index += 1;
                     continue;
                 }
-                let skip = histories
-                    .iter()
-                    .flat_map(|history| &history.features)
-                    .find(|feature| feature.id == *next_id)
-                    .is_some_and(|feature| {
-                        let class = feature.input_class.as_deref().unwrap_or_default();
-                        is_profile_feature_object(feature)
-                            || native_object_class(class) == NativeClassKind::CosmeticThread
-                    });
+                let mut next_feature = None;
+                'profile_histories: for history in ctx.admit_iter(histories, OPERATION)? {
+                    for candidate in ctx.admit_iter(&history.features, OPERATION)? {
+                        if ctx.equal(&candidate.id, next_id, OPERATION)? {
+                            next_feature = Some(candidate);
+                            break 'profile_histories;
+                        }
+                    }
+                }
+                let skip = if let Some(candidate) = next_feature {
+                    let class = candidate.input_class.as_deref().unwrap_or_default();
+                    ctx.charge_work(u64_from_index(class.len()), OPERATION)?;
+                    ctx.charge_work(u64_from_index(candidate.xml_tag.len()), OPERATION)?;
+                    let is_profile = is_profile_feature_object(candidate);
+                    if is_profile {
+                        true
+                    } else {
+                        ctx.charge_work(u64_from_index(class.len()), OPERATION)?;
+                        native_object_class(class) == NativeClassKind::CosmeticThread
+                    }
+                } else {
+                    false
+                };
                 if !skip {
                     break;
                 }
@@ -390,52 +411,55 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .get(end_index)
                 .and_then(|object| usize::try_from(object.0).ok())
                 .unwrap_or(lane.native_payload.len());
-            let lane_key = lane
-                .id
-                .rsplit_once('#')
+            let lane_key = ctx
+                .rsplit_once(&lane.id, "#", OPERATION)?
                 .map_or(lane.id.as_str(), |(_, key)| key);
             let mut candidates = Vec::new();
+            let mut candidates_storage = ctx.reserve_scoped(0, OPERATION)?;
             let scan_end = (103..end_spec_end).len();
             for offset in start..scan_end {
                 ctx.charge_work(64, OPERATION)?;
                 let candidate =
                     (|| -> Result<Option<TerminationVote>, cadmpeg_core::CodecError> {
-                        if compact_extrusion_blind_at(&lane.native_payload, offset) {
-                            for scalar in &lane.scalars {
-                                ctx.charge_work(
-                                    u64_from_index(scalar.name.len())
-                                        .checked_add(32)
-                                        .ok_or_else(|| {
-                                            ctx.refuse_codec_limit(
-                                                OPERATION,
-                                                u64::MAX - 1,
-                                                u64::MAX,
-                                            )
-                                        })?,
+                        if compact_extrusion_blind_at(ctx, &lane.native_payload, offset)? {
+                            let mut depth_scalar = None;
+                            for scalar in ctx.admit_iter(&lane.scalars, OPERATION)? {
+                                if scalar.offset <= u64_from_index(offset)
+                                    || scalar.offset >= u64_from_index(end)
+                                {
+                                    continue;
+                                }
+                                let Some(name) = ctx.get_hash_map(
+                                    &names_by_id,
+                                    scalar.name.as_str(),
                                     OPERATION,
-                                )?;
+                                )?
+                                else {
+                                    continue;
+                                };
+                                if !matches!(name.value.as_str(), "D1" | "Depth") {
+                                    continue;
+                                }
+                                let Some(value_offset) =
+                                    value_only_scalar_offset(ctx, &lane.native_payload, name)?
+                                else {
+                                    continue;
+                                };
+                                if usize::try_from(scalar.offset).ok() != Some(value_offset) {
+                                    continue;
+                                }
+                                if depth_scalar.is_none_or(
+                                    |current: &crate::records::FeatureInputScalar| {
+                                        scalar.offset < current.offset
+                                    },
+                                ) {
+                                    depth_scalar = Some(scalar);
+                                }
                             }
-                            let depth_m = lane
-                                .scalars
-                                .iter()
-                                .filter(|scalar| {
-                                    scalar.offset > u64_from_index(offset)
-                                        && scalar.offset < u64_from_index(end)
-                                })
-                                .filter_map(|scalar| {
-                                    let name = names_by_id.get(scalar.name.as_str())?;
-                                    matches!(name.value.as_str(), "D1" | "Depth")
-                                        .then_some((scalar, *name))
-                                })
-                                .filter(|(scalar, name)| {
-                                    value_only_scalar_offset(&lane.native_payload, name)
-                                        == usize::try_from(scalar.offset).ok()
-                                })
-                                .min_by_key(|(scalar, _)| scalar.offset)
-                                .map(|(scalar, _)| scalar.value.get());
+                            let depth_m = depth_scalar.map(|scalar| scalar.value.get());
                             return Ok(Some(TerminationVote::Blind { depth_m }));
                         }
-                        if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {
+                        if compact_extrusion_mid_plane_at(ctx, &lane.native_payload, offset)? {
                             return Ok(Some(TerminationVote::Symmetric));
                         }
                         if let Some(reference) = compact_extrusion_offset_from_face_at(
@@ -444,30 +468,34 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             offset,
                             end_spec_end,
                         )? {
-                            return Ok(Some(compact_termination_face_vote(
-                                ctx,
-                                FaceCondition::OffsetFromFace,
-                                lane,
-                                feature_id,
-                                lane_key,
-                                reference,
-                            )?));
+                            return Ok(Some(candidates_storage.with_storage(|| {
+                                compact_termination_face_vote(
+                                    ctx,
+                                    FaceCondition::OffsetFromFace,
+                                    lane,
+                                    feature_id,
+                                    lane_key,
+                                    reference,
+                                )
+                            })?));
                         }
-                        if compact_extrusion_through_all_both_at(&lane.native_payload, offset) {
+                        if compact_extrusion_through_all_both_at(ctx, &lane.native_payload, offset)?
+                        {
                             return Ok(Some(TerminationVote::ThroughAllBoth));
                         }
                         if has_depth
                             && compact_extrusion_blind_through_all_second_at(
+                                ctx,
                                 &lane.native_payload,
                                 offset,
-                            )
+                            )?
                         {
                             return Ok(Some(TerminationVote::BlindSecondThroughAll));
                         }
-                        if compact_extrusion_through_all_at(&lane.native_payload, offset) {
+                        if compact_extrusion_through_all_at(ctx, &lane.native_payload, offset)? {
                             return Ok(Some(TerminationVote::ThroughAll));
                         }
-                        if compact_extrusion_through_next_at(&lane.native_payload, offset) {
+                        if compact_extrusion_through_next_at(ctx, &lane.native_payload, offset)? {
                             return Ok(Some(TerminationVote::ThroughNext));
                         }
                         if has_depth {
@@ -485,13 +513,14 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                     "edge-endpoint-ref"
                                 }
                             };
-                            ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                            let reference = ctx.format_retained(
-                                format_args!(
-                                    "sldprt:feature-input:{prefix}:{lane_key}:{reference}"
-                                ),
-                                OPERATION,
-                            )?;
+                            let reference = candidates_storage.with_storage(|| {
+                                ctx.format_retained(
+                                    format_args!(
+                                        "sldprt:feature-input:{prefix}:{lane_key}:{reference}"
+                                    ),
+                                    OPERATION,
+                                )
+                            })?;
                             return Ok(Some(TerminationVote::ToVertex { reference }));
                         }
                         compact_extrusion_to_face_at(
@@ -501,126 +530,128 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             end_spec_end,
                         )?
                         .map(|reference| {
-                            compact_termination_face_vote(
-                                ctx,
-                                FaceCondition::ToFace,
-                                lane,
-                                feature_id,
-                                lane_key,
-                                reference,
-                            )
+                            candidates_storage.with_storage(|| {
+                                compact_termination_face_vote(
+                                    ctx,
+                                    FaceCondition::ToFace,
+                                    lane,
+                                    feature_id,
+                                    lane_key,
+                                    reference,
+                                )
+                            })
                         })
                         .transpose()
                     })()?;
                 if let Some(candidate) = candidate {
-                    ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
-                    candidates.push(candidate);
+                    candidates_storage
+                        .with_storage(|| ctx.push_vec(&mut candidates, candidate, OPERATION))?;
                 }
             }
-            ctx.charge_work(
-                u64_from_index(feature_id.len())
-                    .checked_mul(3)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            let grouped = (grouped_blind.get(feature_id.as_str()) == Some(&1))
-                .then_some(TerminationVote::Blind { depth_m: None });
+            let grouped = (ctx.get_hash_map(&grouped_blind, feature_id.as_str(), OPERATION)?
+                == Some(&1))
+            .then_some(TerminationVote::Blind { depth_m: None });
             let vote = if candidates.len() == 1 {
                 candidates.pop()
             } else {
                 None
             }
             .or(grouped);
-            if !terminations.contains_key(feature_id.as_str()) {
-                let key = copy_termination_text(ctx, feature_id, OPERATION)?;
-                ctx.insert_hash_map(&mut terminations, key, Vec::new(), OPERATION)?;
+            if !ctx.contains_key_hash_map(&terminations, feature_id.as_str(), OPERATION)? {
+                temporary.with_storage(|| {
+                    let key = ctx.copy_retained_text(feature_id, OPERATION)?;
+                    ctx.insert_hash_map(&mut terminations, key, Vec::new(), OPERATION)
+                })?;
             }
-            let votes = terminations.get_mut(feature_id.as_str()).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("missing admitted termination vote bucket")
-            })?;
-            ctx.reserve_vec(votes, 1, OPERATION)?;
-            votes.push(vote);
+            let votes = ctx
+                .get_mut_hash_map(&mut terminations, feature_id.as_str(), OPERATION)?
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("missing admitted termination vote bucket")
+                })?;
+            temporary.with_storage(|| ctx.push_vec(votes, vote, OPERATION))?;
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        ctx.charge_work(
-            u64_from_index(feature.id.len())
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        if feature.properties.contains_key("EndCondition") {
-            continue;
-        }
-        let Some(votes) = terminations.get(&feature.id) else {
-            continue;
-        };
-        let Some(vote) = consensus_termination_vote(ctx, votes)? else {
-            continue;
-        };
-        let condition = copy_termination_text(ctx, vote.condition(), OPERATION)?;
-        insert_termination_field(
-            ctx,
-            &mut feature.properties,
-            "EndCondition",
-            condition,
-            OPERATION,
-        )?;
-        match vote {
-            TerminationVote::ToVertex { reference } => {
-                if !feature.properties.contains_key("Vertex") {
+    for history_index in ctx.admit_iter(&(0..histories.len()), OPERATION)? {
+        let history = &mut histories[history_index];
+        for feature_index in ctx.admit_iter(&(0..history.features.len()), OPERATION)? {
+            let feature = &mut history.features[feature_index];
+            if ctx.contains_key_btree_map(&feature.properties, "EndCondition", OPERATION)? {
+                continue;
+            }
+            let Some(votes) = ctx.get_hash_map(&terminations, &feature.id, OPERATION)? else {
+                continue;
+            };
+            let Some(vote) = consensus_termination_vote(ctx, votes)? else {
+                continue;
+            };
+            let condition = ctx.copy_retained_text(vote.condition(), OPERATION)?;
+            insert_termination_field(
+                ctx,
+                &mut feature.properties,
+                "EndCondition",
+                condition,
+                OPERATION,
+            )?;
+            match vote {
+                TerminationVote::ToVertex { reference } => {
+                    if !ctx.contains_key_btree_map(&feature.properties, "Vertex", OPERATION)? {
+                        insert_termination_field(
+                            ctx,
+                            &mut feature.properties,
+                            "Vertex",
+                            reference,
+                            OPERATION,
+                        )?;
+                    }
+                }
+                TerminationVote::Face {
+                    reference:
+                        FaceReference::Lane { reference, .. }
+                        | FaceReference::Canonical(reference),
+                    ..
+                } => {
+                    if !ctx.contains_key_btree_map(&feature.properties, "Face", OPERATION)? {
+                        insert_termination_field(
+                            ctx,
+                            &mut feature.properties,
+                            "Face",
+                            reference,
+                            OPERATION,
+                        )?;
+                    }
+                }
+                TerminationVote::BlindSecondThroughAll => {
+                    let value = ctx.copy_retained_text("ThroughAll", OPERATION)?;
                     insert_termination_field(
                         ctx,
                         &mut feature.properties,
-                        "Vertex",
-                        reference,
+                        "EndCondition2",
+                        value,
                         OPERATION,
                     )?;
                 }
-            }
-            TerminationVote::Face {
-                reference:
-                    FaceReference::Lane { reference, .. } | FaceReference::Canonical(reference),
-                ..
-            } => {
-                if !feature.properties.contains_key("Face") {
-                    insert_termination_field(
-                        ctx,
-                        &mut feature.properties,
-                        "Face",
-                        reference,
-                        OPERATION,
-                    )?;
+                TerminationVote::Blind {
+                    depth_m: Some(depth_m),
+                } if !ctx.contains_key_btree_map(&feature.parameters, "D1", OPERATION)?
+                    && !ctx.contains_key_btree_map(&feature.parameters, "Depth", OPERATION)? =>
+                {
+                    if let Some(depth) = cadmpeg_ir::scalar::Length::new(depth_m * 1000.0) {
+                        ctx.charge_work(1, OPERATION)?;
+                        let value = ctx.format_retained(
+                            format_args!("{}", crate::history::literals::LengthLiteral(depth)),
+                            OPERATION,
+                        )?;
+                        insert_termination_field(
+                            ctx,
+                            &mut feature.parameters,
+                            "D1",
+                            value,
+                            OPERATION,
+                        )?;
+                    }
                 }
+                _ => {}
             }
-            TerminationVote::BlindSecondThroughAll => {
-                let value = copy_termination_text(ctx, "ThroughAll", OPERATION)?;
-                insert_termination_field(
-                    ctx,
-                    &mut feature.properties,
-                    "EndCondition2",
-                    value,
-                    OPERATION,
-                )?;
-            }
-            TerminationVote::Blind {
-                depth_m: Some(depth_m),
-            } if !feature.parameters.contains_key("D1")
-                && !feature.parameters.contains_key("Depth") =>
-            {
-                if let Some(depth) = cadmpeg_ir::scalar::Length::new(depth_m * 1000.0) {
-                    ctx.charge_work(1, OPERATION)?;
-                    let value = ctx.format_retained(
-                        format_args!("{}", crate::history::literals::LengthLiteral(depth)),
-                        OPERATION,
-                    )?;
-                    insert_termination_field(ctx, &mut feature.parameters, "D1", value, OPERATION)?;
-                }
-            }
-            _ => {}
         }
     }
     Ok(())
@@ -635,7 +666,7 @@ fn insert_termination_field(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let name = cadmpeg_core::text::NonBlankString::for_decode(
         ctx,
-        copy_termination_text(ctx, name, operation)?,
+        ctx.copy_retained_text(name, operation)?,
         "validate nonblank text",
     )?
     .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank termination field name"))?;
@@ -651,49 +682,32 @@ fn consensus_termination_vote(
     let Some(first) = votes.first().and_then(Option::as_ref) else {
         return Ok(None);
     };
-    for vote in votes {
-        ctx.charge_work(1, OPERATION)?;
+    for vote in ctx.admit_iter(votes, OPERATION)? {
         let Some(vote) = vote else {
             return Ok(None);
         };
-        for value in [first, vote] {
-            let fields = match value {
-                TerminationVote::ToVertex { reference } => [Some(reference.as_str()), None, None],
-                TerminationVote::Face {
-                    reference,
-                    identity,
-                    ..
-                } => match reference {
-                    FaceReference::Lane {
-                        reference,
-                        canonical,
-                    } => [
-                        Some(reference.as_str()),
-                        canonical.as_deref(),
-                        Some(identity.as_str()),
-                    ],
-                    FaceReference::Canonical(reference) => {
-                        [Some(reference.as_str()), None, Some(identity.as_str())]
-                    }
-                    FaceReference::Unresolved => [None, None, Some(identity.as_str())],
-                },
-                _ => [None, None, None],
-            };
-            for text in fields.into_iter().flatten() {
-                ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
-            }
-        }
-        if !vote.agrees_with(first) {
+        if !vote.agrees_with(first, ctx, OPERATION)? {
             return Ok(None);
         }
     }
     let mut consensus = first.copy_charged(ctx, OPERATION)?;
     if let TerminationVote::Face { reference, .. } = &mut consensus {
-        if !votes
-            .iter()
-            .filter_map(Option::as_ref)
-            .all(|vote| vote.reference() == first.reference())
-        {
+        let mut same_reference = true;
+        for vote in ctx.admit_iter(votes, OPERATION)? {
+            let Some(vote) = vote.as_ref() else {
+                same_reference = false;
+                break;
+            };
+            same_reference &= match (vote.reference(), first.reference()) {
+                (Some(left), Some(right)) => ctx.equal(left, right, OPERATION)?,
+                (None, None) => true,
+                _ => false,
+            };
+            if !same_reference {
+                break;
+            }
+        }
+        if !same_reference {
             *reference = reference.canonical(ctx, OPERATION)?;
         }
     }
@@ -709,22 +723,19 @@ fn compact_termination_face_vote(
     offset: usize,
 ) -> Result<TerminationVote, cadmpeg_core::CodecError> {
     const OPERATION: &str = "build SLDPRT extrusion face vote";
-    ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
     let reference = ctx.format_retained(
         format_args!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}"),
         OPERATION,
     )?;
-    for selection in &lane.surface_selections {
-        let work = u64_from_index(selection.feature_ref.len())
-            .checked_add(u64_from_index(feature_ref.len()))
-            .and_then(|work| work.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, OPERATION)?;
+    let mut selection = None;
+    for candidate in ctx.admit_iter(&lane.surface_selections, OPERATION)? {
+        if ctx.equal(candidate.feature_ref.as_str(), feature_ref, OPERATION)?
+            && usize::try_from(candidate.offset).ok() == Some(offset)
+        {
+            selection = Some(candidate);
+            break;
+        }
     }
-    let selection = lane.surface_selections.iter().find(|selection| {
-        selection.feature_ref == feature_ref
-            && usize::try_from(selection.offset).ok() == Some(offset)
-    });
     let canonical_reference = selection
         .map(|selection| compact_surface_selection_value(ctx, &selection.components))
         .transpose()?;
@@ -735,39 +746,23 @@ fn compact_termination_face_vote(
                 .terminal_feature_ref
                 .as_deref()
                 .unwrap_or_default();
-            let mut size = canonical
-                .len()
-                .checked_add(terminal.len())
-                .and_then(|size| size.checked_add(2))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(u64_from_index(size), OPERATION)?;
-            for (index, producer) in selection.producer_feature_refs.iter().enumerate() {
-                ctx.charge_work(
-                    u64_from_index(producer.len())
-                        .checked_add(1)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                size = size
-                    .checked_add(producer.len())
-                    .and_then(|size| size.checked_add(usize::from(index != 0)))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            }
             let mut identity = String::new();
-            ctx.try_reserve_retained_text(&mut identity, size, OPERATION)?;
-            identity.push_str(canonical);
-            identity.push('|');
-            for (index, producer) in selection.producer_feature_refs.iter().enumerate() {
+            ctx.append_retained(&mut identity, canonical, OPERATION)?;
+            ctx.push_retained_char(&mut identity, '|', OPERATION)?;
+            for (index, producer) in ctx
+                .admit_iter(&selection.producer_feature_refs, OPERATION)?
+                .enumerate()
+            {
                 if index != 0 {
-                    identity.push(',');
+                    ctx.push_retained_char(&mut identity, ',', OPERATION)?;
                 }
-                identity.push_str(producer);
+                ctx.append_retained(&mut identity, producer, OPERATION)?;
             }
-            identity.push('|');
-            identity.push_str(terminal);
+            ctx.push_retained_char(&mut identity, '|', OPERATION)?;
+            ctx.append_retained(&mut identity, terminal, OPERATION)?;
             identity
         }
-        None => copy_termination_text(ctx, &reference, OPERATION)?,
+        None => ctx.copy_retained_text(&reference, OPERATION)?,
     };
     Ok(TerminationVote::Face {
         condition,
@@ -799,22 +794,23 @@ pub(crate) fn enrich_history_combine_selections(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "enrich SLDPRT combine selections";
+    let mut temporary = ctx.reserve_scoped(0, OPERATION)?;
     let mut selections = HashMap::<String, Vec<Option<CombineSelection>>>::new();
-    for lane in lanes {
-        let objects = history_object_offsets(ctx, histories, lane, OPERATION)?;
-        for (index, (start, feature_id)) in objects.iter().enumerate() {
-            for feature in histories.iter().flat_map(|history| &history.features) {
-                let work = u64_from_index(feature.id.len())
-                    .checked_add(u64_from_index(feature_id.len()))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        let mut object_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let objects = object_storage
+            .with_storage(|| history_object_offsets(ctx, histories, lane, OPERATION))?;
+        for (index, (start, feature_id)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
+            let mut found = None;
+            'histories: for history in ctx.admit_iter(histories, OPERATION)? {
+                for candidate in ctx.admit_iter(&history.features, OPERATION)? {
+                    if ctx.equal(&candidate.id, feature_id, OPERATION)? {
+                        found = Some(candidate);
+                        break 'histories;
+                    }
+                }
             }
-            let Some(feature) = histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .find(|feature| feature.id == *feature_id)
-            else {
+            let Some(feature) = found else {
                 continue;
             };
             ctx.charge_work(
@@ -852,19 +848,10 @@ pub(crate) fn enrich_history_combine_selections(
             }
             let selection = match (first, last) {
                 (Some(target), Some(tools)) if target != tools => {
-                    let operation = compact_combine_operation_at(&lane.native_payload, start);
-                    let lane_key = lane
-                        .id
-                        .rsplit_once('#')
+                    let operation = compact_combine_operation_at(ctx, &lane.native_payload, start)?;
+                    let lane_key = ctx
+                        .rsplit_once(&lane.id, "#", OPERATION)?
                         .map_or(lane.id.as_str(), |(_, key)| key);
-                    ctx.charge_work(
-                        u64_from_index(lane_key.len())
-                            .checked_mul(2)
-                            .ok_or_else(|| {
-                                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                            })?,
-                        OPERATION,
-                    )?;
                     Some(CombineSelection {
                         target: ctx.format_retained(
                             format_args!("sldprt:feature-input:body-path:{lane_key}:{target}"),
@@ -875,112 +862,143 @@ pub(crate) fn enrich_history_combine_selections(
                             OPERATION,
                         )?,
                         operation: operation
-                            .map(|operation| copy_termination_text(ctx, operation, OPERATION))
+                            .map(|operation| ctx.copy_retained_text(operation, OPERATION))
                             .transpose()?,
                     })
                 }
                 _ => None,
             };
-            ctx.charge_work(u64_from_index(feature_id.len()), OPERATION)?;
-            if !selections.contains_key(feature_id.as_str()) {
-                let key = copy_termination_text(ctx, feature_id, OPERATION)?;
-                ctx.insert_hash_map(&mut selections, key, Vec::new(), OPERATION)?;
+            if !ctx.contains_key_hash_map(&selections, feature_id.as_str(), OPERATION)? {
+                let key = ctx.copy_retained_text(feature_id, OPERATION)?;
+                temporary.with_storage(|| {
+                    ctx.insert_hash_map(&mut selections, key, Vec::new(), OPERATION)
+                })?;
             }
-            let votes = selections.get_mut(feature_id.as_str()).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("missing admitted combine vote bucket")
-            })?;
-            ctx.reserve_vec(votes, 1, OPERATION)?;
-            votes.push(selection);
+            let votes = ctx
+                .get_mut_hash_map(&mut selections, feature_id.as_str(), OPERATION)?
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("missing admitted combine vote bucket")
+                })?;
+            temporary.with_storage(|| ctx.push_vec(votes, selection, OPERATION))?;
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        ctx.charge_work(
-            u64_from_index(feature.id.len())
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        let Some(votes) = selections.get(&feature.id) else {
-            continue;
-        };
-        let Some(Some(first)) = votes.first() else {
-            continue;
-        };
-        let mut agreement = true;
-        for vote in votes {
-            for text in [
-                Some(first.target.as_str()),
-                Some(first.tools.as_str()),
-                first.operation.as_deref(),
-                vote.as_ref().map(|vote| vote.target.as_str()),
-                vote.as_ref().map(|vote| vote.tools.as_str()),
-                vote.as_ref().and_then(|vote| vote.operation.as_deref()),
-            ]
-            .into_iter()
-            .flatten()
-            {
-                ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
-            }
-            ctx.charge_work(1, OPERATION)?;
-            if vote.as_ref() != Some(first) {
-                agreement = false;
-                break;
-            }
-        }
-        if !agreement {
-            continue;
-        }
-        for (key, value) in [
-            ("Target", Some(first.target.as_str())),
-            ("Tools", Some(first.tools.as_str())),
-            ("Operation", first.operation.as_deref()),
-        ] {
-            let Some(value) = value else {
+    for history_index in ctx.admit_iter(&(0..histories.len()), OPERATION)? {
+        let history = &mut histories[history_index];
+        for feature_index in ctx.admit_iter(&(0..history.features.len()), OPERATION)? {
+            let feature = &mut history.features[feature_index];
+            let Some(votes) = ctx.get_hash_map(&selections, &feature.id, OPERATION)? else {
                 continue;
             };
-            ctx.charge_work(1, OPERATION)?;
-            if feature.properties.contains_key(key) {
+            let Some(Some(first)) = votes.first() else {
+                continue;
+            };
+            let mut agreement = true;
+            for vote in ctx.admit_iter(votes, OPERATION)? {
+                let agrees = if let Some(vote) = vote.as_ref() {
+                    ctx.equal(&vote.target, &first.target, OPERATION)?
+                        && ctx.equal(&vote.tools, &first.tools, OPERATION)?
+                        && match (vote.operation.as_deref(), first.operation.as_deref()) {
+                            (Some(left), Some(right)) => ctx.equal(left, right, OPERATION)?,
+                            (None, None) => true,
+                            _ => false,
+                        }
+                } else {
+                    false
+                };
+                if !agrees {
+                    agreement = false;
+                    break;
+                }
+            }
+            if !agreement {
                 continue;
             }
-            let value = copy_termination_text(ctx, value, OPERATION)?;
-            insert_termination_field(ctx, &mut feature.properties, key, value, OPERATION)?;
+            for (key, value) in [
+                ("Target", Some(first.target.as_str())),
+                ("Tools", Some(first.tools.as_str())),
+                ("Operation", first.operation.as_deref()),
+            ] {
+                let Some(value) = value else {
+                    continue;
+                };
+                if ctx.contains_key_btree_map(&feature.properties, key, OPERATION)? {
+                    continue;
+                }
+                let value = ctx.copy_retained_text(value, OPERATION)?;
+                insert_termination_field(ctx, &mut feature.properties, key, value, OPERATION)?;
+            }
         }
     }
     Ok(())
 }
 
-fn compact_combine_operation_at(payload: &[u8], name_offset: usize) -> Option<&'static str> {
-    let name_prefix = payload.get(name_offset..name_offset.checked_add(5)?)?;
-    let name_token = View::u16_le_at(name_prefix, 0)?;
+fn compact_combine_operation_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    name_offset: usize,
+) -> Result<Option<&'static str>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT compact combine operation";
+    let Some(name_end) = name_offset.checked_add(5) else {
+        return Ok(None);
+    };
+    let Some(name_prefix) = payload.get(name_offset..name_end) else {
+        return Ok(None);
+    };
+    let Some(name_token) = View::u16_le_at(name_prefix, 0) else {
+        return Ok(None);
+    };
     if !is_class_token(name_token) || name_prefix[2..] != [0xff, 0xfe, 0xff] {
-        return None;
+        return Ok(None);
     }
-    let name_units = usize::from(*payload.get(name_offset.checked_add(5)?)?);
-    let operation = name_offset.checked_add(117usize.checked_add(name_units.checked_mul(2)?)?)?;
-    let operation_end = operation.checked_add(4)?;
+    let Some(name_units_offset) = name_offset.checked_add(5) else {
+        return Ok(None);
+    };
+    let Some(name_units) = payload.get(name_units_offset).copied() else {
+        return Ok(None);
+    };
+    let Some(operation_relative) = usize::from(name_units)
+        .checked_mul(2)
+        .and_then(|name_bytes| 117usize.checked_add(name_bytes))
+    else {
+        return Ok(None);
+    };
+    let Some(operation) = name_offset.checked_add(operation_relative) else {
+        return Ok(None);
+    };
+    let Some(operation_end) = operation.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(standard_tail_end) = operation_end.checked_add(10) else {
+        return Ok(None);
+    };
     let standard_tail = payload
-        .get(operation_end..operation_end.checked_add(10)?)
+        .get(operation_end..standard_tail_end)
         .is_some_and(|tail| tail == [0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]);
+    let Some(alternate_tail_end) = operation_end.checked_add(6) else {
+        return Ok(None);
+    };
     let alternate_tail = payload
-        .get(operation_end..operation_end.checked_add(6)?)
+        .get(operation_end..alternate_tail_end)
         .is_some_and(|tail| tail == [0, 0, 0xff, 0xff, 0xff, 0xff]);
-    if payload
-        .get(operation - 12..operation)?
-        .iter()
+    let Some(zero_prefix_start) = operation.checked_sub(12) else {
+        return Ok(None);
+    };
+    let Some(zero_prefix) = payload.get(zero_prefix_start..operation) else {
+        return Ok(None);
+    };
+    if ctx
+        .admit_iter(zero_prefix, OPERATION)?
         .any(|byte| *byte != 0)
         || !(standard_tail || alternate_tail)
     {
-        return None;
+        return Ok(None);
     }
-    match View::u32_le_at(payload, operation)? {
-        0 => Some("Join"),
-        1 => Some("Cut"),
-        2 => Some("Intersect"),
+    Ok(match View::u32_le_at(payload, operation) {
+        Some(0) => Some("Join"),
+        Some(1) => Some("Cut"),
+        Some(2) => Some("Intersect"),
         _ => None,
-    }
+    })
 }
 
 /// Add compact general-curve reference identities carried by solid sweeps.
@@ -990,34 +1008,38 @@ pub(crate) fn enrich_history_sweep_paths(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "enrich SLDPRT sweep paths";
+    let mut temporary = ctx.reserve_scoped(0, OPERATION)?;
     let mut paths = HashMap::<String, Vec<Option<String>>>::new();
-    for lane in lanes {
-        let objects = history_object_offsets(ctx, histories, lane, OPERATION)?;
-        for (index, &(start, ref feature_id)) in objects.iter().enumerate() {
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        let mut object_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let objects = object_storage
+            .with_storage(|| history_object_offsets(ctx, histories, lane, OPERATION))?;
+        for (index, (start, feature_id)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
             let mut feature = None;
-            for candidate in histories.iter().flat_map(|history| &history.features) {
-                let work = u64_from_index(candidate.id.len())
-                    .checked_add(u64_from_index(feature_id.len()))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
-                if candidate.id == *feature_id {
-                    feature = Some(candidate);
-                    break;
+            'histories: for history in ctx.admit_iter(histories, OPERATION)? {
+                for candidate in ctx.admit_iter(&history.features, OPERATION)? {
+                    if ctx.equal(&candidate.id, feature_id, OPERATION)? {
+                        feature = Some(candidate);
+                        break 'histories;
+                    }
                 }
             }
             let Some(feature) = feature else {
                 continue;
             };
+            ctx.charge_work(
+                u64_from_index(feature.input_class.as_ref().map_or(0, String::len)),
+                OPERATION,
+            )?;
             if !matches!(
                 native_object_class(feature.input_class.as_deref().unwrap_or_default()),
                 NativeClassKind::Sweep | NativeClassKind::SweepReferenceSurface
-            ) || feature.properties.contains_key("Path")
+            ) || ctx.contains_key_btree_map(&feature.properties, "Path", OPERATION)?
             {
                 continue;
             }
             let (Ok(start), end) = (
-                usize::try_from(start),
+                usize::try_from(*start),
                 objects
                     .get(index + 1)
                     .and_then(|object| usize::try_from(object.0).ok())
@@ -1043,9 +1065,8 @@ pub(crate) fn enrich_history_sweep_paths(
                     source = Some(value);
                 }
             };
-            for class in &lane.classes {
-                ctx.charge_work(1, OPERATION)?;
-                if class.name != "moGeneralCurveRef_w"
+            for class in ctx.admit_iter(&lane.classes, OPERATION)? {
+                if !ctx.equal(class.name.as_str(), "moGeneralCurveRef_w", OPERATION)?
                     || class.offset < u64_from_index(start)
                     || class.offset >= u64_from_index(end)
                 {
@@ -1084,11 +1105,9 @@ pub(crate) fn enrich_history_sweep_paths(
             let path = if let Some(source) = source.filter(|_| !ambiguous_source) {
                 Some(ctx.format_retained(format_args!("{source}"), OPERATION)?)
             } else if let Some(offset) = path_offset.filter(|_| !ambiguous_offset) {
-                let lane_key = lane
-                    .id
-                    .rsplit_once('#')
+                let lane_key = ctx
+                    .rsplit_once(&lane.id, "#", OPERATION)?
                     .map_or(lane.id.as_str(), |(_, key)| key);
-                ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
                 Some(ctx.format_retained(
                     format_args!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"),
                     OPERATION,
@@ -1096,61 +1115,49 @@ pub(crate) fn enrich_history_sweep_paths(
             } else {
                 None
             };
-            ctx.charge_work(
-                u64_from_index(feature_id.len())
-                    .checked_mul(3)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            if !paths.contains_key(feature_id) {
-                let key = copy_termination_text(ctx, feature_id, OPERATION)?;
-                ctx.insert_hash_map(&mut paths, key, Vec::new(), OPERATION)?;
+            if !ctx.contains_key_hash_map(&paths, feature_id, OPERATION)? {
+                let key = ctx.copy_retained_text(feature_id, OPERATION)?;
+                temporary
+                    .with_storage(|| ctx.insert_hash_map(&mut paths, key, Vec::new(), OPERATION))?;
             }
-            if let Some(votes) = paths.get_mut(feature_id) {
-                ctx.reserve_vec(votes, 1, OPERATION)?;
-                votes.push(path);
+            if let Some(votes) = ctx.get_mut_hash_map(&mut paths, feature_id, OPERATION)? {
+                temporary.with_storage(|| ctx.push_vec(votes, path, OPERATION))?;
             }
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        ctx.charge_work(
-            u64_from_index(feature.id.len())
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        if feature.properties.contains_key("Path") {
-            continue;
-        }
-        let Some(votes) = paths.get(&feature.id) else {
-            continue;
-        };
-        let Some(Some(first)) = votes.first() else {
-            continue;
-        };
-        let mut agreement = true;
-        for vote in votes {
-            let work = u64_from_index(first.len())
-                .checked_add(u64_from_index(vote.as_ref().map_or(0, String::len)))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
-            if vote.as_ref() != Some(first) {
-                agreement = false;
-                break;
+    for history_index in ctx.admit_iter(&(0..histories.len()), OPERATION)? {
+        let history = &mut histories[history_index];
+        for feature_index in ctx.admit_iter(&(0..history.features.len()), OPERATION)? {
+            let feature = &mut history.features[feature_index];
+            if ctx.contains_key_btree_map(&feature.properties, "Path", OPERATION)? {
+                continue;
             }
-        }
-        if agreement {
-            let path = copy_termination_text(ctx, first, OPERATION)?;
-            ctx.insert_btree_map(
-                &mut feature.properties,
-                cadmpeg_core::nonblank_literal!("Path"),
-                path,
-                OPERATION,
-            )?;
+            let Some(votes) = ctx.get_hash_map(&paths, &feature.id, OPERATION)? else {
+                continue;
+            };
+            let Some(Some(first)) = votes.first() else {
+                continue;
+            };
+            let mut agreement = true;
+            for vote in ctx.admit_iter(votes, OPERATION)? {
+                let agrees = match vote.as_deref() {
+                    Some(value) => ctx.equal(value, first, OPERATION)?,
+                    None => false,
+                };
+                if !agrees {
+                    agreement = false;
+                    break;
+                }
+            }
+            if agreement {
+                let path = ctx.copy_retained_text(first, OPERATION)?;
+                ctx.insert_btree_map(
+                    &mut feature.properties,
+                    cadmpeg_core::nonblank_literal!("Path"),
+                    path,
+                    OPERATION,
+                )?;
+            }
         }
     }
     Ok(())
@@ -1163,36 +1170,29 @@ fn history_object_offsets(
     operation: &'static str,
 ) -> Result<Vec<(u64, String)>, cadmpeg_core::CodecError> {
     let mut objects = Vec::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, operation)?;
-        for name in &lane.names {
-            let work = u64_from_index(name.value.len())
-                .checked_add(u64_from_index(feature.name.len()))
-                .and_then(|work| work.checked_add(2))
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, operation)?;
+    for history in ctx.admit_iter(histories, operation)? {
+        for feature in ctx.admit_iter(&history.features, operation)? {
+            for name in ctx.admit_iter(&lane.names, operation)? {
+                let helper_visits = if feature.source_value().is_some() {
+                    2_u64
+                } else {
+                    1_u64
+                };
+                let work = u64_from_index(name.value.len())
+                    .checked_add(u64_from_index(feature.name.len()))
+                    .and_then(|work| work.checked_add(helper_visits))
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, operation)?;
+            }
+            let Some(name) = feature_object_name(feature, lane) else {
+                continue;
+            };
+            let id = ctx.copy_retained_text(&feature.id, operation)?;
+            ctx.push_vec(&mut objects, (name.offset, id), operation)?;
         }
-        let Some(name) = feature_object_name(feature, lane) else {
-            continue;
-        };
-        let id = copy_termination_text(ctx, &feature.id, operation)?;
-        ctx.reserve_vec(&mut objects, 1, operation)?;
-        objects.push((name.offset, id));
     }
     ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, operation)?;
     Ok(objects)
-}
-
-fn copy_termination_text(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    ctx.charge_work(u64_from_index(text.len()), operation)?;
-    let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, text.len(), operation)?;
-    copy.push_str(text);
-    Ok(copy)
 }
 
 fn copy_termination_feature_id(
@@ -1200,14 +1200,7 @@ fn copy_termination_feature_id(
     id: &cadmpeg_ir::features::FeatureId,
     operation: &'static str,
 ) -> Result<cadmpeg_ir::features::FeatureId, cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        u64_from_index(id.as_str().len())
-            .checked_mul(3)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )?;
-    cadmpeg_ir::features::FeatureId::mint(copy_termination_text(ctx, id.as_str(), operation)?)
-        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT sweep feature identity"))
+    id.try_clone_for_decode(ctx, operation)
 }
 
 fn component_local_ids(
@@ -1215,23 +1208,16 @@ fn component_local_ids(
     components: &[FeatureInputComponentPathEntry],
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    use std::fmt::Write;
-    let size = components
-        .len()
-        .checked_mul(11)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(u64_from_index(size), operation)?;
     let mut local_id = String::new();
-    ctx.try_reserve_retained_text(&mut local_id, size, operation)?;
-    for (index, component) in components.iter().enumerate() {
+    for (index, component) in ctx.admit_iter(components, operation)?.enumerate() {
         if index != 0 {
-            local_id.push(',');
+            ctx.push_retained_char(&mut local_id, ',', operation)?;
         }
         match component.local_id {
-            Some(id) => write!(&mut local_id, "{id}").map_err(|_| {
-                cadmpeg_core::CodecError::malformed("SLDPRT sweep local identity formatting failed")
-            })?,
-            None => local_id.push('_'),
+            Some(id) => {
+                ctx.append_formatted_retained(&mut local_id, format_args!("{id}"), operation)?;
+            }
+            None => ctx.push_retained_char(&mut local_id, '_', operation)?,
         }
     }
     Ok(local_id)
@@ -1246,41 +1232,32 @@ pub(crate) fn project_surface_sweep_profiles(
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{GeneratedCurveRef, PlanarProfileRef};
     const OPERATION: &str = "project SLDPRT surface sweep profile";
+    let mut temporary = ctx.reserve_scoped(0, OPERATION)?;
     let mut history_features = Vec::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, OPERATION)?;
-        ctx.reserve_vec(&mut history_features, 1, OPERATION)?;
-        history_features.push(feature);
+    for history in ctx.admit_iter(histories, OPERATION)? {
+        for feature in ctx.admit_iter(&history.features, OPERATION)? {
+            temporary.with_storage(|| ctx.push_vec(&mut history_features, feature, OPERATION))?;
+        }
     }
     let mut feature_ids_by_native = HashMap::new();
-    for feature in features.iter() {
-        ctx.charge_work(1, OPERATION)?;
+    for feature in ctx.admit_iter(features, OPERATION)? {
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
-        ctx.charge_work(
-            u64_from_index(native.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        ctx.insert_hash_map(&mut feature_ids_by_native, native, &feature.id, OPERATION)?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(&mut feature_ids_by_native, native, &feature.id, OPERATION)
+        })?;
     }
     let mut projections = HashMap::new();
-    for lane in lanes {
-        for class in &lane.classes {
-            ctx.charge_work(
-                u64_from_index(class.name.len())
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        let mut reference_class = None;
+        for class in ctx.admit_iter(&lane.classes, OPERATION)? {
+            if ctx.equal(class.name.as_str(), "moCompReferenceCurve_c", OPERATION)? {
+                reference_class = Some(class);
+                break;
+            }
         }
-        let Some(reference_class) = lane
-            .classes
-            .iter()
-            .find(|class| class.name == "moCompReferenceCurve_c")
-        else {
+        let Some(reference_class) = reference_class else {
             continue;
         };
         let Some(class_offset) = usize::try_from(reference_class.offset).ok() else {
@@ -1294,26 +1271,32 @@ pub(crate) fn project_surface_sweep_profiles(
         };
         let wrapper_token = [wrapper_token[0], wrapper_token[1]];
         let declared_prefix = class_offset.checked_add(6 + reference_class.name.len());
-        let lane_key = lane
-            .id
-            .rsplit_once('#')
+        let lane_key = ctx
+            .rsplit_once(&lane.id, "#", OPERATION)?
             .map_or(lane.id.as_str(), |(_, key)| key);
         let mut objects = Vec::new();
-        for feature in &history_features {
-            for name in &lane.names {
+        let mut objects_storage = ctx.reserve_scoped(0, OPERATION)?;
+        for feature in ctx.admit_iter(&history_features, OPERATION)? {
+            for name in ctx.admit_iter(&lane.names, OPERATION)? {
+                let helper_visits = if feature.source_value().is_some() {
+                    2_u64
+                } else {
+                    1_u64
+                };
                 let work = u64_from_index(name.value.len())
                     .checked_add(u64_from_index(feature.name.len()))
-                    .and_then(|work| work.checked_add(2))
+                    .and_then(|work| work.checked_add(helper_visits))
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(work, OPERATION)?;
             }
             if let Some(name) = feature_object_name(feature, lane) {
-                ctx.reserve_vec(&mut objects, 1, OPERATION)?;
-                objects.push((name.offset, *feature));
+                objects_storage.with_storage(|| {
+                    ctx.push_vec(&mut objects, (name.offset, *feature), OPERATION)
+                })?;
             }
         }
         ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, OPERATION)?;
-        for (index, &(start, feature)) in objects.iter().enumerate() {
+        for (index, (start, feature)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
             ctx.charge_work(
                 u64_from_index(feature.input_class.as_ref().map_or(0, String::len))
                     .checked_add(1)
@@ -1326,7 +1309,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 continue;
             }
             let (Ok(start), end) = (
-                usize::try_from(start),
+                usize::try_from(*start),
                 objects
                     .get(index + 1)
                     .and_then(|(offset, _)| usize::try_from(*offset).ok())
@@ -1338,14 +1321,17 @@ pub(crate) fn project_surface_sweep_profiles(
                 .filter(|prefix| (start..end).contains(prefix))
                 .and_then(|prefix| component_profile_source_at(&lane.native_payload, prefix));
             let direct = if let Some(source) = direct_source {
-                ctx.charge_work(u64_from_index(history_features.len()), OPERATION)?;
-                if let Some(native) = history_features
-                    .iter()
-                    .find(|candidate| candidate.source_value() == Some(source))
-                {
-                    ctx.charge_work(u64_from_index(native.id.len()), OPERATION)?;
-                    feature_ids_by_native
-                        .get(native.id.as_str())
+                let mut source_feature = None;
+                for candidate in ctx.admit_iter(&history_features, OPERATION)? {
+                    if let Some(value) = candidate.source_value() {
+                        if ctx.equal(&value, &source, OPERATION)? {
+                            source_feature = Some(candidate);
+                            break;
+                        }
+                    }
+                }
+                if let Some(native) = source_feature {
+                    ctx.get_hash_map(&feature_ids_by_native, native.id.as_str(), OPERATION)?
                         .map(|id| {
                             copy_termination_feature_id(ctx, id, OPERATION)
                                 .map(PlanarProfileRef::Feature)
@@ -1403,13 +1389,13 @@ pub(crate) fn project_surface_sweep_profiles(
                     else {
                         continue;
                     };
-                    ctx.charge_work(u64_from_index(owner.len()), OPERATION)?;
-                    let Some(id) = feature_ids_by_native.get(owner.as_str()) else {
+                    let Some(id) =
+                        ctx.get_hash_map(&feature_ids_by_native, owner.as_str(), OPERATION)?
+                    else {
                         continue;
                     };
                     let feature_id = copy_termination_feature_id(ctx, id, OPERATION)?;
                     let local_id = component_local_ids(ctx, &components, OPERATION)?;
-                    ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
                     let native = ctx.format_retained(
                         format_args!(
                             "sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"
@@ -1441,11 +1427,13 @@ pub(crate) fn project_surface_sweep_profiles(
             };
             let mut dependencies = Vec::new();
             if let Some(components) = &components {
-                for native in
-                    component_path_features(ctx, components, history_features.iter().copied())?
-                {
-                    ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
-                    if let Some(id) = feature_ids_by_native.get(native.as_str()) {
+                let native_features = temporary.with_storage(|| {
+                    component_path_features(ctx, components, history_features.iter().copied())
+                })?;
+                for native in ctx.admit_iter(&native_features, OPERATION)? {
+                    if let Some(id) =
+                        ctx.get_hash_map(&feature_ids_by_native, native.as_str(), OPERATION)?
+                    {
                         let id = copy_termination_feature_id(ctx, id, OPERATION)?;
                         ctx.reserve_vec(&mut dependencies, 1, OPERATION)?;
                         dependencies.push(id);
@@ -1459,7 +1447,7 @@ pub(crate) fn project_surface_sweep_profiles(
                     dependencies.push(id);
                 }
                 PlanarProfileRef::Generated { curves, .. } => {
-                    for curve in curves {
+                    for curve in ctx.admit_iter(curves.as_slice(), OPERATION)? {
                         let id = copy_termination_feature_id(ctx, &curve.feature, OPERATION)?;
                         ctx.reserve_vec(&mut dependencies, 1, OPERATION)?;
                         dependencies.push(id);
@@ -1467,9 +1455,10 @@ pub(crate) fn project_surface_sweep_profiles(
                 }
                 _ => {}
             }
-            ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
-            let key = copy_termination_text(ctx, &feature.id, OPERATION)?;
-            ctx.insert_hash_map(&mut projections, key, (profile, dependencies), OPERATION)?;
+            let key = ctx.copy_retained_text(&feature.id, OPERATION)?;
+            temporary.with_storage(|| {
+                ctx.insert_hash_map(&mut projections, key, (profile, dependencies), OPERATION)
+            })?;
         }
     }
     drop(feature_ids_by_native);
@@ -1478,8 +1467,9 @@ pub(crate) fn project_surface_sweep_profiles(
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
-        ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
-        let Some((profile, dependencies)) = projections.remove(native) else {
+        let Some((profile, dependencies)) =
+            ctx.remove_hash_map(&mut projections, native, OPERATION)?
+        else {
             continue;
         };
         if !matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) if shape.section_is_unresolved())
@@ -1493,20 +1483,7 @@ pub(crate) fn project_surface_sweep_profiles(
             }
         });
         for dependency in dependencies {
-            let work = u64_from_index(dependency.as_str().len())
-                .checked_add(u64_from_index(feature.id.as_str().len()))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
-            for existing in &feature.dependencies {
-                let work = u64_from_index(existing.as_str().len())
-                    .checked_add(u64_from_index(dependency.as_str().len()))
-                    .and_then(|work| work.checked_add(1))
-                    .and_then(|work| work.checked_mul(2))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
-            }
-            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+            if !ctx.equal(dependency.as_str(), feature.id.as_str(), OPERATION)? {
                 feature.dependencies.insert(ctx, dependency, OPERATION)?;
             }
         }
@@ -1619,35 +1596,30 @@ pub(crate) fn project_compact_combine_paths(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{BodySelection, CombineOperands, GeneratedBodyRef};
-    const OPERATION: &str = "project SLDPRT combine paths";
     struct Projection {
         target: BodySelection,
         tools: BodySelection,
         dependencies: Vec<cadmpeg_ir::features::FeatureId>,
     }
+    const OPERATION: &str = "project SLDPRT combine paths";
+    let mut temporary = ctx.reserve_scoped(0, OPERATION)?;
     let mut feature_ids_by_native = HashMap::new();
-    for feature in features.iter() {
-        ctx.charge_work(1, OPERATION)?;
+    for feature in ctx.admit_iter(features, OPERATION)? {
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
-        ctx.charge_work(
-            u64_from_index(native.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        ctx.insert_hash_map(&mut feature_ids_by_native, native, &feature.id, OPERATION)?;
+        temporary.with_storage(|| {
+            ctx.insert_hash_map(&mut feature_ids_by_native, native, &feature.id, OPERATION)
+        })?;
     }
     let mut history_features = Vec::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, OPERATION)?;
-        ctx.reserve_vec(&mut history_features, 1, OPERATION)?;
-        history_features.push(feature);
+    for history in ctx.admit_iter(histories, OPERATION)? {
+        for feature in ctx.admit_iter(&history.features, OPERATION)? {
+            temporary.with_storage(|| ctx.push_vec(&mut history_features, feature, OPERATION))?;
+        }
     }
     let mut projections = HashMap::<String, Projection>::new();
-    for history_feature in &history_features {
-        ctx.charge_work(1, OPERATION)?;
+    for history_feature in ctx.admit_iter(&history_features, OPERATION)? {
         let (Some(target), Some(tools)) = (
             history_feature.properties.get("Target"),
             history_feature.properties.get("Tools"),
@@ -1655,34 +1627,26 @@ pub(crate) fn project_compact_combine_paths(
             continue;
         };
         let project = |native: &str| -> Result<_, cadmpeg_core::CodecError> {
-            ctx.charge_work(
-                u64_from_index(native.len())
-                    .checked_mul(4)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            let Some((prefix, offset)) = native.rsplit_once(':') else {
+            let Some((prefix, offset)) = ctx.rsplit_once(native, ":", OPERATION)? else {
                 return Ok(None);
             };
-            let Ok(offset) = offset.parse::<usize>() else {
+            let Ok(offset) = ctx.parse_text::<usize>(offset, OPERATION)? else {
                 return Ok(None);
             };
-            let Some((_, lane_key)) = prefix.rsplit_once(':') else {
+            let Some((_, lane_key)) = ctx.rsplit_once(prefix, ":", OPERATION)? else {
                 return Ok(None);
             };
-            for lane in lanes {
-                let work = u64_from_index(lane.id.len())
-                    .checked_add(u64_from_index(lane_key.len()))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
+            let mut selected_lane = None;
+            for candidate in ctx.admit_iter(lanes, OPERATION)? {
+                let candidate_key = ctx
+                    .rsplit_once(&candidate.id, "#", OPERATION)?
+                    .map_or(candidate.id.as_str(), |(_, key)| key);
+                if ctx.equal(candidate_key, lane_key, OPERATION)? {
+                    selected_lane = Some(candidate);
+                    break;
+                }
             }
-            let Some(lane) = lanes.iter().find(|lane| {
-                lane.id
-                    .rsplit_once('#')
-                    .map_or(lane.id.as_str(), |(_, key)| key)
-                    == lane_key
-            }) else {
+            let Some(lane) = selected_lane else {
                 return Ok(None);
             };
             let Some(components) =
@@ -1698,8 +1662,9 @@ pub(crate) fn project_compact_combine_paths(
             else {
                 return Ok(None);
             };
-            ctx.charge_work(u64_from_index(producer.len()), OPERATION)?;
-            let Some(id) = feature_ids_by_native.get(producer.as_str()) else {
+            let Some(id) =
+                ctx.get_hash_map(&feature_ids_by_native, producer.as_str(), OPERATION)?
+            else {
                 return Ok(None);
             };
             let owner = copy_termination_feature_id(ctx, id, OPERATION)?;
@@ -1711,7 +1676,7 @@ pub(crate) fn project_compact_combine_paths(
             let mut bodies = Vec::new();
             ctx.reserve_vec(&mut bodies, 1, OPERATION)?;
             bodies.push(body);
-            let native = copy_termination_text(ctx, native, OPERATION)?;
+            let native = ctx.copy_retained_text(native, OPERATION)?;
             let Ok(selection) = BodySelection::generated(bodies, native, ctx)? else {
                 return Ok(None);
             };
@@ -1725,7 +1690,10 @@ pub(crate) fn project_compact_combine_paths(
             continue;
         };
         let mut dependencies = Vec::new();
-        for component in target_components.iter().chain(&tool_components) {
+        for component in ctx
+            .admit_iter(&target_components, OPERATION)?
+            .chain(ctx.admit_iter(&tool_components, OPERATION)?)
+        {
             let Some(native) = component_path_terminal_feature(
                 ctx,
                 std::slice::from_ref(component),
@@ -1734,8 +1702,9 @@ pub(crate) fn project_compact_combine_paths(
             else {
                 continue;
             };
-            ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
-            if let Some(feature) = feature_ids_by_native.get(native.as_str()) {
+            if let Some(feature) =
+                ctx.get_hash_map(&feature_ids_by_native, native.as_str(), OPERATION)?
+            {
                 let feature = copy_termination_feature_id(ctx, feature, OPERATION)?;
                 ctx.reserve_vec(&mut dependencies, 1, "project SLDPRT combine dependencies")?;
                 dependencies.push(feature);
@@ -1744,29 +1713,19 @@ pub(crate) fn project_compact_combine_paths(
         ctx.reserve_vec(&mut dependencies, 2, "project SLDPRT combine dependencies")?;
         dependencies.push(target_owner);
         dependencies.push(tool_owner);
-        let levels = if dependencies.len() > 1 {
-            dependencies.len().ilog2() + 1
-        } else {
-            1
-        };
-        for dependency in &dependencies {
-            for feature in features.iter() {
-                let work = u64_from_index(dependency.as_str().len())
-                    .checked_add(u64_from_index(feature.id.as_str().len()))
-                    .and_then(|work| work.checked_add(1))
-                    .and_then(|work| work.checked_mul(u64::from(levels).checked_mul(2)?))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
-            }
-        }
         let mut ordered = Vec::new();
+        let mut ordered_storage = ctx.reserve_scoped(0, OPERATION)?;
         for (ordinal, dependency) in dependencies.into_iter().enumerate() {
-            let order = features
-                .iter()
-                .find(|feature| feature.id == dependency)
-                .map(|feature| feature.ordinal);
-            ctx.reserve_vec(&mut ordered, 1, OPERATION)?;
-            ordered.push((order, ordinal, dependency));
+            let mut order = None;
+            for feature in ctx.admit_iter(features, OPERATION)? {
+                if ctx.equal(feature.id.as_str(), dependency.as_str(), OPERATION)? {
+                    order = Some(feature.ordinal);
+                    break;
+                }
+            }
+            ordered_storage.with_storage(|| {
+                ctx.push_vec(&mut ordered, (order, ordinal, dependency), OPERATION)
+            })?;
         }
         ctx.sort_unstable_by(
             &mut ordered,
@@ -1783,30 +1742,25 @@ pub(crate) fn project_compact_combine_paths(
         let mut dependencies = Vec::<cadmpeg_ir::features::FeatureId>::new();
         for (_, _, dependency) in ordered {
             if let Some(previous) = dependencies.last() {
-                let work = u64_from_index(dependency.as_str().len())
-                    .checked_add(u64_from_index(previous.as_str().len()))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
-                if previous == &dependency {
+                if ctx.equal(previous.as_str(), dependency.as_str(), OPERATION)? {
                     continue;
                 }
             }
-            ctx.reserve_capacity(&mut dependencies, 1, OPERATION)?;
-            dependencies.push(dependency);
+            ctx.push_vec(&mut dependencies, dependency, OPERATION)?;
         }
-        ctx.charge_work(u64_from_index(history_feature.id.len()), OPERATION)?;
-        let key = copy_termination_text(ctx, &history_feature.id, OPERATION)?;
-        ctx.insert_hash_map(
-            &mut projections,
-            key,
-            Projection {
-                target,
-                tools,
-                dependencies,
-            },
-            OPERATION,
-        )?;
+        temporary.with_storage(|| {
+            let key = ctx.copy_retained_text(&history_feature.id, OPERATION)?;
+            ctx.insert_hash_map(
+                &mut projections,
+                key,
+                Projection {
+                    target,
+                    tools,
+                    dependencies,
+                },
+                OPERATION,
+            )
+        })?;
     }
     drop(feature_ids_by_native);
     for feature in features {
@@ -1814,8 +1768,7 @@ pub(crate) fn project_compact_combine_paths(
         let Some(native) = feature.native_ref.as_deref() else {
             continue;
         };
-        ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
-        let Some(projection) = projections.remove(native) else {
+        let Some(projection) = ctx.remove_hash_map(&mut projections, native, OPERATION)? else {
             continue;
         };
         if !matches!(
@@ -1825,20 +1778,7 @@ pub(crate) fn project_compact_combine_paths(
             continue;
         }
         for dependency in projection.dependencies {
-            let work = u64_from_index(dependency.as_str().len())
-                .checked_add(u64_from_index(feature.id.as_str().len()))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
-            for existing in &feature.dependencies {
-                let work = u64_from_index(existing.as_str().len())
-                    .checked_add(u64_from_index(dependency.as_str().len()))
-                    .and_then(|work| work.checked_add(1))
-                    .and_then(|work| work.checked_mul(2))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
-            }
-            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+            if !ctx.equal(dependency.as_str(), feature.id.as_str(), OPERATION)? {
                 feature.dependencies.insert(ctx, dependency, OPERATION)?;
             }
         }
@@ -1857,61 +1797,118 @@ pub(crate) fn project_compact_combine_paths(
     Ok(())
 }
 
-fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
-    compact_extrusion_end_spec_header(payload, offset, 1)
-        && (compact_extrusion_traversal_tail_at(payload, offset)
-            || compact_extrusion_dimensioned_traversal_at(payload, offset)
-            || (payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
-                && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()))
+fn compact_extrusion_through_all_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT extrusion through-all traversal";
+    if !compact_extrusion_end_spec_header(payload, offset, 1) {
+        return Ok(false);
+    }
+    if compact_extrusion_traversal_tail_at(ctx, payload, offset)?
+        || compact_extrusion_dimensioned_traversal_at(ctx, payload, offset)?
+    {
+        return Ok(true);
+    }
+    if payload.get(offset + 22..offset + 26) != Some(&[0, 0, 0, 0]) {
+        return Ok(false);
+    }
+    Ok(compact_extrusion_dimension_child_at(ctx, payload, offset + 26, OPERATION)?.is_some())
 }
 
-fn compact_extrusion_dimensioned_traversal_at(payload: &[u8], offset: usize) -> bool {
-    payload.get(offset + 22..offset + 30) == Some(&[0; 8])
-        && payload.get(offset + 30..offset + 34) == Some(&[1, 0, 0, 1])
-        && payload
-            .get(offset + 34..offset + 44)
-            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        && payload.get(offset + 44..offset + 48) == Some(&1u32.to_le_bytes())
-        && payload
-            .get(offset + 48..offset + 68)
-            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        && compact_extrusion_dimension_child_at(payload, offset + 68).is_some()
+fn compact_extrusion_dimensioned_traversal_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT dimensioned extrusion traversal";
+    if payload.get(offset + 22..offset + 30) != Some(&[0; 8])
+        || payload.get(offset + 30..offset + 34) != Some(&[1, 0, 0, 1])
+    {
+        return Ok(false);
+    }
+    let Some(zeroes) = payload.get(offset + 34..offset + 44) else {
+        return Ok(false);
+    };
+    if !ctx.admit_iter(zeroes, OPERATION)?.all(|byte| *byte == 0)
+        || payload.get(offset + 44..offset + 48) != Some(&1u32.to_le_bytes())
+    {
+        return Ok(false);
+    }
+    let Some(zeroes) = payload.get(offset + 48..offset + 68) else {
+        return Ok(false);
+    };
+    if !ctx.admit_iter(zeroes, OPERATION)?.all(|byte| *byte == 0) {
+        return Ok(false);
+    }
+    Ok(compact_extrusion_dimension_child_at(ctx, payload, offset + 68, OPERATION)?.is_some())
 }
 
-fn compact_extrusion_blind_at(payload: &[u8], offset: usize) -> bool {
-    compact_extrusion_end_spec_header(payload, offset, 0)
-        && ((payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
-            && compact_extrusion_dimension_child_at(payload, offset + 26).is_some())
-            || compact_extrusion_dimension_child_at(payload, offset + 22).is_some())
+fn compact_extrusion_blind_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT blind extrusion termination";
+    if !compact_extrusion_end_spec_header(payload, offset, 0) {
+        return Ok(false);
+    }
+    if payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
+        && compact_extrusion_dimension_child_at(ctx, payload, offset + 26, OPERATION)?.is_some()
+    {
+        return Ok(true);
+    }
+    Ok(compact_extrusion_dimension_child_at(ctx, payload, offset + 22, OPERATION)?.is_some())
 }
 
-fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -> bool {
-    compact_extrusion_end_spec_header(payload, offset, 2)
-        && compact_extrusion_traversal_tail_at(payload, offset)
+fn compact_extrusion_through_next_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(compact_extrusion_end_spec_header(payload, offset, 2)
+        && compact_extrusion_traversal_tail_at(ctx, payload, offset)?)
 }
 
 /// Through-all in both directions. Two carriers exist: a first-direction
 /// traversal code `1` with second-direction code `1` and the shared traversal
 /// tail, and the dedicated code `9` whose second-direction word is `1` and
 /// whose retained blind dimension child follows immediately.
-fn compact_extrusion_through_all_both_at(payload: &[u8], offset: usize) -> bool {
-    (compact_extrusion_two_direction_header(payload, offset, 1)
+fn compact_extrusion_through_all_both_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT bidirectional through-all extrusion";
+    if compact_extrusion_two_direction_header(payload, offset, 1)
         && payload.get(offset + 26..offset + 30) == Some(&[0, 0, 0, 0])
-        && compact_extrusion_traversal_body_at(payload, offset))
-        || (compact_extrusion_two_direction_header(payload, offset, 9)
-            && compact_extrusion_dimension_child_at(payload, offset + 26).is_some())
+    {
+        return compact_extrusion_traversal_body_at(ctx, payload, offset);
+    }
+    if compact_extrusion_two_direction_header(payload, offset, 9) {
+        return Ok(
+            compact_extrusion_dimension_child_at(ctx, payload, offset + 26, OPERATION)?.is_some(),
+        );
+    }
+    Ok(false)
 }
 
 /// Blind first direction with a through-all second direction: a code `0`
 /// header whose second-direction word is `1`, owning the blind dimension
 /// child.
-fn compact_extrusion_blind_through_all_second_at(payload: &[u8], offset: usize) -> bool {
-    compact_end_spec_identity_at(payload, offset)
+fn compact_extrusion_blind_through_all_second_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT second-direction through-all extrusion";
+    Ok(compact_end_spec_identity_at(payload, offset)
         && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
         && View::u32_le_at(payload, offset + 12).is_some_and(|flag| flag <= 1)
         && payload.get(offset + 16..offset + 22) == Some(&[0, 0, 0, 0, 0, 0])
         && payload.get(offset + 22..offset + 26) == Some(&[1, 0, 0, 0])
-        && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()
+        && compact_extrusion_dimension_child_at(ctx, payload, offset + 26, OPERATION)?.is_some())
 }
 
 /// Two-direction end-spec header: the words at `+4` and `+8` carry `0` or
@@ -1928,55 +1925,100 @@ fn compact_extrusion_two_direction_header(payload: &[u8], offset: usize, code: u
         && payload.get(offset + 22..offset + 26) == Some(&[1, 0, 0, 0])
 }
 
-fn compact_extrusion_traversal_tail_at(payload: &[u8], offset: usize) -> bool {
-    payload.get(offset + 22..offset + 30) == Some(&[0, 0, 0, 0, 0, 0, 0, 0])
-        && compact_extrusion_traversal_body_from(payload, offset + 30)
+fn compact_extrusion_traversal_tail_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(
+        payload.get(offset + 22..offset + 30) == Some(&[0, 0, 0, 0, 0, 0, 0, 0])
+            && compact_extrusion_traversal_body_from(ctx, payload, offset + 30)?,
+    )
 }
 
 /// Shared traversal run from `+30`: the `[1, 0, 0, 1]` marker and the fixed
 /// zero fill through the `+90` word.
-fn compact_extrusion_traversal_body_at(payload: &[u8], offset: usize) -> bool {
-    compact_extrusion_traversal_body_from(payload, offset + 30)
+fn compact_extrusion_traversal_body_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    compact_extrusion_traversal_body_from(ctx, payload, offset + 30)
 }
 
-fn compact_extrusion_traversal_body_from(payload: &[u8], start: usize) -> bool {
-    payload.get(start..start + 4) == Some(&[1, 0, 0, 1])
-        && payload
-            .get(start + 4..start + 60)
-            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        && payload
-            .get(start + 60..start + 64)
-            .is_some_and(|word| word == [0, 0, 1, 0] || word == [1, 0, 0, 0])
-        && payload
-            .get(start + 64..start + 70)
-            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        && compact_extrusion_traversal_follow_on_at(payload, start + 70)
+fn compact_extrusion_traversal_body_from(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT extrusion traversal body";
+    if payload.get(start..start + 4) != Some(&[1, 0, 0, 1]) {
+        return Ok(false);
+    }
+    let Some(zeroes) = payload.get(start + 4..start + 60) else {
+        return Ok(false);
+    };
+    if !ctx.admit_iter(zeroes, OPERATION)?.all(|byte| *byte == 0) {
+        return Ok(false);
+    }
+    let Some(word) = payload.get(start + 60..start + 64) else {
+        return Ok(false);
+    };
+    if word != [0, 0, 1, 0] && word != [1, 0, 0, 0] {
+        return Ok(false);
+    }
+    let Some(zeroes) = payload.get(start + 64..start + 70) else {
+        return Ok(false);
+    };
+    if !ctx.admit_iter(zeroes, OPERATION)?.all(|byte| *byte == 0) {
+        return Ok(false);
+    }
+    compact_extrusion_traversal_follow_on_at(ctx, payload, start + 70)
 }
 
-fn compact_extrusion_traversal_follow_on_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_traversal_follow_on_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT extrusion traversal follow-on";
     let Some(bytes) = payload.get(offset..offset + 4) else {
-        return false;
+        return Ok(false);
     };
     if bytes == [0, 0, 0, 0]
         || (bytes[1] & 0x80 != 0 && bytes[2..4] == [0, 0])
         || bytes == [0xff, 0xff, 1, 0]
     {
-        return true;
+        return Ok(true);
     }
-    bytes[1] & 0x80 != 0
+    Ok(bytes[1] & 0x80 != 0
         && payload.get(offset + 2..offset + 6) == Some(&5u32.to_le_bytes())
-        && compact_extrusion_dimension_child_at(payload, offset + 6).is_some()
+        && compact_extrusion_dimension_child_at(ctx, payload, offset + 6, OPERATION)?.is_some())
 }
 
-fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
-    compact_extrusion_end_spec_header(payload, offset, 6)
-        && payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
-        && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()
+fn compact_extrusion_mid_plane_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT mid-plane extrusion termination";
+    if !compact_extrusion_end_spec_header(payload, offset, 6) {
+        return Ok(false);
+    }
+    if payload.get(offset + 22..offset + 26) != Some(&[0, 0, 0, 0]) {
+        return Ok(false);
+    }
+    Ok(compact_extrusion_dimension_child_at(ctx, payload, offset + 26, OPERATION)?.is_some())
 }
 
 /// Validate the owned dimension child at `child` and return the offset just
 /// past its fixed tail.
-fn compact_extrusion_dimension_child_at(payload: &[u8], child: usize) -> Option<usize> {
+fn compact_extrusion_dimension_child_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    child: usize,
+    operation: &'static str,
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
     let declaration = b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c";
     let block = if payload.get(child..child + declaration.len()) == Some(declaration) {
         child + declaration.len()
@@ -1986,22 +2028,32 @@ fn compact_extrusion_dimension_child_at(payload: &[u8], child: usize) -> Option<
     {
         child + 2
     } else {
-        return None;
+        return Ok(None);
     };
-    (payload.get(block..block + 16).is_some_and(|bytes| {
-        bytes.iter().enumerate().all(|(index, byte)| match index {
+    let Some(header) = payload.get(block..block + 16) else {
+        return Ok(None);
+    };
+    if !ctx
+        .admit_iter(header, operation)?
+        .enumerate()
+        .all(|(index, byte)| match index {
             8 => matches!(*byte, 0 | 0x40),
             9 => byte.trailing_zeros() >= 3,
             _ => *byte == 0,
         })
-    }) && payload.get(block + 16..block + 20) == Some(&[0xff, 0xff, 0, 0])
-        && payload
-            .get(block + 20)
-            .is_some_and(|byte| *byte == 1 || *byte == 3)
-        && payload.get(block + 21..block + 25) == Some(&[0xff, 0xff, 0xff, 0xff])
-        && payload.get(block + 25..block + 31) == Some(&[0, 0, 0, 0, 0, 0])
-        && payload.get(block + 31..block + 33) == Some(&[0x80, 0xbf]))
-    .then_some(block + 33)
+    {
+        return Ok(None);
+    }
+    Ok(
+        (payload.get(block + 16..block + 20) == Some(&[0xff, 0xff, 0, 0])
+            && payload
+                .get(block + 20)
+                .is_some_and(|byte| *byte == 1 || *byte == 3)
+            && payload.get(block + 21..block + 25) == Some(&[0xff, 0xff, 0xff, 0xff])
+            && payload.get(block + 25..block + 31) == Some(&[0, 0, 0, 0, 0, 0])
+            && payload.get(block + 31..block + 33) == Some(&[0x80, 0xbf]))
+        .then_some(block + 33),
+    )
 }
 
 /// Form of the point reference owned by an up-to-vertex end spec.
@@ -2096,18 +2148,24 @@ pub(super) fn compact_extrusion_offset_from_face_at(
     end: usize,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
     ctx.charge_work(64, "decode SLDPRT extrusion face offset")?;
-    let header = (|| {
-        let end = super::DeclaredEnd::of(end, payload.len())?.get();
-        let payload = payload.get(..end)?;
-        if !compact_extrusion_end_spec_header(payload, offset, 5)
-            || payload.get(offset + 22..offset + 26) != Some(&[0, 0, 0, 0])
-        {
-            return None;
-        }
-        let resume = compact_extrusion_dimension_child_at(payload, offset + 26)?;
-        Some((payload, resume, end))
-    })();
-    let Some((payload, resume, end)) = header else {
+    let Some(end) = super::DeclaredEnd::of(end, payload.len()).map(super::DeclaredEnd::get) else {
+        return Ok(None);
+    };
+    let Some(payload) = payload.get(..end) else {
+        return Ok(None);
+    };
+    if !compact_extrusion_end_spec_header(payload, offset, 5)
+        || payload.get(offset + 22..offset + 26) != Some(&[0, 0, 0, 0])
+    {
+        return Ok(None);
+    }
+    let Some(resume) = compact_extrusion_dimension_child_at(
+        ctx,
+        payload,
+        offset + 26,
+        "decode SLDPRT extrusion face offset",
+    )?
+    else {
         return Ok(None);
     };
     let declaration = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
@@ -2133,11 +2191,22 @@ pub(super) fn compact_extrusion_offset_from_face_at(
         let Some(open_end) = body.checked_add(9).map(|offset| offset.min(end)) else {
             return Ok(None);
         };
-        for open in (open_start..open_end).filter(|cursor| {
-            cursor.checked_add(7).is_some_and(|stop| stop <= end)
-                && payload.get(cursor - 1).is_some_and(|byte| byte & 0x80 != 0)
-                && payload.get(*cursor..cursor + 7) == Some(&[2, 0, 0, 0, 0x40, 0, 0])
-        }) {
+        let Some(opening_positions) = payload.get(open_start..open_end) else {
+            continue;
+        };
+        for (relative, _) in ctx
+            .admit_iter(opening_positions, "decode SLDPRT extrusion face offset")?
+            .enumerate()
+        {
+            let Some(open) = open_start.checked_add(relative) else {
+                continue;
+            };
+            if open.checked_add(7).is_none_or(|stop| stop > end)
+                || payload.get(open - 1).is_none_or(|byte| byte & 0x80 == 0)
+                || payload.get(open..open + 7) != Some(&[2, 0, 0, 0, 0x40, 0, 0])
+            {
+                continue;
+            }
             match compact_termination_reference_offsets(ctx, payload, open, end, true)? {
                 ReferenceOffsets::Empty => {}
                 ReferenceOffsets::One(marker) => candidates.insert(marker),
@@ -2209,16 +2278,15 @@ pub(super) fn compact_extrusion_to_face_at(
         compact_termination_reference_offsets(ctx, payload, search_start, end, declared)?;
     match compact_candidates {
         ReferenceOffsets::One(candidate) => Ok(Some(candidate)),
-        ReferenceOffsets::Empty
-            if declared && compact_tokenized_single_face_child_at(payload, body_offset) =>
-        {
-            Ok(Some(body_offset))
-        }
         ReferenceOffsets::Empty => {
-            Ok(
-                legacy_single_face_reference_path_at(ctx, payload, body_offset)?
-                    .map(|_| body_offset),
-            )
+            if declared && compact_tokenized_single_face_child_at(ctx, payload, body_offset)? {
+                Ok(Some(body_offset))
+            } else {
+                Ok(
+                    legacy_single_face_reference_path_at(ctx, payload, body_offset)?
+                        .map(|_| body_offset),
+                )
+            }
         }
         ReferenceOffsets::Ambiguous => Ok(None),
     }
@@ -2263,34 +2331,53 @@ impl ReferenceOffsets {
     }
 }
 
-fn compact_tokenized_single_face_child_at(payload: &[u8], offset: usize) -> bool {
-    if compact_tokenized_face_body_at(payload, offset, 2) {
-        return true;
+fn compact_tokenized_single_face_child_at(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if compact_tokenized_face_body_at(ctx, payload, offset, 2)? {
+        return Ok(true);
     }
     let declaration = b"\xff\xff\x01\x00\x0c\x00moCompFace_c";
-    payload.get(offset..offset + declaration.len()) == Some(declaration)
-        && compact_tokenized_face_body_at(payload, offset + declaration.len(), 1)
+    Ok(
+        payload.get(offset..offset + declaration.len()) == Some(declaration)
+            && compact_tokenized_face_body_at(ctx, payload, offset + declaration.len(), 1)?,
+    )
 }
 
 fn compact_tokenized_face_body_at(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: usize,
     leading_class_tokens: usize,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT tokenized face body";
+    if !(1..=2).contains(&leading_class_tokens) {
+        return Ok(false);
+    }
     let word_count = leading_class_tokens + 7;
     let Some(body) = payload.get(offset..offset + word_count * 2) else {
-        return false;
+        return Ok(false);
     };
     let token_at = |index: usize| View::u16_le_at(body, index * 2);
-    (1..=2).contains(&leading_class_tokens)
-        && (0..leading_class_tokens).all(|index| token_at(index).is_some_and(is_class_token))
-        && token_at(leading_class_tokens) == Some(2)
+    let chunk_size = std::num::NonZeroUsize::new(2)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    for token in ctx
+        .admit_iter(&body[..leading_class_tokens * 2], OPERATION)?
+        .chunks(chunk_size)
+    {
+        if !View::u16_le_at(token, 0).is_some_and(is_class_token) {
+            return Ok(false);
+        }
+    }
+    Ok(token_at(leading_class_tokens) == Some(2)
         && token_at(leading_class_tokens + 1).is_some_and(is_class_token)
         && token_at(leading_class_tokens + 2) == Some(0)
         && token_at(leading_class_tokens + 3).is_some_and(is_class_token)
         && token_at(leading_class_tokens + 4) == Some(1)
         && token_at(leading_class_tokens + 5) == Some(0)
-        && token_at(leading_class_tokens + 6).is_some_and(is_class_token)
+        && token_at(leading_class_tokens + 6).is_some_and(is_class_token))
 }
 
 fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
@@ -2363,15 +2450,28 @@ impl LegacyFacePathSearch<'_, '_> {
         })
     }
 
-    fn terminal_at(&self, offset: usize) -> bool {
-        self.payload.get(offset..offset + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
-            || [20usize, 24].into_iter().any(|zero_count| {
-                self.payload
-                    .get(offset..offset + zero_count)
-                    .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-                    && View::u32_le_at(self.payload, offset + zero_count)
-                        .is_some_and(|source| source != 0)
-            })
+    fn terminal_at(&self, offset: usize) -> Result<bool, cadmpeg_core::CodecError> {
+        const OPERATION: &str = "decode SLDPRT legacy face component path";
+        if self.payload.get(offset..offset + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]) {
+            return Ok(true);
+        }
+        for zero_count in self.ctx.admit_iter(&[20usize, 24], OPERATION)? {
+            let Some(bytes) = self.payload.get(offset..offset + *zero_count) else {
+                continue;
+            };
+            if !self
+                .ctx
+                .admit_iter(bytes, OPERATION)?
+                .all(|byte| *byte == 0)
+            {
+                continue;
+            }
+            if View::u32_le_at(self.payload, offset + *zero_count).is_some_and(|source| source != 0)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn visit(
@@ -2388,17 +2488,11 @@ impl LegacyFacePathSearch<'_, '_> {
         let _depth = ctx.enter_nested(OPERATION)?;
         ctx.charge_work(256, OPERATION)?;
         if remaining == 0 {
-            if !self.terminal_at(cursor) {
+            if !self.terminal_at(cursor)? {
                 return Ok(());
             }
             if let Some(complete) = &self.complete {
-                ctx.charge_work(
-                    u64_from_index(self.entries.len())
-                        .checked_mul(4)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                if complete != &self.entries {
+                if !ctx.equal(complete, &self.entries, OPERATION)? {
                     self.ambiguous = true;
                 }
             } else {
@@ -2436,16 +2530,17 @@ impl LegacyFacePathSearch<'_, '_> {
                 }
                 for gap in [0usize, 2, 4, 6, 8] {
                     let next = end + slot_bytes;
-                    if self
-                        .payload
-                        .get(next..next + gap)
-                        .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-                    {
+                    let zeroes = self.payload.get(next..next + gap);
+                    let all_zero = match zeroes {
+                        Some(bytes) => ctx.admit_iter(bytes, OPERATION)?.all(|byte| *byte == 0),
+                        None => false,
+                    };
+                    if all_zero {
                         self.visit(next + gap, remaining - 1, has_path_slots)?;
                     }
                 }
             }
-            self.entries.truncate(entry_count);
+            ctx.truncate_vec(&mut self.entries, entry_count, OPERATION)?;
         }
         Ok(())
     }
@@ -2456,6 +2551,7 @@ fn legacy_single_face_reference_path_at(
     payload: &[u8],
     body: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
+    const FILLER_OPERATION: &str = "decode SLDPRT legacy face path controls";
     ctx.charge_work(32, "decode SLDPRT legacy face header")?;
     let header_valid = (|| {
         let header = payload.get(body..body + 19)?;
@@ -2491,14 +2587,34 @@ fn legacy_single_face_reference_path_at(
         let Some(filler) = payload.get(body + 19..control) else {
             continue;
         };
-        ctx.charge_work(8192, "decode SLDPRT legacy face path controls")?;
-        let padded = filler.len() >= 16
-            && filler.windows(16).enumerate().any(|(start, window)| {
-                window.iter().all(|byte| *byte == 0xff)
-                    && filler[..start].iter().all(|byte| *byte == 0)
-                    && filler[start + 16..].iter().all(|byte| *byte == 0)
-            });
-        if !filler.iter().all(|byte| *byte == 0) && !padded {
+        let mut padded = false;
+        if filler.len() >= 16 {
+            let window_size = std::num::NonZeroUsize::new(16)
+                .ok_or_else(|| ctx.refuse_codec_limit(FILLER_OPERATION, 1, 0))?;
+            for (start, window) in ctx
+                .admit_iter(filler, FILLER_OPERATION)?
+                .windows(window_size)
+                .enumerate()
+            {
+                if ctx
+                    .admit_iter(window, FILLER_OPERATION)?
+                    .all(|byte| *byte == 0xff)
+                    && ctx
+                        .admit_iter(&filler[..start], FILLER_OPERATION)?
+                        .all(|byte| *byte == 0)
+                    && ctx
+                        .admit_iter(&filler[start + 16..], FILLER_OPERATION)?
+                        .all(|byte| *byte == 0)
+                {
+                    padded = true;
+                    break;
+                }
+            }
+        }
+        let all_zero = ctx
+            .admit_iter(filler, FILLER_OPERATION)?
+            .all(|byte| *byte == 0);
+        if !all_zero && !padded {
             continue;
         }
         let Some(token) = View::u16_le_at(prefix, 0) else {
@@ -2660,7 +2776,11 @@ pub(super) fn compact_termination_reference_path_at(
     // signature immediately after its own.
     if entry_at(cursor).is_some()
         && entry_at(cursor + 16).is_some()
-        && payload.get(cursor + 20..cursor + 32) == payload.get(cursor + 4..cursor + 16)
+        && ctx.equal(
+            &payload.get(cursor + 20..cursor + 32),
+            &payload.get(cursor + 4..cursor + 16),
+            OPERATION,
+        )?
     {
         cursor += 16;
     }
@@ -2732,38 +2852,19 @@ pub(crate) fn compact_surface_selection_value(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     components: &[FeatureInputComponentPathEntry],
 ) -> Result<String, cadmpeg_core::CodecError> {
-    use std::fmt::Write;
-
     const OPERATION: &str = "format SLDPRT surface component selection";
     const PREFIX: &str = "sldprt:feature-input:surface-component-ids:";
-    let mut size = PREFIX.len();
-    for (index, component) in components.iter().enumerate() {
-        ctx.charge_work(1, OPERATION)?;
-        let digits = match component.local_id {
-            Some(0) | None => 1,
-            Some(local_id) => usize::try_from(local_id.ilog10())
-                .ok()
-                .and_then(|log| log.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        };
-        size = size
-            .checked_add(usize::from(index != 0))
-            .and_then(|value| value.checked_add(digits))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    }
-    ctx.charge_work(u64_from_index(size), OPERATION)?;
     let mut value = String::new();
-    ctx.try_reserve_retained_text(&mut value, size, OPERATION)?;
-    value.push_str(PREFIX);
-    for (index, component) in components.iter().enumerate() {
+    ctx.append_retained(&mut value, PREFIX, OPERATION)?;
+    for (index, component) in ctx.admit_iter(components, OPERATION)?.enumerate() {
         if index != 0 {
-            value.push(',');
+            ctx.push_retained_char(&mut value, ',', OPERATION)?;
         }
         match component.local_id {
-            Some(local_id) => write!(value, "{local_id}").map_err(|_| {
-                cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface component")
-            })?,
-            None => value.push('_'),
+            Some(local_id) => {
+                ctx.append_formatted_retained(&mut value, format_args!("{local_id}"), OPERATION)?;
+            }
+            None => ctx.push_retained_char(&mut value, '_', OPERATION)?,
         }
     }
     Ok(value)

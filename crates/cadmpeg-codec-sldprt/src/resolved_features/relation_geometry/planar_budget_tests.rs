@@ -159,19 +159,20 @@ fn solved_point_projection_refuses_collection_limit() {
             && limit.operation == "index SLDPRT solved-point sketches"));
 }
 
+// The copied relation key belongs to the temporary ownership map.
 #[test]
-fn solved_point_projection_refuses_retained_limit() {
+fn solved_point_projection_refuses_scoped_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy SLDPRT relation identity",
         |cap| {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             project_solved_point_with_policy(policy)
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "copy SLDPRT relation identity"));
 }
 
