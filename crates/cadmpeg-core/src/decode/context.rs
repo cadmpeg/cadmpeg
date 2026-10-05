@@ -511,10 +511,12 @@ impl<'a> DecodeContext<'a> {
         mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.admit_sort(values, projection, operation)?;
-        let count = super::u64_from_index(values.len());
+        if self.sorted_by(values, projection, &mut compare, operation)? {
+            return Ok(());
+        }
         // Small runs use adjacent swaps, so their stable order needs no scratch.
         if values.len() <= 20 {
+            self.admit_sort(values, projection, operation)?;
             for end in 1..values.len() {
                 self.charge_work(1, operation)?;
                 let mut position = end;
@@ -529,6 +531,10 @@ impl<'a> DecodeContext<'a> {
             }
             return Ok(());
         }
+        // Larger runs sort an index array by the values' keys, so the sort
+        // admits its comparisons and index moves once; the values themselves
+        // move only along the permutation's cycles, each swap moving two.
+        let count = super::u64_from_index(values.len());
         self.charge_collection_items(
             count
                 .checked_mul(2)
@@ -543,22 +549,26 @@ impl<'a> DecodeContext<'a> {
             order.push(index);
             destinations.push(0usize);
         }
-        self.sort_unstable_by_key(
-            &mut order,
-            |&index| (projection.project(&values[index]), index),
-            |(_, left), (_, right)| {
-                compare(&values[*left], &values[*right]).then_with(|| left.cmp(right))
-            },
-            operation,
-        )?;
+        let ordering = super::sort::CopiedKey {
+            key: |&index: &usize| (projection.project(&values[index]), index),
+            marker: std::marker::PhantomData,
+        };
+        self.admit_sort(&order, &ordering, operation)?;
+        order.sort_unstable_by(|left, right| {
+            compare(&values[*left], &values[*right]).then_with(|| left.cmp(right))
+        });
         for (destination, source) in order.into_iter().enumerate() {
             self.charge_work(1, operation)?;
             destinations[source] = destination;
         }
+        let swap_work = super::u64_from_index(std::mem::size_of::<T>())
+            .checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(1))
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         for index in 0..values.len() {
             self.charge_work(1, operation)?;
             while destinations[index] != index {
-                self.charge_work(1, operation)?;
+                self.charge_work(swap_work, operation)?;
                 let destination = destinations[index];
                 values.swap(index, destination);
                 destinations.swap(index, destination);

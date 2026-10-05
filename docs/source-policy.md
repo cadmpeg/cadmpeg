@@ -826,10 +826,27 @@ value. With `n` operands, the work bound is `n` measuring visits plus
 Heap capacity growth has its own retained, scoped and movement charges.
 Hash growth charges the storage for twice the new length as movement work and
 holds it as a transient scoped bound, in addition to the rehash of stored keys,
-and charges retained storage from the table's real capacity once it has grown. A B-tree of h levels holds at least 2 * 6^(h-1) - 1
-entries. A tree lookup charges the key's cost for at most eleven comparisons
-per level, and never more comparisons than stored keys. Tree insertion and
-removal charge four passes over the nodes of the search path plus a new root
-for shifts, splits, merges and parent-link repair. Insertion charges no work
-proportional to the stored length. Truncating, clearing, filling or
+and charges retained storage from the table's real capacity once it has grown.
+
+A B-tree of h levels holds at least 2 * 6^(h-1) - 1 entries. A tree lookup
+charges the key's cost for at most eleven comparisons per level, and never more
+comparisons than stored keys. Mutation work is counted in node passes, one
+pass being the node byte bound. A split, a merge and a steal each cost at most
+two passes. Every split creates a node, and a tree of n entries holds at most
+(n - 1) / 5 + 1 nodes, so the splits so far are at most the increases of that
+bound over the insertions so far plus the nodes that merges have freed. An
+insertion therefore charges one shift and two passes for each node its length
+adds to the bound. A removal charges one shift, one steal and, for every level
+of the tree, a merge and the split that may later recreate its node; a tree of
+at most ten entries is one node and a removal only shifts it. Std merges an
+underfull node whenever the result fits, so alternating insertions and
+removals can split and merge a whole path each time; the per-level removal
+charge pays for that. Insertion charges no work proportional to the stored
+length.
+
+A sort first compares neighbours, each comparison charged one step and both
+operands' key costs, and returns when the input is already in order. A stable
+sort of more than twenty values sorts an index array, whose sort admits the
+comparisons and index moves once, and then moves each value along its
+permutation cycle, two values per charged swap. Truncating, clearing, filling or
 compacting a vector charges nothing for the values it releases.
