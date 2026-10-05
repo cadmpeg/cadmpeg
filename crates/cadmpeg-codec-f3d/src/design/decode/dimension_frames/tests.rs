@@ -59,8 +59,8 @@ fn presentation_frame(
     cadmpeg_core::CodecError,
 > {
     let tables = super::PresentationStreamTables {
-        geometry_indices: geometry_indices.to_vec(),
-        sketch_entities: vec![270],
+        geometry_indices,
+        sketch_entities: &[270],
         records: crate::design::test_support::indexed_record_offsets_for_test(bytes),
         owners_by_scope: HashMap::new(),
     };
@@ -1508,15 +1508,14 @@ fn companion_interval_refuses_foreign_scope_member_limit() {
         "f3d companion foreign scope members",
         0,
         |ctx| {
-            super::companion_owned_interval(
+            super::CompanionIntervals::new(
                 ctx,
-                &companion,
-                std::iter::empty(),
+                &[],
                 &[],
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(&header),
-                100,
-            )
+            )?
+            .interval(ctx, "f3d:native", &companion, 100)
         },
     );
     assert!(matches!(
@@ -1525,15 +1524,10 @@ fn companion_interval_refuses_foreign_scope_member_limit() {
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d companion foreign scope members"
     ));
-    let admitted = super::companion_owned_interval(
-        &cadmpeg_test_support::service_decode_context(),
-        &companion,
-        std::iter::empty(),
-        &[],
-        &[scope],
-        &[header],
-        100,
-    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let admitted = super::CompanionIntervals::new(&ctx, &[], &[], &[scope], &[header])
+        .unwrap()
+        .interval(&ctx, "f3d:native", &companion, 100);
     assert_eq!(admitted.unwrap(), Some((58, 70)));
 }
 
@@ -1543,29 +1537,37 @@ fn dimension_annotation_interval_refuses_collection_limit() {
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
-    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    use intervals::{owner_at, parameter_at, STREAM};
+
+    // Owner 10 binds the dimension parameter 12 to companion 11, whose owned
+    // interval runs from 158 to the stream end.
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
-        format!("{}:parameter-companion#0", crate::ids::native_scope(STREAM)),
-        0,
+        format!(
+            "{}:parameter-companion#100",
+            crate::ids::native_scope(STREAM)
+        ),
+        100,
         crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
         11,
         10,
         std::num::NonZeroU64::MIN,
-        42,
+        142,
     );
+    let parameters = [parameter_at(12, 20)];
+    let owners = [owner_at(10, 13, 12, 11, 10)];
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(STREAM, stored).unwrap();
-    zip.write_all(&[0; 58]).unwrap();
+    zip.write_all(&[0; 300]).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let companions = [companion];
         let inputs = super::DimensionDecodeInputs {
             scan,
             placements: &[],
-            parameters: &[],
-            owners: &[],
+            parameters: &parameters,
+            owners: &owners,
             companions: &companions,
             scopes: &[],
             headers: &[],
@@ -1828,12 +1830,8 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
             && failure.operation == "f3d dimension locus companions"));
     let geometry_arena = DecodeArena::new();
     let (geometry_ctx, _) = DecodeContext::from_root_bytes(&[], &geometry_arena, &policy).unwrap();
-    let refusal = super::dimension_geometry_indices(
-        &geometry_ctx,
-        "f3d:Design/BulkStream.dat",
-        std::slice::from_ref(&point),
-        &[],
-    );
+    let refusal = super::dimension_geometry_runs(&geometry_ctx, std::slice::from_ref(&point), &[])
+        .map(|_| ());
     assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d dimension geometry indices"));

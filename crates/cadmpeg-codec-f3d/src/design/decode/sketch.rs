@@ -44,7 +44,7 @@ use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use std::collections::HashMap;
 
-use super::meta::{design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag};
+use super::meta::{design_primary_frames, metadata_for_bulk_stream};
 
 const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
 
@@ -242,6 +242,79 @@ impl IndexedRecordOffsets {
             .windows(width)
             .map(|pair| (pair[0], pair[1])))
     }
+}
+
+/// The records of one input slice that have a scope, grouped by scope:
+/// ascending by scope, and within a scope in input order.
+pub(super) struct ByStream<'a, T> {
+    records: Vec<(&'a str, &'a T)>,
+}
+
+impl<'a, T> ByStream<'a, T> {
+    /// Group `records` by the scope `scope_of` reads from each record; a
+    /// record without one is left out.
+    pub(super) fn build(
+        ctx: &DecodeContext<'_>,
+        records: &'a [T],
+        scope_of: impl Fn(&'a T) -> Result<Option<&'a str>, CodecError>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let mut grouped = Vec::new();
+        for record in ctx.admit_iter(records, operation)? {
+            if let Some(scope) = scope_of(record)? {
+                ctx.push_vec(&mut grouped, (scope, record), operation)?;
+            }
+        }
+        // The stable sort keeps the records of each scope in input order.
+        ctx.stable_sort_by(&mut grouped[..], |(scope, _)| *scope, Ord::cmp, operation)?;
+        Ok(Self { records: grouped })
+    }
+
+    /// The records of `scope` with their scope, in input order. Two
+    /// bisections locate them.
+    pub(super) fn run(
+        &self,
+        ctx: &DecodeContext<'_>,
+        scope: &str,
+    ) -> Result<&[(&'a str, &'a T)], CodecError> {
+        let run = stream_range(ctx, &self.records, |(record_scope, _)| record_scope, scope)?;
+        Ok(self.records.get(run).unwrap_or(&[]))
+    }
+
+    /// The records of `scope`, in input order, each admitted as visited
+    /// work.
+    pub(super) fn of(
+        &self,
+        ctx: &DecodeContext<'_>,
+        scope: &str,
+        operation: &'static str,
+    ) -> Result<impl Iterator<Item = &'a T> + '_, CodecError> {
+        Ok(ctx
+            .admit_iter(self.run(ctx, scope)?, operation)?
+            .map(|(_, record)| *record))
+    }
+}
+
+/// The positions of the values of `values`, ascending by the scope that
+/// `stream_of` projects, whose scope is `stream`. Two bisections locate them.
+pub(super) fn stream_range<V>(
+    ctx: &DecodeContext<'_>,
+    values: &[V],
+    stream_of: impl Fn(&V) -> &str,
+    stream: &str,
+) -> Result<std::ops::Range<usize>, CodecError> {
+    let operation = "find F3D stream records";
+    let first = ctx.partition_point(
+        values,
+        |value| Ok(ctx.compare(stream_of(value), stream, operation)?.is_lt()),
+        operation,
+    )?;
+    let end = ctx.partition_point(
+        values,
+        |value| Ok(ctx.compare(stream_of(value), stream, operation)?.is_le()),
+        operation,
+    )?;
+    Ok(first..end)
 }
 
 /// Build the retained native stream key with the identity component's percent encoding.
@@ -2038,13 +2111,14 @@ fn decode_headers_for_indices_from_stream(
     Ok(())
 }
 
-/// A design `BulkStream` entry and the types its segment registers by class tag.
+/// A design `BulkStream` entry and the types its segment registers, in table
+/// order. A record's class tag is 256 plus the position of its type there.
 struct RelationStream<'scan, 'types, 'ctx> {
     name: &'scan str,
     bytes: &'scan [u8],
     scope: String,
     _scope_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-    types_by_class_tag: HashMap<u32, &'types crate::records::entity_header::SegmentType>,
+    segment_types: &'types [(&'types str, &'types SegmentType)],
 }
 
 /// Decode the sketch-relation body at each `records` entry's offset: the
@@ -2063,14 +2137,29 @@ pub(crate) fn decode_sketch_relations(
     // entry in its segment's own type table, and only that entry's GUID names
     // the class across segments.
     let mut storage = ctx.reserve_scoped(0, "f3d sketch relation streams")?;
+    // The types of each segment, keyed by the native scope of the segment's
+    // type-table stream without its file name.
+    let types_by_segment = storage.with_storage(|| {
+        ByStream::build(
+            ctx,
+            types,
+            |design_type| {
+                Ok(record_streams::record_stream(ctx, design_type.id())?
+                    .and_then(|scope| scope.strip_suffix(META_STREAM_FILE)))
+            },
+            "f3d sketch relation segment types",
+        )
+    })?;
     let mut streams = Vec::new();
     for entry in ctx
         .admit_iter(&scan.entries, "scan F3D sketch design entries")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let types_by_class_tag =
-            storage.with_storage(|| stream_types_by_class_tag(ctx, types, &entry.name))?;
         let (scope_storage, scope) = native_scope_scoped(ctx, &entry.name)?;
+        let segment_types = match scope.strip_suffix(BULK_STREAM_FILE) {
+            Some(prefix) => types_by_segment.run(ctx, prefix)?,
+            None => &[],
+        };
         ctx.push_scoped_vec(
             &mut storage,
             &mut streams,
@@ -2079,7 +2168,7 @@ pub(crate) fn decode_sketch_relations(
                 bytes: scan.entry_bytes(&entry.name)?,
                 scope,
                 _scope_storage: scope_storage,
-                types_by_class_tag,
+                segment_types,
             },
             "f3d sketch relation streams",
         )?;
@@ -2133,16 +2222,15 @@ pub(crate) fn decode_sketch_relations(
         let Some(payload) = bytes.get(at..record_end) else {
             continue;
         };
-        let class = match ctx.get_hash_map(
-            &stream.types_by_class_tag,
-            &record.class_tag.code(),
-            "find F3D sketch relation type",
-        )? {
-            Some(design_type) => {
-                SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version)
-            }
-            None => None,
-        };
+        let design_type = record
+            .class_tag
+            .code()
+            .checked_sub(256)
+            .and_then(|ordinal| usize::try_from(ordinal).ok())
+            .and_then(|ordinal| stream.segment_types.get(ordinal));
+        let class = design_type.and_then(|(_, design_type)| {
+            SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version)
+        });
         let Some(class) = class else {
             continue;
         };
