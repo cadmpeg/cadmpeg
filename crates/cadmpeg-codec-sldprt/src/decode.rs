@@ -742,6 +742,14 @@ fn append_design_losses_with(
                 "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
             )))?;
     }
+    // Filled in reverse so the first feature with an identity answers.
+    let (first_feature_by_id, _first_feature_by_id_storage) = ctx.collect_scoped_string_map(
+        ir.model.features.len(),
+        ctx.admit_iter(&ir.model.features, "index SLDPRT features by ID")?
+            .rev()
+            .map(|feature| (feature.id.as_str(), feature)),
+        "index SLDPRT features by ID",
+    )?;
     let mut incoherent_configuration_suppression = 0;
     for configuration in ctx.admit_iter(
         &ir.model.configurations,
@@ -755,11 +763,11 @@ fn append_design_losses_with(
             if !ctx.contains_hash_set(&(feature_ids), id, "test SLDPRT hashed identity")?
                 || (configuration.active
                     && ctx
-                        .admit_iter(
-                            &ir.model.features,
+                        .get_hash_map(
+                            &first_feature_by_id,
+                            id.as_str(),
                             "find SLDPRT configuration suppression feature",
                         )?
-                        .find(|feature| feature.id == *id)
                         .is_some_and(|feature| {
                             feature.suppressed.is_some_and(|suppressed| {
                                 suppressed != state.evaluation.is_suppressed()
@@ -811,18 +819,10 @@ fn append_design_losses_with(
         let Some(name) = &feature.name else {
             continue;
         };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
-            OPERATION,
-        )?;
         lookup_storage.with_storage(|| {
             ctx.admit_hash_map_entry(&mut feature_names, &feature.id, OPERATION)
         })?;
-        let id = cadmpeg_ir::features::FeatureId::mint(
-            lookup_storage
-                .with_storage(|| copy_retained_string(ctx, feature.id.as_str(), OPERATION))?,
-        )
-        .map_err(CodecError::malformed)?;
+        let id = lookup_storage.with_storage(|| feature.id.try_clone_for_decode(ctx, OPERATION))?;
         let name = lookup_storage.with_storage(|| copy_retained_string(ctx, name, OPERATION))?;
         feature_names.insert(id, name);
     }
@@ -832,10 +832,6 @@ fn append_design_losses_with(
         "scan SLDPRT append_design_losses values",
     )? {
         const OPERATION: &str = "index SLDPRT global parameter owners";
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
-            OPERATION,
-        )?;
         if !crate::history::parameters::is_global_parameter_owner(feature)
             || ctx.contains_hash_set(
                 &(global_parameter_owners),
@@ -845,11 +841,7 @@ fn append_design_losses_with(
         {
             continue;
         }
-        let id = cadmpeg_ir::features::FeatureId::mint(
-            lookup_storage
-                .with_storage(|| copy_retained_string(ctx, feature.id.as_str(), OPERATION))?,
-        )
-        .map_err(CodecError::malformed)?;
+        let id = lookup_storage.with_storage(|| feature.id.try_clone_for_decode(ctx, OPERATION))?;
         lookup_storage
             .with_storage(|| ctx.insert_hash_set(&mut global_parameter_owners, id, OPERATION))?;
     }
