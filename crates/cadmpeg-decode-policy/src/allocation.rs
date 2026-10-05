@@ -1,11 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::{external, types, Analysis};
 use rustc_hir::intravisit::{walk_expr, Visitor};
-use rustc_hir::{Expr, ExprKind};
+use rustc_hir::{Expr, ExprKind, MatchSource, Node};
 use rustc_middle::ty;
 use types::Shape;
 
 impl<'tcx> Analysis<'_, 'tcx> {
+    fn input_sized_growth_loop(
+        &self,
+        expression: &'tcx Expr<'tcx>,
+        receiver: &'tcx Expr<'tcx>,
+    ) -> bool {
+        let Some(initializer) = self.initializer(receiver) else {
+            return false;
+        };
+        for (_, node) in self.tcx.hir_parent_iter(expression.hir_id) {
+            let Node::Expr(parent) = node else {
+                continue;
+            };
+            if matches!(parent.kind, ExprKind::Closure(_)) {
+                return false;
+            }
+            if let ExprKind::Match(source, _, MatchSource::ForLoopDesugar) = parent.kind {
+                if !parent.span.contains(initializer.span)
+                    && self
+                        .call(source)
+                        .and_then(|(_, arguments)| arguments.first().copied())
+                        .is_some_and(|input| {
+                            self.iteration(input, &mut Vec::new()) == Shape::Dynamic
+                        })
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     pub(crate) fn zero_extent(&self, expression: &Expr<'tcx>) -> bool {
         matches!(expression.kind, ExprKind::Lit(literal) if matches!(literal.node, rustc_ast::LitKind::Int(value, _) if value.get() == 0))
     }
@@ -137,6 +168,22 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 } else {
                     types::heap(self.tcx, receiver_type, &mut Vec::new())
                 };
+                let repeated_vector_growth = shape == Shape::Dynamic
+                    && !self.flow.storage
+                    && name == "push"
+                    && matches!(receiver_type.kind(), ty::Adt(owner, _) if
+                        types::physical_item_path(self.tcx, owner.did(), "alloc", &["vec", "Vec"]))
+                    && self.input_sized_growth_loop(expression, receiver);
+                if repeated_vector_growth {
+                    self.shape_report(
+                        expression,
+                        Shape::Dynamic,
+                        "collection growth outside core operation",
+                    );
+                    self.report(expression.span, "uncharged_decode_work",
+                        "input-sized vector growth may relocate stored slots; replacement: DecodeContext::push_vec");
+                    return;
+                }
                 self.shape_report(
                     expression,
                     if shape == Shape::Dynamic

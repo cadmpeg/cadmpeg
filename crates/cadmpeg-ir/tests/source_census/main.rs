@@ -45,6 +45,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "DialectLayers",
         "wire",
     ),
+    (
+        "crates/cadmpeg-core/src/decode/tree.rs",
+        "PlainJson",
+        "free-form",
+    ),
     ("crates/cadmpeg-ir/src/assets.rs", "AssetData", "keyless"),
     (
         "crates/cadmpeg-ir/src/annotations.rs",
