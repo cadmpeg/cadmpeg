@@ -474,9 +474,13 @@ that `capacity()` no longer counts, so a table can hold more buckets than
 `capacity()` implies. Hashbrown reallocates only when the new length exceeds
 half the real capacity, to at most twice the new length, so hash growth
 charges the storage for twice the new length as work, which bounds the old
-table it walks, and its excess over the storage of `capacity()` as retained
-bytes, which bounds the new table. An in-place rehash allocates nothing and
-its walk is paid by the insertions that filled the deleted slots. Growth then
+table it walks, and holds it as a scoped reservation while the table grows,
+which bounds the new table before it is allocated. Right after growing, the
+table has no deleted slots, so growth then charges the storage of its new
+`capacity()` less that of the old one as retained bytes. An in-place rehash
+allocates nothing; the charged removals and insertions since the last rehash
+pay for its walk, so a raw removal is reported with `remove_hash_map`,
+`remove_entry_hash_map` or `remove_hash_set`. Growth then
 charges the rehash of every stored key: length times a fixed key cost, or one visit
 per key plus the sum of each variable key's `DecodeCost`, charged as one
 amount so that the visit order cannot move a refusal. `unique_index` maps a
@@ -820,8 +824,9 @@ Heap sifts charge the maximum `DecodeCost` of all stored operands and the incomi
 value. With `n` operands, the work bound is `n` measuring visits plus
 `(bit_length(n) + 1) * 4 * (maximum_operand_bytes + size_of::<T>())`.
 Heap capacity growth has its own retained, scoped and movement charges.
-Hash growth charges the storage for twice the new length as movement work,
-in addition to the rehash of stored keys. A B-tree of h levels holds at least 2 * 6^(h-1) - 1
+Hash growth charges the storage for twice the new length as movement work and
+holds it as a transient scoped bound, in addition to the rehash of stored keys,
+and charges retained storage from the table's real capacity once it has grown. A B-tree of h levels holds at least 2 * 6^(h-1) - 1
 entries. A tree lookup charges the key's cost for at most eleven comparisons
 per level, and never more comparisons than stored keys. Tree insertion and
 removal charge four passes over the nodes of the search path plus a new root
