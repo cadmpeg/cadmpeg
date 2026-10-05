@@ -1,13 +1,51 @@
 use super::super::{
-    classed_offset_plane_sources, legacy_offset_plane_face_alias, offset_plane_reference_source,
-    select_reference_plane_frame_source, structured_offset_plane_sources,
+    for_each_classed_offset_plane_source, for_each_structured_offset_plane_source,
+    legacy_offset_plane_face_alias, offset_plane_reference_source,
+    select_reference_plane_frame_source, ReferencePlaneFrameCandidate,
 };
 use crate::records::{Feature, FeatureSource};
 use crate::resolved_features::curves::{sketch_plane_frames, SketchPlaneUAxisSource};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane};
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use std::collections::{BTreeMap, HashSet};
+
+fn structured_offset_plane_sources(ctx: &DecodeContext<'_>, payload: &[u8]) -> Vec<u32> {
+    let mut sources = Vec::new();
+    for_each_structured_offset_plane_source(ctx, payload, |source| {
+        ctx.push_vec(&mut sources, source, "collect test plane sources")?;
+        Ok(true)
+    })
+    .expect("structured plane source scan fits service policy");
+    sources
+}
+
+fn classed_offset_plane_sources(ctx: &DecodeContext<'_>, payload: &[u8]) -> Vec<u32> {
+    let mut sources = Vec::new();
+    for_each_classed_offset_plane_source(ctx, payload, |source| {
+        ctx.push_vec(&mut sources, source, "collect test plane sources")?;
+        Ok(true)
+    })
+    .expect("classed plane source scan fits service policy");
+    sources
+}
+
+fn frame_source_candidates(sources: &[&str]) -> Vec<ReferencePlaneFrameCandidate> {
+    sources
+        .iter()
+        .map(|source| ReferencePlaneFrameCandidate {
+            source: (*source).into(),
+            history_index: 0,
+            feature_index: 0,
+            frame: (
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ),
+        })
+        .collect()
+}
 
 #[test]
 fn legacy_offset_plane_face_alias_requires_the_complete_nested_record() {
@@ -23,16 +61,29 @@ fn legacy_offset_plane_face_alias_requires_the_complete_nested_record() {
     body[99..103].copy_from_slice(&3u32.to_le_bytes());
     body[107..115].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
 
-    assert_eq!(legacy_offset_plane_face_alias(&body), Some((0, 175)));
+    assert_eq!(
+        legacy_offset_plane_face_alias(&cadmpeg_test_support::service_decode_context(), &body,)
+            .expect("legacy face alias scan fits service policy"),
+        Some((0, 175))
+    );
     body[91..95].fill(0);
-    assert_eq!(legacy_offset_plane_face_alias(&body), None);
+    assert_eq!(
+        legacy_offset_plane_face_alias(&cadmpeg_test_support::service_decode_context(), &body,)
+            .expect("legacy face alias scan fits service policy"),
+        None
+    );
     body[91..95].copy_from_slice(&175u32.to_le_bytes());
     body[83] = 2;
-    assert_eq!(legacy_offset_plane_face_alias(&body), None);
+    assert_eq!(
+        legacy_offset_plane_face_alias(&cadmpeg_test_support::service_decode_context(), &body,)
+            .expect("legacy face alias scan fits service policy"),
+        None
+    );
 }
 
 #[test]
 fn structured_offset_plane_source_requires_repeated_identities_and_terminator() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut payload = vec![0; 140];
     let header = 0x8323u32.to_le_bytes();
     let identity = [
@@ -54,25 +105,20 @@ fn structured_offset_plane_source_requires_repeated_identities_and_terminator() 
     payload[116..120].copy_from_slice(&2600u32.to_le_bytes());
     payload[132..140].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
 
-    assert_eq!(
-        structured_offset_plane_sources(&payload).collect::<Vec<_>>(),
-        [3]
-    );
+    assert_eq!(structured_offset_plane_sources(&ctx, &payload), vec![3]);
     payload[80] ^= 1;
-    assert!(structured_offset_plane_sources(&payload).next().is_none());
+    assert!(structured_offset_plane_sources(&ctx, &payload).is_empty());
 }
 
 #[test]
 fn classed_offset_plane_source_requires_exact_length_delimited_type() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut payload = 4u32.to_le_bytes().to_vec();
     payload.extend(b"\xff\xff\x01\x00\x1b\x00moFromSktEnt3IntSurfIdRep_c\x00\x00");
 
-    assert_eq!(
-        classed_offset_plane_sources(&payload).collect::<Vec<_>>(),
-        [4]
-    );
+    assert_eq!(classed_offset_plane_sources(&ctx, &payload), vec![4]);
     payload[8] = 0;
-    assert!(classed_offset_plane_sources(&payload).next().is_none());
+    assert!(classed_offset_plane_sources(&ctx, &payload).is_empty());
 }
 
 #[test]
@@ -91,84 +137,132 @@ fn typed_offset_plane_reference_requires_one_known_plane_target() {
         bytes
     };
     let known = HashSet::from([3, 225]);
+    let ctx = cadmpeg_test_support::service_decode_context();
     let principal = record(3, [0x43, 0xf6, 0x8a, 0x4d], 3);
     assert_eq!(
-        offset_plane_reference_source(&principal, &known, &known, None),
+        offset_plane_reference_source(&ctx, &principal, &known, &known, None)
+            .expect("offset plane source scan fits service policy"),
         Some(3)
     );
     let feature = record(225, [0x30, 0x92, 0xab, 0x53], 0);
     assert_eq!(
-        offset_plane_reference_source(&feature, &known, &known, None),
+        offset_plane_reference_source(&ctx, &feature, &known, &known, None)
+            .expect("offset plane source scan fits service policy"),
         Some(225)
     );
     assert_eq!(
-        offset_plane_reference_source(&feature, &known, &known, Some(225)),
+        offset_plane_reference_source(&ctx, &feature, &known, &known, Some(225))
+            .expect("offset plane source scan fits service policy"),
         None
     );
 
     let mut ambiguous = principal.clone();
     ambiguous.extend_from_slice(&feature);
     assert_eq!(
-        offset_plane_reference_source(&ambiguous, &known, &known, None),
+        offset_plane_reference_source(&ctx, &ambiguous, &known, &known, None)
+            .expect("offset plane source scan fits service policy"),
         None
     );
     let mut repeated = principal.clone();
     repeated.extend_from_slice(&principal);
     assert_eq!(
-        offset_plane_reference_source(&repeated, &known, &known, None),
+        offset_plane_reference_source(&ctx, &repeated, &known, &known, None)
+            .expect("offset plane source scan fits service policy"),
         Some(3)
     );
     ambiguous[38] ^= 1;
     assert_eq!(
-        offset_plane_reference_source(&ambiguous, &known, &known, None),
+        offset_plane_reference_source(&ctx, &ambiguous, &known, &known, None)
+            .expect("offset plane source scan fits service policy"),
         Some(225)
     );
     let mut malformed = record(3, [0; 4], 2);
     assert_eq!(
-        offset_plane_reference_source(&malformed, &known, &known, None),
+        offset_plane_reference_source(&ctx, &malformed, &known, &known, None)
+            .expect("offset plane source scan fits service policy"),
         None
     );
     malformed[4..8].copy_from_slice(&[1, 2, 3, 4]);
     malformed[10..14].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
-        offset_plane_reference_source(&malformed, &known, &known, None),
+        offset_plane_reference_source(&ctx, &malformed, &known, &known, None)
+            .expect("offset plane source scan fits service policy"),
         Some(3)
     );
     let principal_only = HashSet::from([3]);
     assert_eq!(
-        offset_plane_reference_source(&feature, &known, &principal_only, None),
+        offset_plane_reference_source(&ctx, &feature, &known, &principal_only, None)
+            .expect("offset plane source scan fits service policy"),
         None
     );
 }
 
 #[test]
 fn frame_only_offset_plane_reference_requires_one_unique_source() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        select_reference_plane_frame_source(["derived", "principal", "older"].into_iter().map(Ok),).unwrap(),
+        select_reference_plane_frame_source(
+            &ctx,
+            &frame_source_candidates(&["derived", "principal", "older"]),
+            |_| true,
+            "select test plane source",
+        )
+        .expect("plane source selection fits service policy"),
         None
     );
     assert_eq!(
-        select_reference_plane_frame_source(["same", "same"].into_iter().map(Ok)).unwrap(),
+        select_reference_plane_frame_source(
+            &ctx,
+            &frame_source_candidates(&["same", "same"]),
+            |_| true,
+            "select test plane source",
+        )
+        .expect("plane source selection fits service policy"),
         Some("same")
     );
     assert_eq!(
-        select_reference_plane_frame_source(["first", "second"].into_iter().map(Ok)).unwrap(),
+        select_reference_plane_frame_source(
+            &ctx,
+            &frame_source_candidates(&["first", "second"]),
+            |_| true,
+            "select test plane source",
+        )
+        .expect("plane source selection fits service policy"),
         None
     );
 }
 
 #[test]
 fn frame_only_offset_plane_reference_does_not_use_feature_order() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        select_reference_plane_frame_source(["older", "latest", "latest"].into_iter().map(Ok),).unwrap(),
+        select_reference_plane_frame_source(
+            &ctx,
+            &frame_source_candidates(&["older", "latest", "latest"]),
+            |_| true,
+            "select test plane source",
+        )
+        .expect("plane source selection fits service policy"),
         None
     );
     assert_eq!(
-        select_reference_plane_frame_source(["source", "source"].into_iter().map(Ok)).unwrap(),
+        select_reference_plane_frame_source(
+            &ctx,
+            &frame_source_candidates(&["source", "source"]),
+            |_| true,
+            "select test plane source",
+        )
+        .expect("plane source selection fits service policy"),
         Some("source")
     );
     assert_eq!(
-        select_reference_plane_frame_source(["first", "second"].into_iter().map(Ok)).unwrap(),
+        select_reference_plane_frame_source(
+            &ctx,
+            &frame_source_candidates(&["first", "second"]),
+            |_| true,
+            "select test plane source",
+        )
+        .expect("plane source selection fits service policy"),
         None
     );
 }

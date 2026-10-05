@@ -1,6 +1,7 @@
 //! Construction-line and marker-84/104 profile-line tests.
 
-use super::super::super::markers::{marker_local_id, sketch_input_entities};
+use super::marker_local_id;
+use super::super::super::markers::sketch_input_entities;
 use super::super::super::selections::marker_local_links;
 use super::super::super::typed_relations::marker_curve_endpoint_markers;
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER};

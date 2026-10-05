@@ -26,6 +26,8 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
+use cadmpeg_core::decode::iter_source::IterSource;
+use cadmpeg_core::decode::scan::AdmittedIter;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
@@ -49,6 +51,128 @@ use crate::layout::legacy_140_single_incidence_profile_point as pt_140;
 use crate::layout::legacy_144_single_incidence_profile_point as pt_144;
 use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
 
+/// Admission policy for the shared marker parser used by decode and standard callers.
+pub(crate) trait MarkerAdmission {
+    type Error;
+    type Iter<'values, S>: Iterator<
+        Item = <<S as IterSource>::Iter<'values> as Iterator>::Item,
+    >
+    where
+        Self: 'values,
+        S: IterSource + ?Sized + 'values;
+    type WordChunks<'bytes>: Iterator<Item = &'bytes [u8]>
+    where
+        Self: 'bytes;
+
+    fn admit_iter<'values, S: IterSource + ?Sized>(
+        &'values self,
+        values: &'values S,
+        operation: &'static str,
+    ) -> Result<Self::Iter<'values, S>, Self::Error>;
+
+    fn word_chunks<'bytes>(
+        &'bytes self,
+        bytes: &'bytes [u8],
+        operation: &'static str,
+    ) -> Result<Self::WordChunks<'bytes>, Self::Error>;
+
+    fn equal_bytes(
+        &self,
+        left: &[u8],
+        right: &[u8],
+        operation: &'static str,
+    ) -> Result<bool, Self::Error>;
+}
+
+impl MarkerAdmission for DecodeContext<'_> {
+    type Error = CodecError;
+    type Iter<'values, S>
+        = AdmittedIter<S::Iter<'values>>
+    where
+        Self: 'values,
+        S: IterSource + ?Sized + 'values;
+    type WordChunks<'bytes>
+        = AdmittedIter<std::slice::Chunks<'bytes, u8>>
+    where
+        Self: 'bytes;
+
+    fn admit_iter<'values, S: IterSource + ?Sized>(
+        &'values self,
+        values: &'values S,
+        operation: &'static str,
+    ) -> Result<Self::Iter<'values, S>, Self::Error> {
+        Ok(DecodeContext::admit_iter(self, values, operation)?)
+    }
+
+    fn word_chunks<'bytes>(
+        &'bytes self,
+        bytes: &'bytes [u8],
+        operation: &'static str,
+    ) -> Result<Self::WordChunks<'bytes>, Self::Error> {
+        let width = std::num::NonZeroUsize::new(4)
+            .ok_or_else(|| self.refuse_codec_limit(operation, 1, 0))?;
+        Ok(DecodeContext::admit_iter(self, bytes, operation)?.chunks(width))
+    }
+
+    fn equal_bytes(
+        &self,
+        left: &[u8],
+        right: &[u8],
+        operation: &'static str,
+    ) -> Result<bool, Self::Error> {
+        DecodeContext::equal_bytes(self, left, right, operation)
+    }
+}
+
+pub(crate) struct StandardMarkerAdmission;
+
+impl MarkerAdmission for StandardMarkerAdmission {
+    type Error = std::convert::Infallible;
+    type Iter<'values, S>
+        = S::Iter<'values>
+    where
+        Self: 'values,
+        S: IterSource + ?Sized + 'values;
+    type WordChunks<'bytes>
+        = std::slice::Chunks<'bytes, u8>
+    where
+        Self: 'bytes;
+
+    fn admit_iter<'values, S: IterSource + ?Sized>(
+        &'values self,
+        values: &'values S,
+        _operation: &'static str,
+    ) -> Result<Self::Iter<'values, S>, Self::Error> {
+        Ok(values.source_iter())
+    }
+
+    fn word_chunks<'bytes>(
+        &'bytes self,
+        bytes: &'bytes [u8],
+        _operation: &'static str,
+    ) -> Result<Self::WordChunks<'bytes>, Self::Error> {
+        Ok(bytes.chunks(4))
+    }
+
+    fn equal_bytes(
+        &self,
+        left: &[u8],
+        right: &[u8],
+        _operation: &'static str,
+    ) -> Result<bool, Self::Error> {
+        Ok(left == right)
+    }
+}
+
+pub(crate) fn standard_marker_result<T>(
+    result: Result<T, std::convert::Infallible>,
+) -> T {
+    match result {
+        Ok(value) => value,
+        Err(never) => match never {},
+    }
+}
+
 /// Project spatial sketches from their model-space marker coordinates or bounded lines.
 /// Relation-owned indexed point markers use the relation-tail decoder below;
 /// their native relation kind must remain intact for downstream binding.
@@ -58,29 +182,26 @@ pub(crate) fn spatial_sketches(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(Vec<SpatialSketch>, Vec<SpatialSketchEntity>), CodecError> {
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT markers temporary storage")?;
+
     ctx.charge_work(
         u64::try_from(model_features.len()).map_err(|_| {
             ctx.refuse_codec_limit("scan SLDPRT spatial features", u64::MAX - 1, u64::MAX)
         })?,
         "scan SLDPRT spatial features",
     )?;
-    let record_count = histories.iter().try_fold(0usize, |count, history| {
-        count.checked_add(history.features.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "index SLDPRT spatial feature records",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })
-    })?;
     let mut records = HashMap::new();
-    ctx.reserve_map(
-        &mut records,
-        record_count,
-        "index SLDPRT spatial feature records",
-    )?;
-    for record in histories.iter().flat_map(|history| &history.features) {
-        records.insert(record.id.as_str(), record);
+    for history in ctx.admit_iter(histories, "index SLDPRT spatial feature records")? {
+        for record in ctx.admit_iter(&history.features, "index SLDPRT spatial feature records")? {
+            temporary_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut records,
+                    record.id.as_str(),
+                    record,
+                    "index SLDPRT spatial feature records",
+                )
+            })?;
+        }
     }
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
@@ -100,18 +221,35 @@ pub(crate) fn spatial_sketches(
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some(record) = records.get(native_ref).copied() else {
+        let Some(record) = ctx
+            .get_hash_map(&records, native_ref, "lookup SLDPRT spatial feature record")?
+            .copied()
+        else {
             continue;
         };
         let mut point_candidates = Vec::new();
-        for lane in lanes {
+        for lane in ctx.admit_iter(lanes, "scan SLDPRT spatial feature lanes")? {
             let mut relation_ranges = Vec::new();
-            for (start, end) in spatial_relation_manager_ranges_charged(ctx, lane)? {
-                if lane.scalars.iter().any(|scalar| {
-                    scalar.feature_ref.as_deref() == Some(native_ref)
-                        && scalar.offset > start
-                        && scalar.offset < end
-                }) {
+            let candidate_ranges = spatial_relation_manager_ranges_charged(ctx, lane)?;
+            for (start, end) in
+                ctx.admit_iter(&candidate_ranges, "scan SLDPRT spatial relation ranges")?
+            {
+                let mut active = false;
+                for scalar in ctx.admit_iter(&lane.scalars, "scan SLDPRT spatial scalars")? {
+                    if let Some(feature_ref) = scalar.feature_ref.as_deref() {
+                        if ctx.equal(
+                            feature_ref,
+                            native_ref,
+                            "compare SLDPRT spatial feature references",
+                        )? && scalar.offset > *start
+                            && scalar.offset < *end
+                        {
+                            active = true;
+                            break;
+                        }
+                    }
+                }
+                if active {
                     ctx.reserve_vec(
                         &mut relation_ranges,
                         1,
@@ -121,9 +259,17 @@ pub(crate) fn spatial_sketches(
                 }
             }
             let mut points = Vec::new();
-            for marker in &lane.sketch_entities {
-                if marker.feature_ref.as_deref() != Some(native_ref)
-                    || marker.object_index().is_none()
+            for marker in
+                ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT spatial sketch markers")?
+            {
+                let Some(feature_ref) = marker.feature_ref.as_deref() else {
+                    continue;
+                };
+                if !ctx.equal(
+                    feature_ref,
+                    native_ref,
+                    "compare SLDPRT spatial marker feature references",
+                )? || marker.object_index().is_none()
                 {
                     continue;
                 }
@@ -131,9 +277,12 @@ pub(crate) fn spatial_sketches(
                     continue;
                 };
                 if !relation_ranges.is_empty()
-                    && (!relation_ranges
-                        .iter()
-                        .any(|(start, end)| marker.offset() > *start && marker.offset() < *end)
+                    && (!ctx
+                        .admit_iter(
+                            &relation_ranges,
+                            "scan SLDPRT active spatial relation ranges",
+                        )?
+                        .any(|(start, end)| marker.offset() > **start && marker.offset() < **end)
                         || !matches!(
                             marker_native_code(&lane.native_payload, offset),
                             Some(1..=85)
@@ -141,17 +290,17 @@ pub(crate) fn spatial_sketches(
                 {
                     continue;
                 }
-                let point =
-                    marker_spatial_coordinates(&lane.native_payload, offset).or_else(|| {
-                        declared_spatial
-                            .then(|| {
-                                current_indexed_spatial_relation_coordinates(
-                                    &lane.native_payload,
-                                    offset,
-                                )
-                            })
-                            .flatten()
-                    });
+                let point = marker_spatial_coordinates(ctx, &lane.native_payload, offset)?;
+                let point = point.or_else(|| {
+                    declared_spatial
+                        .then(|| {
+                            current_indexed_spatial_relation_coordinates(
+                                &lane.native_payload,
+                                offset,
+                            )
+                        })
+                        .flatten()
+                });
                 if let Some(point) = point {
                     ctx.reserve_vec(&mut points, 1, "collect SLDPRT spatial points")?;
                     points.push((marker.id(), point, offset));
@@ -179,10 +328,12 @@ pub(crate) fn spatial_sketches(
             };
             let mut projected = Vec::new();
             let mut valid_points = true;
-            for (native_ref, point, offset) in points {
+            for &(native_ref, point, offset) in
+                ctx.admit_iter(points, "project SLDPRT spatial points")?
+            {
                 let Ok(geometry) =
                     SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
-                        position: *point,
+                        position: point,
                     })
                 else {
                     valid_points = false;
@@ -190,7 +341,7 @@ pub(crate) fn spatial_sketches(
                 };
                 let native_ref = copy_spatial_text(ctx, native_ref)?;
                 ctx.reserve_vec(&mut projected, 1, "project SLDPRT spatial points")?;
-                projected.push((*offset, Some(native_ref), geometry));
+                projected.push((offset, Some(native_ref), geometry));
             }
             if !valid_points {
                 continue;
@@ -199,7 +350,17 @@ pub(crate) fn spatial_sketches(
                 spatial_line_vertices_charged(ctx, histories, record, lane)?.unwrap_or_default();
             let mut projected_lines = Vec::new();
             let mut valid_lines = true;
-            for (offsets, vertices) in lines.1.chunks_exact(2).zip(lines.2.chunks_exact(2)) {
+            let pair_width = std::num::NonZeroUsize::new(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("admit SLDPRT spatial line pairs", 1, 0))?;
+            for (offsets, vertices) in ctx
+                .admit_iter(&lines.1, "project SLDPRT spatial line offsets")?
+                .chunks(pair_width)
+                .zip(
+                    ctx.admit_iter(&lines.2, "project SLDPRT spatial line vertices")?
+                        .chunks(pair_width),
+                )
+                .filter(|(offsets, vertices)| offsets.len() == 2 && vertices.len() == 2)
+            {
                 let Ok(geometry) =
                     SpatialSketchGeometry::try_line_from_parts(vertices[0], vertices[1])
                 else {
@@ -212,12 +373,11 @@ pub(crate) fn spatial_sketches(
             if !valid_lines {
                 continue;
             }
-            ctx.reserve_capacity(
+            ctx.extend_vec(
                 &mut projected,
-                projected_lines.len(),
+                projected_lines,
                 "merge SLDPRT spatial lines",
             )?;
-            projected.extend(projected_lines);
             ctx.sort_unstable_by(
                 &mut projected,
                 |value| &value.0,
@@ -253,6 +413,10 @@ pub(crate) fn spatial_sketches(
                     format_args!("{}:entity:{index}", sketch_id.as_str()),
                     "retain SLDPRT spatial entity identity",
                 )?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(entity_id.len()),
+                    "validate SLDPRT spatial entity identity",
+                )?;
                 let Ok(entity_id) = SpatialSketchEntityId::mint(entity_id) else {
                     continue;
                 };
@@ -276,20 +440,14 @@ pub(crate) fn spatial_sketches(
             continue;
         }
         let mut candidates = Vec::new();
-        for lane in lanes {
+        for lane in ctx.admit_iter(lanes, "scan SLDPRT spatial feature lanes")? {
             let Some(name) = feature_object_name(record, lane) else {
                 continue;
             };
             let Some(start) = usize::try_from(name.offset).ok() else {
                 continue;
             };
-            let end = histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .filter_map(|candidate| feature_object_name(candidate, lane))
-                .filter(|candidate| candidate.offset > name.offset)
-                .map(|candidate| candidate.offset)
-                .min()
+            let end = next_spatial_feature_offset(ctx, histories, lane, name.offset)?
                 .and_then(|offset| usize::try_from(offset).ok())
                 .unwrap_or(lane.native_payload.len());
             let Some(object) = lane.native_payload.get(start..end) else {
@@ -304,8 +462,12 @@ pub(crate) fn spatial_sketches(
         let [(lane, vertices)] = candidates.as_slice() else {
             continue;
         };
-        if vertices
-            .chunks_exact(2)
+        let pair_width = std::num::NonZeroUsize::new(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("admit SLDPRT spatial line pairs", 1, 0))?;
+        if ctx
+            .admit_iter(vertices, "validate SLDPRT spatial line vertices")?
+            .chunks(pair_width)
+            .filter(|vertices| vertices.len() == 2)
             .any(|vertices| vertices[0] == vertices[1])
         {
             continue;
@@ -315,10 +477,19 @@ pub(crate) fn spatial_sketches(
         };
         let mut projected = Vec::new();
         let mut valid_lines = true;
-        for (index, vertices) in vertices.chunks_exact(2).enumerate() {
+        for (index, vertices) in ctx
+            .admit_iter(vertices, "project SLDPRT spatial line vertices")?
+            .chunks(pair_width)
+            .filter(|vertices| vertices.len() == 2)
+            .enumerate()
+        {
             let entity_id = ctx.format_retained(
                 format_args!("{}:entity:{index}", sketch_id.as_str()),
                 "retain SLDPRT spatial entity identity",
+            )?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entity_id.len()),
+                "validate SLDPRT spatial entity identity",
             )?;
             let (Ok(entity_id), Ok(geometry)) = (
                 SpatialSketchEntityId::mint(entity_id),
@@ -356,12 +527,11 @@ pub(crate) fn spatial_sketches(
             profiles: Vec::new(),
             native_ref: Some(native_lane_ref),
         });
-        ctx.reserve_capacity(
+        ctx.extend_vec(
             &mut entities,
-            projected.len(),
+            projected,
             "merge SLDPRT spatial line entities",
         )?;
-        entities.extend(projected);
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
@@ -371,6 +541,29 @@ pub(crate) fn spatial_sketches(
             ));
     }
     Ok((sketches, entities))
+}
+
+fn next_spatial_feature_offset(
+    ctx: &DecodeContext<'_>,
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+    after_offset: u64,
+) -> Result<Option<u64>, CodecError> {
+    let mut next_offset = None;
+    for history in ctx.admit_iter(histories, "find next SLDPRT spatial feature object")? {
+        for candidate in
+            ctx.admit_iter(&history.features, "find next SLDPRT spatial feature object")?
+        {
+            if let Some(candidate) = feature_object_name(candidate, lane) {
+                if candidate.offset > after_offset {
+                    next_offset = Some(next_offset.map_or(candidate.offset, |current: u64| {
+                        current.min(candidate.offset)
+                    }));
+                }
+            }
+        }
+    }
+    Ok(next_offset)
 }
 
 fn copy_spatial_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
@@ -392,7 +585,11 @@ fn spatial_sketch_id_charged(
 ) -> Result<Option<SpatialSketchId>, CodecError> {
     const FEATURE_PREFIX: &str = ":model:feature#";
     const SKETCH_PREFIX: &str = ":model:spatial-sketch#";
-    let value = if let Some(index) = feature_id.find(FEATURE_PREFIX) {
+    let value = if let Some(index) = ctx.find_text(
+        feature_id,
+        FEATURE_PREFIX,
+        "find SLDPRT spatial feature identity prefix",
+    )? {
         let (head, tail) = feature_id.split_at(index);
         let suffix = &tail[FEATURE_PREFIX.len()..];
         ctx.format_retained(
@@ -402,6 +599,10 @@ fn spatial_sketch_id_charged(
     } else {
         copy_spatial_text(ctx, feature_id)?
     };
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(value.len()),
+        "validate SLDPRT spatial sketch identity",
+    )?;
     Ok(SpatialSketchId::mint(value).ok())
 }
 
@@ -409,7 +610,12 @@ fn clone_spatial_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &SpatialSketchId,
 ) -> Result<SpatialSketchId, CodecError> {
-    SpatialSketchId::mint(copy_spatial_text(ctx, id.as_str())?)
+    let copy = copy_spatial_text(ctx, id.as_str())?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(copy.len()),
+        "validate SLDPRT spatial sketch identity",
+    )?;
+    SpatialSketchId::mint(copy)
         .map_err(|_| CodecError::malformed("cannot copy SLDPRT spatial sketch identity"))
 }
 
@@ -428,13 +634,7 @@ fn spatial_line_vertices_charged(
     let Ok(start) = usize::try_from(name.offset) else {
         return Ok(None);
     };
-    let end = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|candidate| feature_object_name(candidate, lane))
-        .filter(|candidate| candidate.offset > name.offset)
-        .map(|candidate| candidate.offset)
-        .min()
+    let end = next_spatial_feature_offset(ctx, histories, lane, name.offset)?
         .and_then(|offset| usize::try_from(offset).ok())
         .unwrap_or(lane.native_payload.len());
     let Some(object) = lane.native_payload.get(start..end) else {
@@ -442,18 +642,27 @@ fn spatial_line_vertices_charged(
     };
     let offsets = spatial_vertex_offsets_charged(ctx, object)?;
     let vertices = spatial_vertex_coordinates_charged(ctx, object)?;
+    let pair_width = std::num::NonZeroUsize::new(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("admit SLDPRT spatial line pairs", 1, 0))?;
     Ok((offsets.len().is_multiple_of(2)
         && offsets.len() == vertices.len()
-        && vertices
-            .chunks_exact(2)
+        && ctx
+            .admit_iter(&vertices, "validate SLDPRT spatial line vertices")?
+            .chunks(pair_width)
+            .filter(|vertices| vertices.len() == 2)
             .all(|vertices| vertices[0] != vertices[1]))
     .then_some(SpatialLineVertices(start, offsets, vertices)))
 }
 
-pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) -> Option<usize> {
-    if current_indexed_spatial_xyz_point(payload, offset) {
-        return offset.checked_add(spatial_xyz::COORDINATES);
+pub(super) fn marker_spatial_coordinate_offset<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<Option<usize>, A::Error> {
+    if current_indexed_spatial_xyz_point(admission, payload, offset)? {
+        return Ok(offset.checked_add(spatial_xyz::COORDINATES));
     }
+    let parsed = (|| {
     if packed_legacy_marker_body(payload, offset)
         && marker_profile_curve_role(payload, offset) == Some(1)
         && payload.get(offset + 48..offset + 50) == Some(&[0x0e, 0x00])
@@ -608,9 +817,15 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
         };
     (!requires_profile_role || marker_profile_curve_role(payload, offset) == Some(1))
         .then_some(coordinate_offset)
+    })();
+    Ok(parsed)
 }
 
-fn current_indexed_spatial_xyz_point(payload: &[u8], offset: usize) -> bool {
+fn current_indexed_spatial_xyz_point<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, A::Error> {
     const NEXT_MARKER_OFFSETS: [usize; 2] = [158, 162];
 
     let continuation_tail = View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(8)
@@ -623,19 +838,26 @@ fn current_indexed_spatial_xyz_point(payload: &[u8], offset: usize) -> bool {
         && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(1)
         && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(0);
 
-    current_indexed_spatial_xyz_common(payload, offset)
+    let matches_prefix = current_indexed_spatial_xyz_common(payload, offset)
         && (continuation_tail || terminal_tail)
         && payload.get(offset + spatial_xyz::TAIL_ZERO..offset + spatial_xyz::TERMINATOR)
             == Some(&[0; 6])
         && payload.get(offset + spatial_xyz::TERMINATOR..offset + spatial_xyz::TERMINATOR + 4)
-            == Some(&[0xfe, 0xff, 0xff, 0xff])
-        && ((continuation_tail
-            && NEXT_MARKER_OFFSETS.iter().any(|relative| {
-                offset
-                    .checked_add(*relative)
-                    .is_some_and(|next| sketch_marker_prefix_at(payload, next))
-            }))
-            || (terminal_tail && current_indexed_spatial_xyz_terminal_tail(payload, offset)))
+            == Some(&[0xfe, 0xff, 0xff, 0xff]);
+    if !matches_prefix {
+        return Ok(false);
+    }
+    if continuation_tail {
+        return Ok(NEXT_MARKER_OFFSETS.iter().any(|relative| {
+            offset
+                .checked_add(*relative)
+                .is_some_and(|next| sketch_marker_prefix_at(payload, next))
+        }));
+    }
+    if terminal_tail {
+        return current_indexed_spatial_xyz_terminal_tail(admission, payload, offset);
+    }
+    Ok(false)
 }
 
 fn current_indexed_spatial_xyz_common(payload: &[u8], offset: usize) -> bool {
@@ -687,13 +909,27 @@ fn current_indexed_spatial_relation_coordinates(payload: &[u8], offset: usize) -
     .flatten()
 }
 
-fn current_indexed_spatial_xyz_terminal_tail(payload: &[u8], offset: usize) -> bool {
+fn current_indexed_spatial_xyz_terminal_tail<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, A::Error> {
     const CONTROL_SEQUENCE: [u8; 24] = [
         0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf, 0xff, 0xff, 0xff,
         0xff, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
     ];
-
-    [
+    for (
+        terminal_tag,
+        zero_alignment_suffix,
+        table_header,
+        first_count,
+        second_count,
+        one_run,
+        zero_after_one_run,
+        one_after_zero,
+        zero_before_control,
+        control_sequence,
+    ) in [
         (
             spatial_xyz_terminal_short::TERMINAL_TAG,
             spatial_xyz_terminal_short::ZERO_ALIGNMENT_SUFFIX,
@@ -718,52 +954,61 @@ fn current_indexed_spatial_xyz_terminal_tail(payload: &[u8], offset: usize) -> b
             spatial_xyz_terminal_long::ZERO_BEFORE_CONTROL,
             spatial_xyz_terminal_long::CONTROL_SEQUENCE,
         ),
-    ]
-    .into_iter()
-    .any(
-        |(
-            terminal_tag,
-            zero_alignment_suffix,
-            table_header,
-            first_count,
-            second_count,
-            one_run,
-            zero_after_one_run,
-            one_after_zero,
-            zero_before_control,
-            control_sequence,
-        )| {
-            payload.get(offset + spatial_xyz::TERMINATOR + 4..offset + terminal_tag)
-                == Some(&[0; 124])
-                && payload.get(offset + terminal_tag..offset + terminal_tag + 2)
-                    == Some(&[0x08, 0x80])
-                && payload
-                    .get(offset + zero_alignment_suffix..offset + table_header)
-                    .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-                && payload.get(offset + table_header..offset + table_header + 4)
-                    == Some(&[0x01, 0x00, 0x01, 0x00])
-                && View::u32_le_at(payload, offset + first_count) == Some(1)
-                && View::u32_le_at(payload, offset + second_count) == Some(2)
-                && payload
-                    .get(offset + one_run..offset + zero_after_one_run)
-                    .is_some_and(|values| {
-                        values
-                            .chunks_exact(4)
-                            .all(|value| value == [0x01, 0x00, 0x00, 0x00])
-                    })
-                && View::u32_le_at(payload, offset + zero_after_one_run) == Some(0)
-                && View::u32_le_at(payload, offset + one_after_zero) == Some(1)
-                && payload.get(offset + zero_before_control..offset + control_sequence)
-                    == Some(&[0; 6])
-                && payload.get(offset + control_sequence..offset + control_sequence + 24)
-                    == Some(&CONTROL_SEQUENCE)
-        },
-    )
+    ] {
+        if payload.get(offset + spatial_xyz::TERMINATOR + 4..offset + terminal_tag)
+            != Some(&[0; 124])
+            || payload.get(offset + terminal_tag..offset + terminal_tag + 2)
+                != Some(&[0x08, 0x80])
+        {
+            continue;
+        }
+        let Some(alignment) = payload.get(offset + zero_alignment_suffix..offset + table_header)
+        else {
+            continue;
+        };
+        if !admission
+            .admit_iter(alignment, "scan SLDPRT terminal marker alignment")?
+            .all(|byte| *byte == 0)
+            || payload.get(offset + table_header..offset + table_header + 4)
+                != Some(&[0x01, 0x00, 0x01, 0x00])
+            || View::u32_le_at(payload, offset + first_count) != Some(1)
+            || View::u32_le_at(payload, offset + second_count) != Some(2)
+        {
+            continue;
+        }
+        let Some(values) = payload.get(offset + one_run..offset + zero_after_one_run) else {
+            continue;
+        };
+        // The layout fixes this span at 48 bytes, so four-byte chunks cover 12 words.
+        if !admission
+            .word_chunks(values, "scan SLDPRT terminal marker one-run words")?
+            .all(|value| value == [0x01, 0x00, 0x00, 0x00])
+        {
+            continue;
+        }
+        if View::u32_le_at(payload, offset + zero_after_one_run) == Some(0)
+            && View::u32_le_at(payload, offset + one_after_zero) == Some(1)
+            && payload.get(offset + zero_before_control..offset + control_sequence)
+                == Some(&[0; 6])
+            && payload.get(offset + control_sequence..offset + control_sequence + 24)
+                == Some(&CONTROL_SEQUENCE)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
-fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
-    let coordinate_offset = marker_spatial_coordinate_offset(payload, offset)?;
-    marker_spatial_point(payload, coordinate_offset)
+fn marker_spatial_coordinates<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<Option<Point3>, A::Error> {
+    let Some(coordinate_offset) = marker_spatial_coordinate_offset(admission, payload, offset)?
+    else {
+        return Ok(None);
+    };
+    Ok(marker_spatial_point(payload, coordinate_offset))
 }
 
 fn marker_spatial_point(payload: &[u8], coordinate_offset: usize) -> Option<Point3> {
@@ -787,13 +1032,18 @@ fn marker_spatial_point(payload: &[u8], coordinate_offset: usize) -> Option<Poin
 /// relation kind in the input roster; this function only exposes their model
 /// coordinates to relation and spatial-sketch projection. Require the complete
 /// record boundary so an incidental byte pattern cannot become geometry.
-pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
-    if let Some(point) = marker_spatial_coordinates(payload, offset) {
-        return Some(point);
+pub(super) fn spatial_relation_marker_coordinates<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<Option<Point3>, A::Error> {
+    if let Some(point) = marker_spatial_coordinates(admission, payload, offset)? {
+        return Ok(Some(point));
     }
     if let Some(point) = current_indexed_spatial_relation_coordinates(payload, offset) {
-        return Some(point);
+        return Ok(Some(point));
     }
+    let parsed = (|| {
     let code = marker_native_code(payload, offset)?;
     let supported_prefix = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
@@ -827,6 +1077,8 @@ pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize)
     let coordinate =
         |relative| Some(View::f64_le_at(payload, coordinate_offset + relative)? * 1000.0);
     Some(Point3::new(coordinate(0)?, coordinate(8)?, coordinate(16)?))
+    })();
+    Ok(parsed)
 }
 
 pub(super) fn spatial_vertex_coordinates_charged(
@@ -835,7 +1087,7 @@ pub(super) fn spatial_vertex_coordinates_charged(
 ) -> Result<Vec<FinitePoint3>, CodecError> {
     let offsets = spatial_vertex_offsets_charged(ctx, payload)?;
     let mut vertices = Vec::new();
-    for offset in offsets {
+    for &offset in ctx.admit_iter(&offsets, "decode SLDPRT spatial vertices")? {
         let Some(point) = View::f64_le_at(payload, offset + 45)
             .zip(View::f64_le_at(payload, offset + 53))
             .zip(View::f64_le_at(payload, offset + 61))
@@ -854,14 +1106,14 @@ pub(super) fn spatial_vertex_offsets_charged(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<usize>, CodecError> {
-    ctx.charge_work(
-        u64::try_from(payload.len()).map_err(|_| {
-            ctx.refuse_codec_limit("scan SLDPRT spatial vertices", u64::MAX - 1, u64::MAX)
-        })?,
-        "scan SLDPRT spatial vertices",
-    )?;
     let mut offsets = Vec::new();
-    for (offset, bytes) in payload.windows(SPATIAL_VERTEX_PREFIX.len()).enumerate() {
+    let window_size = std::num::NonZeroUsize::new(SPATIAL_VERTEX_PREFIX.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("admit SLDPRT spatial vertex windows", 1, 0))?;
+    for (offset, bytes) in ctx
+        .admit_iter(payload, "scan SLDPRT spatial vertices")?
+        .windows(window_size)
+        .enumerate()
+    {
         if bytes == SPATIAL_VERTEX_PREFIX
             && payload.get(offset + 43..offset + 45) == Some(&[0x0e, 0x00])
         {
@@ -883,12 +1135,19 @@ pub(super) fn admit_sketch_input_entities(
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<SketchInputEntity>, cadmpeg_core::CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let lane_key = ctx
+        .rsplit_once(parent, "#", "split SLDPRT feature-input parent")?
+        .map_or(parent, |(_, key)| key);
     let Some(last_start) = payload.len().checked_sub(SKETCH_MARKER.len() - 1) else {
         return Ok(Vec::new());
     };
-    (0..last_start)
-        .filter(|offset| sketch_marker_at(payload, *offset))
+    let Some(marker_starts) = payload.get(..last_start) else {
+        return Ok(Vec::new());
+    };
+    ctx.admit_iter(marker_starts, "scan SLDPRT sketch marker offsets")?
+        .enumerate()
+        .filter(|(offset, _)| sketch_marker_at(payload, *offset))
+        .map(|(offset, _)| offset)
         .enumerate()
         .try_fold(Vec::new(), |mut entities, (ordinal, offset)| {
             let Some(code) = marker_native_code(payload, offset) else {
@@ -924,7 +1183,7 @@ pub(super) fn admit_sketch_input_entities(
             let shifted_geometry_locus = shifted_geometry_handle
                 .or_else(|| shifted_geometry_locus_coordinates(payload, offset));
             let inline_arc = inline_arc_coordinates(payload, offset);
-            let coordinates_m = linked_point
+            let mut coordinates_m = linked_point
                 .map(|(coordinates, _)| coordinates)
                 .or(legacy_alternate_profile_point)
                 .or(extended_profile_point)
@@ -940,13 +1199,15 @@ pub(super) fn admit_sketch_input_entities(
                 .or(terminal_profile_point)
                 .or(compact_geometry_locus_point)
                 .or(shifted_geometry_locus)
-                .or_else(|| inline_arc.map(|[center, _, _]| center))
-                .or_else(|| marker_coordinates(payload, offset));
+                .or_else(|| inline_arc.map(|[center, _, _]| center));
+            if coordinates_m.is_none() {
+                coordinates_m = marker_coordinates(ctx, payload, offset)?;
+            }
             let kind = if slot_curve_and_center_indices(payload, offset).is_some() {
                 SketchInputKind::from_handle_code(code)
             } else if inline_arc.is_some() {
                 SketchInputKind::Arc
-            } else if marker_spatial_coordinates(payload, offset).is_some()
+            } else if marker_spatial_coordinates(ctx, payload, offset)?.is_some()
                 || legacy_declared_handle_coordinates(payload, offset).is_some()
                 || legacy_alternate_profile_point.is_some()
                 || extended_profile_point.is_some()
@@ -964,15 +1225,15 @@ pub(super) fn admit_sketch_input_entities(
                 || shifted_geometry_handle.is_some()
                 || linked_point.is_some()
                 || coordinates_m.is_some()
-                    && (compact_legacy_profile_vertex(payload, offset)
+                    && (compact_legacy_profile_vertex(ctx, payload, offset)?
                         || packed_legacy_profile_vertex(payload, offset)
                         || indexed_profile_vertex(payload, offset)
                         || current_geometry_locus_profile_vertex(payload, offset)
                         || terminal_wide_geometry_locus_profile_vertex(payload, offset)
-                        || extended_geometry_locus_single_link_point(payload, offset)
-                        || geometry_locus_profile_vertex(payload, offset)
+                        || extended_geometry_locus_single_link_point(ctx, payload, offset)?
+                        || geometry_locus_profile_vertex(ctx, payload, offset)?
                         || compact_linked_profile_vertex(payload, offset)
-                        || linked_profile_vertex(payload, offset))
+                        || linked_profile_vertex(ctx, payload, offset)?)
             {
                 SketchInputKind::Point
             } else if current_geometry_locus_profile_line(payload, offset, code)
@@ -1033,19 +1294,23 @@ pub(super) fn admit_sketch_input_entities(
             };
             let id = ctx.format_retained(format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"), "retain SLDPRT sketch marker identity")?;
             let mut parent_copy = String::new();
-            ctx.try_reserve_retained_text(&mut parent_copy, parent.len(), "retain SLDPRT sketch marker parent")?;
-            parent_copy.push_str(parent);
+            ctx.append_retained(
+                &mut parent_copy,
+                parent,
+                "retain SLDPRT sketch marker parent",
+            )?;
             let offset_u64 = u64::try_from(offset).map_err(|_| {
                 ctx.refuse_codec_limit("address SLDPRT sketch marker", u64::MAX - 1, u64::MAX)
             })?;
             let mut entity = match SketchInputEntity::try_new(
+                ctx,
                 id,
                 parent_copy,
                 ordinal,
                 offset_u64,
                 kind,
                 payload,
-            ) {
+            )? {
                 Ok(entity) => entity,
                 Err(error) => {
                     return Err(CodecError::Malformed(ctx.format_retained(format_args!("SolidWorks feature-input lane {parent} marker at byte {offset}: {error}"), "report SLDPRT marker construction")?));
@@ -1303,11 +1568,15 @@ pub(super) fn relation_bindings_scoped(
     scalars: &[FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
 ) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let lane_key = ctx
+        .rsplit_once(parent, "#", "split SLDPRT relation parent")?
+        .map_or(parent, |(_, key)| key);
     let candidates =
         unique_relation_declaration_candidates_charged(ctx, classes, scalars, intervals)?;
     let mut bindings = Vec::new();
-    for (class, scalar, family) in candidates {
+    for &(class, scalar, family) in
+        ctx.admit_iter(&candidates, "project SLDPRT relation binding candidates")?
+    {
         let ordinal = u32::try_from(bindings.len()).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT relation bindings", u64::MAX - 1, u64::MAX)
         })?;
@@ -1347,8 +1616,8 @@ pub(crate) fn reference_cells_charged(
     classes: &[FeatureInputClass],
 ) -> Result<Vec<FeatureInputReference>, CodecError> {
     let mut cells = Vec::new();
-    for scalar in scalars {
-        for operand in &scalar.operands {
+    for scalar in ctx.admit_iter(scalars, "collect SLDPRT reference cells")? {
+        for operand in ctx.admit_iter(&scalar.operands, "collect SLDPRT reference cells")? {
             let id = copy_reference_text(ctx, &operand.reference_ref)?;
             let parent = copy_reference_text(ctx, &scalar.parent)?;
             let feature_ref = scalar
@@ -1375,34 +1644,28 @@ pub(crate) fn reference_cells_charged(
         Ord::cmp,
         "sort SLDPRT reference cells",
     )?;
-    cells.dedup_by_key(|cell| cell.offset);
-    for (ordinal, cell) in cells.iter_mut().enumerate() {
+    ctx.dedup_by_key(
+        &mut cells,
+        |cell| Ok(cell.offset),
+        "deduplicate SLDPRT reference cells",
+    )?;
+    for ordinal in ctx.admit_iter(&(0..cells.len()), "number SLDPRT reference cells")? {
+        let cell = &mut cells[ordinal];
         cell.ordinal = u32::try_from(ordinal).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT reference cells", u64::MAX - 1, u64::MAX)
         })?;
     }
-    let comparisons = cells.len().checked_mul(classes.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit(
-            "match SLDPRT reference declarations",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
-    ctx.charge_work(
-        u64::try_from(comparisons).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "match SLDPRT reference declarations",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?,
-        "match SLDPRT reference declarations",
-    )?;
     let mut declarations = HashMap::<FeatureInputOperandKind, Vec<&FeatureInputClass>>::new();
-    for cell in &cells {
-        for class in classes.iter().filter(|class| {
-            class.parent == cell.parent && class.offset.checked_sub(cell.offset) == Some(12)
-        }) {
+    for cell in ctx.admit_iter(&cells, "match SLDPRT reference declarations")? {
+        for class in ctx.admit_iter(classes, "match SLDPRT reference declarations")? {
+            if !ctx.equal(
+                class.parent.as_str(),
+                cell.parent.as_str(),
+                "compare SLDPRT reference declaration parents",
+            )? || class.offset.checked_sub(cell.offset) != Some(12)
+            {
+                continue;
+            }
             if !declarations.contains_key(&cell.kind) {
                 ctx.reserve_map(&mut declarations, 1, "index SLDPRT reference declarations")?;
                 declarations.insert(cell.kind, Vec::new());
@@ -1420,9 +1683,20 @@ pub(crate) fn reference_cells_charged(
             Ord::cmp,
             "sort SLDPRT reference declarations",
         )?;
-        declared.dedup_by_key(|class| class.id.as_str());
+        ctx.dedup_by(
+            declared,
+            |left, right| {
+                ctx.equal(
+                    left.id.as_str(),
+                    right.id.as_str(),
+                    "compare SLDPRT reference declaration identities",
+                )
+            },
+            "deduplicate SLDPRT reference declarations",
+        )?;
     }
-    for cell in &mut cells {
+    for index in ctx.admit_iter(&(0..cells.len()), "assign SLDPRT reference declarations")? {
+        let cell = &mut cells[index];
         if let Some([class]) = declarations.get(&cell.kind).map(Vec::as_slice) {
             cell.class_ref = Some(copy_reference_text(ctx, &class.id)?);
         }
@@ -1443,38 +1717,64 @@ fn copy_reference_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, C
     Ok(copy)
 }
 
-pub(crate) fn marker_local_id_offset(payload: &[u8], offset: usize) -> Option<usize> {
+pub(crate) fn marker_local_id_offset<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<Option<usize>, A::Error> {
     let relative = if compact_legacy_code_two_profile_point_coordinates(payload, offset).is_some() {
         128
     } else if legacy_wide_profile_roster_curve(payload, offset)
         || marker_local_links(payload, offset).is_some()
     {
         88
-    } else if marker_coordinates(payload, offset).is_some()
+    } else if marker_coordinates(admission, payload, offset)?.is_some()
         || marker_is_geometry_locus(payload, offset)
     {
-        let search_start = offset.checked_add(SKETCH_MARKER.len())?;
-        let search_end = payload.len().checked_sub(SKETCH_MARKER.len() - 1)?;
-        let next =
-            (search_start..search_end).find(|next| sketch_marker_prefix_at(payload, *next))?;
-        match next.checked_sub(offset)? {
+        let Some(search_start) = offset.checked_add(SKETCH_MARKER.len()) else {
+            return Ok(None);
+        };
+        let Some(search_end) = payload.len().checked_sub(SKETCH_MARKER.len() - 1) else {
+            return Ok(None);
+        };
+        let Some(next) = admission
+            .admit_iter(
+                &(search_start..search_end),
+                "find SLDPRT sketch marker local id boundary",
+            )?
+            .find(|next| sketch_marker_prefix_at(payload, *next))
+        else {
+            return Ok(None);
+        };
+        let Some(relative) = next.checked_sub(offset) else {
+            return Ok(None);
+        };
+        match relative {
             142 | 146 => 138,
             152 | 156 => 148,
             154 => 150,
             158 => 144,
             162 | 166 | 167 => 158,
-            _ => return None,
+            _ => return Ok(None),
         }
     } else {
-        return None;
+        return Ok(None);
     };
-    offset.checked_add(relative)
+    Ok(offset.checked_add(relative))
 }
 
-pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
-    let start = marker_local_id_offset(payload, offset)?;
-    let id = View::u32_le_at(payload, start)?;
-    (id != u32::MAX).then_some(id)
+pub(crate) fn marker_local_id<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<Option<u32>, A::Error> {
+    let Some(start) = marker_local_id_offset(admission, payload, offset)? else {
+        return Ok(None);
+    };
+    let Some(id) = View::u32_le_at(payload, start) else {
+        return Ok(None);
+    };
+    Ok((id != u32::MAX).then_some(id))
 }
 
 fn marker_state_value(payload: &[u8], offset: usize) -> Option<cadmpeg_ir::scalar::FiniteReal> {
@@ -1490,12 +1790,24 @@ fn marker_state_value(payload: &[u8], offset: usize) -> Option<cadmpeg_ir::scala
     cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(payload, offset)?)
 }
 
-pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
+pub(crate) fn marker_coordinates<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<Option<FiniteVector<2>>, A::Error> {
+    macro_rules! require_some {
+        ($option:expr) => {
+            match $option {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
     const GEOMETRY_PREFIX: [u8; 12] = [
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf,
     ];
     if let Some(coordinates) = compact_legacy_code_two_profile_point_coordinates(payload, offset) {
-        return Some(coordinates);
+        return Ok(Some(coordinates));
     }
     if compact_legacy_marker_body(payload, offset) {
         let coordinate_kind = matches!(
@@ -1510,32 +1822,38 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<Finite
             || marker_profile_curve_role(payload, offset) != Some(1)
             || payload.get(offset + 42..offset + 44) != Some(&[0x1e, 0x00])
         {
-            return None;
+            return Ok(None);
         }
-        return finite_coordinate_pair(payload, offset.checked_add(44)?);
+        return Ok(finite_coordinate_pair(
+            payload,
+            require_some!(offset.checked_add(44)),
+        ));
     }
     if packed_legacy_marker_body(payload, offset) {
         if payload.get(offset + 48..offset + 50) != Some(&[0x1e, 0x00]) {
-            return None;
+            return Ok(None);
         }
-        return finite_coordinate_pair(payload, offset.checked_add(50)?);
+        return Ok(finite_coordinate_pair(
+            payload,
+            require_some!(offset.checked_add(50)),
+        ));
     }
-    if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX {
-        return None;
+    if require_some!(payload.get(offset + 5..offset + 17)) != GEOMETRY_PREFIX {
+        return Ok(None);
     }
     if let Some((coordinates, _)) = linked_profile_point(payload, offset) {
-        return Some(coordinates);
+        return Ok(Some(coordinates));
     }
     if let Some(coordinates) =
         legacy_geometry_locus_alternate_profile_point_coordinates(payload, offset)
     {
-        return Some(coordinates);
+        return Ok(Some(coordinates));
     }
     if let Some(coordinates) = extended_four_link_profile_point_coordinates(payload, offset) {
-        return Some(coordinates);
+        return Ok(Some(coordinates));
     }
     if let Some(coordinates) = legacy_144_profile_point_variant_coordinates(payload, offset) {
-        return Some(coordinates);
+        return Ok(Some(coordinates));
     }
     let compact_indexed_value_body =
         matches!(
@@ -1557,49 +1875,54 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<Finite
                 .checked_add(84)
                 .is_some_and(|at| sketch_marker_prefix_at(payload, at));
     if compact_indexed_value_body {
-        return None;
+        return Ok(None);
     }
     if let Some(coordinates) = legacy_linked_coordinates(payload, offset) {
-        return Some(coordinates);
+        return Ok(Some(coordinates));
     }
     if let Some(coordinates) = legacy_declared_handle_coordinates(payload, offset) {
-        return Some(coordinates);
+        return Ok(Some(coordinates));
     }
     if let Some([center, _, _]) = inline_arc_coordinates(payload, offset) {
-        return Some(center);
+        return Ok(Some(center));
     }
     if let Some(coordinates) = shifted_geometry_locus_coordinates(payload, offset) {
-        return Some(coordinates);
+        return Ok(Some(coordinates));
     }
-    if geometry_locus_profile_vertex(payload, offset)
+    if geometry_locus_profile_vertex(admission, payload, offset)?
         && payload.get(offset + 56..offset + 58) == Some(&[0x1e, 0x00])
     {
-        return finite_coordinate_pair(payload, offset.checked_add(58)?);
+        return Ok(finite_coordinate_pair(
+            payload,
+            require_some!(offset.checked_add(58)),
+        ));
     }
     let indexed_endpoint_body = extended_tagged_indexed_curve_endpoint_indices(payload, offset)
         .is_some()
         || wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         || extended_wide_horizontal_relation_endpoint_indices(payload, offset).is_some();
     let coordinate_offset =
-        if !indexed_endpoint_body && payload.get(offset + 64..offset + 66)? == [0x1e, 0x00] {
-            offset.checked_add(66)?
+        if !indexed_endpoint_body
+            && require_some!(payload.get(offset + 64..offset + 66)) == [0x1e, 0x00]
+        {
+            require_some!(offset.checked_add(66))
         } else if !indexed_endpoint_body
             && (matches!(
-                payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?,
+                require_some!(payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())),
                 LEGACY_SKETCH_MARKER | LEGACY_EXTENDED_SKETCH_MARKER
-            ) || (payload.get(offset..offset + SKETCH_MARKER.len())? == SKETCH_MARKER
-                && (payload.get(offset + 17..offset + 21)? == 0u32.to_le_bytes()
+            ) || (require_some!(payload.get(offset..offset + SKETCH_MARKER.len())) == SKETCH_MARKER
+                && (require_some!(payload.get(offset + 17..offset + 21)) == 0u32.to_le_bytes()
                     || indexed_profile_vertex(payload, offset))))
             && (marker_is_geometry_locus(payload, offset)
                 || indexed_profile_vertex(payload, offset)
-                || indexed_profile_coordinate_candidate(payload, offset))
-            && payload.get(offset + 56..offset + 58)? == [0x1e, 0x00]
+                || indexed_profile_coordinate_candidate(admission, payload, offset)?)
+            && require_some!(payload.get(offset + 56..offset + 58)) == [0x1e, 0x00]
         {
-            offset.checked_add(58)?
+            require_some!(offset.checked_add(58))
         } else {
-            return None;
+            return Ok(None);
         };
-    finite_coordinate_pair(payload, coordinate_offset)
+    Ok(finite_coordinate_pair(payload, coordinate_offset))
 }
 
 pub(super) fn finite_coordinate_pair(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
@@ -2086,17 +2409,21 @@ pub(super) fn compact_legacy_embedded_geometry_coordinates(
     finite_coordinate_pair(payload, offset + 44)
 }
 
-pub(super) fn compact_legacy_coordinate_roster_coordinates(
+pub(super) fn compact_legacy_coordinate_roster_coordinates<A: MarkerAdmission>(
+    admission: &A,
     payload: &[u8],
     offset: usize,
-) -> Option<FiniteVector<2>> {
-    compact_legacy_code_two_profile_point_coordinates(payload, offset)
-        .or_else(|| compact_legacy_embedded_geometry_coordinates(payload, offset))
-        .or_else(|| {
-            (payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER))
-                .then(|| marker_coordinates(payload, offset))
-                .flatten()
-        })
+) -> Result<Option<FiniteVector<2>>, A::Error> {
+    if let Some(coordinates) = compact_legacy_code_two_profile_point_coordinates(payload, offset) {
+        return Ok(Some(coordinates));
+    }
+    if let Some(coordinates) = compact_legacy_embedded_geometry_coordinates(payload, offset) {
+        return Ok(Some(coordinates));
+    }
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER) {
+        return marker_coordinates(admission, payload, offset);
+    }
+    Ok(None)
 }
 
 fn packed_legacy_linked_profile_point_coordinates(
@@ -2892,9 +3219,13 @@ fn legacy_linked_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVect
     finite_coordinate_pair(payload, coordinate_offset)
 }
 
-fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
+fn indexed_profile_coordinate_candidate<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, A::Error> {
     if payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00]) {
-        return false;
+        return Ok(false);
     }
     let record_sizes: &[usize] = match payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) {
         Some(prefix) if prefix == LEGACY_SKETCH_MARKER => &[134, 138, 146, 150, 154, 161, 162],
@@ -2903,7 +3234,7 @@ fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
                 || !matches!(marker_native_code(payload, offset), Some(0..=2))
                 || marker_object_index(payload, offset).is_none()
             {
-                return false;
+                return Ok(false);
             }
             &[134, 138, 140, 144]
         }
@@ -2912,23 +3243,37 @@ fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
                 || !matches!(marker_native_code(payload, offset), Some(0..=2))
                 || marker_object_index(payload, offset).is_none()
             {
-                return false;
+                return Ok(false);
             }
             &[134]
         }
-        _ => return false,
+        _ => return Ok(false),
     };
-    record_sizes.iter().any(|size| {
-        offset
+    for size in admission.admit_iter(
+        record_sizes,
+        "scan SLDPRT indexed profile coordinate boundaries",
+    )? {
+        if offset
             .checked_add(*size)
             .is_some_and(|at| sketch_marker_prefix_at(payload, at))
-    })
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
-fn compact_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
-    compact_legacy_marker_body(payload, offset)
-        && marker_profile_curve_role(payload, offset) == Some(1)
-        && marker_coordinates(payload, offset).is_some()
+fn compact_legacy_profile_vertex<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, A::Error> {
+    if !compact_legacy_marker_body(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+    {
+        return Ok(false);
+    }
+    Ok(marker_coordinates(admission, payload, offset)?.is_some())
 }
 
 fn packed_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
@@ -3110,7 +3455,11 @@ fn terminal_wide_geometry_locus_profile_vertex(payload: &[u8], offset: usize) ->
             .is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
-fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
+fn geometry_locus_profile_vertex<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, A::Error> {
     if !matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix)
@@ -3132,7 +3481,7 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
             .and_then(|at| finite_coordinate_pair(payload, at))
             .is_none()
     {
-        return false;
+        return Ok(false);
     }
     let compact = matches!(
         payload.get(offset + 74..offset + 78),
@@ -3162,18 +3511,23 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 78..offset + 84) == Some(&[0; 6])
         && payload.get(offset + 84..offset + 88) == Some(&[0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 88..offset + 126) == Some(&[0; 38])
-        && matches!(
-            (
-                payload.get(offset + 126..offset + 130),
-                payload.get(offset + 130..offset + 134)
-            ),
-            (Some(first), Some(second))
-                if first != [0; 4]
+        && match (
+            payload.get(offset + 126..offset + 130),
+            payload.get(offset + 130..offset + 134),
+        ) {
+            (Some(first), Some(second)) => {
+                first != [0; 4]
                     && first != [0xff; 4]
                     && second != [0; 4]
                     && second != [0xff; 4]
-                    && first != second
-        )
+                    && !admission.equal_bytes(
+                        first,
+                        second,
+                        "compare SLDPRT geometry-locus identity bytes",
+                    )?
+            }
+            _ => false,
+        }
         && offset
             .checked_add(134)
             .is_some_and(|at| sketch_marker_prefix_at(payload, at));
@@ -3183,18 +3537,23 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 78..offset + 84) == Some(&[0; 6])
         && payload.get(offset + 84..offset + 88) == Some(&[0xfe, 0xff, 0xff, 0xff])
         && payload.get(offset + 88..offset + 126) == Some(&[0; 38])
-        && matches!(
-            (
-                payload.get(offset + 126..offset + 130),
-                payload.get(offset + 130..offset + 134)
-            ),
-            (Some(first), Some(second))
-                if first != [0; 4]
+        && match (
+            payload.get(offset + 126..offset + 130),
+            payload.get(offset + 130..offset + 134),
+        ) {
+            (Some(first), Some(second)) => {
+                first != [0; 4]
                     && first != [0xff; 4]
                     && second != [0; 4]
                     && second != [0xff; 4]
-                    && first != second
-        )
+                    && !admission.equal_bytes(
+                        first,
+                        second,
+                        "compare SLDPRT geometry-locus identity bytes",
+                    )?
+            }
+            _ => false,
+        }
         && offset
             .checked_add(134)
             .is_some_and(|at| sketch_marker_prefix_at(payload, at));
@@ -3202,11 +3561,17 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
         payload.get(offset + 124..offset + 128),
         payload.get(offset + 128..offset + 132),
     ];
-    let identity = matches!(
-        identities,
-        [Some(first), Some(second)]
-            if first == second && first != [0; 4] && first != [0xff; 4]
-    );
+    let identity = match identities {
+        [Some(first), Some(second)] => {
+            admission.equal_bytes(
+                first,
+                second,
+                "compare SLDPRT geometry-locus identity bytes",
+            )? && first != [0; 4]
+                && first != [0xff; 4]
+        }
+        _ => false,
+    };
     let identity_bearing = payload.get(offset + 74..offset + 78) == Some(&1u32.to_le_bytes())
         && payload.get(offset + 78..offset + 84) == Some(&[0; 6])
         && payload.get(offset + 84..offset + 88) == Some(&[0xfe, 0xff, 0xff, 0xff])
@@ -3216,19 +3581,23 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && offset
             .checked_add(138)
             .is_some_and(|at| sketch_marker_prefix_at(payload, at));
-    compact
+    Ok(compact
         || compact_local_identity
         || compact_identity_pair
         || compact_value_two_identity_pair
-        || identity_bearing
+        || identity_bearing)
 }
 
-fn extended_geometry_locus_single_link_point(payload: &[u8], offset: usize) -> bool {
+fn extended_geometry_locus_single_link_point(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, CodecError> {
     let identity = |relative| {
         View::u32_le_at(payload, offset + relative)
             .is_some_and(|identity| identity != 0 && identity != u32::MAX)
     };
-    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+    let has_prefix = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
         && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -3250,12 +3619,23 @@ fn extended_geometry_locus_single_link_point(payload: &[u8], offset: usize) -> b
         && payload.get(offset + 82..offset + 86) == Some(&(-1i32).to_le_bytes())
         && payload.get(offset + 86..offset + 124) == Some(&[0; 38])
         && identity(124)
-        && identity(128)
-        && payload.get(offset + 124..offset + 128) != payload.get(offset + 128..offset + 132)
-        && payload.get(offset + 132..offset + 138) == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
-        && offset
-            .checked_add(138)
-            .is_some_and(|at| sketch_marker_prefix_at(payload, at))
+        && identity(128);
+    if !has_prefix {
+        return Ok(false);
+    }
+    if ctx.equal(
+        &payload.get(offset + 124..offset + 128),
+        &payload.get(offset + 128..offset + 132),
+        "compare SLDPRT geometry-locus identities",
+    )? {
+        return Ok(false);
+    }
+    Ok(
+        payload.get(offset + 132..offset + 138) == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
+            && offset
+                .checked_add(138)
+                .is_some_and(|at| sketch_marker_prefix_at(payload, at)),
+    )
 }
 
 type LinkedProfilePoint = (FiniteVector<2>, [(u16, u16); 2]);
@@ -3495,19 +3875,9 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
         return Ok(None);
     };
     let mut by_selector = BTreeMap::<u16, ReverseIncidenceOffsets>::new();
-    for marker in markers.iter().copied() {
-        for len in [
-            marker.feature_ref.as_deref().map_or(0, str::len),
-            curve.feature_ref.as_deref().map_or(0, str::len),
-        ] {
-            let work = cadmpeg_core::decode::u64_from_index(len)
-                .checked_add(1)
-                .and_then(|work| work.checked_mul(4))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
-        }
+    for marker in ctx.admit_iter(markers, OPERATION)? {
         ctx.charge_work(512, OPERATION)?;
-        if marker.feature_ref != curve.feature_ref {
+        if !ctx.equal(&marker.feature_ref, &curve.feature_ref, OPERATION)? {
             continue;
         }
         let Ok(marker_offset) = usize::try_from(marker.offset()) else {
@@ -3550,7 +3920,11 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
     Ok(candidates.next().is_none().then_some(endpoints))
 }
 
-fn linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
+fn linked_profile_vertex<A: MarkerAdmission>(
+    admission: &A,
+    payload: &[u8],
+    offset: usize,
+) -> Result<bool, A::Error> {
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(1)
@@ -3567,26 +3941,28 @@ fn linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
         || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
         || payload.get(offset + 102..offset + 108) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
         || marker_object_index(payload, offset).is_none()
-        || marker_local_id(payload, offset).is_none()
         || !offset
             .checked_add(154)
             .is_some_and(|at| sketch_marker_prefix_at(payload, at))
     {
-        return false;
+        return Ok(false);
+    }
+    if marker_local_id(admission, payload, offset)?.is_none() {
+        return Ok(false);
     }
     let Some(first) = payload.get(offset + 78..offset + 90) else {
-        return false;
+        return Ok(false);
     };
     let Some(second) = payload.get(offset + 90..offset + 102) else {
-        return false;
+        return Ok(false);
     };
-    first[..2] == second[..2]
+    Ok(first[..2] == second[..2]
         && first[2..4] != [0; 2]
         && second[2..4] != [0; 2]
         && first[4..8] == [0xff; 4]
         && second[4..8] == [0xff; 4]
         && first[8..12] == [0; 4]
-        && second[8..12] == [0; 4]
+        && second[8..12] == [0; 4])
 }
 
 fn compact_linked_profile_vertex(payload: &[u8], offset: usize) -> bool {

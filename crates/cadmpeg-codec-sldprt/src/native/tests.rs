@@ -768,7 +768,7 @@ fn native_scalar_operand_validation_limit_refuses_before_resolution() {
 }
 
 #[test]
-fn native_history_class_validation_limit_refuses_before_lookup_maps() {
+fn native_history_class_input_name_index_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let decoded = SldprtCodec
@@ -781,15 +781,16 @@ fn native_history_class_validation_limit_refuses_before_lookup_maps() {
         )
         .unwrap();
     let native = sldprt_native(decoded.ir());
-    let source_items = native
+    let source_names = native
         .feature_input_lanes
         .iter()
-        .map(|lane| lane.names.len() + lane.classes.len())
+        .map(|lane| lane.names.len())
         .sum::<usize>();
-    assert!(source_items > 0);
+    assert!(source_names > 0);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = u64::try_from(source_items).unwrap() - 1;
+    // The input-name index charges each actual map slot before insertion.
+    policy.limits.max_collection_items = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut histories = native.feature_histories.clone();
     let error = crate::resolved_features::classes::bind_history_classes(
@@ -802,7 +803,7 @@ fn native_history_class_validation_limit_refuses_before_lookup_maps() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "validate SLDPRT history class candidates"
+                && limit.operation == "index SLDPRT input class names"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -1360,9 +1361,13 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
         .expect("first marker local id");
     lane.sketch_entities[1] = lane.sketch_entities[1]
         .with_test_identity(lane.sketch_entities[1].object_index(), Some(local_id));
-    let local_id_offset = crate::resolved_features::markers::marker_local_id_offset(
-        &lane.native_payload,
-        usize::try_from(lane.sketch_entities[1].offset()).expect("marker offset"),
+    let marker_admission = crate::resolved_features::markers::StandardMarkerAdmission;
+    let local_id_offset = crate::resolved_features::markers::standard_marker_result(
+        crate::resolved_features::markers::marker_local_id_offset(
+            &marker_admission,
+            &lane.native_payload,
+            usize::try_from(lane.sketch_entities[1].offset()).expect("marker offset"),
+        ),
     )
     .expect("local id offset");
     lane.native_payload[local_id_offset..local_id_offset + 4]

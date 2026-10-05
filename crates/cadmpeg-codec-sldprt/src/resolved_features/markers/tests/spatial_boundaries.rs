@@ -1,6 +1,10 @@
 //! Boundary tests for compact, wide, and indexed spatial point prefixes.
 
 use super::super::super::SKETCH_MARKER;
+use super::{
+    marker_spatial_coordinate_offset, marker_spatial_coordinates,
+    spatial_relation_marker_coordinates,
+};
 use crate::layout::{
     compact_current_spatial_marker_point as compact_spatial,
     current_indexed_spatial_xyz_point_prefix as indexed_xyz_spatial,
@@ -8,9 +12,6 @@ use crate::layout::{
     current_indexed_spatial_xyz_terminal_reference_prefix_short as indexed_xyz_terminal_short,
     wide_spatial_marker_coordinate_prefix as wide_spatial,
 };
-use crate::resolved_features::markers::marker_spatial_coordinate_offset;
-use crate::resolved_features::markers::marker_spatial_coordinates;
-use crate::resolved_features::markers::spatial_relation_marker_coordinates;
 use cadmpeg_ir::math::Point3;
 
 pub(super) fn current_indexed_xyz_spatial_point(
@@ -304,4 +305,37 @@ fn current_indexed_spatial_xyz_points_accept_terminal_geometry_tails() {
         [4 + indexed_xyz_spatial::TAIL_WORD_1..4 + indexed_xyz_spatial::TAIL_WORD_1 + 2]
         .copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(marker_spatial_coordinates(&invalid_terminal_tail, 4), None);
+}
+
+#[test]
+fn terminal_xyz_marker_admission_preserves_decode_result_and_refusal() {
+    let payload = terminal_current_indexed_xyz_spatial_point(2, [0.125, -0.25, 0.375], false);
+    let expected = marker_spatial_coordinates(&payload, 4);
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("decode context");
+    assert_eq!(
+        super::super::marker_spatial_coordinates(&ctx, &payload, 4)
+            .expect("admitted terminal marker"),
+        expected
+    );
+
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
+    limited_policy.limits.max_work_units = 0;
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &limited_arena,
+        &limited_policy,
+    )
+    .expect("limited decode context");
+    assert!(matches!(
+        super::super::marker_spatial_coordinates(&limited_ctx, &payload, 4),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
 }

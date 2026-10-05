@@ -8,24 +8,25 @@ use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) fn resolve_scalar_operand_markers<'a>(
     ctx: &DecodeContext<'_>,
-    entities: impl IntoIterator<Item = &'a SketchInputEntity>,
+    entities: &[&'a SketchInputEntity],
     operands: &[FeatureInputOperand],
 ) -> Result<Vec<Option<&'a SketchInputEntity>>, CodecError> {
-    let entities = collect_operand_candidates(ctx, entities)?;
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary storage")?;
+
     let mut resolved = Vec::new();
-    for operand in operands {
+    for operand in ctx.admit_iter(operands, "resolve SLDPRT scalar operands")? {
         let marker = resolve_operand_marker_excluding(
             ctx,
-            &entities,
+            entities,
             operand.kind,
             operand.entity_index,
-            |_| false,
+            |_| Ok(false),
         )?;
         ctx.reserve_vec(&mut resolved, 1, "collect SLDPRT resolved scalar operands")?;
         resolved.push(marker);
@@ -33,69 +34,100 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     if let ([first_operand, second_operand], [Some(first), Some(second)]) =
         (operands, resolved.as_slice())
     {
-        if first.id() == second.id() && first_operand.entity_index != second_operand.entity_index {
+        if ctx.equal(
+            first.id(),
+            second.id(),
+            "compare SLDPRT scalar operand markers",
+        )? && first_operand.entity_index != second_operand.entity_index
+        {
             let alternatives = [
                 resolve_operand_marker_excluding(
                     ctx,
-                    &entities,
+                    entities,
                     first_operand.kind,
                     first_operand.entity_index,
-                    |id| id == second.id(),
+                    |id| ctx.equal(id, second.id(), "compare SLDPRT scalar operand markers"),
                 )?
                 .map(|alternative| [alternative, *second]),
                 resolve_operand_marker_excluding(
                     ctx,
-                    &entities,
+                    entities,
                     second_operand.kind,
                     second_operand.entity_index,
-                    |id| id == first.id(),
+                    |id| ctx.equal(id, first.id(), "compare SLDPRT scalar operand markers"),
                 )?
                 .map(|alternative| [*first, alternative]),
             ];
-            let mut alternatives = alternatives
-                .into_iter()
-                .flatten()
-                .filter(|[left, right]| left.id() != right.id());
-            if let (Some(alternative), None) = (alternatives.next(), alternatives.next()) {
+            let first_alternative = match alternatives[0] {
+                Some([left, right])
+                    if !ctx.equal(
+                        left.id(),
+                        right.id(),
+                        "compare SLDPRT scalar operand markers",
+                    )? =>
+                {
+                    Some([left, right])
+                }
+                _ => None,
+            };
+            let second_alternative = match alternatives[1] {
+                Some([left, right])
+                    if !ctx.equal(
+                        left.id(),
+                        right.id(),
+                        "compare SLDPRT scalar operand markers",
+                    )? =>
+                {
+                    Some([left, right])
+                }
+                _ => None,
+            };
+            let alternative = match (first_alternative, second_alternative) {
+                (Some(alternative), None) | (None, Some(alternative)) => Some(alternative),
+                _ => None,
+            };
+            if let Some(alternative) = alternative {
                 resolved[0] = Some(alternative[0]);
                 resolved[1] = Some(alternative[1]);
             }
         }
     }
     let mut resolved_siblings = HashSet::new();
-    for entity in resolved.iter().flatten() {
-        ctx.reserve_set(
-            &mut resolved_siblings,
-            1,
-            "index SLDPRT scalar operand markers",
-        )?;
-        resolved_siblings.insert(entity.id());
+    for entity in ctx
+        .admit_iter(&resolved, "index resolved SLDPRT scalar operand markers")?
+        .flatten()
+    {
+        temporary_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut resolved_siblings,
+                entity.id(),
+                "index SLDPRT scalar operand markers",
+            )
+        })?;
     }
-    for (operand, target) in operands.iter().zip(&mut resolved) {
+    for index in ctx.admit_iter(
+        &(0..operands.len().min(resolved.len())),
+        "resolve remaining SLDPRT scalar operands",
+    )? {
+        let operand = &operands[index];
+        let target = &mut resolved[index];
         if target.is_none() {
             *target = resolve_operand_marker_excluding(
                 ctx,
-                &entities,
+                entities,
                 operand.kind,
                 operand.entity_index,
-                |id| resolved_siblings.contains(id),
+                |id| {
+                    ctx.contains_hash_set(
+                        &resolved_siblings,
+                        id,
+                        "exclude resolved SLDPRT scalar operand markers",
+                    )
+                },
             )?;
         }
     }
     Ok(resolved)
-}
-
-fn collect_operand_candidates<T>(
-    ctx: &DecodeContext<'_>,
-    values: impl IntoIterator<Item = T>,
-) -> Result<Vec<T>, CodecError> {
-    let mut result = Vec::new();
-    for value in values {
-        ctx.charge_work(1, "scan SLDPRT scalar operand markers")?;
-        ctx.reserve_vec(&mut result, 1, "collect SLDPRT scalar operand markers")?;
-        result.push(value);
-    }
-    Ok(result)
 }
 
 fn operand_marker_index<'a>(
@@ -103,10 +135,13 @@ fn operand_marker_index<'a>(
     entities: &[&'a SketchInputEntity],
 ) -> Result<HashMap<&'a str, &'a SketchInputEntity>, CodecError> {
     let mut result = HashMap::new();
-    for entity in entities {
-        ctx.charge_work(1, "index SLDPRT scalar operand markers")?;
-        ctx.reserve_map(&mut result, 1, "index SLDPRT scalar operand markers")?;
-        result.insert(entity.id(), *entity);
+    for entity in ctx.admit_iter(entities, "index SLDPRT scalar operand markers")? {
+        ctx.insert_hash_map(
+            &mut result,
+            entity.id(),
+            *entity,
+            "index SLDPRT scalar operand markers",
+        )?;
     }
     Ok(result)
 }
@@ -123,16 +158,28 @@ fn resolve_operand_marker<'a>(
         &entities,
         kind,
         address,
-        |_| false,
+        |_| Ok(false),
     )
     .unwrap()
 }
 
 fn unique_entity<'a>(
-    mut candidates: impl Iterator<Item = &'a SketchInputEntity>,
-) -> Option<&'a SketchInputEntity> {
-    let first = candidates.next()?;
-    candidates.next().is_none().then_some(first)
+    ctx: &DecodeContext<'_>,
+    candidates: &[&'a SketchInputEntity],
+    mut matches: impl FnMut(&SketchInputEntity) -> Result<bool, CodecError>,
+    operation: &'static str,
+) -> Result<Option<&'a SketchInputEntity>, CodecError> {
+    let mut selected = None;
+    for entity in ctx.admit_iter(candidates, operation)? {
+        if !matches(entity)? {
+            continue;
+        }
+        if selected.is_some() {
+            return Ok(None);
+        }
+        selected = Some(*entity);
+    }
+    Ok(selected)
 }
 
 fn resolve_operand_marker_excluding<'a>(
@@ -140,35 +187,50 @@ fn resolve_operand_marker_excluding<'a>(
     entities: &[&'a SketchInputEntity],
     kind: FeatureInputOperandKind,
     address: u16,
-    excluded: impl Fn(&str) -> bool,
+    excluded: impl Fn(&str) -> Result<bool, CodecError>,
 ) -> Result<Option<&'a SketchInputEntity>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(entities.len()),
-        "scan SLDPRT scalar operand markers",
-    )?;
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary storage")?;
+
     let excluded = &excluded;
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD) {
-        let mut points = collect_operand_candidates(
-            ctx,
-            entities.iter().copied().filter(|entity| {
-                matches!(
-                    entity.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                ) && entity
-                    .coordinates_m
-                    .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
-            }),
-        )?;
+        let mut points = Vec::new();
+        for entity in ctx.admit_iter(entities, "scan SLDPRT scalar operand points")? {
+            if !matches!(
+                entity.kind(),
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                continue;
+            }
+            let Some(coordinates) = entity.coordinates_m else {
+                continue;
+            };
+            if !ctx
+                .admit_iter(
+                    coordinates.as_raw(),
+                    "check SLDPRT scalar operand point coordinates",
+                )?
+                .copied()
+                .all(f64::is_finite)
+            {
+                continue;
+            }
+            ctx.reserve_vec(&mut points, 1, "collect SLDPRT scalar operand points")?;
+            points.push(*entity);
+        }
         ctx.sort_unstable_by_key(
             &mut points,
             |value| value.offset(),
             Ord::cmp,
             "sort SLDPRT scalar operand points",
         )?;
-        return Ok(points
-            .get(usize::from(address))
-            .copied()
-            .filter(|entity| !excluded(entity.id())));
+        let Some(entity) = points.get(usize::from(address)).copied() else {
+            return Ok(None);
+        };
+        return if excluded(entity.id())? {
+            Ok(None)
+        } else {
+            Ok(Some(entity))
+        };
     }
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7) {
         // In scalar relations, 81e7 addresses the solver-line roster formed
@@ -191,77 +253,88 @@ fn resolve_operand_marker_excluding<'a>(
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) && entity.coordinates_m.is_none())
         };
-        let indexed = entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.object_index() == Some(u32::from(address)))
-            .filter(|entity| accepts(entity))
-            .filter(|entity| !excluded(entity.id()));
-        if entities
-            .iter()
+        if ctx
+            .admit_iter(entities, "check indexed SLDPRT line operand address")?
             .any(|entity| entity.object_index() == Some(u32::from(address)) && accepts(entity))
         {
-            return Ok(unique_entity(indexed));
+            return unique_entity(
+                ctx,
+                entities,
+                |entity| {
+                    Ok(entity.object_index() == Some(u32::from(address))
+                        && accepts(entity)
+                        && !excluded(entity.id())?)
+                },
+                "select unique indexed SLDPRT line operand",
+            );
         }
-        let local = entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.local_id() == Some(u32::from(address)))
-            .filter(|entity| accepts(entity))
-            .filter(|entity| !excluded(entity.id()));
-        return Ok(unique_entity(local));
+        return unique_entity(
+            ctx,
+            entities,
+            |entity| {
+                Ok(entity.local_id() == Some(u32::from(address))
+                    && accepts(entity)
+                    && !excluded(entity.id())?)
+            },
+            "select unique local SLDPRT line operand",
+        );
     }
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C) {
-        let indexed = entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.object_index() == Some(u32::from(address)))
-            .filter(|entity| entity.coordinates_m.is_some())
-            .filter(|entity| {
-                matches!(
-                    entity.kind(),
-                    SketchInputKind::Point
-                        | SketchInputKind::ConstrainedPoint
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                )
-            })
-            .filter(|entity| !excluded(entity.id()));
-        if let Some(entity) = unique_entity(indexed) {
+        if let Some(entity) = unique_entity(
+            ctx,
+            entities,
+            |entity| {
+                Ok(entity.object_index() == Some(u32::from(address))
+                    && entity.coordinates_m.is_some()
+                    && {
+                        matches!(
+                            entity.kind(),
+                            SketchInputKind::Point
+                                | SketchInputKind::ConstrainedPoint
+                                | SketchInputKind::LineOrCircle
+                                | SketchInputKind::Arc
+                        )
+                    }
+                    && !excluded(entity.id())?)
+            },
+            "select unique indexed SLDPRT point operand",
+        )? {
             return Ok(Some(entity));
         }
     }
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC87) {
-        let indexed = entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.object_index() == Some(u32::from(address)))
-            .filter(|entity| entity.coordinates_m.is_some())
-            .filter(|entity| {
-                matches!(
-                    entity.kind(),
-                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                )
-            })
-            .filter(|entity| !excluded(entity.id()));
-        if let Some(entity) = unique_entity(indexed) {
+        if let Some(entity) = unique_entity(
+            ctx,
+            entities,
+            |entity| {
+                Ok(entity.object_index() == Some(u32::from(address))
+                    && entity.coordinates_m.is_some()
+                    && matches!(
+                        entity.kind(),
+                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                    )
+                    && !excluded(entity.id())?)
+            },
+            "select unique indexed SLDPRT line operand",
+        )? {
             return Ok(Some(entity));
         }
     }
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C) {
-        let indexed = entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.object_index() == Some(u32::from(address)))
-            .filter(|entity| entity.coordinates_m.is_some())
-            .filter(|entity| {
-                matches!(
-                    entity.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-            })
-            .filter(|entity| !excluded(entity.id()));
-        return Ok(unique_entity(indexed));
+        return unique_entity(
+            ctx,
+            entities,
+            |entity| {
+                Ok(entity.object_index() == Some(u32::from(address))
+                    && entity.coordinates_m.is_some()
+                    && matches!(
+                        entity.kind(),
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+                    && !excluded(entity.id())?)
+            },
+            "select unique indexed SLDPRT point operand",
+        );
     }
     if matches!(
         kind,
@@ -274,14 +347,17 @@ fn resolve_operand_marker_excluding<'a>(
                 | NativeOperandTag::TAG_BD69
         )
     ) {
-        let indexed = entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.object_index() == Some(u32::from(address)))
-            .filter(|entity| entity.coordinates_m.is_some())
-            .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-            .filter(|entity| !excluded(entity.id()));
-        if let Some(entity) = unique_entity(indexed) {
+        if let Some(entity) = unique_entity(
+            ctx,
+            entities,
+            |entity| {
+                Ok(entity.object_index() == Some(u32::from(address))
+                    && entity.coordinates_m.is_some()
+                    && operand_accepts_marker(kind, entity.kind())
+                    && !excluded(entity.id())?)
+            },
+            "select unique indexed SLDPRT compatible operand",
+        )? {
             return Ok(Some(entity));
         }
     }
@@ -295,25 +371,34 @@ fn resolve_operand_marker_excluding<'a>(
         // as point references, but may also name a relation handle whose
         // links resolve to a point locus. A line or arc sharing the address
         // is not a candidate for this operand family.
-        let indexed = entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.object_index() == Some(u32::from(address)))
-            .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-            .filter(|entity| !excluded(entity.id()));
-        if entities.iter().any(|entity| {
-            entity.object_index() == Some(u32::from(address))
-                && operand_accepts_marker(kind, entity.kind())
-        }) {
-            return Ok(unique_entity(indexed));
+        if ctx
+            .admit_iter(entities, "check indexed SLDPRT point operand address")?
+            .any(|entity| {
+                entity.object_index() == Some(u32::from(address))
+                    && operand_accepts_marker(kind, entity.kind())
+            })
+        {
+            return unique_entity(
+                ctx,
+                entities,
+                |entity| {
+                    Ok(entity.object_index() == Some(u32::from(address))
+                        && operand_accepts_marker(kind, entity.kind())
+                        && !excluded(entity.id())?)
+                },
+                "select unique indexed SLDPRT point operand",
+            );
         }
-        let local = entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.local_id() == Some(u32::from(address)))
-            .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-            .filter(|entity| !excluded(entity.id()));
-        if let Some(entity) = unique_entity(local) {
+        if let Some(entity) = unique_entity(
+            ctx,
+            entities,
+            |entity| {
+                Ok(entity.local_id() == Some(u32::from(address))
+                    && operand_accepts_marker(kind, entity.kind())
+                    && !excluded(entity.id())?)
+            },
+            "select unique local SLDPRT point operand",
+        )? {
             return Ok(Some(entity));
         }
     }
@@ -321,37 +406,47 @@ fn resolve_operand_marker_excluding<'a>(
         kind,
         FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386)
     ) {
-        let indexed = entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.object_index() == Some(u32::from(address)))
-            .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-            .filter(|entity| !excluded(entity.id()));
-        if let Some(entity) = unique_entity(indexed) {
+        if let Some(entity) = unique_entity(
+            ctx,
+            entities,
+            |entity| {
+                Ok(entity.object_index() == Some(u32::from(address))
+                    && operand_accepts_marker(kind, entity.kind())
+                    && !excluded(entity.id())?)
+            },
+            "select unique indexed SLDPRT operand",
+        )? {
             return Ok(Some(entity));
         }
         if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
-            let entities_by_id = operand_marker_index(ctx, entities)?;
-            let indexed_line_handles = entities
-                .iter()
-                .copied()
-                .filter(|entity| entity.object_index() == Some(u32::from(address)))
-                .filter(|entity| !excluded(entity.id()))
-                .filter(|entity| {
-                    linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
-                });
-            if let Some(entity) = unique_entity(indexed_line_handles) {
+            let entities_by_id =
+                temporary_storage.with_storage(|| operand_marker_index(ctx, entities))?;
+            if let Some(entity) = unique_entity(
+                ctx,
+                entities,
+                |entity| {
+                    Ok(entity.object_index() == Some(u32::from(address))
+                        && !excluded(entity.id())?
+                        && linked_coordinate_line_endpoints(ctx, entity, &entities_by_id)?
+                            .is_some())
+                },
+                "select unique indexed SLDPRT line handle",
+            )? {
                 return Ok(Some(entity));
             }
         }
     }
-    let mut compatible = collect_operand_candidates(
-        ctx,
-        entities
-            .iter()
-            .copied()
-            .filter(|entity| operand_accepts_marker(kind, entity.kind())),
-    )?;
+    let mut compatible = Vec::new();
+    for entity in ctx.admit_iter(entities, "scan SLDPRT compatible operand markers")? {
+        if operand_accepts_marker(kind, entity.kind()) {
+            ctx.reserve_vec(
+                &mut compatible,
+                1,
+                "collect SLDPRT compatible operand markers",
+            )?;
+            compatible.push(*entity);
+        }
+    }
     ctx.sort_unstable_by_key(
         &mut compatible,
         |value| value.offset(),
@@ -360,61 +455,89 @@ fn resolve_operand_marker_excluding<'a>(
     )?;
     let mut ordinal_link_graph = false;
     if operand_uses_compatible_ordinal(kind) {
-        if let Some(entity) = compatible
-            .get(usize::from(address))
-            .filter(|entity| !excluded(entity.id()))
-        {
-            return Ok(Some(*entity));
+        if let Some(entity) = compatible.get(usize::from(address)).copied() {
+            if excluded(entity.id())? {
+                return Ok(None);
+            }
+            return Ok(Some(entity));
         }
         if !point_operand_uses_link_graph(kind) {
             return Ok(None);
         }
         ordinal_link_graph = true;
     }
-    let exact_candidates = || {
-        compatible.iter().copied().filter(|entity| {
-            !ordinal_link_graph
-                && entity.local_id() == Some(u32::from(address))
-                && !excluded(entity.id())
-        })
-    };
-    let mut exact = exact_candidates();
-    Ok(match (exact.next(), exact.next()) {
-        (Some(entity), None) => Some(entity),
+    let mut exact_first = None;
+    let mut exact_second = false;
+    for entity in ctx.admit_iter(&compatible, "scan exact SLDPRT operand markers")? {
+        if ordinal_link_graph || entity.local_id() != Some(u32::from(address)) {
+            continue;
+        }
+        if excluded(entity.id())? {
+            continue;
+        }
+        if exact_first.is_some() {
+            exact_second = true;
+            break;
+        }
+        exact_first = Some(*entity);
+    }
+    Ok(match (exact_first, exact_second) {
+        (Some(entity), false) => Some(entity),
         (None, _) => {
             if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386) {
-                let entities_by_id = operand_marker_index(ctx, entities)?;
-                let linked_line_handles = entities
-                    .iter()
-                    .copied()
-                    .filter(|entity| entity.local_id() == Some(u32::from(address)))
-                    .filter(|entity| !excluded(entity.id()))
-                    .filter(|entity| {
-                        linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
-                    });
-                if let Some(entity) = unique_entity(linked_line_handles) {
+                let entities_by_id =
+                    temporary_storage.with_storage(|| operand_marker_index(ctx, entities))?;
+                if let Some(entity) = unique_entity(
+                    ctx,
+                    entities,
+                    |entity| {
+                        Ok(entity.local_id() == Some(u32::from(address))
+                            && !excluded(entity.id())?
+                            && linked_coordinate_line_endpoints(ctx, entity, &entities_by_id)?
+                                .is_some())
+                    },
+                    "select unique local SLDPRT line handle",
+                )? {
                     return Ok(Some(entity));
                 }
             }
             let mut indirect = if point_operand_uses_link_graph(kind) {
                 linked_point_markers(ctx, entities, address, kind, excluded)?
             } else if operand_accepts_link_indirection(kind) {
-                collect_operand_candidates(
-                    ctx,
-                    entities
-                        .iter()
-                        .copied()
-                        .filter(|entity| entity.local_id() == Some(u32::from(address)))
-                        .flat_map(crate::records::SketchInputEntity::links)
-                        .filter_map(|link| {
-                            entities
-                                .iter()
-                                .copied()
-                                .find(|entity| entity.id() == link.entity_ref)
-                        })
-                        .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-                        .filter(|entity| !excluded(entity.id())),
-                )?
+                let mut indirect = Vec::new();
+                for entity in ctx.admit_iter(entities, "scan SLDPRT linked operand handles")? {
+                    if entity.local_id() != Some(u32::from(address)) {
+                        continue;
+                    }
+                    for link in ctx.admit_iter(entity.links(), "scan SLDPRT linked operands")? {
+                        let mut target = None;
+                        for candidate in
+                            ctx.admit_iter(entities, "resolve SLDPRT linked operand target")?
+                        {
+                            if ctx.equal(
+                                candidate.id(),
+                                link.entity_ref.as_str(),
+                                "compare SLDPRT linked operand identities",
+                            )? {
+                                target = Some(*candidate);
+                                break;
+                            }
+                        }
+                        let Some(target) = target else {
+                            continue;
+                        };
+                        if !operand_accepts_marker(kind, target.kind()) || excluded(target.id())? {
+                            continue;
+                        }
+                        ctx.reserve_vec(
+                            &mut indirect,
+                            1,
+                            "collect SLDPRT indirect operand markers",
+                        )?;
+                        indirect.push(target);
+                    }
+                }
+                indirect
             } else {
                 Vec::new()
             };
@@ -424,41 +547,68 @@ fn resolve_operand_marker_excluding<'a>(
                 Ord::cmp,
                 "sort SLDPRT indirect operand markers",
             )?;
-            indirect.dedup_by_key(|entity| entity.id());
+            ctx.dedup_by_key(
+                &mut indirect,
+                |entity| Ok(entity.id()),
+                "deduplicate SLDPRT indirect operand markers",
+            )?;
             match indirect.as_slice() {
                 [entity] => Some(*entity),
                 [] if point_operand_uses_link_graph(kind) && {
-                    let linked = linked_point_markers(ctx, entities, address, kind, |_| false)?;
-                    !linked.is_empty() && linked.iter().all(|entity| excluded(entity.id()))
+                    let linked = linked_point_markers(ctx, entities, address, kind, |_| Ok(false))?;
+                    let mut all_excluded = !linked.is_empty();
+                    for entity in
+                        ctx.admit_iter(&linked, "check excluded SLDPRT linked point markers")?
+                    {
+                        if !excluded(entity.id())? {
+                            all_excluded = false;
+                            break;
+                        }
+                    }
+                    all_excluded
                 } =>
                 {
-                    let remaining = compatible
-                        .iter()
-                        .copied()
-                        .filter(|entity| !excluded(entity.id()));
-                    unique_entity(remaining)
+                    unique_entity(
+                        ctx,
+                        &compatible,
+                        |entity| Ok(!excluded(entity.id())?),
+                        "select unique remaining SLDPRT operand",
+                    )?
                 }
                 [] if operand_allows_compatible_ordinal_fallback(kind) => {
-                    compatible.get(usize::from(address)).copied().or_else(|| {
-                        (kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C))
-                            .then(|| {
-                                unique_entity(entities.iter().copied().filter(|entity| {
-                                    matches!(
-                                        entity.kind(),
-                                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                                    ) && entity.local_id() == Some(u32::from(address))
-                                        && !excluded(entity.id())
-                                }))
-                            })
-                            .flatten()
-                    })
+                    if let Some(entity) = compatible.get(usize::from(address)).copied() {
+                        Some(entity)
+                    } else if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C) {
+                        unique_entity(
+                            ctx,
+                            entities,
+                            |entity| {
+                                Ok(matches!(
+                                    entity.kind(),
+                                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                                ) && entity.local_id() == Some(u32::from(address))
+                                    && !excluded(entity.id())?)
+                            },
+                            "select unique local SLDPRT line operand",
+                        )?
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             }
         }
-        (Some(_), Some(_)) => {
-            unique_entity(exact_candidates().filter(|entity| entity.coordinates_m.is_some()))
-        }
+        (Some(_), true) => unique_entity(
+            ctx,
+            &compatible,
+            |entity| {
+                Ok(!ordinal_link_graph
+                    && entity.local_id() == Some(u32::from(address))
+                    && entity.coordinates_m.is_some()
+                    && !excluded(entity.id())?)
+            },
+            "select unique coordinate SLDPRT operand markers",
+        )?,
     })
 }
 
@@ -471,36 +621,42 @@ fn linked_point_markers<'a>(
     entities: &[&'a SketchInputEntity],
     address: u16,
     kind: FeatureInputOperandKind,
-    excluded: impl Fn(&str) -> bool,
+    excluded: impl Fn(&str) -> Result<bool, CodecError>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
-    let by_id = operand_marker_index(ctx, entities)?;
-    let mut pending = collect_operand_candidates(
-        ctx,
-        entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.local_id() == Some(u32::from(address)))
-            .filter(|entity| !operand_accepts_marker(kind, entity.kind()))
-            .map(SketchInputEntity::id),
-    )?;
+    let mut temporary_storage = ctx.reserve_scoped(0, "SLDPRT operands temporary storage")?;
+
+    let by_id = temporary_storage.with_storage(|| operand_marker_index(ctx, entities))?;
+    let mut pending = Vec::new();
+    for entity in ctx.admit_iter(entities, "collect SLDPRT scalar operand link roots")? {
+        if entity.local_id() == Some(u32::from(address))
+            && !operand_accepts_marker(kind, entity.kind())
+        {
+            ctx.reserve_vec(&mut pending, 1, "collect SLDPRT scalar operand link roots")?;
+            pending.push(entity.id());
+        }
+    }
     let mut visited = HashSet::new();
     let mut compatible = Vec::new();
     while let Some(id) = pending.pop() {
         ctx.charge_work(1, "walk SLDPRT scalar operand links")?;
-        if visited.contains(id) {
+        if ctx.contains_hash_set(&visited, id, "check visited SLDPRT scalar operand links")? {
             continue;
         }
-        ctx.reserve_set(&mut visited, 1, "index SLDPRT scalar operand markers")?;
-        visited.insert(id);
-        let Some(entity) = by_id.get(id).copied() else {
+        temporary_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut visited, id, "index SLDPRT scalar operand markers")
+        })?;
+        let Some(entity) = ctx
+            .get_hash_map(&by_id, id, "resolve SLDPRT scalar operand link")?
+            .copied()
+        else {
             continue;
         };
-        if operand_accepts_marker(kind, entity.kind()) && !excluded(entity.id()) {
+        if operand_accepts_marker(kind, entity.kind()) && !excluded(entity.id())? {
             ctx.reserve_vec(&mut compatible, 1, "collect SLDPRT scalar operand markers")?;
             compatible.push(entity);
             continue;
         }
-        for link in entity.links() {
+        for link in ctx.admit_iter(entity.links(), "scan SLDPRT scalar operand links")? {
             ctx.reserve_vec(&mut pending, 1, "collect SLDPRT scalar operand links")?;
             pending.push(link.entity_ref.as_str());
         }
@@ -522,27 +678,64 @@ fn operand_accepts_link_indirection(kind: FeatureInputOperandKind) -> bool {
 }
 
 pub(super) fn linked_coordinate_line_endpoints<'a>(
+    ctx: &DecodeContext<'_>,
     marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
-) -> Option<[&'a SketchInputEntity; 2]> {
-    let mut links = marker
-        .links()
-        .iter()
-        .filter(|link| link.entity_ref != marker.id());
-    let (Some(first), Some(second), None) = (links.next(), links.next(), links.next()) else {
-        return None;
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    let mut links = [None, None];
+    for link in ctx.admit_iter(marker.links(), "resolve SLDPRT linked line endpoints")? {
+        if ctx.equal(
+            link.entity_ref.as_str(),
+            marker.id(),
+            "compare SLDPRT linked line identities",
+        )? {
+            continue;
+        }
+        match links {
+            [None, _] => links[0] = Some(link),
+            [Some(_), None] => links[1] = Some(link),
+            [Some(_), Some(_)] => return Ok(None),
+        }
+    }
+    let [Some(first_link), Some(second_link)] = links else {
+        return Ok(None);
     };
-    let endpoints = [first, second].map(|link| {
-        markers_by_id
-            .get(link.entity_ref.as_str())
-            .copied()
-            .filter(|endpoint| {
-                endpoint.feature_ref == marker.feature_ref && endpoint.coordinates_m.is_some()
-            })
-    });
-    let [Some(first), Some(second)] = endpoints else {
-        return None;
+    let Some(first) = ctx
+        .get_hash_map(
+            markers_by_id,
+            first_link.entity_ref.as_str(),
+            "resolve SLDPRT first linked line endpoint",
+        )?
+        .copied()
+    else {
+        return Ok(None);
     };
+    let Some(second) = ctx
+        .get_hash_map(
+            markers_by_id,
+            second_link.entity_ref.as_str(),
+            "resolve SLDPRT second linked line endpoint",
+        )?
+        .copied()
+    else {
+        return Ok(None);
+    };
+    if !ctx.equal(
+        &first.feature_ref.as_deref(),
+        &marker.feature_ref.as_deref(),
+        "compare SLDPRT linked line features",
+    )? || first.coordinates_m.is_none()
+    {
+        return Ok(None);
+    }
+    if !ctx.equal(
+        &second.feature_ref.as_deref(),
+        &marker.feature_ref.as_deref(),
+        "compare SLDPRT linked line features",
+    )? || second.coordinates_m.is_none()
+    {
+        return Ok(None);
+    }
     if matches!(marker.kind(), SketchInputKind::Relation(_))
         && ![first, second].into_iter().all(|endpoint| {
             matches!(
@@ -551,44 +744,75 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
             )
         })
     {
-        return None;
+        return Ok(None);
     }
-    (first.id() != second.id()).then_some([first, second])
+    if ctx.equal(
+        first.id(),
+        second.id(),
+        "compare SLDPRT linked line endpoints",
+    )? {
+        Ok(None)
+    } else {
+        Ok(Some([first, second]))
+    }
 }
 
 pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
+    ctx: &DecodeContext<'_>,
     marker: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
-) -> Option<[&'a SketchInputEntity; 2]> {
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     if !matches!(
         marker.kind(),
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
     ) || marker.coordinates_m.is_none()
     {
-        return None;
+        return Ok(None);
     }
-    let endpoints = marker
-        .links()
-        .iter()
-        .filter(|link| link.entity_ref != marker.id())
-        .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
-        .filter(|endpoint| {
-            endpoint.feature_ref == marker.feature_ref
-                && endpoint.coordinates_m.is_some()
-                && matches!(
-                    endpoint.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-        });
     let mut selected: Option<&'a SketchInputEntity> = None;
-    for endpoint in endpoints {
-        match selected {
-            Some(first) if first.id() != endpoint.id() => return None,
-            None => selected = Some(endpoint),
-            Some(_) => {}
+    for link in ctx.admit_iter(marker.links(), "scan SLDPRT linked line endpoints")? {
+        if ctx.equal(
+            link.entity_ref.as_str(),
+            marker.id(),
+            "compare SLDPRT linked line identities",
+        )? {
+            continue;
+        }
+        let Some(endpoint) = ctx
+            .get_hash_map(
+                markers_by_id,
+                link.entity_ref.as_str(),
+                "resolve SLDPRT linked line endpoint",
+            )?
+            .copied()
+        else {
+            continue;
+        };
+        if !ctx.equal(
+            &endpoint.feature_ref.as_deref(),
+            &marker.feature_ref.as_deref(),
+            "compare SLDPRT linked line features",
+        )? || endpoint.coordinates_m.is_none()
+            || !matches!(
+                endpoint.kind(),
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+        {
+            continue;
+        }
+        if let Some(first) = selected {
+            if !ctx.equal(
+                first.id(),
+                endpoint.id(),
+                "compare SLDPRT linked line endpoints",
+            )? {
+                return Ok(None);
+            }
+        } else {
+            selected = Some(endpoint);
         }
     }
-    Some([marker, selected?])
+    Ok(selected.map(|endpoint| [marker, endpoint]))
 }
 
 #[cfg(test)]

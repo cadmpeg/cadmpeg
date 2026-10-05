@@ -1,14 +1,51 @@
 //! Frame-layout ownership regressions.
 
 use super::{
-    angled_reference_plane_frame_candidates, compact_reference_plane_frame_candidates,
-    explicit_reference_plane_frame,
+    explicit_reference_plane_frame, for_each_angled_reference_plane_frame,
+    for_each_compact_reference_plane_frame,
 };
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
 use cadmpeg_ir::math::{Point3, Vector3};
 
+fn has_compact_reference_plane_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+    expected_offset: usize,
+) -> bool {
+    let mut found = false;
+    for_each_compact_reference_plane_frame(ctx, payload, |offset, _| {
+        if offset == expected_offset {
+            found = true;
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    })
+    .expect("compact plane frame scan fits service policy");
+    found
+}
+
+fn has_angled_reference_plane_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+    expected_offset: usize,
+) -> bool {
+    let mut found = false;
+    for_each_angled_reference_plane_frame(ctx, payload, |offset, _| {
+        if offset == expected_offset {
+            found = true;
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    })
+    .expect("angled plane frame scan fits service policy");
+    found
+}
+
 #[test]
 fn matrix_reference_plane_owns_overlapping_compact_scan_window() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut payload = [0_u8; matrix_plane::LEN].to_vec();
     for (relative, value) in [
         (24, 1.0_f64),
@@ -26,14 +63,9 @@ fn matrix_reference_plane_owns_overlapping_compact_scan_window() {
     }
     payload[48] = 1;
 
-    assert!(compact_reference_plane_frame_candidates(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload
-    )
-    .any(|candidate| candidate.unwrap().0 == 33));
+    assert!(has_compact_reference_plane_candidate(&ctx, &payload, 33));
     assert_eq!(
-        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
+        explicit_reference_plane_frame(&ctx, &payload).unwrap(),
         Ok(Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -44,6 +76,7 @@ fn matrix_reference_plane_owns_overlapping_compact_scan_window() {
 
 #[test]
 fn matrix_reference_plane_owns_overlapping_angled_scan_window() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut payload = [0_u8; 226].to_vec();
     for (relative, value) in [
         (24, 1.0_f64),
@@ -79,10 +112,9 @@ fn matrix_reference_plane_owns_overlapping_angled_scan_window() {
         payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
 
-    assert!(angled_reference_plane_frame_candidates(&payload).any(|(offset, _)| offset == 105));
+    assert!(has_angled_reference_plane_candidate(&ctx, &payload, 105));
     assert_eq!(
-        explicit_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap(),
+        explicit_reference_plane_frame(&ctx, &payload).unwrap(),
         Ok(Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),

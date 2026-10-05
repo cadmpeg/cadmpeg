@@ -240,12 +240,22 @@ fn extended_terminal_radial_record_carries_a_one_based_roster_address() {
     }
 
     assert_eq!(
-        extended_terminal_repeated_radial_circle_index(&payload, 0),
+        extended_terminal_repeated_radial_circle_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            0
+        )
+        .unwrap(),
         Some(12)
     );
     payload[58..60].copy_from_slice(&13u16.to_le_bytes());
     assert_eq!(
-        extended_terminal_repeated_radial_circle_index(&payload, 0),
+        extended_terminal_repeated_radial_circle_index(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            0
+        )
+        .unwrap(),
         None
     );
 }
@@ -267,7 +277,15 @@ fn duplicated_extended_curve_address_identifies_a_radial_circle_roster() {
     payload[80..84].copy_from_slice(&1u32.to_le_bytes());
     payload[112..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-    assert_eq!(extended_radial_circle_index(&payload, 0), Some(7));
+    assert_eq!(
+        extended_radial_circle_index(&cadmpeg_test_support::service_decode_context(), &payload, 0)
+            .unwrap(),
+        Some(7)
+    );
     payload[66..68].copy_from_slice(&8u16.to_le_bytes());
-    assert_eq!(extended_radial_circle_index(&payload, 0), None);
+    assert_eq!(
+        extended_radial_circle_index(&cadmpeg_test_support::service_decode_context(), &payload, 0)
+            .unwrap(),
+        None
+    );
 }

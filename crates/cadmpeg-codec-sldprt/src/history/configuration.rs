@@ -424,7 +424,8 @@ pub(crate) fn project_configuration_design_states(
                     // shared hole construction. Copy missing construction
                     // fields while preserving authored local placements.
                     let inherit_placements =
-                        !crate::resolved_features::holes::hole_position_carrier_present(ctx, 
+                        !crate::resolved_features::holes::hole_position_carrier_present(
+                            ctx,
                             &feature,
                             histories,
                             scoped_lanes,

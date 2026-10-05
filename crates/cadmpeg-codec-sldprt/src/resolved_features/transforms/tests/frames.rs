@@ -1316,10 +1316,12 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
     )];
 
     assert!(nested_profile_contains_declared_circular_carriers(
+        &cadmpeg_test_support::service_decode_context(),
         &sketch,
         std::slice::from_ref(&circle),
         &declared,
-    ));
+    )
+    .unwrap());
     let mut arc = circle;
     arc.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: Point2::new(10.0, 20.0),
@@ -1329,15 +1331,19 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
     })
     .unwrap();
     assert!(nested_profile_contains_declared_circular_carriers(
+        &cadmpeg_test_support::service_decode_context(),
         &sketch,
         std::slice::from_ref(&arc),
         &declared,
-    ));
+    )
+    .unwrap());
     assert!(!nested_profile_contains_declared_circular_carriers(
+        &cadmpeg_test_support::service_decode_context(),
         &sketch,
         &[],
         &declared,
-    ));
+    )
+    .unwrap());
 }
 
 #[test]
