@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for identity order.
 
-use crate::index::identities::BorrowedIdentities;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::document::CadIr;
 use crate::report::{
@@ -12,9 +11,15 @@ use crate::report::{
     Severity,
 };
 
+/// Every identity met so far, held in temporary storage.
+struct Seen<'ctx, 'a> {
+    identities: HashSet<&'a str>,
+    storage: ScopedReservation<'ctx>,
+}
+
 fn push_identity<'a>(
     ctx: &DecodeContext<'_>,
-    seen: &mut BorrowedIdentities<'_, 'a>,
+    seen: &mut Seen<'_, 'a>,
     findings: &mut Vec<Finding>,
     id: &'a str,
 ) -> Result<(), CodecError> {
@@ -36,7 +41,9 @@ fn push_identity<'a>(
             format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"),
         )?;
     }
-    let inserted = seen.insert_unique(id, ())?;
+    let inserted = seen.storage.with_storage(|| {
+        ctx.insert_hash_set(&mut seen.identities, id, "validation identity uniqueness")
+    })?;
     if !inserted {
         super::record_finding(
             ctx,
@@ -88,7 +95,7 @@ macro_rules! define_model_identity_checks {
         fn check_model_identity_and_order<'a>(
             ctx: &DecodeContext<'_>,
             ir: &'a CadIr,
-            seen: &mut BorrowedIdentities<'_, 'a>,
+            seen: &mut Seen<'_, 'a>,
             findings: &mut Vec<Finding>,
         ) -> Result<(), CodecError> {
             $(
@@ -115,7 +122,10 @@ pub(super) fn check_identity_and_order(
     view: crate::native::view::NativeView<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let mut seen = BorrowedIdentities::build(ctx, |_| Ok(()))?;
+    let mut seen = Seen {
+        identities: HashSet::new(),
+        storage: ctx.reserve_scoped(0, "validation identity uniqueness")?,
+    };
     check_model_identity_and_order(ctx, view.ir, &mut seen, findings)?;
     let mut by_arena: (BTreeMap<String, Vec<&str>>, _) = (
         BTreeMap::new(),
@@ -147,33 +157,12 @@ pub(super) fn check_identity_and_order(
                     format_args!("native.{format}.{arena}"),
                     "validation native arena name",
                 )?;
-                let mut new_ids = Vec::new();
-                let ids = if ctx.contains_key_btree_map(
-                    &by_arena.0,
-                    &label,
-                    "group validation native arenas",
-                )? {
-                    ctx.get_mut_btree_map(
-                        &mut by_arena.0,
-                        &label,
-                        "group validation native arenas",
-                    )?
-                    .ok_or_else(|| CodecError::malformed("validation arena group disappeared"))?
-                } else {
-                    &mut new_ids
-                };
+                let ids = ctx
+                    .entry_btree_map(&mut by_arena.0, label, "group validation native arenas")?
+                    .or_default();
                 for record in records.records() {
                     ctx.charge_work(1, "validation native order scan")?;
                     ctx.push_vec(ids, record.id(), "validation native order slots")?;
-                }
-                if !new_ids.is_empty() {
-                    // discarded-value: lookup found no group for this arena label.
-                    let _ = ctx.insert_btree_map(
-                        &mut by_arena.0,
-                        label,
-                        new_ids,
-                        "validation native arena slots",
-                    )?;
                 }
                 Ok::<_, CodecError>(())
             })?;
