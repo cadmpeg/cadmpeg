@@ -9,9 +9,12 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_ir::hash::digest::Sha256Digest;
+
 use super::{
-    DisplayJtCompressedElement, DisplayJtCompressedElementSequence, DisplayJtDocument,
-    DisplayJtSegment, DisplayJtShapeLodElement,
+    DisplayJtCompressedElement, DisplayJtCompressedElementSequence,
+    DisplayJtCompressedElementSequenceWire, DisplayJtDocument, DisplayJtSegment,
+    DisplayJtShapeLodElement,
 };
 
 /// A JT graph with resolved owners and consistent repeated segment fields.
@@ -292,8 +295,7 @@ impl DisplayJtGraph {
                     .arena_as_for_decode(ctx, "display_jt_shape_lod_elements")?,
                 compressed_elements: namespace
                     .arena_as_for_decode(ctx, "display_jt_compressed_elements")?,
-                compressed_element_sequences: namespace
-                    .arena_as_for_decode(ctx, "display_jt_compressed_element_sequences")?,
+                compressed_element_sequences: sequences_for_decode(ctx, namespace)?,
             },
         )
     }
@@ -329,6 +331,55 @@ impl TryFrom<&NativeNamespace> for DisplayJtGraph {
     fn try_from(namespace: &NativeNamespace) -> Result<Self, Self::Error> {
         Self::from_namespace(namespace)
     }
+}
+
+/// Loads stored element sequences, hashing each tail under the decode budget.
+fn sequences_for_decode(
+    ctx: &DecodeContext<'_>,
+    namespace: &NativeNamespace,
+) -> Result<Vec<DisplayJtCompressedElementSequence>, NativeConvertError> {
+    const ARENA: &str = "display_jt_compressed_element_sequences";
+    const OPERATION: &str = "load DisplayJT element sequences";
+    let records = ctx
+        .get_btree_map(namespace.arenas(), ARENA, OPERATION)?
+        .map_or(&[][..], Vec::as_slice);
+    let mut wires =
+        namespace.arena_iter_as_for_decode::<DisplayJtCompressedElementSequenceWire>(ctx, ARENA);
+    let mut sequences = ctx.vector_storage(records.len(), OPERATION)?;
+    for record in ctx
+        .admit_iter(records, OPERATION)
+        .map_err(CodecError::from)?
+    {
+        let Some(wire) = wires.next() else {
+            break;
+        };
+        let mut digest_storage = ctx.reserve_scoped(0, "check DisplayJT sequence tail digest")?;
+        let sequence = match DisplayJtCompressedElementSequence::from_wire(wire?, |tail| {
+            digest_storage.with_storage(|| {
+                Sha256Digest::digest_for_decode(ctx, tail, "check DisplayJT sequence tail digest")
+            })
+        })? {
+            Ok(sequence) => sequence,
+            Err(message) => {
+                let source = NativeConvertError::ReadRecordMessage {
+                    id: record.identity_for_decode(ctx, "retain native record error identity")?,
+                    message: ctx.copy_retained_text(message, "retain DisplayJT graph rejection")?,
+                };
+                let arena = ctx.copy_retained_text(ARENA, "retain native arena error name")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NativeConvertError>()),
+                    "retain native arena error",
+                )?;
+                return Err(NativeConvertError::Arena {
+                    arena,
+                    source: Box::new(source),
+                });
+            }
+        };
+        ctx.reserve_vec(&mut sequences, 1, OPERATION)?;
+        sequences.push(sequence);
+    }
+    Ok(sequences)
 }
 
 fn admit_compressed_owner(

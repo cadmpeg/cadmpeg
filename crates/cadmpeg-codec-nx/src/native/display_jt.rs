@@ -1691,14 +1691,27 @@ struct DisplayJtCompressedElementSequenceWire {
 impl TryFrom<DisplayJtCompressedElementSequenceWire> for DisplayJtCompressedElementSequence {
     type Error = &'static str;
     fn try_from(wire: DisplayJtCompressedElementSequenceWire) -> Result<Self, Self::Error> {
-        if wire.tail_sha256 != Sha256Digest::digest(&wire.tail) {
-            return Err("DisplayJtCompressedElementSequence.tail_sha256 disagrees with tail");
+        match Self::from_wire(wire, |tail| Ok::<_, Infallible>(Sha256Digest::digest(tail))) {
+            Ok(sequence) => sequence,
+            Err(error) => match error {},
         }
-        Self::with_tail_digest(wire)
     }
 }
 
 impl DisplayJtCompressedElementSequence {
+    /// Checks a serialized sequence, hashing its tail through `digest`.
+    fn from_wire<E>(
+        wire: DisplayJtCompressedElementSequenceWire,
+        digest: impl FnOnce(&[u8]) -> Result<Sha256Digest, E>,
+    ) -> Result<Result<Self, &'static str>, E> {
+        if wire.tail_sha256 != digest(&wire.tail)? {
+            return Ok(Err(
+                "DisplayJtCompressedElementSequence.tail_sha256 disagrees with tail",
+            ));
+        }
+        Ok(Self::with_tail_digest(wire))
+    }
+
     /// Checks the framed extent of a sequence whose tail digest is already
     /// known to belong to its tail.
     fn with_tail_digest(
@@ -5760,9 +5773,9 @@ enum JtKeyed<T> {
 }
 
 /// Records a keyed value, turning a second occurrence of its key into a repeat.
-fn insert_jt_keyed<'ctx, K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
+fn insert_jt_keyed<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &DecodeContext<'_>,
-    storage: &mut ScopedReservation<'ctx>,
+    storage: &mut ScopedReservation<'_>,
     table: &mut HashMap<K, JtKeyed<V>>,
     key: K,
     value: V,
