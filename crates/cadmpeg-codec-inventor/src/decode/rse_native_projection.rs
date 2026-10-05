@@ -12,7 +12,7 @@ use crate::native::{
 };
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentMetaState};
 
-use super::{admit_native_items, retained_hex};
+use super::retained_hex;
 
 pub(super) struct RseNativeProjection {
     pub(super) identity_issues: Vec<StructuralIssueRecord>,
@@ -43,148 +43,202 @@ pub(super) fn project(
         segment_bulk_issues: Vec::new(),
         unpaired_segments: Vec::new(),
     };
-    for segment in &container.rse.segments {
+    for segment in ctx.admit_iter(
+        &container.rse.segments,
+        "visit Inventor decode/rse_native_projection items",
+    )? {
         let token = segment.pair.token.as_str();
-        for (ordinal, detail) in segment.identity_issues.iter().enumerate() {
-            admit_native_items(ctx, 1)?;
-            projection.identity_issues.push(StructuralIssueRecord {
-                id: ctx.format_retained(
-                    format_args!("inventor:rse:structural-issue#segment-{token}-{ordinal}"),
-                    "retain Inventor segment identity issue id",
-                )?,
-                scope: ctx.format_retained(
-                    format_args!("segment:{token}"),
-                    "retain Inventor segment identity issue scope",
-                )?,
-                detail: ctx
-                    .copy_retained_text(detail, "retain Inventor segment identity issue detail")?,
-            });
+        for (ordinal, detail) in ctx
+            .admit_iter(
+                &segment.identity_issues,
+                "visit Inventor decode/rse_native_projection items",
+            )?
+            .enumerate()
+        {
+            ctx.charge_entities(1, "admit Inventor native structural records")?;
+            ctx.push_vec(
+                &mut projection.identity_issues,
+                StructuralIssueRecord {
+                    id: ctx.format_retained(
+                        format_args!("inventor:rse:structural-issue#segment-{token}-{ordinal}"),
+                        "retain Inventor segment identity issue id",
+                    )?,
+                    scope: ctx.format_retained(
+                        format_args!("segment:{token}"),
+                        "retain Inventor segment identity issue scope",
+                    )?,
+                    detail: ctx.copy_retained_text(
+                        detail,
+                        "retain Inventor segment identity issue detail",
+                    )?,
+                },
+                "retain Inventor native structural records",
+            )?;
         }
-        admit_native_items(ctx, 1)?;
-        projection.segment_pairs.push(SegmentPairRecord {
-            id: ctx.format_retained(
-                format_args!("inventor:rse:segment#{token}"),
-                "retain Inventor segment pair id",
-            )?,
-            token: ctx.copy_retained_text(token, "retain Inventor segment pair token")?,
-            metadata_directory_id: segment.pair.metadata.directory_id(),
-            bulk_directory_id: segment.pair.bulk.directory_id(),
-        });
+        ctx.charge_entities(1, "admit Inventor native structural records")?;
+        ctx.push_vec(
+            &mut projection.segment_pairs,
+            SegmentPairRecord {
+                id: ctx.format_retained(
+                    format_args!("inventor:rse:segment#{token}"),
+                    "retain Inventor segment pair id",
+                )?,
+                token: ctx.copy_retained_text(token, "retain Inventor segment pair token")?,
+                metadata_directory_id: segment.pair.metadata.directory_id(),
+                bulk_directory_id: segment.pair.bulk.directory_id(),
+            },
+            "retain Inventor native structural records",
+        )?;
         match &segment.meta {
             SegmentMetaState::Parsed(meta) => {
-                admit_native_items(ctx, 1)?;
-                projection.segment_meta.push(SegmentMetaRecord {
-                    id: ctx.format_retained(
-                        format_args!("inventor:rse:segment-meta#{token}"),
-                        "retain Inventor segment metadata id",
-                    )?,
-                    token: ctx
-                        .copy_retained_text(token, "retain Inventor segment metadata token")?,
-                    version: meta.declared.version,
-                    kind: ctx
-                        .copy_retained_text(segment.kind.label(), "retain Inventor segment kind")?,
-                    display_name: ctx.copy_retained_text(
-                        &meta.display_name,
-                        "retain Inventor segment display name",
-                    )?,
-                    segment_id: retained_hex(
-                        ctx,
-                        &meta.segment_id,
-                        "retain Inventor segment GUID",
-                    )?,
-                    header_values: meta.header_values,
-                    state_words: meta.state_words,
-                    created: ctx.copy_retained_text(
-                        &meta.created,
-                        "retain Inventor segment creation text",
-                    )?,
-                    modified: ctx.copy_retained_text(
-                        &meta.modified,
-                        "retain Inventor segment modification text",
-                    )?,
-                    body_form: meta.body_form,
-                    expanded_body_len: cadmpeg_core::decode::u64_from_index(
-                        meta.body.window().len(),
-                    ),
-                    expanded_body_sha256:
-                        cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                            ctx,
-                            meta.body.window(),
-                            "retain Inventor segment body digest",
-                        )
-                        .map(String::from)?,
-                    table_prefix: meta.tables.prefix,
-                    block_count: cadmpeg_core::decode::u64_from_index(meta.tables.blocks.len()),
-                    type_count: cadmpeg_core::decode::u64_from_index(meta.tables.types.len()),
-                    terminal_id: retained_hex(
-                        ctx,
-                        &meta.tables.terminal_id,
-                        "retain Inventor segment terminal GUID",
-                    )?,
-                });
-                for section in &meta.tables.sections {
-                    admit_native_items(ctx, 1)?;
-                    projection.meta_sections.push(MetaSectionRecord {
+                ctx.charge_entities(1, "admit Inventor native structural records")?;
+                ctx.push_vec(
+                    &mut projection.segment_meta,
+                    SegmentMetaRecord {
                         id: ctx.format_retained(
-                            format_args!("inventor:rse:meta-section#{token}-{}", section.number),
-                            "retain Inventor metadata section id",
+                            format_args!("inventor:rse:segment-meta#{token}"),
+                            "retain Inventor segment metadata id",
                         )?,
                         token: ctx
-                            .copy_retained_text(token, "retain Inventor metadata section token")?,
-                        number: section.number,
-                        discriminator: section.discriminator,
-                        payload_len: cadmpeg_core::decode::u64_from_index(
-                            section.payload.window().len(),
+                            .copy_retained_text(token, "retain Inventor segment metadata token")?,
+                        version: meta.declared.version,
+                        kind: ctx.copy_retained_text(
+                            segment.kind.label(),
+                            "retain Inventor segment kind",
+                        )?,
+                        display_name: ctx.copy_retained_text(
+                            &meta.display_name,
+                            "retain Inventor segment display name",
+                        )?,
+                        segment_id: retained_hex(
+                            ctx,
+                            &meta.segment_id,
+                            "retain Inventor segment GUID",
+                        )?,
+                        header_values: meta.header_values,
+                        state_words: meta.state_words,
+                        created: ctx.copy_retained_text(
+                            &meta.created,
+                            "retain Inventor segment creation text",
+                        )?,
+                        modified: ctx.copy_retained_text(
+                            &meta.modified,
+                            "retain Inventor segment modification text",
+                        )?,
+                        body_form: meta.body_form,
+                        expanded_body_len: cadmpeg_core::decode::u64_from_index(
+                            meta.body.window().len(),
                         ),
-                        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                        expanded_body_sha256:
+                            cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                                ctx,
+                                meta.body.window(),
+                                "retain Inventor segment body digest",
+                            )
+                            .map(String::from)?,
+                        table_prefix: meta.tables.prefix,
+                        block_count: cadmpeg_core::decode::u64_from_index(meta.tables.blocks.len()),
+                        type_count: cadmpeg_core::decode::u64_from_index(meta.tables.types.len()),
+                        terminal_id: retained_hex(
                             ctx,
-                            section.payload.window(),
-                            "retain Inventor metadata section digest",
-                        )
-                        .map(String::from)?,
-                    });
+                            &meta.tables.terminal_id,
+                            "retain Inventor segment terminal GUID",
+                        )?,
+                    },
+                    "retain Inventor native structural records",
+                )?;
+                for section in
+                    ctx.admit_iter(&meta.tables.sections, "visit Inventor metadata sections")?
+                {
+                    ctx.charge_entities(1, "admit Inventor native structural records")?;
+                    ctx.push_vec(
+                        &mut projection.meta_sections,
+                        MetaSectionRecord {
+                            id: ctx.format_retained(
+                                format_args!(
+                                    "inventor:rse:meta-section#{token}-{}",
+                                    section.number
+                                ),
+                                "retain Inventor metadata section id",
+                            )?,
+                            token: ctx.copy_retained_text(
+                                token,
+                                "retain Inventor metadata section token",
+                            )?,
+                            number: section.number,
+                            discriminator: section.discriminator,
+                            payload_len: cadmpeg_core::decode::u64_from_index(
+                                section.payload.window().len(),
+                            ),
+                            payload_sha256:
+                                cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                                    ctx,
+                                    section.payload.window(),
+                                    "retain Inventor metadata section digest",
+                                )
+                                .map(String::from)?,
+                        },
+                        "retain Inventor native structural records",
+                    )?;
                 }
-                for descriptor in &meta.tables.types {
-                    admit_native_items(ctx, 1)?;
-                    projection.meta_types.push(MetaTypeRecord {
-                        id: ctx.format_retained(
-                            format_args!("inventor:rse:meta-type#{token}-{}", descriptor.index),
-                            "retain Inventor metadata type id",
-                        )?,
-                        token: ctx
-                            .copy_retained_text(token, "retain Inventor metadata type token")?,
-                        index: descriptor.index,
-                        type_id: retained_hex(
-                            ctx,
-                            &descriptor.id,
-                            "retain Inventor metadata type GUID",
-                        )?,
-                        fields: descriptor.fields,
-                    });
+                for descriptor in ctx.admit_iter(
+                    &meta.tables.types,
+                    "visit Inventor decode/rse_native_projection items",
+                )? {
+                    ctx.charge_entities(1, "admit Inventor native structural records")?;
+                    ctx.push_vec(
+                        &mut projection.meta_types,
+                        MetaTypeRecord {
+                            id: ctx.format_retained(
+                                format_args!("inventor:rse:meta-type#{token}-{}", descriptor.index),
+                                "retain Inventor metadata type id",
+                            )?,
+                            token: ctx
+                                .copy_retained_text(token, "retain Inventor metadata type token")?,
+                            index: descriptor.index,
+                            type_id: retained_hex(
+                                ctx,
+                                &descriptor.id,
+                                "retain Inventor metadata type GUID",
+                            )?,
+                            fields: descriptor.fields,
+                        },
+                        "retain Inventor native structural records",
+                    )?;
                 }
             }
             SegmentMetaState::Malformed { detail, .. } => {
-                admit_native_items(ctx, 1)?;
-                projection.segment_meta_issues.push(SegmentMetaIssueRecord {
-                    id: ctx.format_retained(
-                        format_args!("inventor:rse:segment-meta-issue#{token}"),
-                        "retain Inventor metadata issue id",
-                    )?,
-                    token: ctx.copy_retained_text(token, "retain Inventor metadata issue token")?,
-                    detail: ctx
-                        .copy_retained_text(detail, "retain Inventor metadata issue detail")?,
-                });
+                ctx.charge_entities(1, "admit Inventor native structural records")?;
+                ctx.push_vec(
+                    &mut projection.segment_meta_issues,
+                    SegmentMetaIssueRecord {
+                        id: ctx.format_retained(
+                            format_args!("inventor:rse:segment-meta-issue#{token}"),
+                            "retain Inventor metadata issue id",
+                        )?,
+                        token: ctx
+                            .copy_retained_text(token, "retain Inventor metadata issue token")?,
+                        detail: ctx
+                            .copy_retained_text(detail, "retain Inventor metadata issue detail")?,
+                    },
+                    "retain Inventor native structural records",
+                )?;
             }
         }
         match &segment.bulk {
             SegmentBulkState::Framed(bulk) => {
                 let records = match &bulk.records {
                     RecordFrameState::Framed(table) => {
-                        for record in &table.records {
-                            admit_native_items(ctx, 1)?;
-                            projection
-                                .rse_records
-                                .push(RseRecordRecord::from_frame(ctx, token, record)?);
+                        for record in ctx.admit_iter(
+                            &table.records,
+                            "visit Inventor decode/rse_native_projection items",
+                        )? {
+                            ctx.charge_entities(1, "admit Inventor native structural records")?;
+                            ctx.push_vec(
+                                &mut projection.rse_records,
+                                RseRecordRecord::from_frame(ctx, token, record)?,
+                                "retain Inventor native structural records",
+                            )?;
                         }
                         SegmentBulkFrame::Framed {
                             record_count: cadmpeg_core::decode::u64_from_index(table.records.len()),
@@ -205,71 +259,103 @@ pub(super) fn project(
                             .copy_retained_text(detail, "retain Inventor RSe frame issue")?,
                     },
                 };
-                admit_native_items(ctx, 1)?;
-                projection.segment_bulk.push(SegmentBulkRecord {
-                    id: ctx.format_retained(
-                        format_args!("inventor:rse:segment-bulk#{token}"),
-                        "retain Inventor segment bulk id",
-                    )?,
-                    token: ctx.copy_retained_text(token, "retain Inventor segment bulk token")?,
-                    prefix: retained_hex(ctx, &bulk.prefix, "retain Inventor segment bulk prefix")?,
-                    form: bulk.form.value(),
-                    compressed_len: cadmpeg_core::decode::u64_from_index(
-                        bulk.compressed.window().len(),
-                    ),
-                    compressed_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bulk.compressed.window(),
-                        "retain Inventor compressed bulk digest",
-                    )
-                    .map(String::from)?,
-                    expanded_len: cadmpeg_core::decode::u64_from_index(
-                        bulk.expanded.window().len(),
-                    ),
-                    expanded_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-                        ctx,
-                        bulk.expanded.window(),
-                        "retain Inventor expanded bulk digest",
-                    )
-                    .map(String::from)?,
-                    records,
-                });
+                ctx.charge_entities(1, "admit Inventor native structural records")?;
+                ctx.push_vec(
+                    &mut projection.segment_bulk,
+                    SegmentBulkRecord {
+                        id: ctx.format_retained(
+                            format_args!("inventor:rse:segment-bulk#{token}"),
+                            "retain Inventor segment bulk id",
+                        )?,
+                        token: ctx
+                            .copy_retained_text(token, "retain Inventor segment bulk token")?,
+                        prefix: retained_hex(
+                            ctx,
+                            &bulk.prefix,
+                            "retain Inventor segment bulk prefix",
+                        )?,
+                        form: bulk.form.value(),
+                        compressed_len: cadmpeg_core::decode::u64_from_index(
+                            bulk.compressed.window().len(),
+                        ),
+                        compressed_sha256:
+                            cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                                ctx,
+                                bulk.compressed.window(),
+                                "retain Inventor compressed bulk digest",
+                            )
+                            .map(String::from)?,
+                        expanded_len: cadmpeg_core::decode::u64_from_index(
+                            bulk.expanded.window().len(),
+                        ),
+                        expanded_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                            ctx,
+                            bulk.expanded.window(),
+                            "retain Inventor expanded bulk digest",
+                        )
+                        .map(String::from)?,
+                        records,
+                    },
+                    "retain Inventor native structural records",
+                )?;
             }
             SegmentBulkState::Malformed(detail) => {
-                admit_native_items(ctx, 1)?;
-                projection.segment_bulk_issues.push(SegmentBulkIssueRecord {
-                    id: ctx.format_retained(
-                        format_args!("inventor:rse:segment-bulk-issue#{token}"),
-                        "retain Inventor bulk issue id",
-                    )?,
-                    token: ctx.copy_retained_text(token, "retain Inventor bulk issue token")?,
-                    detail: ctx.copy_retained_text(detail, "retain Inventor bulk issue detail")?,
-                });
+                ctx.charge_entities(1, "admit Inventor native structural records")?;
+                ctx.push_vec(
+                    &mut projection.segment_bulk_issues,
+                    SegmentBulkIssueRecord {
+                        id: ctx.format_retained(
+                            format_args!("inventor:rse:segment-bulk-issue#{token}"),
+                            "retain Inventor bulk issue id",
+                        )?,
+                        token: ctx.copy_retained_text(token, "retain Inventor bulk issue token")?,
+                        detail: ctx
+                            .copy_retained_text(detail, "retain Inventor bulk issue detail")?,
+                    },
+                    "retain Inventor native structural records",
+                )?;
             }
         }
     }
-    for token in &container.rse.unpaired_metadata {
-        admit_native_items(ctx, 1)?;
-        projection.unpaired_segments.push(UnpairedSegmentRecord {
-            id: ctx.format_retained(
-                format_args!("inventor:rse:unpaired-metadata#{}", token.as_str()),
-                "retain Inventor unpaired metadata id",
-            )?,
-            token: ctx
-                .copy_retained_text(token.as_str(), "retain Inventor unpaired metadata token")?,
-            missing_member: UnpairedMember::Bulk,
-        });
+    for token in ctx.admit_iter(
+        &container.rse.unpaired_metadata,
+        "visit Inventor decode/rse_native_projection items",
+    )? {
+        ctx.charge_entities(1, "admit Inventor native structural records")?;
+        ctx.push_vec(
+            &mut projection.unpaired_segments,
+            UnpairedSegmentRecord {
+                id: ctx.format_retained(
+                    format_args!("inventor:rse:unpaired-metadata#{}", token.as_str()),
+                    "retain Inventor unpaired metadata id",
+                )?,
+                token: ctx.copy_retained_text(
+                    token.as_str(),
+                    "retain Inventor unpaired metadata token",
+                )?,
+                missing_member: UnpairedMember::Bulk,
+            },
+            "retain Inventor native structural records",
+        )?;
     }
-    for token in &container.rse.unpaired_bulk {
-        admit_native_items(ctx, 1)?;
-        projection.unpaired_segments.push(UnpairedSegmentRecord {
-            id: ctx.format_retained(
-                format_args!("inventor:rse:unpaired-bulk#{}", token.as_str()),
-                "retain Inventor unpaired bulk id",
-            )?,
-            token: ctx.copy_retained_text(token.as_str(), "retain Inventor unpaired bulk token")?,
-            missing_member: UnpairedMember::Metadata,
-        });
+    for token in ctx.admit_iter(
+        &container.rse.unpaired_bulk,
+        "visit Inventor decode/rse_native_projection items",
+    )? {
+        ctx.charge_entities(1, "admit Inventor native structural records")?;
+        ctx.push_vec(
+            &mut projection.unpaired_segments,
+            UnpairedSegmentRecord {
+                id: ctx.format_retained(
+                    format_args!("inventor:rse:unpaired-bulk#{}", token.as_str()),
+                    "retain Inventor unpaired bulk id",
+                )?,
+                token: ctx
+                    .copy_retained_text(token.as_str(), "retain Inventor unpaired bulk token")?,
+                missing_member: UnpairedMember::Metadata,
+            },
+            "retain Inventor native structural records",
+        )?;
     }
     Ok(projection)
 }
