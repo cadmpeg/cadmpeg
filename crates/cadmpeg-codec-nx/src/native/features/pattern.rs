@@ -6,12 +6,13 @@ use crate::om::counted_pattern_references::CountedPatternReferences;
 use crate::om::pattern_references::{PatternPayloadReferenceLayout, PatternReferences};
 use crate::om::reference_index::PayloadIndexToken;
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 
 use crate::container::Container;
 
 use super::joined_payload::JoinedPayload;
-use super::payload_content::FeaturePayloadContent;
+use super::payload_content::{
+    copy_block_ids, malformed_reason, operation_key, shared_block_store, FeaturePayloadContent,
+};
 use super::FeatureConstructionOwner;
 use super::FeatureConstructionPayload;
 use super::FeatureOperationLabel;
@@ -1061,23 +1062,27 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             "NX pattern construction labels",
         )?;
     }
-    let mut operations = BTreeSet::<&str>::new();
-    for reference in ctx.admit_iter(references, "index NX pattern construction references")? {
-        index_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&str>() * 4,
-        ))?;
-        ctx.insert_btree_set(
-            &mut operations,
-            reference.operation_label.as_str(),
-            "NX pattern construction operations",
-        )?;
-    }
+    let (groups, _groups_reservation) = ctx.collect_scoped_btree_groups(
+        references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "group NX pattern construction references",
+    )?;
     let mut output = Vec::new();
-    'operations: for operation_label in ctx
-        .admit_iter(&operations, "visit NX pattern construction operations")?
-        .copied()
-    {
-        let Some(kind) = kinds.get(operation_label) else {
+    let mut groups = groups.into_iter();
+    for _ in ctx.admit_iter(
+        &(0..groups.len()),
+        "visit NX pattern construction operations",
+    )? {
+        let Some((operation_label, mut graph)) = groups.next() else {
+            break;
+        };
+        let Some(kind) = ctx.get_btree_map(
+            &kinds,
+            &operation_label,
+            "find NX pattern construction kind",
+        )?
+        else {
             continue;
         };
         let operation_kind = match *kind {
@@ -1085,19 +1090,8 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             "Pattern Geometry" => FeaturePatternKind::Geometry,
             _ => continue,
         };
-        let mut graph_reservation = ctx.reserve_scoped(0, "NX pattern construction graph")?;
-        let mut graph = Vec::new();
-        for reference in ctx
-            .admit_iter(references, "match NX pattern construction references")?
-            .filter(|reference| reference.operation_label == operation_label)
-        {
-            ctx.reserve_scoped_vec(
-                &mut graph_reservation,
-                &mut graph,
-                1,
-                "NX pattern construction graph",
-            )?;
-            graph.push(reference);
+        if !matches!(graph.len(), 9 | 10) {
+            continue;
         }
         ctx.stable_sort_by(
             &mut graph,
@@ -1105,11 +1099,10 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             Ord::cmp,
             "sort NX pattern construction graph",
         )?;
-        if !matches!(graph.len(), 9 | 10)
-            || ctx
-                .admit_iter(graph.as_slice(), "validate NX pattern graph order")?
-                .enumerate()
-                .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
+        if ctx
+            .admit_iter(graph.as_slice(), "validate NX pattern graph order")?
+            .enumerate()
+            .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
             || ctx.any_by(
                 graph.as_slice(),
                 |reference| Ok(reference.layout != graph[0].layout),
@@ -1118,53 +1111,39 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         {
             continue;
         }
-        let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
-        let mut data_blocks = Vec::new();
-        for reference in ctx
-            .admit_iter(&graph, "copy NX pattern construction blocks")?
-            .copied()
-        {
-            let Some(block) = reference.data_block.as_deref() else {
-                continue 'operations;
-            };
-            source_id_storage.with_storage(|| {
-                ctx.reserve_vec(&mut data_blocks, 1, "NX pattern construction block IDs")
-            })?;
-            data_blocks.push(ctx.copy_retained_text(block, "NX pattern construction block ID")?);
-        }
-        let Some(store) = data_blocks
-            .first()
-            .and_then(|block| block.rsplit_once(":block#").map(|(prefix, _)| prefix))
+        let Some((data_blocks, _source_id_storage)) = copy_block_ids(
+            ctx,
+            ctx.admit_iter(&graph, "copy NX pattern construction blocks")?
+                .map(|reference| reference.data_block.as_deref()),
+            "NX pattern construction block IDs",
+        )?
         else {
             continue;
         };
-        if ctx.any_by(
+        if shared_block_store(
+            ctx,
             &data_blocks,
-            |block| {
-                Ok(block
-                    .rsplit_once(":block#")
-                    .is_none_or(|(prefix, _)| prefix != store))
-            },
             "validate NX pattern construction block owners",
-        )? {
+        )?
+        .is_none()
+        {
             continue;
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
-        let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
+        let Some(operation_key) = operation_key(
+            ctx,
+            operation_label,
+            "find NX pattern construction operation key",
+        )?
+        else {
             continue;
         };
-        let prefix = "nx:feature-history:pattern-construction-payload#";
-        let id_len = prefix
-            .len()
-            .checked_add(operation_key.len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("NX pattern construction payload identity", 0, 1)
-            })?;
-        let mut id = ctx.retained_string(id_len, "NX pattern construction payload identity")?;
-        id.push_str(prefix);
-        id.push_str(operation_key);
+        let id = ctx.format_retained(
+            format_args!("nx:feature-history:pattern-construction-payload#{operation_key}"),
+            "NX pattern construction payload identity",
+        )?;
         let mut construction_references = Vec::new();
         for reference in ctx
             .admit_iter(&graph, "copy NX pattern construction reference IDs")?
@@ -1228,8 +1207,9 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
             let value = ctx
                 .copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
-            let value = PrintableString::new(value)
-                .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
+            let value = PrintableString::new(value).map_err(|error| {
+                malformed_reason(ctx, error, "NX pattern construction string error")
+            })?;
             let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,
                 "NX pattern construction string label",

@@ -3,7 +3,10 @@ use super::body_scalar_triple::FeatureOperationBodyScalarTriple;
 use super::extrude_32::{FeatureExtrude32Construction, FeatureExtrudePayload32Branch};
 use super::joined_payload::JoinedPayload;
 use super::object_frame::DataBlockObjectFrame;
-use super::payload_content::FeaturePayloadContent;
+use super::payload_content::{
+    block_store, copy_block_ids, malformed_reason, operation_key, shared_block_store,
+    FeaturePayloadContent,
+};
 use super::payload_name::FeaturePayloadName;
 use super::point_scalar_lane::{FeaturePointConstructionScalarLane, PointScalarPositions};
 use super::reference::ConstructionReference;
@@ -32,7 +35,7 @@ use crate::om::compact::LocatedCompactIndex;
 use crate::om::reference_index::PayloadIndexToken;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
 pub(super) struct ResolvedFeaturePayloadReference {
@@ -164,24 +167,21 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             "NX projected curve kinds",
         )?;
     }
-    let mut operations = BTreeSet::new();
-    let mut operation_reservation = ctx.reserve_scoped(0, "NX projected curve operations")?;
-    for reference in ctx.admit_iter(references, "index NX projected-curve references")? {
-        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&str>() * 4,
-        ))?;
-        ctx.insert_btree_set(
-            &mut operations,
-            reference.operation_label.as_str(),
-            "NX projected curve operations",
-        )?;
-    }
+    let (groups, _groups_reservation) = ctx.collect_scoped_btree_groups(
+        references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "group NX projected-curve references",
+    )?;
     let mut payloads = Vec::new();
-    for operation_label in ctx
-        .admit_iter(&operations, "visit NX projected-curve operations")?
-        .copied()
-    {
-        let Some(kind) = kinds.get(operation_label) else {
+    let mut groups = groups.into_iter();
+    for _ in ctx.admit_iter(&(0..groups.len()), "visit NX projected-curve operations")? {
+        let Some((operation_label, mut field)) = groups.next() else {
+            break;
+        };
+        let Some(kind) =
+            ctx.get_btree_map(&kinds, &operation_label, "find NX projected-curve kind")?
+        else {
             continue;
         };
         let (operation_kind, expected_len) = match *kind {
@@ -189,19 +189,8 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             "CPROJ_CMB" => (FeatureProjectedCurveKind::Combined, 8),
             _ => continue,
         };
-        let mut field = Vec::new();
-        let mut field_reservation = ctx.reserve_scoped(0, "NX projected curve reference field")?;
-        for reference in ctx
-            .admit_iter(references, "match NX projected-curve references")?
-            .filter(|reference| reference.operation_label == operation_label)
-        {
-            ctx.reserve_scoped_vec(
-                &mut field_reservation,
-                &mut field,
-                1,
-                "NX projected curve reference field",
-            )?;
-            field.push(reference);
+        if field.len() != expected_len {
+            continue;
         }
         ctx.stable_sort_by(
             &mut field,
@@ -209,61 +198,41 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             Ord::cmp,
             "sort NX projected curve references",
         )?;
-        if field.len() != expected_len
-            || ctx
-                .admit_iter(&field, "check NX projected-curve reference order")?
-                .enumerate()
-                .any(|(ordinal, reference)| u32::try_from(ordinal).ok() != Some(reference.ordinal))
+        if ctx
+            .admit_iter(&field, "check NX projected-curve reference order")?
+            .enumerate()
+            .any(|(ordinal, reference)| u32::try_from(ordinal).ok() != Some(reference.ordinal))
         {
             continue;
         }
-        let mut data_blocks = Vec::new();
-        let mut block_reservation = ctx.reserve_scoped(0, "NX projected curve block IDs")?;
-        let mut complete = true;
-        for reference in ctx.admit_iter(&field, "resolve NX projected-curve block IDs")? {
-            let Some(block) = reference.data_block.as_deref() else {
-                complete = false;
-                break;
-            };
-
-            block_reservation.with_storage(|| {
-                ctx.reserve_vec(&mut data_blocks, 1, "NX projected curve block IDs")
-            })?;
-            let mut copy = String::new();
-            ctx.try_reserve_retained_text(
-                &mut copy,
-                block.len(),
-                "copy NX projected curve block ID",
-            )?;
-            copy.push_str(block);
-            data_blocks.push(copy);
-        }
-        if !complete {
-            continue;
-        }
-        let Some(store) = data_blocks
-            .first()
-            .and_then(|block| block.rsplit_once(":block#"))
-            .map(|(store, _)| store)
+        let Some((data_blocks, block_reservation)) = copy_block_ids(
+            ctx,
+            ctx.admit_iter(&field, "resolve NX projected-curve block IDs")?
+                .map(|reference| reference.data_block.as_deref()),
+            "NX projected curve block IDs",
+        )?
         else {
             continue;
         };
-        if ctx.any_by(
+        if shared_block_store(
+            ctx,
             &data_blocks,
-            |block| {
-                Ok(block
-                    .rsplit_once(":block#")
-                    .is_none_or(|(prefix, _)| prefix != store))
-            },
             "validate NX projected-curve block owners",
-        )? {
+        )?
+        .is_none()
+        {
             continue;
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
         drop(block_reservation);
-        let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
+        let Some(operation_key) = operation_key(
+            ctx,
+            operation_label,
+            "find NX projected-curve operation key",
+        )?
+        else {
             continue;
         };
         let id = ctx.format_retained(
@@ -351,7 +320,7 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             let text =
                 ctx.copy_retained_text(value.value.as_str(), "NX projected curve string value")?;
             let value = crate::printable_string::PrintableString::new(text)
-                .map_err(|error| CodecError::Malformed(error.into()))?;
+                .map_err(|error| malformed_reason(ctx, error, "NX projected curve string error"))?;
             ctx.reserve_vec(&mut strings, 1, "NX projected curve strings")?;
             strings.push(FeatureProjectedCurveConstructionString {
                 id,
@@ -444,9 +413,16 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
         if target_ordinal < 2 {
             continue;
         }
-        let Some((expected_section, expected_block)) = expected_target
-            .strip_prefix("nx:om-data-blocks-")
-            .and_then(|tail| tail.split_once(":block#"))
+        let Some(tail) = ctx.strip_prefix(
+            expected_target,
+            "nx:om-data-blocks-",
+            "split NX point scalar lane target",
+        )?
+        else {
+            continue;
+        };
+        let Some((expected_section, expected_block)) =
+            ctx.split_once(tail, ":block#", "split NX point scalar lane target")?
         else {
             continue;
         };
@@ -473,39 +449,22 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
         if !canonical || block_ordinal != Some(target_ordinal) {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(indexed.len()),
-            "match NX point scalar lane",
-        )?;
-        let mut candidate = None;
-        let mut ambiguous = false;
-        for (ordinal, (entry, section)) in indexed.iter().enumerate() {
-            if section_ordinal != Some(ordinal) {
-                continue;
-            }
-            let Some((_, _, records)) = section.as_offset_only() else {
-                continue;
-            };
-            let (Some(preceding), Some(target)) = (
-                records.get(target_ordinal - 2),
-                records.get(target_ordinal - 1),
-            ) else {
-                continue;
-            };
-            let Some(lane) = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes)
-            else {
-                continue;
-            };
-            if candidate.is_some() {
-                ambiguous = true;
-                break;
-            }
-            candidate = Some((ordinal, *entry, preceding, target, lane));
-        }
-        if ambiguous {
+        let Some(section_ordinal) = section_ordinal else {
             continue;
-        }
-        let Some((section_ordinal, entry, preceding, target, lane)) = candidate else {
+        };
+        let Some((entry, section)) = indexed.get(section_ordinal) else {
+            continue;
+        };
+        let Some((_, _, records)) = section.as_offset_only() else {
+            continue;
+        };
+        let (Some(preceding), Some(target)) = (
+            records.get(target_ordinal - 2),
+            records.get(target_ordinal - 1),
+        ) else {
+            continue;
+        };
+        let Some(lane) = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes) else {
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -733,38 +692,24 @@ pub(in crate::native) fn feature_surface_construction_payloads(
     references: &[FeatureSurfaceConstructionReference],
 ) -> Result<Vec<FeatureSurfaceConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let label_bytes = references
-        .len()
-        .checked_mul(std::mem::size_of::<&str>() * 4)
-        .ok_or_else(|| ctx.refuse_codec_limit("NX surface payload labels", 0, 1))?;
-    let _labels_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(label_bytes),
-        "NX surface payload labels",
+    let (groups, _groups_reservation) = ctx.collect_scoped_btree_groups(
+        references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "group NX surface construction references",
     )?;
-    let mut labels = BTreeSet::new();
-    for reference in ctx.admit_iter(references, "index NX surface payload labels")? {
-        ctx.insert_btree_set(
-            &mut labels,
-            reference.operation_label.as_str(),
-            "NX surface payload labels",
-        )?;
-    }
     let mut output = Vec::new();
-    for operation_label in ctx
-        .admit_iter(&labels, "visit NX surface construction operations")?
-        .copied()
-    {
-        let graph_count = ctx
-            .admit_iter(references, "count NX surface construction references")?
-            .filter(|reference| reference.operation_label == operation_label)
-            .count();
-
-        let (mut graph, _graph_reservation) =
-            ctx.temporary_vec(graph_count, "NX surface construction graph")?;
-        graph.extend(
-            ctx.admit_iter(references, "copy NX surface construction references")?
-                .filter(|reference| reference.operation_label == operation_label),
-        );
+    let mut groups = groups.into_iter();
+    for _ in ctx.admit_iter(
+        &(0..groups.len()),
+        "visit NX surface construction operations",
+    )? {
+        let Some((operation_label, mut graph)) = groups.next() else {
+            break;
+        };
+        if graph.len() != 14 {
+            continue;
+        }
         ctx.stable_sort_by(
             &mut graph,
             |value| &value.ordinal,
@@ -785,58 +730,39 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         else {
             continue;
         };
-        let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
-        let mut data_blocks = Vec::new();
-        source_id_storage.with_storage(|| {
-            ctx.reserve_vec(
-                &mut data_blocks,
-                14,
-                "NX surface construction source blocks",
-            )
-        })?;
-        for reference in graph {
-            let Some(block) = reference.data_block.as_deref() else {
-                break;
-            };
-            data_blocks
-                .push(ctx.copy_retained_text(block, "NX surface construction source block")?);
-        }
-        if data_blocks.len() != 14 {
-            continue;
-        }
-        let Some(store) = data_blocks
-            .first()
-            .and_then(|block| block.rsplit_once(":block#").map(|(store, _)| store))
+        let Some((data_blocks, _source_id_storage)) = copy_block_ids(
+            ctx,
+            ctx.admit_iter(&graph, "copy NX surface construction source blocks")?
+                .map(|reference| reference.data_block.as_deref()),
+            "NX surface construction source blocks",
+        )?
         else {
             continue;
         };
-        if ctx.any_by(
+        if shared_block_store(
+            ctx,
             &data_blocks,
-            |block| {
-                Ok(block
-                    .rsplit_once(":block#")
-                    .is_none_or(|(prefix, _)| prefix != store))
-            },
             "validate NX surface construction block owners",
-        )? {
+        )?
+        .is_none()
+        {
             continue;
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
-        let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
+        let Some(operation_key) = operation_key(
+            ctx,
+            operation_label,
+            "find NX surface construction operation key",
+        )?
+        else {
             continue;
         };
-        let prefix = "nx:feature-history:surface-construction-payload#";
-        let id_len = prefix
-            .len()
-            .checked_add(operation_key.len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("NX surface construction payload identity", 0, 1)
-            })?;
-        let mut id = ctx.retained_string(id_len, "NX surface construction payload identity")?;
-        id.push_str(prefix);
-        id.push_str(operation_key);
+        let id = ctx.format_retained(
+            format_args!("nx:feature-history:surface-construction-payload#{operation_key}"),
+            "NX surface construction payload identity",
+        )?;
         let mut construction_references: [String; 14] = std::array::from_fn(|_| String::new());
         for (slot, reference) in graph.into_iter().enumerate() {
             construction_references[slot] = ctx
@@ -933,7 +859,7 @@ pub(in crate::native) fn feature_surface_construction_strings(
             let text =
                 ctx.copy_retained_text(value.value.as_str(), "NX surface payload string text")?;
             let value = crate::payload_text::PayloadText::new(text)
-                .map_err(|error| CodecError::Malformed(error.to_owned()))?;
+                .map_err(|error| malformed_reason(ctx, error, "NX surface payload string error"))?;
             ctx.reserve_vec(&mut strings, 1, "NX surface payload strings")?;
             strings.push(FeatureSurfaceConstructionString {
                 id,
@@ -1252,30 +1178,69 @@ pub(in crate::native) fn feature_operation_body_operands(
     bindings: &[SegmentBodyBinding],
 ) -> Result<Vec<FeatureOperationBodyOperand>, CodecError> {
     let mut operands = Vec::new();
+    let input_stores = OperationInputStores::new(ctx, inputs)?;
+    let mut block_ids = BTreeMap::new();
+    let mut block_id_storage = ctx.reserve_scoped(0, "NX operation operand data block index")?;
+    for (position, block) in ctx
+        .admit_iter(blocks, "index NX operation operand data blocks")?
+        .enumerate()
+    {
+        block_id_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut block_ids,
+                block.id.as_str(),
+                position,
+                "NX operation operand data block index",
+            )
+        })?;
+    }
+    let mut reference_stores = BTreeMap::new();
+    let mut reference_storage = ctx.reserve_scoped(0, "NX operation body reference stores")?;
+    let mut reference_without_inputs = false;
+    for (position, reference) in ctx
+        .admit_iter(references, "index NX operation body references")?
+        .enumerate()
+    {
+        let (has_inputs, store) = input_stores.get(ctx, &reference.operation_label)?;
+        reference_without_inputs |= !has_inputs;
+        if let Some(store) = store {
+            reference_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut reference_stores,
+                    store,
+                    position,
+                    "NX operation body reference stores",
+                )
+            })?;
+        }
+    }
+    let (binding_groups, _binding_storage) = ctx.collect_scoped_btree_groups(
+        ctx.admit_iter(bindings, "walk NX operation operand segment bindings")?
+            .flat_map(|binding| {
+                let alias = (binding.body_alias_object_index != binding.body_object_index)
+                    .then_some(binding.body_alias_object_index);
+                std::iter::once(binding.body_object_index)
+                    .chain(alias)
+                    .map(move |index| (index, binding))
+            }),
+        "index NX operation operand segment bindings",
+    )?;
     for member in ctx.admit_iter(members, "build NX feature operation body operands")? {
         if member.member.atom.value() == member.body_object_index {
             continue;
         }
-        let (has_inputs, member_store) =
-            unique_operation_store(ctx, inputs, &member.operation_label)?;
+        let (has_inputs, member_store) = input_stores.get(ctx, &member.operation_label)?;
         if member_store.is_none() && has_inputs {
             continue;
         }
         let operand_data_block = if let Some(store) = member_store {
-            let length = store
-                .len()
-                .checked_add(7 + 10)
-                .ok_or_else(|| ctx.refuse_codec_limit("retain NX operand data block id", 0, 1))?;
-            let mut candidate = ctx.reserve_scoped(0, "format NX operand data block id")?;
-            let mut id = String::new();
-            candidate.with_storage(|| {
-                ctx.try_reserve_retained_text(&mut id, length, "allocate NX operand data block id")
-            })?;
-            write!(id, "{store}:block#{}", member.member.atom.value())
-                .map_err(|_| ctx.refuse_codec_limit("write NX operand data block id", 0, 1))?;
-            if ctx.any_by(
-                blocks,
-                |block| Ok(block.id == id),
+            let (id, candidate) = ctx.format_scoped(
+                format_args!("{store}:block#{}", member.member.atom.value()),
+                "format NX operand data block id",
+            )?;
+            if ctx.contains_key_btree_map(
+                &block_ids,
+                id.as_str(),
                 "find NX operation operand data block",
             )? {
                 candidate.commit()?;
@@ -1289,36 +1254,33 @@ pub(in crate::native) fn feature_operation_body_operands(
         if member_store.is_some() && operand_data_block.is_none() {
             continue;
         }
-        let mut same_namespace_reference = false;
-        for reference in ctx.admit_iter(references, "match NX operation body references")? {
-            let (has_reference_inputs, reference_store) =
-                unique_operation_store(ctx, inputs, &reference.operation_label)?;
-            let matches = match member_store {
-                Some(store) => reference_store == Some(store),
-                None => !has_reference_inputs,
-            };
-            if matches {
-                same_namespace_reference = true;
-                break;
-            }
-        }
+        let same_namespace_reference = match member_store {
+            Some(store) => ctx.contains_key_btree_map(
+                &reference_stores,
+                store,
+                "match NX operation body reference store",
+            )?,
+            None => reference_without_inputs,
+        };
         let mut segment_body_bindings = Vec::new();
         if member_store.is_none() {
-            for binding in ctx
-                .admit_iter(bindings, "find NX operation operand segment bindings")?
-                .filter(|binding| {
-                    binding.body_object_index == member.member.atom.value()
-                        || binding.body_alias_object_index == member.member.atom.value()
-                })
-            {
-                ctx.reserve_vec(
-                    &mut segment_body_bindings,
-                    1,
-                    "NX operation operand bindings",
-                )?;
-                segment_body_bindings.push(
-                    ctx.copy_retained_text(&binding.id, "retain NX operation operand binding id")?,
-                );
+            let key = member.member.atom.value();
+            if let Some(group) = ctx.get_btree_map(
+                &binding_groups,
+                &key,
+                "find NX operation operand segment bindings",
+            )? {
+                for binding in ctx.admit_iter(group, "copy NX operation operand bindings")? {
+                    ctx.reserve_vec(
+                        &mut segment_body_bindings,
+                        1,
+                        "NX operation operand bindings",
+                    )?;
+                    segment_body_bindings.push(ctx.copy_retained_text(
+                        &binding.id,
+                        "retain NX operation operand binding id",
+                    )?);
+                }
             }
         }
         if !same_namespace_reference && segment_body_bindings.is_empty() {
@@ -1348,27 +1310,97 @@ pub(in crate::native) fn feature_operation_body_operands(
     Ok(operands)
 }
 
-fn unique_operation_store<'a>(
-    ctx: &DecodeContext<'_>,
-    inputs: &'a [FeatureInputBlock],
-    operation: &str,
-) -> Result<(bool, Option<&'a str>), CodecError> {
-    let mut has_inputs = false;
-    let mut store = None;
-    for input in ctx
-        .admit_iter(inputs, "find NX feature operation input store")?
-        .filter(|input| input.operation_label == operation)
-    {
-        has_inputs = true;
-        if let Some((candidate, _)) = input.data_block.rsplit_once(":block#") {
-            match store {
-                None => store = Some(candidate),
-                Some(existing) if existing != candidate => return Ok((true, None)),
-                Some(_) => {}
+/// The data-block store shared by one operation's input blocks.
+struct InputStore<'a> {
+    store: Option<&'a str>,
+    conflict: bool,
+}
+
+/// Every operation's input data-block store, built once from the inputs.
+///
+/// An operation has a store when its inputs name exactly one owner store;
+/// inputs without a store do not count, and two different stores leave the
+/// operation without one.
+pub(super) struct OperationInputStores<'a, 's> {
+    stores: BTreeMap<&'a str, InputStore<'a>>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'s>,
+}
+
+impl<'a, 's> OperationInputStores<'a, 's> {
+    pub(super) fn new(
+        ctx: &'s DecodeContext<'_>,
+        inputs: &'a [FeatureInputBlock],
+    ) -> Result<Self, CodecError> {
+        const OPERATION: &str = "index NX feature operation input stores";
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut stores = BTreeMap::new();
+        for input in ctx.admit_iter(inputs, OPERATION)? {
+            let candidate = block_store(ctx, &input.data_block, OPERATION)?;
+            let label = input.operation_label.as_str();
+            let mut fresh = InputStore {
+                store: None,
+                conflict: false,
+            };
+            match ctx.get_mut_btree_map(&mut stores, &label, OPERATION)? {
+                Some(entry) => Self::merge(ctx, entry, candidate)?,
+                None => {
+                    Self::merge(ctx, &mut fresh, candidate)?;
+                    storage.with_storage(|| {
+                        ctx.insert_btree_map(&mut stores, label, fresh, OPERATION)
+                    })?;
+                }
             }
         }
+        Ok(Self {
+            stores,
+            _storage: storage,
+        })
     }
-    Ok((has_inputs, store))
+
+    fn merge(
+        ctx: &DecodeContext<'_>,
+        entry: &mut InputStore<'a>,
+        candidate: Option<&'a str>,
+    ) -> Result<(), CodecError> {
+        if entry.conflict {
+            return Ok(());
+        }
+        let Some(candidate) = candidate else {
+            return Ok(());
+        };
+        match entry.store {
+            None => entry.store = Some(candidate),
+            Some(existing) => {
+                if !ctx.equal(
+                    existing,
+                    candidate,
+                    "compare NX feature operation input stores",
+                )? {
+                    entry.store = None;
+                    entry.conflict = true;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether the operation has inputs, and its shared store when unique.
+    pub(super) fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation_label: &str,
+    ) -> Result<(bool, Option<&'a str>), CodecError> {
+        Ok(
+            match ctx.get_btree_map(
+                &self.stores,
+                &operation_label,
+                "find NX feature operation input store",
+            )? {
+                Some(entry) => (true, entry.store),
+                None => (false, None),
+            },
+        )
+    }
 }
 
 pub(super) fn replace_operation_text(
@@ -1571,38 +1603,18 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
     ctx: &DecodeContext<'_>,
     references: &[FeatureExtrudeProfileReference],
 ) -> Result<Vec<FeatureExtrudeConstructionProfile>, CodecError> {
-    let mut operations = BTreeSet::new();
-    let mut operation_reservation = ctx.reserve_scoped(0, "NX extrude profile operations")?;
-    for reference in ctx.admit_iter(references, "index NX extrusion profile references")? {
-        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&str>() * 4,
-        ))?;
-        ctx.insert_btree_set(
-            &mut operations,
-            reference.operation_label.as_str(),
-            "NX extrude profile operations",
-        )?;
-    }
+    let (groups, _groups_reservation) = ctx.collect_scoped_btree_groups(
+        references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "group NX extrusion profile references",
+    )?;
     let mut profiles = Vec::new();
-    for operation_label in ctx
-        .admit_iter(&operations, "visit NX extrusion profile operations")?
-        .copied()
-    {
-        let mut operation_references = Vec::new();
-        let mut reference_reservation =
-            ctx.reserve_scoped(0, "NX extrude profile reference order")?;
-        for reference in ctx
-            .admit_iter(references, "match NX extrusion profile references")?
-            .filter(|reference| reference.operation_label == operation_label)
-        {
-            ctx.reserve_scoped_vec(
-                &mut reference_reservation,
-                &mut operation_references,
-                1,
-                "NX extrude profile reference order",
-            )?;
-            operation_references.push(reference);
-        }
+    let mut groups = groups.into_iter();
+    for _ in ctx.admit_iter(&(0..groups.len()), "visit NX extrusion profile operations")? {
+        let Some((operation_label, mut operation_references)) = groups.next() else {
+            break;
+        };
         ctx.stable_sort_by(
             &mut operation_references,
             |value| &value.ordinal,
@@ -1736,13 +1748,6 @@ pub(in crate::native) fn feature_extrude_32_constructions(
         items: &crate::om::branch_items::BranchItems<(T, Option<String>)>,
         operation: &'static str,
     ) -> Result<Option<crate::om::branch_items::BranchItems<String>>, CodecError> {
-        if ctx.any_by(
-            items.as_slice(),
-            |(_, binding)| Ok(binding.is_none()),
-            operation,
-        )? {
-            return Ok(None);
-        }
         let mut copied = Vec::new();
         for (_, binding) in ctx.admit_iter(items.as_slice(), operation)? {
             let Some(binding) = binding.as_deref() else {
@@ -1754,49 +1759,43 @@ pub(in crate::native) fn feature_extrude_32_constructions(
         }
         crate::om::branch_items::BranchItems::new(copied)
             .map(Some)
-            .map_err(|error| CodecError::Malformed(error.into()))
+            .map_err(|error| malformed_reason(ctx, error, "NX branch items error"))
     }
 
-    let mut operations = BTreeSet::new();
-    let mut operation_reservation = ctx.reserve_scoped(0, "NX extrude 32 operations")?;
-    for branch in ctx.admit_iter(branches, "index NX extrusion branches")? {
-        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&str>() * 4,
-        ))?;
-        ctx.insert_btree_set(
-            &mut operations,
-            branch.operation_label.as_str(),
-            "NX extrude 32 operations",
-        )?;
-    }
+    let (branch_groups, _branch_reservation) = ctx.collect_scoped_btree_groups(
+        branches
+            .iter()
+            .map(|branch| (branch.operation_label.as_str(), branch)),
+        "group NX extrusion branches",
+    )?;
+    let (mut profile_groups, _profile_reservation) = ctx.collect_scoped_btree_groups(
+        references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "group NX extrusion profiles",
+    )?;
     let mut constructions = Vec::new();
-    for operation_label in ctx
-        .admit_iter(&operations, "visit NX extrusion branch operations")?
-        .copied()
-    {
-        let mut matching = ctx
-            .admit_iter(branches, "match NX extrusion branch")?
-            .filter(|branch| branch.operation_label == operation_label);
-        let Some(branch) = matching.next() else {
+    let mut branch_groups = branch_groups.into_iter();
+    for _ in ctx.admit_iter(
+        &(0..branch_groups.len()),
+        "visit NX extrusion branch operations",
+    )? {
+        let Some((operation_label, matching)) = branch_groups.next() else {
+            break;
+        };
+        let [branch] = matching.as_slice() else {
             continue;
         };
-        if matching.next().is_some() {
+        let Some(mut profile) = ctx
+            .get_mut_btree_map(
+                &mut profile_groups,
+                &operation_label,
+                "find NX extrusion profile",
+            )?
+            .map(std::mem::take)
+        else {
             continue;
-        }
-        let mut profile = Vec::new();
-        let mut profile_reservation = ctx.reserve_scoped(0, "NX extrude 32 profile order")?;
-        for reference in ctx
-            .admit_iter(references, "match NX extrusion profile")?
-            .filter(|reference| reference.operation_label == operation_label)
-        {
-            ctx.reserve_scoped_vec(
-                &mut profile_reservation,
-                &mut profile,
-                1,
-                "NX extrude 32 profile order",
-            )?;
-            profile.push(reference);
-        }
+        };
         ctx.stable_sort_by(
             &mut profile,
             |value| &value.ordinal,
@@ -1950,36 +1949,20 @@ pub(in crate::native) fn feature_block_constructions(
     ctx: &DecodeContext<'_>,
     references: &[FeatureBlockConstructionReference],
 ) -> Result<Vec<FeatureBlockConstruction>, CodecError> {
-    let mut operations = BTreeSet::new();
-    let mut operation_reservation = ctx.reserve_scoped(0, "NX block construction operations")?;
-    for reference in ctx.admit_iter(references, "index NX block construction references")? {
-        operation_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&str>() * 4,
-        ))?;
-        ctx.insert_btree_set(
-            &mut operations,
-            reference.operation_label.as_str(),
-            "NX block construction operations",
-        )?;
-    }
+    let (groups, _groups_reservation) = ctx.collect_scoped_btree_groups(
+        references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "group NX block construction references",
+    )?;
     let mut constructions = Vec::new();
-    for operation_label in ctx
-        .admit_iter(&operations, "visit NX block construction operations")?
-        .copied()
-    {
-        let mut field = Vec::new();
-        let mut field_reservation = ctx.reserve_scoped(0, "NX block construction field order")?;
-        for reference in ctx
-            .admit_iter(references, "match NX block construction references")?
-            .filter(|reference| reference.operation_label == operation_label)
-        {
-            ctx.reserve_scoped_vec(
-                &mut field_reservation,
-                &mut field,
-                1,
-                "NX block construction field order",
-            )?;
-            field.push(reference);
+    let mut groups = groups.into_iter();
+    for _ in ctx.admit_iter(&(0..groups.len()), "visit NX block construction operations")? {
+        let Some((operation_label, mut field)) = groups.next() else {
+            break;
+        };
+        if field.len() != 19 {
+            continue;
         }
         ctx.stable_sort_by_key(
             &mut field,
@@ -2235,20 +2218,34 @@ pub(in crate::native) fn feature_block_payload_named_records(
     scalars: &[FeaturePayloadScalar],
 ) -> Result<Vec<FeatureBlockPayloadNamedRecord>, CodecError> {
     let mut records = Vec::new();
+    let (name_groups, _name_groups_reservation) = ctx.collect_scoped_btree_groups(
+        names
+            .iter()
+            .map(|name| (name.construction_payload.as_str(), name)),
+        "group NX block payload names",
+    )?;
+    let (scalar_groups, _scalar_groups_reservation) = ctx.collect_scoped_btree_groups(
+        scalars.iter().map(|scalar| (scalar.payload.id(), scalar)),
+        "group NX block payload scalars",
+    )?;
     for payload in ctx.admit_iter(payloads, "join NX block payload names")? {
+        let Some(name_group) = ctx.get_btree_map(
+            &name_groups,
+            payload.id.as_str(),
+            "find NX block payload names",
+        )?
+        else {
+            continue;
+        };
         let mut payload_names = Vec::new();
         let mut name_reservation = ctx.reserve_scoped(0, "NX block payload names for join")?;
-        for name in ctx
-            .admit_iter(names, "match NX block payload names")?
-            .filter(|name| name.construction_payload == payload.id)
-        {
-            ctx.reserve_scoped_vec(
+        for name in ctx.admit_iter(name_group, "copy NX block payload names")? {
+            ctx.push_scoped_vec(
                 &mut name_reservation,
                 &mut payload_names,
-                1,
+                *name,
                 "NX block payload names for join",
             )?;
-            payload_names.push(name);
         }
         ctx.stable_sort_by_key(
             &mut payload_names,
@@ -2256,38 +2253,48 @@ pub(in crate::native) fn feature_block_payload_named_records(
             Ord::cmp,
             "sort NX block payload names",
         )?;
+        let mut payload_scalars = Vec::new();
+        let mut scalar_reservation = ctx.reserve_scoped(0, "NX block payload scalars for join")?;
+        if let Some(scalar_group) = ctx.get_btree_map(
+            &scalar_groups,
+            payload.id.as_str(),
+            "find NX block payload scalars",
+        )? {
+            for scalar in ctx.admit_iter(scalar_group, "copy NX block payload scalars")? {
+                ctx.push_scoped_vec(
+                    &mut scalar_reservation,
+                    &mut payload_scalars,
+                    *scalar,
+                    "NX block payload scalars for join",
+                )?;
+            }
+        }
+        ctx.stable_sort_by(
+            &mut payload_scalars,
+            |value| &value.payload_offset,
+            Ord::cmp,
+            "sort NX block payload scalars",
+        )?;
+        let payload_end = payload.content.byte_len(ctx)?;
         for (ordinal, name) in ctx
             .admit_iter(payload_names.as_slice(), "visit NX block payload names")?
             .enumerate()
         {
             let end = payload_names
                 .get(ordinal + 1)
-                .map_or(payload.content.byte_len(ctx)?, |next| next.frame.offset());
-            let mut scalar_fields = Vec::new();
-            let mut scalar_reservation =
-                ctx.reserve_scoped(0, "NX block payload scalars for join")?;
-            for scalar in ctx
-                .admit_iter(scalars, "match NX block payload scalars")?
-                .filter(|scalar| {
-                    scalar.payload.id() == payload.id
-                        && scalar.payload_offset > name.frame.offset()
-                        && scalar.payload_offset < end
-                })
-            {
-                ctx.reserve_scoped_vec(
-                    &mut scalar_reservation,
-                    &mut scalar_fields,
-                    1,
-                    "NX block payload scalars for join",
-                )?;
-                scalar_fields.push(scalar);
-            }
-            ctx.stable_sort_by(
-                &mut scalar_fields,
-                |value| &value.payload_offset,
-                Ord::cmp,
-                "sort NX block payload scalars",
+                .map_or(payload_end, |next| next.frame.offset());
+            let start = name.frame.offset();
+            let first = ctx.partition_point(
+                &payload_scalars,
+                |scalar| Ok(scalar.payload_offset <= start),
+                "find NX block payload scalar interval start",
             )?;
+            let last = ctx.partition_point(
+                &payload_scalars,
+                |scalar| Ok(scalar.payload_offset < end),
+                "find NX block payload scalar interval end",
+            )?;
+            let scalar_fields = payload_scalars.get(first..last).unwrap_or_default();
             let id = ctx.format_retained(
                 format_args!("{}-record-{ordinal}", payload.id),
                 "NX block payload named record identity",
@@ -2301,14 +2308,7 @@ pub(in crate::native) fn feature_block_payload_named_records(
             let name_field =
                 ctx.copy_retained_text(&name.id, "NX block payload named record name field")?;
             let mut scalar_ids = Vec::new();
-            let mut scalar_fields = scalar_fields.into_iter();
-            for _ in ctx.admit_iter(
-                &(0..scalar_fields.len()),
-                "copy NX block payload scalar IDs",
-            )? {
-                let Some(scalar) = scalar_fields.next() else {
-                    return Err(ctx.refuse_codec_limit("copy NX block payload scalar IDs", 0, 1));
-                };
+            for scalar in ctx.admit_iter(scalar_fields, "copy NX block payload scalar IDs")? {
                 let scalar_id = ctx
                     .copy_retained_text(&scalar.id, "NX block payload named record scalar field")?;
                 ctx.reserve_vec(
@@ -2341,11 +2341,38 @@ pub(in crate::native) fn feature_block_payload_points(
     scalars: &[FeaturePayloadScalar],
 ) -> Result<Vec<FeatureBlockPayloadPoint>, CodecError> {
     let mut points = Vec::new();
+    let mut name_index = BTreeMap::new();
+    let mut name_storage = ctx.reserve_scoped(0, "NX block payload point name index")?;
+    for name in ctx.admit_iter(names, "index NX block payload point names")? {
+        name_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut name_index,
+                name.id.as_str(),
+                name,
+                "NX block payload point name index",
+            )
+        })?;
+    }
+    let mut scalar_index = BTreeMap::new();
+    let mut scalar_storage = ctx.reserve_scoped(0, "NX block payload point scalar index")?;
+    for scalar in ctx.admit_iter(scalars, "index NX block payload point scalars")? {
+        scalar_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut scalar_index,
+                scalar.id.as_str(),
+                scalar,
+                "NX block payload point scalar index",
+            )
+        })?;
+    }
     for record in ctx.admit_iter(records, "scan NX block payload records")? {
         let Some(name) = ctx
-            .admit_iter(names, "find NX block payload point name")?
-            .rev()
-            .find(|name| name.id == record.name_field)
+            .get_btree_map(
+                &name_index,
+                record.name_field.as_str(),
+                "find NX block payload point name",
+            )?
+            .copied()
         else {
             continue;
         };
@@ -2360,16 +2387,22 @@ pub(in crate::native) fn feature_block_payload_points(
             continue;
         };
         let Some(first) = ctx
-            .admit_iter(scalars, "find NX block payload first point scalar")?
-            .rev()
-            .find(|scalar| scalar.id == *first_id)
+            .get_btree_map(
+                &scalar_index,
+                first_id.as_str(),
+                "find NX block payload first point scalar",
+            )?
+            .copied()
         else {
             continue;
         };
         let Some(second) = ctx
-            .admit_iter(scalars, "find NX block payload second point scalar")?
-            .rev()
-            .find(|scalar| scalar.id == *second_id)
+            .get_btree_map(
+                &scalar_index,
+                second_id.as_str(),
+                "find NX block payload second point scalar",
+            )?
+            .copied()
         else {
             continue;
         };
@@ -2404,27 +2437,29 @@ pub(in crate::native) fn feature_block_payload_point_groups(
     points: &[FeatureBlockPayloadPoint],
 ) -> Result<Vec<FeatureBlockPayloadPointGroup>, CodecError> {
     let mut groups = Vec::new();
-    for (ordinal, point) in ctx
-        .admit_iter(points, "scan NX block payload point groups")?
-        .enumerate()
-    {
-        if ctx.any_by(
-            &points[..ordinal],
-            |candidate| {
-                Ok(candidate.operation_label == point.operation_label
-                    && candidate.name == point.name)
-            },
-            "find prior NX block payload point witness",
-        )? {
+    let (witness_groups, _witness_reservation) = ctx.collect_scoped_btree_groups(
+        points
+            .iter()
+            .map(|point| ((point.operation_label.as_str(), point.name.as_str()), point)),
+        "group NX block payload point witnesses",
+    )?;
+    for point in ctx.admit_iter(points, "scan NX block payload point groups")? {
+        let Some(group) = ctx.get_btree_map(
+            &witness_groups,
+            &(point.operation_label.as_str(), point.name.as_str()),
+            "find NX block payload point witnesses",
+        )?
+        else {
+            continue;
+        };
+        if !group
+            .first()
+            .is_some_and(|first| std::ptr::eq(*first, point))
+        {
             continue;
         }
         let mut coordinates_differ = false;
-        for candidate in ctx
-            .admit_iter(points, "compare NX block payload point witnesses")?
-            .filter(|candidate| {
-                candidate.operation_label == point.operation_label && candidate.name == point.name
-            })
-        {
+        for candidate in ctx.admit_iter(group, "compare NX block payload point witnesses")? {
             if ctx
                 .admit_iter(
                     &*candidate.coordinates,
@@ -2441,12 +2476,7 @@ pub(in crate::native) fn feature_block_payload_point_groups(
             continue;
         }
         let mut witnesses = Vec::new();
-        for witness in ctx
-            .admit_iter(points, "copy NX block payload point witnesses")?
-            .filter(|candidate| {
-                candidate.operation_label == point.operation_label && candidate.name == point.name
-            })
-        {
+        for witness in ctx.admit_iter(group, "copy NX block payload point witnesses")? {
             let id = ctx.copy_retained_text(&witness.id, "NX block payload point group witness")?;
             ctx.reserve_vec(&mut witnesses, 1, "NX block payload point group witnesses")?;
             witnesses.push(id);
@@ -2481,26 +2511,62 @@ pub(in crate::native) fn feature_block_dimensions(
     expressions: &[ParameterFormula],
 ) -> Result<Vec<FeatureBlockDimensions>, CodecError> {
     let mut dimensions = Vec::new();
+    let (binding_groups, _binding_reservation) = ctx.collect_scoped_btree_groups(
+        bindings
+            .iter()
+            .map(|binding| (binding.operation_label.as_str(), binding)),
+        "group NX block dimension bindings",
+    )?;
+    let (expression_groups, _expression_reservation) = ctx.collect_scoped_btree_groups(
+        ctx.admit_iter(expressions, "index NX block dimension expressions")?
+            .filter_map(|expression| {
+                expression
+                    .declaration
+                    .as_deref()
+                    .map(|declaration| (declaration, expression))
+            }),
+        "group NX block dimension expressions",
+    )?;
+    let mut declaration_index = BTreeMap::new();
+    let mut declaration_storage = ctx.reserve_scoped(0, "NX block dimension declaration index")?;
+    for (position, declaration) in ctx
+        .admit_iter(declarations, "index NX block dimension declarations")?
+        .enumerate()
+    {
+        if ctx.contains_key_btree_map(
+            &declaration_index,
+            declaration.id.as_str(),
+            "find NX block dimension declaration",
+        )? {
+            continue;
+        }
+        declaration_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut declaration_index,
+                declaration.id.as_str(),
+                position,
+                "NX block dimension declaration index",
+            )
+        })?;
+    }
     for construction in ctx.admit_iter(constructions, "scan NX block dimensions")? {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(expressions.len().checked_mul(3).ok_or_else(
-                || ctx.refuse_codec_limit("scan NX block dimension expressions", 0, 1),
-            )?),
-            "scan NX block dimension expressions",
-        )?;
+        let Some(binding_group) = ctx.get_btree_map(
+            &binding_groups,
+            construction.operation_label.as_str(),
+            "find NX block dimension bindings",
+        )?
+        else {
+            continue;
+        };
         let mut operation_bindings = Vec::new();
         let mut binding_reservation = ctx.reserve_scoped(0, "NX block dimension bindings")?;
-        for binding in ctx
-            .admit_iter(bindings, "match NX block dimension bindings")?
-            .filter(|binding| binding.operation_label == construction.operation_label)
-        {
-            ctx.reserve_scoped_vec(
+        for binding in ctx.admit_iter(binding_group, "copy NX block dimension bindings")? {
+            ctx.push_scoped_vec(
                 &mut binding_reservation,
                 &mut operation_bindings,
-                1,
+                *binding,
                 "NX block dimension bindings",
             )?;
-            operation_bindings.push(binding);
         }
         let Some(anchor) = operation_bindings
             .first()
@@ -2510,7 +2576,13 @@ pub(in crate::native) fn feature_block_dimensions(
         };
         if ctx.any_by(
             operation_bindings.as_slice(),
-            |binding| Ok(binding.expression_declaration != anchor),
+            |binding| {
+                Ok(!ctx.equal(
+                    binding.expression_declaration.as_str(),
+                    anchor,
+                    "compare NX block dimension binding anchors",
+                )?)
+            },
             "validate NX block dimension binding anchors",
         )? {
             continue;
@@ -2521,9 +2593,9 @@ pub(in crate::native) fn feature_block_dimensions(
             Ord::cmp,
             "sort NX block dimension bindings",
         )?;
-        let Some(start) = ctx.position_by(
-            declarations,
-            |declaration| Ok(declaration.id == anchor),
+        let Some(&start) = ctx.get_btree_map(
+            &declaration_index,
+            anchor,
             "find NX block dimension declaration",
         )?
         else {
@@ -2537,50 +2609,95 @@ pub(in crate::native) fn feature_block_dimensions(
         };
         let run = [&run_slice[0], &run_slice[1], &run_slice[2]];
         let first = run[0].name.index();
-        if run.iter().enumerate().any(|(ordinal, declaration)| {
-            declaration.record.split_once(":entry#").map(|pair| pair.0)
-                != run[0].record.split_once(":entry#").map(|pair| pair.0)
-                || declaration.source_entry != run[0].source_entry
+        let first_entry = ctx
+            .split_once(
+                run[0].record.as_str(),
+                ":entry#",
+                "split NX block dimension record",
+            )?
+            .map(|pair| pair.0);
+        let mut run_valid = true;
+        for (ordinal, declaration) in run.iter().enumerate() {
+            let entry = ctx
+                .split_once(
+                    declaration.record.as_str(),
+                    ":entry#",
+                    "split NX block dimension record",
+                )?
+                .map(|pair| pair.0);
+            let (expected_name, _expected_reservation) = ctx.format_scoped(
+                format_args!("p{}", declaration.name.index()),
+                "format NX block dimension name",
+            )?;
+            if !ctx.equal(&entry, &first_entry, "compare NX block dimension records")?
+                || !ctx.equal(
+                    declaration.source_entry.as_str(),
+                    run[0].source_entry.as_str(),
+                    "compare NX block dimension entries",
+                )?
                 || Some(declaration.name.index())
                     != u32::try_from(ordinal)
                         .ok()
                         .and_then(|ordinal| first.checked_add(ordinal))
-                || declaration.name.as_str() != format!("p{}", declaration.name.index())
-        }) {
+                || !ctx.equal(
+                    declaration.name.as_str(),
+                    expected_name.as_str(),
+                    "compare NX block dimension names",
+                )?
+            {
+                run_valid = false;
+                break;
+            }
+        }
+        if !run_valid {
             continue;
         }
-        let resolve = |declaration: &ExpressionDeclaration| {
-            let mut matches = expressions
-                .iter()
-                .filter(|expression| expression.declaration.as_deref() == Some(&declaration.id));
-            let expression = matches.next()?;
-            if matches.next().is_some() {
-                return None;
-            }
-            Some((
-                expression,
-                cadmpeg_ir::scalar::FiniteReal::new(
-                    crate::native::om::expression_length_in_millimeters(
-                        &expression.unit,
-                        expression.value?.get(),
-                    )?,
-                )?,
-            ))
-        };
-        let (Some(first_resolved), Some(second_resolved), Some(third_resolved)) =
-            (resolve(run[0]), resolve(run[1]), resolve(run[2]))
-        else {
+        let mut slots = [None, None, None];
+        for (slot, declaration) in slots.iter_mut().zip(run) {
+            let Some(group) = ctx.get_btree_map(
+                &expression_groups,
+                declaration.id.as_str(),
+                "find NX block dimension expression",
+            )?
+            else {
+                break;
+            };
+            let [expression] = group.as_slice() else {
+                break;
+            };
+            let Some(value) = expression.value else {
+                break;
+            };
+            let Some(length) =
+                crate::native::om::expression_length_in_millimeters(&expression.unit, value.get())
+            else {
+                break;
+            };
+            let Some(length) = cadmpeg_ir::scalar::FiniteReal::new(length) else {
+                break;
+            };
+            *slot = Some((*expression, length));
+        }
+        let [Some(first_resolved), Some(second_resolved), Some(third_resolved)] = slots else {
             continue;
         };
         let resolved = [first_resolved, second_resolved, third_resolved];
-        if resolved
-            .iter()
-            .zip(run.iter())
-            .any(|((expression, _), declaration)| {
-                expression.source_entry != declaration.source_entry
-                    || expression.source_table != resolved[0].0.source_table
-            })
-        {
+        let mut sources_agree = true;
+        for ((expression, _), declaration) in resolved.iter().zip(run.iter()) {
+            if !ctx.equal(
+                expression.source_entry.as_str(),
+                declaration.source_entry.as_str(),
+                "compare NX block dimension expression entries",
+            )? || !ctx.equal(
+                &expression.source_table,
+                &resolved[0].0.source_table,
+                "compare NX block dimension expression tables",
+            )? {
+                sources_agree = false;
+                break;
+            }
+        }
+        if !sources_agree {
             continue;
         }
         let id = if let Some((prefix, suffix)) = construction.id.split_once("block-construction") {
@@ -2682,12 +2799,20 @@ pub(super) fn data_block_object_frame_id(
 ) -> Result<String, cadmpeg_core::CodecError> {
     use std::fmt::Write;
 
-    let Some((section, block)) = data_block
-        .strip_prefix("nx:om-data-blocks-")
-        .and_then(|rest| rest.split_once(":block#"))
+    let Some((section, block)) = ctx
+        .strip_prefix(
+            data_block,
+            "nx:om-data-blocks-",
+            "split NX data block object frame source",
+        )?
+        .map(|rest| ctx.split_once(rest, ":block#", "split NX data block object frame source"))
+        .transpose()?
+        .flatten()
     else {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "invalid NX data block object frame source".into(),
+        return Err(malformed_reason(
+            ctx,
+            "invalid NX data block object frame source",
+            "NX data block object frame source error",
         ));
     };
     let prefix = "nx:om-data-block-object-frames-";
@@ -2767,7 +2892,19 @@ pub(super) fn unique_offset_data_store(
     )],
     object_indices: &[u32],
 ) -> Result<Option<usize>, CodecError> {
-    if object_indices.is_empty() || object_indices.contains(&0) {
+    let mut largest = 0u32;
+    for &object_index in
+        ctx.admit_iter(object_indices, "validate NX offset store object indices")?
+    {
+        if object_index == 0 {
+            return Ok(None);
+        }
+        largest = largest.max(object_index);
+    }
+    let Ok(largest) = usize::try_from(largest) else {
+        return Ok(None);
+    };
+    if object_indices.is_empty() {
         return Ok(None);
     }
     let mut unique = None;
@@ -2778,16 +2915,7 @@ pub(super) fn unique_offset_data_store(
         let Some((_, _, records)) = candidate.as_offset_only() else {
             continue;
         };
-        let matches = ctx.all_by(
-            object_indices,
-            |object_index| {
-                Ok(usize::try_from(*object_index)
-                    .ok()
-                    .is_some_and(|ordinal| ordinal <= records.len()))
-            },
-            "validate NX offset store object indices",
-        )?;
-        if !matches {
+        if largest > records.len() {
             continue;
         }
         if unique.replace(section_ordinal).is_some() {

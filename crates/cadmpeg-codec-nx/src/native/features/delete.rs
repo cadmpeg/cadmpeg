@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native DELETE reference fields and construction payloads.
 
-use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
+use super::payload_content::{
+    copy_block_ids, shared_block_store, FeaturePayloadBlock, FeaturePayloadContent,
+};
 use super::{
     charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
     FeatureHistory,
@@ -12,7 +14,6 @@ use crate::om::reference_index::PayloadIndexToken;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fmt::Write;
 
 /// Exact counted nullable reference field carried by a `DELETE` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -238,79 +239,33 @@ fn delete_construction_payload_from_field(
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
     let slots = field.references.slots();
-    if ctx.any_by(
-        slots,
-        |reference| {
-            Ok(reference
-                .as_ref()
-                .and_then(|(_, block)| block.as_ref())
-                .is_none())
-        },
-        "validate NX DELETE source block references",
-    )? {
-        return Ok(None);
-    }
-
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(slots.len()),
+    let Some((data_blocks, _source_reservation)) = copy_block_ids(
+        ctx,
+        ctx.admit_iter(slots, "copy NX DELETE source block references")?
+            .map(|reference| reference.as_ref().and_then(|(_, block)| block.as_deref())),
         "NX DELETE source block references",
-    )?;
-    let mut source_reservation = ctx.reserve_scoped(0, "NX DELETE source block references")?;
-    let mut data_blocks = Vec::new();
-    source_reservation.with_storage(|| {
-        ctx.reserve_capacity(
-            &mut data_blocks,
-            slots.len(),
-            "allocate NX DELETE source block references",
-        )
-    })?;
-    for reference in slots {
-        let Some((_, Some(block))) = reference else {
-            return Ok(None);
-        };
-        let mut id = String::new();
-        ctx.try_reserve_retained_text(
-            &mut id,
-            block.len(),
-            "allocate NX DELETE source block reference",
-        )?;
-        id.push_str(block);
-        data_blocks.push(id);
-    }
-    let Some(store) = data_blocks
-        .first()
-        .and_then(|id| id.rsplit_once(":block#").map(|(store, _)| store))
+    )?
     else {
         return Ok(None);
     };
-    if ctx.any_by(
-        &data_blocks,
-        |block| {
-            Ok(block
-                .rsplit_once(":block#")
-                .is_none_or(|(prefix, _)| prefix != store))
-        },
-        "validate NX DELETE source block owners",
-    )? {
+    if shared_block_store(ctx, &data_blocks, "validate NX DELETE source block owners")?.is_none() {
         return Ok(None);
     }
     let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
         return Ok(None);
     };
-    let Some(operation_key) = field
-        .operation_label
-        .strip_prefix("nx:feature-history:operation-label#")
+    let Some(operation_key) = ctx.strip_prefix(
+        &field.operation_label,
+        "nx:feature-history:operation-label#",
+        "find NX DELETE operation key",
+    )?
     else {
         return Ok(None);
     };
-    let prefix = "nx:feature-history:delete-construction-payload#";
-    let id_len = prefix
-        .len()
-        .checked_add(operation_key.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX DELETE construction identity", 0, 1))?;
-    let mut id = ctx.retained_string(id_len, "NX DELETE construction identity")?;
-    write!(&mut id, "{prefix}{operation_key}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX DELETE construction identity", 0, 1))?;
+    let id = ctx.format_retained(
+        format_args!("nx:feature-history:delete-construction-payload#{operation_key}"),
+        "NX DELETE construction identity",
+    )?;
     Ok(Some(FeatureDeleteConstructionPayload {
         id,
         operation_label: ctx
