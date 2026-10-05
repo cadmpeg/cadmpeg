@@ -3,9 +3,40 @@
 //! edit-and-patch engine.
 
 use crate::native::F3dNative;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::Sense;
+
+/// Ceilings no writer input can reach.
+///
+/// Writers share projection, identity and geometry code with decode, and that
+/// code charges a `DecodeContext`. A writer's output must never be refused by a
+/// decode budget, so writer code runs that shared code under this policy: every
+/// counter would have to exceed `u64::MAX` before a ceiling refused.
+pub(crate) const WRITING_POLICY: DecodePolicy = DecodePolicy {
+    mode: DecodeMode::Salvage,
+    limits: ResourceLimits {
+        max_input_bytes: u64::MAX,
+        max_decompressed_bytes_total: u64::MAX,
+        max_decompressed_bytes_per_expand: u64::MAX,
+        max_materialized_bytes: u64::MAX,
+        max_retained_bytes: u64::MAX,
+        max_entities: u64::MAX,
+        max_collection_items: u64::MAX,
+        max_recursion_depth: u64::MAX,
+        max_work_units: u64::MAX,
+    },
+};
+
+/// Run shared decode-path code for a writer under [`WRITING_POLICY`].
+pub(crate) fn with_writing_context<T>(
+    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &WRITING_POLICY)?;
+    run(&ctx)
+}
 
 pub(super) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
     ir.native
@@ -19,20 +50,23 @@ pub(super) fn validate_configuration_projection(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
-    let mut projected = crate::design::configurations::project_configurations(
-        &cadmpeg_ir::index::StandardIndex,
-        &native.design_configurations,
-    )?;
-    crate::design::configurations::bind_configuration_parameter_overrides(
-        &cadmpeg_ir::index::StandardIndex,
-        &mut projected,
-        &target.model.parameters,
-    )?;
-    crate::design::configurations::bind_configuration_suppressed_features(
-        &cadmpeg_ir::index::StandardIndex,
-        &mut projected,
-        &target.model.features,
-    )?;
+    let projected = with_writing_context(|ctx| {
+        let mut projected = crate::design::configurations::project_configurations(
+            ctx,
+            &native.design_configurations,
+        )?;
+        crate::design::configurations::bind_configuration_parameter_overrides(
+            ctx,
+            &mut projected,
+            &target.model.parameters,
+        )?;
+        crate::design::configurations::bind_configuration_suppressed_features(
+            ctx,
+            &mut projected,
+            &target.model.features,
+        )?;
+        Ok(projected)
+    })?;
     if target.model.configurations != projected {
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"
@@ -58,12 +92,14 @@ pub(crate) fn validate_assembly_projection(
                 )
             });
     };
-    let projected = crate::design::assembly::project_assembly_joints(
-        &cadmpeg_ir::index::StandardIndex,
-        &native.design_parameter_scopes,
-        &native.design_component_occurrences,
-        &target.model.features,
-    )?;
+    let projected = with_writing_context(|ctx| {
+        crate::design::assembly::project_assembly_joints(
+            ctx,
+            &native.design_parameter_scopes,
+            &native.design_component_occurrences,
+            &target.model.features,
+        )
+    })?;
     if target.model.assembly_joints != projected {
         return Err(CodecError::NotImplemented(
             "editing F3D assembly joints is not supported".into(),

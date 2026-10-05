@@ -506,10 +506,14 @@ fn localized_fillet_owner(
     parameter_record_index: u32,
     local_ordinal: u32,
 ) -> DesignParameterOwner {
-    let mut owner = parse_parameter_owner(&parameter_owner_frame())
-        .unwrap()
-        .into_record("Design/BulkStream.dat", 0)
-        .unwrap();
+    let mut owner = parse_parameter_owner(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameter_owner_frame(),
+    )
+    .expect("service decode context")
+    .unwrap()
+    .into_record("Design/BulkStream.dat", 0)
+    .unwrap();
     {
         let mut wire = DesignParameterOwnerWire::from(owner.clone());
         wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
@@ -521,6 +525,31 @@ fn localized_fillet_owner(
         owner = DesignParameterOwner::try_from(wire).unwrap();
     }
     owner
+}
+
+#[test]
+fn fixed_fillet_parameter_owner_search_refuses_work_limit() {
+    let owners = [localized_fillet_owner(10, 11, 0)];
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index F3D fixed Fillet parameter owners",
+        0,
+        |ctx| {
+            let mut scope = localized_fillet_scope();
+            crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
+                ctx,
+                std::slice::from_mut(&mut scope),
+                &owners,
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && failure.operation == "index F3D fixed Fillet parameter owners"
+                && failure.additional == 1
+    ));
 }
 
 mod fillet_limits;
@@ -566,10 +595,14 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             .unwrap()],
         });
     }
-    crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
-        std::slice::from_mut(&mut indexed_scope),
-        &owners,
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
+            ctx,
+            std::slice::from_mut(&mut indexed_scope),
+            &owners,
+        )
+    })
+    .unwrap();
     assert_eq!(indexed_scope.fixed_fillet_parameters(), None);
 
     let assignments = decode_fillet_radius_groups(

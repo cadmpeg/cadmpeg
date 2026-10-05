@@ -16,7 +16,9 @@ fn scalar_text_refusal(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     scalar
-        .format_text(|arguments| ctx.format_retained(arguments, "project F3D configuration scalar text"))
+        .format_text(|arguments| {
+            ctx.format_retained(arguments, "project F3D configuration scalar text")
+        })
         .expect_err("configuration scalar text must exceed retained budget")
 }
 
@@ -280,8 +282,13 @@ fn configuration_scalar_projection_preserves_exact_text() {
         .map(|(key, value)| {
             (
                 key.as_str(),
-                crate::test_support::with_decode_context(|ctx| value.format_text(|arguments| ctx.format_retained(arguments,
-                    "project F3D configuration scalar text")).unwrap()),
+                crate::test_support::with_decode_context(|ctx| {
+                    value
+                        .format_text(|arguments| {
+                            ctx.format_retained(arguments, "project F3D configuration scalar text")
+                        })
+                        .unwrap()
+                }),
             )
         })
         .collect();

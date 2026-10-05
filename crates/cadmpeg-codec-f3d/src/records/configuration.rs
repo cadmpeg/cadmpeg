@@ -73,7 +73,8 @@ pub(crate) enum ConfigurationScalar {
 }
 
 impl ConfigurationScalar {
-    pub(crate) fn format_text<E>(&self,
+    pub(crate) fn format_text<E>(
+        &self,
         format: impl FnOnce(std::fmt::Arguments<'_>) -> Result<String, E>,
     ) -> Result<String, E> {
         struct ScalarText<'a>(&'a ConfigurationScalar);

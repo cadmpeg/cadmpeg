@@ -1617,9 +1617,17 @@ face_operands,
                     parameter.expression(),
                     "f3d projected parameter expression",
                 )?,
-                display: if ctx.contains_text(parameter.source_kind(), "Diameter Dimension", "f3d parameter diameter display kind")? {
+                display: if ctx.contains_text(
+                    parameter.source_kind(),
+                    "Diameter Dimension",
+                    "f3d parameter diameter display kind",
+                )? {
                     Some(DimensionDisplay::Diameter)
-                } else if ctx.contains_text(parameter.source_kind(), "Radius Dimension", "f3d parameter radius display kind")? {
+                } else if ctx.contains_text(
+                    parameter.source_kind(),
+                    "Radius Dimension",
+                    "f3d parameter radius display kind",
+                )? {
                     Some(DimensionDisplay::Radius)
                 } else {
                     None
@@ -2126,7 +2134,8 @@ fn project_work_point_construction(
                     let state_id = resolution.state_id;
                     let vertex_slot = resolution.vertex_slot();
                     let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-                    let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
+                    let feature_key =
+                        crate::design::identity::identity_key(ctx, feature_id.as_str())?;
                     let prefix =
                         crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
                     match VertexSelection::historical(

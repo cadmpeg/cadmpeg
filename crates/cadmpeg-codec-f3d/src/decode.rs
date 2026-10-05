@@ -2509,8 +2509,11 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
         self.native.design_parameters =
             crate::design::decode::parameters::decode_parameters(ctx, scan)?;
-        self.native.design_entity_headers =
-            crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
+        self.native.design_entity_headers = crate::design::decode::sketch::decode_entity_headers(
+            ctx,
+            scan,
+            &self.native.design_types,
+        )?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
             ctx,
             scan,
@@ -2519,6 +2522,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
             ctx,
             scan,
+            &self.native.design_types,
             &self.native.design_record_headers,
         )?;
         extend_related_design_records(self.ctx, scan, &mut self.native)?;
@@ -2564,10 +2568,13 @@ impl<'a> F3dDecodeSession<'a> {
             points: &self.native.sketch_points,
             curves: &self.native.sketch_curve_identities,
         };
+        // The dimension passes share one index of each record stream.
+        let mut dimension_records = crate::design::decode::sketch::RecordOffsetCache::new(ctx)?;
         self.native.design_dimension_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
             )?
             .try_into()
             .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
@@ -2575,29 +2582,35 @@ impl<'a> F3dDecodeSession<'a> {
             crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
                 &self.native.design_entity_headers,
             )?;
         self.native.design_dimension_presentation_frames =
             crate::design::decode::dimension_frames::decode_dimension_presentation_frames(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
+                &self.native.design_types,
                 &self.native.design_entity_headers,
             )?;
         self.native.design_dimension_locus_groups =
             crate::design::decode::dimension_frames::decode_dimension_locus_groups(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
                 &self.native.design_entity_headers,
             )?;
         self.native.design_dimension_null_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
                 &self.native.design_dimension_locus_pairs,
                 &self.native.design_dimension_locus_groups,
             )?
             .try_into()
             .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
+        drop(dimension_records);
         crate::design::dimensions::remove_dimension_frame_relations(
             ctx,
             &mut self.native.sketch_relations,
@@ -3415,7 +3428,8 @@ fn decode_scanned_document<'a>(
         );
     }
 
-    let model_blob_names = crate::design::decode::body::design_model_blob_names(ctx, scan)?;
+    let (model_blob_names, _model_blob_names_storage) =
+        crate::design::decode::body::design_model_blob_names(ctx, scan)?;
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
     let model_breps = model_brep_candidates(ctx, scan, &model_blob_names)?;
@@ -3429,7 +3443,7 @@ fn decode_scanned_document<'a>(
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
-        let all_body_visibility =
+        let (all_body_visibility, _all_body_visibility_storage) =
             crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
@@ -4999,9 +5013,10 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
     )?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
+        ctx,
         &mut native.design_parameter_scopes,
         &native.design_parameter_owners,
-    );
+    )?;
     let mut existing = ctx.collect_hash_set(
         native.design_record_headers.iter().filter_map(|record| {
             Some((crate::ids::native_stream(&record.id)?, record.record_index))
