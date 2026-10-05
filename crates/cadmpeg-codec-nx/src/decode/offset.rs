@@ -44,6 +44,12 @@ const EPS_OFFSET_CORRECT_INTERSECTION_PARAMETERS_E11: f64 = 1.0e-11;
 const EPS_OFFSET_INTERSECTION_PARAMETER_TANGENT_E8: f64 = 1.0e-8;
 const EPS_OFFSET_SOLVE_DAMPED_LEAST_SQUARES_4X4_E12: f64 = 1.0e-12;
 const OFFSET_NEWTON_ITERATIONS: usize = 32;
+
+/// Two parameter lanes and the scoped reservation holding their storage.
+pub(super) type ParameterLanes<'ctx> = (
+    [Vec<Point2>; 2],
+    cadmpeg_core::decode::ScopedReservation<'ctx>,
+);
 const MAX_OFFSET_FIT_CACHE_ENTRIES: usize = 4096;
 
 pub(super) fn saved_offset_carriers(
@@ -862,27 +868,30 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
     let mut rectangle_storage = geometry_budget
         .charges
         .reserve_scoped_limit(0, "nx offset rectangles")?;
-    // Consecutive breaks bound one knot span; the zip pairs each break with
-    // its successor.
-    for (u0, u1) in geometry_budget
+    // Consecutive breaks bound one knot span.
+    for u_end in geometry_budget
         .charges
-        .admit_iter(&u_breaks, "nx offset u knot spans")?
-        .zip(u_breaks.iter().skip(1))
-        .filter(|(lower, upper)| lower < upper)
+        .admit_iter(&(1..u_breaks.len()), "nx offset u knot spans")?
     {
-        for (v0, v1) in geometry_budget
+        let (u0, u1) = (u_breaks[u_end - 1], u_breaks[u_end]);
+        if u0 >= u1 {
+            continue;
+        }
+        for v_end in geometry_budget
             .charges
-            .admit_iter(&v_breaks, "nx offset v knot spans")?
-            .zip(v_breaks.iter().skip(1))
-            .filter(|(lower, upper)| lower < upper)
+            .admit_iter(&(1..v_breaks.len()), "nx offset v knot spans")?
         {
+            let (v0, v1) = (v_breaks[v_end - 1], v_breaks[v_end]);
+            if v0 >= v1 {
+                continue;
+            }
             geometry_budget.charges.reserve_scoped_vec_limit(
                 &mut rectangle_storage,
                 &mut rectangles,
                 1,
                 "nx offset rectangles",
             )?;
-            rectangles.push([*u0, *u1, *v0, *v1]);
+            rectangles.push([u0, u1, v0, v1]);
         }
     }
     if rectangles.is_empty() {
@@ -1256,7 +1265,7 @@ pub(super) fn translation_net_normal(
             return Ok(None);
         }
     }
-    for u in 0..u_count {
+    for u in ctx.admit_iter(&(0..u_count), "nx offset translation net rows")? {
         for v in 0..v_count {
             ctx.charge_work_limit(1, "nx offset translation net poles")?;
             let (Some(column_start), Some(row_start), Some(pole)) =
@@ -1521,7 +1530,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     // A start is finite, and clamped into the support domain unless the
     // support extends linearly.
     let start = |candidate: Option<Point2>| {
-        let mut candidate = candidate.filter(|candidate| candidate.is_finite())?;
+        let mut candidate = candidate.filter(Point2::is_finite)?;
         if !linear_extension {
             clamp_surface_parameters(&mut candidate, domain);
         }
@@ -2249,13 +2258,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     seeds: [Option<Point2>; 2],
     geometry_budget: &GeometryWorkBudget<'ctx>,
     blend_parameter_grids: &mut BlendParameterGridCache<'a, '_>,
-) -> Result<
-    Option<(
-        [Vec<Point2>; 2],
-        cadmpeg_core::decode::ScopedReservation<'ctx>,
-    )>,
-    cadmpeg_core::CodecError,
-> {
+) -> Result<Option<ParameterLanes<'ctx>>, cadmpeg_core::CodecError> {
     if chart.len() < 2 || !fit_tolerance.is_finite() || fit_tolerance <= 0.0 {
         return Ok(None);
     }
@@ -2388,12 +2391,11 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
 
     // Each chart sample after the first adds one corrected sample to each
     // lane, within the capacity reserved above.
-    for (previous_sample, next_sample) in geometry_budget
+    for next in geometry_budget
         .charges
-        .admit_iter(chart, "nx intersection chart traversal")?
-        .zip(chart.iter().skip(1))
+        .admit_iter(&(1..chart.len()), "nx intersection chart traversal")?
     {
-        let chart_pair = [*previous_sample, *next_sample];
+        let chart_pair = [chart[next - 1], chart[next]];
         let Some(jacobian) =
             intersection_parameter_jacobian(index, surfaces, current, space, geometry_budget)?
         else {

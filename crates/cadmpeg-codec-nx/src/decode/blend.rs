@@ -3632,11 +3632,8 @@ fn difference_controls<'ctx>(
     };
     let mut differences =
         ScopedValues::with_capacity(ctx, count, "nx rational derivative differences")?;
-    for (previous, next) in ctx
-        .admit_iter(values, "nx rational derivative differences")?
-        .zip(values.iter().skip(1))
-    {
-        differences.values.push(next - previous);
+    for next in ctx.admit_iter(&(1..values.len()), "nx rational derivative differences")? {
+        differences.values.push(values[next] - values[next - 1]);
     }
     Ok(differences)
 }
@@ -3742,13 +3739,9 @@ fn add_bernstein_polynomials<'ctx>(
     if first.len() != second.len() {
         return Ok(None);
     }
-    for (value, addend) in ctx
-        .admit_iter(second, "nx Bernstein sum")?
-        .zip(first.values.iter_mut())
-        .map(|(addend, value)| (value, addend))
-    {
-        *value += addend;
-        if !value.is_finite() {
+    for index in ctx.admit_iter(&(0..second.len()), "nx Bernstein sum")? {
+        first.values[index] += second[index];
+        if !first.values[index].is_finite() {
             return Ok(None);
         }
     }
@@ -3763,13 +3756,9 @@ fn subtract_bernstein_polynomials<'ctx>(
     if first.len() != second.len() {
         return Ok(None);
     }
-    for (value, subtrahend) in ctx
-        .admit_iter(second, "nx Bernstein difference")?
-        .zip(first.values.iter_mut())
-        .map(|(subtrahend, value)| (value, subtrahend))
-    {
-        *value -= subtrahend;
-        if !value.is_finite() {
+    for index in ctx.admit_iter(&(0..second.len()), "nx Bernstein difference")? {
+        first.values[index] -= second[index];
+        if !first.values[index].is_finite() {
             return Ok(None);
         }
     }
@@ -4489,11 +4478,8 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
                 candidate_count += 1;
             }
         }
-        let Some((candidate, (offset_surface, parameters))) =
-            candidate.filter(|_| candidate_count == 1)
-        else {
-            return None;
-        };
+        let (candidate, (offset_surface, parameters)) =
+            candidate.filter(|_| candidate_count == 1)?;
         if let Err(limit) = contact_seeds.remember(
             (support, spine, offset_surface),
             parameter,

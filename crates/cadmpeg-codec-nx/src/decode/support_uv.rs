@@ -19,7 +19,7 @@ use super::offset::{
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache,
     offset_surface_parameters_with_tolerance_with_index_and_budget,
     refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
-    surface_parameters,
+    surface_parameters, ParameterLanes,
 };
 use super::pcurves::{
     blend_boundary_parameter_from_support_spine_with_index_and_budget,
@@ -50,12 +50,6 @@ use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
-
-/// Two fitted parameter lanes and the scoped reservation holding their storage.
-type SupportUvLanes<'ctx> = (
-    [Vec<Point2>; 2],
-    cadmpeg_core::decode::ScopedReservation<'ctx>,
-);
 
 /// Maximum serialized support-UV lane length admitted by one model record.
 pub(super) const MAX_SUPPORT_UV_SAMPLES: usize = 1_024;
@@ -338,11 +332,11 @@ fn support_uv_lane_matches_surface_with_budget(
     else {
         return Ok(false);
     };
-    for (uv, point) in geometry_budget
-        .charges
-        .admit_iter(values.as_slice(), "nx support UV lane fit traversal")?
-        .zip(points)
-    {
+    for sample in geometry_budget.charges.admit_iter(
+        &(0..values.len().min(points.len())),
+        "nx support UV lane fit traversal",
+    )? {
+        let (uv, point) = (&values[sample], &points[sample]);
         if geometry_budget.exhausted() {
             refuse_geometry_work(geometry_budget)?;
             return Ok(false);
@@ -673,7 +667,7 @@ fn pcurve_control_point_seed(pcurve: Option<&PcurveGeometry>, index: usize) -> O
     nurbs
         .pole_rows()
         .point_at(index)
-        .map(|point| point.get())
+        .map(FinitePoint2::get)
         .filter(|point| !missing_support_parameter(point.u) && !missing_support_parameter(point.v))
 }
 
@@ -1772,11 +1766,11 @@ geometry_budget,
                         true
                     } else {
                         let mut reproduces = true;
-                        for (sample_index, (sample_uv, point)) in ctx
-                            .admit_iter(&uv, "nx support UV chart reproduction")?
-                            .zip(points)
-                            .enumerate()
-                        {
+                        for sample_index in ctx.admit_iter(
+                            &(0..uv.len().min(points.len())),
+                            "nx support UV chart reproduction",
+                        )? {
+                            let (sample_uv, point) = (&uv[sample_index], &points[sample_index]);
                             let Some(actual) = decoded_surface_point_with_geometry_and_budget(
                                 &model_index,
                                 surface_id,
@@ -2003,15 +1997,15 @@ pub(super) fn blend_spine_cache_fit_tolerance_with_index(
 /// the scoped reservation that holds their storage. The caller admits one
 /// sample per point and missing lane through its coupled support budget.
 fn complete_blend_boundary_support_uv_with_index_and_budget<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&'a SurfaceId; 2],
     points: &[Point3],
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
-    geometry_budget: &GeometryWorkBudget<'_>,
+    geometry_budget: &GeometryWorkBudget<'ctx>,
     blend_parameter_grids: &mut BlendParameterGridCache<'a, '_>,
-) -> Result<Option<SupportUvLanes<'ctx>>, cadmpeg_core::CodecError> {
+) -> Result<Option<ParameterLanes<'ctx>>, cadmpeg_core::CodecError> {
+    let ctx = geometry_budget.charges;
     let mut selected_sides = None;
     for blend_side in 0..2 {
         let Some(CircularBlendDefinition { supports, .. }) = blend_surface_definition_with_index(
@@ -2266,7 +2260,6 @@ fn complete_coupled_support_uv(
                 )?);
             let geometry_budget = &lane_geometry_budget;
             let mut lanes = complete_blend_boundary_support_uv_with_index_and_budget(
-                ctx,
                 &model_index,
                 surfaces,
                 points,
