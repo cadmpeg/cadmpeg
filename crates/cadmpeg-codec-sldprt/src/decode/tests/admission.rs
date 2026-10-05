@@ -112,33 +112,29 @@ fn work_refusal_with_request(
 ) -> cadmpeg_core::decode::ResourceLimit {
     use cadmpeg_core::decode::ResourceDimension;
 
-    // Randomized reader maps can change the preceding key-copy sum. Replay the
-    // probed boundary with the ordinary limit; probe again when a new ordering
-    // moves it.
-    for _ in 0..64 {
-        options.policy.limits.max_work_units = u64::MAX;
-        let limit = probed_refusal(
-            source,
-            &options,
-            ResourceDimension::WorkUnits,
-            operation,
-            additional,
-        );
-        options.policy.limits.max_work_units = limit.used + limit.additional - 1;
-        let repeated = SldprtCodec
-            .decode(&mut Cursor::new(source), &options)
-            .expect_err("one work unit below the target must refuse");
-        if matches!(
-            repeated,
+    options.policy.limits.max_work_units = u64::MAX;
+    let limit = probed_refusal(
+        source,
+        &options,
+        ResourceDimension::WorkUnits,
+        operation,
+        additional,
+    );
+    options.policy.limits.max_work_units = limit.used + limit.additional - 1;
+    let repeated = SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .expect_err("one work unit below the target must refuse");
+    assert!(
+        matches!(
+            &repeated,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::WorkUnits
                     && refusal.operation == operation
                     && additional.is_none_or(|count| refusal.additional == count)
-        ) {
-            return limit;
-        }
-    }
-    panic!("named replay boundary was not reached: {operation}");
+        ),
+        "{operation}: the replay refused elsewhere, so the decode charges in a run-dependent order: {repeated:?}"
+    );
+    limit
 }
 
 fn custom_property_source() -> Vec<u8> {

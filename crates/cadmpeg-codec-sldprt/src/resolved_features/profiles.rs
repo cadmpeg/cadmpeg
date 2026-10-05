@@ -68,7 +68,7 @@ use cadmpeg_ir::{
     features::{FeatureDefinition, FeatureOperation},
     scalar::{Angle, Length},
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::index_from_u64;
@@ -104,10 +104,10 @@ pub(crate) fn bind_sketch_profiles(
         declared_entity_handle_circular_carriers(ctx, features, parameters, lanes)?;
     let mut superseded = HashSet::new();
     let metadata_ids = history_metadata_ids(ctx, histories)?;
-    let mut native_features = HashMap::new();
+    let mut native_features = BTreeMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut native_features,
             feature.id.as_str(),
             feature,
@@ -415,10 +415,10 @@ pub(crate) fn project_compact_sketch_profiles(
     const OPERATION: &str = "project SLDPRT compact sketch profiles";
     let metadata_ids = history_metadata_ids(ctx, histories)?;
 
-    let mut native_features = HashMap::new();
+    let mut native_features = BTreeMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut native_features,
             feature.id.as_str(),
             feature,
@@ -1293,9 +1293,9 @@ pub(crate) fn project_marker_backed_sketches(
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(ctx, histories)?;
 
-    let mut native_features = HashMap::new();
+    let mut native_features = BTreeMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut native_features,
             feature.id.as_str(),
             feature,
@@ -3453,7 +3453,7 @@ fn project_detached_legacy_config_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
-    native_features: &HashMap<&str, &crate::records::Feature>,
+    native_features: &BTreeMap<&str, &crate::records::Feature>,
     lanes: &[FeatureInputLane],
     feature_frames: &HashMap<String, (Point3, Vector3, Vector3)>,
 ) -> Result<(), CodecError> {
