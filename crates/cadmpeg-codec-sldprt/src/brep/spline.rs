@@ -1866,31 +1866,35 @@ mod tests {
     }
 
     macro_rules! surface_collection_boundary {
-        ($name:ident, $bytes:expr, $limit:expr, $operation:literal) => {
+        ($name:ident, $bytes:expr, $operation:literal) => {
             #[test]
             fn $name() {
                 let bytes = $bytes;
                 let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_collection_items = $limit;
-                let (ctx, _) =
-                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                let error = scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
-                    .expect_err("surface collection exceeds the limit");
-                assert!(matches!(error,
-                    cadmpeg_core::CodecError::ResourceLimit(limit)
-                        if limit.dimension == ResourceDimension::CollectionItems
-                            && limit.operation == $operation), "{error:?}");
+                let error = cadmpeg_test_support::refusal::resource_limit_at(
+                    ResourceDimension::CollectionItems,
+                    $operation,
+                    |cap| {
+                        let mut policy = DecodePolicy::service();
+                        policy.limits.max_collection_items = cap;
+                        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+                        let result = scan_surface_carriers(&ctx, &bytes, &mut Vec::new());
+                        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                        }
+                        result
+                    },
+                );
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
             }
         };
     }
 
     macro_rules! plain_surface_boundary {
-        ($name:ident, $limit:expr, $operation:literal) => {
+        ($name:ident, $operation:literal) => {
             surface_collection_boundary!(
                 $name,
                 crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10),
-                $limit,
                 $operation
             );
         };
@@ -1898,126 +1902,102 @@ mod tests {
 
     plain_surface_boundary!(
         parasolid_surface_descriptors_refuse_before_insertion,
-        0,
         "collect Parasolid surface descriptors"
     );
     plain_surface_boundary!(
         parasolid_surface_array_references_refuse_before_collection,
-        1,
         "collect Parasolid surface array references"
     );
     plain_surface_boundary!(
         parasolid_compact_arrays_refuse_before_insertion,
-        7,
         "scan Parasolid compact arrays"
     );
     plain_surface_boundary!(
         parasolid_scalar_arrays_refuse_before_insertion,
-        28,
         "collect Parasolid scalar arrays"
     );
     plain_surface_boundary!(
         parasolid_integer_arrays_refuse_before_insertion,
-        32,
         "collect Parasolid integer arrays"
     );
     plain_surface_boundary!(
         parasolid_scalar_values_refuse_before_candidate_copy,
-        46,
         "copy Parasolid scalar array values"
     );
     plain_surface_boundary!(
         parasolid_scalar_candidates_refuse_before_insertion,
-        58,
         "collect Parasolid scalar candidates"
     );
     plain_surface_boundary!(
         parasolid_compact_scalar_values_refuse_before_allocation,
-        59,
         "decode Parasolid compact scalar values"
     );
     plain_surface_boundary!(
         parasolid_integer_values_refuse_before_candidate_copy,
-        75,
         "copy Parasolid integer array values"
     );
     plain_surface_boundary!(
         parasolid_integer_candidates_refuse_before_insertion,
-        77,
         "collect Parasolid integer candidates"
     );
     plain_surface_boundary!(
         parasolid_compact_integer_values_refuse_before_allocation,
-        78,
         "decode Parasolid compact integer values"
     );
     plain_surface_boundary!(
         parasolid_knot_multiplicity_groups_refuse_before_insertion,
-        81,
         "group Parasolid knot multiplicities"
     );
     plain_surface_boundary!(
         parasolid_distinct_knots_refuse_before_copy,
-        87,
         "copy Parasolid distinct knots"
     );
     plain_surface_boundary!(
         parasolid_knot_multiplicities_refuse_before_copy,
-        89,
         "copy Parasolid knot multiplicities"
     );
     plain_surface_boundary!(
         parasolid_knot_candidates_refuse_before_insertion,
-        91,
         "collect Parasolid knot candidates"
     );
     plain_surface_boundary!(
         parasolid_surface_pole_rows_refuse_before_partition,
-        121,
         "partition Parasolid surface pole rows"
     );
     plain_surface_boundary!(
         parasolid_surface_poles_refuse_before_partition,
-        123,
         "partition Parasolid surface poles"
     );
     plain_surface_boundary!(
         parasolid_surface_pole_rows_refuse_before_admission,
-        127,
         "IR NURBS admitted grid rows"
     );
     plain_surface_boundary!(
         parasolid_surface_poles_refuse_before_admission,
-        129,
         "IR NURBS admitted poles"
     );
     plain_surface_boundary!(
         parasolid_surface_carriers_refuse_before_insertion,
-        133,
         "collect Parasolid surface carriers"
     );
     surface_collection_boundary!(
         parasolid_surface_weight_rows_refuse_before_partition,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
-        144,
         "partition Parasolid surface weight rows"
     );
     surface_collection_boundary!(
         parasolid_surface_weights_refuse_before_partition,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
-        146,
         "partition Parasolid surface weights"
     );
     surface_collection_boundary!(
         parasolid_weighted_surface_rows_refuse_before_pairing,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
-        150,
         "IR NURBS paired grid rows"
     );
     surface_collection_boundary!(
         parasolid_weighted_surface_poles_refuse_before_pairing,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
-        152,
         "IR NURBS paired poles"
     );
 

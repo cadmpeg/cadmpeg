@@ -244,9 +244,11 @@ fn solved_point_projection_refuses_collection_limit() {
 // The copied relation key belongs to the temporary ownership map.
 #[test]
 fn solved_point_projection_refuses_scoped_limit() {
+    // The relation ownership index is built under the projection's scoped
+    // storage, after the larger sketch index has set the peak.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "copy SLDPRT relation identity",
+        "index SLDPRT relation parameter ownership",
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
@@ -255,7 +257,7 @@ fn solved_point_projection_refuses_scoped_limit() {
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "copy SLDPRT relation identity"));
+            && limit.operation == "index SLDPRT relation parameter ownership"));
 }
 
 #[test]

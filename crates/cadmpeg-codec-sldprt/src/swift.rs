@@ -605,23 +605,30 @@ pub(crate) fn unsupported_annotation_classes(
     Ok(project_with_topology(ctx, &root, None, &rendered, None)?.unsupported)
 }
 
+/// Whether a container section carries a SWIFT schema.
+fn is_swift_schema_section(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
+    Ok(name.starts_with("SWIFT/")
+        && ctx.contains_text(name, "Schema", "find SWIFT schema section name")?)
+}
+
 fn has_root_marker(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
-    Ok(scan.sections(ctx)?.try_fold(false, |found, section| {
-        Ok::<_, cadmpeg_core::CodecError>(
-            found
-                || ({
-                    section
-                        .name()
-                        .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
-                        && ctx
-                            .admit_iter(section.payload(), "scan SWIFT root class marker")?
-                            .windows(std::num::NonZeroUsize::new(ROOT_CLASS.len()).ok_or_else(
-                                || cadmpeg_core::CodecError::malformed("zero scan window width"),
-                            )?)
-                            .any(|window| window == ROOT_CLASS.as_bytes())
-                }),
-        )
-    })?)
+    ctx.any_by(
+        scan.section_steps(),
+        |section| {
+            Ok(match section.name() {
+                Some(name) => {
+                    is_swift_schema_section(ctx, name)?
+                        && ctx.contains_bytes(
+                            section.payload(),
+                            ROOT_CLASS.as_bytes(),
+                            "scan SWIFT root class marker",
+                        )?
+                }
+                None => false,
+            })
+        },
+        "scan SWIFT schema sections",
+    )
 }
 
 fn scan_root(
@@ -629,12 +636,13 @@ fn scan_root(
     scan: &ContainerScan<'_>,
 ) -> Result<Option<(cadmpeg_ir::StreamName, Entity, Vec<RenderedDimension>)>, CodecError> {
     let mut root = None;
-    for section in scan.sections(ctx)?.filter(|section| {
-        section
-            .name()
-            .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
-    }) {
-        ctx.charge_work(1, "scan SWIFT schema sections")?;
+    for section in scan.sections(ctx)? {
+        let Some(name) = section.name() else {
+            continue;
+        };
+        if !is_swift_schema_section(ctx, name)? {
+            continue;
+        }
         let Some(entity) = parse_unique_root(ctx, section.payload())? else {
             continue;
         };
@@ -656,13 +664,9 @@ fn parse_unique_root(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Option<Entity>, CodecError> {
-    ctx.charge_work(u64_from_index(payload.len()), "scan SWIFT entity roots")?;
     let mut parsed = None;
-    for offset in payload
-        .windows(ENTITY_TOKEN.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == ENTITY_TOKEN).then_some(offset))
-    {
+    // The token cannot overlap itself, so non-overlapping matches are all matches.
+    for offset in ctx.find_bytes_iter(payload, ENTITY_TOKEN, "scan SWIFT entity roots")? {
         let Some(mut cursor) = View::over_retained(payload).child(offset, payload.len()) else {
             continue;
         };

@@ -140,20 +140,36 @@ fn swift_cycles_remain_absent_and_pattern_leaves_are_visited() {
 
 #[test]
 fn swift_missing_vector_component_does_not_hide_later_lookup_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    const LOOKUP: &str = "look up SLDPRT ordered key";
     let mut geometry = entity("GeoCylinder");
     geometry.doubles.insert("Other".into(), 0.0);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 11;
-    // One one-byte key admits eleven comparisons before the next component refuses.
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::swift::vector(&ctx, &geometry, ["I", "J", "K"]).unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected work refusal");
+    let with_work_limit = |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let result = crate::swift::vector(&ctx, &geometry, ["I", "J", "K"]);
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
     };
-    assert_eq!(limit.operation, "look up SLDPRT ordered key");
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+    // The first lookup misses; a budget that admits exactly it must still
+    // refuse the next component's lookup instead of returning the miss.
+    let CodecError::ResourceLimit(first) = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        LOOKUP,
+        with_work_limit,
+    ) else {
+        panic!("expected the first lookup to refuse");
+    };
+    let first_lookup = first.used + first.additional;
+    let CodecError::ResourceLimit(later) = with_work_limit(first_lookup).unwrap_err() else {
+        panic!("expected a later lookup to refuse");
+    };
+    assert_eq!(later.operation, LOOKUP);
+    assert_eq!(later.used, first_lookup);
 }
 
 #[test]

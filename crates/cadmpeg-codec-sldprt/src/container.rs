@@ -311,6 +311,7 @@ impl<'a> Section<'a> {
 }
 
 impl ContainerScan<'_> {
+    /// Every section, with the whole traversal admitted before the first.
     pub(crate) fn sections(
         &self,
         ctx: &DecodeContext<'_>,
@@ -320,6 +321,15 @@ impl ContainerScan<'_> {
         Ok(blocks
             .map(Section::Block)
             .chain(streams.map(Section::Compound)))
+    }
+
+    /// Every section, one fixed step at a time, for a search that charges
+    /// each step it takes.
+    pub(crate) fn section_steps(&self) -> impl Iterator<Item = Section<'_>> {
+        self.blocks
+            .iter()
+            .map(Section::Block)
+            .chain(self.compound_streams.iter().map(Section::Compound))
     }
 }
 
