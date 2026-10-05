@@ -896,6 +896,33 @@ pub(crate) struct FeatureInputGeneratedSurfaceIdentity {
     pub(crate) components: Vec<FeatureInputComponentPathEntry>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputGeneratedSurfaceIdentity {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.ordinal,
+                    self.offset,
+                ),
+                (
+                    self.type_prefix,
+                    self.feature_source_id,
+                    self.local_identity,
+                    &self.components,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// One typed node in a persistent feature-input component path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputComponentPathEntry {
