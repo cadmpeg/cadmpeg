@@ -6492,61 +6492,62 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut output = Vec::new();
-    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
-        let Some(joined) = JoinedPayload::from_source(
-            ctx,
-            payload.content.blocks().iter().map(|block| &block.id),
-            payload.content.blocks().len(),
-            &blocks,
-        )?
-        else {
-            continue;
-        };
-        let source_offset = |relative: usize| {
-            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
-        };
-        let mut rows = crate::om::binary64_pair::object_pairs(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
-            let Some(pair) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
-            };
-            let Some(frame) = pair.into_wire_frame() else {
-                continue;
-            };
-            let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                continue;
-            };
-            let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                continue;
-            };
-            let Some(source) = source_offset(pair.offset())? else {
-                continue;
-            };
-            let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar pair ordinal", 0, 1))?;
-            let record = FeaturePayloadScalarPair {
-                id,
-                operation_label: ctx.copy_retained_text(
-                    &payload.operation_label,
-                    "NX datum CSYS scalar pair label",
-                )?,
-                payload: FeatureScalarPairPayload::DatumCsys {
-                    datum_csys_payload: ctx
-                        .copy_retained_text(&payload.id, "NX datum CSYS scalar pair payload")?,
-                    frame,
-                },
-                ordinal,
-                value_source_offsets: [first, second],
-                source_offset: source,
-            };
-            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
-            output.push(record);
-        }
+    construction_payload_frames::<DatumCsysPayloadScalarPairs>(ctx, container, payloads)
+}
+
+/// Frames of the datum csys payload scalar pairs family.
+struct DatumCsysPayloadScalarPairs;
+
+impl ConstructionPayloadFrames for DatumCsysPayloadScalarPairs {
+    type Payload = FeatureDatumCsysPayload;
+    type Row = crate::om::binary64_pair::Binary64Pair<crate::om::binary64_pair::ObjectPairForm>;
+    type Record = FeaturePayloadScalarPair;
+
+    fn blocks(payload: &Self::Payload) -> &[FeaturePayloadBlock] {
+        payload.content.blocks()
     }
-    Ok(output)
+
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::om::binary64_pair::object_pairs(ctx, bytes)
+    }
+
+    fn build(
+        ctx: &DecodeContext<'_>,
+        payload: &Self::Payload,
+        ordinal: usize,
+        pair: Self::Row,
+        joined: &JoinedPayload<'_>,
+    ) -> Result<Option<Self::Record>, CodecError> {
+        let Some(frame) = pair.into_wire_frame() else {
+            return Ok(None);
+        };
+        let Some(first) = joined.source_at(ctx, pair.value_offsets()[0])? else {
+            return Ok(None);
+        };
+        let Some(second) = joined.source_at(ctx, pair.value_offsets()[1])? else {
+            return Ok(None);
+        };
+        let Some(source) = joined.source_at(ctx, pair.offset())? else {
+            return Ok(None);
+        };
+        let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar pair ordinal", 0, 1))?;
+        let record = FeaturePayloadScalarPair {
+            id,
+            operation_label: ctx
+                .copy_retained_text(&payload.operation_label, "NX datum CSYS scalar pair label")?,
+            payload: FeatureScalarPairPayload::DatumCsys {
+                datum_csys_payload: ctx
+                    .copy_retained_text(&payload.id, "NX datum CSYS scalar pair payload")?,
+                frame,
+            },
+            ordinal,
+            value_source_offsets: [first, second],
+            source_offset: source,
+        };
+        Ok(Some(record))
+    }
 }
 
 /// Decode complete signed Q1.55 pair frames from reconstructed datum-CSYS payloads.
@@ -6555,62 +6556,63 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Result<Vec<FeatureDatumCsysPayloadFixedPair>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut output = Vec::new();
-    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
-        let Some(joined) = JoinedPayload::from_source(
-            ctx,
-            payload.content.blocks().iter().map(|block| &block.id),
-            payload.content.blocks().len(),
-            &blocks,
-        )?
-        else {
-            continue;
-        };
-        let source_offset = |relative: usize| {
-            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
-        };
-        let mut rows = crate::om::datum_csys_payload_fixed_pairs(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
-            let Some(pair) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
-            };
-            let Some(position) =
-                PairPosition::new(pair.form, cadmpeg_core::decode::u64_from_index(pair.offset))
-            else {
-                continue;
-            };
-            let Some(source) = source_offset(pair.offset)? else {
-                continue;
-            };
-            let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                continue;
-            };
-            let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                continue;
-            };
-            let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS fixed pair ordinal", 0, 1))?;
-            let record = FeatureDatumCsysPayloadFixedPair {
-                id,
-                operation_label: ctx.copy_retained_text(
-                    &payload.operation_label,
-                    "NX datum CSYS fixed pair label",
-                )?,
-                datum_csys_payload: ctx
-                    .copy_retained_text(&payload.id, "NX datum CSYS fixed pair payload")?,
-                ordinal,
-                values: pair.values,
-                position,
-                source_offset: source,
-                value_source_offsets: [first, second],
-            };
-            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
-            output.push(record);
-        }
+    construction_payload_frames::<DatumCsysPayloadFixedPairs>(ctx, container, payloads)
+}
+
+/// Frames of the datum csys payload fixed pairs family.
+struct DatumCsysPayloadFixedPairs;
+
+impl ConstructionPayloadFrames for DatumCsysPayloadFixedPairs {
+    type Payload = FeatureDatumCsysPayload;
+    type Row = crate::om::DatumCsysPayloadFixedPair;
+    type Record = FeatureDatumCsysPayloadFixedPair;
+
+    fn blocks(payload: &Self::Payload) -> &[FeaturePayloadBlock] {
+        payload.content.blocks()
     }
-    Ok(output)
+
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::om::datum_csys_payload_fixed_pairs(ctx, bytes)
+    }
+
+    fn build(
+        ctx: &DecodeContext<'_>,
+        payload: &Self::Payload,
+        ordinal: usize,
+        pair: Self::Row,
+        joined: &JoinedPayload<'_>,
+    ) -> Result<Option<Self::Record>, CodecError> {
+        let Some(position) =
+            PairPosition::new(pair.form, cadmpeg_core::decode::u64_from_index(pair.offset))
+        else {
+            return Ok(None);
+        };
+        let Some(source) = joined.source_at(ctx, pair.offset)? else {
+            return Ok(None);
+        };
+        let Some(first) = joined.source_at(ctx, pair.value_offsets()[0])? else {
+            return Ok(None);
+        };
+        let Some(second) = joined.source_at(ctx, pair.value_offsets()[1])? else {
+            return Ok(None);
+        };
+        let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS fixed pair ordinal", 0, 1))?;
+        let record = FeatureDatumCsysPayloadFixedPair {
+            id,
+            operation_label: ctx
+                .copy_retained_text(&payload.operation_label, "NX datum CSYS fixed pair label")?,
+            datum_csys_payload: ctx
+                .copy_retained_text(&payload.id, "NX datum CSYS fixed pair payload")?,
+            ordinal,
+            values: pair.values,
+            position,
+            source_offset: source,
+            value_source_offsets: [first, second],
+        };
+        Ok(Some(record))
+    }
 }
 
 /// Decode complete shifted-binary64 fields from reconstructed datum-CSYS payloads.
@@ -6619,52 +6621,54 @@ pub(super) fn feature_datum_csys_payload_scalars(
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
 ) -> Result<Vec<FeaturePayloadScalar>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut output = Vec::new();
-    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
-        let Some(joined) = JoinedPayload::from_source(
-            ctx,
-            payload.content.blocks().iter().map(|block| &block.id),
-            payload.content.blocks().len(),
-            &blocks,
-        )?
-        else {
-            continue;
-        };
-        let source_offset = |relative: usize| {
-            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
-        };
-        let mut rows =
-            crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
-            let Some(scalar) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
-            };
-            let Some(source) = source_offset(scalar.offset)? else {
-                continue;
-            };
-            let id = format_feature_child_id(ctx, &payload.id, "-scalar-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar ordinal", 0, 1))?;
-            let record = FeaturePayloadScalar {
-                id,
-                operation_label: ctx
-                    .copy_retained_text(&payload.operation_label, "NX datum CSYS scalar label")?,
-                payload: FeatureScalarPayload::DatumCsys {
-                    datum_csys_payload: ctx
-                        .copy_retained_text(&payload.id, "NX datum CSYS scalar payload")?,
-                },
-                ordinal,
-                field_code: scalar.field_code,
-                scalar: scalar.scalar,
-                payload_offset: cadmpeg_core::decode::u64_from_index(scalar.offset),
-                source_offset: source,
-            };
-            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
-            output.push(record);
-        }
+    construction_payload_frames::<DatumCsysPayloadScalars>(ctx, container, payloads)
+}
+
+/// Frames of the datum csys payload scalars family.
+struct DatumCsysPayloadScalars;
+
+impl ConstructionPayloadFrames for DatumCsysPayloadScalars {
+    type Payload = FeatureDatumCsysPayload;
+    type Row = crate::om::ConstructionPayloadScalarField;
+    type Record = FeaturePayloadScalar;
+
+    fn blocks(payload: &Self::Payload) -> &[FeaturePayloadBlock] {
+        payload.content.blocks()
     }
-    Ok(output)
+
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::om::construction_payload_scalar_fields(ctx, bytes)
+    }
+
+    fn build(
+        ctx: &DecodeContext<'_>,
+        payload: &Self::Payload,
+        ordinal: usize,
+        scalar: Self::Row,
+        joined: &JoinedPayload<'_>,
+    ) -> Result<Option<Self::Record>, CodecError> {
+        let Some(source) = joined.source_at(ctx, scalar.offset)? else {
+            return Ok(None);
+        };
+        let id = format_feature_child_id(ctx, &payload.id, "-scalar-", ordinal)?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar ordinal", 0, 1))?;
+        let record = FeaturePayloadScalar {
+            id,
+            operation_label: ctx
+                .copy_retained_text(&payload.operation_label, "NX datum CSYS scalar label")?,
+            payload: FeatureScalarPayload::DatumCsys {
+                datum_csys_payload: ctx
+                    .copy_retained_text(&payload.id, "NX datum CSYS scalar payload")?,
+            },
+            ordinal,
+            field_code: scalar.field_code,
+            scalar: scalar.scalar,
+            payload_offset: cadmpeg_core::decode::u64_from_index(scalar.offset),
+            source_offset: source,
+        };
+        Ok(Some(record))
+    }
 }
 
 /// Decode the final three descriptor lanes of datum coordinate systems.
@@ -6802,62 +6806,62 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut output = Vec::new();
-    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
-        let Some(joined) = JoinedPayload::from_source(
-            ctx,
-            payload.content.blocks().iter().map(|block| &block.id),
-            payload.content.blocks().len(),
-            &blocks,
-        )?
-        else {
-            continue;
-        };
-        let source_offset = |relative: usize| {
-            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
-        };
-        let mut rows =
-            crate::om::binary64_pair::datum_plane_pairs(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
-            let Some(pair) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
-            };
-            let Some(frame) = pair.into_wire_frame() else {
-                continue;
-            };
-            let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                continue;
-            };
-            let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                continue;
-            };
-            let Some(source) = source_offset(pair.offset())? else {
-                continue;
-            };
-            let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX datum plane scalar pair ordinal", 0, 1))?;
-            let record = FeaturePayloadScalarPair {
-                id,
-                operation_label: ctx.copy_retained_text(
-                    &payload.operation_label,
-                    "NX datum plane scalar pair label",
-                )?,
-                payload: FeatureScalarPairPayload::DatumPlane {
-                    datum_plane_payload: ctx
-                        .copy_retained_text(&payload.id, "NX datum plane scalar pair payload")?,
-                    frame,
-                },
-                ordinal,
-                value_source_offsets: [first, second],
-                source_offset: source,
-            };
-            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
-            output.push(record);
-        }
+    construction_payload_frames::<DatumPlanePayloadScalarPairs>(ctx, container, payloads)
+}
+
+/// Frames of the datum plane payload scalar pairs family.
+struct DatumPlanePayloadScalarPairs;
+
+impl ConstructionPayloadFrames for DatumPlanePayloadScalarPairs {
+    type Payload = FeatureDatumPlanePayload;
+    type Row = crate::om::binary64_pair::Binary64Pair<crate::om::binary64_pair::DatumPlanePairForm>;
+    type Record = FeaturePayloadScalarPair;
+
+    fn blocks(payload: &Self::Payload) -> &[FeaturePayloadBlock] {
+        payload.content.blocks()
     }
-    Ok(output)
+
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::om::binary64_pair::datum_plane_pairs(ctx, bytes)
+    }
+
+    fn build(
+        ctx: &DecodeContext<'_>,
+        payload: &Self::Payload,
+        ordinal: usize,
+        pair: Self::Row,
+        joined: &JoinedPayload<'_>,
+    ) -> Result<Option<Self::Record>, CodecError> {
+        let Some(frame) = pair.into_wire_frame() else {
+            return Ok(None);
+        };
+        let Some(first) = joined.source_at(ctx, pair.value_offsets()[0])? else {
+            return Ok(None);
+        };
+        let Some(second) = joined.source_at(ctx, pair.value_offsets()[1])? else {
+            return Ok(None);
+        };
+        let Some(source) = joined.source_at(ctx, pair.offset())? else {
+            return Ok(None);
+        };
+        let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX datum plane scalar pair ordinal", 0, 1))?;
+        let record = FeaturePayloadScalarPair {
+            id,
+            operation_label: ctx
+                .copy_retained_text(&payload.operation_label, "NX datum plane scalar pair label")?,
+            payload: FeatureScalarPairPayload::DatumPlane {
+                datum_plane_payload: ctx
+                    .copy_retained_text(&payload.id, "NX datum plane scalar pair payload")?,
+                frame,
+            },
+            ordinal,
+            value_source_offsets: [first, second],
+            source_offset: source,
+        };
+        Ok(Some(record))
+    }
 }
 
 /// Decode atomically resolved datum-plane descriptor blocks.
@@ -7386,61 +7390,63 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut output = Vec::new();
-    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
-        let Some(joined) = JoinedPayload::from_source(
-            ctx,
-            payload.content.blocks().iter().map(|block| &block.id),
-            payload.content.blocks().len(),
-            &blocks,
-        )?
-        else {
-            continue;
-        };
-        let source_offset = |relative: usize| {
-            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
-        };
-        let mut rows = crate::om::binary64_pair::sketch_pairs(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
-            let Some(pair) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
-            };
-            let Some(frame) = pair.into_wire_frame() else {
-                continue;
-            };
-            let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                continue;
-            };
-            let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                continue;
-            };
-            let Some(source) = source_offset(pair.offset())? else {
-                continue;
-            };
-            let id = format_feature_child_id(ctx, &payload.id, "-coordinate-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch coordinate pair ordinal", 0, 1))?;
-            let record = FeaturePayloadScalarPair {
-                id,
-                operation_label: ctx.copy_retained_text(
-                    &payload.operation_label,
-                    "NX sketch coordinate pair label",
-                )?,
-                payload: FeatureScalarPairPayload::Construction {
-                    construction_payload: ctx
-                        .copy_retained_text(&payload.id, "NX sketch coordinate pair payload")?,
-                    frame,
-                },
-                ordinal,
-                value_source_offsets: [first, second],
-                source_offset: source,
-            };
-            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
-            output.push(record);
-        }
+    construction_payload_frames::<SketchPayloadCoordinatePairs>(ctx, container, payloads)
+}
+
+/// Frames of the sketch payload coordinate pairs family.
+struct SketchPayloadCoordinatePairs;
+
+impl ConstructionPayloadFrames for SketchPayloadCoordinatePairs {
+    type Payload = FeatureConstructionPayload;
+    type Row =
+        crate::om::binary64_pair::Binary64Pair<crate::om::binary64_pair::SketchBinary64PairForm>;
+    type Record = FeaturePayloadScalarPair;
+
+    fn blocks(payload: &Self::Payload) -> &[FeaturePayloadBlock] {
+        payload.content.blocks()
     }
-    Ok(output)
+
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::om::binary64_pair::sketch_pairs(ctx, bytes)
+    }
+
+    fn build(
+        ctx: &DecodeContext<'_>,
+        payload: &Self::Payload,
+        ordinal: usize,
+        pair: Self::Row,
+        joined: &JoinedPayload<'_>,
+    ) -> Result<Option<Self::Record>, CodecError> {
+        let Some(frame) = pair.into_wire_frame() else {
+            return Ok(None);
+        };
+        let Some(first) = joined.source_at(ctx, pair.value_offsets()[0])? else {
+            return Ok(None);
+        };
+        let Some(second) = joined.source_at(ctx, pair.value_offsets()[1])? else {
+            return Ok(None);
+        };
+        let Some(source) = joined.source_at(ctx, pair.offset())? else {
+            return Ok(None);
+        };
+        let id = format_feature_child_id(ctx, &payload.id, "-coordinate-pair-", ordinal)?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX sketch coordinate pair ordinal", 0, 1))?;
+        let record = FeaturePayloadScalarPair {
+            id,
+            operation_label: ctx
+                .copy_retained_text(&payload.operation_label, "NX sketch coordinate pair label")?,
+            payload: FeatureScalarPairPayload::Construction {
+                construction_payload: ctx
+                    .copy_retained_text(&payload.id, "NX sketch coordinate pair payload")?,
+                frame,
+            },
+            ordinal,
+            value_source_offsets: [first, second],
+            source_offset: source,
+        };
+        Ok(Some(record))
+    }
 }
 
 /// Decode exact scaled shifted-binary64 pair frames from reconstructed sketch payloads.
@@ -7449,60 +7455,63 @@ pub(super) fn feature_sketch_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadFixedPair>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut output = Vec::new();
-    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
-        let Some(joined) = JoinedPayload::from_source(
-            ctx,
-            payload.content.blocks().iter().map(|block| &block.id),
-            payload.content.blocks().len(),
-            &blocks,
-        )?
-        else {
-            continue;
-        };
-        let source_offset = |relative: usize| {
-            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
-        };
-        let mut rows = crate::om::sketch_payload_fixed_pairs(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
-            let Some(pair) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
-            };
-            let Some(position) =
-                PairPosition::new(pair.form, cadmpeg_core::decode::u64_from_index(pair.offset))
-            else {
-                continue;
-            };
-            let Some(source) = source_offset(pair.offset)? else {
-                continue;
-            };
-            let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                continue;
-            };
-            let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                continue;
-            };
-            let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch fixed pair ordinal", 0, 1))?;
-            let record = FeatureSketchPayloadFixedPair {
-                id,
-                operation_label: ctx
-                    .copy_retained_text(&payload.operation_label, "NX sketch fixed pair label")?,
-                construction_payload: ctx
-                    .copy_retained_text(&payload.id, "NX sketch fixed pair payload")?,
-                ordinal,
-                values: pair.values,
-                position,
-                source_offset: source,
-                value_source_offsets: [first, second],
-            };
-            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
-            output.push(record);
-        }
+    construction_payload_frames::<SketchPayloadFixedPairs>(ctx, container, payloads)
+}
+
+/// Frames of the sketch payload fixed pairs family.
+struct SketchPayloadFixedPairs;
+
+impl ConstructionPayloadFrames for SketchPayloadFixedPairs {
+    type Payload = FeatureConstructionPayload;
+    type Row = crate::om::SketchPayloadFixedPair;
+    type Record = FeatureSketchPayloadFixedPair;
+
+    fn blocks(payload: &Self::Payload) -> &[FeaturePayloadBlock] {
+        payload.content.blocks()
     }
-    Ok(output)
+
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::om::sketch_payload_fixed_pairs(ctx, bytes)
+    }
+
+    fn build(
+        ctx: &DecodeContext<'_>,
+        payload: &Self::Payload,
+        ordinal: usize,
+        pair: Self::Row,
+        joined: &JoinedPayload<'_>,
+    ) -> Result<Option<Self::Record>, CodecError> {
+        let Some(position) =
+            PairPosition::new(pair.form, cadmpeg_core::decode::u64_from_index(pair.offset))
+        else {
+            return Ok(None);
+        };
+        let Some(source) = joined.source_at(ctx, pair.offset)? else {
+            return Ok(None);
+        };
+        let Some(first) = joined.source_at(ctx, pair.value_offsets()[0])? else {
+            return Ok(None);
+        };
+        let Some(second) = joined.source_at(ctx, pair.value_offsets()[1])? else {
+            return Ok(None);
+        };
+        let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX sketch fixed pair ordinal", 0, 1))?;
+        let record = FeatureSketchPayloadFixedPair {
+            id,
+            operation_label: ctx
+                .copy_retained_text(&payload.operation_label, "NX sketch fixed pair label")?,
+            construction_payload: ctx
+                .copy_retained_text(&payload.id, "NX sketch fixed pair payload")?,
+            ordinal,
+            values: pair.values,
+            position,
+            source_offset: source,
+            value_source_offsets: [first, second],
+        };
+        Ok(Some(record))
+    }
 }
 
 /// Decode exact mixed scaled shifted-binary64/binary32 pair frames from reconstructed sketch payloads.
@@ -7511,55 +7520,115 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadMixedPair>, CodecError> {
+    construction_payload_frames::<SketchPayloadMixedPairs>(ctx, container, payloads)
+}
+
+/// Frames of the sketch payload mixed pairs family.
+struct SketchPayloadMixedPairs;
+
+impl ConstructionPayloadFrames for SketchPayloadMixedPairs {
+    type Payload = FeatureConstructionPayload;
+    type Row = crate::om::SketchPayloadMixedPair;
+    type Record = FeatureSketchPayloadMixedPair;
+
+    fn blocks(payload: &Self::Payload) -> &[FeaturePayloadBlock] {
+        payload.content.blocks()
+    }
+
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::om::sketch_payload_mixed_pairs(ctx, bytes)
+    }
+
+    fn build(
+        ctx: &DecodeContext<'_>,
+        payload: &Self::Payload,
+        ordinal: usize,
+        pair: Self::Row,
+        joined: &JoinedPayload<'_>,
+    ) -> Result<Option<Self::Record>, CodecError> {
+        let Some(position) = PairPosition::new(
+            MixedPairForm,
+            cadmpeg_core::decode::u64_from_index(pair.offset),
+        ) else {
+            return Ok(None);
+        };
+        let Some(source) = joined.source_at(ctx, pair.offset)? else {
+            return Ok(None);
+        };
+        let Some(first) = joined.source_at(ctx, pair.value_offsets()[0])? else {
+            return Ok(None);
+        };
+        let Some(second) = joined.source_at(ctx, pair.value_offsets()[1])? else {
+            return Ok(None);
+        };
+        let id = format_feature_child_id(ctx, &payload.id, "-mixed-pair-", ordinal)?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX sketch mixed pair ordinal", 0, 1))?;
+        let record = FeatureSketchPayloadMixedPair {
+            id,
+            operation_label: ctx
+                .copy_retained_text(&payload.operation_label, "NX sketch mixed pair label")?,
+            construction_payload: ctx
+                .copy_retained_text(&payload.id, "NX sketch mixed pair payload")?,
+            ordinal,
+            scalars: pair.scalars,
+            position,
+            source_offset: source,
+            value_source_offsets: [first, second],
+        };
+        Ok(Some(record))
+    }
+}
+
+/// One family of frames scanned from reconstructed construction payloads.
+///
+/// [`construction_payload_frames`] joins each payload's blocks, scans the
+/// joined bytes with [`Self::scan`] and builds one record per frame whose
+/// offsets map into a source block.
+trait ConstructionPayloadFrames {
+    type Payload;
+    type Row;
+    type Record;
+
+    fn blocks(payload: &Self::Payload) -> &[FeaturePayloadBlock];
+
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError>;
+
+    /// The frame's record, or `None` when one of its offsets has no source block.
+    fn build(
+        ctx: &DecodeContext<'_>,
+        payload: &Self::Payload,
+        ordinal: usize,
+        row: Self::Row,
+        joined: &JoinedPayload<'_>,
+    ) -> Result<Option<Self::Record>, CodecError>;
+}
+
+fn construction_payload_frames<F: ConstructionPayloadFrames>(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+    payloads: &[F::Payload],
+) -> Result<Vec<F::Record>, CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut output = Vec::new();
     for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let payload_blocks = F::blocks(payload);
         let Some(joined) = JoinedPayload::from_source(
             ctx,
-            payload.content.blocks().iter().map(|block| &block.id),
-            payload.content.blocks().len(),
+            payload_blocks.iter().map(|block| &block.id),
+            payload_blocks.len(),
             &blocks,
         )?
         else {
             continue;
         };
-        let source_offset = |relative: usize| {
-            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
-        };
-        let mut rows = crate::om::sketch_payload_mixed_pairs(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
-            let Some(pair) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
-            };
-            let Some(position) = PairPosition::new(
-                MixedPairForm,
-                cadmpeg_core::decode::u64_from_index(pair.offset),
-            ) else {
+        let rows = F::scan(ctx, joined.bytes())?;
+        for (ordinal, row) in ctx
+            .admit_iter(rows, "scan NX construction payload frames")?
+            .enumerate()
+        {
+            let Some(record) = F::build(ctx, payload, ordinal, row, &joined)? else {
                 continue;
-            };
-            let Some(source) = source_offset(pair.offset)? else {
-                continue;
-            };
-            let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                continue;
-            };
-            let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                continue;
-            };
-            let id = format_feature_child_id(ctx, &payload.id, "-mixed-pair-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch mixed pair ordinal", 0, 1))?;
-            let record = FeatureSketchPayloadMixedPair {
-                id,
-                operation_label: ctx
-                    .copy_retained_text(&payload.operation_label, "NX sketch mixed pair label")?,
-                construction_payload: ctx
-                    .copy_retained_text(&payload.id, "NX sketch mixed pair payload")?,
-                ordinal,
-                scalars: pair.scalars,
-                position,
-                source_offset: source,
-                value_source_offsets: [first, second],
             };
             ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
             output.push(record);
@@ -7749,66 +7818,69 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadScalarLane>, CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut output = Vec::new();
-    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
-        let Some(joined) = JoinedPayload::from_source(
-            ctx,
-            payload.content.blocks().iter().map(|block| &block.id),
-            payload.content.blocks().len(),
-            &blocks,
-        )?
-        else {
-            continue;
-        };
-        let source_offset = |relative: usize| {
-            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
-        };
-        let mut rows = crate::om::sketch_payload_scalar_lanes(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
-            let Some(lane) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
-            };
-            let Ok(header_offset) = usize::try_from(lane.offset()) else {
-                continue;
-            };
-            let Some(header_source) = source_offset(header_offset)? else {
-                continue;
-            };
-            let Ok(terminator_offset) = usize::try_from(lane.end()) else {
-                continue;
-            };
-            let Some(terminator_source) = source_offset(terminator_offset)? else {
-                continue;
-            };
-            let Some(lane) = lane.try_map_locations(ctx, |offset, ()| {
-                let Ok(offset) = usize::try_from(offset) else {
-                    return Ok(None);
-                };
-                source_offset(offset)
-            })?
-            else {
-                continue;
-            };
-            let id = format_feature_child_id(ctx, &payload.id, "-scalar-lane-", ordinal)?;
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("NX sketch scalar lane ordinal", 0, 1))?;
-            let record = FeatureSketchPayloadScalarLane {
-                id,
-                operation_label: ctx
-                    .copy_retained_text(&payload.operation_label, "NX sketch scalar lane label")?,
-                construction_payload: ctx
-                    .copy_retained_text(&payload.id, "NX sketch scalar lane payload")?,
-                ordinal,
-                lane,
-                source_offset: header_source,
-                terminator_source_offset: terminator_source,
-            };
-            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
-            output.push(record);
-        }
+    construction_payload_frames::<SketchPayloadScalarLanes>(ctx, container, payloads)
+}
+
+/// Frames of the sketch payload scalar lanes family.
+struct SketchPayloadScalarLanes;
+
+impl ConstructionPayloadFrames for SketchPayloadScalarLanes {
+    type Payload = FeatureConstructionPayload;
+    type Row = FramedScalarRun<SketchScalarLaneForm, ()>;
+    type Record = FeatureSketchPayloadScalarLane;
+
+    fn blocks(payload: &Self::Payload) -> &[FeaturePayloadBlock] {
+        payload.content.blocks()
     }
-    Ok(output)
+
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::om::sketch_payload_scalar_lanes(ctx, bytes)
+    }
+
+    fn build(
+        ctx: &DecodeContext<'_>,
+        payload: &Self::Payload,
+        ordinal: usize,
+        lane: Self::Row,
+        joined: &JoinedPayload<'_>,
+    ) -> Result<Option<Self::Record>, CodecError> {
+        let Ok(header_offset) = usize::try_from(lane.offset()) else {
+            return Ok(None);
+        };
+        let Some(header_source) = joined.source_at(ctx, header_offset)? else {
+            return Ok(None);
+        };
+        let Ok(terminator_offset) = usize::try_from(lane.end()) else {
+            return Ok(None);
+        };
+        let Some(terminator_source) = joined.source_at(ctx, terminator_offset)? else {
+            return Ok(None);
+        };
+        let Some(lane) = lane.try_map_locations(ctx, |offset, ()| {
+            let Ok(offset) = usize::try_from(offset) else {
+                return Ok(None);
+            };
+            joined.source_at(ctx, offset)
+        })?
+        else {
+            return Ok(None);
+        };
+        let id = format_feature_child_id(ctx, &payload.id, "-scalar-lane-", ordinal)?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX sketch scalar lane ordinal", 0, 1))?;
+        let record = FeatureSketchPayloadScalarLane {
+            id,
+            operation_label: ctx
+                .copy_retained_text(&payload.operation_label, "NX sketch scalar lane label")?,
+            construction_payload: ctx
+                .copy_retained_text(&payload.id, "NX sketch scalar lane payload")?,
+            ordinal,
+            lane,
+            source_offset: header_source,
+            terminator_source_offset: terminator_source,
+        };
+        Ok(Some(record))
+    }
 }
 
 /// Decode exact compact-code name fields across reconstructed sketch payloads.
