@@ -59,7 +59,7 @@ use group_record::GroupOrigin;
 
 use super::substrate::{ParsedStreams, StreamView};
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// One complete Parasolid GROUP record with its source and owning-partition scope.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
@@ -165,34 +165,43 @@ pub(super) fn parasolid_group_records(
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
     deltas_records: &[ParasolidDeltasRecord],
 ) -> Result<Vec<ParasolidGroupRecord>, CodecError> {
-    let mut paired_partition = BTreeMap::new();
-    let mut pair_guard = ctx.reserve_scoped(0, "NX GROUP delta pair index")?;
-    for (&partition, deltas) in delta_pairs {
+    let mut paired_partition = HashMap::new();
+    let mut pair_storage = ctx.reserve_scoped(0, "NX GROUP delta pair index")?;
+    for (&partition, deltas) in ctx.admit_iter(delta_pairs, "NX GROUP delta pair index")? {
         let Ok(partition) = u32::try_from(partition) else {
             continue;
         };
-        for &delta in deltas {
-            if !paired_partition.contains_key(&delta) {
-                ctx.charge_collection_items(1, "NX GROUP delta pair index")?;
-                pair_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(usize, u32)>() * 4,
-                ))?;
-            }
-            paired_partition.insert(delta, partition);
+        for &delta in ctx.admit_iter(deltas, "NX GROUP delta pair index")? {
+            pair_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut paired_partition,
+                    delta,
+                    partition,
+                    "NX GROUP delta pair index",
+                )
+            })?;
         }
     }
     let mut groups = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
+    for (stream_ordinal, stream) in ctx
+        .admit_iter(streams, "NX GROUP partition streams")?
+        .enumerate()
+    {
         if stream.kind() != crate::parasolid::StreamKind::Partition {
             continue;
         }
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
             continue;
         };
-        for record in crate::deltas::census::walk(ctx, &stream.inflated)?
+        let records = crate::deltas::census::walk(ctx, &stream.inflated)?
             .into_events()
-            .records
-        {
+            .records;
+        let record_count = records.len();
+        let mut records = records.into_iter();
+        for _ in ctx.admit_iter(&(0..record_count), "NX GROUP partition records")? {
+            let Some(record) = records.next() else {
+                break;
+            };
             let crate::deltas::record_family::RecordFamily::Group {
                 node_id,
                 selector,
@@ -227,7 +236,7 @@ pub(super) fn parasolid_group_records(
             )?;
         }
     }
-    for record in deltas_records {
+    for record in ctx.admit_iter(deltas_records, "NX GROUP deltas records")? {
         let crate::deltas::record_family::RecordFamily::Group {
             node_id,
             selector,
@@ -237,15 +246,19 @@ pub(super) fn parasolid_group_records(
         else {
             continue;
         };
+        let partition_stream_ordinal = match usize::try_from(record.stream_ordinal) {
+            Ok(delta) => ctx
+                .get_hash_map(&paired_partition, &delta, "NX GROUP delta pair index")?
+                .copied(),
+            Err(_) => None,
+        };
         ctx.push_vec(
             &mut groups,
             ParasolidGroupRecord {
                 id: replace_group_record_id(ctx, &record.id)?,
                 origin: GroupOrigin::Deltas {
                     stream_ordinal: record.stream_ordinal,
-                    partition_stream_ordinal: usize::try_from(record.stream_ordinal)
-                        .ok()
-                        .and_then(|delta| paired_partition.get(&delta).copied()),
+                    partition_stream_ordinal,
                 },
                 xmt: record.xmt,
                 node_id: *node_id,
@@ -267,22 +280,22 @@ pub(super) fn parasolid_group_records(
     Ok(groups)
 }
 
+/// A malformed-record error whose message is copied under the decode budget.
+fn retained_malformed(ctx: &DecodeContext<'_>, message: &str) -> CodecError {
+    match ctx.copy_retained_text(message, "retain NX Parasolid rejection") {
+        Ok(message) => CodecError::Malformed(message),
+        Err(error) => error,
+    }
+}
+
 fn replace_group_record_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, CodecError> {
-    let (prefix, middle, suffix) = if let Some((prefix, suffix)) = id.split_once("deltas-record") {
-        (prefix, "parasolid-group", suffix)
-    } else {
-        (id, "", "")
-    };
-    let length = prefix
-        .len()
-        .checked_add(middle.len())
-        .and_then(|length| length.checked_add(suffix.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP record identity", 0, 1))?;
-    let mut output = ctx.retained_string(length, "NX GROUP record identity")?;
-    output.push_str(prefix);
-    output.push_str(middle);
-    output.push_str(suffix);
-    Ok(output)
+    let operation = "NX GROUP record identity";
+    match ctx.split_once(id, "deltas-record", operation)? {
+        Some((prefix, suffix)) => {
+            ctx.format_retained(format_args!("{prefix}parasolid-group{suffix}"), operation)
+        }
+        None => ctx.copy_retained_text(id, operation),
+    }
 }
 
 fn group_members_from_records(
@@ -291,70 +304,62 @@ fn group_members_from_records(
     records: &[crate::deltas::Record],
     members: &mut Vec<ParasolidGroupMember>,
 ) -> Result<(), CodecError> {
-    let mut records_by_xmt = BTreeMap::<u32, Option<&crate::deltas::Record>>::new();
-    let mut record_guard = ctx.reserve_scoped(0, "NX GROUP record index")?;
-    for record in records {
-        if let Some(unique) = records_by_xmt.get_mut(&record.xmt) {
-            *unique = None;
-        } else {
-            record_guard.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(u32, Option<&crate::deltas::Record>)>() * 4,
-            ))?;
-            ctx.insert_btree_map(
-                &mut records_by_xmt,
-                record.xmt,
-                Some(record),
-                "NX GROUP record index",
-            )?;
-        }
-    }
-    let unique_record = |xmt| records_by_xmt.get(&xmt).copied().flatten();
+    let (records_by_xmt, _record_storage) = ctx.unique_index(
+        records.iter().map(|record| (record.xmt, record)),
+        "NX GROUP record index",
+    )?;
+    let unique_record = |xmt: u32| -> Result<Option<&crate::deltas::Record>, CodecError> {
+        Ok(ctx
+            .get_hash_map(&records_by_xmt, &xmt, "NX GROUP record index")?
+            .copied()
+            .flatten())
+    };
     let mut groups_by_node = BTreeMap::<u32, Option<(u32, u32)>>::new();
-    let mut group_guard = ctx.reserve_scoped(0, "NX GROUP node index")?;
-    for record in records {
+    let mut group_storage = ctx.reserve_scoped(0, "NX GROUP node index")?;
+    for record in ctx.admit_iter(records, "NX GROUP node index")? {
         if let crate::deltas::record_family::RecordFamily::Group {
             node_id,
             references,
             ..
         } = &record.family
         {
-            if let Some(unique) = groups_by_node.get_mut(node_id) {
+            if let Some(unique) =
+                ctx.get_mut_btree_map(&mut groups_by_node, node_id, "NX GROUP node index")?
+            {
                 *unique = None;
             } else {
-                group_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(u32, Option<(u32, u32)>)>() * 4,
-                ))?;
-                ctx.insert_btree_map(
-                    &mut groups_by_node,
-                    *node_id,
-                    Some((record.xmt, references[4])),
-                    "NX GROUP node index",
-                )?;
+                group_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut groups_by_node,
+                        *node_id,
+                        Some((record.xmt, references[4])),
+                        "NX GROUP node index",
+                    )
+                })?;
             }
         }
     }
-    for (&group_node_id, unique) in &groups_by_node {
+    for (&group_node_id, unique) in ctx.admit_iter(&groups_by_node, "NX GROUP member chains")? {
         let Some((group_xmt, tail)) = *unique else {
             continue;
         };
         let mut reverse_chain = Vec::new();
-        let mut chain_guard = ctx.reserve_scoped(0, "NX GROUP member chain")?;
-        let mut seen = BTreeSet::new();
-        let mut seen_guard = ctx.reserve_scoped(0, "NX GROUP member seen index")?;
+        let mut chain_storage = ctx.reserve_scoped(0, "NX GROUP member chain")?;
+        let mut seen = HashSet::new();
+        let mut seen_storage = ctx.reserve_scoped(0, "NX GROUP member seen index")?;
         let mut current = tail;
         let mut expected_next = 1;
         let mut complete = true;
         while current != 1 {
             ctx.charge_work(1, "NX GROUP member chain")?;
-            if seen.contains(&current) {
+            if ctx.contains_hash_set(&seen, &current, "NX GROUP member seen index")? {
                 complete = false;
                 break;
             }
-            seen_guard.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<u32>() * 4,
-            ))?;
-            ctx.insert_btree_set(&mut seen, current, "NX GROUP member seen index")?;
-            let Some(list_record) = unique_record(current) else {
+            seen_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut seen, current, "NX GROUP member seen index")
+            })?;
+            let Some(list_record) = unique_record(current)? else {
                 complete = false;
                 break;
             };
@@ -369,7 +374,7 @@ fn group_members_from_records(
                 break;
             }
             let member_xmt = references[1];
-            let Some(member_record) = unique_record(member_xmt) else {
+            let Some(member_record) = unique_record(member_xmt)? else {
                 complete = false;
                 break;
             };
@@ -377,23 +382,25 @@ fn group_members_from_records(
                 complete = false;
                 break;
             };
-            ctx.reserve_scoped_vec(
-                &mut chain_guard,
+            ctx.push_scoped_vec(
+                &mut chain_storage,
                 &mut reverse_chain,
-                1,
+                (current, member_xmt, target),
                 "NX GROUP member chain",
             )?;
-            reverse_chain.push((current, member_xmt, target));
             expected_next = current;
             current = references[4];
         }
         if !complete || reverse_chain.is_empty() {
             continue;
         }
-        reverse_chain.reverse();
-        for (ordinal, (list_record_xmt, member_xmt, target)) in
-            reverse_chain.into_iter().enumerate()
-        {
+        ctx.reverse(&mut reverse_chain, "NX GROUP member chain")?;
+        let chain_len = reverse_chain.len();
+        let mut chain = reverse_chain.into_iter();
+        for ordinal in ctx.admit_iter(&(0..chain_len), "NX GROUP members")? {
+            let Some((list_record_xmt, member_xmt, target)) = chain.next() else {
+                break;
+            };
             let Ok(ordinal_u32) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -458,23 +465,27 @@ fn apply_group_state_events(
         Tombstone(u32),
     }
     let census = crate::deltas::census::walk(ctx, bytes)?.into_events();
-    let count = census
-        .records
-        .len()
-        .checked_add(census.tombstones.len())
+    let record_count = census.records.len();
+    let tombstone_count = census.tombstones.len();
+    let count = record_count
+        .checked_add(tombstone_count)
         .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state events", 0, 1))?;
-    let bytes = count
-        .checked_mul(std::mem::size_of::<(usize, Event)>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state events", 0, 1))?;
-    let _events_guard = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX GROUP state events",
-    )?;
-    let mut events = ctx.collection_vec(count, "NX GROUP state events")?;
-    for record in census.records {
+    let (mut events, mut events_storage) =
+        ctx.scoped_vector_storage(count, "NX GROUP state events")?;
+    let mut census_records = census.records.into_iter();
+    for _ in ctx.admit_iter(&(0..record_count), "NX GROUP state events")? {
+        let Some(record) = census_records.next() else {
+            break;
+        };
+        ctx.reserve_scoped_vec(&mut events_storage, &mut events, 1, "NX GROUP state events")?;
         events.push((record.offset, Event::Record(record)));
     }
-    for tombstone in census.tombstones {
+    let mut census_tombstones = census.tombstones.into_iter();
+    for _ in ctx.admit_iter(&(0..tombstone_count), "NX GROUP state events")? {
+        let Some(tombstone) = census_tombstones.next() else {
+            break;
+        };
+        ctx.reserve_scoped_vec(&mut events_storage, &mut events, 1, "NX GROUP state events")?;
         events.push((tombstone.offset, Event::Tombstone(tombstone.xmt)));
     }
     ctx.stable_sort_by(
@@ -483,19 +494,20 @@ fn apply_group_state_events(
         Ord::cmp,
         "sort NX GROUP state events",
     )?;
-    for (_, event) in events {
+    let mut events = events.into_iter();
+    for _ in ctx.admit_iter(&(0..count), "NX GROUP current record index")? {
+        let Some((_, event)) = events.next() else {
+            break;
+        };
         match event {
             Event::Record(record) => {
-                if !records.contains_key(&record.xmt) {
-                    ctx.charge_collection_items(1, "NX GROUP current record index")?;
-                    reservation.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<(u32, crate::deltas::Record)>() * 4,
-                    ))?;
-                }
-                records.insert(record.xmt, record);
+                let xmt = record.xmt;
+                reservation.with_storage(|| {
+                    ctx.insert_btree_map(records, xmt, record, "NX GROUP current record index")
+                })?;
             }
             Event::Tombstone(xmt) => {
-                records.remove(&xmt);
+                ctx.remove_btree_map(records, &xmt, "NX GROUP current record index")?;
             }
         }
     }
@@ -510,7 +522,10 @@ pub(super) fn parasolid_group_members(
     parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidGroupMember>, CodecError> {
     let mut members = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
+    for (stream_ordinal, stream) in ctx
+        .admit_iter(streams, "NX GROUP partition streams")?
+        .enumerate()
+    {
         if stream.kind() != crate::parasolid::StreamKind::Partition {
             continue;
         }
@@ -518,32 +533,48 @@ pub(super) fn parasolid_group_members(
             continue;
         };
         let mut current = BTreeMap::new();
-        let mut current_guard = ctx.reserve_scoped(0, "NX GROUP current record index")?;
-        apply_group_state_events(ctx, &mut current, &mut current_guard, &stream.inflated)?;
+        let mut current_storage = ctx.reserve_scoped(0, "NX GROUP current record index")?;
+        apply_group_state_events(ctx, &mut current, &mut current_storage, &stream.inflated)?;
         let mut complete = true;
-        for delta in delta_pairs.get(&stream_ordinal).into_iter().flatten() {
-            let Some(stream) = streams.get(*delta) else {
-                complete = false;
-                break;
-            };
-            apply_group_state_events(ctx, &mut current, &mut current_guard, &stream.inflated)?;
+        if let Some(deltas) =
+            ctx.get_btree_map(delta_pairs, &stream_ordinal, "NX GROUP delta pair index")?
+        {
+            for &delta in ctx.admit_iter(deltas, "NX GROUP delta pair index")? {
+                let Some(stream) = streams.get(delta) else {
+                    complete = false;
+                    break;
+                };
+                apply_group_state_events(
+                    ctx,
+                    &mut current,
+                    &mut current_storage,
+                    &stream.inflated,
+                )?;
+            }
         }
         if !complete {
             continue;
         }
         let count = current.len();
-        let bytes = count
-            .checked_mul(std::mem::size_of::<crate::deltas::Record>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP current records", 0, 1))?;
-        let _records_guard = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX GROUP current records",
-        )?;
-        let mut records = ctx.collection_vec(count, "NX GROUP current records")?;
-        records.extend(current.into_values());
+        let (mut records, mut records_storage) =
+            ctx.scoped_vector_storage(count, "NX GROUP current records")?;
+        let mut values = current.into_values();
+        for _ in ctx.admit_iter(&(0..count), "NX GROUP current records")? {
+            let Some(record) = values.next() else {
+                break;
+            };
+            ctx.reserve_scoped_vec(
+                &mut records_storage,
+                &mut records,
+                1,
+                "NX GROUP current records",
+            )?;
+            records.push(record);
+        }
         group_members_from_records(ctx, stream_ordinal_u32, &records, &mut members)?;
     }
-    for member in &mut members {
+    for index in ctx.admit_iter(&(0..members.len()), "NX GROUP member targets")? {
+        let member = &mut members[index];
         let Ok(partition) = usize::try_from(member.partition_stream_ordinal) else {
             continue;
         };
@@ -1315,7 +1346,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         inline_body_states: Vec::new(),
         residual_spans: Vec::new(),
     };
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
+    for (stream_ordinal, stream) in ctx.admit_iter(streams, "NX deltas streams")?.enumerate() {
         if stream.kind() != crate::parasolid::StreamKind::Deltas {
             continue;
         }
@@ -1329,7 +1360,10 @@ pub(super) fn parasolid_deltas_events_with_censuses(
             None => crate::deltas::census::walk(ctx, &stream.inflated)?,
         };
         let mut residual_start = 0;
-        for (covered_start, covered_end) in census.covered_spans(ctx)? {
+        let covered_spans = census.covered_spans(ctx)?;
+        for &(covered_start, covered_end) in
+            ctx.admit_iter(&covered_spans, "NX deltas residual spans")?
+        {
             if residual_start < covered_start {
                 push_deltas_residual_span(
                     ctx,
@@ -1389,7 +1423,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for record in census.records {
+        let records_count = census.records.len();
+        let mut records = census.records.into_iter();
+        for _ in ctx.admit_iter(&(0..records_count), "NX deltas events")? {
+            let Some(record) = records.next() else {
+                break;
+            };
             ctx.push_vec(
                 &mut events.records,
                 ParasolidDeltasRecord {
@@ -1409,7 +1448,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for tombstone in census.tombstones {
+        let tombstones_count = census.tombstones.len();
+        let mut tombstones = census.tombstones.into_iter();
+        for _ in ctx.admit_iter(&(0..tombstones_count), "NX deltas events")? {
+            let Some(tombstone) = tombstones.next() else {
+                break;
+            };
             ctx.push_vec(
                 &mut events.tombstones,
                 ParasolidDeltasTombstone {
@@ -1428,7 +1472,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for revision in census.body_revisions {
+        let body_revisions_count = census.body_revisions.len();
+        let mut body_revisions = census.body_revisions.into_iter();
+        for _ in ctx.admit_iter(&(0..body_revisions_count), "NX deltas events")? {
+            let Some(revision) = body_revisions.next() else {
+                break;
+            };
             let state_tail = &stream.inflated[revision.prefix_end..revision.end];
             ctx.push_vec(
                 &mut events.body_revisions,
@@ -1458,7 +1507,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for tail in census.term_use_numeric_tails {
+        let term_use_numeric_tails_count = census.term_use_numeric_tails.len();
+        let mut term_use_numeric_tails = census.term_use_numeric_tails.into_iter();
+        for _ in ctx.admit_iter(&(0..term_use_numeric_tails_count), "NX deltas events")? {
+            let Some(tail) = term_use_numeric_tails.next() else {
+                break;
+            };
             ctx.push_vec(
                 &mut events.term_use_numeric_tails,
                 ParasolidDeltasTermUseNumericTail {
@@ -1477,7 +1531,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for lane in census.tagged_reference_lanes {
+        let tagged_reference_lanes_count = census.tagged_reference_lanes.len();
+        let mut tagged_reference_lanes = census.tagged_reference_lanes.into_iter();
+        for _ in ctx.admit_iter(&(0..tagged_reference_lanes_count), "NX deltas events")? {
+            let Some(lane) = tagged_reference_lanes.next() else {
+                break;
+            };
             let bytes = &stream.inflated[lane.offset..lane.end];
             ctx.push_vec(
                 &mut events.tagged_reference_lanes,
@@ -1502,7 +1561,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for map in census.reference_type_maps {
+        let reference_type_maps_count = census.reference_type_maps.len();
+        let mut reference_type_maps = census.reference_type_maps.into_iter();
+        for _ in ctx.admit_iter(&(0..reference_type_maps_count), "NX deltas events")? {
+            let Some(map) = reference_type_maps.next() else {
+                break;
+            };
             let bytes = &stream.inflated[map.offset..map.end];
             ctx.push_vec(
                 &mut events.reference_type_maps,
@@ -1528,7 +1592,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for packet in census.reference_state_packets {
+        let reference_state_packets_count = census.reference_state_packets.len();
+        let mut reference_state_packets = census.reference_state_packets.into_iter();
+        for _ in ctx.admit_iter(&(0..reference_state_packets_count), "NX deltas events")? {
+            let Some(packet) = reference_state_packets.next() else {
+                break;
+            };
             let bytes = &stream.inflated[packet.offset..packet.end];
             ctx.push_vec(
                 &mut events.reference_state_packets,
@@ -1554,7 +1623,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for preamble in census.schema_reference_preambles {
+        let schema_reference_preambles_count = census.schema_reference_preambles.len();
+        let mut schema_reference_preambles = census.schema_reference_preambles.into_iter();
+        for _ in ctx.admit_iter(&(0..schema_reference_preambles_count), "NX deltas events")? {
+            let Some(preamble) = schema_reference_preambles.next() else {
+                break;
+            };
             let bytes = &stream.inflated[preamble.offset..preamble.end];
             ctx.push_vec(
                 &mut events.schema_reference_preambles,
@@ -1579,7 +1653,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for packet in census.reference_marker_packets {
+        let reference_marker_packets_count = census.reference_marker_packets.len();
+        let mut reference_marker_packets = census.reference_marker_packets.into_iter();
+        for _ in ctx.admit_iter(&(0..reference_marker_packets_count), "NX deltas events")? {
+            let Some(packet) = reference_marker_packets.next() else {
+                break;
+            };
             let bytes = &stream.inflated[packet.offset..packet.end];
             ctx.push_vec(
                 &mut events.reference_marker_packets,
@@ -1605,7 +1684,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for packet in census.type_150_state_packets {
+        let type_150_state_packets_count = census.type_150_state_packets.len();
+        let mut type_150_state_packets = census.type_150_state_packets.into_iter();
+        for _ in ctx.admit_iter(&(0..type_150_state_packets_count), "NX deltas events")? {
+            let Some(packet) = type_150_state_packets.next() else {
+                break;
+            };
             let bytes = &stream.inflated[packet.offset..packet.end];
             ctx.push_vec(
                 &mut events.type_150_state_packets,
@@ -1630,7 +1714,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for declaration in census.inline_schema_declarations {
+        let inline_schema_declarations_count = census.inline_schema_declarations.len();
+        let mut inline_schema_declarations = census.inline_schema_declarations.into_iter();
+        for _ in ctx.admit_iter(&(0..inline_schema_declarations_count), "NX deltas events")? {
+            let Some(declaration) = inline_schema_declarations.next() else {
+                break;
+            };
             let bytes = &stream.inflated[declaration.offset..declaration.end];
             ctx.push_vec(
                 &mut events.inline_schema_declarations,
@@ -1655,7 +1744,12 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        for state in census.inline_body_states {
+        let inline_body_states_count = census.inline_body_states.len();
+        let mut inline_body_states = census.inline_body_states.into_iter();
+        for _ in ctx.admit_iter(&(0..inline_body_states_count), "NX deltas events")? {
+            let Some(state) = inline_body_states.next() else {
+                break;
+            };
             let bytes = &stream.inflated[state.offset..state.end];
             ctx.push_vec(
                 &mut events.inline_body_states,
@@ -1839,9 +1933,13 @@ fn per_parasolid_stream<P: ParasolidStreamRecords>(
 ) -> Result<Vec<P::Record>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in parsed.iter() {
+        ctx.charge_work(1, "NX Parasolid cached streams")?;
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX Parasolid stream ordinal", 0, 1))?;
-        for row in P::rows(stream.view_for_records()) {
+        for row in ctx.admit_iter(
+            P::rows(stream.view_for_records()),
+            "NX Parasolid cached records",
+        )? {
             ctx.reserve_vec(&mut records, 1, "NX Parasolid cached records")?;
             let id = parasolid_record_id(ctx, stream_ordinal, P::ID_STEM, P::xmt(row))?;
             records.push(P::record(id, ordinal, row));
@@ -1884,13 +1982,22 @@ fn per_parasolid_scan<P: ParasolidScanRecords>(
     streams: &[Stream],
 ) -> Result<Vec<P::Record>, CodecError> {
     let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
+    for (stream_ordinal, stream) in ctx
+        .admit_iter(streams, "NX Parasolid scanned streams")?
+        .enumerate()
+    {
         if !stream.kind().is_parasolid() {
             continue;
         }
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX Parasolid scan ordinal", 0, 1))?;
-        for row in P::scan(ctx, &stream.inflated)? {
+        let rows = P::scan(ctx, &stream.inflated)?;
+        let row_count = rows.len();
+        let mut rows = rows.into_iter();
+        for _ in ctx.admit_iter(&(0..row_count), "NX Parasolid scanned records")? {
+            let Some(row) = rows.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records, 1, "NX Parasolid scanned records")?;
             let id = parasolid_record_id(ctx, stream_ordinal, P::ID_STEM, P::xmt(&row))?;
             records.push(P::record(id, ordinal, row));
@@ -2355,13 +2462,22 @@ pub(super) fn parasolid_chart_records(
     streams: &[Stream],
 ) -> Result<Vec<ParasolidChartRecord>, CodecError> {
     let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
+    for (stream_ordinal, stream) in ctx
+        .admit_iter(streams, "NX Parasolid chart streams")?
+        .enumerate()
+    {
         let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
             continue;
         };
         let point_layout = subtype.chart_point_layout();
-        for chart in crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)?
-        {
+        let charts =
+            crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)?;
+        let chart_count = charts.len();
+        let mut charts = charts.into_iter();
+        for _ in ctx.admit_iter(&(0..chart_count), "NX Parasolid chart records")? {
+            let Some(chart) = charts.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records, 1, "NX Parasolid chart records")?;
             records.push(ParasolidChartRecord {
                 id: parasolid_offset_record_id(
@@ -3332,7 +3448,10 @@ pub(super) fn parasolid_attribute_definitions(
     streams: &[Stream],
 ) -> Result<Vec<ParasolidAttributeDefinition>, CodecError> {
     let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
+    for (stream_ordinal, stream) in ctx
+        .admit_iter(streams, "NX attribute definition streams")?
+        .enumerate()
+    {
         if !stream.kind().is_parasolid() {
             continue;
         }
@@ -3344,13 +3463,18 @@ pub(super) fn parasolid_attribute_definitions(
             payloads,
         } = crate::parasolid::attribute_definitions(ctx, &stream.inflated)?;
         payloads.commit()?;
-        for definition in scanned {
+        let scanned_count = scanned.len();
+        let mut scanned = scanned.into_iter();
+        for _ in ctx.admit_iter(&(0..scanned_count), "NX attribute definitions")? {
+            let Some(definition) = scanned.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records, 1, "NX attribute definitions")?;
-            let name_len = definition.name.as_str().len();
-            let mut name = ctx.retained_string(name_len, "retain NX attribute definition name")?;
-            name.push_str(definition.name.as_str());
-            let name = crate::printable_string::PrintableString::new(name)
-                .map_err(|message| CodecError::Malformed(message.into()))?;
+            let name = crate::printable_string::PrintableString::new(ctx.copy_retained_text(
+                definition.name.as_str(),
+                "retain NX attribute definition name",
+            )?)
+            .map_err(|message| retained_malformed(ctx, message))?;
             let id = parasolid_record_id(
                 ctx,
                 stream_ordinal,
@@ -3385,7 +3509,10 @@ pub(super) fn parasolid_field_names_records(
     streams: &[Stream],
 ) -> Result<Vec<ParasolidFieldNamesRecord>, CodecError> {
     let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
+    for (stream_ordinal, stream) in ctx
+        .admit_iter(streams, "NX field names streams")?
+        .enumerate()
+    {
         if !stream.kind().is_parasolid() {
             continue;
         }
@@ -3397,7 +3524,12 @@ pub(super) fn parasolid_field_names_records(
             payloads,
         } = crate::parasolid::field_names_records(ctx, &stream.inflated)?;
         payloads.commit()?;
-        for record in scanned {
+        let scanned_count = scanned.len();
+        let mut scanned = scanned.into_iter();
+        for _ in ctx.admit_iter(&(0..scanned_count), "NX field names records")? {
+            let Some(record) = scanned.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records, 1, "NX field names records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3433,78 +3565,78 @@ pub(super) fn parasolid_attribute_field_names(
     strings: &[ParasolidEntity54StringRecord],
     unicode: &[ParasolidEntity62UnicodeRecord],
 ) -> Result<Vec<ParasolidAttributeFieldNames>, CodecError> {
-    let mut definitions_by_identity =
-        BTreeMap::<(u32, u32), Option<&ParasolidAttributeDefinition>>::new();
-    let mut definitions_guard = ctx.reserve_scoped(0, "NX attribute field definition index")?;
-    for definition in definitions {
-        insert_unique_value(
-            ctx,
-            &mut definitions_by_identity,
-            &mut definitions_guard,
-            (definition.stream_ordinal, u32::from(definition.xmt)),
-            definition,
-        )?;
-    }
-    let mut lists = BTreeMap::<(u32, u32), Option<&ParasolidFieldNamesRecord>>::new();
-    let mut lists_guard = ctx.reserve_scoped(0, "NX attribute field list index")?;
-    for list in field_names {
-        insert_unique_value(
-            ctx,
-            &mut lists,
-            &mut lists_guard,
-            (list.stream_ordinal, u32::from(list.xmt)),
-            list,
-        )?;
-    }
-    let mut names_by_xmt = BTreeMap::<(u32, u32), Option<(&str, &str)>>::new();
-    let mut names_guard = ctx.reserve_scoped(0, "NX attribute field name index")?;
-    for string in strings {
-        insert_unique_value(
-            ctx,
-            &mut names_by_xmt,
-            &mut names_guard,
-            (string.stream_ordinal, u32::from(string.xmt)),
-            (string.id.as_str(), string.value.as_str()),
-        )?;
-    }
-    for value in unicode {
-        insert_unique_value(
-            ctx,
-            &mut names_by_xmt,
-            &mut names_guard,
-            (value.stream_ordinal, u32::from(value.xmt)),
-            (value.id.as_str(), value.value.as_str()),
-        )?;
-    }
+    let (definitions_by_identity, _definitions_storage) = ctx.unique_index(
+        definitions
+            .iter()
+            .map(|definition| ((definition.stream_ordinal, u32::from(definition.xmt)), ())),
+        "NX attribute field definition index",
+    )?;
+    let (lists, _lists_storage) = ctx.unique_index(
+        field_names
+            .iter()
+            .map(|list| ((list.stream_ordinal, u32::from(list.xmt)), list)),
+        "NX attribute field list index",
+    )?;
+    let (names_by_xmt, _names_storage) = ctx.unique_index(
+        strings
+            .iter()
+            .map(|string| {
+                (
+                    (string.stream_ordinal, u32::from(string.xmt)),
+                    (string.id.as_str(), string.value.as_str()),
+                )
+            })
+            .chain(unicode.iter().map(|value| {
+                (
+                    (value.stream_ordinal, u32::from(value.xmt)),
+                    (value.id.as_str(), value.value.as_str()),
+                )
+            })),
+        "NX attribute field name index",
+    )?;
     let mut relations = Vec::new();
-    for definition in definitions_by_identity.values().filter_map(|value| *value) {
+    for definition in ctx.admit_iter(definitions, "resolve NX attribute field names")? {
+        if !ctx.contains_key_hash_map(
+            &definitions_by_identity,
+            &(definition.stream_ordinal, u32::from(definition.xmt)),
+            "NX attribute field definition index",
+        )? {
+            continue;
+        }
         let Some(field_names_xmt) = definition.field_names_xmt else {
             continue;
         };
-        let Some(Some(list)) = lists.get(&(definition.stream_ordinal, u32::from(field_names_xmt)))
+        let Some(&Some(list)) = ctx.get_hash_map(
+            &lists,
+            &(definition.stream_ordinal, u32::from(field_names_xmt)),
+            "NX attribute field list index",
+        )?
         else {
             continue;
         };
         if list.name_xmts.as_slice().len() != definition.field_codes.len() {
             continue;
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(list.name_xmts.as_slice().len()),
+        let name_of = |xmt: &NonNullXmt| -> Result<Option<(&str, &str)>, CodecError> {
+            Ok(ctx
+                .get_hash_map(
+                    &names_by_xmt,
+                    &(definition.stream_ordinal, u32::from(*xmt)),
+                    "NX attribute field name index",
+                )?
+                .copied()
+                .flatten())
+        };
+        if !ctx.all_by(
+            list.name_xmts.as_slice(),
+            |xmt| Ok(name_of(xmt)?.is_some()),
             "resolve NX attribute field names",
-        )?;
-        if !list.name_xmts.as_slice().iter().all(|xmt| {
-            matches!(
-                names_by_xmt.get(&(definition.stream_ordinal, u32::from(*xmt))),
-                Some(Some(_))
-            )
-        }) {
+        )? {
             continue;
         }
         let mut resolved = Vec::new();
-        for xmt in list.name_xmts.as_slice() {
-            let Some(Some((value_record, name))) =
-                names_by_xmt.get(&(definition.stream_ordinal, u32::from(*xmt)))
-            else {
+        for xmt in ctx.admit_iter(list.name_xmts.as_slice(), "NX attribute field names")? {
+            let Some((value_record, name)) = name_of(xmt)? else {
                 continue;
             };
             ctx.reserve_vec(&mut resolved, 1, "NX attribute field names")?;
@@ -3578,19 +3710,18 @@ pub(super) fn parasolid_topology_attribute_list_references(
     parsed: &ParsedStreams,
     entity_records: &[ParasolidEntity51Record],
 ) -> Result<Vec<ParasolidTopologyAttributeListReference>, CodecError> {
-    let mut records_by_identity = BTreeMap::<(u32, u32), Option<&str>>::new();
-    let mut records_guard = ctx.reserve_scoped(0, "NX topology attribute list record index")?;
-    for record in entity_records {
-        insert_unique_value(
-            ctx,
-            &mut records_by_identity,
-            &mut records_guard,
-            (record.stream_ordinal, u32::from(record.xmt)),
-            record.id.as_str(),
-        )?;
-    }
+    let (records_by_identity, _records_storage) = ctx.unique_index(
+        entity_records.iter().map(|record| {
+            (
+                (record.stream_ordinal, u32::from(record.xmt)),
+                record.id.as_str(),
+            )
+        }),
+        "NX topology attribute list record index",
+    )?;
     let mut references = Vec::new();
     for (stream_ordinal, stream) in parsed.iter() {
+        ctx.charge_work(1, "scan NX topology attribute list streams")?;
         let graph = &stream.view_for_records().graph;
         for topology_type in TopologyAttributeKind::ALL {
             for node in graph.of_kind(topology_type.node_kind()) {
@@ -3660,11 +3791,16 @@ pub(super) fn parasolid_topology_attribute_list_references(
                         1,
                     )
                 })?;
-                let attribute_list_record = records_by_identity
-                    .get(&(ordinal, attribute_list_xmt))
-                    .and_then(|record| *record)
-                    .map(|record| ctx.copy_retained_text(record, "NX entity 51 value use text"))
-                    .transpose()?;
+                let attribute_list_record = match ctx.get_hash_map(
+                    &records_by_identity,
+                    &(ordinal, attribute_list_xmt),
+                    "NX topology attribute list record index",
+                )? {
+                    Some(Some(record)) => {
+                        Some(ctx.copy_retained_text(record, "NX entity 51 value use text")?)
+                    }
+                    _ => None,
+                };
                 references.push(ParasolidTopologyAttributeListReference {
                     id,
                     stream_ordinal: ordinal,
@@ -3686,7 +3822,7 @@ pub(super) fn parasolid_entity_51_records(
     streams: &[Stream],
 ) -> Result<Vec<ParasolidEntity51Record>, CodecError> {
     let mut records = Vec::new();
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
+    for (stream_ordinal, stream) in ctx.admit_iter(streams, "NX entity 51 streams")?.enumerate() {
         if !stream.kind().is_parasolid() {
             continue;
         }
@@ -3698,7 +3834,12 @@ pub(super) fn parasolid_entity_51_records(
             payloads,
         } = crate::parasolid::entity_51_records(ctx, &stream.inflated)?;
         payloads.commit()?;
-        for record in scanned {
+        let scanned_count = scanned.len();
+        let mut scanned = scanned.into_iter();
+        for _ in ctx.admit_iter(&(0..scanned_count), "NX entity 51 records")? {
+            let Some(record) = scanned.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records, 1, "NX entity 51 records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3743,48 +3884,56 @@ pub(super) fn parasolid_entity_value_records(
         tags: Vec::new(),
         unicode: Vec::new(),
     };
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
+    let mut deltas_offsets = BTreeMap::<u32, Vec<usize>>::new();
+    let mut deltas_offsets_storage = ctx.reserve_scoped(0, "NX value record owner offsets")?;
+    for record in ctx.admit_iter(deltas_records, "NX value record owner offsets")? {
+        if !matches!(
+            record.family,
+            RecordFamily::Entity52
+                | RecordFamily::Entity53
+                | RecordFamily::Entity54
+                | RecordFamily::Entity55
+                | RecordFamily::Entity56
+                | RecordFamily::Entity57
+                | RecordFamily::Entity58
+                | RecordFamily::Entity59
+                | RecordFamily::Entity62
+        ) {
+            continue;
+        }
+        let Ok(offset) = usize::try_from(record.inflated_offset) else {
+            continue;
+        };
+        deltas_offsets_storage.with_storage(|| {
+            ctx.push_btree_group(
+                &mut deltas_offsets,
+                record.stream_ordinal,
+                offset,
+                "NX value record owner offsets",
+                "NX value record owner offsets",
+            )
+        })?;
+    }
+    for (stream_ordinal, stream) in ctx
+        .admit_iter(streams, "NX value record streams")?
+        .enumerate()
+    {
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX value record stream ordinal", 0, 1))?;
-        let mut offsets_guard = ctx.reserve_scoped(0, "NX value record owner offsets")?;
-        let owned_offsets = match stream.kind() {
-            StreamKind::Deltas => {
-                let mut offsets = Vec::new();
-                for record in deltas_records {
-                    if record.stream_ordinal != ordinal
-                        || !matches!(
-                            record.family,
-                            RecordFamily::Entity52
-                                | RecordFamily::Entity53
-                                | RecordFamily::Entity54
-                                | RecordFamily::Entity55
-                                | RecordFamily::Entity56
-                                | RecordFamily::Entity57
-                                | RecordFamily::Entity58
-                                | RecordFamily::Entity59
-                                | RecordFamily::Entity62
-                        )
-                    {
-                        continue;
-                    }
-                    let Ok(offset) = usize::try_from(record.inflated_offset) else {
-                        continue;
-                    };
-                    ctx.reserve_scoped_vec(
-                        &mut offsets_guard,
-                        &mut offsets,
-                        1,
-                        "NX value record owner offsets",
-                    )?;
-                    offsets.push(offset);
-                }
-                offsets
-            }
+        let (owned_offsets, offsets_guard) = match stream.kind() {
+            StreamKind::Deltas => (
+                ctx.remove_btree_map(
+                    &mut deltas_offsets,
+                    &ordinal,
+                    "NX value record owner offsets",
+                )?
+                .unwrap_or_default(),
+                None,
+            ),
             StreamKind::Partition | StreamKind::Plain => {
                 let (offsets, guard) =
                     crate::parasolid::referenced_value_record_offsets(ctx, &stream.inflated)?;
-                offsets_guard = guard;
-                offsets
+                (offsets, Some(guard))
             }
             StreamKind::Preview => continue,
         };
@@ -3794,7 +3943,12 @@ pub(super) fn parasolid_entity_value_records(
             owned_offsets,
         )?;
         drop(offsets_guard);
-        for record in values.integers {
+        let integers_count = values.integers.len();
+        let mut integers = values.integers.into_iter();
+        for _ in ctx.admit_iter(&(0..integers_count), "NX Parasolid value records")? {
+            let Some(record) = integers.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records.integers, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3812,7 +3966,12 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        for record in values.doubles {
+        let doubles_count = values.doubles.len();
+        let mut doubles = values.doubles.into_iter();
+        for _ in ctx.admit_iter(&(0..doubles_count), "NX Parasolid value records")? {
+            let Some(record) = doubles.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records.doubles, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3830,7 +3989,12 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        for record in values.strings {
+        let strings_count = values.strings.len();
+        let mut strings = values.strings.into_iter();
+        for _ in ctx.admit_iter(&(0..strings_count), "NX Parasolid value records")? {
+            let Some(record) = strings.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records.strings, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3839,11 +4003,10 @@ pub(super) fn parasolid_entity_value_records(
                 u32::from(record.xmt),
                 record.offset,
             )?;
-            let value_len = record.value.as_str().len();
-            let mut text = ctx.retained_string(value_len, "retain NX Parasolid string value")?;
-            text.push_str(record.value.as_str());
-            let value = crate::printable_string::PrintableString::new(text)
-                .map_err(|message| CodecError::Malformed(message.into()))?;
+            let value = crate::printable_string::PrintableString::new(
+                ctx.copy_retained_text(record.value.as_str(), "retain NX Parasolid string value")?,
+            )
+            .map_err(|message| retained_malformed(ctx, message))?;
             records.strings.push(ParasolidEntity54StringRecord {
                 id,
                 stream_ordinal: ordinal,
@@ -3874,7 +4037,12 @@ pub(super) fn parasolid_entity_value_records(
             });
             Ok(())
         };
-        for record in values.points {
+        let points_count = values.points.len();
+        let mut points = values.points.into_iter();
+        for _ in ctx.admit_iter(&(0..points_count), "NX Parasolid value records")? {
+            let Some(record) = points.next() else {
+                break;
+            };
             retain_vector(
                 ParasolidVectorValueKind::Points,
                 "entity-55-points",
@@ -3884,7 +4052,12 @@ pub(super) fn parasolid_entity_value_records(
                 record.value,
             )?;
         }
-        for record in values.vectors {
+        let vectors_count = values.vectors.len();
+        let mut vectors = values.vectors.into_iter();
+        for _ in ctx.admit_iter(&(0..vectors_count), "NX Parasolid value records")? {
+            let Some(record) = vectors.next() else {
+                break;
+            };
             retain_vector(
                 ParasolidVectorValueKind::Vectors,
                 "entity-56-vectors",
@@ -3894,7 +4067,12 @@ pub(super) fn parasolid_entity_value_records(
                 record.value,
             )?;
         }
-        for record in values.directions {
+        let directions_count = values.directions.len();
+        let mut directions = values.directions.into_iter();
+        for _ in ctx.admit_iter(&(0..directions_count), "NX Parasolid value records")? {
+            let Some(record) = directions.next() else {
+                break;
+            };
             retain_vector(
                 ParasolidVectorValueKind::Directions,
                 "entity-59-directions",
@@ -3904,7 +4082,12 @@ pub(super) fn parasolid_entity_value_records(
                 record.value,
             )?;
         }
-        for record in values.axes {
+        let axes_count = values.axes.len();
+        let mut axes = values.axes.into_iter();
+        for _ in ctx.admit_iter(&(0..axes_count), "NX Parasolid value records")? {
+            let Some(record) = axes.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records.axes, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3922,7 +4105,12 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        for record in values.tags {
+        let tags_count = values.tags.len();
+        let mut tags = values.tags.into_iter();
+        for _ in ctx.admit_iter(&(0..tags_count), "NX Parasolid value records")? {
+            let Some(record) = tags.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records.tags, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3940,7 +4128,12 @@ pub(super) fn parasolid_entity_value_records(
                 inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        for record in values.unicode {
+        let unicode_count = values.unicode.len();
+        let mut unicode = values.unicode.into_iter();
+        for _ in ctx.admit_iter(&(0..unicode_count), "NX Parasolid value records")? {
+            let Some(record) = unicode.next() else {
+                break;
+            };
             ctx.reserve_vec(&mut records.unicode, 1, "NX Parasolid value records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -4004,27 +4197,6 @@ pub(super) fn parasolid_entity_value_records(
     Ok(records)
 }
 
-/// Join type-81 reference slots to unique same-stream numeric value records.
-fn insert_unique_value<T: Copy>(
-    ctx: &DecodeContext<'_>,
-    values: &mut BTreeMap<(u32, u32), Option<T>>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    key: (u32, u32),
-    value: T,
-) -> Result<(), CodecError> {
-    ctx.admit_btree_entry(values, &key, "NX entity 51 value identity index")?;
-    match values.entry(key) {
-        std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<((u32, u32), Option<T>)>() * 4,
-            ))?;
-            entry.insert(Some(value));
-        }
-    }
-    Ok(())
-}
-
 fn entity_51_use_id(
     ctx: &DecodeContext<'_>,
     stem: &'static str,
@@ -4076,41 +4248,40 @@ pub(super) fn parasolid_entity_51_numeric_uses(
     integers: &[ParasolidEntity52IntegerRecord],
     doubles: &[ParasolidEntity53DoubleRecord],
 ) -> Result<Vec<ParasolidEntity51NumericUse>, CodecError> {
-    let mut values =
-        BTreeMap::<(u32, u32), Option<(ParasolidEntity51NumericKind, NonNullXmt, &str)>>::new();
-    let mut values_guard = ctx.reserve_scoped(0, "NX entity 51 value identity index")?;
-    for record in integers {
-        insert_unique_value(
-            ctx,
-            &mut values,
-            &mut values_guard,
-            (record.stream_ordinal, u32::from(record.xmt)),
-            (
-                ParasolidEntity51NumericKind::UnsignedIntegers,
-                record.xmt,
-                &record.id,
-            ),
-        )?;
-    }
-    for record in doubles {
-        insert_unique_value(
-            ctx,
-            &mut values,
-            &mut values_guard,
-            (record.stream_ordinal, u32::from(record.xmt)),
-            (
-                ParasolidEntity51NumericKind::Doubles,
-                record.xmt,
-                &record.id,
-            ),
-        )?;
-    }
+    let (values, _values_storage) = ctx.unique_index(
+        integers
+            .iter()
+            .map(|record| {
+                (
+                    (record.stream_ordinal, u32::from(record.xmt)),
+                    (
+                        ParasolidEntity51NumericKind::UnsignedIntegers,
+                        record.xmt,
+                        record.id.as_str(),
+                    ),
+                )
+            })
+            .chain(doubles.iter().map(|record| {
+                (
+                    (record.stream_ordinal, u32::from(record.xmt)),
+                    (
+                        ParasolidEntity51NumericKind::Doubles,
+                        record.xmt,
+                        record.id.as_str(),
+                    ),
+                )
+            })),
+        "NX entity 51 value identity index",
+    )?;
     let mut uses = Vec::new();
-    for entity in entities {
+    for entity in ctx.admit_iter(entities, "NX entity 51 value uses")? {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some(Some((kind, target_xmt, value_record))) =
-                values.get(&(entity.stream_ordinal, referenced_xmt))
+            let Some(&Some((kind, target_xmt, value_record))) = ctx.get_hash_map(
+                &values,
+                &(entity.stream_ordinal, referenced_xmt),
+                "NX entity 51 value identity index",
+            )?
             else {
                 continue;
             };
@@ -4122,8 +4293,8 @@ pub(super) fn parasolid_entity_51_numeric_uses(
                     entity_51_record: ctx
                         .copy_retained_text(&entity.id, "NX entity 51 value use text")?,
                     position,
-                    referenced_xmt: *target_xmt,
-                    kind: *kind,
+                    referenced_xmt: target_xmt,
+                    kind,
                     value_record: ctx
                         .copy_retained_text(value_record, "NX entity 51 value use text")?,
                     inflated_offset: entity.inflated_offset,
@@ -4142,24 +4313,21 @@ pub(super) fn parasolid_entity_51_string_uses(
     entities: &[ParasolidEntity51Record],
     strings: &[ParasolidEntity54StringRecord],
 ) -> Result<Vec<ParasolidEntity51StringUse>, CodecError> {
-    let mut strings_by_identity =
-        BTreeMap::<(u32, u32), Option<&ParasolidEntity54StringRecord>>::new();
-    let mut strings_guard = ctx.reserve_scoped(0, "NX entity 51 value identity index")?;
-    for string in strings {
-        insert_unique_value(
-            ctx,
-            &mut strings_by_identity,
-            &mut strings_guard,
-            (string.stream_ordinal, u32::from(string.xmt)),
-            string,
-        )?;
-    }
+    let (strings_by_identity, _strings_storage) = ctx.unique_index(
+        strings
+            .iter()
+            .map(|string| ((string.stream_ordinal, u32::from(string.xmt)), string)),
+        "NX entity 51 value identity index",
+    )?;
     let mut uses = Vec::new();
-    for entity in entities {
+    for entity in ctx.admit_iter(entities, "NX entity 51 value uses")? {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some(Some(string)) =
-                strings_by_identity.get(&(entity.stream_ordinal, referenced_xmt))
+            let Some(&Some(string)) = ctx.get_hash_map(
+                &strings_by_identity,
+                &(entity.stream_ordinal, referenced_xmt),
+                "NX entity 51 value identity index",
+            )?
             else {
                 continue;
             };
@@ -4193,63 +4361,60 @@ pub(super) fn parasolid_entity_51_structured_uses(
     tags: &[ParasolidEntity58TagRecord],
     unicode: &[ParasolidEntity62UnicodeRecord],
 ) -> Result<Vec<ParasolidEntity51StructuredUse>, CodecError> {
-    let mut values = BTreeMap::<(u32, u32), Option<(StructuredValueKind, NonNullXmt, &str)>>::new();
-    let mut values_guard = ctx.reserve_scoped(0, "NX entity 51 value identity index")?;
-    for record in vectors {
-        let kind = match record.kind {
-            ParasolidVectorValueKind::Points => StructuredValueKind::Points,
-            ParasolidVectorValueKind::Vectors => StructuredValueKind::Vectors,
-            ParasolidVectorValueKind::Directions => StructuredValueKind::Directions,
-        };
-        insert_unique_value(
-            ctx,
-            &mut values,
-            &mut values_guard,
-            (record.stream_ordinal, u32::from(record.xmt)),
-            (kind, record.xmt, record.id.as_str()),
-        )?;
+    fn structured(
+        kind: StructuredValueKind,
+        stream_ordinal: u32,
+        xmt: NonNullXmt,
+        id: &str,
+    ) -> ((u32, u32), (StructuredValueKind, NonNullXmt, &str)) {
+        ((stream_ordinal, u32::from(xmt)), (kind, xmt, id))
     }
-    for (kind, stream_ordinal, xmt, id) in axes
-        .iter()
-        .map(|record| {
-            (
-                StructuredValueKind::Axes,
-                record.stream_ordinal,
-                record.xmt,
-                record.id.as_str(),
-            )
-        })
-        .chain(tags.iter().map(|record| {
-            (
-                StructuredValueKind::Tags,
-                record.stream_ordinal,
-                record.xmt,
-                record.id.as_str(),
-            )
-        }))
-        .chain(unicode.iter().map(|record| {
-            (
-                StructuredValueKind::Unicode,
-                record.stream_ordinal,
-                record.xmt,
-                record.id.as_str(),
-            )
-        }))
-    {
-        insert_unique_value(
-            ctx,
-            &mut values,
-            &mut values_guard,
-            (stream_ordinal, u32::from(xmt)),
-            (kind, xmt, id),
-        )?;
-    }
+    let (values, _values_storage) = ctx.unique_index(
+        vectors
+            .iter()
+            .map(|record| {
+                let kind = match record.kind {
+                    ParasolidVectorValueKind::Points => StructuredValueKind::Points,
+                    ParasolidVectorValueKind::Vectors => StructuredValueKind::Vectors,
+                    ParasolidVectorValueKind::Directions => StructuredValueKind::Directions,
+                };
+                structured(kind, record.stream_ordinal, record.xmt, record.id.as_str())
+            })
+            .chain(axes.iter().map(|record| {
+                structured(
+                    StructuredValueKind::Axes,
+                    record.stream_ordinal,
+                    record.xmt,
+                    record.id.as_str(),
+                )
+            }))
+            .chain(tags.iter().map(|record| {
+                structured(
+                    StructuredValueKind::Tags,
+                    record.stream_ordinal,
+                    record.xmt,
+                    record.id.as_str(),
+                )
+            }))
+            .chain(unicode.iter().map(|record| {
+                structured(
+                    StructuredValueKind::Unicode,
+                    record.stream_ordinal,
+                    record.xmt,
+                    record.id.as_str(),
+                )
+            })),
+        "NX entity 51 value identity index",
+    )?;
     let mut uses = Vec::new();
-    for entity in entities {
+    for entity in ctx.admit_iter(entities, "NX entity 51 value uses")? {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some(Some((kind, target_xmt, value_record))) =
-                values.get(&(entity.stream_ordinal, referenced_xmt))
+            let Some(&Some((kind, target_xmt, value_record))) = ctx.get_hash_map(
+                &values,
+                &(entity.stream_ordinal, referenced_xmt),
+                "NX entity 51 value identity index",
+            )?
             else {
                 continue;
             };
@@ -4266,8 +4431,8 @@ pub(super) fn parasolid_entity_51_structured_uses(
                     entity_51_record: ctx
                         .copy_retained_text(&entity.id, "NX entity 51 value use text")?,
                     position,
-                    referenced_xmt: *target_xmt,
-                    kind: *kind,
+                    referenced_xmt: target_xmt,
+                    kind,
                     value_record: ctx
                         .copy_retained_text(value_record, "NX entity 51 value use text")?,
                     inflated_offset: entity.inflated_offset,
@@ -4287,109 +4452,95 @@ pub(super) fn parasolid_topology_attribute_class_uses(
     entity_records: &[ParasolidEntity51Record],
     class_uses: &[ParasolidAttributeClassUse],
 ) -> Result<Vec<ParasolidTopologyAttributeClassUse>, CodecError> {
-    let mut records_by_identity = BTreeMap::<(u32, u32), Option<&ParasolidEntity51Record>>::new();
-    let mut identity_guard = ctx.reserve_scoped(0, "NX topology attribute entity index")?;
-    for record in entity_records {
-        insert_unique_value(
-            ctx,
-            &mut records_by_identity,
-            &mut identity_guard,
-            (record.stream_ordinal, u32::from(record.xmt)),
-            record,
-        )?;
-    }
-    let mut records_by_owner = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
-    let mut owner_guard = ctx.reserve_scoped(0, "NX topology attribute owner index")?;
-    for record in entity_records {
+    let (records_by_identity, _identity_storage) = ctx.unique_index(
+        entity_records
+            .iter()
+            .map(|record| ((record.stream_ordinal, u32::from(record.xmt)), record)),
+        "NX topology attribute entity index",
+    )?;
+    let mut records_by_owner = HashMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
+    let mut owner_storage = ctx.reserve_scoped(0, "NX topology attribute owner index")?;
+    for record in ctx.admit_iter(entity_records, "NX topology attribute owner index")? {
         let owner_xmt = record.leading_references[0];
         if owner_xmt > 1 {
-            let owner_key = (record.stream_ordinal, owner_xmt);
-            ctx.admit_btree_entry(
-                &records_by_owner,
-                &owner_key,
-                "NX topology attribute owner index",
-            )?;
-            let members = match records_by_owner.entry(owner_key) {
-                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    owner_guard.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<((u32, u32), Vec<&ParasolidEntity51Record>)>() * 4,
-                    ))?;
-                    entry.insert(Vec::new())
-                }
-            };
-            ctx.reserve_scoped_vec(
-                &mut owner_guard,
-                members,
-                1,
-                "NX topology attribute owner members",
-            )?;
-            members.push(record);
+            owner_storage.with_storage(|| {
+                ctx.push_hash_group(
+                    &mut records_by_owner,
+                    (record.stream_ordinal, owner_xmt),
+                    record,
+                    "NX topology attribute owner index",
+                    "NX topology attribute owner members",
+                )
+            })?;
         }
     }
-    let mut class_uses_by_entity = BTreeMap::<&str, Option<&ParasolidAttributeClassUse>>::new();
-    let mut class_guard = ctx.reserve_scoped(0, "NX topology attribute class index")?;
-    for class_use in class_uses {
-        let class_key = class_use.entity_51_record.as_str();
-        ctx.admit_btree_entry(
-            &class_uses_by_entity,
-            &class_key,
-            "NX topology attribute class index",
-        )?;
-        match class_uses_by_entity.entry(class_key) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                class_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(&str, Option<&ParasolidAttributeClassUse>)>() * 4,
-                ))?;
-                entry.insert(Some(class_use));
-            }
-        }
-    }
+    let (class_uses_by_entity, _class_storage) = ctx.unique_index(
+        class_uses
+            .iter()
+            .map(|class_use| (class_use.entity_51_record.as_str(), class_use)),
+        "NX topology attribute class index",
+    )?;
     let mut uses = Vec::new();
-    for reference in topology_references {
+    for reference in ctx.admit_iter(topology_references, "NX topology attribute class uses")? {
         let Some(entity_id) = reference.attribute_list_record.as_deref() else {
             continue;
         };
-        let Some(Some(head)) =
-            records_by_identity.get(&(reference.stream_ordinal, reference.attribute_list_xmt))
+        let Some(&Some(head)) = ctx.get_hash_map(
+            &records_by_identity,
+            &(reference.stream_ordinal, reference.attribute_list_xmt),
+            "NX topology attribute entity index",
+        )?
         else {
             continue;
         };
-        if head.id != entity_id || head.leading_references[0] != reference.topology_xmt {
+        if !ctx.equal(
+            head.id.as_str(),
+            entity_id,
+            "NX topology attribute entity index",
+        )? || head.leading_references[0] != reference.topology_xmt
+        {
             continue;
         }
 
-        let Some(members) =
-            records_by_owner.get(&(reference.stream_ordinal, reference.topology_xmt))
+        let Some(members) = ctx.get_hash_map(
+            &records_by_owner,
+            &(reference.stream_ordinal, reference.topology_xmt),
+            "NX topology attribute owner index",
+        )?
         else {
             continue;
         };
 
-        let mut member_xmt_counts = BTreeMap::<u32, usize>::new();
-        let mut count_guard = ctx.reserve_scoped(0, "NX topology attribute member XMT counts")?;
-        for member in members {
+        let mut member_xmt_counts = HashMap::<u32, usize>::new();
+        let mut count_storage = ctx.reserve_scoped(0, "NX topology attribute member XMT counts")?;
+        for member in ctx.admit_iter(members, "NX topology attribute member XMT counts")? {
             let member_key = u32::from(member.xmt);
-            ctx.admit_btree_entry(
-                &member_xmt_counts,
+            if let Some(count) = ctx.get_mut_hash_map(
+                &mut member_xmt_counts,
                 &member_key,
                 "NX topology attribute member XMT counts",
-            )?;
-            let count = match member_xmt_counts.entry(member_key) {
-                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    count_guard.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<(u32, usize)>() * 4,
-                    ))?;
-                    entry.insert(0)
-                }
-            };
-            *count = count.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("count NX topology attribute member XMT", 0, 1)
-            })?;
+            )? {
+                *count = count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("count NX topology attribute member XMT", 0, 1)
+                })?;
+            } else {
+                count_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut member_xmt_counts,
+                        member_key,
+                        1,
+                        "NX topology attribute member XMT counts",
+                    )
+                })?;
+            }
         }
-        for member in members {
-            let Some(Some(class_use)) = class_uses_by_entity.get(member.id.as_str()) else {
+        for member in ctx.admit_iter(members, "NX topology attribute class uses")? {
+            let Some(&Some(class_use)) = ctx.get_hash_map(
+                &class_uses_by_entity,
+                member.id.as_str(),
+                "NX topology attribute class index",
+            )?
+            else {
                 continue;
             };
             let digits = |value: u64| {
@@ -4410,8 +4561,17 @@ pub(super) fn parasolid_topology_attribute_class_uses(
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1)
                 })?;
-            let suffix = member.id != head.id;
-            let offset_suffix = suffix && member_xmt_counts.get(&u32::from(member.xmt)) != Some(&1);
+            let suffix = !ctx.equal(
+                member.id.as_str(),
+                head.id.as_str(),
+                "NX topology attribute class identity",
+            )?;
+            let offset_suffix = suffix
+                && ctx.get_hash_map(
+                    &member_xmt_counts,
+                    &u32::from(member.xmt),
+                    "NX topology attribute member XMT counts",
+                )? != Some(&1);
             if suffix {
                 length = length
                     .checked_add(1 + digits(u64::from(u32::from(member.xmt))))
@@ -4483,22 +4643,22 @@ pub(super) fn parasolid_attribute_class_uses(
     entities: &[ParasolidEntity51Record],
     definitions: &[ParasolidAttributeDefinition],
 ) -> Result<Vec<ParasolidAttributeClassUse>, CodecError> {
-    let mut definitions_by_identity =
-        BTreeMap::<(u32, u32), Option<&ParasolidAttributeDefinition>>::new();
-    let mut definitions_guard = ctx.reserve_scoped(0, "NX attribute class definition index")?;
-    for definition in definitions {
-        insert_unique_value(
-            ctx,
-            &mut definitions_by_identity,
-            &mut definitions_guard,
-            (definition.stream_ordinal, u32::from(definition.xmt)),
-            definition,
-        )?;
-    }
+    let (definitions_by_identity, _definitions_storage) = ctx.unique_index(
+        definitions.iter().map(|definition| {
+            (
+                (definition.stream_ordinal, u32::from(definition.xmt)),
+                definition,
+            )
+        }),
+        "NX attribute class definition index",
+    )?;
     let mut uses = Vec::new();
-    for entity in entities {
-        let Some(Some(definition)) =
-            definitions_by_identity.get(&(entity.stream_ordinal, entity.definition_xmt))
+    for entity in ctx.admit_iter(entities, "NX attribute class uses")? {
+        let Some(&Some(definition)) = ctx.get_hash_map(
+            &definitions_by_identity,
+            &(entity.stream_ordinal, entity.definition_xmt),
+            "NX attribute class definition index",
+        )?
         else {
             continue;
         };
@@ -4552,180 +4712,117 @@ pub(super) fn parasolid_attribute_field_uses(
     string_uses: &[ParasolidEntity51StringUse],
     structured_uses: &[ParasolidEntity51StructuredUse],
 ) -> Result<Vec<ParasolidAttributeFieldUse>, CodecError> {
-    let mut classes = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
-    let mut classes_guard = ctx.reserve_scoped(0, "NX attribute field class index")?;
-    for class_use in class_uses {
-        let class_key = class_use.entity_51_record.as_str();
-        ctx.admit_btree_entry(&classes, &class_key, "NX attribute field class index")?;
-        let group = match classes.entry(class_key) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                classes_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(&str, Vec<&ParasolidAttributeClassUse>)>() * 4,
-                ))?;
-                entry.insert(Vec::new())
-            }
-        };
-        ctx.reserve_scoped_vec(
-            &mut classes_guard,
-            group,
-            1,
-            "NX attribute field class members",
-        )?;
-        group.push(class_use);
-    }
-    let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
-    let mut definitions_guard = ctx.reserve_scoped(0, "NX attribute field definition index")?;
-    for definition in definitions {
-        let definition_key = definition.id.as_str();
-        ctx.admit_btree_entry(
-            &definitions_by_id,
-            &definition_key,
-            "NX attribute field definition index",
-        )?;
-        let group = match definitions_by_id.entry(definition_key) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                definitions_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(&str, Vec<&ParasolidAttributeDefinition>)>() * 4,
-                ))?;
-                entry.insert(Vec::new())
-            }
-        };
-        ctx.reserve_scoped_vec(
-            &mut definitions_guard,
-            group,
-            1,
-            "NX attribute field definition members",
-        )?;
-        group.push(definition);
-    }
+    let (classes, _classes_storage) = ctx.unique_index(
+        class_uses
+            .iter()
+            .map(|class_use| (class_use.entity_51_record.as_str(), class_use)),
+        "NX attribute field class index",
+    )?;
+    let (definitions_by_id, _definitions_storage) = ctx.unique_index(
+        definitions
+            .iter()
+            .map(|definition| (definition.id.as_str(), definition)),
+        "NX attribute field definition index",
+    )?;
     let mut candidates = BTreeMap::<(&str, FieldPosition), Vec<_>>::new();
-    let mut candidates_guard = ctx.reserve_scoped(0, "NX attribute field candidates")?;
-    let mut push_candidate = |key, candidate| -> Result<(), CodecError> {
-        ctx.admit_btree_entry(&candidates, &key, "NX attribute field candidate index")?;
-        let group = match candidates.entry(key) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                candidates_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(
-                        (&str, FieldPosition),
-                        Vec<(u32, ParasolidAttributeFieldValueKind, &str, &str, u64)>,
-                    )>() * 4,
-                ))?;
-                entry.insert(Vec::new())
-            }
-        };
-        ctx.reserve_scoped_vec(
-            &mut candidates_guard,
-            group,
-            1,
-            "NX attribute field candidate members",
-        )?;
-        group.push(candidate);
-        Ok(())
-    };
-    for numeric_use in numeric_uses {
+    let mut candidates_storage = ctx.reserve_scoped(0, "NX attribute field candidates")?;
+    for numeric_use in ctx.admit_iter(numeric_uses, "NX attribute field candidates")? {
         let value_kind = match numeric_use.kind {
             ParasolidEntity51NumericKind::UnsignedIntegers => {
                 ParasolidAttributeFieldValueKind::UnsignedIntegers
             }
             ParasolidEntity51NumericKind::Doubles => ParasolidAttributeFieldValueKind::Doubles,
         };
-        push_candidate(
-            (numeric_use.entity_51_record.as_str(), numeric_use.position),
-            (
-                numeric_use.stream_ordinal,
-                value_kind,
-                numeric_use.id.as_str(),
-                numeric_use.value_record.as_str(),
-                numeric_use.inflated_offset,
-            ),
-        )?;
+        candidates_storage.with_storage(|| {
+            ctx.push_btree_group(
+                &mut candidates,
+                (numeric_use.entity_51_record.as_str(), numeric_use.position),
+                (
+                    numeric_use.stream_ordinal,
+                    value_kind,
+                    numeric_use.id.as_str(),
+                    numeric_use.value_record.as_str(),
+                    numeric_use.inflated_offset,
+                ),
+                "NX attribute field candidate index",
+                "NX attribute field candidate members",
+            )
+        })?;
     }
-    for string_use in string_uses {
-        push_candidate(
-            (string_use.entity_51_record.as_str(), string_use.position),
-            (
-                string_use.stream_ordinal,
-                ParasolidAttributeFieldValueKind::String,
-                string_use.id.as_str(),
-                string_use.string_record.as_str(),
-                string_use.inflated_offset,
-            ),
-        )?;
+    for string_use in ctx.admit_iter(string_uses, "NX attribute field candidates")? {
+        candidates_storage.with_storage(|| {
+            ctx.push_btree_group(
+                &mut candidates,
+                (string_use.entity_51_record.as_str(), string_use.position),
+                (
+                    string_use.stream_ordinal,
+                    ParasolidAttributeFieldValueKind::String,
+                    string_use.id.as_str(),
+                    string_use.string_record.as_str(),
+                    string_use.inflated_offset,
+                ),
+                "NX attribute field candidate index",
+                "NX attribute field candidate members",
+            )
+        })?;
     }
-    for structured_use in structured_uses {
-        push_candidate(
-            (
-                structured_use.entity_51_record.as_str(),
-                structured_use.position,
-            ),
-            (
-                structured_use.stream_ordinal,
-                structured_use.kind.into(),
-                structured_use.id.as_str(),
-                structured_use.value_record.as_str(),
-                structured_use.inflated_offset,
-            ),
-        )?;
+    for structured_use in ctx.admit_iter(structured_uses, "NX attribute field candidates")? {
+        candidates_storage.with_storage(|| {
+            ctx.push_btree_group(
+                &mut candidates,
+                (
+                    structured_use.entity_51_record.as_str(),
+                    structured_use.position,
+                ),
+                (
+                    structured_use.stream_ordinal,
+                    structured_use.kind.into(),
+                    structured_use.id.as_str(),
+                    structured_use.value_record.as_str(),
+                    structured_use.inflated_offset,
+                ),
+                "NX attribute field candidate index",
+                "NX attribute field candidate members",
+            )
+        })?;
     }
-    let candidate_count = numeric_uses
-        .len()
-        .checked_add(string_uses.len())
-        .and_then(|count| count.checked_add(structured_uses.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field join work", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(candidate_count),
-        "NX attribute field join work",
-    )?;
     let mut uses = Vec::new();
-    for ((entity_51_record, position), candidates) in candidates {
-        let matched = (|| {
-            let [(stream_ordinal, value_kind, value_use, value_record, inflated_offset)] =
-                candidates.as_slice()
-            else {
-                return None;
-            };
-            let [class_use] = classes.get(entity_51_record)?.as_slice() else {
-                return None;
-            };
-            if class_use.stream_ordinal != *stream_ordinal {
-                return None;
-            }
-            let [definition] = definitions_by_id
-                .get(class_use.attribute_definition.as_str())?
-                .as_slice()
-            else {
-                return None;
-            };
-            let field_ordinal = position.field_ordinal();
-            let field_code = *definition
-                .field_codes
-                .get(cadmpeg_core::decode::index_from_u32(field_ordinal))?;
-            (field_code == value_kind.field_code()).then_some(())?;
-            let (_, class_key) = class_use.id.rsplit_once('#')?;
-            Some((
-                *stream_ordinal,
-                *value_kind,
-                *value_use,
-                *value_record,
-                *inflated_offset,
-                class_use,
-                class_key,
-                field_ordinal,
-            ))
-        })();
-        let Some((
-            stream_ordinal,
-            value_kind,
-            value_use,
-            value_record,
-            inflated_offset,
-            class_use,
-            class_key,
-            field_ordinal,
-        )) = matched
+    for (&(entity_51_record, position), candidates) in
+        ctx.admit_iter(&candidates, "NX attribute field join work")?
+    {
+        let [(stream_ordinal, value_kind, value_use, value_record, inflated_offset)] =
+            *candidates.as_slice()
+        else {
+            continue;
+        };
+        let Some(&Some(class_use)) =
+            ctx.get_hash_map(&classes, entity_51_record, "NX attribute field class index")?
+        else {
+            continue;
+        };
+        if class_use.stream_ordinal != stream_ordinal {
+            continue;
+        }
+        let Some(&Some(definition)) = ctx.get_hash_map(
+            &definitions_by_id,
+            class_use.attribute_definition.as_str(),
+            "NX attribute field definition index",
+        )?
+        else {
+            continue;
+        };
+        let field_ordinal = position.field_ordinal();
+        let Some(&field_code) = definition
+            .field_codes
+            .get(cadmpeg_core::decode::index_from_u32(field_ordinal))
+        else {
+            continue;
+        };
+        if field_code != value_kind.field_code() {
+            continue;
+        }
+        let Some((_, class_key)) =
+            ctx.rsplit_once(&class_use.id, "#", "NX attribute field use identity")?
         else {
             continue;
         };
@@ -4783,124 +4880,82 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
     field_uses: &[ParasolidAttributeFieldUse],
     topology_class_uses: &[ParasolidTopologyAttributeClassUse],
 ) -> Result<bool, CodecError> {
-    let mut definitions_by_id = BTreeMap::<&str, Option<&ParasolidAttributeDefinition>>::new();
-    let mut definitions_guard = ctx.reserve_scoped(0, "NX topology attribute definition index")?;
-    for definition in definitions {
-        let definition_key = definition.id.as_str();
-        ctx.admit_btree_entry(
-            &definitions_by_id,
-            &definition_key,
-            "NX topology attribute definition index",
-        )?;
-        match definitions_by_id.entry(definition_key) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                definitions_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(&str, Option<&ParasolidAttributeDefinition>)>() * 4,
-                ))?;
-                entry.insert(Some(definition));
-            }
-        }
-    }
-    let mut fields_by_identity =
-        BTreeMap::<(&str, u32), Option<&ParasolidAttributeFieldUse>>::new();
-    let mut fields_guard = ctx.reserve_scoped(0, "NX topology attribute field index")?;
-    for field_use in field_uses {
-        let key = (
-            field_use.entity_51_record.as_str(),
-            field_use.position.field_ordinal(),
-        );
-        ctx.admit_btree_entry(
-            &fields_by_identity,
-            &key,
-            "NX topology attribute field index",
-        )?;
-        match fields_by_identity.entry(key) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                fields_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<((&str, u32), Option<&ParasolidAttributeFieldUse>)>() * 4,
-                ))?;
-                entry.insert(Some(field_use));
-            }
-        }
-    }
-
-    let mut entities_by_id = BTreeMap::<&str, Option<&ParasolidEntity51Record>>::new();
-    let mut entities_guard = ctx.reserve_scoped(0, "NX topology attribute entity index")?;
-    for entity in entities {
-        let entity_key = entity.id.as_str();
-        ctx.admit_btree_entry(
-            &entities_by_id,
-            &entity_key,
-            "NX topology attribute entity index",
-        )?;
-        match entities_by_id.entry(entity_key) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entities_guard.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(&str, Option<&ParasolidEntity51Record>)>() * 4,
-                ))?;
-                entry.insert(Some(entity));
-            }
-        }
-    }
-
-    let work = topology_class_uses
-        .iter()
-        .try_fold(0usize, |total, use_| {
-            let fields = definitions_by_id
-                .get(use_.attribute_definition.as_str())
-                .and_then(|definition| *definition)
-                .map_or(0, |definition| definition.field_codes.len());
-            total.checked_add(fields.checked_add(1)?)
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("NX topology attribute field validation work", 0, 1)
-        })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "NX topology attribute field validation work",
-    )?;
-    Ok(topology_class_uses.iter().any(|topology_class_use| {
-        let entity_id = topology_class_use.entity_51_record.as_str();
-        let Some(Some(entity)) = entities_by_id.get(entity_id) else {
-            return true;
-        };
-        let Some(Some(definition)) =
-            definitions_by_id.get(topology_class_use.attribute_definition.as_str())
-        else {
-            return true;
-        };
-        definition
-            .field_codes
+    let (definitions_by_id, _definitions_storage) = ctx.unique_index(
+        definitions
             .iter()
-            .enumerate()
-            .any(|(field_ordinal, field_code)| {
-                // Field code 0 is ignored. Pointer fields (code 9) are always
-                // transmitted empty and therefore have no value relation.
-                if matches!(
-                    field_code,
-                    AttributeField::Ignored | AttributeField::Pointer
-                ) {
-                    return false;
-                }
-                let Some(&referenced_xmt) = entity.trailing_references.values().get(field_ordinal)
-                else {
-                    return true;
-                };
-                if referenced_xmt == 1 {
-                    return false;
-                }
-                let Ok(field_ordinal) = u32::try_from(field_ordinal) else {
-                    return true;
-                };
-                !matches!(
-                    fields_by_identity.get(&(entity.id.as_str(), field_ordinal)),
-                    Some(Some(_))
-                )
-            })
-    }))
+            .map(|definition| (definition.id.as_str(), definition)),
+        "NX topology attribute definition index",
+    )?;
+    let (fields_by_identity, _fields_storage) = ctx.unique_index(
+        field_uses.iter().map(|field_use| {
+            (
+                (
+                    field_use.entity_51_record.as_str(),
+                    field_use.position.field_ordinal(),
+                ),
+                (),
+            )
+        }),
+        "NX topology attribute field index",
+    )?;
+    let (entities_by_id, _entities_storage) = ctx.unique_index(
+        entities.iter().map(|entity| (entity.id.as_str(), entity)),
+        "NX topology attribute entity index",
+    )?;
+    ctx.any_by(
+        topology_class_uses,
+        |topology_class_use| {
+            let Some(&Some(entity)) = ctx.get_hash_map(
+                &entities_by_id,
+                topology_class_use.entity_51_record.as_str(),
+                "NX topology attribute entity index",
+            )?
+            else {
+                return Ok(true);
+            };
+            let Some(&Some(definition)) = ctx.get_hash_map(
+                &definitions_by_id,
+                topology_class_use.attribute_definition.as_str(),
+                "NX topology attribute definition index",
+            )?
+            else {
+                return Ok(true);
+            };
+            let mut field_ordinal = 0_usize;
+            ctx.any_by(
+                &definition.field_codes,
+                |field_code| {
+                    let ordinal = field_ordinal;
+                    field_ordinal += 1;
+                    // Field code 0 is ignored. Pointer fields (code 9) are always
+                    // transmitted empty and therefore have no value relation.
+                    if matches!(
+                        field_code,
+                        AttributeField::Ignored | AttributeField::Pointer
+                    ) {
+                        return Ok(false);
+                    }
+                    let Some(&referenced_xmt) = entity.trailing_references.values().get(ordinal)
+                    else {
+                        return Ok(true);
+                    };
+                    if referenced_xmt == 1 {
+                        return Ok(false);
+                    }
+                    let Ok(ordinal) = u32::try_from(ordinal) else {
+                        return Ok(true);
+                    };
+                    Ok(!ctx.contains_key_hash_map(
+                        &fields_by_identity,
+                        &(entity.id.as_str(), ordinal),
+                        "NX topology attribute field index",
+                    )?)
+                },
+                "NX topology attribute field validation work",
+            )
+        },
+        "NX topology attribute field validation work",
+    )
 }
 
 #[cfg(test)]
