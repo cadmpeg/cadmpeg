@@ -124,7 +124,10 @@ fn symbolic_thread_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = symbolic_thread_container();
     let records = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_symbolic_threads(ctx, &container)
+        crate::native::features::holes::feature_symbolic_threads(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted symbolic thread");
     assert_eq!(records.len(), 1);
@@ -135,7 +138,10 @@ fn symbolic_thread_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::holes::feature_symbolic_threads(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| {
+                    crate::native::features::holes::feature_symbolic_threads(ctx, &history)
+                })
                 .expect_err("symbolic thread resource limit")
         },
     )
@@ -710,7 +716,8 @@ fn hole_package_lane_route_refusal(
     let container = hole_package_lane_container();
     let admitted = crate::test_support::with_decode_context(|ctx| {
         crate::native::features::holes::feature_hole_package_construction_group_lanes(
-            ctx, &container,
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
         )
     })
     .expect("admitted hole package lane");
@@ -722,10 +729,13 @@ fn hole_package_lane_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::holes::feature_hole_package_construction_group_lanes(
-                ctx, &container,
-            )
-            .expect_err("hole package lane resource limit")
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| {
+                    crate::native::features::holes::feature_hole_package_construction_group_lanes(
+                        ctx, &history,
+                    )
+                })
+                .expect_err("hole package lane resource limit")
         },
     )
 }
@@ -772,7 +782,8 @@ fn repeated_scalar_block_reference_route_refusal(
     let container = repeated_scalar_block_reference_container();
     let admitted = crate::test_support::with_decode_context(|ctx| {
         crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
-            ctx, &container,
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
         )
     })
     .expect("admitted repeated scalar block references");
@@ -784,9 +795,8 @@ fn repeated_scalar_block_reference_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
-        ctx, &container,
-    )
+            crate::native::features::FeatureHistory::new(ctx, &container)
+    .and_then(|history| crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(ctx, &history))
     .expect_err("repeated scalar block reference resource limit")
         },
     )
@@ -840,7 +850,10 @@ fn repeated_scalar_lane_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = repeated_scalar_lane_container();
     let admitted = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(ctx, &container)
+        crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted repeated scalar lane");
     assert_eq!(admitted.len(), 1);
@@ -851,10 +864,13 @@ fn repeated_scalar_lane_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
-                ctx, &container,
-            )
-            .expect_err("repeated scalar lane resource limit")
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| {
+                    crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
+                        ctx, &history,
+                    )
+                })
+                .expect_err("repeated scalar lane resource limit")
         },
     )
 }
@@ -1232,18 +1248,22 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         id: "simple-hole-group".into(),
         first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
         second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
-        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "simple-hole-1".into(),
-                scalar_lane: "scalar-1".into(),
-                block_reference: "references-1".into(),
-            },
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "simple-hole-2".into(),
-                scalar_lane: "scalar-2".into(),
-                block_reference: "references-2".into(),
-            },
-        ])
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(
+            vec![
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "simple-hole-1".into(),
+                    scalar_lane: "scalar-1".into(),
+                    block_reference: "references-1".into(),
+                },
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "simple-hole-2".into(),
+                    scalar_lane: "scalar-2".into(),
+                    block_reference: "references-2".into(),
+                },
+            ],
+            &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
+        )
+        .unwrap()
         .unwrap(),
     };
 
@@ -1293,18 +1313,22 @@ fn package_use_inputs() -> (
         id: "simple-hole-group".to_string(),
         first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
         second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
-        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "simple-hole-1".into(),
-                scalar_lane: "scalar-1".into(),
-                block_reference: "references-1".into(),
-            },
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "simple-hole-2".into(),
-                scalar_lane: "scalar-2".into(),
-                block_reference: "references-2".into(),
-            },
-        ])
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(
+            vec![
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "simple-hole-1".into(),
+                    scalar_lane: "scalar-1".into(),
+                    block_reference: "references-1".into(),
+                },
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "simple-hole-2".into(),
+                    scalar_lane: "scalar-2".into(),
+                    block_reference: "references-2".into(),
+                },
+            ],
+            &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
+        )
+        .unwrap()
         .unwrap(),
     };
     (lane, group)

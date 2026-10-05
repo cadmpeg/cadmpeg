@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source-block metadata for reconstructed feature payloads.
 
+use cadmpeg_core::decode::scan::AdmittedIter;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{
@@ -9,6 +10,7 @@ use serde::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FeaturePayloadBlock {
@@ -24,20 +26,25 @@ pub(super) struct FeaturePayloadContent<B> {
 }
 
 impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
-    pub(super) fn new(
+    pub(super) fn new<A: FeaturePayloadBlockAdmission>(
         blocks: B,
         sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-    ) -> Result<Self, String> {
-        blocks
-            .as_ref()
-            .iter()
+        admission: &A,
+    ) -> Result<Result<Self, String>, A::Error> {
+        let total = admission
+            .admit(blocks.as_ref())?
             .try_fold(0u64, |total, block| total.checked_add(block.byte_len))
-            .ok_or_else(|| "block_byte_lengths overflow byte_len".to_owned())?;
-        Ok(Self { blocks, sha256 })
+            .ok_or_else(|| "block_byte_lengths overflow byte_len".to_owned());
+        Ok(total.map(|_| Self { blocks, sha256 }))
     }
 
-    pub(super) fn byte_len(&self) -> u64 {
-        self.blocks().iter().map(|block| block.byte_len).sum()
+    pub(super) fn byte_len(&self, ctx: &DecodeContext<'_>) -> Result<u64, CodecError> {
+        ctx.admit_iter(self.blocks(), "sum NX feature payload block lengths")?
+            .try_fold(0u64, |total, block| {
+                total.checked_add(block.byte_len).ok_or_else(|| {
+                    ctx.refuse_codec_limit("sum NX feature payload block lengths", 0, 1)
+                })
+            })
     }
 
     pub(super) fn blocks(&self) -> &[FeaturePayloadBlock] {
@@ -49,17 +56,75 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
     }
 }
 
+pub(super) trait FeaturePayloadBlockAdmission {
+    type Error;
+    type Iter<'a>: Iterator<Item = &'a FeaturePayloadBlock>
+    where
+        Self: 'a;
+
+    fn admit<'a>(
+        &'a self,
+        blocks: &'a [FeaturePayloadBlock],
+    ) -> Result<Self::Iter<'a>, Self::Error>;
+}
+
+struct DecodeFeaturePayloadBlockAdmission<'ctx, 'decode> {
+    ctx: &'ctx DecodeContext<'decode>,
+}
+
+impl FeaturePayloadBlockAdmission for DecodeFeaturePayloadBlockAdmission<'_, '_> {
+    type Error = CodecError;
+    type Iter<'a>
+        = AdmittedIter<std::slice::Iter<'a, FeaturePayloadBlock>>
+    where
+        Self: 'a;
+
+    fn admit<'a>(
+        &'a self,
+        blocks: &'a [FeaturePayloadBlock],
+    ) -> Result<Self::Iter<'a>, Self::Error> {
+        Ok(self
+            .ctx
+            .admit_iter(blocks, "validate NX feature payload block lengths")?)
+    }
+}
+
+pub(super) struct ContextFreeFeaturePayloadBlockAdmission;
+
+impl FeaturePayloadBlockAdmission for ContextFreeFeaturePayloadBlockAdmission {
+    type Error = Infallible;
+    type Iter<'a>
+        = std::slice::Iter<'a, FeaturePayloadBlock>
+    where
+        Self: 'a;
+
+    fn admit<'a>(
+        &'a self,
+        blocks: &'a [FeaturePayloadBlock],
+    ) -> Result<Self::Iter<'a>, Self::Error> {
+        Ok(blocks.iter())
+    }
+}
+
 impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> FeaturePayloadContent<B> {
-    pub(super) fn from_source(
+    pub(super) fn from_source<I>(
         ctx: &DecodeContext<'_>,
-        ids: impl IntoIterator<Item = String>,
+        ids: I,
         blocks: &BTreeMap<String, (&[u8], u64)>,
-    ) -> Result<Option<Self>, CodecError> {
+    ) -> Result<Option<Self>, CodecError>
+    where
+        I: IntoIterator<Item = String>,
+        I::IntoIter: ExactSizeIterator,
+    {
         let mut hash = Sha256::new();
         let mut rows = Vec::new();
 
         let mut byte_len = 0u64;
-        for id in ids {
+        let mut ids = ids.into_iter();
+        for _ in ctx.admit_iter(&(0..ids.len()), "scan NX feature payload block ids")? {
+            let Some(id) = ids.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX feature payload block ids", 0, 1));
+            };
             let Some((bytes, source_offset)) = blocks.get(&id).copied() else {
                 return Ok(None);
             };
@@ -91,7 +156,11 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             hash.finalize().into(),
             "retain NX feature payload digest",
         )?;
-        let content = Self::new(blocks, digest).map_err(CodecError::Malformed)?;
+        let content = match Self::new(blocks, digest, &DecodeFeaturePayloadBlockAdmission { ctx })?
+        {
+            Ok(content) => content,
+            Err(error) => return Err(CodecError::Malformed(error)),
+        };
         Ok(Some(content))
     }
 }
@@ -223,7 +292,16 @@ where
         let blocks = B::try_from(rows).map_err(|_| {
             serde::de::Error::custom("data_blocks count does not match the payload lane")
         })?;
-        Self::new(blocks, wire.sha256).map_err(serde::de::Error::custom)
+        match Self::new(
+            blocks,
+            wire.sha256,
+            &ContextFreeFeaturePayloadBlockAdmission,
+        )
+        .map_err(|error| match error {})?
+        {
+            Ok(content) => Ok(content),
+            Err(message) => Err(serde::de::Error::custom(message)),
+        }
     }
 }
 
@@ -260,7 +338,11 @@ mod tests {
     fn payload_content_preserves_ordered_metadata_wire() {
         let content: FeaturePayloadContent<[FeaturePayloadBlock; 2]> =
             serde_json::from_str(TWO_BLOCKS).unwrap();
-        assert_eq!(content.byte_len(), 8);
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(content.byte_len(ctx)?, 8);
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })
+        .unwrap();
         assert_eq!(serde_json::to_string(&content).unwrap(), TWO_BLOCKS);
         let variable: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
             serde_json::from_str(TWO_BLOCKS).unwrap();
@@ -312,8 +394,10 @@ mod tests {
         ];
         assert!(FeaturePayloadContent::new(
             blocks,
-            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash")
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash"),
+            &super::ContextFreeFeaturePayloadBlockAdmission,
         )
+        .unwrap()
         .is_err());
     }
 }

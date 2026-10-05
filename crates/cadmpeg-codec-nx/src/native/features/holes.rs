@@ -8,10 +8,9 @@ use super::operation_record::FeatureOperationRecord;
 
 use super::charged_unique_offset_data_block;
 use super::reference::ConstructionReference;
-use super::visit_feature_history_operation_records;
+use super::FeatureHistory;
 use super::FeatureOperationLabel;
 use super::FeaturePayloadString;
-use crate::container::Container;
 
 use crate::native::om::data_blocks;
 use crate::om::nonempty::NonEmpty;
@@ -390,20 +389,91 @@ pub(in crate::native) struct SimpleHoleConstructionMembers(
 );
 
 impl SimpleHoleConstructionMembers {
-    pub(in crate::native) fn new(
+    pub(in crate::native) fn new<A: SimpleHoleMemberAdmission>(
         members: Vec<FeatureSimpleHoleConstructionMember>,
-    ) -> Result<Self, &'static str> {
+        admission: &A,
+    ) -> Result<Result<Self, &'static str>, A::Error> {
         if members.len() < 2 {
-            return Err("operation_labels must contain at least two members");
+            return Ok(Err("operation_labels must contain at least two members"));
         }
-        if members.iter().enumerate().any(|(index, member)| {
-            members[..index]
-                .iter()
-                .any(|other| other.operation_label == member.operation_label)
-        }) {
-            return Err("operation_labels must contain distinct members");
+        for (index, member) in admission
+            .admit(&members, "validate NX simple-hole group members")?
+            .enumerate()
+        {
+            for other in admission.admit(
+                &members[..index],
+                "check NX simple-hole member label uniqueness",
+            )? {
+                if admission.same_label(&other.operation_label, &member.operation_label)? {
+                    return Ok(Err("operation_labels must contain distinct members"));
+                }
+            }
         }
-        Ok(Self(members))
+        Ok(Ok(Self(members)))
+    }
+}
+
+pub(in crate::native) trait SimpleHoleMemberAdmission {
+    type Error;
+    type Iter<'a>: Iterator<Item = &'a FeatureSimpleHoleConstructionMember>
+    where
+        Self: 'a;
+
+    fn admit<'a>(
+        &'a self,
+        members: &'a [FeatureSimpleHoleConstructionMember],
+        operation: &'static str,
+    ) -> Result<Self::Iter<'a>, Self::Error>;
+
+    fn same_label(&self, left: &str, right: &str) -> Result<bool, Self::Error>;
+}
+
+pub(in crate::native) struct ContextFreeSimpleHoleMemberAdmission;
+
+impl SimpleHoleMemberAdmission for ContextFreeSimpleHoleMemberAdmission {
+    type Error = std::convert::Infallible;
+    type Iter<'a>
+        = std::slice::Iter<'a, FeatureSimpleHoleConstructionMember>
+    where
+        Self: 'a;
+
+    fn admit<'a>(
+        &'a self,
+        members: &'a [FeatureSimpleHoleConstructionMember],
+        _operation: &'static str,
+    ) -> Result<Self::Iter<'a>, Self::Error> {
+        Ok(members.iter())
+    }
+
+    fn same_label(&self, left: &str, right: &str) -> Result<bool, Self::Error> {
+        Ok(left == right)
+    }
+}
+
+struct DecodeSimpleHoleMemberAdmission<'ctx, 'decode> {
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'decode>,
+}
+
+impl SimpleHoleMemberAdmission for DecodeSimpleHoleMemberAdmission<'_, '_> {
+    type Error = cadmpeg_core::CodecError;
+    type Iter<'a>
+        = cadmpeg_core::decode::scan::AdmittedIter<
+        std::slice::Iter<'a, FeatureSimpleHoleConstructionMember>,
+    >
+    where
+        Self: 'a;
+
+    fn admit<'a>(
+        &'a self,
+        members: &'a [FeatureSimpleHoleConstructionMember],
+        operation: &'static str,
+    ) -> Result<Self::Iter<'a>, Self::Error> {
+        Ok(self.ctx.admit_iter(members, operation)?)
+    }
+
+    fn same_label(&self, left: &str, right: &str) -> Result<bool, Self::Error> {
+        self.ctx
+            .equal(left, right, "compare NX simple-hole member labels")
     }
 }
 
@@ -459,25 +529,30 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
         {
             return Err("simple-hole operation_labels, scalar_lanes, and block_references must have equal lengths".into());
         }
+        let members = match SimpleHoleConstructionMembers::new(
+            wire.operation_labels
+                .into_iter()
+                .zip(wire.scalar_lanes)
+                .zip(wire.block_references)
+                .map(|((operation_label, scalar_lane), block_reference)| {
+                    FeatureSimpleHoleConstructionMember {
+                        operation_label,
+                        scalar_lane,
+                        block_reference,
+                    }
+                })
+                .collect(),
+            &ContextFreeSimpleHoleMemberAdmission,
+        ) {
+            Ok(members) => members,
+            Err(error) => match error {},
+        }
+        .map_err(str::to_owned)?;
         Ok(Self {
             id: wire.id,
             first_data_blocks: wire.first_data_blocks,
             second_data_blocks: wire.second_data_blocks,
-            members: SimpleHoleConstructionMembers::new(
-                wire.operation_labels
-                    .into_iter()
-                    .zip(wire.scalar_lanes)
-                    .zip(wire.block_references)
-                    .map(|((operation_label, scalar_lane), block_reference)| {
-                        FeatureSimpleHoleConstructionMember {
-                            operation_label,
-                            scalar_lane,
-                            block_reference,
-                        }
-                    })
-                    .collect(),
-            )
-            .map_err(str::to_owned)?,
+            members,
         })
     }
 }
@@ -686,7 +761,11 @@ fn owned_symbolic_thread(
         format_feature_history_id(ctx, "symbolic-thread", section_key, operation_ordinal, None)?;
 
     let mut text_frames = ctx.collection_vec(frames.len(), "NX symbolic thread text frames")?;
-    for (ordinal, frame) in frames.into_iter().enumerate() {
+    let mut frames = frames.into_iter();
+    for ordinal in ctx.admit_iter(&(0..frames.len()), "build NX symbolic-thread text frames")? {
+        let Some(frame) = frames.next() else {
+            return Err(ctx.refuse_codec_limit("build NX symbolic-thread text frames", 0, 1));
+        };
         let ordinal_u32 = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX symbolic thread text frame ordinal", 0, 1))?;
         let frame_id = format_feature_history_id(
@@ -726,53 +805,35 @@ fn owned_symbolic_thread(
 /// Decode complete typed text frames from symbolic-thread operations.
 pub(in crate::native) fn feature_symbolic_threads(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureSymbolicThread>, cadmpeg_core::CodecError> {
     let mut threads = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let frames = match symbolic_thread_text_frames(ctx, record.payload_view()) {
-                Ok(Some(frames)) => frames,
-                Ok(None) => return,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
+            let Some(frames) = symbolic_thread_text_frames(ctx, record.payload_view())? else {
+                continue;
             };
-            let thread = match owned_symbolic_thread(
+            let thread = owned_symbolic_thread(
                 ctx,
                 frames,
                 section_key,
                 entry_offset,
                 operation_ordinal,
                 record.offset(),
-            ) {
-                Ok(thread) => thread,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx
-                .charge_collection_items(1, "NX symbolic threads")
+            )?;
+            ctx.charge_collection_items(1, "NX symbolic threads")
                 .and_then(|()| {
                     ctx.reserve_capacity(&mut threads, 1, "allocate NX symbolic threads")
-                })
-            {
-                failure = Some(error);
-                return;
-            }
+                })?;
             threads.push(thread);
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+        }
     }
     Ok(threads)
 }
@@ -972,86 +1033,57 @@ pub(in crate::native) fn feature_threaded_hole_templates(
 /// Decode exact nonempty duplicated scalar lanes from simple-hole operations.
 pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLane>, cadmpeg_core::CodecError> {
     let mut pairs = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let pair = match crate::om::simple_hole_repeated_scalar_lane(ctx, record.payload_view())
-            {
-                Ok(Some(pair)) => pair,
-                Ok(None) => return,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
+            let Some(pair) =
+                crate::om::simple_hole_repeated_scalar_lane(ctx, record.payload_view())?
+            else {
+                continue;
             };
-            let values = match pair.map_charged(ctx, |token| RepeatedScalar {
+            let values = pair.map_charged(ctx, |token| RepeatedScalar {
                 scalar: token.scalar,
                 witness_offsets: token
                     .witness_offsets
                     .map(|offset| entry_offset + cadmpeg_core::decode::u64_from_index(offset)),
-            }) {
-                Ok(values) => values,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let id = match format_feature_history_id(
+            })?;
+            let id = format_feature_history_id(
                 ctx,
                 "simple-hole-repeated-scalar-lane",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(id) => id,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let operation_label = match format_feature_history_id(
+            )?;
+            let operation_label = format_feature_history_id(
                 ctx,
                 "operation-label",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(label) => label,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx
-                .charge_collection_items(1, "NX simple hole repeated scalar lanes")
+            )?;
+            ctx.charge_collection_items(1, "NX simple hole repeated scalar lanes")
                 .and_then(|()| {
                     ctx.reserve_capacity(
                         &mut pairs,
                         1,
                         "allocate NX simple hole repeated scalar lanes",
                     )
-                })
-            {
-                failure = Some(error);
-                return;
-            }
+                })?;
             pairs.push(FeatureSimpleHoleRepeatedScalarLane {
                 id,
                 operation_label,
                 values,
             });
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+        }
     }
     Ok(pairs)
 }
@@ -1065,17 +1097,18 @@ fn simple_hole_block_reference(
     entry_offset: u64,
     (token, offset): (crate::om::reference_index::PayloadIndexToken, usize),
 ) -> Result<Option<SimpleHoleBlockReference>, cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(blocks.len()),
+    let Some(block) = ctx.find_by(
+        blocks,
+        |block| {
+            Ok(block.block_ordinal == token.value()
+                && block
+                    .id
+                    .rsplit_once(":block#")
+                    .is_some_and(|(owner, _)| owner == prefix))
+        },
         "resolve NX simple hole block reference",
-    )?;
-    let Some(block) = blocks.iter().find(|block| {
-        block.block_ordinal == token.value()
-            && block
-                .id
-                .rsplit_once(":block#")
-                .is_some_and(|(owner, _)| owner == prefix)
-    }) else {
+    )?
+    else {
         return Ok(None);
     };
     let Some(source_offset) =
@@ -1112,41 +1145,30 @@ fn simple_hole_reference_pair(
 
 pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>, cadmpeg_core::CodecError> {
-    let inputs = feature_input_blocks(ctx, container)?;
-    let blocks = data_blocks(ctx, container)?;
+    let inputs = feature_input_blocks(ctx, history)?;
+    let blocks = data_blocks(ctx, history.container())?;
     let mut references = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let operation_label = match format_feature_history_id(
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        'records: for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
+            let operation_label = format_feature_history_id(
                 ctx,
                 "operation-label",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(label) => label,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(inputs.len()),
-                "find NX simple hole block owner",
-            ) {
-                failure = Some(error);
-                return;
-            }
+            )?;
             let mut prefix = None;
-            for input in &inputs {
+            let inputs = ctx.admit_iter(&inputs, "find NX simple hole block owner")?;
+            for input in inputs {
                 if input.operation_label != operation_label {
                     continue;
                 }
@@ -1158,72 +1180,54 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
                     continue;
                 };
                 if prefix.is_some_and(|first| first != candidate) {
-                    return;
+                    continue 'records;
                 }
                 prefix = Some(candidate);
             }
             let Some(prefix) = prefix else {
-                return;
+                continue;
             };
-            let decoded = match crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(ctx, record.payload_view()) {
-                Ok(Some(decoded)) => decoded,
-                Ok(None) => return,
-                Err(error) => { failure = Some(error); return; }
-            };
+            let Some(decoded) = crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(ctx, record.payload_view())? else {
+continue;
+};
             let first =
                 match simple_hole_reference_pair(ctx, &blocks, prefix, entry_offset, decoded[0]) {
                     Ok(Some(first)) => first,
-                    Ok(None) => return,
+                    Ok(None) => continue,
                     Err(error) => {
-                        failure = Some(error);
-                        return;
+                        return Err(error);
                     }
                 };
             let second =
                 match simple_hole_reference_pair(ctx, &blocks, prefix, entry_offset, decoded[1]) {
                     Ok(Some(second)) => second,
-                    Ok(None) => return,
+                    Ok(None) => continue,
                     Err(error) => {
-                        failure = Some(error);
-                        return;
+                        return Err(error);
                     }
                 };
-            let id = match format_feature_history_id(
+            let id = format_feature_history_id(
                 ctx,
                 "simple-hole-repeated-scalar-lane-block-references",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(id) => id,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx
-                .charge_collection_items(1, "NX simple hole block reference lanes")
+            )?;
+            ctx.charge_collection_items(1, "NX simple hole block reference lanes")
                 .and_then(|()| {
                     ctx.reserve_capacity(
                         &mut references,
                         1,
                         "allocate NX simple hole block reference lanes",
                     )
-                })
-            {
-                failure = Some(error);
-                return;
-            }
+                })?;
             references.push(FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
                 id,
                 operation_label,
                 first,
                 second,
             });
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+        }
     }
     Ok(references)
 }
@@ -1235,19 +1239,14 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
     lanes: &[FeatureSimpleHoleRepeatedScalarLane],
     references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
 ) -> Result<Vec<FeatureSimpleHoleConstructionGroup>, cadmpeg_core::CodecError> {
-    let chronology_work = labels
-        .len()
-        .checked_mul(labels.len())
-        .ok_or_else(|| ctx.refuse_codec_limit("order NX hole operations", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(chronology_work),
-        "order NX hole operations",
-    )?;
     let mut chronology_reservation = ctx.reserve_scoped(0, "NX hole operation chronology")?;
     let mut chronology = Vec::new();
-    for (index, label) in labels.iter().enumerate() {
-        let first_offset = labels
-            .iter()
+    for (index, label) in ctx
+        .admit_iter(labels, "build NX hole operation chronology")?
+        .enumerate()
+    {
+        let first_offset = ctx
+            .admit_iter(labels, "find NX hole section start")?
             .filter(|other| other.section_link == label.section_link)
             .map(|other| other.source_offset)
             .fold(label.source_offset, u64::min);
@@ -1273,17 +1272,6 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         Ord::cmp,
         "sort NX hole operation chronology",
     )?;
-    let group_work = references
-        .len()
-        .checked_add(lanes.len())
-        .and_then(|count| count.checked_add(labels.len()))
-        .and_then(|count| count.checked_add(1))
-        .and_then(|count| count.checked_mul(references.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("group NX simple holes", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(group_work),
-        "group NX simple holes",
-    )?;
     let mut grouped_reservation = ctx.reserve_scoped(0, "NX simple hole group index")?;
     let mut grouped = BTreeMap::<
         ([&str; 2], [&str; 2]),
@@ -1293,7 +1281,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         )>,
     >::new();
     let mut ambiguous_groups = BTreeSet::<([&str; 2], [&str; 2])>::new();
-    for reference in references {
+    for reference in ctx.admit_iter(references, "group NX simple-hole references")? {
         let key = (
             reference
                 .first
@@ -1306,8 +1294,8 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
                 .each_ref()
                 .map(|reference| reference.data_block.as_str()),
         );
-        let mut matching_lanes = lanes
-            .iter()
+        let mut matching_lanes = ctx
+            .admit_iter(lanes, "match NX simple-hole reference lanes")?
             .filter(|lane| lane.operation_label == reference.operation_label);
         let lane = match (matching_lanes.next(), matching_lanes.next()) {
             (Some(lane), None) => lane,
@@ -1346,16 +1334,34 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         bucket.push((reference, lane));
     }
     let mut groups = Vec::new();
-    for (key, candidates) in grouped {
+    let mut grouped = grouped.into_iter();
+    for _ in ctx.admit_iter(&(0..grouped.len()), "visit NX simple-hole groups")? {
+        let Some((key, candidates)) = grouped.next() else {
+            return Err(ctx.refuse_codec_limit("visit NX simple-hole groups", 0, 1));
+        };
         if ambiguous_groups.contains(&key) {
             continue;
         }
         let mut positions_reservation = ctx.reserve_scoped(0, "NX simple hole group positions")?;
         let mut positioned = Vec::new();
         let mut missing = false;
-        for (index, (reference, lane)) in candidates.into_iter().enumerate() {
-            let Some(position) = chronology
-                .iter()
+        let mut candidates = candidates.into_iter();
+        for index in ctx.admit_iter(
+            &(0..candidates.len()),
+            "position NX simple-hole group candidates",
+        )? {
+            let Some((reference, lane)) = candidates.next() else {
+                return Err(ctx.refuse_codec_limit(
+                    "position NX simple-hole group candidates",
+                    0,
+                    1,
+                ));
+            };
+            let Some(position) = ctx
+                .admit_iter(
+                    chronology.as_slice(),
+                    "find NX simple-hole chronology position",
+                )?
                 .rposition(|(_, label, _)| label.id == reference.operation_label)
             else {
                 missing = true;
@@ -1381,20 +1387,32 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
             Ord::cmp,
             "sort NX simple hole group members",
         )?;
-        if positioned.len() < 2
-            || positioned
-                .iter()
-                .enumerate()
-                .any(|(index, (_, _, reference, _))| {
-                    positioned[..index]
-                        .iter()
-                        .any(|(_, _, other, _)| other.operation_label == reference.operation_label)
-                })
+        if positioned.len() < 2 {
+            continue;
+        }
+        let mut has_duplicate = false;
+        for (index, (_, _, reference, _)) in ctx
+            .admit_iter(positioned.as_slice(), "check NX simple-hole group labels")?
+            .enumerate()
         {
+            if ctx.any_by(
+                &positioned[..index],
+                |(_, _, other, _)| Ok(other.operation_label == reference.operation_label),
+                "check NX simple-hole group label uniqueness",
+            )? {
+                has_duplicate = true;
+                break;
+            }
+        }
+        if has_duplicate {
             continue;
         }
         let mut members = Vec::new();
-        for (_, _, reference, lane) in positioned {
+        let mut positioned = positioned.into_iter();
+        for _ in ctx.admit_iter(&(0..positioned.len()), "copy NX simple-hole group members")? {
+            let Some((_, _, reference, lane)) = positioned.next() else {
+                return Err(ctx.refuse_codec_limit("copy NX simple-hole group members", 0, 1));
+            };
             let operation_label = ctx
                 .copy_retained_text(&reference.operation_label, "NX simple hole group operation")?;
             let scalar_lane =
@@ -1408,13 +1426,15 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
                 block_reference,
             });
         }
-        let id_anchor = members.iter().fold(&members[0], |first, second| {
-            if first.operation_label <= second.operation_label {
-                first
-            } else {
-                second
-            }
-        });
+        let id_anchor = ctx
+            .admit_iter(members.as_slice(), "choose NX simple-hole group identity")?
+            .fold(&members[0], |first, second| {
+                if first.operation_label <= second.operation_label {
+                    first
+                } else {
+                    second
+                }
+            });
         let id_key = id_anchor
             .operation_label
             .rsplit_once('#')
@@ -1427,8 +1447,9 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         let mut id = ctx.retained_string(length, "NX simple hole group identity")?;
         id.push_str(prefix);
         id.push_str(id_key);
-        let members = SimpleHoleConstructionMembers::new(members)
-            .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
+        let members =
+            SimpleHoleConstructionMembers::new(members, &DecodeSimpleHoleMemberAdmission { ctx })?
+                .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
         let first_data_blocks = [
             ctx.copy_retained_text(key.0[0], "NX simple hole first block")?,
             ctx.copy_retained_text(key.0[1], "NX simple hole first block")?,
@@ -1484,65 +1505,45 @@ fn package_lane_references(
 
 pub(in crate::native) fn feature_hole_package_construction_group_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureHolePackageConstructionGroupLane>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = history.container().indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
             let Some(lane) = crate::om::hole_package_construction_group_lane(record.payload_view())
             else {
-                return;
+                continue;
             };
-            let references = match package_lane_references(ctx, &indexed, entry_offset, &lane) {
-                Ok(Some(references)) => references,
-                Ok(None) => return,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
+            let Some(references) = package_lane_references(ctx, &indexed, entry_offset, &lane)?
+            else {
+                continue;
             };
-            let operation_label = match format_feature_history_id(
+            let operation_label = format_feature_history_id(
                 ctx,
                 "operation-label",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(label) => label,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let id = match format_feature_history_id(
+            )?;
+            let id = format_feature_history_id(
                 ctx,
                 "hole-package-construction-group-lane",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(id) => id,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx
-                .charge_collection_items(1, "NX hole package lanes")
+            )?;
+            ctx.charge_collection_items(1, "NX hole package lanes")
                 .and_then(|()| {
                     ctx.reserve_capacity(&mut lanes, 1, "allocate NX hole package lanes")
-                })
-            {
-                failure = Some(error);
-                return;
-            }
+                })?;
             lanes.push(FeatureHolePackageConstructionGroupLane {
                 id,
                 operation_label,
@@ -1554,10 +1555,7 @@ pub(in crate::native) fn feature_hole_package_construction_group_lanes(
                     + cadmpeg_core::decode::u64_from_index(record.payload_offset())
                     + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+        }
     }
     Ok(lanes)
 }
@@ -1583,21 +1581,12 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
     lanes: &[FeatureHolePackageConstructionGroupLane],
     groups: &[FeatureSimpleHoleConstructionGroup],
 ) -> Result<Vec<FeatureHolePackageConstructionGroupUse>, cadmpeg_core::CodecError> {
-    let work = groups
-        .len()
-        .checked_add(lanes.len())
-        .and_then(|count| count.checked_mul(groups.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX hole package groups", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(work),
-        "join NX hole package groups",
-    )?;
     let mut reservation = ctx.reserve_scoped(0, "NX hole package group candidates")?;
     let mut matches = Vec::new();
-    for group in groups {
+    for group in ctx.admit_iter(groups, "join NX hole package groups")? {
         let key = simple_hole_group_key(group);
-        if groups
-            .iter()
+        if ctx
+            .admit_iter(groups, "check NX unique simple-hole group")?
             .filter(|other| simple_hole_group_key(other) == key)
             .take(2)
             .count()
@@ -1605,8 +1594,8 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
         {
             continue;
         }
-        let mut matching_lanes = lanes
-            .iter()
+        let mut matching_lanes = ctx
+            .admit_iter(lanes, "match NX hole package group lanes")?
             .filter(|lane| hole_package_lane_key(lane) == key);
         let (Some(lane), None) = (matching_lanes.next(), matching_lanes.next()) else {
             continue;
@@ -1629,7 +1618,11 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
         "sort NX hole package groups",
     )?;
     let mut uses = Vec::new();
-    for (group, lane) in matches {
+    let mut matches = matches.into_iter();
+    for _ in ctx.admit_iter(&(0..matches.len()), "build NX hole package group uses")? {
+        let Some((group, lane)) = matches.next() else {
+            return Err(ctx.refuse_codec_limit("build NX hole package group uses", 0, 1));
+        };
         let id = copy_replaced_id(
             ctx,
             &lane.id,

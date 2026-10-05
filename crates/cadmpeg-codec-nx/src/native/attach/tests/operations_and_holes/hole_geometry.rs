@@ -392,18 +392,22 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
             .references
             .each_ref()
             .map(|reference| reference.data_block.clone()),
-        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: operation.into(),
-                scalar_lane: "lane".into(),
-                block_reference: "blocks".into(),
-            },
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: "other-operation".into(),
-                scalar_lane: "other-lane".into(),
-                block_reference: "other-blocks".into(),
-            },
-        ])
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(
+            vec![
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: operation.into(),
+                    scalar_lane: "lane".into(),
+                    block_reference: "blocks".into(),
+                },
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "other-operation".into(),
+                    scalar_lane: "other-lane".into(),
+                    block_reference: "other-blocks".into(),
+                },
+            ],
+            &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
+        )
+        .unwrap()
         .unwrap(),
     };
 
@@ -480,18 +484,22 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
             id: "group".into(),
             first_data_blocks: ["a".into(), "b".into()],
             second_data_blocks: ["c".into(), "d".into()],
-            members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
-                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                    operation_label: operations[0].clone(),
-                    scalar_lane: "lane-a".into(),
-                    block_reference: "refs-a".into(),
-                },
-                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                    operation_label: operations[1].clone(),
-                    scalar_lane: "lane-b".into(),
-                    block_reference: "refs-b".into(),
-                },
-            ])
+            members: crate::native::features::holes::SimpleHoleConstructionMembers::new(
+                vec![
+                    crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                        operation_label: operations[0].clone(),
+                        scalar_lane: "lane-a".into(),
+                        block_reference: "refs-a".into(),
+                    },
+                    crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                        operation_label: operations[1].clone(),
+                        scalar_lane: "lane-b".into(),
+                        block_reference: "refs-b".into(),
+                    },
+                ],
+                &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
+            )
+            .unwrap()
             .unwrap(),
         };
         let mut model = Model::default();

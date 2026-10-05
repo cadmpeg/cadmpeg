@@ -43,7 +43,7 @@ use super::format_feature_history_id;
 use super::offset_data_block_bytes;
 
 use super::charged_unique_offset_data_block;
-use super::visit_feature_history_operation_records;
+use super::FeatureHistory;
 
 /// Ordered construction reference carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -920,71 +920,64 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
 /// payloads without assigning seed or transform semantics to their slots.
 pub(in crate::native) fn feature_pattern_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeaturePatternReference>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = history.container().indexed_om_sections(ctx)?;
     let mut references = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
             let Some(decoded) = PatternReferences::read(record.payload_view()) else {
-                return;
+                continue;
             };
             let layout = decoded.layout();
-            for (ordinal, reference) in decoded.into_references().into_iter().enumerate() {
-                let item = (|| -> Result<FeaturePatternReference, cadmpeg_core::CodecError> {
-                    let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
-                        ctx.refuse_codec_limit("NX pattern reference ordinal", 0, 1)
-                    })?;
-                    Ok(FeaturePatternReference {
-                        id: format_feature_history_id(
-                            ctx,
-                            "pattern-reference",
-                            section_key,
-                            operation_ordinal,
-                            Some(ordinal),
-                        )?,
-                        operation_label: format_feature_history_id(
-                            ctx,
-                            "operation-label",
-                            section_key,
-                            operation_ordinal,
-                            None,
-                        )?,
-                        layout,
-                        ordinal: ordinal_u32,
-                        token: reference.token,
-                        data_block: charged_unique_offset_data_block(
-                            ctx,
-                            &indexed,
-                            reference.token.value(),
-                        )?,
-                        source_offset: entry_offset
-                            + cadmpeg_core::decode::u64_from_index(reference.offset),
-                    })
-                })();
-                let item = match item {
-                    Ok(item) => item,
-                    Err(error) => {
-                        failure = Some(error);
-                        return;
-                    }
+            let mut decoded_references = decoded.into_references().into_iter();
+            let ordinals = ctx.admit_iter(
+                &(0..decoded_references.len()),
+                "visit NX pattern references",
+            )?;
+            for ordinal in ordinals {
+                let Some(reference) = decoded_references.next() else {
+                    return Err(ctx.refuse_codec_limit("visit NX pattern references", 0, 1));
                 };
-                if let Err(error) = ctx.reserve_vec(&mut references, 1, "NX pattern references") {
-                    failure = Some(error);
-                    return;
-                }
+                let ordinal_u32 = u32::try_from(ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX pattern reference ordinal", 0, 1))?;
+                let item = FeaturePatternReference {
+                    id: format_feature_history_id(
+                        ctx,
+                        "pattern-reference",
+                        section_key,
+                        operation_ordinal,
+                        Some(ordinal),
+                    )?,
+                    operation_label: format_feature_history_id(
+                        ctx,
+                        "operation-label",
+                        section_key,
+                        operation_ordinal,
+                        None,
+                    )?,
+                    layout,
+                    ordinal: ordinal_u32,
+                    token: reference.token,
+                    data_block: charged_unique_offset_data_block(
+                        ctx,
+                        &indexed,
+                        reference.token.value(),
+                    )?,
+                    source_offset: entry_offset
+                        + cadmpeg_core::decode::u64_from_index(reference.offset),
+                };
+                ctx.reserve_vec(&mut references, 1, "NX pattern references")?;
                 references.push(item);
             }
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+        }
     }
     Ok(references)
 }
@@ -993,76 +986,56 @@ pub(in crate::native) fn feature_pattern_references(
 /// payloads without assigning roles to its references.
 pub(in crate::native) fn feature_pattern_counted_reference_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeaturePatternCountedReferenceLane>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = history.container().indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
-    let mut refusal: Option<cadmpeg_core::CodecError> = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if refusal.is_some() {
-                return;
-            }
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
             let lane = match CountedPatternReferences::read(ctx, record.payload_view()) {
                 Ok(Some(lane)) => lane,
-                Ok(None) => return,
+                Ok(None) => continue,
                 Err(error) => {
-                    refusal = Some(error);
-                    return;
+                    return Err(error);
                 }
             };
             let references = match lane.resolve(ctx, entry_offset, |token| {
                 charged_unique_offset_data_block(ctx, &indexed, token.value())
             }) {
                 Ok(Some(references)) => references,
-                Ok(None) => return,
+                Ok(None) => continue,
                 Err(error) => {
-                    refusal = Some(error);
-                    return;
+                    return Err(error);
                 }
             };
-            let id = match format_feature_history_id(
+            let id = format_feature_history_id(
                 ctx,
                 "pattern-counted-reference-lane",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(id) => id,
-                Err(error) => {
-                    refusal = Some(error);
-                    return;
-                }
-            };
-            let operation_label = match format_feature_history_id(
+            )?;
+            let operation_label = format_feature_history_id(
                 ctx,
                 "operation-label",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(label) => label,
-                Err(error) => {
-                    refusal = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX counted pattern reference lanes")
-            {
-                refusal = Some(error);
-                return;
-            }
+            )?;
+            ctx.reserve_vec(&mut lanes, 1, "NX counted pattern reference lanes")?;
             lanes.push(FeaturePatternCountedReferenceLane {
                 id,
                 operation_label,
                 references,
             });
-        },
-    )?;
-    if let Some(error) = refusal {
-        return Err(error);
+        }
     }
     Ok(lanes)
 }
@@ -1075,18 +1048,9 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
     references: &[FeaturePatternReference],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let scan_work = references
-        .len()
-        .checked_mul(references.len())
-        .and_then(|work| work.checked_add(labels.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("join NX pattern construction references", 0, 1))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(scan_work),
-        "join NX pattern construction references",
-    )?;
     let mut index_reservation = ctx.reserve_scoped(0, "NX pattern construction indexes")?;
     let mut kinds = BTreeMap::<&str, &str>::new();
-    for label in labels {
+    for label in ctx.admit_iter(labels, "index NX pattern construction labels")? {
         index_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(&str, &str)>() * 4,
         ))?;
@@ -1098,7 +1062,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         )?;
     }
     let mut operations = BTreeSet::<&str>::new();
-    for reference in references {
+    for reference in ctx.admit_iter(references, "index NX pattern construction references")? {
         index_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<&str>() * 4,
         ))?;
@@ -1109,7 +1073,10 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         )?;
     }
     let mut output = Vec::new();
-    'operations: for operation_label in operations {
+    'operations: for operation_label in ctx
+        .admit_iter(&operations, "visit NX pattern construction operations")?
+        .copied()
+    {
         let Some(kind) = kinds.get(operation_label) else {
             continue;
         };
@@ -1120,8 +1087,8 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         };
         let mut graph_reservation = ctx.reserve_scoped(0, "NX pattern construction graph")?;
         let mut graph = Vec::new();
-        for reference in references
-            .iter()
+        for reference in ctx
+            .admit_iter(references, "match NX pattern construction references")?
             .filter(|reference| reference.operation_label == operation_label)
         {
             ctx.reserve_scoped_vec(
@@ -1139,19 +1106,24 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             "sort NX pattern construction graph",
         )?;
         if !matches!(graph.len(), 9 | 10)
-            || graph
-                .iter()
+            || ctx
+                .admit_iter(graph.as_slice(), "validate NX pattern graph order")?
                 .enumerate()
                 .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
-            || graph
-                .iter()
-                .any(|reference| reference.layout != graph[0].layout)
+            || ctx.any_by(
+                graph.as_slice(),
+                |reference| Ok(reference.layout != graph[0].layout),
+                "validate NX pattern graph layouts",
+            )?
         {
             continue;
         }
         let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
         let mut data_blocks = Vec::new();
-        for reference in &graph {
+        for reference in ctx
+            .admit_iter(&graph, "copy NX pattern construction blocks")?
+            .copied()
+        {
             let Some(block) = reference.data_block.as_deref() else {
                 continue 'operations;
             };
@@ -1166,11 +1138,15 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         else {
             continue;
         };
-        if data_blocks.iter().any(|block| {
-            block
-                .rsplit_once(":block#")
-                .is_none_or(|(prefix, _)| prefix != store)
-        }) {
+        if ctx.any_by(
+            &data_blocks,
+            |block| {
+                Ok(block
+                    .rsplit_once(":block#")
+                    .is_none_or(|(prefix, _)| prefix != store))
+            },
+            "validate NX pattern construction block owners",
+        )? {
             continue;
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
@@ -1190,7 +1166,10 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         id.push_str(prefix);
         id.push_str(operation_key);
         let mut construction_references = Vec::new();
-        for reference in &graph {
+        for reference in ctx
+            .admit_iter(&graph, "copy NX pattern construction reference IDs")?
+            .copied()
+        {
             ctx.reserve_vec(
                 &mut construction_references,
                 1,
@@ -1225,17 +1204,23 @@ pub(in crate::native) fn feature_pattern_construction_strings(
 ) -> Result<Vec<FeaturePatternConstructionString>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut strings = Vec::new();
-    for payload in payloads {
-        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+    for payload in ctx.admit_iter(payloads, "scan NX pattern string payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.block_ids(),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
         else {
             continue;
         };
-        for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?
-            .into_iter()
-            .enumerate()
-        {
+        let mut decoded = crate::om::string_values(ctx, joined.bytes(), 0)?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..decoded.len()), "visit NX pattern payload strings")? {
+            let Some(value) = decoded.next() else {
+                return Err(ctx.refuse_codec_limit("visit NX pattern payload strings", 0, 1));
+            };
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
-            let Some(source_offset) = joined.source_offset(payload_offset) else {
+            let Some(source_offset) = joined.source_offset(ctx, payload_offset)? else {
                 continue;
             };
             let ordinal_u32 = u32::try_from(ordinal)
@@ -1274,22 +1259,29 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
 ) -> Result<Vec<FeaturePatternConstructionFixedLane>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut lanes = Vec::new();
-    for payload in payloads {
-        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
+    for payload in ctx.admit_iter(payloads, "scan NX pattern fixed-lane payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.block_ids(),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
         else {
             continue;
         };
-        for (ordinal, lane) in crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?
-            .into_iter()
-            .enumerate()
-        {
+        let mut decoded =
+            crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..decoded.len()), "visit NX pattern fixed lanes")? {
+            let Some(lane) = decoded.next() else {
+                return Err(ctx.refuse_codec_limit("visit NX pattern fixed lanes", 0, 1));
+            };
             let payload_offset = lane.offset();
             let Some(lane) =
-                lane.try_map_locations(ctx, |offset, ()| joined.source_offset(offset))?
+                lane.try_map_locations(ctx, |offset, ()| joined.source_offset(ctx, offset))?
             else {
                 continue;
             };
-            let Some(source_offset) = joined.source_offset(payload_offset) else {
+            let Some(source_offset) = joined.source_offset(ctx, payload_offset)? else {
                 continue;
             };
             let ordinal_u32 = u32::try_from(ordinal)
@@ -1316,69 +1308,45 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
 /// Decode exact counted transform lanes from bounded pattern payloads.
 pub(in crate::native) fn feature_pattern_transform_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeaturePatternTransformLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let lane = match crate::om::pattern_payload_transform_lane(ctx, record.payload_view()) {
-                Ok(Some(lane)) => lane,
-                Ok(None) => return,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
+            let Some(lane) = crate::om::pattern_payload_transform_lane(ctx, record.payload_view())?
+            else {
+                continue;
             };
-            let rows = match lane.rows.map_charged(
+            let rows = lane.rows.map_charged(
                 ctx,
                 |selector| crate::om::compact::LocatedCompactIndex {
                     atom: selector.atom,
                     offset: entry_offset + cadmpeg_core::decode::u64_from_index(selector.offset),
                 },
                 |offset| entry_offset + cadmpeg_core::decode::u64_from_index(offset),
-            ) {
-                Ok(rows) => rows,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let id = match format_feature_history_id(
+            )?;
+            let id = format_feature_history_id(
                 ctx,
                 "pattern-transform-lane",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(id) => id,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let operation_label = match format_feature_history_id(
+            )?;
+            let operation_label = format_feature_history_id(
                 ctx,
                 "operation-label",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(label) => label,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX pattern transform lanes") {
-                failure = Some(error);
-                return;
-            }
+            )?;
+            ctx.reserve_vec(&mut lanes, 1, "NX pattern transform lanes")?;
             lanes.push(FeaturePatternTransformLane {
                 id,
                 operation_label,
@@ -1386,10 +1354,7 @@ pub(in crate::native) fn feature_pattern_transform_lanes(
                 rows,
                 source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+        }
     }
     Ok(lanes)
 }
@@ -1397,75 +1362,51 @@ pub(in crate::native) fn feature_pattern_transform_lanes(
 /// Decode exact counted output lanes from bounded multi-instance payloads.
 pub(in crate::native) fn feature_multi_instance_output_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureMultiInstanceOutputLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
             let lane =
                 match crate::om::multi_instance_output_payload_lane(ctx, record.payload_view()) {
                     Ok(Some(lane)) => lane,
-                    Ok(None) => return,
+                    Ok(None) => continue,
                     Err(error) => {
-                        failure = Some(error);
-                        return;
+                        return Err(error);
                     }
                 };
-            let outputs = match lane.outputs.map_offsets(ctx, |offset| {
+            let outputs = lane.outputs.map_offsets(ctx, |offset| {
                 entry_offset + cadmpeg_core::decode::u64_from_index(offset)
-            }) {
-                Ok(outputs) => outputs,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let id = match format_feature_history_id(
+            })?;
+            let id = format_feature_history_id(
                 ctx,
                 "multi-instance-output-lane",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(id) => id,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let operation_label = match format_feature_history_id(
+            )?;
+            let operation_label = format_feature_history_id(
                 ctx,
                 "operation-label",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(label) => label,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX multi-instance output lanes") {
-                failure = Some(error);
-                return;
-            }
+            )?;
+            ctx.reserve_vec(&mut lanes, 1, "NX multi-instance output lanes")?;
             lanes.push(FeatureMultiInstanceOutputLane {
                 id,
                 operation_label,
                 outputs,
                 source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+        }
     }
     Ok(lanes)
 }
@@ -1474,72 +1415,44 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(
 /// payloads.
 pub(in crate::native) fn feature_identical_instance_output_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureIdenticalInstanceOutputLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
             let lane =
-                match crate::om::identical_instance_output_payload_lane(ctx, record.payload_view())
-                {
-                    Ok(lane) => lane,
-                    Err(error) => {
-                        failure = Some(error);
-                        return;
-                    }
-                };
+                crate::om::identical_instance_output_payload_lane(ctx, record.payload_view())?;
             let Some(lane) = lane else {
-                return;
+                continue;
             };
-            let selectors = match lane.selectors.map_charged(ctx, |token| {
+            let selectors = lane.selectors.map_charged(ctx, |token| {
                 Ok(crate::om::compact::LocatedCompactIndex {
                     atom: token.atom,
                     offset: entry_offset + cadmpeg_core::decode::u64_from_index(token.offset),
                 })
-            }) {
-                Ok(selectors) => selectors,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let id = match format_feature_history_id(
+            })?;
+            let id = format_feature_history_id(
                 ctx,
                 "identical-instance-output-lane",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(id) => id,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let operation_label = match format_feature_history_id(
+            )?;
+            let operation_label = format_feature_history_id(
                 ctx,
                 "operation-label",
                 section_key,
                 operation_ordinal,
                 None,
-            ) {
-                Ok(label) => label,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            if let Err(error) = ctx.reserve_vec(&mut lanes, 1, "NX identical-instance output lanes")
-            {
-                failure = Some(error);
-                return;
-            }
+            )?;
+            ctx.reserve_vec(&mut lanes, 1, "NX identical-instance output lanes")?;
             lanes.push(FeatureIdenticalInstanceOutputLane {
                 id,
                 operation_label,
@@ -1548,13 +1461,9 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
                 selectors,
                 source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
-        },
-    )?;
-    if let Some(error) = failure {
-        Err(error)
-    } else {
-        Ok(lanes)
+        }
     }
+    Ok(lanes)
 }
 
 use super::deserialize_reference_lane_count;

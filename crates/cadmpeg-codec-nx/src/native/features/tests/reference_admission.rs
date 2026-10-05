@@ -151,7 +151,10 @@ fn extrude_32_branch_route_refusal(
     let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
     let container = reference_container("EXTRUDE", bytes.to_vec());
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_extrude_payload_32_branches(ctx, &container)
+        feature_extrude_payload_32_branches(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     };
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| decode(ctx))
@@ -181,7 +184,10 @@ fn block_reference_refusal(
     payload.extend([0; 4]);
     let container = reference_container("BLOCK", payload);
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_block_construction_references(ctx, &container)
+        feature_block_construction_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     };
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| decode(ctx))
@@ -337,20 +343,32 @@ fn operation_lane_refusal(
     };
     let container = reference_container(label, bytes.to_vec());
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
-        OperationLaneRoute::Terminal => {
-            feature_operation_terminal_discriminators(ctx, &container).map(|rows| rows.len())
-        }
-        OperationLaneRoute::ScalarTriple => {
-            feature_operation_body_scalar_triples(ctx, &container).map(|rows| rows.len())
-        }
-        OperationLaneRoute::BodyMember => {
-            feature_operation_body_members(ctx, &container).map(|rows| rows.len())
-        }
-        OperationLaneRoute::Continuation => {
-            feature_operation_body_11_continuations(ctx, &container).map(|rows| rows.len())
-        }
+        OperationLaneRoute::Terminal => feature_operation_terminal_discriminators(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|rows| rows.len()),
+        OperationLaneRoute::ScalarTriple => feature_operation_body_scalar_triples(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|rows| rows.len()),
+        OperationLaneRoute::BodyMember => feature_operation_body_members(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|rows| rows.len()),
+        OperationLaneRoute::Continuation => feature_operation_body_11_continuations(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|rows| rows.len()),
         OperationLaneRoute::CompactReferences | OperationLaneRoute::ObjectReferences => {
-            feature_operation_body_reference_lanes(ctx, &container).map(|rows| rows.len())
+            feature_operation_body_reference_lanes(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )
+            .map(|rows| rows.len())
         }
     };
     assert_eq!(
@@ -456,12 +474,16 @@ fn extrude_route_refusal(
     };
     let container = reference_container("EXTRUDE", payload);
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
-        ExtrudeRoute::Profile => {
-            feature_extrude_profile_references(ctx, &container).map(|rows| rows.len())
-        }
-        ExtrudeRoute::Header => {
-            feature_extrude_payload_headers(ctx, &container).map(|rows| rows.len())
-        }
+        ExtrudeRoute::Profile => feature_extrude_profile_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|rows| rows.len()),
+        ExtrudeRoute::Header => feature_extrude_payload_headers(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|rows| rows.len()),
     };
     let expected = match route {
         ExtrudeRoute::Profile => 2,
@@ -535,7 +557,10 @@ fn swp104_branch_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = swp104_container();
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_swp104_leading_branches(ctx, &container)
+        feature_swp104_leading_branches(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     };
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| decode(ctx))
@@ -594,7 +619,10 @@ fn point_lane_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = point_lane_container();
     let headers = crate::test_support::with_decode_context(|ctx| {
-        feature_point_construction_headers(ctx, &container)
+        feature_point_construction_headers(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("point construction headers");
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -649,7 +677,10 @@ fn point_lane_ordinal_text_parsing_propagates_work_refusal() {
 
     let container = point_lane_container();
     let headers = crate::test_support::with_decode_context(|ctx| {
-        feature_point_construction_headers(ctx, &container)
+        feature_point_construction_headers(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("point construction headers");
     for operation in [
@@ -676,7 +707,10 @@ fn point_header_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = point_header_container();
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_point_construction_headers(ctx, &container)
+        feature_point_construction_headers(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     };
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| decode(ctx))
@@ -752,8 +786,14 @@ fn projected_curve_payload_refusal(
     let container = projected_curve_payload_container();
     let (labels, references) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
-            feature_operation_labels(ctx, &container)?,
-            feature_projected_curve_references(ctx, &container)?,
+            feature_operation_labels(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
+            feature_projected_curve_references(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
         ))
     })
     .expect("projected curve payload inputs");
@@ -776,13 +816,49 @@ fn projected_curve_payload_refusal(
     )
 }
 
+#[test]
+fn projected_curve_reference_order_check_propagates_work_refusal() {
+    let container = projected_curve_payload_container();
+    let (labels, references) = crate::test_support::with_decode_context(|ctx| {
+        Ok::<_, cadmpeg_core::CodecError>((
+            feature_operation_labels(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
+            feature_projected_curve_references(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
+        ))
+    })
+    .expect("projected curve payload inputs");
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "check NX projected-curve reference order",
+        |ctx| feature_projected_curve_construction_payloads(ctx, &container, &labels, &references),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "check NX projected-curve reference order"
+    ));
+}
+
 fn projected_curve_string_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = projected_curve_payload_container();
     let payloads = crate::test_support::with_decode_context(|ctx| {
-        let labels = feature_operation_labels(ctx, &container)?;
-        let references = feature_projected_curve_references(ctx, &container)?;
+        let labels = feature_operation_labels(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )?;
+        let references = feature_projected_curve_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )?;
         feature_projected_curve_construction_payloads(ctx, &container, &labels, &references)
     })
     .expect("projected curve construction payloads");
@@ -931,7 +1007,10 @@ fn projected_curve_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = projected_curve_container();
     let records = crate::test_support::with_decode_context(|ctx| {
-        feature_projected_curve_references(ctx, &container)
+        feature_projected_curve_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted projected curve references");
     assert_eq!(records.len(), 3);
@@ -942,7 +1021,8 @@ fn projected_curve_route_refusal(
             configure(policy);
         },
         |ctx| {
-            feature_projected_curve_references(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_projected_curve_references(ctx, &history))
                 .expect_err("projected curve reference resource limit")
         },
     )
@@ -962,15 +1042,21 @@ fn reference_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let call = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route {
-        ReferenceRoute::Surface => {
-            feature_surface_construction_references(ctx, container).map(|records| records.len())
-        }
-        ReferenceRoute::Draft => {
-            feature_draft_construction_references(ctx, container).map(|records| records.len())
-        }
-        ReferenceRoute::ThruCurveEnvelope => {
-            feature_thru_curve_construction_envelopes(ctx, container).map(|records| records.len())
-        }
+        ReferenceRoute::Surface => feature_surface_construction_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, container)?,
+        )
+        .map(|records| records.len()),
+        ReferenceRoute::Draft => feature_draft_construction_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, container)?,
+        )
+        .map(|records| records.len()),
+        ReferenceRoute::ThruCurveEnvelope => feature_thru_curve_construction_envelopes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, container)?,
+        )
+        .map(|records| records.len()),
     };
     let records =
         crate::test_support::with_decode_context(call).expect("admitted feature references");
@@ -1146,7 +1232,10 @@ fn surface_payload_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = surface_payload_container();
     let references = crate::test_support::with_decode_context(|ctx| {
-        feature_surface_construction_references(ctx, &container)
+        feature_surface_construction_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted surface references");
     assert_eq!(references.len(), 14);
@@ -1556,7 +1645,10 @@ fn draft_terminal_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = draft_container();
     let lanes = crate::test_support::with_decode_context(|ctx| {
-        feature_draft_construction_terminal_lanes(ctx, &container)
+        feature_draft_construction_terminal_lanes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted draft terminal lane");
     assert_eq!(lanes.len(), 1);
@@ -1567,7 +1659,8 @@ fn draft_terminal_route_refusal(
             configure(policy);
         },
         |ctx| {
-            feature_draft_construction_terminal_lanes(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_draft_construction_terminal_lanes(ctx, &history))
                 .expect_err("draft terminal lane resource limit")
         },
     )
@@ -1629,7 +1722,12 @@ fn draft_index_route_refusal(
             policy.limits.max_materialized_bytes =
                 cadmpeg_core::decode::u64_from_index(2 * 7039 * 21 * node + 7039 * 64);
         },
-        |ctx| feature_draft_construction_index_lanes(ctx, &container),
+        |ctx| {
+            feature_draft_construction_index_lanes(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )
+        },
     )
     .expect("admitted draft index lane");
     assert_eq!(lanes.len(), 1);
@@ -1656,7 +1754,8 @@ fn draft_index_route_refusal(
             configure(policy);
         },
         |ctx| {
-            feature_draft_construction_index_lanes(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_draft_construction_index_lanes(ctx, &history))
                 .expect_err("draft index lane resource limit")
         },
     )

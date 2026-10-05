@@ -39,7 +39,9 @@ mod color_wire;
 pub(super) mod column_index;
 use column_index::ColumnIndexRows;
 
+use crate::native::features::FeatureHistory;
 use crate::native::segments::{segment_om_links, SegmentOmLink};
+use crate::om::discriminators::IndexRowMode;
 use crate::om::parameter_name::ParameterName;
 pub(super) mod roll_forward;
 use crate::om::IndexedStore;
@@ -193,18 +195,6 @@ fn linked_section<'s, 'c>(
     )
 }
 
-/// Canonical feature-history links in history order, with the framed sections.
-fn canonical_history_sections<'c>(
-    ctx: &DecodeContext<'_>,
-    container: &'c Container,
-) -> Result<(Vec<SegmentOmLink>, Vec<FramedSection<'c>>), CodecError> {
-    let links = crate::native::features::canonical_feature_history_links(
-        ctx,
-        segment_om_links(ctx, container)?,
-    )?;
-    Ok((links, container.om_sections(ctx)?))
-}
-
 /// Decode internally pointed record areas from linked OM sections.
 pub(super) fn om_record_areas(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -343,21 +333,18 @@ pub(super) fn audit_trail_rows(
 /// Decode exact object state-counter rows from canonical feature-history areas.
 pub(super) fn operation_state_counters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateCounter>, cadmpeg_core::CodecError> {
-    let (links, sections) = canonical_history_sections(ctx, container)?;
     let mut out = Vec::new();
-    for (section_ordinal, link) in ctx
-        .admit_iter(&links, "NX canonical OM section links")?
-        .enumerate()
-    {
-        let Some((entry, section)) = linked_section(ctx, &sections, link)? else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(map) = section.operation_state_counter_map(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let entry_offset = history_section.entry_offset;
         for (ordinal, row) in map.into_rows().enumerate() {
             ctx.charge_work(1, "NX operation state counters")?;
             let Ok(ordinal) = u32::try_from(ordinal) else {
@@ -389,21 +376,18 @@ pub(super) fn operation_state_counters(
 /// Decode anchored state-journal groups from canonical feature-history areas.
 pub(super) fn operation_state_journal_groups(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateJournalGroup>, cadmpeg_core::CodecError> {
-    let (links, sections) = canonical_history_sections(ctx, container)?;
     let mut out = Vec::new();
-    for (section_ordinal, link) in ctx
-        .admit_iter(&links, "NX canonical OM section links")?
-        .enumerate()
-    {
-        let Some((entry, section)) = linked_section(ctx, &sections, link)? else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(groups) = section.operation_state_journal_groups(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let entry_offset = history_section.entry_offset;
         let group_count = groups.len();
         let mut groups = groups.into_iter();
         for ordinal in ctx.admit_iter(&(0..group_count), "NX operation state journal groups")? {
@@ -439,34 +423,35 @@ pub(super) fn operation_state_journal_groups(
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
 pub(super) fn operation_state_groups(
     ctx: &DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
-    let (links, sections) = canonical_history_sections(ctx, container)?;
     let mut output = Vec::new();
-    for (section_ordinal, link) in ctx
-        .admit_iter(&links, "NX canonical OM section links")?
-        .enumerate()
-    {
-        let Some((entry, section)) = linked_section(ctx, &sections, link)? else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(table) = section.operation_state_group_table(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let entry_offset = history_section.entry_offset;
         let table_end_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(table.end_offset()))
             .ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward table end offset", 0, 1))?;
         let table_footer = table.footer();
-        let table = OmRollForwardStateTable::from_frames(
+        let groups = OmRollForwardStateTable::groups_from_frames(
             ctx,
             section_ordinal,
+            table.into_groups(),
+            |group| group.into_absolute(entry_offset),
+        )?;
+        let table = OmRollForwardStateTable::new(
+            ctx,
             &link.id,
             &entry.name,
             table_footer,
             table_end_offset,
-            table.into_groups(),
-            |group| group.into_absolute(entry_offset),
+            groups,
         )?;
         ctx.reserve_vec(&mut output, 1, "NX roll-forward state tables")?;
         output.push(table);
@@ -477,21 +462,18 @@ pub(super) fn operation_state_groups(
 /// Decode standalone operation-state messages from canonical feature-history areas.
 pub(super) fn operation_state_messages(
     ctx: &DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateMessage>, CodecError> {
-    let (links, sections) = canonical_history_sections(ctx, container)?;
     let mut output = Vec::new();
-    for (section_ordinal, link) in ctx
-        .admit_iter(&links, "NX canonical OM section links")?
-        .enumerate()
-    {
-        let Some((entry, section)) = linked_section(ctx, &sections, link)? else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(messages) = section.operation_state_messages(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let entry_offset = history_section.entry_offset;
         for (ordinal, message) in ctx
             .admit_iter(&messages, "NX operation state messages")?
             .enumerate()
@@ -527,21 +509,18 @@ pub(super) fn operation_state_messages(
 /// Decode exact per-object operation-state status rows from feature-history areas.
 pub(super) fn operation_state_statuses(
     ctx: &DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateStatus>, CodecError> {
-    let (links, sections) = canonical_history_sections(ctx, container)?;
     let mut output = Vec::new();
-    for (section_ordinal, link) in ctx
-        .admit_iter(&links, "NX canonical OM section links")?
-        .enumerate()
-    {
-        let Some((entry, section)) = linked_section(ctx, &sections, link)? else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(table) = section.operation_state_status_table(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let entry_offset = history_section.entry_offset;
         let mut matched = 0_usize;
         for (offset, entry_row) in table.into_entries() {
             ctx.charge_work(1, "NX operation state statuses")?;
@@ -593,21 +572,18 @@ pub(super) fn operation_state_statuses(
 /// Decode exact feature-record slot lanes from feature-history status blocks.
 pub(super) fn operation_state_slot_lanes(
     ctx: &DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<OmOperationStateSlotLane>, CodecError> {
-    let (links, sections) = canonical_history_sections(ctx, container)?;
     let mut output = Vec::new();
-    for (section_ordinal, link) in ctx
-        .admit_iter(&links, "NX canonical OM section links")?
-        .enumerate()
-    {
-        let Some((entry, section)) = linked_section(ctx, &sections, link)? else {
-            continue;
-        };
+    for history_section in ctx.admit_iter(history.sections(), "NX canonical OM section links")? {
+        let section_ordinal = history_section.ordinal;
+        let link = &history_section.link;
+        let entry = history_section.entry;
+        let section = &history_section.section;
         let Some(table) = section.operation_state_status_table(ctx)? else {
             continue;
         };
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let entry_offset = history_section.entry_offset;
         let mut matched = 0_usize;
         for (offset, entry_row) in table.into_entries() {
             ctx.charge_work(1, "NX operation state slot lanes")?;
@@ -4038,9 +4014,9 @@ fn xml_root_element<'document, 'input>(
     }
 }
 
-fn xml_attribute<'document, 'input, const NAMES: usize>(
+fn xml_attribute<'document, const NAMES: usize>(
     ctx: &DecodeContext<'_>,
-    node: roxmltree::Node<'document, 'input>,
+    node: roxmltree::Node<'document, '_>,
     names: &[&str; NAMES],
 ) -> Result<Option<&'document str>, CodecError> {
     for name in names {
@@ -5694,7 +5670,6 @@ pub(super) fn data_block_column_index_tables(
         let Some((last_target, target_prefix)) = targets.split_last() else {
             continue;
         };
-        use crate::om::discriminators::IndexRowMode;
         if opening.frame.mode() != IndexRowMode::Form07
             || suffix.is_empty()
             || ctx.any_by(
@@ -6383,6 +6358,8 @@ pub(super) fn expression_declarations(
     Ok(declarations)
 }
 
+/// Table name preceding host global variable declarations.
+const TABLE_MARKER: &[u8] = b"hostglobalvariables";
 /// Decode explicit numeric expressions from all indexed OM sections.
 pub(super) fn expressions(
     ctx: &DecodeContext<'_>,
@@ -6453,7 +6430,6 @@ pub(super) fn expressions(
         let Some(payload) = container.data.get(offset..end) else {
             continue;
         };
-        const TABLE_MARKER: &[u8] = b"hostglobalvariables";
         let numeric_records = crate::om::numeric_expressions(ctx, payload)?;
         if numeric_records.is_empty() {
             continue;

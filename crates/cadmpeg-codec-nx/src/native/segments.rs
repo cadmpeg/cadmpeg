@@ -269,21 +269,29 @@ pub(super) fn unique_segment_body_alias_binding<'a>(
     })
 }
 
-/// Return the only matching binding, visiting no binding after a second match.
 fn unique_binding<'a>(
     ctx: &DecodeContext<'_>,
     bindings: &'a [SegmentBodyBinding],
     matches: impl Fn(&SegmentBodyBinding) -> bool,
 ) -> Result<Option<&'a SegmentBodyBinding>, CodecError> {
-    let operation = "match NX segment body bindings";
-    let Some(first) = ctx.position_by(bindings, |binding| Ok(matches(binding)), operation)? else {
-        return Ok(None);
-    };
-    let (found, rest) = bindings.split_at(first + 1);
-    if ctx.any_by(rest, |binding| Ok(matches(binding)), operation)? {
-        return Ok(None);
-    }
-    Ok(found.last())
+    super::unique_by(
+        ctx,
+        bindings,
+        |binding| Ok(matches(binding)),
+        "match NX segment body bindings",
+    )
+}
+
+/// Return the only plain-stream binding whose alias identity is `object_index`.
+pub(super) fn unique_plain_alias_binding<'a>(
+    ctx: &DecodeContext<'_>,
+    object_index: u32,
+    bindings: &'a [SegmentBodyBinding],
+) -> Result<Option<&'a SegmentBodyBinding>, CodecError> {
+    unique_binding(ctx, bindings, |binding| {
+        binding.stream_kind == crate::parasolid::StreamKind::Plain
+            && binding.body_alias_object_index == object_index
+    })
 }
 
 /// Unambiguous terminal status of one segment-bound body image.
