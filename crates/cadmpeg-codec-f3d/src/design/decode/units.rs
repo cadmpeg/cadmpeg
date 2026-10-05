@@ -30,6 +30,8 @@ const UNIT_ENTRY_COUNT: u32 = 19;
 const CUSTOM_SYSTEM: &str = "Custom";
 /// The property name of the `Custom` system's `ModelingLength` entry.
 const MODELING_LENGTH_PROPERTY: &str = "modelingLengthName";
+/// The suffix a unit-system name appends to the system key.
+const SYSTEM_NAME_SUFFIX: &str = "UnitSystemName";
 /// The namespace every unit-system record stores.
 const SYSTEM_NAMESPACE: &str = "NaFusion";
 /// The namespace every unit-entry record stores.
@@ -100,15 +102,6 @@ fn references<const N: usize>(bytes: &[u8], at: usize) -> Option<[u32; N]> {
     Some(out)
 }
 
-/// Whether `text` equals the literal `expected`.
-fn text_is(ctx: &DecodeContext<'_>, text: &str, expected: &str) -> Result<bool, CodecError> {
-    ctx.equal_bytes(
-        text.as_bytes(),
-        expected.as_bytes(),
-        "match F3D unit record text",
-    )
-}
-
 /// The payload of one unit-system record: its key and its unit-entry
 /// references. The record stores the key, a label, byte `01`, the name
 /// `<key>UnitSystemName`, the `NaFusion` namespace, four zero bytes, and the
@@ -130,16 +123,17 @@ fn unit_system<'bytes>(
     let Some((name, position)) = ascii_at(ctx, bytes, position + 1)? else {
         return Ok(None);
     };
-    let Some(suffix) = ctx.strip_prefix(name, key, "match F3D unit system name")? else {
-        return Ok(None);
-    };
-    if !text_is(ctx, suffix, "UnitSystemName")? {
+    // The name is the key followed by a fixed suffix; the suffix comparison
+    // reads at most the literal's length.
+    if name.as_bytes().get(key.len()..) != Some(SYSTEM_NAME_SUFFIX.as_bytes())
+        || !ctx.starts_with(name, key, "match F3D unit system name")?
+    {
         return Ok(None);
     }
     let Some((namespace, position)) = ascii_at(ctx, bytes, position)? else {
         return Ok(None);
     };
-    if !text_is(ctx, namespace, SYSTEM_NAMESPACE)? {
+    if namespace.as_bytes() != SYSTEM_NAMESPACE.as_bytes() {
         return Ok(None);
     }
     Ok(expect_zero_quad(bytes, position)
@@ -182,7 +176,7 @@ fn unit_entry<'bytes>(
     let Some((namespace, position)) = ascii_at(ctx, bytes, position)? else {
         return Ok(None);
     };
-    if !text_is(ctx, namespace, ENTRY_NAMESPACE)? {
+    if namespace.as_bytes() != ENTRY_NAMESPACE.as_bytes() {
         return Ok(None);
     }
     let Some(position) = expect_zero_quad(bytes, position) else {
@@ -249,7 +243,7 @@ fn custom_length_unit(
                 else {
                     return Ok(None);
                 };
-                if !text_is(ctx, key, CUSTOM_SYSTEM)? {
+                if key.as_bytes() != CUSTOM_SYSTEM.as_bytes() {
                     return Ok(None);
                 }
                 for entry in entries {
@@ -264,7 +258,8 @@ fn custom_length_unit(
                             else {
                                 return Ok(None);
                             };
-                            Ok(text_is(ctx, property, MODELING_LENGTH_PROPERTY)?.then_some(value))
+                            Ok((property.as_bytes() == MODELING_LENGTH_PROPERTY.as_bytes())
+                                .then_some(value))
                         },
                         "scan F3D unit entry records",
                     )?;
@@ -291,12 +286,13 @@ fn custom_length_unit(
 /// the five stored length unit names is rejected: the search is a byte scan,
 /// and the closed name set is what separates the collection from bytes that
 /// merely read like one. The stream's indexed headers are indexed once, when
-/// the first candidate names its six systems.
+/// the first candidate names its six systems, and held under a scoped
+/// reservation until the stream is done.
 fn decode_modeling_length_unit(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<String>, CodecError> {
-    let mut offsets = None;
+    let mut index = None;
     let mut position = 0;
     while let Some(count_at) = next_collection_count(ctx, bytes, position)? {
         position = count_at;
@@ -304,9 +300,9 @@ fn decode_modeling_length_unit(
         else {
             continue;
         };
-        let offsets = match &mut offsets {
-            Some(offsets) => offsets,
-            None => offsets.insert(IndexedRecordOffsets::build(ctx, bytes)?),
+        let (offsets, _storage) = match &mut index {
+            Some(index) => index,
+            None => index.insert(IndexedRecordOffsets::build_scoped(ctx, bytes)?),
         };
         if let Some(unit) = custom_length_unit(ctx, bytes, offsets, systems)? {
             return Ok(Some(
