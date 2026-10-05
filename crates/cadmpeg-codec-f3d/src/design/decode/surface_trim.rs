@@ -113,6 +113,8 @@ fn exact_surface_trim_operation(
     // Every entry is read before the uniqueness tests; any failed test leaves
     // the scope without a carrier, so the order of the tests does not matter.
     let mut scratch = ctx.reserve_scoped(0, "f3d surface-trim cell keys")?;
+    // The entries become retained only when the carrier is complete.
+    let mut entries_storage = ctx.reserve_scoped(0, "f3d surface-trim cell entries")?;
     let mut cell_entries = Vec::new();
     let mut cell_record_indices = Vec::new();
     let mut cell_ordinals = Vec::new();
@@ -144,7 +146,8 @@ fn exact_surface_trim_operation(
             ordinal_value,
             "f3d surface-trim cell ordinals",
         )?;
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut entries_storage,
             &mut cell_entries,
             DesignSurfaceTrimCellEntry {
                 record_index: cell_record_index,
@@ -197,7 +200,11 @@ fn exact_surface_trim_operation(
             trailing_zero_offset: u64_from_index(prefix.trailing_zero_offset),
         },
     );
-    Ok(operation.ok())
+    let Ok(operation) = operation else {
+        return Ok(None);
+    };
+    entries_storage.commit()?;
+    Ok(Some(operation))
 }
 
 /// Whether `values` holds a value twice. The values are sorted in place and

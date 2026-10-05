@@ -4,7 +4,9 @@
 use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
-use crate::design::decode::image::embedded_image_asset;
+use crate::design::decode::image::{
+    embedded_image_asset, embedded_image_entry, neutral_asset_id_charged,
+};
 use crate::design::decode::record_streams::{has_stream, record_stream};
 use crate::design::decode::scopes::shared_frames::{exact_indexed_header_at, marked_reference};
 use crate::design::decode::sketch::{indexed_record_header_at, IndexedRecordOffsets};
@@ -65,7 +67,10 @@ pub(crate) fn project_canvas_images(
         else {
             continue;
         };
-        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+        let (feature_id, _feature_id_storage) = ctx
+            .with_scoped_storage("f3d Canvas neutral feature ID", || {
+                crate::design::identity::neutral_feature_id(ctx, scope)
+            })?;
         let Some(feature_index) = ctx.position_by(
             features,
             |feature| {
@@ -85,16 +90,11 @@ pub(crate) fn project_canvas_images(
         };
         let (mirror_u, mirror_v) = image.geometry().boundary.mirroring();
         let [minimum, maximum] = image.geometry().boundary.extents();
-        // The asset is retained only when it is the first with its ID.
-        let (asset, asset_storage) = ctx.with_scoped_storage("f3d Canvas assets", || {
-            embedded_image_asset(ctx, scan, image.asset_name())
-        })?;
-        let Some(asset) = asset else {
+        let Some(entry) = embedded_image_entry(ctx, scan, image.asset_name())? else {
             continue;
         };
-        let asset_id = asset
-            .id
-            .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
+        let asset_id = neutral_asset_id_charged(ctx, &entry.name)?;
+        // The image bytes are copied only for the first asset with its ID.
         if !ctx.any_by(
             &assets,
             |candidate: &Asset| {
@@ -106,7 +106,8 @@ pub(crate) fn project_canvas_images(
             },
             "find F3D Canvas asset",
         )? {
-            asset_storage.commit()?;
+            let id = asset_id.try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
+            let asset = embedded_image_asset(ctx, scan, entry, image.asset_name(), id)?;
             ctx.push_vec(&mut assets, asset, "f3d Canvas assets")?;
         }
         let (opacity, frame) = image.geometry().payload.decoded();
@@ -604,15 +605,16 @@ mod tests {
                     && limit.operation == "find F3D Canvas neutral feature")
             );
             for (dimension, operation) in [
-                (
-                    ResourceDimension::MaterializedBytes,
-                    "f3d embedded image data",
-                ),
+                (ResourceDimension::RetainedBytes, "f3d asset identifier"),
                 (
                     ResourceDimension::RetainedBytes,
                     "f3d image feature asset identifier",
                 ),
-                (ResourceDimension::RetainedBytes, "f3d Canvas assets"),
+                (ResourceDimension::RetainedBytes, "f3d embedded image data"),
+                (
+                    ResourceDimension::MaterializedBytes,
+                    "f3d feature identifier",
+                ),
                 (ResourceDimension::CollectionItems, "f3d Canvas assets"),
             ] {
                 let error =

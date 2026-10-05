@@ -40,13 +40,15 @@ pub(crate) fn decode_component_occurrences(
             // A header offset indexes `bytes`, so the successor stays in range.
             let next = next_indexed_record_header(ctx, bytes, header.offset + 1, |_| true)?;
             if let Some(end) = next.map(|next| next.offset) {
-                if let Some(occurrence) =
-                    exact_component_occurrence(ctx, bytes, &header, end, &scope)?
-                {
+                let (occurrence, storage) = ctx
+                    .with_scoped_storage("f3d decoded component occurrence", || {
+                        exact_component_occurrence(ctx, bytes, &header, end, &scope)
+                    })?;
+                if let Some(occurrence) = occurrence {
                     ctx.push_scoped_vec(
                         &mut scratch,
                         &mut candidates,
-                        occurrence,
+                        (occurrence, storage),
                         "f3d component occurrence candidates",
                     )?;
                 }
@@ -56,12 +58,13 @@ pub(crate) fn decode_component_occurrences(
     }
     ctx.stable_sort_by(
         &mut candidates[..],
-        |value| &value.id,
+        |(value, _)| &value.id,
         Ord::cmp,
         "sort f3d design components 1",
     )?;
+    // The first occurrence of each identity becomes retained.
     let mut occurrences = Vec::new();
-    for occurrence in candidates {
+    for (occurrence, storage) in candidates {
         ctx.charge_work(1, "dedup f3d design components")?;
         if let Some(kept) = occurrences.last() {
             let kept: &DesignComponentOccurrence = kept;
@@ -73,6 +76,7 @@ pub(crate) fn decode_component_occurrences(
                 continue;
             }
         }
+        storage.commit()?;
         ctx.push_vec(
             &mut occurrences,
             occurrence,

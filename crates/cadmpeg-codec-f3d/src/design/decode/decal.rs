@@ -4,7 +4,9 @@
 use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::byte_fields::zeros_at;
-use crate::design::decode::image::embedded_image_asset;
+use crate::design::decode::image::{
+    embedded_image_asset, embedded_image_entry, neutral_asset_id_charged,
+};
 use crate::design::decode::record_streams::{has_stream, record_stream};
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::{
@@ -105,35 +107,62 @@ pub(crate) fn project_decal_images(
         else {
             continue;
         };
-        let mut faces = Vec::new();
-        for reference in
-            ctx.admit_iter(operand.references(), "scan F3D Decal operand references")?
-        {
-            for face in
-                ctx.admit_iter(&reference.candidate_faces, "scan F3D Decal face candidates")?
+        // The faces, the asset ID and a new asset become retained only when
+        // the image binds a neutral feature.
+        let (faces, faces_storage) = ctx.with_scoped_storage("f3d Decal faces", || {
+            let mut faces = Vec::new();
+            for reference in
+                ctx.admit_iter(operand.references(), "scan F3D Decal operand references")?
             {
-                let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
-                ctx.push_vec(&mut faces, copied, "f3d Decal faces")?;
+                for face in
+                    ctx.admit_iter(&reference.candidate_faces, "scan F3D Decal face candidates")?
+                {
+                    let copied = face.try_clone_for_decode(ctx, "f3d Decal face identifier")?;
+                    ctx.push_vec(&mut faces, copied, "f3d Decal faces")?;
+                }
             }
-        }
-        ctx.stable_sort_by(
-            &mut faces[..],
-            |value| value.as_str(),
-            Ord::cmp,
-            "sort f3d design decal 1",
-        )?;
-        ctx.dedup_vec(&mut faces, "dedup f3d design decal faces")?;
+            ctx.stable_sort_by(
+                &mut faces[..],
+                |value| value.as_str(),
+                Ord::cmp,
+                "sort f3d design decal 1",
+            )?;
+            ctx.dedup_vec(&mut faces, "dedup f3d design decal faces")?;
+            Ok::<_, CodecError>(faces)
+        })?;
         if faces.is_empty() {
             continue;
         }
-        // The asset is retained only when it is the first with its ID.
-        let (asset, asset_storage) = ctx.with_scoped_storage("f3d Decal assets", || {
-            embedded_image_asset(ctx, scan, image.asset.name())
-        })?;
-        let Some(asset) = asset else {
+        let Some(entry) = embedded_image_entry(ctx, scan, image.asset.name())? else {
             continue;
         };
-        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+        let mut asset_storage = ctx.reserve_scoped(0, "f3d Decal assets")?;
+        let asset_id = asset_storage.with_storage(|| neutral_asset_id_charged(ctx, &entry.name))?;
+        let known_asset = ctx.any_by(
+            &assets,
+            |candidate: &Asset| {
+                ctx.equal_bytes(
+                    candidate.id.as_str().as_bytes(),
+                    asset_id.as_str().as_bytes(),
+                    "match F3D Decal asset",
+                )
+            },
+            "find F3D Decal asset",
+        )?;
+        // The image bytes are copied only for the first asset with its ID.
+        let asset = if known_asset {
+            None
+        } else {
+            Some(asset_storage.with_storage(|| {
+                let id =
+                    asset_id.try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
+                embedded_image_asset(ctx, scan, entry, image.asset.name(), id)
+            })?)
+        };
+        let (feature_id, _feature_id_storage) = ctx
+            .with_scoped_storage("f3d Decal neutral feature ID", || {
+                crate::design::identity::neutral_feature_id(ctx, scope)
+            })?;
         let Some(feature_index) = ctx.position_by(
             features,
             |feature| {
@@ -151,22 +180,10 @@ pub(crate) fn project_decal_images(
         let Some(feature) = features.get_mut(feature_index) else {
             continue;
         };
-        let asset_id = asset
-            .id
-            .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
         let native_id =
             ctx.copy_retained_text(&operand.id, "f3d Decal native operand identifier")?;
-        let known_asset = ctx.any_by(
-            &assets,
-            |candidate: &Asset| {
-                ctx.equal_bytes(
-                    candidate.id.as_str().as_bytes(),
-                    asset_id.as_str().as_bytes(),
-                    "match F3D Decal asset",
-                )
-            },
-            "find F3D Decal asset",
-        )?;
+        faces_storage.commit()?;
+        asset_storage.commit()?;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {
@@ -178,8 +195,7 @@ pub(crate) fn project_decal_images(
                 mapping: DecalMapping::FitToFaces,
                 opacity: None,
             }));
-        if !known_asset {
-            asset_storage.commit()?;
+        if let Some(asset) = asset {
             ctx.push_vec(&mut assets, asset, "f3d Decal assets")?;
         }
     }
@@ -663,14 +679,26 @@ mod tests {
                 (
                     u64::try_from(face.as_str().len() - 1).unwrap(),
                     u64::MAX,
-                    ResourceDimension::RetainedBytes,
+                    ResourceDimension::MaterializedBytes,
                     "f3d Decal face identifier",
                 ),
                 (
                     u64::try_from(after_embedded + asset_id_len - 1).unwrap(),
                     u64::MAX,
-                    ResourceDimension::RetainedBytes,
+                    ResourceDimension::MaterializedBytes,
                     "f3d image feature asset identifier",
+                ),
+                (
+                    u64::MAX,
+                    u64::MAX,
+                    ResourceDimension::RetainedBytes,
+                    "f3d Decal faces",
+                ),
+                (
+                    u64::MAX,
+                    u64::MAX,
+                    ResourceDimension::RetainedBytes,
+                    "f3d Decal assets",
                 ),
                 (
                     u64::try_from(after_embedded + asset_id_len + operand.id.len() - 1).unwrap(),

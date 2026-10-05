@@ -132,7 +132,7 @@ impl IndexedRecordOffsets {
     }
 
     /// Record indexes and their ascending header offsets, in the byte order of
-    /// each index's first header.
+    /// each index's first header. Every index is admitted up front.
     pub(in crate::design) fn records(
         &self,
         ctx: &DecodeContext<'_>,
@@ -225,7 +225,8 @@ impl IndexedRecordOffsets {
     }
 
     /// Consecutive header offsets carrying `record_index`, each pair delimiting
-    /// one frame of that record.
+    /// one frame of that record. The whole group is admitted up front; a
+    /// caller that can stop early walks [`Self::offsets`] and pays per pair.
     pub(in crate::design) fn frames(
         &self,
         ctx: &DecodeContext<'_>,
