@@ -632,8 +632,10 @@ mod tests {
                 .map(|key_bytes| *key_bytes * archive_map_comparisons)
                 .sum::<usize>(),
         );
+        // Each of the three names is searched twice for a one-byte pattern,
+        // name bytes plus one each, and scanned once for path components.
         let archive_name_validation_work =
-            cadmpeg_core::decode::u64_from_index(5 * archive_name_bytes + 3 * 4);
+            cadmpeg_core::decode::u64_from_index(3 * archive_name_bytes + 3 * 2);
         // Calibrate one complete schema load followed by both exact framing
         // and decode calls, using the same catalog as the production path.
         let schema_and_instance_decode_succeeds = |limit| {
