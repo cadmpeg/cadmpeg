@@ -410,8 +410,8 @@ require their own operations. Dropping consumed or remaining values is free.
 A search that can stop early (`any`, `all`, `find`, `find_map`, `position`,
 `rposition`) over an admitted iterator is reported: the admission charged
 every visit. `any_by`, `all_by`, `find_by`, `find_map` and `position_by`
-step a fixed-step source and charge each step as it is made, with an end
-probe only when the source does not state its exact length; `rposition_by`
+step a fixed-step source and charge each step as it is made, including the
+end probe of a search that finds nothing; `rposition_by`
 searches a slice from the end the same way.
 
 The standard reflexive `From<T> for T` and its `Into<T>` forwarding move the
@@ -443,8 +443,10 @@ Range receipts identify the range kind and each bound. A move receipt for a
 vector's suffix from an index pays for `Vec::insert` at that index.
 Truncating or clearing a collection needs no receipt.
 
-Decode code uses `HashMap` and `HashSet` only for keyed lookup, insertion
-and removal. Iteration order is unspecified, so decoded output must not
+Decode code uses `HashMap` and `HashSet` only for keyed lookup and
+insertion. A removal leaves a deleted slot that `capacity()` no longer
+counts, and core charges growth from `capacity()`, so a removal is reported;
+a collection that shrinks is a `BTreeMap` or `BTreeSet`. Iteration order is unspecified, so decoded output must not
 depend on it, and a scan walks the allocated table, which has no exact public
 bound once removals leave deleted slots. Traversal (`iter`, `keys`, `values`,
 `values_mut`, `into_keys`, `into_values`, `IntoIterator`, `for` loops), the
@@ -468,12 +470,13 @@ standard key, a key whose `Ord` comes from a derive expansion, or
 Probing is not charged per probe, so the table must use `RandomState`; a
 fixed-key builder such as `BuildHasherDefault<DefaultHasher>` lets an input
 choose colliding keys and retains a finding. Hash growth charges the old
-table's bytes first, which pays for walking its allocated buckets, and then
+table's bytes first, which pays for walking its buckets because an
+insert-only table's `capacity()` counts all of them, and then
 the rehash of every stored key: length times a fixed key cost, or one visit
 per key plus the sum of each variable key's `DecodeCost`, charged as one
-amount so that the visit order cannot move a refusal. `unique_index` keeps
-only keys that occurred once; a repeated key is removed and remembered in a
-scoped side set.
+amount so that the visit order cannot move a refusal. `unique_index` maps a
+key that occurred once to `Some` and keeps a `None` tombstone for a repeated
+key; uniqueness is tested through `get`, not `contains_key`.
 
 A scoped storage receipt names its live reservation local. Moving that
 reservation into another owner invalidates the local receipt. Keep the
@@ -551,7 +554,7 @@ or exhausted bound retains an unproven finding.
 | `serialize` | `parse_json` for derived decode trees; `parse_json_value` for value trees. Rebuild serialized owned fields with `collect_vec` and `format_retained`; custom Serde calls remain unproven |
 | `deserialize` | `parse_json` for derived decode trees; `parse_json_value` for value trees. Rebuild serialized owned fields with `collect_vec` and `format_retained`; custom Serde calls remain unproven |
 | `Clone element layout unresolved` | `collect_vec` with a concrete charged child factory |
-| `remove` | `remove_hash_map`, `remove_btree_map`, `remove_hash_set` or `remove_btree_set` |
+| `remove` | `remove_btree_map` or `remove_btree_set`; hash tables are insert-only |
 | `vector collection storage reuse` | `collect_vec` |
 | `nth` | `admit_iter` |
 | `copy_from_slice` | `copy_into` |
@@ -629,7 +632,7 @@ or exhausted bound retains an unproven finding.
 | `rfind` | `rfind_text` or `rfind_bytes`; `admit_iter` before reverse iterator search |
 | `resize` | `resize_with` |
 | `to_str` | `validate_utf8` |
-| `remove_entry` | `remove_entry_hash_map` or `remove_entry_btree_map` |
+| `remove_entry` | `remove_entry_btree_map`; hash tables are insert-only |
 | `try_for_each` | `admit_iter` |
 | `binary_search_by` | `binary_search_by` |
 | `decompress` | `begin_expand` and `charge_work` for compressed bytes; shared container inflate operations own the scan |
