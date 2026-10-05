@@ -5,6 +5,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_entity_selection_frame;
+use crate::design::decode::record_streams::record_stream;
 use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
@@ -12,7 +13,6 @@ use crate::design::decode::sketch::{
     IndexedRecordHeader, IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id_charged;
-use crate::ids::native_stream;
 use crate::records::feature::{
     scope::DesignParameterScope,
     surface_ops::{
@@ -21,7 +21,7 @@ use crate::records::feature::{
 };
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Decode the exact auxiliary BRep-cell carrier of a `SurfaceTrim` scope.
 ///
@@ -110,14 +110,14 @@ fn exact_surface_trim_operation(
         return Ok(None);
     };
 
-    let mut cell_entries =
-        ctx.vector_storage(prefix.cell_count, "f3d surface-trim cell entries")?;
-    let mut cell_record_indices = HashSet::new();
-    let mut cell_ordinals = HashSet::new();
-    for ordinal in ctx.admit_iter(
-        &(0..prefix.cell_count),
-        "scan F3D surface-trim cell entries",
-    )? {
+    // Every entry is read before the uniqueness tests; any failed test leaves
+    // the scope without a carrier, so the order of the tests does not matter.
+    let mut scratch = ctx.reserve_scoped(0, "f3d surface-trim cell keys")?;
+    let mut cell_entries = Vec::new();
+    let mut cell_record_indices = Vec::new();
+    let mut cell_ordinals = Vec::new();
+    for ordinal in 0..prefix.cell_count {
+        ctx.charge_work(1, "scan F3D surface-trim cell entries")?;
         // `cell_count * 19` fits: the prefix bounded the entry table by `paired`.
         let entry_start = prefix.entries_start + ordinal * 19;
         let Some(cell_record_index) = marked_record_reference(bytes, entry_start) else {
@@ -129,19 +129,21 @@ fn exact_surface_trim_operation(
         if ordinal_value == 0
             || ordinal_value > u64::from(prefix.trailing_value)
             || records.offsets(cell_record_index).is_empty()
-            || !ctx.insert_hash_set(
-                &mut cell_record_indices,
-                cell_record_index,
-                "f3d surface-trim cell record indices",
-            )?
-            || !ctx.insert_hash_set(
-                &mut cell_ordinals,
-                ordinal_value,
-                "f3d surface-trim cell ordinals",
-            )?
         {
             return Ok(None);
         }
+        ctx.push_scoped_vec(
+            &mut scratch,
+            &mut cell_record_indices,
+            cell_record_index,
+            "f3d surface-trim cell record indices",
+        )?;
+        ctx.push_scoped_vec(
+            &mut scratch,
+            &mut cell_ordinals,
+            ordinal_value,
+            "f3d surface-trim cell ordinals",
+        )?;
         ctx.push_vec(
             &mut cell_entries,
             DesignSurfaceTrimCellEntry {
@@ -152,6 +154,17 @@ fn exact_surface_trim_operation(
             },
             "f3d surface-trim cell entries",
         )?;
+    }
+    if has_repeat(
+        ctx,
+        &mut cell_record_indices,
+        "find repeated F3D surface-trim cell record",
+    )? || has_repeat(
+        ctx,
+        &mut cell_ordinals,
+        "find repeated F3D surface-trim cell ordinal",
+    )? {
+        return Ok(None);
     }
     let chain_records = [
         surface_trim_chain_record(ctx, first_chain)?,
@@ -185,6 +198,22 @@ fn exact_surface_trim_operation(
         },
     );
     Ok(operation.ok())
+}
+
+/// Whether `values` holds a value twice. The values are sorted in place and
+/// the search stops at the first repeat.
+fn has_repeat<T: Copy + Ord + cadmpeg_core::decode::cost::DecodeCost>(
+    ctx: &DecodeContext<'_>,
+    values: &mut [T],
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    ctx.sort_unstable_by_key(values, |value| *value, Ord::cmp, operation)?;
+    let mut previous = None;
+    ctx.any_by(
+        values,
+        |value| Ok(previous.replace(*value) == Some(*value)),
+        operation,
+    )
 }
 
 /// Fixed fields of a `SurfaceTrim` cell table that opens at `start` and whose
@@ -246,6 +275,7 @@ pub(crate) fn decode_surface_trim_operations(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
+    let mut index_storage = ctx.reserve_scoped(0, "f3d surface-trim stream indexes")?;
     let mut record_offsets = HashMap::<String, IndexedRecordOffsets>::new();
     let mut out = Vec::new();
     for scope in ctx
@@ -257,7 +287,7 @@ pub(crate) fn decode_surface_trim_operations(
             )
         })
     {
-        let Some(stream) = native_stream(&scope.id) else {
+        let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
@@ -265,7 +295,9 @@ pub(crate) fn decode_surface_trim_operations(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(ctx, &mut record_offsets, stream, bytes)?;
+        let records = index_storage.with_storage(|| {
+            cached_owned_record_offsets(ctx, &mut record_offsets, stream, bytes)
+        })?;
         let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
             continue;
         };
@@ -276,9 +308,7 @@ pub(crate) fn decode_surface_trim_operations(
             scope.byte_offset(),
             "f3d surface-trim operation identifier",
         )?;
-
-        ctx.reserve_vec(&mut out, 1, "f3d surface-trim operations")?;
-        out.push(operation);
+        ctx.push_vec(&mut out, operation, "f3d surface-trim operations")?;
     }
     ctx.stable_sort_by(
         &mut out[..],
