@@ -2215,6 +2215,11 @@ pub(crate) fn decode_dimension_annotation_frames(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let (intervals, _interval_storage) =
+            annotation_intervals(ctx, inputs, stream, bytes.len(), &mut intervals_by_stream)?;
+        if intervals.is_empty() {
+            continue;
+        }
         let ((geometry_indices, sketch_entities, governed_owners), _stream_storage) = ctx
             .with_scoped_storage("f3d dimension annotation stream tables", || {
                 let geometry_indices = dimension_geometry_indices(ctx, stream, points, curves)?;
@@ -2239,8 +2244,6 @@ pub(crate) fn decode_dimension_annotation_frames(
                 }
                 Ok::<_, CodecError>((geometry_indices, sketch_entities, governed_owners))
             })?;
-        let (intervals, _interval_storage) =
-            annotation_intervals(ctx, inputs, stream, bytes.len(), &mut intervals_by_stream)?;
         let (stream_records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
         let frame_inputs = AnnotationFrameInputs {
             governed_owners: &governed_owners,

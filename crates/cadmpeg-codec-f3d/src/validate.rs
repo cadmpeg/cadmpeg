@@ -1281,12 +1281,11 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         )?;
         let source_ordinal = timeline_ordinals.entry(segment).or_default();
         for entity_id in design_type.entities.values() {
-            let valid_type = crate::design::decode::meta::is_supported_feature_timeline_type(
-                ctx.decode,
-                design_type,
-            )? && class_tag.as_ref().is_some_and(|tag| {
-                records::references::DesignClassTag::try_from(tag.clone()).is_ok()
-            });
+            let valid_type =
+                crate::design::decode::meta::is_supported_feature_timeline_type(design_type)
+                    && class_tag.as_ref().is_some_and(|tag| {
+                        records::references::DesignClassTag::try_from(tag.clone()).is_ok()
+                    });
             let Some(class_tag) = class_tag.clone() else {
                 continue;
             };
@@ -8253,6 +8252,11 @@ fn validate_dimension_locus_pairs<'a>(
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut locus_pair_indices = HashSet::new();
     let mut locus_pair_companions = HashSet::new();
+    let governing = design::decode::dimension_frames::GoverningCompanions::build(
+        ctx.decode,
+        &native.design_parameter_owners,
+        &native.design_parameters,
+    )?;
     for pair in &native.design_dimension_locus_pairs {
         let native_stream = design_stream(&pair.id);
         let unique_index = ctx.decode.insert_hash_set(
@@ -8287,13 +8291,11 @@ fn validate_dimension_locus_pairs<'a>(
                     parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
-        let governs_following_dimension =
-            design::decode::dimension_frames::following_dimension_companion_record_index(
-                &pair.id,
-                pair.paired_byte_offset(),
-                &native.design_parameter_owners,
-                &native.design_parameters,
-            ) == Some(pair.governing_companion_record_index);
+        let governs_following_dimension = governing.governing(
+            ctx.decode,
+            &pair.id,
+            pair.paired_byte_offset(),
+        )? == Some(pair.governing_companion_record_index);
         let valid = companion_contains_frame
             && dimension_companion
             && governs_following_dimension
@@ -8699,6 +8701,11 @@ fn validate_dimension_null_locus_pairs<'a>(
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
     let mut null_locus_pair_indices = HashSet::new();
     let mut null_locus_pair_companions = HashSet::new();
+    let governing = design::decode::dimension_frames::GoverningCompanions::build(
+        ctx.decode,
+        &native.design_parameter_owners,
+        &native.design_parameters,
+    )?;
     for pair in &native.design_dimension_null_locus_pairs {
         let native_stream = design_stream(&pair.id);
         let unique_index = ctx.decode.insert_hash_set(
@@ -8733,13 +8740,11 @@ fn validate_dimension_null_locus_pairs<'a>(
                     parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
-        let governs_following_dimension =
-            design::decode::dimension_frames::following_dimension_companion_record_index(
-                &pair.id,
-                pair.paired_byte_offset(),
-                &native.design_parameter_owners,
-                &native.design_parameters,
-            ) == Some(pair.governing_companion_record_index);
+        let governs_following_dimension = governing.governing(
+            ctx.decode,
+            &pair.id,
+            pair.paired_byte_offset(),
+        )? == Some(pair.governing_companion_record_index);
         let companion_has_typed_frame = locus_pair_companions
             .contains(&(native_stream, pair.companion_record_index))
             || locus_group_companions.contains(&(native_stream, pair.companion_record_index));

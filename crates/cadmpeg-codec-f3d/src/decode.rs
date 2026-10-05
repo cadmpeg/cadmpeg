@@ -3410,7 +3410,8 @@ fn decode_scanned_document<'a>(
         );
     }
 
-    let model_blob_names = crate::design::decode::body::design_model_blob_names(ctx, scan)?;
+    let (model_blob_names, _model_blob_names_storage) =
+        crate::design::decode::body::design_model_blob_names(ctx, scan)?;
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
     let model_breps = model_brep_candidates(ctx, scan, &model_blob_names)?;
@@ -3424,7 +3425,7 @@ fn decode_scanned_document<'a>(
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
-        let all_body_visibility =
+        let (all_body_visibility, _all_body_visibility_storage) =
             crate::design::decode::body::decode_all_body_visibility(ctx, scan)?;
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();

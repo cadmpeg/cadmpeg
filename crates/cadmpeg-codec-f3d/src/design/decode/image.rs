@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer uniquely named Design image resources into neutral assets.
 
-use cadmpeg_core::container::ContainerRole;
+use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 
 use crate::container::ContainerScan;
 use crate::design::decode::record_streams::in_stream;
@@ -40,11 +40,12 @@ pub(super) fn neutral_asset_id_charged(
         .map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
 
-pub(super) fn embedded_image_asset(
+/// The only Design image entry whose file name is `asset_name`.
+pub(super) fn embedded_image_entry<'scan>(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &'scan ContainerScan,
     asset_name: &str,
-) -> Result<Option<Asset>, CodecError> {
+) -> Result<Option<&'scan ContainerEntry>, CodecError> {
     const OPERATION: &str = "find F3D embedded image entry";
     let mut found = None;
     for entry in ctx.admit_iter(&scan.entries, OPERATION)? {
@@ -59,16 +60,25 @@ pub(super) fn embedded_image_asset(
             return Ok(None);
         }
     }
-    let Some(entry) = found else {
-        return Ok(None);
-    };
+    Ok(found)
+}
+
+/// The neutral asset `id` holding the bytes of the image `entry`, named
+/// `asset_name`.
+pub(super) fn embedded_image_asset(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    entry: &ContainerEntry,
+    asset_name: &str,
+    id: cadmpeg_ir::assets::AssetId,
+) -> Result<Asset, CodecError> {
     let media_type = image_media_type(ctx, asset_name)?.map(str::to_owned);
     let data = ctx.copy_retained(scan.entry_bytes(&entry.name)?, "f3d embedded image data")?;
     let name = ctx.copy_retained_text(asset_name, "f3d embedded image name")?;
     let native_ref = native_scope_charged(ctx, &entry.name)?;
-    Ok(Some(Asset::try_new(
+    Asset::try_new(
         ctx,
-        neutral_asset_id_charged(ctx, &entry.name)?,
+        id,
         Some(name),
         media_type,
         AssetContent::Embedded {
@@ -76,7 +86,7 @@ pub(super) fn embedded_image_asset(
                 .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
         },
         Some(native_ref),
-    )?))
+    )
 }
 
 /// The media type a file name's extension states. A name that starts with its
@@ -203,6 +213,16 @@ mod tests {
         zip.write_all(DATA).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
+            let asset = |ctx: &DecodeContext<'_>| {
+                let entry = super::embedded_image_entry(ctx, scan, NAME)?.expect("image entry");
+                super::embedded_image_asset(
+                    ctx,
+                    scan,
+                    entry,
+                    NAME,
+                    crate::ids::neutral_asset_id(ENTRY),
+                )
+            };
             for (limit, operation) in [
                 (0, "f3d embedded image data"),
                 (u64_from_index(DATA.len()), "f3d embedded image name"),
@@ -217,7 +237,7 @@ mod tests {
 
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 assert!(matches!(
-                    super::embedded_image_asset(&ctx, scan, NAME),
+                    asset(&ctx),
                     Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                         if failure.dimension == ResourceDimension::RetainedBytes
                             && failure.operation == operation
@@ -227,7 +247,7 @@ mod tests {
                 ResourceDimension::WorkUnits,
                 "classify F3D embedded image extension",
                 0,
-                |ctx| super::embedded_image_asset(ctx, scan, NAME).map(|_| ()),
+                |ctx| asset(ctx).map(|_| ()),
             );
             assert!(matches!(
                 extension_error,
@@ -238,9 +258,7 @@ mod tests {
                         && limit.additional == u64_from_index(NAME.len() + 1)
             ));
             crate::design::test_support::with_test_decode_context(|ctx| {
-                assert!(super::embedded_image_asset(ctx, scan, NAME)
-                    .unwrap()
-                    .is_some());
+                assert_eq!(asset(ctx).unwrap().id, crate::ids::neutral_asset_id(ENTRY));
             });
         });
     }

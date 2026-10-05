@@ -1015,8 +1015,9 @@ fn parse_feature_timeline_record(
         return Ok(None);
     }
 
+    // The items grow as they are read, because a malformed item ends the
+    // frame before its count.
     let mut items = Vec::new();
-    ctx.reserve_capacity(&mut items, count, "admit F3D timeline item slots")?;
     for _ in 0..count {
         ctx.charge_work(1, "read F3D timeline items")?;
         let Some(target_offset) = at.checked_add(1) else {

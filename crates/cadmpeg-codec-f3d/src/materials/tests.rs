@@ -1596,7 +1596,7 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let visibility =
+        let (visibility, _storage) =
             crate::design::decode::body::decode_all_body_visibility(&ctx, scan).unwrap();
         assert_eq!(
             visibility
