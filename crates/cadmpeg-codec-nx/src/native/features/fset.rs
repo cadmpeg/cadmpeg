@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native FSET reference graphs and construction payloads.
 
-use super::payload_content::FeaturePayloadContent;
+use super::payload_content::{copy_block_ids, shared_block_store, FeaturePayloadContent};
 use super::{
     charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
     FeatureConstructionOwner, FeatureConstructionPayload, FeatureHistory,
@@ -11,7 +11,6 @@ use crate::om::fset_references::{word_reference_bytes, FsetReferences};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fmt::Write;
 
 /// Exact two-group object-reference graph carried by an `FSET` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -285,55 +284,16 @@ fn fset_construction_payload_from_group(
     source_blocks: &[(u16, Option<String>)],
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
-    if ctx.any_by(
-        source_blocks,
-        |(_, target)| Ok(target.is_none()),
-        "validate NX FSET source block targets",
-    )? {
-        return Ok(None);
-    }
-
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(source_blocks.len()),
+    let Some((data_blocks, _source_reservation)) = copy_block_ids(
+        ctx,
+        ctx.admit_iter(source_blocks, "copy NX FSET source block targets")?
+            .map(|(_, target)| target.as_deref()),
         "NX FSET source block references",
-    )?;
-    let mut source_reservation = ctx.reserve_scoped(0, "NX FSET source block references")?;
-    let mut data_blocks = Vec::new();
-    source_reservation.with_storage(|| {
-        ctx.reserve_capacity(
-            &mut data_blocks,
-            source_blocks.len(),
-            "allocate NX FSET source block references",
-        )
-    })?;
-    for (_, target) in ctx.admit_iter(source_blocks, "copy NX FSET source block targets")? {
-        let Some(block) = target else {
-            return Ok(None);
-        };
-        let mut id = String::new();
-        ctx.try_reserve_retained_text(
-            &mut id,
-            block.len(),
-            "allocate NX FSET source block reference",
-        )?;
-        id.push_str(block);
-        data_blocks.push(id);
-    }
-    let Some(store) = data_blocks
-        .first()
-        .and_then(|id| id.rsplit_once(":block#").map(|(store, _)| store))
+    )?
     else {
         return Ok(None);
     };
-    if ctx.any_by(
-        &data_blocks,
-        |block| {
-            Ok(block
-                .rsplit_once(":block#")
-                .is_none_or(|(prefix, _)| prefix != store))
-        },
-        "validate NX FSET source block owners",
-    )? {
+    if shared_block_store(ctx, &data_blocks, "validate NX FSET source block owners")?.is_none() {
         return Ok(None);
     }
     let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
@@ -343,21 +303,18 @@ fn fset_construction_payload_from_group(
         FeatureFsetReferenceGroup::First => "first",
         FeatureFsetReferenceGroup::Second => "second",
     };
-    let Some(operation_key) = graph
-        .operation_label
-        .strip_prefix("nx:feature-history:operation-label#")
+    let Some(operation_key) = ctx.strip_prefix(
+        &graph.operation_label,
+        "nx:feature-history:operation-label#",
+        "find NX FSET operation key",
+    )?
     else {
         return Ok(None);
     };
-    let prefix = "nx:feature-history:fset-construction-payload#";
-    let id_len = prefix
-        .len()
-        .checked_add(operation_key.len())
-        .and_then(|length| length.checked_add(1 + group_name.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX FSET construction identity", 0, 1))?;
-    let mut id = ctx.retained_string(id_len, "NX FSET construction identity")?;
-    write!(&mut id, "{prefix}{operation_key}-{group_name}")
-        .map_err(|_| ctx.refuse_codec_limit("write NX FSET construction identity", 0, 1))?;
+    let id = ctx.format_retained(
+        format_args!("nx:feature-history:fset-construction-payload#{operation_key}-{group_name}"),
+        "NX FSET construction identity",
+    )?;
     Ok(Some(FeatureConstructionPayload {
         id,
         operation_label: ctx

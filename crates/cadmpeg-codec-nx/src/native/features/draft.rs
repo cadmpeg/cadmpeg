@@ -3,7 +3,10 @@
 
 use super::joined_payload::JoinedPayload;
 use super::payload_content::FeaturePayloadBlock;
-use super::payload_content::FeaturePayloadContent;
+use super::payload_content::{
+    block_store, blocks_in_store, copy_block_ids, malformed_reason, operation_key,
+    FeaturePayloadContent,
+};
 use super::FeatureConstructionOwner;
 use super::FeatureConstructionPayload;
 use crate::container::Container;
@@ -22,7 +25,6 @@ use crate::om::fixed::Q155;
 use crate::om::nonempty::NonEmpty;
 use crate::om::scalar_run::FramedScalarRun;
 use crate::printable_string::PrintableString;
-use cadmpeg_core::CodecError;
 use serde::Deserialize;
 
 use crate::om::scalar::ShiftedBinary32;
@@ -740,32 +742,33 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                     .ok_or_else(|| {
                         ctx.refuse_codec_limit("count NX draft reference indices", 0, 1)
                     })?;
+                let refs = graph.references();
+                let mut complete_indices = Vec::new();
+                let mut indices_reservation =
+                    ctx.reserve_scoped(0, "NX draft complete reference indices")?;
+                for (token, _) in ctx.admit_iter(&refs, "copy NX draft graph reference indices")? {
+                    ctx.push_scoped_vec(
+                        &mut indices_reservation,
+                        &mut complete_indices,
+                        token.value(),
+                        "NX draft complete reference indices",
+                    )?;
+                }
                 let mut indices = lane.indices();
-                let mut index_count = 0usize;
                 for _ in ctx.admit_iter(
                     &(0..index_extent),
-                    "count NX draft complete reference indices",
+                    "copy NX draft complete reference indices",
                 )? {
-                    if indices.next().is_none() {
+                    let Some(token) = indices.next() else {
                         break;
-                    }
-                    index_count = index_count.checked_add(1).ok_or_else(|| {
-                        ctx.refuse_codec_limit("count NX draft reference indices", 0, 1)
-                    })?;
+                    };
+                    ctx.push_scoped_vec(
+                        &mut indices_reservation,
+                        &mut complete_indices,
+                        token.atom.value(),
+                        "NX draft complete reference indices",
+                    )?;
                 }
-                let count = 4usize.checked_add(index_count).ok_or_else(|| {
-                    ctx.refuse_codec_limit("NX draft complete reference indices", 0, 1)
-                })?;
-
-                let (mut complete_indices, _indices_reservation) =
-                    ctx.temporary_vec(count, "NX draft complete reference indices")?;
-                complete_indices.extend(
-                    graph
-                        .references()
-                        .into_iter()
-                        .map(|(token, _)| token.value()),
-                );
-                complete_indices.extend(lane.indices().map(|token| token.atom.value()));
                 unique_offset_data_store(ctx, &indexed, &complete_indices)?
             } else {
                 None
@@ -822,26 +825,20 @@ pub(in crate::native) fn feature_draft_construction_payloads(
         let index_extent = usize::from(tokens.declared_count())
             .checked_sub(1)
             .ok_or_else(|| ctx.refuse_codec_limit("count NX draft payload indices", 0, 1))?;
-        let mut rows = tokens.indices();
-        let mut count = 0usize;
-        for _ in ctx.admit_iter(&(0..index_extent), "count NX draft payload indices")? {
-            let Some(_) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("count NX draft payload indices", 0, 1));
-            };
-            count = count
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit("count NX draft payload indices", 0, 1))?;
-        }
         let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
-        let mut data_blocks = source_id_storage
-            .with_storage(|| ctx.collection_vec(count, "NX draft construction source blocks"))?;
+        let mut data_blocks = Vec::new();
         let mut rows = tokens.indices();
-        for _ in ctx.admit_iter(&(0..count), "copy NX draft payload indices")? {
+        for _ in ctx.admit_iter(&(0..index_extent), "copy NX draft payload indices")? {
             let Some(row) = rows.next() else {
                 return Err(ctx.refuse_codec_limit("copy NX draft payload indices", 0, 1));
             };
-            data_blocks
-                .push(ctx.copy_retained_text(row.target, "NX draft construction source block")?);
+            let block = ctx.copy_retained_text(row.target, "NX draft construction source block")?;
+            ctx.push_scoped_vec(
+                &mut source_id_storage,
+                &mut data_blocks,
+                block,
+                "NX draft construction source blocks",
+            )?;
         }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
@@ -878,6 +875,12 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
 ) -> Result<Vec<FeatureDraftConstructionGraphPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut output = Vec::new();
+    let (reference_groups, _groups_reservation) = ctx.collect_scoped_btree_groups(
+        references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "group NX draft construction graph references",
+    )?;
     for lane in ctx.admit_iter(lanes, "build NX draft construction graph payloads")? {
         let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
             continue;
@@ -885,21 +888,24 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         let Some(store) = tokens
             .indices()
             .next()
-            .and_then(|row| row.target.rsplit_once(":block#").map(|(store, _)| store))
+            .map(|row| block_store(ctx, row.target, "find NX draft graph source owner"))
+            .transpose()?
+            .flatten()
         else {
             continue;
         };
-        let count = ctx
-            .admit_iter(references, "count NX draft construction graph references")?
-            .filter(|reference| reference.operation_label == lane.operation_label)
-            .count();
-
-        let (mut graph, _graph_reservation) =
-            ctx.temporary_vec(count, "NX draft construction graph")?;
-        graph.extend(
-            ctx.admit_iter(references, "copy NX draft construction graph references")?
-                .filter(|reference| reference.operation_label == lane.operation_label),
-        );
+        let Some(group) = ctx.get_btree_map(
+            &reference_groups,
+            lane.operation_label.as_str(),
+            "find NX draft construction graph references",
+        )?
+        else {
+            continue;
+        };
+        let Ok(mut graph) = <[&FeatureDraftConstructionReference; 4]>::try_from(group.as_slice())
+        else {
+            continue;
+        };
         ctx.stable_sort_by(
             &mut graph,
             |value| &value.ordinal,
@@ -907,40 +913,25 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
             "sort NX draft construction graph",
         )?;
         if ctx
-            .admit_iter(
-                graph.as_slice(),
-                "validate NX draft construction graph order",
-            )?
+            .admit_iter(&graph, "validate NX draft construction graph order")?
             .enumerate()
             .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
         {
             continue;
         }
-        let Ok(graph): Result<[&FeatureDraftConstructionReference; 4], _> = graph.try_into() else {
+        let Some((data_blocks, _source_id_storage)) = copy_block_ids(
+            ctx,
+            ctx.admit_iter(&graph, "resolve NX draft graph source blocks")?
+                .map(|reference| reference.data_block.as_deref()),
+            "NX draft graph source blocks",
+        )?
+        else {
             continue;
         };
-        let mut source_id_storage = ctx.reserve_scoped(0, "NX payload source identity headers")?;
-        let mut data_blocks = source_id_storage
-            .with_storage(|| ctx.collection_vec(4, "NX draft graph source blocks"))?;
-        for reference in ctx
-            .admit_iter(&graph, "resolve NX draft graph source blocks")?
-            .copied()
-        {
-            let Some(block) = reference.data_block.as_deref() else {
-                break;
-            };
-            data_blocks.push(ctx.copy_retained_text(block, "NX draft graph source block")?);
-        }
-        if data_blocks.len() != 4 {
-            continue;
-        }
-        if ctx.any_by(
+        if !blocks_in_store(
+            ctx,
             &data_blocks,
-            |block| {
-                Ok(block
-                    .rsplit_once(":block#")
-                    .is_none_or(|(prefix, _)| prefix != store))
-            },
+            store,
             "validate NX draft graph source owners",
         )? {
             continue;
@@ -948,17 +939,13 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
             continue;
         };
-        let Some((_, key)) = lane.id.rsplit_once('#') else {
+        let Some(key) = operation_key(ctx, &lane.id, "find NX draft graph operation key")? else {
             continue;
         };
-        let prefix = "nx:feature-history:draft-construction-graph-payload#";
-        let id_len = prefix
-            .len()
-            .checked_add(key.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX draft graph payload identity", 0, 1))?;
-        let mut id = ctx.retained_string(id_len, "NX draft graph payload identity")?;
-        id.push_str(prefix);
-        id.push_str(key);
+        let id = ctx.format_retained(
+            format_args!("nx:feature-history:draft-construction-graph-payload#{key}"),
+            "NX draft graph payload identity",
+        )?;
         let mut construction_references: [String; 4] = std::array::from_fn(|_| String::new());
         for (slot, reference) in ctx
             .admit_iter(&graph, "copy NX draft graph reference identities")?
@@ -1124,7 +1111,9 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             let value = PrintableString::new(
                 ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?,
             )
-            .map_err(|reason| CodecError::Malformed(reason.into()))?;
+            .map_err(|reason| {
+                malformed_reason(ctx, reason, "NX draft construction string error")
+            })?;
             ctx.reserve_vec(&mut strings, 1, "NX draft construction graph strings")?;
             strings.push(FeatureDraftConstructionGraphString {
                 id,

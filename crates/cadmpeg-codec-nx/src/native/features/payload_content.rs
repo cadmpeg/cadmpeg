@@ -2,7 +2,7 @@
 //! Ordered source-block metadata for reconstructed feature payloads.
 
 use cadmpeg_core::decode::scan::AdmittedIter;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use serde::{
     ser::{SerializeSeq, SerializeStruct},
@@ -125,7 +125,10 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             let Some(id) = ids.next() else {
                 return Err(ctx.refuse_codec_limit("scan NX feature payload block ids", 0, 1));
             };
-            let Some((bytes, source_offset)) = blocks.get(&id).copied() else {
+            let Some((bytes, source_offset)) = ctx
+                .get_btree_map(blocks, &id, "find NX feature payload block")?
+                .copied()
+            else {
                 return Ok(None);
             };
             let length = u64_from_index(bytes.len());
@@ -162,6 +165,96 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             Err(error) => return Err(CodecError::Malformed(error)),
         };
         Ok(Some(content))
+    }
+}
+
+/// Separator between a data-block store and the block ordinal in a block id.
+const BLOCK_MARKER: &str = ":block#";
+
+/// The store that owns a block id of the form `{store}:block#{ordinal}`.
+pub(super) fn block_store<'t>(
+    ctx: &DecodeContext<'_>,
+    block: &'t str,
+    operation: &'static str,
+) -> Result<Option<&'t str>, CodecError> {
+    Ok(ctx
+        .rsplit_once(block, BLOCK_MARKER, operation)?
+        .map(|(store, _)| store))
+}
+
+/// Copies block ids into scoped storage; `None` when any block id is absent.
+///
+/// The returned reservation keeps the id vector's storage accounted until the
+/// caller drops it. `blocks` must be an admitted iteration.
+pub(super) fn copy_block_ids<'ctx, 'b>(
+    ctx: &'ctx DecodeContext<'_>,
+    blocks: impl Iterator<Item = Option<&'b str>>,
+    operation: &'static str,
+) -> Result<Option<(Vec<String>, ScopedReservation<'ctx>)>, CodecError> {
+    let mut reservation = ctx.reserve_scoped(0, operation)?;
+    let mut ids = Vec::new();
+    for block in blocks {
+        let Some(block) = block else {
+            return Ok(None);
+        };
+        let copy = ctx.copy_retained_text(block, operation)?;
+        ctx.push_scoped_vec(&mut reservation, &mut ids, copy, operation)?;
+    }
+    Ok(Some((ids, reservation)))
+}
+
+/// True when every block id names `store` as its owner.
+pub(super) fn blocks_in_store(
+    ctx: &DecodeContext<'_>,
+    blocks: &[String],
+    store: &str,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    let outside = ctx.any_by(
+        blocks,
+        |block| match block_store(ctx, block, operation)? {
+            Some(owner) => Ok(!ctx.equal(owner, store, operation)?),
+            None => Ok(true),
+        },
+        operation,
+    )?;
+    Ok(!outside)
+}
+
+/// The store shared by every block id, or `None` when there are no blocks, a
+/// block id has no store, or two ids name different stores.
+pub(super) fn shared_block_store<'b>(
+    ctx: &DecodeContext<'_>,
+    blocks: &'b [String],
+    operation: &'static str,
+) -> Result<Option<&'b str>, CodecError> {
+    let Some((first, rest)) = blocks.split_first() else {
+        return Ok(None);
+    };
+    let Some(store) = block_store(ctx, first, operation)? else {
+        return Ok(None);
+    };
+    Ok(blocks_in_store(ctx, rest, store, operation)?.then_some(store))
+}
+
+/// The operation key after the last `#` of an operation-label identity.
+pub(super) fn operation_key<'t>(
+    ctx: &DecodeContext<'_>,
+    label: &'t str,
+    operation: &'static str,
+) -> Result<Option<&'t str>, CodecError> {
+    Ok(ctx.rsplit_once(label, "#", operation)?.map(|(_, key)| key))
+}
+
+/// A malformed-input error carrying a copy of a constant reason.
+pub(super) fn malformed_reason(
+    ctx: &DecodeContext<'_>,
+    reason: &str,
+    operation: &'static str,
+) -> CodecError {
+    match ctx.copy_retained_text(reason, operation) {
+        Ok(reason) => CodecError::Malformed(reason),
+        Err(error) => error,
     }
 }
 
@@ -399,5 +492,25 @@ mod tests {
         )
         .unwrap()
         .is_err());
+    }
+
+    #[test]
+    fn shared_block_store_requires_one_owner_for_every_block() {
+        let ids = |ids: &[&str]| ids.iter().map(|id| (*id).to_owned()).collect::<Vec<_>>();
+        crate::test_support::with_decode_context(|ctx| {
+            let op = "test shared store";
+            let same = ids(&["s:a:block#1", "s:a:block#2"]);
+            assert_eq!(super::shared_block_store(ctx, &same, op)?, Some("s:a"));
+            let mixed = ids(&["s:a:block#1", "s:b:block#2"]);
+            assert_eq!(super::shared_block_store(ctx, &mixed, op)?, None);
+            let unowned = ids(&["s:a:block#1", "plain"]);
+            assert_eq!(super::shared_block_store(ctx, &unowned, op)?, None);
+            assert_eq!(super::shared_block_store(ctx, &ids(&["plain"]), op)?, None);
+            assert_eq!(super::shared_block_store(ctx, &[], op)?, None);
+            assert!(super::blocks_in_store(ctx, &same, "s:a", op)?);
+            assert!(!super::blocks_in_store(ctx, &mixed, "s:a", op)?);
+            Ok::<_, cadmpeg_core::CodecError>(())
+        })
+        .unwrap();
     }
 }
