@@ -469,9 +469,11 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"315");
     bytes.extend_from_slice(&251u32.to_le_bytes());
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let stream = || LocusGroupStream {
         name: "Design1/BulkStream.dat",
         bytes: &bytes,
+        records: &records,
         geometry_indices: &[175, 217],
         sketch_entities: &[172],
     };
