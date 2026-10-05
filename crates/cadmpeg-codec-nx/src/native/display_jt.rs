@@ -4994,113 +4994,58 @@ pub(super) fn display_jt_shape_lod_bindings(
     Ok(bindings)
 }
 
-/// Decode the common node-data header from every type-1 segment element.
-pub(super) fn display_jt_base_node_data(
-    ctx: &DecodeContext<'_>,
-    container: &Container,
-    segments: &[DisplayJtSegment],
-    documents: &[DisplayJtDocument],
-) -> Result<Vec<DisplayJtBaseNodeData>, CodecError> {
-    let (documents_by_id, _documents_storage) = ctx.unique_index(
-        documents
-            .iter()
-            .map(|document| (document.id.as_str(), document)),
-        "index DisplayJT documents",
-    )?;
-    let mut nodes = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT base node segments")?
-        .filter(|segment| segment.segment_type == 1)
-    {
-        let Some(&Some(document)) = ctx.get_hash_map(
-            &documents_by_id,
-            segment.document.as_str(),
-            "match DisplayJT segment documents",
-        )?
-        else {
-            return Ok(Vec::new());
-        };
-        if segment.compression.is_none() {
-            return Ok(Vec::new());
-        }
-        let Some((inflated, _inflated_storage)) =
-            inflate_display_jt_segment(ctx, container, segment)?
-        else {
-            return Ok(Vec::new());
-        };
-        let Some((elements, _, _framing_storage)) =
-            frame_display_jt_elements(ctx, &inflated, "NX JT framing storage")?
-        else {
-            return Ok(Vec::new());
-        };
-        for (ordinal, element) in ctx
-            .admit_iter(&elements, "store DisplayJT base node")?
-            .enumerate()
-        {
-            if element.object_base_type > 2 {
-                continue;
-            }
-            let Some((version, flags, attribute_object_ids, family_data)) =
-                parse_jt_base_node_body(element.body, document.version.major())
-            else {
-                return Ok(Vec::new());
-            };
-            let attribute_object_ids = read_jt_object_ids(
-                ctx,
-                attribute_object_ids,
-                "decode DisplayJT base node attributes",
-            )?;
-            let operation = "store DisplayJT base node";
-            ctx.reserve_record_vec(&mut nodes, 1, 0, operation)?;
-            nodes.push(DisplayJtBaseNodeData {
-                id: ctx.format_retained(
-                    format_args!("{}-base-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                element: ctx.format_retained(
-                    format_args!("{}-inflated-element-{ordinal}", segment.id),
-                    operation,
-                )?,
-                object_type_id: element.object_type_id,
-                object_id: element.object_id,
-                version,
-                flags,
-                attribute_object_ids,
-                family_data_byte_len: u32::try_from(family_data.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "DisplayJT count exceeds u32",
-                        u64::from(u32::MAX),
-                        cadmpeg_core::decode::u64_from_index(family_data.len()),
-                    )
-                })?,
-                family_data_sha256: Sha256Digest::digest_for_decode(
-                    ctx,
-                    family_data,
-                    "retain DisplayJT hash",
-                )?,
-                source_offset: segment.source_offset + 24,
-            });
-        }
-    }
-    Ok(nodes)
+/// Scene-graph node and attribute records of the logical scene-graph segments.
+///
+/// Each family is decoded independently: a family that rejects a segment or
+/// element decodes no records, and the other families are unaffected.
+pub(super) struct DisplayJtSceneNodes {
+    pub(super) base_nodes: Vec<DisplayJtBaseNodeData>,
+    pub(super) group_nodes: Vec<DisplayJtGroupNodeData>,
+    pub(super) instance_nodes: Vec<DisplayJtInstanceNode>,
+    pub(super) transforms: Vec<DisplayJtGeometricTransformAttribute>,
+    pub(super) materials: Vec<DisplayJtMaterialAttribute>,
+    pub(super) partition_nodes: Vec<DisplayJtPartitionNode>,
+    pub(super) range_lod_nodes: Vec<DisplayJtRangeLodNode>,
+    pub(super) tri_strip_shape_nodes: Vec<DisplayJtTriStripShapeNode>,
 }
 
-/// Decode common group-node data from every JT 9 group-derived scene node.
-pub(super) fn display_jt_group_node_data(
+/// Records of one scene family, or `None` once the family rejects its input.
+type JtSceneFamily<T> = Option<Vec<T>>;
+
+/// Rejects a family whose segment admission applies to the current segment.
+fn reject_jt_scene_family<T>(family: &mut JtSceneFamily<T>, applies: bool) {
+    if applies {
+        *family = None;
+    }
+}
+
+/// Decode every scene-graph node family from one inflation of each type-1 segment.
+///
+/// Common node data comes from every compressed segment; the JT 9 node,
+/// attribute and shape families from compressed segments of JT 9 documents;
+/// partition and range-LOD nodes from segments of documents before JT 10.
+pub(super) fn display_jt_scene_nodes(
     ctx: &DecodeContext<'_>,
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Result<Vec<DisplayJtGroupNodeData>, CodecError> {
+) -> Result<DisplayJtSceneNodes, CodecError> {
     let (documents_by_id, _documents_storage) = ctx.unique_index(
         documents
             .iter()
             .map(|document| (document.id.as_str(), document)),
         "index DisplayJT documents",
     )?;
-    let mut nodes = Vec::new();
+    let mut base_nodes = Some(Vec::new());
+    let mut group_nodes = Some(Vec::new());
+    let mut instance_nodes = Some(Vec::new());
+    let mut transforms = Some(Vec::new());
+    let mut materials = Some(Vec::new());
+    let mut partition_nodes = Some(Vec::new());
+    let mut range_lod_nodes = Some(Vec::new());
+    let mut tri_strip_shape_nodes = Some(Vec::new());
     for segment in ctx
-        .admit_iter(segments, "scan DisplayJT group node segments")?
+        .admit_iter(segments, "scan DisplayJT scene segments")?
         .filter(|segment| segment.segment_type == 1)
     {
         let Some(&Some(document)) = ctx.get_hash_map(
@@ -5109,564 +5054,521 @@ pub(super) fn display_jt_group_node_data(
             "match DisplayJT segment documents",
         )?
         else {
-            return Ok(Vec::new());
+            return Ok(DisplayJtSceneNodes {
+                base_nodes: Vec::new(),
+                group_nodes: Vec::new(),
+                instance_nodes: Vec::new(),
+                transforms: Vec::new(),
+                materials: Vec::new(),
+                partition_nodes: Vec::new(),
+                range_lod_nodes: Vec::new(),
+                tri_strip_shape_nodes: Vec::new(),
+            });
         };
-        if document.version.major() != 9 || segment.compression.is_none() {
+        let compressed = segment.compression.is_some();
+        reject_jt_scene_family(&mut base_nodes, !compressed);
+        let jt9 = document.version.major() == 9 && compressed;
+        let legacy = document.version.major() < 10;
+        let jt9_active = jt9
+            && (group_nodes.is_some()
+                || instance_nodes.is_some()
+                || transforms.is_some()
+                || materials.is_some()
+                || tri_strip_shape_nodes.is_some());
+        let legacy_active = legacy && (partition_nodes.is_some() || range_lod_nodes.is_some());
+        if base_nodes.is_none() && !jt9_active && !legacy_active {
             continue;
         }
-        let Some((inflated, _inflated_storage)) =
-            inflate_display_jt_segment(ctx, container, segment)?
-        else {
-            return Ok(Vec::new());
+        let inflated = inflate_display_jt_segment(ctx, container, segment)?;
+        let framed_elements = match &inflated {
+            Some((bytes, _)) => frame_display_jt_elements(ctx, bytes, "NX JT framing storage")?,
+            None => None,
         };
-        let Some((elements, _, _framing_storage)) =
-            frame_display_jt_elements(ctx, &inflated, "NX JT framing storage")?
-        else {
-            return Ok(Vec::new());
+        let Some((elements, _, _framing_storage)) = framed_elements else {
+            reject_jt_scene_family(&mut base_nodes, true);
+            reject_jt_scene_family(&mut group_nodes, jt9);
+            reject_jt_scene_family(&mut instance_nodes, jt9);
+            reject_jt_scene_family(&mut transforms, jt9);
+            reject_jt_scene_family(&mut materials, jt9);
+            reject_jt_scene_family(&mut tri_strip_shape_nodes, jt9);
+            reject_jt_scene_family(&mut partition_nodes, legacy);
+            reject_jt_scene_family(&mut range_lod_nodes, legacy);
+            continue;
         };
         for (ordinal, element) in ctx
-            .admit_iter(&elements, "store DisplayJT group node")?
+            .admit_iter(&elements, "decode DisplayJT scene elements")?
             .enumerate()
         {
-            if element.object_base_type != 1 {
-                continue;
-            }
-            let Some((version, child_object_ids, family_data)) =
-                parse_jt9_group_node_body(element.body)
-            else {
-                return Ok(Vec::new());
+            let at = JtSceneElement {
+                segment,
+                ordinal,
+                element,
             };
-            let child_object_ids =
-                read_jt_object_ids(ctx, child_object_ids, "decode DisplayJT group children")?;
-            if version != 1 {
-                return Ok(Vec::new());
+            if let Some(nodes) = base_nodes.as_mut() {
+                if !push_jt_base_node(ctx, nodes, &at, document.version.major())? {
+                    base_nodes = None;
+                }
             }
-            let operation = "store DisplayJT group node";
-            ctx.reserve_record_vec(&mut nodes, 1, 0, operation)?;
-            nodes.push(DisplayJtGroupNodeData {
-                id: ctx.format_retained(
-                    format_args!("{}-group-node-data-{ordinal}", segment.id),
-                    operation,
-                )?,
-                base_node: ctx.format_retained(
-                    format_args!("{}-base-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                object_id: element.object_id,
-                version,
-                child_object_ids,
-                family_data_byte_len: u32::try_from(family_data.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "DisplayJT count exceeds u32",
-                        u64::from(u32::MAX),
-                        cadmpeg_core::decode::u64_from_index(family_data.len()),
-                    )
-                })?,
-                family_data_sha256: Sha256Digest::digest_for_decode(
-                    ctx,
-                    family_data,
-                    "retain DisplayJT hash",
-                )?,
-                source_offset: segment.source_offset + 24,
-            });
+            if jt9 {
+                if let Some(nodes) = group_nodes.as_mut() {
+                    if !push_jt_group_node(ctx, nodes, &at)? {
+                        group_nodes = None;
+                    }
+                }
+                if let Some(nodes) = instance_nodes.as_mut() {
+                    if !push_jt_instance_node(ctx, nodes, &at)? {
+                        instance_nodes = None;
+                    }
+                }
+                if let Some(attributes) = transforms.as_mut() {
+                    if !push_jt_geometric_transform(ctx, attributes, &at)? {
+                        transforms = None;
+                    }
+                }
+                if let Some(attributes) = materials.as_mut() {
+                    if !push_jt_material(ctx, attributes, &at)? {
+                        materials = None;
+                    }
+                }
+                if let Some(nodes) = tri_strip_shape_nodes.as_mut() {
+                    if !push_jt_tri_strip_shape_node(ctx, nodes, &at)? {
+                        tri_strip_shape_nodes = None;
+                    }
+                }
+            }
+            if legacy {
+                if let Some(nodes) = partition_nodes.as_mut() {
+                    if !push_jt_partition_node(ctx, nodes, &at)? {
+                        partition_nodes = None;
+                    }
+                }
+                if let Some(nodes) = range_lod_nodes.as_mut() {
+                    if !push_jt_range_lod_node(ctx, nodes, &at)? {
+                        range_lod_nodes = None;
+                    }
+                }
+            }
         }
     }
-    Ok(nodes)
+    Ok(DisplayJtSceneNodes {
+        base_nodes: base_nodes.unwrap_or_default(),
+        group_nodes: group_nodes.unwrap_or_default(),
+        instance_nodes: instance_nodes.unwrap_or_default(),
+        transforms: transforms.unwrap_or_default(),
+        materials: materials.unwrap_or_default(),
+        partition_nodes: partition_nodes.unwrap_or_default(),
+        range_lod_nodes: range_lod_nodes.unwrap_or_default(),
+        tri_strip_shape_nodes: tri_strip_shape_nodes.unwrap_or_default(),
+    })
 }
 
-/// Decode complete JT 9 instance nodes from logical scene-graph segments.
-pub(super) fn display_jt_instance_nodes(
+/// One framed element of a scene segment at its serialized ordinal.
+struct JtSceneElement<'a, 'b> {
+    segment: &'a DisplayJtSegment,
+    ordinal: usize,
+    element: &'a ParsedJtElement<'b>,
+}
+
+/// Decodes the common node data of a node element; `false` rejects the family.
+fn push_jt_base_node(
     ctx: &DecodeContext<'_>,
-    container: &Container,
-    segments: &[DisplayJtSegment],
-    documents: &[DisplayJtDocument],
-) -> Result<Vec<DisplayJtInstanceNode>, CodecError> {
+    nodes: &mut Vec<DisplayJtBaseNodeData>,
+    at: &JtSceneElement<'_, '_>,
+    format_major: u16,
+) -> Result<bool, CodecError> {
+    let JtSceneElement {
+        segment,
+        ordinal,
+        element,
+    } = *at;
+    if element.object_base_type > 2 {
+        return Ok(true);
+    }
+    let Some((version, flags, attribute_object_ids, family_data)) =
+        parse_jt_base_node_body(element.body, format_major)
+    else {
+        return Ok(false);
+    };
+    let attribute_object_ids = read_jt_object_ids(
+        ctx,
+        attribute_object_ids,
+        "decode DisplayJT base node attributes",
+    )?;
+    let operation = "store DisplayJT base node";
+    ctx.reserve_record_vec(nodes, 1, 0, operation)?;
+    nodes.push(DisplayJtBaseNodeData {
+        id: ctx.format_retained(
+            format_args!("{}-base-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        element: ctx.format_retained(
+            format_args!("{}-inflated-element-{ordinal}", segment.id),
+            operation,
+        )?,
+        object_type_id: element.object_type_id,
+        object_id: element.object_id,
+        version,
+        flags,
+        attribute_object_ids,
+        family_data_byte_len: u32::try_from(family_data.len()).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "DisplayJT count exceeds u32",
+                u64::from(u32::MAX),
+                cadmpeg_core::decode::u64_from_index(family_data.len()),
+            )
+        })?,
+        family_data_sha256: Sha256Digest::digest_for_decode(
+            ctx,
+            family_data,
+            "retain DisplayJT hash",
+        )?,
+        source_offset: segment.source_offset + 24,
+    });
+    Ok(true)
+}
+
+/// Decodes JT 9 group-node data of a group element; `false` rejects the family.
+fn push_jt_group_node(
+    ctx: &DecodeContext<'_>,
+    nodes: &mut Vec<DisplayJtGroupNodeData>,
+    at: &JtSceneElement<'_, '_>,
+) -> Result<bool, CodecError> {
+    let JtSceneElement {
+        segment,
+        ordinal,
+        element,
+    } = *at;
+    if element.object_base_type != 1 {
+        return Ok(true);
+    }
+    let Some((version, child_object_ids, family_data)) = parse_jt9_group_node_body(element.body)
+    else {
+        return Ok(false);
+    };
+    let child_object_ids =
+        read_jt_object_ids(ctx, child_object_ids, "decode DisplayJT group children")?;
+    if version != 1 {
+        return Ok(false);
+    }
+    let operation = "store DisplayJT group node";
+    ctx.reserve_record_vec(nodes, 1, 0, operation)?;
+    nodes.push(DisplayJtGroupNodeData {
+        id: ctx.format_retained(
+            format_args!("{}-group-node-data-{ordinal}", segment.id),
+            operation,
+        )?,
+        base_node: ctx.format_retained(
+            format_args!("{}-base-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        object_id: element.object_id,
+        version,
+        child_object_ids,
+        family_data_byte_len: u32::try_from(family_data.len()).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "DisplayJT count exceeds u32",
+                u64::from(u32::MAX),
+                cadmpeg_core::decode::u64_from_index(family_data.len()),
+            )
+        })?,
+        family_data_sha256: Sha256Digest::digest_for_decode(
+            ctx,
+            family_data,
+            "retain DisplayJT hash",
+        )?,
+        source_offset: segment.source_offset + 24,
+    });
+    Ok(true)
+}
+
+/// Decodes a JT 9 instance node; `false` rejects the family.
+fn push_jt_instance_node(
+    ctx: &DecodeContext<'_>,
+    nodes: &mut Vec<DisplayJtInstanceNode>,
+    at: &JtSceneElement<'_, '_>,
+) -> Result<bool, CodecError> {
     const INSTANCE_NODE_TYPE: [u8; 16] = [
         0x2a, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
     ];
-    let (documents_by_id, _documents_storage) = ctx.unique_index(
-        documents
-            .iter()
-            .map(|document| (document.id.as_str(), document)),
-        "index DisplayJT documents",
-    )?;
-    let mut nodes = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT instance node segments")?
-        .filter(|segment| segment.segment_type == 1)
-    {
-        let Some(&Some(document)) = ctx.get_hash_map(
-            &documents_by_id,
-            segment.document.as_str(),
-            "match DisplayJT segment documents",
-        )?
-        else {
-            return Ok(Vec::new());
-        };
-        if document.version.major() != 9 || segment.compression.is_none() {
-            continue;
-        }
-        let Some((inflated, _inflated_storage)) =
-            inflate_display_jt_segment(ctx, container, segment)?
-        else {
-            return Ok(Vec::new());
-        };
-        let Some((elements, _, _framing_storage)) =
-            frame_display_jt_elements(ctx, &inflated, "NX JT framing storage")?
-        else {
-            return Ok(Vec::new());
-        };
-        for (ordinal, element) in ctx
-            .admit_iter(&elements, "store DisplayJT instance node")?
-            .enumerate()
-        {
-            if element.object_type_id != INSTANCE_NODE_TYPE {
-                continue;
-            }
-            if element.object_base_type != 0 {
-                return Ok(Vec::new());
-            }
-            let Some((version, child_object_id)) = parse_jt9_instance_node_body(element.body)
-            else {
-                return Ok(Vec::new());
-            };
-            let operation = "store DisplayJT instance node";
-            ctx.reserve_record_vec(&mut nodes, 1, 0, operation)?;
-            nodes.push(DisplayJtInstanceNode {
-                id: ctx.format_retained(
-                    format_args!("{}-instance-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                base_node: ctx.format_retained(
-                    format_args!("{}-base-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                object_id: element.object_id,
-                version,
-                child_object_id,
-                source_offset: segment.source_offset + 24,
-            });
-        }
+    let JtSceneElement {
+        segment,
+        ordinal,
+        element,
+    } = *at;
+    if element.object_type_id != INSTANCE_NODE_TYPE {
+        return Ok(true);
     }
-    Ok(nodes)
+    if element.object_base_type != 0 {
+        return Ok(false);
+    }
+    let Some((version, child_object_id)) = parse_jt9_instance_node_body(element.body) else {
+        return Ok(false);
+    };
+    let operation = "store DisplayJT instance node";
+    ctx.reserve_record_vec(nodes, 1, 0, operation)?;
+    nodes.push(DisplayJtInstanceNode {
+        id: ctx.format_retained(
+            format_args!("{}-instance-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        base_node: ctx.format_retained(
+            format_args!("{}-base-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        object_id: element.object_id,
+        version,
+        child_object_id,
+        source_offset: segment.source_offset + 24,
+    });
+    Ok(true)
 }
 
-/// Decode JT 9 geometric-transform attributes from logical scene-graph segments.
-pub(super) fn display_jt_geometric_transform_attributes(
+/// Decodes a JT 9 geometric-transform attribute; `false` rejects the family.
+fn push_jt_geometric_transform(
     ctx: &DecodeContext<'_>,
-    container: &Container,
-    segments: &[DisplayJtSegment],
-    documents: &[DisplayJtDocument],
-) -> Result<Vec<DisplayJtGeometricTransformAttribute>, CodecError> {
+    attributes: &mut Vec<DisplayJtGeometricTransformAttribute>,
+    at: &JtSceneElement<'_, '_>,
+) -> Result<bool, CodecError> {
     const GEOMETRIC_TRANSFORM_TYPE: [u8; 16] = [
         0x83, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
     ];
-    let (documents_by_id, _documents_storage) = ctx.unique_index(
-        documents
-            .iter()
-            .map(|document| (document.id.as_str(), document)),
-        "index DisplayJT documents",
-    )?;
-    let mut attributes = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT transform segments")?
-        .filter(|segment| segment.segment_type == 1)
-    {
-        let Some(&Some(document)) = ctx.get_hash_map(
-            &documents_by_id,
-            segment.document.as_str(),
-            "match DisplayJT segment documents",
-        )?
-        else {
-            return Ok(Vec::new());
-        };
-        if document.version.major() != 9 || segment.compression.is_none() {
-            continue;
-        }
-        let Some((inflated, _inflated_storage)) =
-            inflate_display_jt_segment(ctx, container, segment)?
-        else {
-            return Ok(Vec::new());
-        };
-        let Some((elements, _, _framing_storage)) =
-            frame_display_jt_elements(ctx, &inflated, "NX JT framing storage")?
-        else {
-            return Ok(Vec::new());
-        };
-        for (ordinal, element) in ctx
-            .admit_iter(&elements, "store DisplayJT geometric transform")?
-            .enumerate()
-        {
-            if element.object_type_id != GEOMETRIC_TRANSFORM_TYPE {
-                continue;
-            }
-            if element.object_base_type != 3 {
-                return Ok(Vec::new());
-            }
-            let Some((state_flags, field_inhibit_flags, stored_values_mask, matrix)) =
-                parse_jt9_geometric_transform_body(element.body)
-            else {
-                return Ok(Vec::new());
-            };
-            let operation = "store DisplayJT geometric transform";
-            ctx.reserve_record_vec(&mut attributes, 1, 0, operation)?;
-            attributes.push(DisplayJtGeometricTransformAttribute {
-                id: ctx.format_retained(
-                    format_args!("{}-geometric-transform-{ordinal}", segment.id),
-                    operation,
-                )?,
-                element: ctx.format_retained(
-                    format_args!("{}-inflated-element-{ordinal}", segment.id),
-                    operation,
-                )?,
-                object_id: element.object_id,
-                state_flags,
-                field_inhibit_flags,
-                stored_values_mask,
-                matrix,
-                source_offset: segment.source_offset + 24,
-            });
-        }
+    let JtSceneElement {
+        segment,
+        ordinal,
+        element,
+    } = *at;
+    if element.object_type_id != GEOMETRIC_TRANSFORM_TYPE {
+        return Ok(true);
     }
-    Ok(attributes)
+    if element.object_base_type != 3 {
+        return Ok(false);
+    }
+    let Some((state_flags, field_inhibit_flags, stored_values_mask, matrix)) =
+        parse_jt9_geometric_transform_body(element.body)
+    else {
+        return Ok(false);
+    };
+    let operation = "store DisplayJT geometric transform";
+    ctx.reserve_record_vec(attributes, 1, 0, operation)?;
+    attributes.push(DisplayJtGeometricTransformAttribute {
+        id: ctx.format_retained(
+            format_args!("{}-geometric-transform-{ordinal}", segment.id),
+            operation,
+        )?,
+        element: ctx.format_retained(
+            format_args!("{}-inflated-element-{ordinal}", segment.id),
+            operation,
+        )?,
+        object_id: element.object_id,
+        state_flags,
+        field_inhibit_flags,
+        stored_values_mask,
+        matrix,
+        source_offset: segment.source_offset + 24,
+    });
+    Ok(true)
 }
 
-/// Decode JT 9 material attributes from logical scene-graph segments.
-pub(super) fn display_jt_material_attributes(
+/// Decodes a JT 9 material attribute; `false` rejects the family.
+fn push_jt_material(
     ctx: &DecodeContext<'_>,
-    container: &Container,
-    segments: &[DisplayJtSegment],
-    documents: &[DisplayJtDocument],
-) -> Result<Vec<DisplayJtMaterialAttribute>, CodecError> {
+    attributes: &mut Vec<DisplayJtMaterialAttribute>,
+    at: &JtSceneElement<'_, '_>,
+) -> Result<bool, CodecError> {
     const MATERIAL_ATTRIBUTE_TYPE: [u8; 16] = [
         0x30, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
     ];
-    let (documents_by_id, _documents_storage) = ctx.unique_index(
-        documents
-            .iter()
-            .map(|document| (document.id.as_str(), document)),
-        "index DisplayJT documents",
-    )?;
-    let mut attributes = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT material segments")?
-        .filter(|segment| segment.segment_type == 1)
-    {
-        let Some(&Some(document)) = ctx.get_hash_map(
-            &documents_by_id,
-            segment.document.as_str(),
-            "match DisplayJT segment documents",
-        )?
-        else {
-            return Ok(Vec::new());
-        };
-        if document.version.major() != 9 || segment.compression.is_none() {
-            continue;
-        }
-        let Some((inflated, _inflated_storage)) =
-            inflate_display_jt_segment(ctx, container, segment)?
-        else {
-            return Ok(Vec::new());
-        };
-        let Some((elements, _, _framing_storage)) =
-            frame_display_jt_elements(ctx, &inflated, "NX JT framing storage")?
-        else {
-            return Ok(Vec::new());
-        };
-        for (ordinal, element) in ctx
-            .admit_iter(&elements, "store DisplayJT material attribute")?
-            .enumerate()
-        {
-            if element.object_type_id != MATERIAL_ATTRIBUTE_TYPE {
-                continue;
-            }
-            if element.object_base_type != 3 {
-                return Ok(Vec::new());
-            }
-            let Some((state_flags, field_inhibit_flags, version, data_flags, colors, shininess)) =
-                parse_jt9_material_body(element.body)
-            else {
-                return Ok(Vec::new());
-            };
-            let operation = "store DisplayJT material attribute";
-            ctx.reserve_record_vec(&mut attributes, 1, 0, operation)?;
-            attributes.push(DisplayJtMaterialAttribute {
-                id: ctx.format_retained(
-                    format_args!("{}-material-attribute-{ordinal}", segment.id),
-                    operation,
-                )?,
-                element: ctx.format_retained(
-                    format_args!("{}-inflated-element-{ordinal}", segment.id),
-                    operation,
-                )?,
-                object_id: element.object_id,
-                state_flags,
-                field_inhibit_flags,
-                version,
-                data_flags,
-                ambient: colors[0],
-                diffuse: colors[1],
-                specular: colors[2],
-                emission: colors[3],
-                shininess,
-                source_offset: segment.source_offset + 24,
-            });
-        }
+    let JtSceneElement {
+        segment,
+        ordinal,
+        element,
+    } = *at;
+    if element.object_type_id != MATERIAL_ATTRIBUTE_TYPE {
+        return Ok(true);
     }
-    Ok(attributes)
+    if element.object_base_type != 3 {
+        return Ok(false);
+    }
+    let Some((state_flags, field_inhibit_flags, version, data_flags, colors, shininess)) =
+        parse_jt9_material_body(element.body)
+    else {
+        return Ok(false);
+    };
+    let operation = "store DisplayJT material attribute";
+    ctx.reserve_record_vec(attributes, 1, 0, operation)?;
+    attributes.push(DisplayJtMaterialAttribute {
+        id: ctx.format_retained(
+            format_args!("{}-material-attribute-{ordinal}", segment.id),
+            operation,
+        )?,
+        element: ctx.format_retained(
+            format_args!("{}-inflated-element-{ordinal}", segment.id),
+            operation,
+        )?,
+        object_id: element.object_id,
+        state_flags,
+        field_inhibit_flags,
+        version,
+        data_flags,
+        ambient: colors[0],
+        diffuse: colors[1],
+        specular: colors[2],
+        emission: colors[3],
+        shininess,
+        source_offset: segment.source_offset + 24,
+    });
+    Ok(true)
 }
 
-/// Decode complete JT 9 partition nodes from logical scene-graph segments.
-pub(super) fn display_jt_partition_nodes(
+/// Decodes a partition node before JT 10; `false` rejects the family.
+fn push_jt_partition_node(
     ctx: &DecodeContext<'_>,
-    container: &Container,
-    segments: &[DisplayJtSegment],
-    documents: &[DisplayJtDocument],
-) -> Result<Vec<DisplayJtPartitionNode>, CodecError> {
+    nodes: &mut Vec<DisplayJtPartitionNode>,
+    at: &JtSceneElement<'_, '_>,
+) -> Result<bool, CodecError> {
     const PARTITION_NODE_TYPE: [u8; 16] = [
         0x3e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
     ];
-    let (documents_by_id, _documents_storage) = ctx.unique_index(
-        documents
-            .iter()
-            .map(|document| (document.id.as_str(), document)),
-        "index DisplayJT documents",
-    )?;
-    let mut nodes = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT partition node segments")?
-        .filter(|segment| segment.segment_type == 1)
-    {
-        let Some(&Some(document)) = ctx.get_hash_map(
-            &documents_by_id,
-            segment.document.as_str(),
-            "match DisplayJT segment documents",
-        )?
-        else {
-            return Ok(Vec::new());
-        };
-        if document.version.major() >= 10 {
-            continue;
-        }
-        let Some((inflated, _inflated_storage)) =
-            inflate_display_jt_segment(ctx, container, segment)?
-        else {
-            return Ok(Vec::new());
-        };
-        let Some((elements, _, _framing_storage)) =
-            frame_display_jt_elements(ctx, &inflated, "NX JT framing storage")?
-        else {
-            return Ok(Vec::new());
-        };
-        for (ordinal, element) in ctx
-            .admit_iter(&elements, "store DisplayJT partition node")?
-            .enumerate()
-        {
-            if element.object_type_id != PARTITION_NODE_TYPE {
-                continue;
-            }
-            let Some(node) = parse_jt9_partition_node_body(ctx, element.body)? else {
-                return Ok(Vec::new());
-            };
-            let operation = "store DisplayJT partition node";
-            ctx.reserve_record_vec(&mut nodes, 1, 0, operation)?;
-            nodes.push(DisplayJtPartitionNode {
-                id: ctx.format_retained(
-                    format_args!("{}-partition-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                base_node: ctx.format_retained(
-                    format_args!("{}-base-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                object_id: element.object_id,
-                group_version: node.group_version,
-                child_object_ids: node.child_object_ids,
-                file_name: node.file_name,
-                transformed_bounds: node.transformed_bounds,
-                area: node.area,
-                vertex_count_range: node.vertex_count_range,
-                node_count_range: node.node_count_range,
-                polygon_count_range: node.polygon_count_range,
-                bounds: node.bounds,
-                source_offset: segment.source_offset + 24,
-            });
-        }
+    let JtSceneElement {
+        segment,
+        ordinal,
+        element,
+    } = *at;
+    if element.object_type_id != PARTITION_NODE_TYPE {
+        return Ok(true);
     }
-    Ok(nodes)
+    let Some(node) = parse_jt9_partition_node_body(ctx, element.body)? else {
+        return Ok(false);
+    };
+    let operation = "store DisplayJT partition node";
+    ctx.reserve_record_vec(nodes, 1, 0, operation)?;
+    nodes.push(DisplayJtPartitionNode {
+        id: ctx.format_retained(
+            format_args!("{}-partition-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        base_node: ctx.format_retained(
+            format_args!("{}-base-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        object_id: element.object_id,
+        group_version: node.group_version,
+        child_object_ids: node.child_object_ids,
+        file_name: node.file_name,
+        transformed_bounds: node.transformed_bounds,
+        area: node.area,
+        vertex_count_range: node.vertex_count_range,
+        node_count_range: node.node_count_range,
+        polygon_count_range: node.polygon_count_range,
+        bounds: node.bounds,
+        source_offset: segment.source_offset + 24,
+    });
+    Ok(true)
 }
 
-/// Decode complete JT 9 range-LOD nodes from logical scene-graph segments.
-pub(super) fn display_jt_range_lod_nodes(
+/// Decodes a range-LOD node before JT 10; `false` rejects the family.
+fn push_jt_range_lod_node(
     ctx: &DecodeContext<'_>,
-    container: &Container,
-    segments: &[DisplayJtSegment],
-    documents: &[DisplayJtDocument],
-) -> Result<Vec<DisplayJtRangeLodNode>, CodecError> {
+    nodes: &mut Vec<DisplayJtRangeLodNode>,
+    at: &JtSceneElement<'_, '_>,
+) -> Result<bool, CodecError> {
     const RANGE_LOD_NODE_TYPE: [u8; 16] = [
         0x4c, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
     ];
-    let (documents_by_id, _documents_storage) = ctx.unique_index(
-        documents
-            .iter()
-            .map(|document| (document.id.as_str(), document)),
-        "index DisplayJT documents",
-    )?;
-    let mut nodes = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT range LOD segments")?
-        .filter(|segment| segment.segment_type == 1)
-    {
-        let Some(&Some(document)) = ctx.get_hash_map(
-            &documents_by_id,
-            segment.document.as_str(),
-            "match DisplayJT segment documents",
-        )?
-        else {
-            return Ok(Vec::new());
-        };
-        if document.version.major() >= 10 {
-            continue;
-        }
-        let Some((inflated, _inflated_storage)) =
-            inflate_display_jt_segment(ctx, container, segment)?
-        else {
-            return Ok(Vec::new());
-        };
-        let Some((elements, _, _framing_storage)) =
-            frame_display_jt_elements(ctx, &inflated, "NX JT framing storage")?
-        else {
-            return Ok(Vec::new());
-        };
-        for (ordinal, element) in ctx
-            .admit_iter(&elements, "store DisplayJT range LOD node")?
-            .enumerate()
-        {
-            if element.object_type_id != RANGE_LOD_NODE_TYPE {
-                continue;
-            }
-            let Some(node) = parse_jt9_range_lod_node_body(ctx, element.body)? else {
-                return Ok(Vec::new());
-            };
-            let operation = "store DisplayJT range LOD node";
-            ctx.reserve_record_vec(&mut nodes, 1, 0, operation)?;
-            nodes.push(DisplayJtRangeLodNode {
-                id: ctx.format_retained(
-                    format_args!("{}-range-lod-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                base_node: ctx.format_retained(
-                    format_args!("{}-base-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                object_id: element.object_id,
-                group_version: node.group_version,
-                child_object_ids: node.child_object_ids,
-                lod_version: node.lod_version,
-                reserved_values: node.reserved_values,
-                reserved_value: node.reserved_value,
-                range_version: node.range_version,
-                range_limits: node.range_limits,
-                center: node.center,
-                source_offset: segment.source_offset + 24,
-            });
-        }
+    let JtSceneElement {
+        segment,
+        ordinal,
+        element,
+    } = *at;
+    if element.object_type_id != RANGE_LOD_NODE_TYPE {
+        return Ok(true);
     }
-    Ok(nodes)
+    let Some(node) = parse_jt9_range_lod_node_body(ctx, element.body)? else {
+        return Ok(false);
+    };
+    let operation = "store DisplayJT range LOD node";
+    ctx.reserve_record_vec(nodes, 1, 0, operation)?;
+    nodes.push(DisplayJtRangeLodNode {
+        id: ctx.format_retained(
+            format_args!("{}-range-lod-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        base_node: ctx.format_retained(
+            format_args!("{}-base-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        object_id: element.object_id,
+        group_version: node.group_version,
+        child_object_ids: node.child_object_ids,
+        lod_version: node.lod_version,
+        reserved_values: node.reserved_values,
+        reserved_value: node.reserved_value,
+        range_version: node.range_version,
+        range_limits: node.range_limits,
+        center: node.center,
+        source_offset: segment.source_offset + 24,
+    });
+    Ok(true)
 }
 
-/// Decode complete JT 9 tri-strip shape nodes from logical scene-graph segments.
-pub(super) fn display_jt_tri_strip_shape_nodes(
+/// Decodes a JT 9 tri-strip shape node; `false` rejects the family.
+fn push_jt_tri_strip_shape_node(
     ctx: &DecodeContext<'_>,
-    container: &Container,
-    segments: &[DisplayJtSegment],
-    documents: &[DisplayJtDocument],
-) -> Result<Vec<DisplayJtTriStripShapeNode>, CodecError> {
+    nodes: &mut Vec<DisplayJtTriStripShapeNode>,
+    at: &JtSceneElement<'_, '_>,
+) -> Result<bool, CodecError> {
     const TRI_STRIP_SHAPE_NODE_TYPE: [u8; 16] = [
         0x77, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
     ];
-    let (documents_by_id, _documents_storage) = ctx.unique_index(
-        documents
-            .iter()
-            .map(|document| (document.id.as_str(), document)),
-        "index DisplayJT documents",
-    )?;
-    let mut nodes = Vec::new();
-    for segment in ctx
-        .admit_iter(segments, "scan DisplayJT tri-strip shape node segments")?
-        .filter(|segment| segment.segment_type == 1)
-    {
-        let Some(&Some(document)) = ctx.get_hash_map(
-            &documents_by_id,
-            segment.document.as_str(),
-            "match DisplayJT segment documents",
-        )?
-        else {
-            return Ok(Vec::new());
-        };
-        if document.version.major() != 9 || segment.compression.is_none() {
-            continue;
-        }
-        let Some((inflated, _inflated_storage)) =
-            inflate_display_jt_segment(ctx, container, segment)?
-        else {
-            return Ok(Vec::new());
-        };
-        let Some((elements, _, _framing_storage)) =
-            frame_display_jt_elements(ctx, &inflated, "NX JT framing storage")?
-        else {
-            return Ok(Vec::new());
-        };
-        for (ordinal, element) in ctx
-            .admit_iter(&elements, "store DisplayJT tri strip shape node")?
-            .enumerate()
-        {
-            if element.object_type_id != TRI_STRIP_SHAPE_NODE_TYPE {
-                continue;
-            }
-            if element.object_base_type != 2 {
-                return Ok(Vec::new());
-            }
-            let Some(node) = parse_jt9_tri_strip_shape_node_body(element.body) else {
-                return Ok(Vec::new());
-            };
-            let operation = "store DisplayJT tri strip shape node";
-            ctx.reserve_record_vec(&mut nodes, 1, 0, operation)?;
-            nodes.push(DisplayJtTriStripShapeNode {
-                id: ctx.format_retained(
-                    format_args!("{}-tri-strip-shape-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                base_node: ctx.format_retained(
-                    format_args!("{}-base-node-{ordinal}", segment.id),
-                    operation,
-                )?,
-                object_id: element.object_id,
-                reserved_bounds: node.reserved_bounds,
-                untransformed_bounds: node.untransformed_bounds,
-                area: node.area,
-                vertex_count_range: node.vertex_count_range,
-                node_count_range: node.node_count_range,
-                polygon_count_range: node.polygon_count_range,
-                memory_byte_len: node.memory_byte_len,
-                compression_level: node.compression_level,
-                vertex_version: node.vertex_version,
-                vertex_bindings: node.vertex_bindings,
-                vertex_quantization_bits: node.vertex_quantization_bits,
-                normal_quantization_factor: node.normal_quantization_factor,
-                texture_quantization_bits: node.texture_quantization_bits,
-                color_quantization_bits: node.color_quantization_bits,
-                source_offset: segment.source_offset + 24,
-            });
-        }
+    let JtSceneElement {
+        segment,
+        ordinal,
+        element,
+    } = *at;
+    if element.object_type_id != TRI_STRIP_SHAPE_NODE_TYPE {
+        return Ok(true);
     }
-    Ok(nodes)
+    if element.object_base_type != 2 {
+        return Ok(false);
+    }
+    let Some(node) = parse_jt9_tri_strip_shape_node_body(element.body) else {
+        return Ok(false);
+    };
+    let operation = "store DisplayJT tri strip shape node";
+    ctx.reserve_record_vec(nodes, 1, 0, operation)?;
+    nodes.push(DisplayJtTriStripShapeNode {
+        id: ctx.format_retained(
+            format_args!("{}-tri-strip-shape-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        base_node: ctx.format_retained(
+            format_args!("{}-base-node-{ordinal}", segment.id),
+            operation,
+        )?,
+        object_id: element.object_id,
+        reserved_bounds: node.reserved_bounds,
+        untransformed_bounds: node.untransformed_bounds,
+        area: node.area,
+        vertex_count_range: node.vertex_count_range,
+        node_count_range: node.node_count_range,
+        polygon_count_range: node.polygon_count_range,
+        memory_byte_len: node.memory_byte_len,
+        compression_level: node.compression_level,
+        vertex_version: node.vertex_version,
+        vertex_bindings: node.vertex_bindings,
+        vertex_quantization_bits: node.vertex_quantization_bits,
+        normal_quantization_factor: node.normal_quantization_factor,
+        texture_quantization_bits: node.texture_quantization_bits,
+        color_quantization_bits: node.color_quantization_bits,
+        source_offset: segment.source_offset + 24,
+    });
+    Ok(true)
 }
 const DISPLAY_JT_COLOR_CHANNEL: u32 = 0x4e58_0001;
 const DISPLAY_JT_VERTEX_FLAG_CHANNEL: u32 = 0x4e58_0002;
