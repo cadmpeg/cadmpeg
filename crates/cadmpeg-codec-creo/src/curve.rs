@@ -1337,7 +1337,7 @@ fn curve_equation_prohibited_constructs(
                 }
                 let name = &source[start..end];
                 if bytes.get(following) == Some(&b'(')
-                    && ctx.any_by(&PROHIBITED_FUNCTIONS, |candidate| Ok(ctx.eq_ignore_ascii_case(name, candidate, "creo relation text comparison")?), "creo relation comparison traversal")?
+                    && ctx.any_by(PROHIBITED_FUNCTIONS, |candidate| Ok(ctx.eq_ignore_ascii_case(name, candidate, "creo relation text comparison")?), "creo relation comparison traversal")?
                     && !{ let mut matched = false; for known in ctx.admit_iter(&prohibited, "creo prohibited name traversal")? { if ctx.eq_ignore_ascii_case(known, name, "creo relation text comparison")? { matched = true; break; } } matched }
                 {
                     let mut name =
@@ -1516,7 +1516,7 @@ fn extend_expression_dependencies(
             let constant = reserved_relation_scalar(ctx, dependency)?.is_some();
             if !function
                 && !constant
-                && !ctx.any_by(&dependencies, |existing| Ok(ctx.eq_ignore_ascii_case(existing, dependency, "creo relation text comparison")?), "creo relation comparison traversal")?
+                && !ctx.any_by(dependencies.iter(), |existing| Ok(ctx.eq_ignore_ascii_case(existing, dependency, "creo relation text comparison")?), "creo relation comparison traversal")?
             {
                 ctx.reserve_vec(dependencies, 1, "creo expression dependency names")?;
                 dependencies
@@ -1634,7 +1634,7 @@ fn curve_expression_solve_program(
             if let Some(unknowns) = &unknowns {
                 for statement in std::mem::take(&mut block.statements) {
                     if ctx.any_by(&statement.equation.dependencies, |dependency| Ok({
-                        ctx.any_by(&unknowns, |unknown| Ok(ctx.eq_ignore_ascii_case(&unknown.name, dependency, "creo relation text comparison")?), "creo relation comparison traversal")?
+                        ctx.any_by(unknowns, |unknown| Ok(ctx.eq_ignore_ascii_case(&unknown.name, dependency, "creo relation text comparison")?), "creo relation comparison traversal")?
                     }), "creo relation comparison traversal")? {
                         ctx.reserve_vec(&mut equations, 1, "creo solve equations")?;
                         equations.push(statement.equation);
