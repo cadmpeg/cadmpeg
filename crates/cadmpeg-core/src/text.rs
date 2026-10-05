@@ -915,8 +915,8 @@ mod tests {
     fn nonblank_decode_validation_admits_unicode_bytes_and_keeps_storage() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Three UTF-8 whitespace bytes and one non-whitespace byte.
-        policy.limits.max_work_units = 4;
+        // One whitespace character and one non-whitespace character.
+        policy.limits.max_work_units = 2;
         policy.limits.max_materialized_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let value = String::from("\u{2003}a");
@@ -929,8 +929,8 @@ mod tests {
         let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "probe").unwrap_err() else {
             panic!("refusal")
         };
-        assert_eq!(limit.used, 4);
-        policy.limits.max_work_units = 3;
+        assert_eq!(limit.used, 2);
+        policy.limits.max_work_units = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let first =
             NonBlankString::for_decode(&ctx, String::from("\u{2003}a"), "validate").unwrap_err();
@@ -954,8 +954,8 @@ mod tests {
     fn nonblank_borrowed_construction_charges_validation_and_one_copy() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Four UTF-8 validation bytes and four copied bytes; one four-byte buffer.
-        policy.limits.max_work_units = 8;
+        // Two validated characters and four copied bytes; one four-byte buffer.
+        policy.limits.max_work_units = 6;
         policy.limits.max_retained_bytes = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let source = String::from("\u{2003}a");
@@ -967,7 +967,7 @@ mod tests {
         let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else {
             panic!("work refusal")
         };
-        assert_eq!(work.used, 8);
+        assert_eq!(work.used, 6);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert_eq!(
             NonBlankString::for_decode(&ctx, source.as_str(), "borrowed nonblank")
@@ -988,8 +988,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        // Three whitespace bytes are validated without retaining their text.
-        policy.limits.max_work_units = 3;
+        // One whitespace character is validated without retaining its text.
+        policy.limits.max_work_units = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(NonBlankString::for_decode(&ctx, "\u{2003}", "blank text")
             .unwrap()
@@ -997,7 +997,7 @@ mod tests {
         let CodecError::ResourceLimit(work) = ctx.charge_work(1, "probe").unwrap_err() else {
             panic!("work refusal")
         };
-        assert_eq!(work.used, 3);
+        assert_eq!(work.used, 1);
         policy.limits.max_work_units = 8;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let first = NonBlankString::for_decode(&ctx, "\u{2003}a", "borrowed text").unwrap_err();
@@ -1039,8 +1039,8 @@ mod tests {
     fn checked_nonblank_token_keeps_spelling_and_transfers_one_owned_buffer() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Four nonblank UTF-8 bytes and three blank UTF-8 bytes; both buffers already exist.
-        policy.limits.max_work_units = 7;
+        // Two nonblank-token characters and one blank-token character; both buffers already exist.
+        policy.limits.max_work_units = 3;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let source = String::from("\u{2003}a");
@@ -1059,7 +1059,7 @@ mod tests {
         let first = ctx
             .validate_nonblank_text(String::from("x"), "token refusal")
             .unwrap_err();
-        assert_eq!(first.used, 7);
+        assert_eq!(first.used, 3);
         assert_eq!(ctx.resource_refusal(), Some(first));
         assert_eq!(
             ctx.validate_nonblank_text(String::from("later"), "later token")

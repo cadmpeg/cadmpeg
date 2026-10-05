@@ -1,8 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Generic core collectors defer source-step obligations to their callers.
+//! Iterator traversal costs and the source-step obligations of core collectors.
 use crate::{external, types, Analysis};
 use rustc_hir::Expr;
 use rustc_middle::ty::{self, Ty};
+
+/// What a complete traversal costs beyond the work of checked callbacks.
+/// The order runs from the strongest guarantee to the weakest.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum StepCost {
+    /// A constant number of steps, each doing constant work.
+    Constant,
+    /// Every base visit was charged by `DecodeContext::admit_iter` before the
+    /// first step, and each visit does constant work.
+    Prepaid,
+    /// Each step does constant work beyond prepaid visits, but the number of
+    /// steps is not charged.
+    One,
+    /// A step can perform unbounded work before yielding.
+    Unknown,
+}
 
 impl<'tcx> Analysis<'_, 'tcx> {
     fn core_iterator_types(
@@ -56,12 +72,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
             }
     }
 
-    fn checked_iterator_callback(&self, callback: Ty<'tcx>) -> bool {
+    pub(crate) fn checked_iterator_callback(&self, callback: Ty<'tcx>) -> bool {
         match callback.peel_refs().kind() {
-            ty::Closure(id, _) => self.checked_body(*id),
+            ty::Closure(id, _) => !types::standard(self.tcx, *id) && self.checked_body(*id),
             ty::FnDef(id, _) => {
                 matches!(self.tcx.def_kind(*id), rustc_hir::def::DefKind::Ctor(_, _))
-                    || self.checked_body(*id)
+                    || !types::standard(self.tcx, *id) && self.checked_body(*id)
                     || external::summary(self.tcx, *id, None)
                         .is_some_and(|cost| cost.work == external::Work::Fixed)
             }
@@ -70,67 +86,265 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
     }
 
-    fn bounded_iterator_steps(&self, value: Ty<'tcx>) -> bool {
-        let value = value.peel_refs();
-        if self.core_iterator_parameter(value) {
-            return true;
-        }
-        match value.kind() {
-            ty::Array(..) | ty::Slice(_) => return true,
-            _ => (),
-        }
-        let ty::Adt(owner, args) = value.kind() else {
-            return false;
-        };
-        if !types::standard(self.tcx, owner.did()) {
-            return types::admitted_iterator(self.tcx, value);
-        }
-        let name = self.tcx.item_name(owner.did());
-        let path = self.tcx.def_path_str(owner.did());
-        let mut arguments = args.types();
-        match name.as_str() {
-            "Vec" => true,
-            "IntoIter" if path.contains("vec::") || path.contains("array::") => true,
-            "Iter" | "IterMut" if path.contains("slice::") => true,
-            "Chunks" | "ChunksExact" | "Windows" | "Bytes" | "Chars" => true,
-            "Range" | "RangeInclusive" | "RangeFrom" => arguments.next().is_some_and(|element| {
-                matches!(element.kind(), ty::Uint(_) | ty::Int(_) | ty::Char)
-            }),
-            "Map" | "Inspect" => {
-                arguments
-                    .next()
-                    .is_some_and(|source| self.bounded_iterator_steps(source))
-                    && arguments
-                        .next()
-                        .is_some_and(|callback| self.checked_iterator_callback(callback))
+    /// Every callable operand of an iterator consumer has a checked body.
+    /// Operands that are not callables (fold seeds, counts) carry no work.
+    pub(crate) fn consumer_callbacks_checked(&self, operands: &[Ty<'tcx>]) -> bool {
+        operands
+            .iter()
+            .all(|operand| match operand.peel_refs().kind() {
+                ty::Closure(..) | ty::FnDef(..) => self.checked_iterator_callback(*operand),
+                ty::FnPtr(..) | ty::Dynamic(..) => false,
+                ty::Param(_) => {
+                    self.checked_iterator_callback(*operand)
+                        || !self.callable_parameter(operand.peel_refs())
+                }
+                _ => true,
+            })
+    }
+
+    fn callable_parameter(&self, value: Ty<'tcx>) -> bool {
+        self.typing_env().param_env.caller_bounds().any(|clause| {
+            match clause.kind().skip_binder() {
+                ty::ClauseKind::Trait(predicate) => {
+                    predicate.self_ty() == value
+                        && self
+                            .tcx
+                            .fn_trait_kind_from_def_id(predicate.def_id())
+                            .is_some()
+                }
+                _ => false,
             }
-            "Enumerate" | "Rev" | "Copied" | "Peekable" | "Fuse" => arguments
-                .next()
-                .is_some_and(|source| self.bounded_iterator_steps(source)),
-            "Filter" | "FilterMap" | "TakeWhile" | "SkipWhile" | "MapWhile" | "FlatMap"
-            | "Scan" => {
-                types::admitted_iterator(self.tcx, value)
-                    && args
-                        .types()
-                        .last()
-                        .is_some_and(|callback| self.checked_iterator_callback(callback))
-            }
-            _ => types::admitted_iterator(self.tcx, value),
+        })
+    }
+
+    /// Every base visit of the iterator was charged before its first step.
+    pub(crate) fn prepaid_iterator(&self, value: Ty<'tcx>) -> bool {
+        self.iterator_step_cost(value) == StepCost::Prepaid
+    }
+
+    /// The shape a traversal of the iterator has for work accounting:
+    /// constant or prepaid traversals need no further charge, one-step
+    /// traversals need one per step, and unknown steps have no shape.
+    pub(crate) fn bounded_iterator_shape(&self, value: Ty<'tcx>) -> Option<types::Shape> {
+        match self.iterator_step_cost(value) {
+            StepCost::Constant | StepCost::Prepaid => Some(types::Shape::Fixed),
+            StepCost::One => Some(types::Shape::Dynamic),
+            StepCost::Unknown => None,
         }
     }
 
+    pub(crate) fn iterator_step_cost(&self, value: Ty<'tcx>) -> StepCost {
+        self.iterator_step_cost_at(value, 0)
+    }
+
+    fn iterator_step_cost_at(&self, value: Ty<'tcx>, depth: usize) -> StepCost {
+        if depth >= self.tcx.recursion_limit().0 {
+            return StepCost::Unknown;
+        }
+        let value = self.normalized_iterator_type(value.peel_refs());
+        let value = types::reveal_opaque(self.tcx, value);
+        if self.core_iterator_parameter(value) {
+            return StepCost::Unknown;
+        }
+        let ty::Adt(owner, arguments) = value.kind() else {
+            return match value.kind() {
+                ty::Array(..) => StepCost::Constant,
+                ty::Slice(_) | ty::Str => StepCost::One,
+                _ => StepCost::Unknown,
+            };
+        };
+        if types::admitted_iter(self.tcx, value) {
+            return StepCost::Prepaid;
+        }
+        if ["Children", "Attributes"]
+            .iter()
+            .any(|name| types::physical_item_path(self.tcx, owner.did(), "roxmltree", &[name]))
+        {
+            return StepCost::One;
+        }
+        if !types::standard(self.tcx, owner.did()) {
+            return StepCost::Unknown;
+        }
+        let name = self.tcx.item_name(owner.did());
+        let path = self.tcx.def_path_str(owner.did());
+        let arguments: Vec<_> = arguments.types().collect();
+        let cost = |index: usize| {
+            arguments.get(index).map_or(StepCost::Unknown, |source| {
+                self.iterator_step_cost_at(*source, depth + 1)
+            })
+        };
+        let callback = || {
+            arguments
+                .last()
+                .is_some_and(|callback| self.checked_iterator_callback(*callback))
+        };
+        match name.as_str() {
+            "Option" | "Result" | "Once" | "Empty" => StepCost::Constant,
+            "IntoIter" | "Iter" | "IterMut"
+                if path.contains("array::")
+                    || path.contains("option::")
+                    || path.contains("result::") =>
+            {
+                StepCost::Constant
+            }
+            "ToLowercase" | "ToUppercase" if path.contains("char::") => StepCost::Constant,
+            "IntoIter" if path.contains("vec::") => StepCost::One,
+            // A collection passed as an `IntoIterator` source steps through its
+            // own iterator; slices and B-tree iterators advance in constant
+            // amortized work per item.
+            "Vec" | "VecDeque" | "BTreeMap" | "BTreeSet" if !path.contains("hash") => StepCost::One,
+            "Chunks" | "ChunksExact" | "RChunks" | "Windows" if path.contains("slice::") => {
+                StepCost::One
+            }
+            "Iter" | "IterMut" | "IntoIter" | "Keys" | "Values" | "ValuesMut"
+                if path.contains("btree::") =>
+            {
+                StepCost::One
+            }
+            "Iter" | "IterMut"
+                if (path.contains("slice::")
+                    || path.contains("vec::")
+                    || path.contains("vec_deque::"))
+                    && !path.contains("hash") =>
+            {
+                StepCost::One
+            }
+            "Bytes" | "Chars"
+                if types::physical_item_path(
+                    self.tcx,
+                    owner.did(),
+                    "core",
+                    &["str", "iter", name.as_str()],
+                ) =>
+            {
+                StepCost::One
+            }
+            "Range" | "RangeInclusive" | "RangeFrom"
+                if types::physical_item_path(
+                    self.tcx,
+                    owner.did(),
+                    "core",
+                    &["ops", "range", name.as_str()],
+                ) && arguments.first().is_some_and(|element| {
+                    matches!(element.kind(), ty::Uint(_) | ty::Int(_) | ty::Char)
+                }) =>
+            {
+                StepCost::One
+            }
+            "FromFn" | "Successors" if callback() => StepCost::One,
+            // Each step forwards to one base step and one checked callback.
+            "Map" | "Inspect" | "MapWhile" | "Scan" | "TakeWhile" => {
+                if callback() {
+                    cost(0)
+                } else {
+                    StepCost::Unknown
+                }
+            }
+            // One step may consume many base steps; only a prepaid or constant
+            // base pays for the skipped visits.
+            "Filter" | "FilterMap" | "SkipWhile" if !callback() => StepCost::Unknown,
+            "Filter" | "FilterMap" | "SkipWhile" | "Skip" | "StepBy" => match cost(0) {
+                base @ (StepCost::Constant | StepCost::Prepaid) => base,
+                StepCost::One | StepCost::Unknown => StepCost::Unknown,
+            },
+            "Enumerate" | "Rev" | "Copied" | "Fuse" | "Peekable" | "Take" | "DecodeUtf16" => {
+                cost(0)
+            }
+            "Cloned" => {
+                let element = arguments
+                    .first()
+                    .and_then(|source| self.iterator_item(*source))
+                    .map(|item| item.peel_refs());
+                if element.is_some_and(|element| {
+                    self.tcx
+                        .type_is_copy_modulo_regions(self.typing_env(), element)
+                        || self.clone_shape(element) == types::Shape::Fixed
+                }) {
+                    cost(0)
+                } else {
+                    StepCost::Unknown
+                }
+            }
+            "Chain" => cost(0).max(cost(1)),
+            // Zip stops at its shorter side, so the shorter side bounds the
+            // constant-work steps of the other.
+            "Zip" => {
+                let (left, right) = (cost(0), cost(1));
+                if left == StepCost::Unknown || right == StepCost::Unknown {
+                    StepCost::Unknown
+                } else {
+                    left.min(right)
+                }
+            }
+            "Flatten" => {
+                let inner = arguments
+                    .first()
+                    .and_then(|source| self.iterator_item(*source));
+                self.flattened_cost(cost(0), inner, depth)
+            }
+            "FlatMap" if callback() => {
+                self.flattened_cost(cost(0), arguments.get(1).copied(), depth)
+            }
+            _ => StepCost::Unknown,
+        }
+    }
+
+    /// A flattened traversal pays for its inner iterators only when each one
+    /// has a constant count; a one-step outer also needs every inner to yield,
+    /// or a single step could skip any number of empty inner iterators.
+    fn flattened_cost(&self, outer: StepCost, inner: Option<Ty<'tcx>>, depth: usize) -> StepCost {
+        let Some(inner) = inner else {
+            return StepCost::Unknown;
+        };
+        let inner = inner.peel_refs();
+        let constant_count = self.iterator_step_cost_at(inner, depth + 1) == StepCost::Constant;
+        let nonempty_array = matches!(inner.kind(), ty::Array(_, length)
+            if length.try_to_target_usize(self.tcx).is_some_and(|length| length > 0));
+        match outer {
+            StepCost::Constant | StepCost::Prepaid if constant_count => outer,
+            StepCost::One if nonempty_array => StepCost::One,
+            _ => StepCost::Unknown,
+        }
+    }
+
+    fn normalized_iterator_type(&self, value: Ty<'tcx>) -> Ty<'tcx> {
+        self.tcx
+            .try_normalize_erasing_regions(
+                self.typing_env(),
+                ty::Unnormalized::new_wip(types::reveal_opaque(self.tcx, value)),
+            )
+            .unwrap_or(value)
+    }
+
+    /// Checks the source operands of core operations that step a caller's
+    /// iterator, and the refusal of each iterator admission.
     pub(crate) fn iterator_boundary(&mut self, expression: &'tcx Expr<'tcx>) {
         let Some((definition, operands)) = self.call(expression) else {
             return;
         };
+        if types::decode_context_method(self.tcx, definition, "admit_iter")
+            && !self.propagated(expression)
+        {
+            self.report(
+                expression.span,
+                "unproven_decode_charge",
+                "DecodeContext::admit_iter refusal is not propagated; replacement: propagate the admission Result with ?",
+            );
+        }
         let Some(args) = self.call_arguments(expression) else {
             return;
         };
         let sources = self.core_iterator_types(definition, args);
+        let source_owner = self.tcx.def_path_str(definition);
         for operand in operands {
-            let value = self.expr_ty(operand).peel_refs();
-            if sources.contains(&value) && !self.bounded_iterator_steps(value) {
-                self.report(expression.span, "unproven_decode_charge", &format!("DecodeContext::{} source can scan before yielding; use DecodeContext::admit_iter on its base before applying adapters", self.tcx.item_name(definition)));
+            let value = self.expr_ty(operand);
+            if sources
+                .iter()
+                .any(|source| *source == value || *source == value.peel_refs())
+                && !self.core_iterator_parameter(value)
+                && self.iterator_step_cost(value) == StepCost::Unknown
+            {
+                self.report(expression.span, "unproven_decode_charge", &format!("{source_owner} source can scan before yielding; admit its bounded base before applying adapters"));
             }
         }
     }

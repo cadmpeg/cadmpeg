@@ -1080,16 +1080,22 @@ fn feature_unique_ordinal_index_refuses_collection_limit() {
     assert_feature_dependency_index_refusal("f3d feature unique ordinal index");
 }
 
+/// The stream of the limit fixtures. Its 200 byte directory makes every record
+/// id longer than the transient hash-table reservations the projection holds
+/// while its lookup tables grow, so an id copy is the first charge to need more
+/// materialized bytes than the peak before it.
+const LIMIT_STREAM: &str = "f3d:Design/pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp/BulkStream.dat";
+
 fn authored_ordinal_limit_fixture() -> (Vec<DesignParameterScope>, DesignFeatureTimeline) {
-    let stream = "f3d:Design/BulkStream.dat";
+    let stream = LIMIT_STREAM;
     let mut first = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        &format!("{LIMIT_STREAM}:design-parameter-scope#10"),
         crate::records::feature::scope::DesignFeatureKind::Extrude,
         10,
     );
     first.feature_ordinal = std::num::NonZeroU32::new(1).unwrap();
     let mut second = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#11",
+        &format!("{LIMIT_STREAM}:design-parameter-scope#11"),
         crate::records::feature::scope::DesignFeatureKind::Extrude,
         11,
     );
@@ -1338,6 +1344,10 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
         "mm"
     };
     let expression_lookup = operation.starts_with("f3d expression ");
+    // The alias names are longer than the transient hash-table reservations
+    // the lookup tables hold while they grow, so each name copy is the first
+    // charge to need more materialized bytes than the peak before it.
+    let long_name = "n".repeat(250);
     let mut parameter = parse_design_parameter_record(&parameter_record(
         Some(40),
         if expression_lookup {
@@ -1347,11 +1357,11 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
         },
         "FeatureInput",
         Some(unit),
-        "InternalValue",
+        &long_name,
         0.1,
     ))
     .unwrap();
-    parameter.id = "f3d:Design/BulkStream.dat:design-parameter#41".to_owned();
+    parameter.id = format!("{LIMIT_STREAM}:design-parameter#41");
     parameter.record_index = 41;
     parameter
         .try_set_source(
@@ -1365,7 +1375,7 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
         .unwrap();
     let owner = crate::records::parameters::DesignParameterOwner::try_from(
         crate::records::parameters::DesignParameterOwnerWire {
-            id: "f3d:Design/BulkStream.dat:design-parameter-owner#40".to_owned(),
+            id: format!("{LIMIT_STREAM}:design-parameter-owner#40"),
             byte_offset: 0,
             frame_length: 103,
             class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
@@ -1383,12 +1393,62 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
     )
     .unwrap();
     let document_alias = operation.starts_with("f3d document alias");
-    let owners = if document_alias {
-        &[][..]
+    let mut owners = if document_alias {
+        Vec::new()
     } else {
-        std::slice::from_ref(&owner)
+        vec![owner]
     };
     let mut native = vec![parameter];
+    if !expression_lookup && !document_alias {
+        // A second owned parameter makes the second owned alias name copy
+        // start above every transient peak the first iteration reached, since
+        // the second insertion into each alias table does not grow it.
+        let mut second = parse_design_parameter_record(&parameter_record(
+            Some(43),
+            "1 mm",
+            "FeatureInput",
+            Some(unit),
+            &"m".repeat(250),
+            0.1,
+        ))
+        .unwrap();
+        second.id = format!("{LIMIT_STREAM}:design-parameter#44");
+        second.record_index = 44;
+        second
+            .try_set_source(
+                crate::records::parameters::DesignParameterSource::new::<String>(
+                    second.source_kind().to_owned(),
+                    Some(43),
+                    second.family_discriminator(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        owners.push(
+            crate::records::parameters::DesignParameterOwner::try_from(
+                crate::records::parameters::DesignParameterOwnerWire {
+                    id: format!("{LIMIT_STREAM}:design-parameter-owner#43"),
+                    byte_offset: 0,
+                    frame_length: 103,
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "292".to_owned(),
+                    )
+                    .unwrap(),
+                    record_index: 43,
+                    scope_record_index: 10,
+                    local_ordinal: 0,
+                    evaluated_value: 0.1,
+                    evaluated_value_offset: 40,
+                    parameter_record_index: 44,
+                    owned_ordinal: 1,
+                    variant: None,
+                    companion_record_index: 45,
+                },
+            )
+            .unwrap(),
+        );
+        native.push(second);
+    }
     if expression_lookup {
         let mut width = parse_design_parameter_record(&parameter_record(
             None,
@@ -1399,7 +1459,7 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
             0.2,
         ))
         .unwrap();
-        width.id = "f3d:Design/BulkStream.dat:design-parameter#42".to_owned();
+        width.id = format!("{LIMIT_STREAM}:design-parameter#42");
         width.record_index = 42;
         native.push(width);
     }
@@ -1446,7 +1506,7 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
                     &ctx,
                     &crate::design::feature_project::ProjectInputs {
                         native: &native,
-                        owners,
+                        owners: &owners,
                         scopes: &scopes,
                         timelines: std::slice::from_ref(&timeline),
                         ..Default::default()
@@ -1634,7 +1694,7 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
             1.0,
         ))
         .unwrap();
-        parameter.id = format!("f3d:Design/BulkStream.dat:design-parameter#{record_index}");
+        parameter.id = format!("{LIMIT_STREAM}:design-parameter#{record_index}");
         parameter.record_index = record_index;
         parameter
     };

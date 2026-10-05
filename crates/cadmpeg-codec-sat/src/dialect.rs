@@ -201,9 +201,12 @@ fn declared(
                 "text".into(),
                 "SAT framing declarations",
             )?;
-            let Some(text) = text else { return Ok(declared) };
+            let Some(text) = text else {
+                return Ok(declared);
+            };
             let terminator = ctx.copy_retained_text(
-                terminator_line(text.branch), "SAT framing terminator declaration",
+                terminator_line(text.branch),
+                "SAT framing terminator declaration",
             )?;
             ctx.insert_btree_map(
                 &mut declared,

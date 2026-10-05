@@ -8,6 +8,7 @@ mod sealed {
     pub trait Scalar {}
     pub trait Source {}
     pub trait Radix {}
+    pub trait Query {}
 }
 
 /// Text values whose borrowed view requires no scan, copy or allocation.
@@ -53,6 +54,67 @@ impl<T: TextSource + ?Sized> sealed::Source for &T {}
 impl<T: TextSource + ?Sized> TextSource for &T {
     fn as_text(&self) -> &str {
         T::as_text(*self)
+    }
+}
+
+/// Borrowed text and byte views with constant-time extent and range access.
+pub trait QuerySource: sealed::Query {
+    /// The borrowed result domain: UTF-8 text or bytes.
+    type View: ?Sized;
+    /// Returns the existing bytes without traversal.
+    fn query_bytes(&self) -> &[u8];
+    /// Returns an existing range, checking bounds and UTF-8 boundaries.
+    fn query_range(&self, range: std::ops::Range<usize>) -> Option<&Self::View>;
+}
+
+impl sealed::Query for str {}
+impl QuerySource for str {
+    type View = str;
+    fn query_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn query_range(&self, range: std::ops::Range<usize>) -> Option<&str> {
+        self.get(range)
+    }
+}
+impl sealed::Query for String {}
+impl QuerySource for String {
+    type View = str;
+    fn query_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+    fn query_range(&self, range: std::ops::Range<usize>) -> Option<&str> {
+        self.get(range)
+    }
+}
+impl sealed::Query for [u8] {}
+impl QuerySource for [u8] {
+    type View = [u8];
+    fn query_bytes(&self) -> &[u8] {
+        self
+    }
+    fn query_range(&self, range: std::ops::Range<usize>) -> Option<&[u8]> {
+        self.get(range)
+    }
+}
+impl sealed::Query for Vec<u8> {}
+impl QuerySource for Vec<u8> {
+    type View = [u8];
+    fn query_bytes(&self) -> &[u8] {
+        self.as_slice()
+    }
+    fn query_range(&self, range: std::ops::Range<usize>) -> Option<&[u8]> {
+        self.get(range)
+    }
+}
+impl<const N: usize> sealed::Query for [u8; N] {}
+impl<const N: usize> QuerySource for [u8; N] {
+    type View = [u8];
+    fn query_bytes(&self) -> &[u8] {
+        self.as_slice()
+    }
+    fn query_range(&self, range: std::ops::Range<usize>) -> Option<&[u8]> {
+        self.get(range)
     }
 }
 
@@ -116,15 +178,21 @@ impl DecodeContext<'_> {
         T::parse_radix(self, text, radix, operation)
     }
 
-    /// Charge the complete text scan and retain its result with the exact input.
+    /// Charge each character visited up to the first non-whitespace one, and
+    /// retain the result with the exact input.
     pub fn validate_nonblank_text<S: TextSource>(
         &self,
         source: S,
         operation: &'static str,
     ) -> Result<crate::text::NonBlankText<S>, super::ResourceLimit> {
-        let nonblank = self
-            .admit_iter(source.as_text(), operation)?
-            .any(|character| !character.is_whitespace());
+        let mut nonblank = false;
+        for character in source.as_text().chars() {
+            self.charge_work_limit(1, operation)?;
+            if !character.is_whitespace() {
+                nonblank = true;
+                break;
+            }
+        }
         Ok(crate::text::NonBlankText { source, nonblank })
     }
 

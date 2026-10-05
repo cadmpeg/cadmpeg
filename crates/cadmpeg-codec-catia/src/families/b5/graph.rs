@@ -10,11 +10,11 @@ type Class1aPcurveFields = Option<(u32, [f64; 2], [f64; 2], [f64; 2], f64, [f64;
 type LoopReferencesOutput = Result<Option<(Vec<u32>, B5LoopMetadata, Vec<[i16; 3]>)>, CodecError>;
 type LoopMetadataOutput = Result<Option<(B5LoopMetadata, Vec<[i16; 3]>)>, CodecError>;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Range;
 
-use cadmpeg_core::decode::{cost::DecodeCost, DecodeContext, View, WorkBudget};
+use cadmpeg_core::decode::{cost::DecodeCost, DecodeContext, ScopedReservation, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_pcurve_uv;
 use cadmpeg_ir::features::FinitePoint3;
@@ -2542,7 +2542,10 @@ fn resolve_targeted_surface(
         headers,
         resolved,
         rolling,
-        HashSet::new(),
+        (
+            BTreeSet::new(),
+            ctx.reserve_scoped(0, "catia_b5_targeted_surface_visited")?,
+        ),
     )
 }
 
@@ -2553,12 +2556,13 @@ fn resolve_targeted_surface_inner(
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
-    mut visited: HashSet<u32>,
+    (mut visited, mut visited_storage): (BTreeSet<u32>, ScopedReservation<'_>),
 ) -> Result<Option<B5Surface>, CodecError> {
     let _depth = ctx.enter_nested("catia_b5_targeted_surface_resolution")?;
     loop {
-        if !ctx.insert_hash_set(&mut visited, object_id, "catia_b5_targeted_surface_visited")?
-            || records.get(&object_id).is_some_and(Option::is_none)
+        if !visited_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut visited, object_id, "catia_b5_targeted_surface_visited")
+        })? || records.get(&object_id).is_some_and(Option::is_none)
         {
             return Ok(None);
         }
@@ -2597,6 +2601,20 @@ fn resolve_targeted_surface_inner(
     }
 }
 
+/// Copies the visited set into scratch storage that the recursive call owns
+/// and releases when it returns.
+fn copy_visited<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    visited: &BTreeSet<u32>,
+) -> Result<(BTreeSet<u32>, ScopedReservation<'ctx>), CodecError> {
+    const OPERATION: &str = "catia_b5_targeted_visited_copy";
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let copy = storage.with_storage(|| {
+        ctx.collect_btree_set(ctx.admit_iter(visited, OPERATION)?.copied(), OPERATION)
+    })?;
+    Ok((copy, storage))
+}
+
 fn resolve_targeted_analytic_offset(
     ctx: &DecodeContext<'_>,
     record: &B5Record,
@@ -2604,7 +2622,7 @@ fn resolve_targeted_analytic_offset(
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
-    visited: &HashSet<u32>,
+    visited: &BTreeSet<u32>,
 ) -> Result<Option<B5Surface>, CodecError> {
     if record.payload.first() != Some(&0x82) {
         return Ok(None);
@@ -2623,7 +2641,7 @@ fn resolve_targeted_analytic_offset(
         headers,
         resolved,
         rolling,
-        ctx.copy_retained_set(visited, "catia_b5_targeted_visited_copy")?,
+        copy_visited(ctx, visited)?,
     )?
     else {
         return Ok(None);
@@ -2643,7 +2661,7 @@ fn resolve_targeted_analytic_offset(
             headers,
             resolved,
             rolling,
-            ctx.copy_retained_set(visited, "catia_b5_targeted_visited_copy")?,
+            copy_visited(ctx, visited)?,
         )?
         else {
             return Ok(None);
