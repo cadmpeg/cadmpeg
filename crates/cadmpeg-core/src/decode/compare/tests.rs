@@ -31,13 +31,14 @@ fn charged_lookup_and_comparison_refuse_before_access() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let values = std::collections::HashMap::from([("long key", 7)]);
+    let mut values = std::collections::HashMap::from([("long key", 7)]);
     let CodecError::ResourceLimit(limit) = ctx
-        .get_hash_map(&values, "long key", "lookup")
+        .remove_hash_map(&mut values, "long key", "remove")
         .expect_err("refusal")
     else {
         panic!("refusal")
     };
+    assert_eq!(values.get("long key"), Some(&7));
     let CodecError::ResourceLimit(repeated) = ctx.equal("a", "b", "equal").expect_err("fused")
     else {
         panic!("refusal")
@@ -157,7 +158,7 @@ fn set_relations_and_stored_map_keys_use_complete_query_work() {
     assert!(!ctx
         .is_subset_btree_set(&left, &right, "tree relation")
         .expect("admission"));
-    let hash = HashMap::from([(String::from("alpha"), 1)]);
+    let mut hash = HashMap::from([(String::from("alpha"), 1)]);
     let mut tree = BTreeMap::from([(String::from("alpha"), 2)]);
     assert_eq!(
         ctx.get_key_value_hash_map(&hash, "alpha", "stored")
@@ -170,6 +171,11 @@ fn set_relations_and_stored_map_keys_use_complete_query_work() {
             .expect("admission")
             .map(|(key, value)| (key.as_str(), *value)),
         Some(("alpha", 2))
+    );
+    assert_eq!(
+        ctx.remove_entry_hash_map(&mut hash, "alpha", "remove")
+            .expect("admission"),
+        Some((String::from("alpha"), 1))
     );
     assert_eq!(
         ctx.remove_entry_btree_map(&mut tree, "alpha", "remove")
@@ -186,7 +192,7 @@ fn set_relations_and_stored_map_keys_use_complete_query_work() {
         panic!("refusal")
     };
     let CodecError::ResourceLimit(repeated) = ctx
-        .get_key_value_hash_map(&hash, "alpha", "refuse lookup")
+        .remove_entry_hash_map(&mut hash, "alpha", "refuse remove")
         .expect_err("fused")
     else {
         panic!("refusal")

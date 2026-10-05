@@ -92,6 +92,21 @@ impl DecodeContext<'_> {
         self.charge_key(key, 1, operation)?;
         Ok(values.contains_key(key))
     }
+    /// Admits key work before `HashMap::remove`.
+    pub fn remove_hash_map<K, Q, V, S>(
+        &self,
+        values: &mut HashMap<K, V, S>,
+        key: &Q,
+        operation: &'static str,
+    ) -> Result<Option<V>, CodecError>
+    where
+        K: Borrow<Q> + Eq + Hash,
+        Q: DecodeCost + Eq + Hash + ?Sized,
+        S: BuildHasher,
+    {
+        self.charge_key(key, 1, operation)?;
+        Ok(values.remove(key))
+    }
     /// Admits key work before `HashSet::contains`.
     pub fn contains_hash_set<K, Q, S>(
         &self,
@@ -121,6 +136,21 @@ impl DecodeContext<'_> {
     {
         self.charge_key(key, 1, operation)?;
         Ok(values.get(key))
+    }
+    /// Admits key work before `HashSet::remove`.
+    pub fn remove_hash_set<K, Q, S>(
+        &self,
+        values: &mut HashSet<K, S>,
+        key: &Q,
+        operation: &'static str,
+    ) -> Result<bool, CodecError>
+    where
+        K: Borrow<Q> + Eq + Hash,
+        Q: DecodeCost + Eq + Hash + ?Sized,
+        S: BuildHasher,
+    {
+        self.charge_key(key, 1, operation)?;
+        Ok(values.remove(key))
     }
     /// Admits key work before `BTreeMap::get`.
     pub fn get_btree_map<'values, K, Q, V>(
@@ -248,6 +278,21 @@ impl DecodeContext<'_> {
     {
         self.charge_key(key, 1, operation)?;
         Ok(values.get_key_value(key))
+    }
+    /// Admits the query key before removing the stored key and value.
+    pub fn remove_entry_hash_map<K, Q, V, S>(
+        &self,
+        values: &mut HashMap<K, V, S>,
+        key: &Q,
+        operation: &'static str,
+    ) -> Result<Option<(K, V)>, CodecError>
+    where
+        K: Borrow<Q> + Eq + Hash,
+        Q: DecodeCost + Eq + Hash + ?Sized,
+        S: BuildHasher,
+    {
+        self.charge_key(key, 1, operation)?;
+        Ok(values.remove_entry(key))
     }
     /// Admits the query key before borrowing the stored key and value.
     pub fn get_key_value_btree_map<'values, K, Q, V>(
