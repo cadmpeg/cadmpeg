@@ -383,6 +383,9 @@ fn entity_has_type(
     Ok(*registered_version == version && guid_matches(guid, type_guid))
 }
 
+/// The one material envelope after a named body-presentation header in
+/// `start..end`. Each envelope candidate is parsed under its own scoped
+/// reservation; only the candidate that is returned becomes retained.
 fn presentation_material(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -394,10 +397,14 @@ fn presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let physical_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?;
+    let markers = MaterialMarkers::new()?;
     let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID)?;
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
+    let envelope = PresentationEnvelope {
+        bytes,
+        start,
+        end,
+        entity_suffix,
+    };
     let mut candidate = None;
     let mut search_at = start;
     while let Some(physical_at) = next_match(
@@ -405,53 +412,117 @@ fn presentation_material(
         bytes,
         search_at,
         end,
-        &[&physical_marker],
+        &[&markers.physical],
         "find F3D physical material marker",
     )? {
-        search_at = physical_at + physical_marker.len();
+        search_at = physical_at + markers.physical.len();
+        let (material, storage) = ctx
+            .with_scoped_storage("f3d body presentation material candidates", || {
+                envelope.named_material_at(ctx, &markers, &legacy_marker, entity_types, physical_at)
+            })?;
+        let Some(material) = material else {
+            continue;
+        };
+        if candidate.is_some() {
+            return Ok(None);
+        }
+        candidate = Some((material, storage));
+    }
+    let Some((material, storage)) = candidate else {
+        return Ok(None);
+    };
+    storage.commit()?;
+    Ok(Some(material))
+}
+
+/// The counted UTF-16LE library identifiers both material envelope forms
+/// store.
+struct MaterialMarkers {
+    physical: Vec<u8>,
+    modern: Vec<u8>,
+    modern_trailer: Vec<u8>,
+}
+
+impl MaterialMarkers {
+    fn new() -> Result<Self, CodecError> {
+        Ok(Self {
+            physical: lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?,
+            modern: lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?,
+            modern_trailer: lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?,
+        })
+    }
+}
+
+/// The bytes of one body-presentation frame that hold its material envelope:
+/// `bytes[start..end]`, owned by the entity `entity_suffix`.
+struct PresentationEnvelope<'a> {
+    bytes: &'a [u8],
+    start: usize,
+    end: usize,
+    entity_suffix: u64,
+}
+
+impl PresentationEnvelope<'_> {
+    /// The material envelope of a named owner whose physical-library marker
+    /// opens at `physical_at`. The visual record ends with `legacy_marker` or
+    /// with the modern marker pair.
+    fn named_material_at(
+        &self,
+        ctx: &DecodeContext<'_>,
+        markers: &MaterialMarkers,
+        legacy_marker: &[u8],
+        entity_types: &HashMap<u64, EntityType<'_>>,
+        physical_at: usize,
+    ) -> Result<Option<PresentationMaterial>, CodecError> {
+        let Self {
+            bytes,
+            start,
+            end,
+            entity_suffix,
+        } = *self;
         let Some((physical_guid_at, physical_guid, _physical_guid_storage)) =
             preceding_lp_utf16(ctx, bytes, start, physical_at)?
         else {
-            continue;
+            return Ok(None);
         };
         let Some(node_tail_at) = physical_guid_at.checked_sub(11) else {
-            continue;
+            return Ok(None);
         };
         if bytes_at::<11>(bytes, node_tail_at) != Some(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]) {
-            continue;
+            return Ok(None);
         }
         let Some((_, node_guid, _node_guid_storage)) =
             preceding_lp_utf16(ctx, bytes, start, node_tail_at)?
         else {
-            continue;
+            return Ok(None);
         };
         if physical_guid.len() != GUID_LEN
             || node_guid.len() != GUID_LEN
             || !is_guid_prefix(&physical_guid)
             || !is_guid_prefix(&node_guid)
         {
-            continue;
+            return Ok(None);
         }
-        let Some(token_at) = skip_zeros(bytes, physical_at + physical_marker.len(), end) else {
-            continue;
+        let Some(token_at) = skip_zeros(bytes, physical_at + markers.physical.len(), end) else {
+            return Ok(None);
         };
         let Some((physical_token, after_token)) =
             lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256, "f3d Design UTF-16 text")?
         else {
-            continue;
+            return Ok(None);
         };
         if !is_physical_material_token(&physical_token) || after_token > end {
-            continue;
+            return Ok(None);
         }
         let mut reference_at = after_token;
         let Some(brep_container_entity) = local_reference(bytes, &mut reference_at) else {
-            continue;
+            return Ok(None);
         };
         if local_reference_value(bytes, &mut reference_at) != Some(LocalReference::Null) {
-            continue;
+            return Ok(None);
         }
         let Some(scene_node_entity) = local_reference(bytes, &mut reference_at) else {
-            continue;
+            return Ok(None);
         };
         if entity_suffix.checked_add(1) != Some(scene_node_entity)
             || !entity_has_type(
@@ -469,49 +540,44 @@ fn presentation_material(
                 BODY_SCENE_NODE_TYPE_VERSION,
             )?
         {
-            continue;
+            return Ok(None);
         }
         let Some((_, after_name, _name_storage)) =
             lp_utf16_bounded_scoped(ctx, bytes, reference_at, 0..=256, "f3d Design UTF-16 text")?
         else {
-            continue;
+            return Ok(None);
         };
         let Some(visual_at) = record_tail_visual_offset(bytes, after_name, end) else {
-            continue;
+            return Ok(None);
         };
         let Some((visual_guid, after_visual)) =
             lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256, "f3d Design UTF-16 text")?
         else {
-            continue;
+            return Ok(None);
         };
         let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
         else {
-            continue;
+            return Ok(None);
         };
         let Some(visual_marker_at) = skip_zeros(bytes, after_visual, end) else {
-            continue;
+            return Ok(None);
         };
-        let (after_visual_marker, legacy) = if bytes
-            .get(visual_marker_at..visual_marker_at + legacy_marker.len())
-            == Some(legacy_marker.as_slice())
-        {
-            (visual_marker_at + legacy_marker.len(), true)
-        } else if bytes.get(visual_marker_at..visual_marker_at + modern_marker.len())
-            == Some(modern_marker.as_slice())
-        {
-            let Some(trailer_at) = skip_zeros(bytes, visual_marker_at + modern_marker.len(), end)
-            else {
-                continue;
+        let (after_visual_marker, legacy) =
+            if needle_at(bytes, visual_marker_at, end, &[legacy_marker]) {
+                (visual_marker_at + legacy_marker.len(), true)
+            } else if needle_at(bytes, visual_marker_at, end, &[&markers.modern]) {
+                let Some(trailer_at) =
+                    skip_zeros(bytes, visual_marker_at + markers.modern.len(), end)
+                else {
+                    return Ok(None);
+                };
+                if !needle_at(bytes, trailer_at, end, &[&markers.modern_trailer]) {
+                    return Ok(None);
+                }
+                (trailer_at + markers.modern_trailer.len(), false)
+            } else {
+                return Ok(None);
             };
-            if bytes.get(trailer_at..trailer_at + modern_trailer.len())
-                != Some(modern_trailer.as_slice())
-            {
-                continue;
-            }
-            (trailer_at + modern_trailer.len(), false)
-        } else {
-            continue;
-        };
         let visual_preset = match skip_zeros(bytes, after_visual_marker, end) {
             Some(at) if legacy => {
                 lp_utf16_bounded_charged(ctx, bytes, at, 1..=256, "f3d Design UTF-16 text")?
@@ -519,12 +585,9 @@ fn presentation_material(
             }
             _ => None,
         };
-        if candidate.is_some() {
-            return Ok(None);
-        }
         let node_guid =
             ctx.copy_retained_text(&node_guid, "f3d body presentation material node GUID")?;
-        candidate = Some(PresentationMaterial {
+        Ok(Some(PresentationMaterial {
             node_guid,
             physical_token,
             physical_token_offset: u64_from_index(token_at + 4),
@@ -534,58 +597,42 @@ fn presentation_material(
                 value,
                 offset: u64_from_index(at + 4),
             }),
-        });
+        }))
     }
-    Ok(candidate)
-}
 
-/// Parse the material envelope of a body-presentation owner whose indexed
-/// head stores no component-qualified entity ID.
-fn bare_presentation_material(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    start: usize,
-    end: usize,
-    entity_suffix: u64,
-) -> Result<Option<PresentationMaterial>, CodecError> {
-    let Some(bytes) = bytes.get(..end) else {
-        return Ok(None);
-    };
-    let envelope_marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?;
-    let library_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?;
-    let marker: [&[u8]; 2] = [&envelope_marker, &library_marker];
-    let marker_len = envelope_marker.len() + library_marker.len();
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
-    let mut candidate = None;
-    let mut search_at = start;
-    while let Some(marker_at) = next_match(
-        ctx,
-        bytes,
-        search_at,
-        end,
-        &marker,
-        "find F3D bare material marker",
-    )? {
-        search_at = marker_at + marker_len;
+    /// The material envelope of a bare owner whose envelope and
+    /// physical-library markers open at `marker_at`.
+    fn bare_material_at(
+        &self,
+        ctx: &DecodeContext<'_>,
+        markers: &MaterialMarkers,
+        marker_at: usize,
+        marker_len: usize,
+    ) -> Result<Option<PresentationMaterial>, CodecError> {
+        let Self {
+            bytes,
+            end,
+            entity_suffix,
+            ..
+        } = *self;
         let Some(token_at) = skip_zeros(bytes, marker_at + marker_len, end) else {
-            continue;
+            return Ok(None);
         };
         let Some((physical_token, after_token)) =
             lp_utf16_bounded_charged(ctx, bytes, token_at, 1..=256, "f3d Design UTF-16 text")?
         else {
-            continue;
+            return Ok(None);
         };
         if !is_physical_material_token(&physical_token) {
-            continue;
+            return Ok(None);
         }
 
         let mut physical_reference_at = after_token;
         if local_reference(bytes, &mut physical_reference_at).is_none() {
-            continue;
+            return Ok(None);
         }
         let Some(node_guid_at) = skip_zeros(bytes, physical_reference_at, end) else {
-            continue;
+            return Ok(None);
         };
         let Some((node_guid, after_node_guid)) = lp_utf16_bounded_charged(
             ctx,
@@ -595,17 +642,17 @@ fn bare_presentation_material(
             "f3d Design UTF-16 text",
         )?
         else {
-            continue;
+            return Ok(None);
         };
         if !is_guid_prefix(&node_guid) {
-            continue;
+            return Ok(None);
         }
         let mut node_reference_at = after_node_guid;
         let Some(node_entity) = local_reference(bytes, &mut node_reference_at) else {
-            continue;
+            return Ok(None);
         };
         if entity_suffix.checked_add(1) != Some(node_entity) {
-            continue;
+            return Ok(None);
         }
 
         // The visual record follows the node reference directly or after an
@@ -621,46 +668,95 @@ fn bare_presentation_material(
         let named_visual_at =
             after_name.and_then(|name_end| record_tail_visual_offset(bytes, name_end, end));
         let visual_at = match (direct_visual_at, named_visual_at) {
-            (Some(direct), Some(named)) if direct != named => continue,
+            (Some(direct), Some(named)) if direct != named => return Ok(None),
             (Some(visual_at), _) | (None, Some(visual_at)) => visual_at,
-            (None, None) => continue,
+            (None, None) => return Ok(None),
         };
         let Some((visual_guid, after_visual)) =
             lp_utf16_bounded_charged(ctx, bytes, visual_at, 1..=256, "f3d Design UTF-16 text")?
         else {
-            continue;
+            return Ok(None);
         };
         let Ok(visual_guid) = crate::records::references::DesignVisualToken::try_from(visual_guid)
         else {
-            continue;
+            return Ok(None);
         };
-        let Some(marker_at) = skip_zeros(bytes, after_visual, end) else {
-            continue;
+        let Some(visual_marker_at) = skip_zeros(bytes, after_visual, end) else {
+            return Ok(None);
         };
-        if bytes.get(marker_at..marker_at + modern_marker.len()) != Some(modern_marker.as_slice()) {
-            continue;
-        }
-        let Some(trailer_at) = skip_zeros(bytes, marker_at + modern_marker.len(), end) else {
-            continue;
-        };
-        if bytes.get(trailer_at..trailer_at + modern_trailer.len())
-            != Some(modern_trailer.as_slice())
-        {
-            continue;
-        }
-        if candidate.is_some() {
+        if !needle_at(bytes, visual_marker_at, end, &[&markers.modern]) {
             return Ok(None);
         }
-        candidate = Some(PresentationMaterial {
+        let Some(trailer_at) = skip_zeros(bytes, visual_marker_at + markers.modern.len(), end)
+        else {
+            return Ok(None);
+        };
+        if !needle_at(bytes, trailer_at, end, &[&markers.modern_trailer]) {
+            return Ok(None);
+        }
+        Ok(Some(PresentationMaterial {
             node_guid,
             physical_token,
             physical_token_offset: u64_from_index(token_at + 4),
             visual_guid,
             visual_guid_offset: u64_from_index(visual_at + 4),
             visual_preset: None,
-        });
+        }))
     }
-    Ok(candidate)
+}
+
+/// Parse the material envelope of a body-presentation owner whose indexed
+/// head stores no component-qualified entity ID. Each envelope candidate is
+/// parsed under its own scoped reservation; only the candidate that is
+/// returned becomes retained.
+fn bare_presentation_material(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    entity_suffix: u64,
+) -> Result<Option<PresentationMaterial>, CodecError> {
+    let Some(bytes) = bytes.get(..end) else {
+        return Ok(None);
+    };
+    let envelope_marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?;
+    let markers = MaterialMarkers::new()?;
+    let marker: [&[u8]; 2] = [&envelope_marker, &markers.physical];
+    let marker_len = envelope_marker.len() + markers.physical.len();
+    let envelope = PresentationEnvelope {
+        bytes,
+        start,
+        end,
+        entity_suffix,
+    };
+    let mut candidate = None;
+    let mut search_at = start;
+    while let Some(marker_at) = next_match(
+        ctx,
+        bytes,
+        search_at,
+        end,
+        &marker,
+        "find F3D bare material marker",
+    )? {
+        search_at = marker_at + marker_len;
+        let (material, storage) = ctx
+            .with_scoped_storage("f3d body presentation material candidates", || {
+                envelope.bare_material_at(ctx, &markers, marker_at, marker_len)
+            })?;
+        let Some(material) = material else {
+            continue;
+        };
+        if candidate.is_some() {
+            return Ok(None);
+        }
+        candidate = Some((material, storage));
+    }
+    let Some((material, storage)) = candidate else {
+        return Ok(None);
+    };
+    storage.commit()?;
+    Ok(Some(material))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
