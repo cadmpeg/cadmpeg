@@ -524,7 +524,30 @@ mod tests {
         ));
     }
 
-    fn linked_color_refusal(max_items: u64, operation: &'static str) {
+    fn collection_refusal<T>(
+        operation: &'static str,
+        bytes: &[u8],
+        run: impl Fn(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+    ) {
+        let arena = DecodeArena::new();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+                let result = run(&ctx);
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    fn linked_color_refusal(operation: &'static str) {
         let bytes = color(900, [0.25, 0.5, 0.75], false);
         let entities = [EntityRecord {
             attr: 700,
@@ -533,67 +556,45 @@ mod tests {
             refs: vec![900],
             end: 0,
         }];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = linked_colors(&ctx, &bytes, &entities)
-            .expect_err("linked color collection exceeds the limit");
-        assert!(
-            matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation),
-            "{error:?}"
-        );
+        collection_refusal(operation, &bytes, |ctx| {
+            linked_colors(ctx, &bytes, &entities)
+        });
     }
 
     #[test]
     fn parasolid_linked_face_references_refuse_before_collection() {
-        linked_color_refusal(0, "collect Parasolid linked face references");
+        linked_color_refusal("collect Parasolid linked face references");
     }
 
     #[test]
     fn parasolid_parent_face_reference_refuses_before_collection() {
-        linked_color_refusal(1, "collect Parasolid parent face reference");
+        linked_color_refusal("collect Parasolid parent face reference");
     }
 
     #[test]
     fn parasolid_linked_color_groups_refuse_before_insertion() {
-        linked_color_refusal(2, "collect Parasolid linked color groups");
+        linked_color_refusal("collect Parasolid linked color groups");
     }
 
     #[test]
     fn parasolid_linked_colors_refuse_before_insertion() {
-        linked_color_refusal(3, "collect Parasolid linked colors");
+        linked_color_refusal("collect Parasolid linked colors");
     }
 
-    fn face_color_refusal(max_items: u64, operation: &'static str) {
+    fn face_color_refusal(operation: &'static str) {
         let mut bytes = bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 900]);
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan_metadata(&ctx, &bytes, false)
-            .expect_err("face color collection exceeds the limit");
-        assert!(
-            matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == operation),
-            "{error:?}"
-        );
+        collection_refusal(operation, &bytes, |ctx| scan_metadata(ctx, &bytes, false));
     }
 
     #[test]
     fn parasolid_face_color_versions_refuse_before_insertion() {
-        face_color_refusal(18, "collect Parasolid face color versions");
+        face_color_refusal("collect Parasolid face color versions");
     }
 
     #[test]
     fn parasolid_face_colors_refuse_before_insertion() {
-        face_color_refusal(19, "collect Parasolid face colors");
+        face_color_refusal("collect Parasolid face colors");
     }
 
     #[test]

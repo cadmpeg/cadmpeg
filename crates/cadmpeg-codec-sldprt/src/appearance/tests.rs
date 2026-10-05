@@ -693,15 +693,23 @@ fn appearance_utf16_refuses_exact_retained_budget() {
 
 #[test]
 fn appearance_utf16_refuses_work_before_decode() {
-    let (source, length) = unicode_appearance_source();
+    let (source, _) = unicode_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(length);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(
-        matches!(super::definitions(&ctx, &scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "decode SLDPRT appearance name")
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "decode SLDPRT appearance name",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = super::definitions(&ctx, &scan);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
     );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }

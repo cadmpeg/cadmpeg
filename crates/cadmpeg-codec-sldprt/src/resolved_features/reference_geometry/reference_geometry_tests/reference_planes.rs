@@ -79,9 +79,15 @@ fn reference_plane_error(policy: DecodePolicy) -> CodecError {
 
 #[test]
 fn reference_plane_enrichment_refuses_collection_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let error = reference_plane_error(policy);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "index SLDPRT reference plane sources",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            Err::<(), CodecError>(reference_plane_error(policy))
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "index SLDPRT reference plane sources"));

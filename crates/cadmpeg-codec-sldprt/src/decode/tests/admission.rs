@@ -989,23 +989,38 @@ fn reference_membership_refusals_do_not_become_incoherent_results() {
 
 #[test]
 fn repeated_key_count_preserves_mutable_lookup_refusal() {
-    const KEY_BYTES: usize = 4096;
-    let key = "k".repeat(KEY_BYTES);
+    const OPERATION: &str = "count repeated SLDPRT keys";
+    let key = "k".repeat(4096);
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // Empty-tree insertion fits; eleven comparisons of the repeated key do not.
-    policy.limits.max_work_units = 8192;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::decode::count_keys(&ctx, [key.clone(), key], "count repeated SLDPRT keys")
-        .unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+    let with_work_limit = |cap| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let result = crate::decode::count_keys(&ctx, [key.clone(), key.clone()], OPERATION);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    };
+    // The repeated key's lookup is the last charge, so one unit below the
+    // complete need refuses exactly that lookup.
+    let mut admitted = 1 << 20;
+    assert!(with_work_limit(admitted).is_ok());
+    let mut refused = 0;
+    while admitted - refused > 1 {
+        let middle = refused + (admitted - refused) / 2;
+        if with_work_limit(middle).is_ok() {
+            admitted = middle;
+        } else {
+            refused = middle;
+        }
+    }
+    let cadmpeg_core::CodecError::ResourceLimit(repeat) =
+        with_work_limit(admitted - 1).unwrap_err()
+    else {
         panic!("resource refusal");
     };
-    assert_eq!(limit.operation, "count repeated SLDPRT keys");
-    assert_eq!(
-        limit.additional,
-        11 * cadmpeg_core::decode::u64_from_index(KEY_BYTES)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(repeat.operation, OPERATION);
+    assert!(repeat.additional >= cadmpeg_core::decode::u64_from_index(key.len()));
+    assert_eq!(repeat.used + repeat.additional, admitted);
 }

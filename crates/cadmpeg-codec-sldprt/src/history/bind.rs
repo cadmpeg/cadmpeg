@@ -1140,9 +1140,7 @@ mod tests {
         ));
     }
 
-    fn sketch_binding_error(
-        limits: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
-    ) -> cadmpeg_core::CodecError {
+    fn sketch_binding_refusal(dimension: ResourceDimension) {
         let mut neutral = ordering_feature();
         neutral.name = Some("Sketch1".into());
         neutral.native_ref = Some("native".into());
@@ -1151,7 +1149,6 @@ mod tests {
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             }));
-        let mut features = [neutral];
         let sketches = [cadmpeg_ir::sketches::Sketch {
             id: cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch")
                 .unwrap_or_else(|error| panic!("invalid test ID: {error}")),
@@ -1171,53 +1168,49 @@ mod tests {
             features: vec![crate::history::tests::feature("native", None, 0)],
         }];
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        limits(&mut policy.limits);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .unwrap_or_else(|error| panic!("test context failed: {error}"));
-        bind_unique_sketch_feature(&ctx, &mut features, &sketches, &histories)
-            .expect_err("the sketch-binding route must refuse the selected limit")
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "bind SLDPRT feature sketches",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                    ResourceDimension::MaterializedBytes => {
+                        policy.limits.max_materialized_bytes = cap
+                    }
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    _ => panic!("sketch binding dimension"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)?;
+                let mut features = [neutral.clone()];
+                let result = bind_unique_sketch_feature(&ctx, &mut features, &sketches, &histories);
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
     #[test]
     fn sketch_binding_refuses_collection_limit() {
-        let error = sketch_binding_error(|limits| limits.max_collection_items = 0);
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "index SLDPRT native sketch features"
-        ));
+        sketch_binding_refusal(ResourceDimension::CollectionItems);
     }
 
     #[test]
     fn sketch_binding_refuses_retained_limit() {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "retain SLDPRT sketch binding identity",
-            |cap| {
-                Err::<(), cadmpeg_core::CodecError>(sketch_binding_error(|limits| {
-                    limits.max_retained_bytes = cap;
-                }))
-            },
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain SLDPRT sketch binding identity"
-        ));
+        sketch_binding_refusal(ResourceDimension::RetainedBytes);
+    }
+
+    #[test]
+    fn sketch_binding_refuses_scoped_limit() {
+        sketch_binding_refusal(ResourceDimension::MaterializedBytes);
     }
 
     #[test]
     fn sketch_binding_refuses_work_limit() {
-        // One history visit precedes native sketch record indexing.
-        let error = sketch_binding_error(|limits| limits.max_work_units = 1);
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "index SLDPRT native sketch features"
-        ));
+        sketch_binding_refusal(ResourceDimension::WorkUnits);
     }
 }
