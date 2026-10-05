@@ -651,7 +651,10 @@ impl DecodeContext<'_> {
     /// Work of one parse of the text. A pass scans the input once, copies
     /// each string once, and compares each object key with at most one B-tree
     /// search path of keys, so the input length times one plus the copy pass
-    /// plus the comparison bound covers it. A `raw_value` carrier can replay
+    /// plus the comparison bound covers it. A typed pass into a derived struct
+    /// matches each key against the struct's field names instead, which costs
+    /// at most the field count times the key length: a constant of the target
+    /// type that this bound does not scale by. A `raw_value` carrier can replay
     /// its string once per nesting level and compare against every entry.
     fn json_pass_work(
         &self,
