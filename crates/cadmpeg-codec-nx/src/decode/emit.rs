@@ -28,7 +28,7 @@ use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, FitTolerance, IntcurveSupportContext,
     IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
+    SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::{sha256, LowerHex};
 use cadmpeg_ir::ids::{
@@ -654,7 +654,7 @@ pub(super) fn emit_topology(
                                     [
                                         IntcurveSupportSide {
                                             surface: Some(surface),
-                                            pcurve: Some(pcurve.into()),
+                                            pcurve: Some(SupportPcurve::new(pcurve, None)),
                                         },
                                         IntcurveSupportSide {
                                             surface: None,
@@ -1681,9 +1681,9 @@ pub(super) fn keep_marks<T>(
     operation: &'static str,
 ) -> Result<Vec<bool>, CodecError> {
     let mut marks = Vec::new();
-    ctx.reserve_scoped_vec(storage, &mut marks, values.len(), operation)?;
     for value in ctx.admit_iter(values, operation)? {
-        marks.push(keep(value)?);
+        let mark = keep(value)?;
+        ctx.push_scoped_vec(storage, &mut marks, mark, operation)?;
     }
     Ok(marks)
 }
