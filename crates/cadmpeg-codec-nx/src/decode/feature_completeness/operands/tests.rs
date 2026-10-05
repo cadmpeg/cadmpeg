@@ -16,7 +16,7 @@ use super::{
 #[test]
 fn selection_completeness_detects_nonadjacent_duplicate_ids() {
     assert!(crate::decode::feature_completeness::decode_check(|ctx| {
-        selection_ids_are_incomplete(ctx, &[] as &[u32])
+        selection_ids_are_incomplete::<_, u32>(ctx, &[])
     }));
     assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
         selection_ids_are_incomplete(ctx, &[2, 1, 3])
