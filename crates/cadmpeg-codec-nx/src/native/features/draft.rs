@@ -688,14 +688,14 @@ pub(in crate::native) fn feature_draft_construction_references(
         let operation_label = format_feature_history_id(
             ctx,
             "operation-label",
-            &reference.section_key,
+            reference.section_key,
             reference.operation_ordinal,
             None,
         )?;
         let id = format_feature_history_id(
             ctx,
             "draft-construction-reference",
-            &reference.section_key,
+            reference.section_key,
             reference.operation_ordinal,
             Some(reference.ordinal),
         )?;
@@ -746,7 +746,7 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                 let mut complete_indices = Vec::new();
                 let mut indices_reservation =
                     ctx.reserve_scoped(0, "NX draft complete reference indices")?;
-                for (token, _) in ctx.admit_iter(&refs, "copy NX draft graph reference indices")? {
+                for (token, _) in &refs {
                     ctx.push_scoped_vec(
                         &mut indices_reservation,
                         &mut complete_indices,
@@ -912,8 +912,8 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
             Ord::cmp,
             "sort NX draft construction graph",
         )?;
-        if ctx
-            .admit_iter(&graph, "validate NX draft construction graph order")?
+        if graph
+            .iter()
             .enumerate()
             .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
         {
@@ -921,7 +921,8 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         }
         let Some((data_blocks, _source_id_storage)) = copy_block_ids(
             ctx,
-            ctx.admit_iter(&graph, "resolve NX draft graph source blocks")?
+            graph
+                .iter()
                 .map(|reference| reference.data_block.as_deref()),
             "NX draft graph source blocks",
         )?
@@ -947,11 +948,7 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
             "NX draft graph payload identity",
         )?;
         let mut construction_references: [String; 4] = std::array::from_fn(|_| String::new());
-        for (slot, reference) in ctx
-            .admit_iter(&graph, "copy NX draft graph reference identities")?
-            .copied()
-            .enumerate()
-        {
+        for (slot, reference) in graph.iter().copied().enumerate() {
             construction_references[slot] =
                 ctx.copy_retained_text(&reference.id, "NX draft graph reference identity")?;
         }

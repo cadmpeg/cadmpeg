@@ -135,14 +135,14 @@ pub(in crate::native) fn feature_projected_curve_references(
         let operation_label = format_feature_history_id(
             ctx,
             "operation-label",
-            &reference.section_key,
+            reference.section_key,
             reference.operation_ordinal,
             None,
         )?;
         let id = format_feature_history_id(
             ctx,
             "projected-curve-reference",
-            &reference.section_key,
+            reference.section_key,
             reference.operation_ordinal,
             Some(reference.ordinal),
         )?;
@@ -212,8 +212,8 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
             Ord::cmp,
             "sort NX projected curve references",
         )?;
-        if ctx
-            .admit_iter(&field, "check NX projected-curve reference order")?
+        if field
+            .iter()
             .enumerate()
             .any(|(ordinal, reference)| u32::try_from(ordinal).ok() != Some(reference.ordinal))
         {
@@ -221,7 +221,8 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         }
         let Some((data_blocks, block_reservation)) = copy_block_ids(
             ctx,
-            ctx.admit_iter(&field, "resolve NX projected-curve block IDs")?
+            field
+                .iter()
                 .map(|reference| reference.data_block.as_deref()),
             "NX projected curve block IDs",
         )?
@@ -256,14 +257,7 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         let operation_label =
             ctx.copy_retained_text(operation_label, "NX projected curve payload operation")?;
         let mut construction_references = Vec::new();
-        let mut field_references = field.into_iter();
-        for _ in ctx.admit_iter(
-            &(0..field_references.len()),
-            "copy NX projected-curve reference IDs",
-        )? {
-            let Some(reference) = field_references.next() else {
-                return Err(ctx.refuse_codec_limit("copy NX projected-curve reference IDs", 0, 1));
-            };
+        for reference in field {
             let identity =
                 ctx.copy_retained_text(&reference.id, "NX projected curve construction reference")?;
             ctx.reserve_vec(
@@ -566,14 +560,14 @@ pub(in crate::native) fn feature_surface_construction_references(
         let operation_label = format_feature_history_id(
             ctx,
             "operation-label",
-            &reference.section_key,
+            reference.section_key,
             reference.operation_ordinal,
             None,
         )?;
         let id = format_feature_history_id(
             ctx,
             "surface-construction-reference",
-            &reference.section_key,
+            reference.section_key,
             reference.operation_ordinal,
             Some(reference.ordinal),
         )?;
@@ -731,11 +725,8 @@ pub(in crate::native) fn feature_surface_construction_payloads(
             Ord::cmp,
             "sort NX surface construction graph",
         )?;
-        if ctx
-            .admit_iter(
-                graph.as_slice(),
-                "validate NX surface construction graph order",
-            )?
+        if graph
+            .iter()
             .enumerate()
             .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
         {
@@ -747,7 +738,8 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         };
         let Some((data_blocks, _source_id_storage)) = copy_block_ids(
             ctx,
-            ctx.admit_iter(&graph, "copy NX surface construction source blocks")?
+            graph
+                .iter()
                 .map(|reference| reference.data_block.as_deref()),
             "NX surface construction source blocks",
         )?
@@ -1652,14 +1644,16 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             Ord::cmp,
             "sort NX extrude profile references",
         )?;
-        if ctx
-            .admit_iter(
-                operation_references.as_slice(),
-                "validate NX extrusion profile order",
-            )?
-            .enumerate()
-            .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
-        {
+        let mut ordinal = 0usize;
+        if ctx.any_by(
+            operation_references.as_slice(),
+            |reference| {
+                let misordered = u32::try_from(ordinal) != Ok(reference.ordinal);
+                ordinal += 1;
+                Ok(misordered)
+            },
+            "validate NX extrusion profile order",
+        )? {
             continue;
         }
         if ctx.any_by(
@@ -1843,11 +1837,16 @@ pub(in crate::native) fn feature_extrude_32_constructions(
         let Ok(profile) = crate::om::branch_items::BranchItems::new(profile) else {
             continue;
         };
-        if ctx
-            .admit_iter(profile.as_slice(), "validate NX extrusion profile order")?
-            .enumerate()
-            .any(|(ordinal, reference)| u32::try_from(ordinal) != Ok(reference.ordinal))
-        {
+        let mut ordinal = 0usize;
+        if ctx.any_by(
+            profile.as_slice(),
+            |reference| {
+                let misordered = u32::try_from(ordinal) != Ok(reference.ordinal);
+                ordinal += 1;
+                Ok(misordered)
+            },
+            "validate NX extrusion profile order",
+        )? {
             continue;
         }
         if ctx.any_by(
@@ -1940,15 +1939,9 @@ pub(in crate::native) fn feature_block_construction_references(
             else {
                 continue;
             };
-            let mut positioned = BlockReferencePosition::enumerate(field.references());
-            for _ in ctx.admit_iter(&(0_usize..19), "visit NX block construction references")? {
-                let Some((position, (token, source_offset))) = positioned.next() else {
-                    return Err(ctx.refuse_codec_limit(
-                        "visit NX block construction references",
-                        0,
-                        1,
-                    ));
-                };
+            for (position, (token, source_offset)) in
+                BlockReferencePosition::enumerate(field.references())
+            {
                 let ordinal = usize::try_from(position.ordinal())
                     .map_err(|_| ctx.refuse_codec_limit("NX block reference ordinal", 0, 1))?;
                 let id = format_feature_history_id(
@@ -2496,20 +2489,17 @@ pub(in crate::native) fn feature_block_payload_point_groups(
         {
             continue;
         }
-        let mut coordinates_differ = false;
-        for candidate in ctx.admit_iter(group, "compare NX block payload point witnesses")? {
-            if ctx
-                .admit_iter(
-                    &*candidate.coordinates,
-                    "compare NX block payload point coordinates",
-                )?
-                .zip(*point.coordinates)
-                .any(|(first, second)| first.to_bits() != second.to_bits())
-            {
-                coordinates_differ = true;
-                break;
-            }
-        }
+        let coordinates_differ = ctx.any_by(
+            group,
+            |candidate| {
+                Ok(candidate
+                    .coordinates
+                    .iter()
+                    .zip(*point.coordinates)
+                    .any(|(first, second)| first.to_bits() != second.to_bits()))
+            },
+            "compare NX block payload point witnesses",
+        )?;
         if coordinates_differ {
             continue;
         }
@@ -2933,13 +2923,15 @@ pub(super) fn unique_offset_data_store(
     object_indices: &[u32],
 ) -> Result<Option<usize>, CodecError> {
     let mut largest = 0u32;
-    for &object_index in
-        ctx.admit_iter(object_indices, "validate NX offset store object indices")?
-    {
-        if object_index == 0 {
-            return Ok(None);
-        }
-        largest = largest.max(object_index);
+    if ctx.any_by(
+        object_indices,
+        |&object_index| {
+            largest = largest.max(object_index);
+            Ok(object_index == 0)
+        },
+        "validate NX offset store object indices",
+    )? {
+        return Ok(None);
     }
     let Ok(largest) = usize::try_from(largest) else {
         return Ok(None);
@@ -2947,20 +2939,17 @@ pub(super) fn unique_offset_data_store(
     if object_indices.is_empty() {
         return Ok(None);
     }
-    let mut unique = None;
-    for (section_ordinal, (_, candidate)) in ctx
-        .admit_iter(indexed, "find NX unique offset data store")?
-        .enumerate()
-    {
-        let Some((_, _, records)) = candidate.as_offset_only() else {
-            continue;
-        };
-        if largest > records.len() {
-            continue;
-        }
-        if unique.replace(section_ordinal).is_some() {
-            return Ok(None);
-        }
+    let holds_largest = |(_, candidate): &(_, crate::om::IndexedSection<'_>)| {
+        Ok(candidate
+            .as_offset_only()
+            .is_some_and(|(_, _, records)| largest <= records.len()))
+    };
+    let operation = "find NX unique offset data store";
+    let Some(first) = ctx.position_by(indexed, holds_largest, operation)? else {
+        return Ok(None);
+    };
+    if ctx.any_by(&indexed[first + 1..], holds_largest, operation)? {
+        return Ok(None);
     }
-    Ok(unique)
+    Ok(Some(first))
 }

@@ -30,7 +30,8 @@ impl<'ctx> JoinedPayload<'ctx> {
         let mut bytes = Vec::new();
         let mut sources = Vec::new();
         let mut ids = ids;
-        for _ in ctx.admit_iter(&(0_usize..count), "copy NX feature payload blocks")? {
+        for _ in 0_usize..count {
+            ctx.charge_work(1, "copy NX feature payload blocks")?;
             let Some(id) = ids.next() else {
                 return Ok(None);
             };

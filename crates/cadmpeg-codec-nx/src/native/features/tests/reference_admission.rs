@@ -816,36 +816,6 @@ fn projected_curve_payload_refusal(
     )
 }
 
-#[test]
-fn projected_curve_reference_order_check_propagates_work_refusal() {
-    let container = projected_curve_payload_container();
-    let (labels, references) = crate::test_support::with_decode_context(|ctx| {
-        Ok::<_, cadmpeg_core::CodecError>((
-            feature_operation_labels(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, &container)?,
-            )?,
-            feature_projected_curve_references(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, &container)?,
-            )?,
-        ))
-    })
-    .expect("projected curve payload inputs");
-    let error = crate::test_support::resource_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "check NX projected-curve reference order",
-        |ctx| feature_projected_curve_construction_payloads(ctx, &container, &labels, &references),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "check NX projected-curve reference order"
-    ));
-}
-
 fn projected_curve_string_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
