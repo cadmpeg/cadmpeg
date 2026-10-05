@@ -166,19 +166,6 @@ storage_case!(
         )
     }
 );
-// The growth peak includes both new and old hash-set bucket storage.
-storage_case!(
-    copy_retained_set_storage,
-    67,
-    103,
-    peak = (67, 103 + 67),
-    |ctx: &DecodeContext<'_>, count| {
-        let values = (0..count)
-            .map(|value| u64::try_from(value).expect("small value"))
-            .collect();
-        ctx.copy_retained_set(&values, "copied set storage")
-    }
-);
 storage_case!(
     collect_retained_texts_storage,
     25,

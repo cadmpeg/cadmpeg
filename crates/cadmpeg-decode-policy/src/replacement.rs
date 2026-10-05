@@ -15,8 +15,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     "slice"
                 }
             }
-            ty::Adt(owner, _) if types::standard(self.tcx, owner.did()) => {
+            ty::Adt(owner, arguments) if types::standard(self.tcx, owner.did()) => {
                 match self.tcx.item_name(owner.did()).as_str() {
+                    "Option"
+                        if matches!(arguments.type_at(0).kind(), ty::Adt(inner, _)
+                        if types::standard(self.tcx, inner.did())
+                            && self.tcx.item_name(inner.did()).as_str() == "HashSet") =>
+                    {
+                        "hash_set"
+                    }
                     "String" => "text",
                     "Vec" => "vector",
                     "HashMap" => "hash_map",
@@ -60,6 +67,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             match name.as_str() {
                 "push" | "write_char" => return method("push_retained_char"),
                 "push_str" | "write_str" => return method("append_retained"),
+                "with_capacity" => return method("retained_string"),
                 "insert" => {
                     return "DecodeContext::replace_text_range over index..index with value.encode_utf8(&mut [0; 4])".to_owned()
                 }
@@ -68,6 +76,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
                 _ => (),
             }
+        }
+        if name.as_str() == "retain" && matches!(kind, "btree_map" | "btree_set") {
+            return method(&format!("retain_{kind}"));
+        }
+        if kind.starts_with("hash") && matches!(name.as_str(), "remove" | "remove_entry" | "take") {
+            return crate::hash_tables::REMOVAL_REPLACEMENT.to_owned();
+        }
+        if kind.starts_with("hash") && matches!(name.as_str(), "is_subset" | "is_disjoint") {
+            return crate::hash_tables::TRAVERSAL_REPLACEMENT.to_owned();
         }
         if map
             && matches!(
@@ -109,6 +126,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 "push_heap"
             });
         }
+        if kind == "vector" && name.as_str() == "insert" {
+            return method("insert_vec");
+        }
         match name.as_str() {
             "contains" if kind == "text" => method("contains_text"),
             "contains" if matches!(kind, "slice" | "bytes" | "vector") => method("contains"),
@@ -125,6 +145,8 @@ impl<'tcx> Analysis<'_, 'tcx> {
             "clone" | "clone_from" | "to_owned" | "into_owned" | "from" | "into" if kind == "text" || result == "text" => method("copy_retained_text"),
             "to_vec" | "to_owned" | "clone" if kind == "bytes" => method("copy_slice"),
             "to_vec" | "clone" | "to_owned" if matches!(kind, "slice" | "vector") => "DecodeContext::collect_vec with charged child construction; use DecodeContext::copy_slice for Copy elements".to_owned(),
+            "collect" | "from_iter" if result == "text" => method("collect_text"),
+            "with_capacity" if result == "text" => method("retained_string"),
             "collect" | "from_iter" if matches!(result, "hash_map" | "btree_map" | "hash_set" | "btree_set") => method(match result {
                 "hash_map" => "collect_hash_map", "hash_set" => "collect_hash_set", "btree_set" => "collect_btree_set", _ => "collect_scoped_btree_map",
             }),
@@ -175,14 +197,14 @@ pub(crate) fn fallback(name: &str) -> String {
         "resize_with" => "resize_with", "drain" => "drain_vec", "splice" => "splice_vec", "split_off" => "split_off_vec", "shrink_to_fit" => "shrink_vec",
         "into_boxed_slice" | "into_boxed_slice may shrink/reallocate: capacity equality unresolved" => "into_boxed_slice",
         "with_capacity" => "collection_vec", "derived Default" => "collect_indexed_vec",
-        "attribute" | "has_tag_name" | "root_element" => "charge_work",
+        "attribute" => "xml_attribute", "has_tag_name" => "xml_has_tag_name", "root_element" => "xml_root_element",
         "parse_with_options" => "parse_xml",
         "deserialize" | "deserialize_any" | "deserialize_map" | "from_value" => "parse_json",
         "serialize" | "to_value" | "to_writer" | "custom" | "end" => return "DecodeContext::parse_json_value for a value-tree decode; rebuild concrete owned fields with DecodeContext::collect_vec and DecodeContext::format_retained; custom Serde callbacks remain unproven".to_owned(),
         "unzip" => "unzip_vec",
         "decode" => return "DecodeContext::collection_vec for output storage and DecodeContext::charge_work for the checked input extent; use a slice decoder".to_owned(),
         "decompress" | "decompress_stream" | "lzma_decompress_with_options" => "begin_expand",
-        "by_index" | "by_index_raw" => return "cadmpeg_container::ArchiveSnapshot::new followed by ArchiveSnapshot::open; DecodeContext::begin_expand admits decompression".to_owned(),
+        "by_index" | "by_index_raw" => return "cadmpeg_container::ArchiveSnapshot::probe_readable_names for tolerant name probes; ArchiveSnapshot::new followed by ArchiveSnapshot::open for payload reads; DecodeContext::begin_expand admits decompression".to_owned(),
         "comparison" | "custom comparison work" => "equal",
         _ => return "DecodeContext::charge_work for the resolved operand extent and DecodeContext::reserve_scoped for checked temporary bytes; resolve the concrete implementation and retain unproven status until its bound is known".to_owned(),
     };
