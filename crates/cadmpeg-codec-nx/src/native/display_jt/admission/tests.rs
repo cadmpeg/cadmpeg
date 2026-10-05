@@ -239,7 +239,7 @@ fn display_jt_native_validation_propagates_resource_limit() {
             let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
             assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "construct canonical native value"));
+            && limit.operation == "load typed native record"));
             crate::test_support::with_decode_context(|service| {
                 assert!(crate::NxCodec::validate_native(service, &ir)
                     .unwrap()
