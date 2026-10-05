@@ -172,7 +172,7 @@ fn hash_growth_refuses_inline_slot_moves_before_rehashing() {
     hashes.set(0);
     let capacity = map.capacity();
     let arena = DecodeArena::new();
-    // Three rehash visits, three measuring visits and three key bytes precede bucket movement.
+    // Bucket movement is charged before any key is rehashed or measured.
     let ctx = operation_context(&arena, ResourceDimension::WorkUnits, 9);
     let CodecError::ResourceLimit(limit) = ctx
         .reserve_map(&mut map, 1, "large slots")
@@ -180,7 +180,7 @@ fn hash_growth_refuses_inline_slot_moves_before_rehashing() {
     else {
         panic!("resource refusal")
     };
-    assert_eq!(limit.used, 9);
+    assert_eq!(limit.used, 0);
     assert!(limit.additional > 3 * 4096);
     assert_eq!(hashes.get(), 0);
     assert_eq!(map.capacity(), capacity);
