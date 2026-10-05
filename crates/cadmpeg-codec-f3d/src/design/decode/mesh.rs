@@ -9,9 +9,7 @@ use crate::bytes::{lp_ascii_strict, lp_utf16_bounded_charged};
 use crate::container::ContainerScan;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::image::neutral_asset_id_charged;
-use crate::design::decode::meta::{
-    metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
-};
+use crate::design::decode::meta::{metadata_for_bulk_stream, TypedFrameSource, TypedPrimaryFrame};
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::sketch::{
     indexed_record_header_at, native_scope_charged, native_scope_scoped, IndexedRecordOffsets,
@@ -1782,13 +1780,10 @@ where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
     let mut storage = ctx.reserve_scoped(0, "f3d mesh graph records")?;
-    let collection_frames = typed_primary_frames(
-        ctx,
-        bytes,
-        meta,
-        MESH_COLLECTION_TYPE_GUID,
-        "mesh-collection",
-    )?;
+    // The primary frames are resolved once for every record type of the graph.
+    let mut typed = TypedFrameSource::new(bytes, meta);
+    let (collection_frames, _collection_frames_storage) =
+        typed.frames(ctx, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
     let mut collections = Vec::new();
     for frame in ctx.admit_iter(&collection_frames, "parse F3D mesh collections")? {
         let collection = parse_mesh_collection_record(ctx, bytes, meta, *frame)?;
@@ -1803,27 +1798,25 @@ where
     }
     let (_stream_storage, stream) = native_scope_scoped(ctx, source_entry_name)?;
     let collection_indices = mesh_collection_indices(ctx, &mut storage, &collections)?;
-    let frames = |type_guid: &str, record_kind: &str| {
-        typed_primary_frames(ctx, bytes, meta, type_guid, record_kind)
-    };
+    let mut frames = |type_guid: &str, record_kind: &str| typed.frames(ctx, type_guid, record_kind);
     let entry_names = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?,
+        &frames(MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?.0,
         "mesh-entry-name",
         |frame| parse_mesh_entry_name_record(ctx, bytes, frame).map(Some),
     )?;
     let guids = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_GUID_TYPE_GUID, "mesh-GUID")?,
+        &frames(MESH_GUID_TYPE_GUID, "mesh-GUID")?.0,
         "mesh-GUID",
         |frame| parse_mesh_guid_record(ctx, bytes, frame).map(Some),
     )?;
     let bodies = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_BODY_TYPE_GUID, "mesh-body")?,
+        &frames(MESH_BODY_TYPE_GUID, "mesh-body")?.0,
         "mesh-body",
         |frame| parse_mesh_body_record(ctx, bytes, frame).map(Some),
     )?;
@@ -1831,14 +1824,14 @@ where
     let texture_tables = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_TEXTURE_TABLE_TYPE_GUID, "mesh-texture-table")?,
+        &frames(MESH_TEXTURE_TABLE_TYPE_GUID, "mesh-texture-table")?.0,
         "mesh-texture-table",
         |frame| parse_mesh_texture_table_record(ctx, &mut texture_storage, bytes, frame).map(Some),
     )?;
     let wrappers = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?,
+        &frames(MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?.0,
         "mesh-wrapper",
         |frame| parse_mesh_wrapper_record(ctx, bytes, frame).map(Some),
     )?;
@@ -1846,42 +1839,42 @@ where
     let scopes = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_FEATURE_SCOPE_TYPE_GUID, "mesh-feature-scope")?,
+        &frames(MESH_FEATURE_SCOPE_TYPE_GUID, "mesh-feature-scope")?.0,
         "mesh-feature-scope",
         |frame| parse_mesh_scope_record(ctx, bytes, meta, &records, frame).map(Some),
     )?;
     let states = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?,
+        &frames(MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?.0,
         "mesh-scene-state",
         |frame| parse_mesh_scene_state_record(ctx, bytes, frame).map(Some),
     )?;
     let scene_nodes = record_map(
         ctx,
         &mut storage,
-        &frames(SCENE_NODE_TYPE_GUID, "mesh-scene-node")?,
+        &frames(SCENE_NODE_TYPE_GUID, "mesh-scene-node")?.0,
         "mesh-scene-node",
         |frame| parse_scene_node_record(ctx, bytes, frame).map(Some),
     )?;
     let scene_auxiliary_frames = record_map(
         ctx,
         &mut storage,
-        &frames(SCENE_AUXILIARY_TYPE_GUID, "mesh-scene-auxiliary")?,
+        &frames(SCENE_AUXILIARY_TYPE_GUID, "mesh-scene-auxiliary")?.0,
         "mesh-scene-auxiliary",
         |frame| Ok(Some(frame)),
     )?;
     let filename_frames = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_TEXTURE_FILENAME_TYPE_GUID, "mesh-texture-filename")?,
+        &frames(MESH_TEXTURE_FILENAME_TYPE_GUID, "mesh-texture-filename")?.0,
         "mesh-texture-filename",
         |frame| Ok(Some(frame)),
     )?;
     let collection_owners = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_COLLECTION_OWNER_TYPE_GUID, "mesh-collection-owner")?,
+        &frames(MESH_COLLECTION_OWNER_TYPE_GUID, "mesh-collection-owner")?.0,
         "mesh-collection-owner",
         |frame| {
             let Some(owner) = parse_mesh_collection_owner_record(ctx, bytes, frame)? else {
@@ -1900,7 +1893,7 @@ where
     let body_owner_frames = record_map(
         ctx,
         &mut storage,
-        &frames(MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?,
+        &frames(MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?.0,
         "mesh-body-owner",
         |frame| Ok(Some(frame)),
     )?;

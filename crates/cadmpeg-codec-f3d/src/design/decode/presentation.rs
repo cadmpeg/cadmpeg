@@ -13,7 +13,7 @@ use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::reference_runs::admit_reference_values;
 
 use crate::bytes::{is_guid_prefix, lp_utf16_bytes, take_reference};
-use crate::design::decode::meta::{guid_matches, has_base_type, typed_primary_frames};
+use crate::design::decode::meta::{guid_matches, has_base_type, TypedFrameSource};
 use crate::design::decode::sketch::{
     parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
 };
@@ -85,10 +85,18 @@ pub(super) fn browser_node_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
+    browser_nodes_in(ctx, bytes, &mut TypedFrameSource::new(bytes, meta))
+}
+
+/// The browser nodes among the typed frames of `source`, whose stream is
+/// `bytes`.
+fn browser_nodes_in<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    source: &mut TypedFrameSource<'_, '_, 'ctx>,
+) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
-    let (frames, _frames_storage) = ctx.with_scoped_storage("f3d browser-node frames", || {
-        typed_primary_frames(ctx, bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")
-    })?;
+    let (frames, _frames_storage) = source.frames(ctx, BROWSER_NODE_TYPE_GUID, "browser-node")?;
     for frame in ctx.admit_iter(&frames, "scan F3D browser-node frames")? {
         if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
             continue;
@@ -199,23 +207,16 @@ pub(crate) fn body_presentations(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyPresentation>, CodecError> {
+    let mut source = TypedFrameSource::new(bytes, meta);
     let (nodes, _nodes_storage) = ctx.with_scoped_storage("f3d browser node records", || {
-        browser_node_records(ctx, bytes, meta)
+        browser_nodes_in(ctx, bytes, &mut source)
     })?;
     let (entity_types, _entity_types_storage) =
         ctx.with_scoped_storage("f3d presentation entity types", || entity_types(ctx, meta))?;
 
     let mut out = Vec::new();
     let (frames, _frames_storage) =
-        ctx.with_scoped_storage("f3d body-presentation frames", || {
-            typed_primary_frames(
-                ctx,
-                bytes,
-                meta,
-                BODY_PRESENTATION_TYPE_GUID,
-                "body-presentation",
-            )
-        })?;
+        source.frames(ctx, BODY_PRESENTATION_TYPE_GUID, "body-presentation")?;
     for frame in ctx.admit_iter(&frames, "scan F3D body-presentation frames")? {
         if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
             continue;
@@ -1193,19 +1194,19 @@ mod tests {
             records: vec![primary_record(entity, 0), primary_record(43, node_start)],
             secondary_records: Vec::new(),
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 31;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = body_presentations_with_context(&ctx, &bytes, &meta)
-            .err()
-            .unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d body presentation records",
+            0,
+            |ctx| body_presentations_with_context(ctx, &bytes, &meta),
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "f3d body presentation records"
         ));
-        policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64_from_index(node_guid.len() - 1);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let nodes = browser_node_records(&bytes, &meta).unwrap();
