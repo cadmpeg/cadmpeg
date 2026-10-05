@@ -149,7 +149,9 @@ fn swift_missing_vector_component_does_not_hide_later_lookup_refusal() {
     // One one-byte key admits eleven comparisons before the next component refuses.
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::swift::vector(&ctx, &geometry, ["I", "J", "K"]).unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else { panic!("expected work refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected work refusal");
+    };
     assert_eq!(limit.operation, "look up SLDPRT ordered key");
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
@@ -161,7 +163,8 @@ fn swift_missing_nominal_field_preserves_lookup_refusal() {
     let mut geometry = entity("GeoCylinder");
     geometry.doubles.insert("Other".into(), 0.0);
     feature.related.push(RelatedObject {
-        name: "NomCylinder".into(), class: "GeoCylinder".into(),
+        name: "NomCylinder".into(),
+        class: "GeoCylinder".into(),
         entity: geometry,
     });
     let arena = DecodeArena::new();
@@ -169,7 +172,51 @@ fn swift_missing_nominal_field_preserves_lookup_refusal() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::swift::nominal_measurement(&ctx, &feature, "NomCylinder", "R").unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else { panic!("expected work refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected work refusal");
+    };
     assert_eq!(limit.operation, "look up SLDPRT ordered key");
     assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+fn assert_work_refusal_at(
+    operation: &'static str,
+    mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), CodecError>,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = run(&ctx);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == operation
+            && limit.additional > 0));
+}
+
+#[test]
+fn swift_reachability_membership_refusal_reaches_the_caller() {
+    assert_work_refusal_at("check SWIFT reachability path", |ctx| {
+        let mut visited = BTreeSet::from(["F0".to_owned()]);
+        let result =
+            crate::swift::feature_reaches(ctx, "F0", "target", &BTreeMap::new(), &mut visited, 0);
+        if matches!(&result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "check SWIFT reachability path")
+        {
+            assert_eq!(visited, BTreeSet::from(["F0".to_owned()]));
+        }
+        result.map(|_| ())
+    });
 }
