@@ -118,7 +118,8 @@ pub(super) fn exact_legacy_as_built_421_alignment(
     }
     // Owner class tags hold three digits, so each comparison is constant.
     if lanes.iter().any(|owner| {
-        owner.frame_length() != 103 || owner.class_tag().as_str() != generation.owner_class_tag()
+        owner.frame_length() != 103
+            || owner.class_tag().as_bytes() != generation.owner_class_tag().as_bytes()
     }) {
         return Ok(None);
     }
@@ -270,7 +271,36 @@ const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
 
 /// Decode the two ordered construction/face-selection pairs of a 421-byte
 /// `As-built` scope and derive their local frames from the stored solved frame.
+/// The constructions and selections are parsed under a scoped reservation and
+/// become retained only when the pairs are complete.
 pub(super) fn exact_legacy_as_built_421_operands(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+    recipes: &[ConstructionRecipe],
+    solved_frame: &DesignAssemblySolvedFrame,
+) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
+    let (operands, storage) =
+        ctx.with_scoped_storage("f3d legacy AsBuilt operand candidates", || {
+            legacy_as_built_421_operands(
+                ctx,
+                bytes,
+                records,
+                scope,
+                stream_types,
+                recipes,
+                solved_frame,
+            )
+        })?;
+    if operands.is_some() {
+        storage.commit()?;
+    }
+    Ok(operands)
+}
+
+fn legacy_as_built_421_operands(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -449,21 +479,21 @@ fn exact_legacy_as_built_face_selection(
             .and_then(|offset| u64::try_from(offset).ok()),
         _ => None,
     };
+    let search = LegacySelectionSearch {
+        bytes,
+        records,
+        scope,
+        scope_reference_ordinal,
+        record_index,
+        expected_class_tag,
+        next_byte_offset,
+        recipes,
+    };
     // Each candidate is parsed under its own scoped reservation; only the
     // selection that is returned becomes retained.
     let selection_at = |byte_offset: usize| {
         ctx.with_scoped_storage("f3d legacy AsBuilt face selection candidates", || {
-            exact_legacy_as_built_selection_at(
-                ctx,
-                bytes,
-                records,
-                scope,
-                scope_reference_ordinal,
-                (record_index, expected_class_tag),
-                byte_offset,
-                next_byte_offset,
-                recipes,
-            )
+            search.selection_at(ctx, byte_offset)
         })
     };
     // Exactly one header of the record index must carry a complete selection.
@@ -497,84 +527,96 @@ fn exact_legacy_as_built_face_selection(
     Ok(Some(selection))
 }
 
-/// The legacy As-built face selection whose indexed header is at
-/// `byte_offset`, when that header carries `expected_class_tag` and the face
-/// operand and entity-selection prefix after it are complete.
-#[allow(clippy::too_many_arguments)]
-fn exact_legacy_as_built_selection_at(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    scope: &DesignParameterScope,
+/// The search for the legacy As-built face selection of one scope reference:
+/// the record index and class tag its header carries, and the scope and
+/// stream context each candidate header is parsed against.
+struct LegacySelectionSearch<'a> {
+    bytes: &'a [u8],
+    records: &'a IndexedRecordOffsets,
+    scope: &'a DesignParameterScope,
     scope_reference_ordinal: u32,
-    (record_index, expected_class_tag): (u32, &[u8; 3]),
-    byte_offset: usize,
+    record_index: u32,
+    expected_class_tag: &'a [u8; 3],
     next_byte_offset: Option<u64>,
-    recipes: &[ConstructionRecipe],
-) -> Result<Option<DesignAssemblyLegacySelection>, cadmpeg_core::CodecError> {
-    let Ok(header_offset) = u64::try_from(byte_offset) else {
-        return Ok(None);
-    };
-    if indexed_class_at(bytes, header_offset) != Some(expected_class_tag) {
-        return Ok(None);
-    }
-    // The header ID lives only while the face operand is parsed.
-    let mut id_storage = ctx.reserve_scoped(0, "f3d legacy AsBuilt selection header ID")?;
-    let id = ctx.copy_scoped_text(
-        &scope.id,
-        &mut id_storage,
-        "f3d legacy AsBuilt selection header ID",
-    )?;
-    let class_tag = retain_class_tag(
-        ctx,
-        *expected_class_tag,
-        "copy F3D As-built selection class tag",
-    )?;
-    let header = DesignRecordHeader {
-        id,
-        record_index,
-        class_tag,
-        byte_offset: header_offset,
-    };
-    let Some(operand) = parse_face_operand(
-        ctx,
-        bytes,
-        records,
-        crate::design::decode::operands::FaceOperandFrame {
-            scope,
-            scope_reference_ordinal,
-            group_ownership: None,
+    recipes: &'a [ConstructionRecipe],
+}
+
+impl LegacySelectionSearch<'_> {
+    /// The face selection whose indexed header is at `byte_offset`, when that
+    /// header carries the expected class tag and the face operand and
+    /// entity-selection prefix after it are complete.
+    fn selection_at(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        byte_offset: usize,
+    ) -> Result<Option<DesignAssemblyLegacySelection>, cadmpeg_core::CodecError> {
+        let Ok(header_offset) = u64::try_from(byte_offset) else {
+            return Ok(None);
+        };
+        if indexed_class_at(self.bytes, header_offset) != Some(self.expected_class_tag) {
+            return Ok(None);
+        }
+        // The header ID lives only while the face operand is parsed.
+        let mut id_storage = ctx.reserve_scoped(0, "f3d legacy AsBuilt selection header ID")?;
+        let id = ctx.copy_scoped_text(
+            &self.scope.id,
+            &mut id_storage,
+            "f3d legacy AsBuilt selection header ID",
+        )?;
+        let class_tag = retain_class_tag(
+            ctx,
+            *self.expected_class_tag,
+            "copy F3D As-built selection class tag",
+        )?;
+        let header = DesignRecordHeader {
+            id,
+            record_index: self.record_index,
+            class_tag,
+            byte_offset: header_offset,
+        };
+        let Some(operand) = parse_face_operand(
+            ctx,
+            self.bytes,
+            self.records,
+            crate::design::decode::operands::FaceOperandFrame {
+                scope: self.scope,
+                scope_reference_ordinal: self.scope_reference_ordinal,
+                group_ownership: None,
+                next_byte_offset: self.next_byte_offset,
+                header: &header,
+            },
+            self.recipes,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(prefix) =
+            parse_entity_selection_prefix(ctx, self.bytes, byte_offset, self.record_index)?
+        else {
+            return Ok(None);
+        };
+        let (Ok(asset_id), Ok(context_id)) =
+            (prefix.asset_id.try_into(), prefix.context_id.try_into())
+        else {
+            return Ok(None);
+        };
+        let next_byte_offset = operand.next_byte_offset();
+        Ok(Some(DesignAssemblyLegacySelection {
+            record_index: self.record_index,
+            byte_offset: header_offset,
+            class_tag: header.class_tag,
+            asset_id,
+            asset_id_offset: prefix.asset_id_offset,
+            context_id,
+            context_id_offset: prefix.context_id_offset,
+            recipe_record_index: operand.recipe_record_index(),
+            recipe_record_byte_offset: operand.recipe_record_byte_offset(),
+            recipe_id: operand.recipe_id,
+            recipe_kind: operand.recipe_kind,
+            recipe_references: operand.recipe_references,
             next_byte_offset,
-            header: &header,
-        },
-        recipes,
-    )?
-    else {
-        return Ok(None);
-    };
-    let Some(prefix) = parse_entity_selection_prefix(ctx, bytes, byte_offset, record_index)? else {
-        return Ok(None);
-    };
-    let (Ok(asset_id), Ok(context_id)) = (prefix.asset_id.try_into(), prefix.context_id.try_into())
-    else {
-        return Ok(None);
-    };
-    let next_byte_offset = operand.next_byte_offset();
-    Ok(Some(DesignAssemblyLegacySelection {
-        record_index,
-        byte_offset: header_offset,
-        class_tag: header.class_tag,
-        asset_id,
-        asset_id_offset: prefix.asset_id_offset,
-        context_id,
-        context_id_offset: prefix.context_id_offset,
-        recipe_record_index: operand.recipe_record_index(),
-        recipe_record_byte_offset: operand.recipe_record_byte_offset(),
-        recipe_id: operand.recipe_id,
-        recipe_kind: operand.recipe_kind,
-        recipe_references: operand.recipe_references,
-        next_byte_offset,
-    }))
+        }))
+    }
 }
 
 #[cfg(test)]
