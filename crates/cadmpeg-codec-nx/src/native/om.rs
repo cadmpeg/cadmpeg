@@ -203,12 +203,7 @@ pub(super) fn om_record_areas(
     let links = segment_om_links(ctx, container)?;
     let sections = container.om_sections(ctx)?;
     let mut areas = Vec::new();
-    let links_count = links.len();
-    let mut links = links.into_iter();
-    for _ in ctx.admit_iter(&(0..links_count), "NX OM record area links")? {
-        let Some(link) = links.next() else {
-            break;
-        };
+    for link in ctx.admit_iter(links, "NX OM record area links")? {
         let Some((_, section)) = linked_section(ctx, &sections, &link)? else {
             continue;
         };
@@ -289,12 +284,7 @@ pub(super) fn audit_trail_rows(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let row_count = rows.len();
-        let mut rows = rows.into_iter();
-        for _ in ctx.admit_iter(&(0..row_count), "NX audit trail rows")? {
-            let Some(row) = rows.next() else {
-                break;
-            };
+        for row in ctx.admit_iter(rows, "NX audit trail rows")? {
             let record = row.record();
             let ordinal = record.ordinal.value();
             let Some(source_offset) =
@@ -388,12 +378,10 @@ pub(super) fn operation_state_journal_groups(
             continue;
         };
         let entry_offset = history_section.entry_offset;
-        let group_count = groups.len();
-        let mut groups = groups.into_iter();
-        for ordinal in ctx.admit_iter(&(0..group_count), "NX operation state journal groups")? {
-            let Some(group) = groups.next() else {
-                break;
-            };
+        for (ordinal, group) in ctx
+            .admit_iter(groups, "NX operation state journal groups")?
+            .enumerate()
+        {
             let Some(ordinal) = u32::try_from(ordinal).ok() else {
                 continue;
             };
@@ -3173,11 +3161,7 @@ pub(super) fn external_references(
     let mut ordinal_reservation = ctx.reserve_scoped(0, "nx external reference ordinals")?;
     let mut ordinals = BTreeMap::<&str, u32>::new();
     let mut references = ctx.vector_storage(count, "nx external references")?;
-    let mut strings = strings.into_iter();
-    for _ in ctx.admit_iter(&(0..count), "nx external references")? {
-        let Some((entry, relative, path)) = strings.next() else {
-            break;
-        };
+    for (entry, relative, path) in ctx.admit_iter(strings, "nx external references")? {
         let current = match ctx.get_mut_btree_map(
             &mut ordinals,
             entry.name.as_str(),
@@ -3232,11 +3216,7 @@ pub(super) fn external_reference_records(
     let parsed = container.external_reference_records(ctx)?;
     let count = parsed.len();
     let mut output = ctx.vector_storage(count, "nx native external reference records")?;
-    let mut parsed = parsed.into_iter();
-    for _ in ctx.admit_iter(&(0..count), "nx native external reference records")? {
-        let Some((entry, record)) = parsed.next() else {
-            break;
-        };
+    for (entry, record) in ctx.admit_iter(parsed, "nx native external reference records")? {
         ctx.reserve_vec(&mut output, 1, "nx native external reference records")?;
         let id = external_reference_record_id(
             ctx,
@@ -3305,12 +3285,7 @@ pub(super) fn external_reference_indexed_records(
     }
     let parsed = container.external_reference_indexed_records(ctx)?;
     let mut output = Vec::new();
-    let parsed_count = parsed.len();
-    let mut parsed_values = parsed.into_iter();
-    for _index in ctx.admit_iter(&(0..parsed_count), "NX OM parsed visits")? {
-        let Some((entry, record)) = parsed_values.next() else {
-            break;
-        };
+    for (_index, (entry, record)) in ctx.admit_iter(parsed, "NX OM parsed visits")?.enumerate() {
         let Some((entry_offset, _)) = entry.file_span() else {
             continue;
         };
@@ -4326,15 +4301,10 @@ pub(super) fn object_records(
             .enumerate()
         {
             let record_references = record.references(ctx, records.len())?;
-            let record_references_count = record_references.len();
-            let mut record_references = record_references.into_iter();
-            for _index in ctx.admit_iter(
-                &(0..record_references_count),
-                "NX OM record references visits",
-            )? {
-                let Some(reference) = record_references.next() else {
-                    break;
-                };
+            for (_index, reference) in ctx
+                .admit_iter(record_references, "NX OM record references visits")?
+                .enumerate()
+            {
                 let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
                     continue;
                 };
@@ -4555,19 +4525,14 @@ pub(super) fn rmfastload_object_id_table(
     assign_rmfastload_object_id_identities(ctx, &mut object_ids, &counts)?;
     drop((counts, map_reservation));
     let member_ids = ctx.collect_retained_texts(
-        ctx.admit_iter(&object_ids, "allocate NX FastLoad member links")?
-            .map(|object_id| object_id.id.as_str()),
+        object_ids.iter().map(|object_id| object_id.id.as_str()),
         "allocate NX FastLoad member links",
     )?;
     let native_table = RmFastLoadObjectIdTable {
         id: table_id,
         members: match ObjectIdMembers::new(member_ids) {
             Ok(members) => members,
-            Err(message) => {
-                return Err(CodecError::Malformed(
-                    ctx.copy_retained_text(message, "NX FastLoad membership error")?,
-                ))
-            }
+            Err(message) => return Err(CodecError::malformed(message)),
         },
         source_entry: ctx.copy_retained_text(&entry.name, "retain NX FastLoad native copies")?,
         registry_source_offset: entry_offset
@@ -5288,12 +5253,10 @@ pub(super) fn data_block_control_handle_pairs(
         })?;
     }
     let mut pairs = Vec::new();
-    let by_block_count = by_block.len();
-    let mut by_block_values = by_block.into_iter();
-    for _index in ctx.admit_iter(&(0..by_block_count), "NX OM by block visits")? {
-        let Some((data_block, mut block_references)) = by_block_values.next() else {
-            break;
-        };
+    for (_index, (data_block, mut block_references)) in ctx
+        .admit_iter(by_block, "NX OM by block visits")?
+        .enumerate()
+    {
         ctx.stable_sort_by(
             &mut block_references,
             |value| &value.0.source_offset,
@@ -5650,12 +5613,10 @@ pub(super) fn data_block_column_index_tables(
         })?;
     }
     let mut output = Vec::new();
-    let linked_count = linked_by_section.len();
-    let mut linked_by_section = linked_by_section.into_iter();
-    for _index in ctx.admit_iter(&(0..linked_count), "NX column index linked sections")? {
-        let Some((section_ordinal, linked)) = linked_by_section.next() else {
-            break;
-        };
+    for (_index, (section_ordinal, linked)) in ctx
+        .admit_iter(linked_by_section, "NX column index linked sections")?
+        .enumerate()
+    {
         let Some(targets) = ctx.remove_btree_map(
             &mut targets_by_section,
             &section_ordinal,
@@ -6013,12 +5974,10 @@ pub(super) fn object_record_handle_pairs(
         })?;
     }
     let mut pairs = Vec::new();
-    let by_record_count = by_record.len();
-    let mut by_record_values = by_record.into_iter();
-    for _index in ctx.admit_iter(&(0..by_record_count), "NX OM by record visits")? {
-        let Some((record, mut record_references)) = by_record_values.next() else {
-            break;
-        };
+    for (_index, (record, mut record_references)) in ctx
+        .admit_iter(by_record, "NX OM by record visits")?
+        .enumerate()
+    {
         ctx.stable_sort_by(
             &mut record_references,
             |value| &value.0.source_offset,
@@ -6253,12 +6212,7 @@ pub(super) fn persistent_handles(
     }
     drop(members);
     let mut handles = Vec::new();
-    let groups_count = groups.len();
-    let mut groups_values = groups.into_iter();
-    for _index in ctx.admit_iter(&(0..groups_count), "NX OM groups visits")? {
-        let Some((value, group)) = groups_values.next() else {
-            break;
-        };
+    for (_index, (value, group)) in ctx.admit_iter(groups, "NX OM groups visits")?.enumerate() {
         ctx.reserve_vec(&mut handles, 1, "NX persistent handles")?;
         let id = ctx.format_retained(
             format_args!("nx:om-persistent-handles:handle#{value:08x}"),
@@ -6383,11 +6337,8 @@ pub(super) fn expressions(
     let sections = container.indexed_om_sections(ctx)?;
     let mut indexed_guard = ctx.reserve_scoped(0, "NX indexed expression lookup")?;
     let mut indexed = BTreeMap::<(&str, usize), (u32, usize, usize)>::new();
-    let section_count = sections.len();
-    let mut sections = sections.into_iter();
     for (section_ordinal, (entry, section)) in ctx
-        .admit_iter(&(0..section_count), "NX expression indexed input sections")?
-        .filter_map(|_| sections.next())
+        .admit_iter(sections, "NX expression indexed input sections")?
         .enumerate()
     {
         let Some(directory_entry) = container.entries.get(entry.index()) else {
@@ -6442,12 +6393,10 @@ pub(super) fn expressions(
                 "NX expression table markers",
             )
         })?;
-        let numeric_records_count = numeric_records.len();
-        let mut numeric_records = numeric_records.into_iter();
-        for _index in ctx.admit_iter(&(0..numeric_records_count), "NX OM numeric records visits")? {
-            let Some(expression) = numeric_records.next() else {
-                break;
-            };
+        for (_index, expression) in ctx
+            .admit_iter(numeric_records, "NX OM numeric records visits")?
+            .enumerate()
+        {
             // The table is the last marker that ends at or before the expression.
             let preceding = ctx.partition_point(
                 &table_offsets,

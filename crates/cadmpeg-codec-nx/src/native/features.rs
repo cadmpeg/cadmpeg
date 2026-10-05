@@ -3616,11 +3616,7 @@ pub(super) fn canonical_feature_history_links(
         "sort NX feature history links",
     )?;
     let mut canonical: Vec<SegmentOmLink> = Vec::new();
-    let mut history = history.into_iter();
-    for _ in ctx.admit_iter(&(0..history.len()), "deduplicate NX feature history links")? {
-        let Some(link) = history.next() else {
-            break;
-        };
+    for link in ctx.admit_iter(history, "deduplicate NX feature history links")? {
         if canonical
             .last()
             .is_some_and(|last| last.location.section_offset() == link.location.section_offset())
@@ -3642,13 +3638,13 @@ fn operation_header_block_identities<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     container: &Container,
 ) -> Result<(OperationBlockIdentities, ScopedReservation<'ctx>), CodecError> {
-    let mut blocks = data_blocks(ctx, container)?.into_iter();
-    let count = blocks.len();
     ctx.unique_index(
-        ctx.admit_iter(&(0..count), "visit NX operation block identities")?
-            .filter_map(|_| blocks.next())
-            .filter(|block| block.role == DataBlockRole::Column)
-            .map(|block| (block.block_ordinal, block.stable_identity)),
+        ctx.admit_iter(
+            data_blocks(ctx, container)?,
+            "visit NX operation block identities",
+        )?
+        .filter(|block| block.role == DataBlockRole::Column)
+        .map(|block| (block.block_ordinal, block.stable_identity)),
         "index NX operation block identities",
     )
 }
@@ -4136,18 +4132,10 @@ pub(super) fn feature_unlabeled_operation_body_writes(
             ctx.admit_iter(&unlabeled, "visit NX unlabeled operation records")?
         {
             let decoded = crate::om::unlabeled_operation_body_write_frames(ctx, record)?;
-            let mut decoded = decoded.into_iter();
-            for ordinal in ctx.admit_iter(
-                &(0..decoded.len()),
-                "visit NX unlabeled operation body writes",
-            )? {
-                let Some(write) = decoded.next() else {
-                    return Err(ctx.refuse_codec_limit(
-                        "visit NX unlabeled operation body writes",
-                        0,
-                        1,
-                    ));
-                };
+            for (ordinal, write) in ctx
+                .admit_iter(decoded, "visit NX unlabeled operation body writes")?
+                .enumerate()
+            {
                 let Some(offset) =
                     entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset()))
                 else {
@@ -5515,14 +5503,9 @@ pub(super) fn feature_input_store_operations(
             feature_input_store_sections(ctx, inputs, blocks)
         })?;
     let mut operations = BTreeSet::new();
-    let mut sections = sections.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..sections.len()),
-        "visit NX input-store operation groups",
-    )? {
-        let Some((label, grouped_sections)) = sections.next() else {
-            return Err(ctx.refuse_codec_limit("visit NX input-store operation groups", 0, 1));
-        };
+    for (label, grouped_sections) in
+        ctx.admit_iter(sections, "visit NX input-store operation groups")?
+    {
         if grouped_sections.is_empty() {
             continue;
         }
@@ -5835,11 +5818,10 @@ pub(super) fn feature_input_block_identity_groups(
         "sort NX input block groups",
     )?;
     let mut output = Vec::new();
-    let mut groups = groups.into_iter();
-    for ordinal in ctx.admit_iter(&(0..groups.len()), "emit NX input block identity groups")? {
-        let Some((data_block, members)) = groups.next() else {
-            return Err(ctx.refuse_codec_limit("emit NX input block identity groups", 0, 1));
-        };
+    for (ordinal, (data_block, members)) in ctx
+        .admit_iter(groups, "emit NX input block identity groups")?
+        .enumerate()
+    {
         let mut retained_members = Vec::new();
         let mut members = members.into_iter();
         for _ in ctx.admit_iter(&(0..members.len()), "copy NX input block identity members")? {
@@ -7918,11 +7900,13 @@ pub(super) fn feature_sketch_payload_names(
             &construction_payload,
             "NX sketch payload name identity",
         )?;
-        let mut fields = crate::om::name_field::scan(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..fields.len()), "visit NX sketch payload names")? {
-            let Some(field) = fields.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX sketch payload names", 0, 1));
-            };
+        for (ordinal, field) in ctx
+            .admit_iter(
+                crate::om::name_field::scan(ctx, joined.bytes())?,
+                "visit NX sketch payload names",
+            )?
+            .enumerate()
+        {
             let relative = cadmpeg_core::decode::u64_from_index(field.offset());
             let Some(source_offset) = joined.source_offset(ctx, relative)? else {
                 continue;

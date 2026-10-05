@@ -1353,11 +1353,7 @@ pub(super) fn emit_topology(
             }
         }
     }
-    let mut pending_faces = pending_faces.into_iter();
-    for _ in ctx.admit_iter(&(0..pending_faces.len()), "nx emitted faces")? {
-        let Some(pending) = pending_faces.next() else {
-            break;
-        };
+    for pending in ctx.admit_iter(pending_faces, "nx emitted faces")? {
         if let Some(failure) = ctx.remove_btree_map(
             &mut face_loop_failures,
             &pending.xmt,

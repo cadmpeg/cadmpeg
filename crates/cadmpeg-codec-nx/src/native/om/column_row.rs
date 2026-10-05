@@ -246,12 +246,10 @@ fn project_column_rows<R, F, T>(
             .ok_or_else(|| ctx.refuse_codec_limit("NX column row block count", 0, 1))?;
         let rows = scan(storage)?;
         let mut ordinal = 0usize;
-        let rows_count = rows.len();
-        let mut rows = rows.into_iter();
-        for _index in ctx.admit_iter(&(0..rows_count), "NX column row rows visits")? {
-            let Some(row) = rows.next() else {
-                break;
-            };
+        for (_index, row) in ctx
+            .admit_iter(rows, "NX column row rows visits")?
+            .enumerate()
+        {
             let Some((offset, frame)) = resolve(row, section_ordinal, block_count, source_base)?
             else {
                 continue;

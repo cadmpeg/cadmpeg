@@ -486,12 +486,10 @@ fn group_members_from_records(
             continue;
         }
         ctx.reverse(&mut reverse_chain, "NX GROUP member chain")?;
-        let chain_len = reverse_chain.len();
-        let mut chain = reverse_chain.into_iter();
-        for ordinal in ctx.admit_iter(&(0..chain_len), "NX GROUP members")? {
-            let Some((list_record_xmt, member_xmt, target)) = chain.next() else {
-                break;
-            };
+        for (ordinal, (list_record_xmt, member_xmt, target)) in ctx
+            .admit_iter(reverse_chain, "NX GROUP members")?
+            .enumerate()
+        {
             let Ok(ordinal_u32) = u32::try_from(ordinal) else {
                 continue;
             };
@@ -1466,12 +1464,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let records_count = census.records.len();
-        let mut records = census.records.into_iter();
-        for _ in ctx.admit_iter(&(0..records_count), "NX deltas events")? {
-            let Some(record) = records.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(census.records, "NX deltas events")? {
             ctx.push_vec(
                 &mut events.records,
                 ParasolidDeltasRecord {
@@ -1491,12 +1484,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let tombstones_count = census.tombstones.len();
-        let mut tombstones = census.tombstones.into_iter();
-        for _ in ctx.admit_iter(&(0..tombstones_count), "NX deltas events")? {
-            let Some(tombstone) = tombstones.next() else {
-                break;
-            };
+        for tombstone in ctx.admit_iter(census.tombstones, "NX deltas events")? {
             ctx.push_vec(
                 &mut events.tombstones,
                 ParasolidDeltasTombstone {
@@ -1515,12 +1503,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let body_revisions_count = census.body_revisions.len();
-        let mut body_revisions = census.body_revisions.into_iter();
-        for _ in ctx.admit_iter(&(0..body_revisions_count), "NX deltas events")? {
-            let Some(revision) = body_revisions.next() else {
-                break;
-            };
+        for revision in ctx.admit_iter(census.body_revisions, "NX deltas events")? {
             let state_tail = &stream.inflated[revision.prefix_end..revision.end];
             ctx.push_vec(
                 &mut events.body_revisions,
@@ -1550,12 +1533,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let term_use_numeric_tails_count = census.term_use_numeric_tails.len();
-        let mut term_use_numeric_tails = census.term_use_numeric_tails.into_iter();
-        for _ in ctx.admit_iter(&(0..term_use_numeric_tails_count), "NX deltas events")? {
-            let Some(tail) = term_use_numeric_tails.next() else {
-                break;
-            };
+        for tail in ctx.admit_iter(census.term_use_numeric_tails, "NX deltas events")? {
             ctx.push_vec(
                 &mut events.term_use_numeric_tails,
                 ParasolidDeltasTermUseNumericTail {
@@ -1574,12 +1552,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let tagged_reference_lanes_count = census.tagged_reference_lanes.len();
-        let mut tagged_reference_lanes = census.tagged_reference_lanes.into_iter();
-        for _ in ctx.admit_iter(&(0..tagged_reference_lanes_count), "NX deltas events")? {
-            let Some(lane) = tagged_reference_lanes.next() else {
-                break;
-            };
+        for lane in ctx.admit_iter(census.tagged_reference_lanes, "NX deltas events")? {
             let bytes = &stream.inflated[lane.offset..lane.end];
             ctx.push_vec(
                 &mut events.tagged_reference_lanes,
@@ -1604,12 +1577,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let reference_type_maps_count = census.reference_type_maps.len();
-        let mut reference_type_maps = census.reference_type_maps.into_iter();
-        for _ in ctx.admit_iter(&(0..reference_type_maps_count), "NX deltas events")? {
-            let Some(map) = reference_type_maps.next() else {
-                break;
-            };
+        for map in ctx.admit_iter(census.reference_type_maps, "NX deltas events")? {
             let bytes = &stream.inflated[map.offset..map.end];
             ctx.push_vec(
                 &mut events.reference_type_maps,
@@ -1635,12 +1603,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let reference_state_packets_count = census.reference_state_packets.len();
-        let mut reference_state_packets = census.reference_state_packets.into_iter();
-        for _ in ctx.admit_iter(&(0..reference_state_packets_count), "NX deltas events")? {
-            let Some(packet) = reference_state_packets.next() else {
-                break;
-            };
+        for packet in ctx.admit_iter(census.reference_state_packets, "NX deltas events")? {
             let bytes = &stream.inflated[packet.offset..packet.end];
             ctx.push_vec(
                 &mut events.reference_state_packets,
@@ -1666,12 +1629,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let schema_reference_preambles_count = census.schema_reference_preambles.len();
-        let mut schema_reference_preambles = census.schema_reference_preambles.into_iter();
-        for _ in ctx.admit_iter(&(0..schema_reference_preambles_count), "NX deltas events")? {
-            let Some(preamble) = schema_reference_preambles.next() else {
-                break;
-            };
+        for preamble in ctx.admit_iter(census.schema_reference_preambles, "NX deltas events")? {
             let bytes = &stream.inflated[preamble.offset..preamble.end];
             ctx.push_vec(
                 &mut events.schema_reference_preambles,
@@ -1696,12 +1654,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let reference_marker_packets_count = census.reference_marker_packets.len();
-        let mut reference_marker_packets = census.reference_marker_packets.into_iter();
-        for _ in ctx.admit_iter(&(0..reference_marker_packets_count), "NX deltas events")? {
-            let Some(packet) = reference_marker_packets.next() else {
-                break;
-            };
+        for packet in ctx.admit_iter(census.reference_marker_packets, "NX deltas events")? {
             let bytes = &stream.inflated[packet.offset..packet.end];
             ctx.push_vec(
                 &mut events.reference_marker_packets,
@@ -1727,12 +1680,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let type_150_state_packets_count = census.type_150_state_packets.len();
-        let mut type_150_state_packets = census.type_150_state_packets.into_iter();
-        for _ in ctx.admit_iter(&(0..type_150_state_packets_count), "NX deltas events")? {
-            let Some(packet) = type_150_state_packets.next() else {
-                break;
-            };
+        for packet in ctx.admit_iter(census.type_150_state_packets, "NX deltas events")? {
             let bytes = &stream.inflated[packet.offset..packet.end];
             ctx.push_vec(
                 &mut events.type_150_state_packets,
@@ -1757,12 +1705,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let inline_schema_declarations_count = census.inline_schema_declarations.len();
-        let mut inline_schema_declarations = census.inline_schema_declarations.into_iter();
-        for _ in ctx.admit_iter(&(0..inline_schema_declarations_count), "NX deltas events")? {
-            let Some(declaration) = inline_schema_declarations.next() else {
-                break;
-            };
+        for declaration in ctx.admit_iter(census.inline_schema_declarations, "NX deltas events")? {
             let bytes = &stream.inflated[declaration.offset..declaration.end];
             ctx.push_vec(
                 &mut events.inline_schema_declarations,
@@ -1787,12 +1730,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                 "NX deltas events",
             )?;
         }
-        let inline_body_states_count = census.inline_body_states.len();
-        let mut inline_body_states = census.inline_body_states.into_iter();
-        for _ in ctx.admit_iter(&(0..inline_body_states_count), "NX deltas events")? {
-            let Some(state) = inline_body_states.next() else {
-                break;
-            };
+        for state in ctx.admit_iter(census.inline_body_states, "NX deltas events")? {
             let bytes = &stream.inflated[state.offset..state.end];
             ctx.push_vec(
                 &mut events.inline_body_states,
@@ -2035,12 +1973,7 @@ fn per_parasolid_scan<P: ParasolidScanRecords>(
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX Parasolid scan ordinal", 0, 1))?;
         let rows = P::scan(ctx, &stream.inflated)?;
-        let row_count = rows.len();
-        let mut rows = rows.into_iter();
-        for _ in ctx.admit_iter(&(0..row_count), "NX Parasolid scanned records")? {
-            let Some(row) = rows.next() else {
-                break;
-            };
+        for row in ctx.admit_iter(rows, "NX Parasolid scanned records")? {
             ctx.reserve_vec(&mut records, 1, "NX Parasolid scanned records")?;
             let id = parasolid_record_id(ctx, stream_ordinal, P::ID_STEM, P::xmt(&row))?;
             records.push(P::record(id, ordinal, row));
@@ -2515,12 +2448,7 @@ pub(super) fn parasolid_chart_records(
         let point_layout = subtype.chart_point_layout();
         let charts =
             crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)?;
-        let chart_count = charts.len();
-        let mut charts = charts.into_iter();
-        for _ in ctx.admit_iter(&(0..chart_count), "NX Parasolid chart records")? {
-            let Some(chart) = charts.next() else {
-                break;
-            };
+        for chart in ctx.admit_iter(charts, "NX Parasolid chart records")? {
             ctx.reserve_vec(&mut records, 1, "NX Parasolid chart records")?;
             records.push(ParasolidChartRecord {
                 id: parasolid_offset_record_id(
@@ -3506,12 +3434,7 @@ pub(super) fn parasolid_attribute_definitions(
             payloads,
         } = crate::parasolid::attribute_definitions(ctx, &stream.inflated)?;
         payloads.commit()?;
-        let scanned_count = scanned.len();
-        let mut scanned = scanned.into_iter();
-        for _ in ctx.admit_iter(&(0..scanned_count), "NX attribute definitions")? {
-            let Some(definition) = scanned.next() else {
-                break;
-            };
+        for definition in ctx.admit_iter(scanned, "NX attribute definitions")? {
             ctx.reserve_vec(&mut records, 1, "NX attribute definitions")?;
             let name = crate::printable_string::PrintableString::new(ctx.copy_retained_text(
                 definition.name.as_str(),
@@ -3567,12 +3490,7 @@ pub(super) fn parasolid_field_names_records(
             payloads,
         } = crate::parasolid::field_names_records(ctx, &stream.inflated)?;
         payloads.commit()?;
-        let scanned_count = scanned.len();
-        let mut scanned = scanned.into_iter();
-        for _ in ctx.admit_iter(&(0..scanned_count), "NX field names records")? {
-            let Some(record) = scanned.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(scanned, "NX field names records")? {
             ctx.reserve_vec(&mut records, 1, "NX field names records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -3882,12 +3800,7 @@ pub(super) fn parasolid_entity_51_records(
             payloads,
         } = crate::parasolid::entity_51_records(ctx, &stream.inflated)?;
         payloads.commit()?;
-        let scanned_count = scanned.len();
-        let mut scanned = scanned.into_iter();
-        for _ in ctx.admit_iter(&(0..scanned_count), "NX entity 51 records")? {
-            let Some(record) = scanned.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(scanned, "NX entity 51 records")? {
             ctx.reserve_vec(&mut records, 1, "NX entity 51 records")?;
             let id = parasolid_offset_record_id(
                 ctx,
@@ -4085,12 +3998,7 @@ pub(super) fn parasolid_entity_value_records(
             });
             Ok(())
         };
-        let points_count = values.points.len();
-        let mut points = values.points.into_iter();
-        for _ in ctx.admit_iter(&(0..points_count), "NX Parasolid value records")? {
-            let Some(record) = points.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(values.points, "NX Parasolid value records")? {
             retain_vector(
                 ParasolidVectorValueKind::Points,
                 "entity-55-points",
@@ -4115,12 +4023,7 @@ pub(super) fn parasolid_entity_value_records(
                 record.value,
             )?;
         }
-        let directions_count = values.directions.len();
-        let mut directions = values.directions.into_iter();
-        for _ in ctx.admit_iter(&(0..directions_count), "NX Parasolid value records")? {
-            let Some(record) = directions.next() else {
-                break;
-            };
+        for record in ctx.admit_iter(values.directions, "NX Parasolid value records")? {
             retain_vector(
                 ParasolidVectorValueKind::Directions,
                 "entity-59-directions",

@@ -677,14 +677,7 @@ pub(in crate::native) fn feature_draft_construction_references(
                 .map(|field| field.references().into_iter().collect())
         })?;
     let mut output = Vec::new();
-    let mut references = references.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..references.len()),
-        "build NX draft construction references",
-    )? {
-        let Some(reference) = references.next() else {
-            return Err(ctx.refuse_codec_limit("build NX draft construction references", 0, 1));
-        };
+    for reference in ctx.admit_iter(references, "build NX draft construction references")? {
         let operation_label = format_feature_history_id(
             ctx,
             "operation-label",
@@ -983,12 +976,13 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(
         else {
             continue;
         };
-        let mut decoded =
-            crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..decoded.len()), "visit NX draft fixed lanes")? {
-            let Some(lane) = decoded.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX draft fixed lanes", 0, 1));
-            };
+        for (ordinal, lane) in ctx
+            .admit_iter(
+                crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?,
+                "visit NX draft fixed lanes",
+            )?
+            .enumerate()
+        {
             let payload_offset = lane.offset();
             let Some(lane) =
                 lane.try_map_locations(ctx, |offset, ()| joined.source_offset(ctx, offset))?
@@ -1036,12 +1030,13 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(
         else {
             continue;
         };
-        let mut decoded =
-            crate::om::draft_construction_binary32_lanes(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..decoded.len()), "visit NX draft binary32 lanes")? {
-            let Some(lane) = decoded.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX draft binary32 lanes", 0, 1));
-            };
+        for (ordinal, lane) in ctx
+            .admit_iter(
+                crate::om::draft_construction_binary32_lanes(ctx, joined.bytes())?,
+                "visit NX draft binary32 lanes",
+            )?
+            .enumerate()
+        {
             let payload_offset = lane.offset();
             let Some(lane) =
                 lane.try_map_locations(ctx, |offset, ()| joined.source_offset(ctx, offset))?
@@ -1090,11 +1085,13 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
         else {
             continue;
         };
-        let mut decoded = crate::om::string_values(ctx, joined.bytes(), 0)?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..decoded.len()), "visit NX draft payload strings")? {
-            let Some(value) = decoded.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX draft payload strings", 0, 1));
-            };
+        for (ordinal, value) in ctx
+            .admit_iter(
+                crate::om::string_values(ctx, joined.bytes(), 0)?,
+                "visit NX draft payload strings",
+            )?
+            .enumerate()
+        {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
             let Some(source_offset) = joined.source_offset(ctx, payload_offset)? else {
                 continue;
@@ -1142,12 +1139,13 @@ pub(in crate::native) fn feature_draft_construction_identity_frames(
         else {
             continue;
         };
-        let mut decoded =
-            crate::om::draft_construction_identity_frames(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..decoded.len()), "visit NX draft identity frames")? {
-            let Some(frame) = decoded.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX draft identity frames", 0, 1));
-            };
+        for (ordinal, frame) in ctx
+            .admit_iter(
+                crate::om::draft_construction_identity_frames(ctx, joined.bytes())?,
+                "visit NX draft identity frames",
+            )?
+            .enumerate()
+        {
             let payload_offset = frame.offset();
             let identity_payload_offset = frame.identity_offset();
             let (Some(source_offset), Some(identity_source_offset)) = (

@@ -126,14 +126,7 @@ pub(in crate::native) fn feature_projected_curve_references(
             )
         })?;
     let mut output = Vec::new();
-    let mut references = references.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..references.len()),
-        "build NX projected-curve references",
-    )? {
-        let Some(reference) = references.next() else {
-            return Err(ctx.refuse_codec_limit("build NX projected-curve references", 0, 1));
-        };
+    for reference in ctx.admit_iter(references, "build NX projected-curve references")? {
         let operation_label = format_feature_history_id(
             ctx,
             "operation-label",
@@ -190,11 +183,9 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         "group NX projected-curve references",
     )?;
     let mut payloads = Vec::new();
-    let mut groups = groups.into_iter();
-    for _ in ctx.admit_iter(&(0..groups.len()), "visit NX projected-curve operations")? {
-        let Some((operation_label, mut field)) = groups.next() else {
-            break;
-        };
+    for (operation_label, mut field) in
+        ctx.admit_iter(groups, "visit NX projected-curve operations")?
+    {
         let Some(kind) =
             ctx.get_btree_map(&kinds, &operation_label, "find NX projected-curve kind")?
         else {
@@ -301,18 +292,13 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
         else {
             continue;
         };
-        let mut decoded = crate::om::string_values(ctx, joined.bytes(), 0)?.into_iter();
-        for ordinal in ctx.admit_iter(
-            &(0..decoded.len()),
-            "visit NX projected-curve payload strings",
-        )? {
-            let Some(value) = decoded.next() else {
-                return Err(ctx.refuse_codec_limit(
-                    "visit NX projected-curve payload strings",
-                    0,
-                    1,
-                ));
-            };
+        for (ordinal, value) in ctx
+            .admit_iter(
+                crate::om::string_values(ctx, joined.bytes(), 0)?,
+                "visit NX projected-curve payload strings",
+            )?
+            .enumerate()
+        {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
             let Some(source_offset) = joined.source_offset(ctx, payload_offset)? else {
                 continue;
@@ -551,14 +537,7 @@ pub(in crate::native) fn feature_surface_construction_references(
                 })
         })?;
     let mut output = Vec::new();
-    let mut references = references.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..references.len()),
-        "build NX surface construction references",
-    )? {
-        let Some(reference) = references.next() else {
-            return Err(ctx.refuse_codec_limit("build NX surface construction references", 0, 1));
-        };
+    for reference in ctx.admit_iter(references, "build NX surface construction references")? {
         let operation_label = format_feature_history_id(
             ctx,
             "operation-label",
@@ -710,14 +689,9 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         "group NX surface construction references",
     )?;
     let mut output = Vec::new();
-    let mut groups = groups.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..groups.len()),
-        "visit NX surface construction operations",
-    )? {
-        let Some((operation_label, mut graph)) = groups.next() else {
-            break;
-        };
+    for (operation_label, mut graph) in
+        ctx.admit_iter(groups, "visit NX surface construction operations")?
+    {
         if graph.len() != 14 {
             continue;
         }
@@ -871,11 +845,13 @@ pub(in crate::native) fn feature_surface_construction_strings(
         else {
             continue;
         };
-        let mut decoded = crate::om::surface_payload_strings(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..decoded.len()), "visit NX surface payload strings")? {
-            let Some(value) = decoded.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX surface payload strings", 0, 1));
-            };
+        for (ordinal, value) in ctx
+            .admit_iter(
+                crate::om::surface_payload_strings(ctx, joined.bytes())?,
+                "visit NX surface payload strings",
+            )?
+            .enumerate()
+        {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
             let Some(source_offset) = joined.source_offset(ctx, payload_offset)? else {
                 continue;
@@ -1088,15 +1064,7 @@ pub(in crate::native) fn feature_operation_body_scalar_triples(
                 ctx,
                 record.body_view(),
             )?;
-            let mut rows = rows.into_iter();
-            for _ in ctx.admit_iter(&(0..rows.len()), "visit NX operation body scalar triples")? {
-                let Some(triple) = rows.next() else {
-                    return Err(ctx.refuse_codec_limit(
-                        "visit NX operation body scalar triples",
-                        0,
-                        1,
-                    ));
-                };
+            for triple in ctx.admit_iter(rows, "visit NX operation body scalar triples")? {
                 let Some(scalars) = triple.scalars.relocate(entry_offset) else {
                     continue;
                 };
@@ -1140,15 +1108,7 @@ pub(in crate::native) fn feature_operation_body_members(
             "visit NX feature operation records",
         )? {
             let groups = crate::om::operation_body_members(ctx, record.body_view())?;
-            let mut groups = groups.into_iter();
-            for _ in ctx.admit_iter(&(0..groups.len()), "visit NX operation body member groups")? {
-                let Some(group) = groups.next() else {
-                    return Err(ctx.refuse_codec_limit(
-                        "visit NX operation body member groups",
-                        0,
-                        1,
-                    ));
-                };
+            for group in ctx.admit_iter(groups, "visit NX operation body member groups")? {
                 let mut group_members = group.members.into_iter();
                 for ordinal in
                     ctx.admit_iter(&(0..group_members.len()), "visit NX operation body members")?
@@ -1462,11 +1422,7 @@ pub(in crate::native) fn feature_operation_body_11_continuations(
             "visit NX feature operation records",
         )? {
             let rows = crate::om::operation_body_11_continuations(ctx, record.body_view())?;
-            let mut rows = rows.into_iter();
-            for _ in ctx.admit_iter(&(0..rows.len()), "visit NX trim-body continuations")? {
-                let Some(continuation) = rows.next() else {
-                    return Err(ctx.refuse_codec_limit("visit NX trim-body continuations", 0, 1));
-                };
+            for continuation in ctx.admit_iter(rows, "visit NX trim-body continuations")? {
                 let id = ctx.format_retained(format_args!("nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal:010}-{}",
                             continuation.body_reference_ordinal), "NX trim body continuation identity")?;
                 let operation_label = format_feature_history_id(
@@ -1524,18 +1480,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
             "visit NX feature operation records",
         )? {
             let parsed = crate::om::operation_body_reference_lanes(ctx, record.body_view())?;
-            let mut parsed = parsed.into_iter();
-            for _ in ctx.admit_iter(
-                &(0..parsed.len()),
-                "visit NX operation body reference lanes",
-            )? {
-                let Some(lane) = parsed.next() else {
-                    return Err(ctx.refuse_codec_limit(
-                        "visit NX operation body reference lanes",
-                        0,
-                        1,
-                    ));
-                };
+            for lane in ctx.admit_iter(parsed, "visit NX operation body reference lanes")? {
                 let references = match lane.values {
                     crate::om::OperationBodyReferenceLaneValues::CompactIndex(values) => {
                         let mut references = Vec::new();
@@ -1638,11 +1583,9 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
         "group NX extrusion profile references",
     )?;
     let mut profiles = Vec::new();
-    let mut groups = groups.into_iter();
-    for _ in ctx.admit_iter(&(0..groups.len()), "visit NX extrusion profile operations")? {
-        let Some((operation_label, mut operation_references)) = groups.next() else {
-            break;
-        };
+    for (operation_label, mut operation_references) in
+        ctx.admit_iter(groups, "visit NX extrusion profile operations")?
+    {
         ctx.stable_sort_by(
             &mut operation_references,
             |value| &value.ordinal,
@@ -1671,14 +1614,9 @@ pub(in crate::native) fn feature_extrude_construction_profiles(
             continue;
         }
         let mut profile_references = Vec::new();
-        let mut operation_references = operation_references.into_iter();
-        for _ in ctx.admit_iter(
-            &(0..operation_references.len()),
-            "copy NX extrusion profile references",
-        )? {
-            let Some(reference) = operation_references.next() else {
-                return Err(ctx.refuse_codec_limit("copy NX extrusion profile references", 0, 1));
-            };
+        for reference in
+            ctx.admit_iter(operation_references, "copy NX extrusion profile references")?
+        {
             let Some((block, witness_source_offset)) = reference
                 .data_block
                 .as_deref()
@@ -1812,14 +1750,9 @@ pub(in crate::native) fn feature_extrude_32_constructions(
         "group NX extrusion profiles",
     )?;
     let mut constructions = Vec::new();
-    let mut branch_groups = branch_groups.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..branch_groups.len()),
-        "visit NX extrusion branch operations",
-    )? {
-        let Some((operation_label, matching)) = branch_groups.next() else {
-            break;
-        };
+    for (operation_label, matching) in
+        ctx.admit_iter(branch_groups, "visit NX extrusion branch operations")?
+    {
         let [branch] = matching.as_slice() else {
             continue;
         };
@@ -1992,11 +1925,9 @@ pub(in crate::native) fn feature_block_constructions(
         "group NX block construction references",
     )?;
     let mut constructions = Vec::new();
-    let mut groups = groups.into_iter();
-    for _ in ctx.admit_iter(&(0..groups.len()), "visit NX block construction operations")? {
-        let Some((operation_label, mut field)) = groups.next() else {
-            break;
-        };
+    for (operation_label, mut field) in
+        ctx.admit_iter(groups, "visit NX block construction operations")?
+    {
         if field.len() != 19 {
             continue;
         }
@@ -2150,12 +2081,13 @@ pub(in crate::native) fn feature_block_payload_scalars(
         else {
             continue;
         };
-        let mut fields =
-            crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..fields.len()), "visit NX block payload scalar fields")? {
-            let Some(field) = fields.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX block payload scalar fields", 0, 1));
-            };
+        for (ordinal, field) in ctx
+            .admit_iter(
+                crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?,
+                "visit NX block payload scalar fields",
+            )?
+            .enumerate()
+        {
             let payload_offset = cadmpeg_core::decode::u64_from_index(field.offset);
             let Some(source_offset) = joined.source_offset(ctx, payload_offset)? else {
                 continue;
@@ -2208,11 +2140,13 @@ pub(in crate::native) fn feature_block_payload_names(
         else {
             continue;
         };
-        let mut fields = crate::om::name_field::scan(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..fields.len()), "visit NX block payload name fields")? {
-            let Some(field) = fields.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX block payload name fields", 0, 1));
-            };
+        for (ordinal, field) in ctx
+            .admit_iter(
+                crate::om::name_field::scan(ctx, joined.bytes())?,
+                "visit NX block payload name fields",
+            )?
+            .enumerate()
+        {
             let Some(source_offset) =
                 joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(field.offset()))?
             else {
@@ -2752,14 +2686,7 @@ pub(in crate::native) fn feature_block_dimensions(
         let construction_id =
             ctx.copy_retained_text(&construction.id, "NX block dimensions construction")?;
         let mut anchor_bindings = Vec::new();
-        let mut operation_bindings = operation_bindings.into_iter();
-        for _ in ctx.admit_iter(
-            &(0..operation_bindings.len()),
-            "copy NX block dimension bindings",
-        )? {
-            let Some(binding) = operation_bindings.next() else {
-                return Err(ctx.refuse_codec_limit("copy NX block dimension bindings", 0, 1));
-            };
+        for binding in ctx.admit_iter(operation_bindings, "copy NX block dimension bindings")? {
             let id = ctx.copy_retained_text(&binding.id, "NX block dimension anchor binding")?;
             ctx.reserve_vec(
                 &mut anchor_bindings,
@@ -2800,11 +2727,13 @@ pub(in crate::native) fn data_block_object_frames(
     for (data_block, (bytes, source_offset)) in
         ctx.admit_iter(&*blocks, "scan NX offset-store blocks")?
     {
-        let mut frames = crate::om::data_block_object_frames(ctx, bytes)?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..frames.len()), "visit NX data-block object frames")? {
-            let Some(frame) = frames.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX data-block object frames", 0, 1));
-            };
+        for (ordinal, frame) in ctx
+            .admit_iter(
+                crate::om::data_block_object_frames(ctx, bytes)?,
+                "visit NX data-block object frames",
+            )?
+            .enumerate()
+        {
             let id = data_block_object_frame_id(ctx, data_block, ordinal)?;
             let data_block =
                 ctx.copy_retained_text(data_block, "retain NX data block object frame source")?;

@@ -1052,15 +1052,14 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
     let mut index_reservation = ctx.reserve_scoped(0, "NX pattern construction indexes")?;
     let mut kinds = BTreeMap::<&str, &str>::new();
     for label in ctx.admit_iter(labels, "index NX pattern construction labels")? {
-        index_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(&str, &str)>() * 4,
-        ))?;
-        ctx.insert_btree_map(
-            &mut kinds,
-            label.id.as_str(),
-            label.value.as_str(),
-            "NX pattern construction labels",
-        )?;
+        index_reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut kinds,
+                label.id.as_str(),
+                label.value.as_str(),
+                "NX pattern construction labels",
+            )
+        })?;
     }
     let (groups, _groups_reservation) = ctx.collect_scoped_btree_groups(
         references
@@ -1069,14 +1068,9 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         "group NX pattern construction references",
     )?;
     let mut output = Vec::new();
-    let mut groups = groups.into_iter();
-    for _ in ctx.admit_iter(
-        &(0..groups.len()),
-        "visit NX pattern construction operations",
-    )? {
-        let Some((operation_label, mut graph)) = groups.next() else {
-            break;
-        };
+    for (operation_label, mut graph) in
+        ctx.admit_iter(groups, "visit NX pattern construction operations")?
+    {
         let Some(kind) = ctx.get_btree_map(
             &kinds,
             &operation_label,
@@ -1189,11 +1183,13 @@ pub(in crate::native) fn feature_pattern_construction_strings(
         else {
             continue;
         };
-        let mut decoded = crate::om::string_values(ctx, joined.bytes(), 0)?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..decoded.len()), "visit NX pattern payload strings")? {
-            let Some(value) = decoded.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX pattern payload strings", 0, 1));
-            };
+        for (ordinal, value) in ctx
+            .admit_iter(
+                crate::om::string_values(ctx, joined.bytes(), 0)?,
+                "visit NX pattern payload strings",
+            )?
+            .enumerate()
+        {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
             let Some(source_offset) = joined.source_offset(ctx, payload_offset)? else {
                 continue;
@@ -1243,12 +1239,13 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
         else {
             continue;
         };
-        let mut decoded =
-            crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..decoded.len()), "visit NX pattern fixed lanes")? {
-            let Some(lane) = decoded.next() else {
-                return Err(ctx.refuse_codec_limit("visit NX pattern fixed lanes", 0, 1));
-            };
+        for (ordinal, lane) in ctx
+            .admit_iter(
+                crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?,
+                "visit NX pattern fixed lanes",
+            )?
+            .enumerate()
+        {
             let payload_offset = lane.offset();
             let Some(lane) =
                 lane.try_map_locations(ctx, |offset, ()| joined.source_offset(ctx, offset))?

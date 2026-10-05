@@ -192,12 +192,10 @@ pub(in crate::native) fn material_texture_assets(
         "sort NX material texture entries",
     )?;
     let mut assets = Vec::new();
-    let entries_count = entries.len();
-    let mut entries = entries.into_iter();
-    for _index in ctx.admit_iter(&(0..entries_count), "NX material texture entries visits")? {
-        let Some(entry) = entries.next() else {
-            break;
-        };
+    for (_index, entry) in ctx
+        .admit_iter(entries, "NX material texture entries visits")?
+        .enumerate()
+    {
         let parsed = (|| {
             let (offset, size) = entry.file_span()?;
             let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
