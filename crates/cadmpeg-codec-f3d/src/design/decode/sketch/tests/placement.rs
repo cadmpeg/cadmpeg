@@ -1286,8 +1286,12 @@ fn sketch_geometry_tail_names_its_owner_container() {
 }
 
 fn sketch_graph_header(suffix: u64, members: Vec<u32>) -> DesignEntityHeader {
+    sketch_graph_header_in("f3d:native", suffix, members)
+}
+
+fn sketch_graph_header_in(stream: &str, suffix: u64, members: Vec<u32>) -> DesignEntityHeader {
     DesignEntityHeader {
-        id: format!("f3d:native:design-entity-header#{suffix}"),
+        id: format!("{stream}:design-entity-header#{suffix}"),
         byte_offset: suffix,
 
         entity_id: crate::records::identity::DesignEntityId::try_from(format!("0_{suffix}"))
@@ -1309,8 +1313,12 @@ fn sketch_graph_header(suffix: u64, members: Vec<u32>) -> DesignEntityHeader {
 }
 
 fn sketch_graph_point(record_index: u32) -> SketchPoint {
+    sketch_graph_point_in("f3d:native", record_index)
+}
+
+fn sketch_graph_point_in(stream: &str, record_index: u32) -> SketchPoint {
     SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
-        id: format!("f3d:native:sketch-point#{record_index}"),
+        id: format!("{stream}:sketch-point#{record_index}"),
         record_index,
         owner_reference: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
@@ -1332,12 +1340,16 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
 }
 
 fn sketch_graph_relation() -> crate::records::sketch_relations::SketchRelation {
+    sketch_graph_relation_in("f3d:native")
+}
+
+fn sketch_graph_relation_in(stream: &str) -> crate::records::sketch_relations::SketchRelation {
     use crate::records::sketch_relations::{
         SketchRelation, SketchRelationDraft, SketchRelationMember, SketchRelationReturnMember,
     };
 
     SketchRelation::try_new(SketchRelationDraft {
-        id: "f3d:native:sketch-relation#30".to_owned(),
+        id: format!("{stream}:sketch-relation#30"),
         record_index: 30,
         class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
         byte_offset: 0,
@@ -1393,22 +1405,29 @@ fn sketch_graph_collections_and_text_refuse_limits() {
                 && failure.operation == operation)
         );
     }
-    for (dimension, operation) in [
+    // The scope text needs as many materialized bytes as the relation's stream
+    // is long. That stream is longer than the transient hash-table reservation
+    // the operand table holds while it grows (227 bytes), so the scope text is
+    // the first charge to need more materialized bytes than that peak.
+    let long_stream = "s".repeat(256);
+    for (dimension, operation, stream) in [
         (
             ResourceDimension::RetainedBytes,
             "f3d sketch relation owner text",
+            "f3d:native",
         ),
         (
             ResourceDimension::MaterializedBytes,
             "f3d sketch relation scope text",
+            long_stream.as_str(),
         ),
     ] {
         let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
-            let mut points = [sketch_graph_point(20)];
-            let mut relations = [sketch_graph_relation()];
+            let mut points = [sketch_graph_point_in(stream, 20)];
+            let mut relations = [sketch_graph_relation_in(stream)];
             bind_sketch_graph(
                 ctx,
-                &[sketch_graph_header(100, vec![20])],
+                &[sketch_graph_header_in(stream, 100, vec![20])],
                 &mut points,
                 &mut [],
                 &mut [],

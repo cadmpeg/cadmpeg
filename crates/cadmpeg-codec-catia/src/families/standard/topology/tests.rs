@@ -1164,9 +1164,17 @@ fn incidence_cycles_refuse_work_limit_before_unseen_scan() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // One prior set item, eight scalar-key hash reads and the two-row sort precede the unseen scan.
+    // Eight scalar-key hash reads, the first-insertion growth of the edge set
+    // and the vertex map, and the two-row sort precede the unseen scan. A first
+    // insertion is bounded by a four-bucket table: buckets times element size,
+    // 15 bytes of group padding, one control byte per bucket and the 16-byte
+    // trailer.
     let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-    policy.limits.max_work_units = 1 + 8 * index_bytes + 4 + 10 * index_bytes * 3 * 8;
+    let four_buckets =
+        |element: usize| cadmpeg_core::decode::u64_from_index(4 * element + 15 + 4 + 16);
+    let hash_growth = four_buckets(std::mem::size_of::<usize>())
+        + four_buckets(std::mem::size_of::<(usize, usize)>());
+    policy.limits.max_work_units = 8 * index_bytes + 4 + hash_growth + 10 * index_bytes * 3 * 8;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("fixture fits the input limit");
     let result = incidence_cycles(&ctx, &[0, 1], &[[0, 1], [1, 0]]);

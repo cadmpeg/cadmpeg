@@ -6,7 +6,7 @@ use super::scalars::feature_object_name;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
 use cadmpeg_core::decode::u64_from_index;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::records::ObjectId;
 
@@ -125,7 +125,7 @@ pub(crate) fn bind_history_classes(
         }
     }
 
-    let mut direct_classes_by_name = HashMap::<&str, Vec<&str>>::new();
+    let mut direct_classes_by_name = BTreeMap::<&str, Vec<&str>>::new();
     for lane in lanes {
         let names_by_offset = temporary.with_storage(|| {
             collect_class_map(
@@ -141,21 +141,25 @@ pub(crate) fn bind_history_classes(
                 continue;
             };
             if class.role() != FeatureInputClassRole::Native {
-                temporary.with_storage(|| {
-                    ctx.reserve_map(
-                        &mut direct_classes_by_name,
-                        1,
-                        "bind SLDPRT history classes",
-                    )
-                })?;
-                let classes = direct_classes_by_name.entry(name).or_default();
+                let classes = temporary
+                    .with_storage(|| {
+                        ctx.entry_btree_map(
+                            &mut direct_classes_by_name,
+                            name,
+                            "bind SLDPRT history classes",
+                        )
+                    })?
+                    .or_default();
                 temporary
                     .with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
                 classes.push(&class.name);
             }
         }
     }
-    for classes in direct_classes_by_name.values_mut() {
+    for (_, classes) in ctx.admit_iter(
+        &mut direct_classes_by_name,
+        "sort SLDPRT history class names",
+    )? {
         ctx.sort_unstable_by(
             classes,
             |value| value,
@@ -191,7 +195,7 @@ pub(crate) fn bind_history_classes(
         }
     }
 
-    let mut cosmetic_thread_classes = HashMap::<String, Vec<String>>::new();
+    let mut cosmetic_thread_classes = BTreeMap::<String, Vec<String>>::new();
     for lane in lanes {
         let mut declared = temporary.with_storage(|| {
             collect_class_vec(
@@ -222,7 +226,7 @@ pub(crate) fn bind_history_classes(
                     .map(|class| class.offset + 6 + u64_from_index(class.name.len())),
             )
         })?;
-        let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
+        let mut groups = BTreeMap::<u16, Vec<&crate::records::Feature>>::new();
         for feature in histories
             .iter()
             .flat_map(|history| &history.features)
@@ -242,27 +246,29 @@ pub(crate) fn bind_history_classes(
             else {
                 continue;
             };
-            temporary
-                .with_storage(|| ctx.reserve_map(&mut groups, 1, "bind SLDPRT history classes"))?;
-            let group = groups.entry(token).or_default();
+            let group = temporary
+                .with_storage(|| {
+                    ctx.entry_btree_map(&mut groups, token, "bind SLDPRT history classes")
+                })?
+                .or_default();
             temporary.with_storage(|| ctx.reserve_vec(group, 1, "bind SLDPRT history classes"))?;
             group.push(feature);
         }
-        for features in groups.values() {
+        for (_, features) in ctx.admit_iter(&groups, "bind SLDPRT history classes")? {
             if features
                 .iter()
                 .all(|feature| cosmetic_thread_parameter_shape(feature))
             {
                 for feature in features {
-                    temporary.with_storage(|| {
-                        ctx.reserve_map(
-                            &mut cosmetic_thread_classes,
-                            1,
-                            "bind SLDPRT history classes",
-                        )
-                    })?;
-                    let classes = cosmetic_thread_classes
-                        .entry(temporary.with_storage(|| copy_class_text(ctx, &feature.id))?)
+                    let key = temporary.with_storage(|| copy_class_text(ctx, &feature.id))?;
+                    let classes = temporary
+                        .with_storage(|| {
+                            ctx.entry_btree_map(
+                                &mut cosmetic_thread_classes,
+                                key,
+                                "bind SLDPRT history classes",
+                            )
+                        })?
                         .or_default();
                     temporary.with_storage(|| {
                         ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")
@@ -272,7 +278,7 @@ pub(crate) fn bind_history_classes(
             }
         }
     }
-    for classes in cosmetic_thread_classes.values_mut() {
+    for (_, classes) in ctx.admit_iter(&mut cosmetic_thread_classes, "sort SLDPRT bound classes")? {
         ctx.stable_sort_by(
             classes,
             |value| value,
@@ -349,21 +355,21 @@ pub(crate) fn bind_history_classes(
         }
     }
 
-    let mut classes_by_type = HashMap::<String, Vec<String>>::new();
+    let mut classes_by_type = BTreeMap::<String, Vec<String>>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         if let Some(class) = &feature.input_class {
-            temporary.with_storage(|| {
-                ctx.reserve_map(&mut classes_by_type, 1, "bind SLDPRT history classes")
-            })?;
-            let classes = classes_by_type
-                .entry(temporary.with_storage(|| copy_class_text(ctx, &feature.kind))?)
+            let key = temporary.with_storage(|| copy_class_text(ctx, &feature.kind))?;
+            let classes = temporary
+                .with_storage(|| {
+                    ctx.entry_btree_map(&mut classes_by_type, key, "bind SLDPRT history classes")
+                })?
                 .or_default();
             temporary
                 .with_storage(|| ctx.reserve_vec(classes, 1, "bind SLDPRT history classes"))?;
             classes.push(temporary.with_storage(|| copy_class_text(ctx, class))?);
         }
     }
-    for classes in classes_by_type.values_mut() {
+    for (_, classes) in ctx.admit_iter(&mut classes_by_type, "sort SLDPRT bound classes")? {
         ctx.stable_sort_by(
             classes,
             |value| value,
@@ -395,7 +401,7 @@ pub(crate) fn bind_history_classes(
             }),
         )
     })?;
-    let mut classes_by_token = HashMap::<(&str, u16), Vec<String>>::new();
+    let mut classes_by_token = BTreeMap::<(&str, u16), Vec<String>>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         let Some(class) = &feature.input_class else {
             continue;
@@ -424,11 +430,14 @@ pub(crate) fn bind_history_classes(
                     continue;
                 };
                 if let Some(token) = repeated_class_token(&lane.native_payload, offset) {
-                    temporary.with_storage(|| {
-                        ctx.reserve_map(&mut classes_by_token, 1, "bind SLDPRT history classes")
-                    })?;
-                    let classes = classes_by_token
-                        .entry((lane.id.as_str(), token))
+                    let classes = temporary
+                        .with_storage(|| {
+                            ctx.entry_btree_map(
+                                &mut classes_by_token,
+                                (lane.id.as_str(), token),
+                                "bind SLDPRT history classes",
+                            )
+                        })?
                         .or_default();
                     temporary.with_storage(|| {
                         ctx.reserve_vec(classes, 1, "bind SLDPRT history classes")
@@ -438,7 +447,7 @@ pub(crate) fn bind_history_classes(
             }
         }
     }
-    for classes in classes_by_token.values_mut() {
+    for (_, classes) in ctx.admit_iter(&mut classes_by_token, "sort SLDPRT bound classes")? {
         ctx.stable_sort_by(
             classes,
             |value| value,
@@ -589,7 +598,7 @@ fn legacy_repeated_hole_wizard_classes(
                 .iter()
                 .map(|class| class.offset + 6 + u64_from_index(class.name.len())),
         )?;
-        let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
+        let mut groups = BTreeMap::<u16, Vec<&crate::records::Feature>>::new();
         for name in &lane.names {
             if direct_name_offsets.contains(&name.offset) {
                 continue;
@@ -604,12 +613,13 @@ fn legacy_repeated_hole_wizard_classes(
             else {
                 continue;
             };
-            ctx.reserve_map(&mut groups, 1, "bind SLDPRT history classes")?;
-            let group = groups.entry(token).or_default();
+            let group = ctx
+                .entry_btree_map(&mut groups, token, "bind SLDPRT history classes")?
+                .or_default();
             ctx.reserve_vec(group, 1, "bind SLDPRT history classes")?;
             group.push(feature);
         }
-        for features in groups.values() {
+        for (_, features) in ctx.admit_iter(&groups, "bind SLDPRT history classes")? {
             if features
                 .iter()
                 .all(|feature| hole_shapes.contains(feature.id.as_str()))

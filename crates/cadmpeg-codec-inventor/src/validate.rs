@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inventor-native validation.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 use serde::de::DeserializeOwned;
@@ -128,7 +128,7 @@ pub(crate) fn validate_native(
     };
     let (actual_arenas, _actual_arenas_storage) =
         ctx.with_scoped_storage("collect Inventor native arena names", || {
-            ctx.collect_hash_set(
+            ctx.collect_btree_set(
                 ctx.admit_iter(namespace.arenas(), "visit Inventor native arenas")?
                     .map(|(name, _)| name.as_str()),
                 "collect Inventor native arena names",
@@ -136,13 +136,13 @@ pub(crate) fn validate_native(
         })?;
     let (expected_arenas, _expected_arenas_storage) =
         ctx.with_scoped_storage("collect expected Inventor arena names", || {
-            ctx.collect_hash_set(
+            ctx.collect_btree_set(
                 ctx.admit_iter(ARENAS, "visit Inventor expected arena names")?
                     .copied(),
                 "collect expected Inventor arena names",
             )
         })?;
-    if !equal_hash_sets(
+    if !equal_btree_sets(
         ctx,
         &actual_arenas,
         &expected_arenas,
@@ -154,7 +154,7 @@ pub(crate) fn validate_native(
                     ctx.admit_iter(&expected_arenas, "find missing Inventor arenas")?
                         .copied()
                         .filter_map(|arena| {
-                            match ctx.contains_hash_set(
+                            match ctx.contains_btree_set(
                                 &actual_arenas,
                                 arena,
                                 "check missing Inventor arena",
@@ -173,7 +173,7 @@ pub(crate) fn validate_native(
                     ctx.admit_iter(&actual_arenas, "find unexpected Inventor arenas")?
                         .copied()
                         .filter_map(|arena| {
-                            match ctx.contains_hash_set(
+                            match ctx.contains_btree_set(
                                 &expected_arenas,
                                 arena,
                                 "check unexpected Inventor arena",
@@ -2244,14 +2244,6 @@ fn validate_presentation(
                 "collect Inventor RSe presentation record index",
             )
         })?;
-    let (raw_keys, _raw_keys_storage) =
-        ctx.with_scoped_storage("collect Inventor RSe presentation keys", || {
-            ctx.collect_hash_set(
-                ctx.admit_iter(&raw_records, "index Inventor RSe presentation keys")?
-                    .map(|(key, _)| *key),
-                "collect Inventor RSe presentation keys",
-            )
-        })?;
     let (rendering_keys, _rendering_keys_storage) =
         ctx.with_scoped_storage("collect Inventor rendering-style keys", || {
             ctx.collect_hash_set(
@@ -2378,8 +2370,8 @@ fn validate_presentation(
             )
         {
             if reference != 0 {
-                let resolves = ctx.contains_hash_set(
-                    &raw_keys,
+                let resolves = ctx.contains_key_hash_map(
+                    &raw_records,
                     &(token, reference - 1),
                     "resolve Inventor PmGraphics face reference",
                 )?;
@@ -2454,8 +2446,8 @@ fn validate_presentation(
             "validate Inventor PmGraphics style references",
         )? {
             let resolves = reference.index() != 0
-                && ctx.contains_hash_set(
-                    &raw_keys,
+                && ctx.contains_key_hash_map(
+                    &raw_records,
                     &(record.segment_token(), reference.index() - 1),
                     "resolve Inventor PmGraphics style reference",
                 )?;
@@ -2964,14 +2956,14 @@ fn validate_databases(
     )?;
     let (storage, _storage_storage) =
         ctx.with_scoped_storage("collect Inventor storage bands", || {
-            ctx.collect_hash_set(
+            ctx.collect_btree_set(
                 ctx.admit_iter(&data.storage_bands, "index Inventor storage bands")?
                     .map(|record| record.band),
                 "collect Inventor storage bands",
             )
         })?;
-    let (mut states, mut states_storage) =
-        ctx.temporary_set(0, "index Inventor database state bands")?;
+    let mut states_storage = ctx.reserve_scoped(0, "index Inventor database state bands")?;
+    let mut states = BTreeSet::new();
     for band in ctx
         .admit_iter(&data.databases, "index Inventor database bands")?
         .map(|record| record.band)
@@ -2981,7 +2973,7 @@ fn validate_databases(
         )
     {
         let inserted = states_storage.with_storage(|| {
-            ctx.insert_hash_set(&mut states, band, "index Inventor database state bands")
+            ctx.insert_btree_set(&mut states, band, "index Inventor database state bands")
         })?;
         if !inserted {
             push_finding(
@@ -2993,7 +2985,7 @@ fn validate_databases(
             )?;
         }
     }
-    if !equal_hash_sets(
+    if !equal_btree_sets(
         ctx,
         &storage,
         &states,
@@ -3099,7 +3091,7 @@ fn validate_segments(
     }
     let (pair_tokens, _pair_tokens_storage) =
         ctx.with_scoped_storage("collect Inventor paired segment tokens", || {
-            ctx.collect_hash_set(
+            ctx.collect_btree_set(
                 ctx.admit_iter(&data.pairs, "index Inventor paired segment tokens")?
                     .map(|record| record.token.as_str()),
                 "collect Inventor paired segment tokens",
@@ -3125,11 +3117,18 @@ fn validate_segments(
     )?;
     let (metadata_by_token, _metadata_by_token_storage) =
         ctx.with_scoped_storage("collect Inventor segment metadata index", || {
-            ctx.collect_hash_map(
+            let mut metadata_by_token = BTreeMap::new();
+            for record in
                 ctx.admit_iter(&data.metadata, "index Inventor segment metadata by token")?
-                    .map(|record| (record.token.as_str(), record)),
-                "collect Inventor segment metadata index",
-            )
+            {
+                ctx.insert_btree_map(
+                    &mut metadata_by_token,
+                    record.token.as_str(),
+                    record,
+                    "collect Inventor segment metadata index",
+                )?;
+            }
+            Ok::<_, CodecError>(metadata_by_token)
         })?;
     unique(
         ctx,
@@ -3145,7 +3144,7 @@ fn validate_segments(
         |record| Ok((record.token.as_str(), record.index)),
         "metadata type index",
     )?;
-    let mut sections_by_token = HashMap::<&str, HashSet<u8>>::new();
+    let mut sections_by_token = HashMap::<&str, BTreeSet<u8>>::new();
     let mut sections_by_token_storage =
         ctx.reserve_scoped(0, "index Inventor metadata sections")?;
     for record in ctx.admit_iter(&data.meta_sections, "index Inventor metadata sections")? {
@@ -3156,14 +3155,14 @@ fn validate_segments(
                 &token,
                 "find Inventor metadata section group",
             )? {
-                ctx.insert_hash_set(
+                ctx.insert_btree_set(
                     sections,
                     u8::from(record.number),
                     "index Inventor metadata sections",
                 )?;
             } else {
-                let mut sections = HashSet::new();
-                ctx.insert_hash_set(
+                let mut sections = BTreeSet::new();
+                ctx.insert_btree_set(
                     &mut sections,
                     u8::from(record.number),
                     "index Inventor metadata sections",
@@ -3204,7 +3203,7 @@ fn validate_segments(
     }
     let (expected_sections, _expected_sections_storage) =
         ctx.with_scoped_storage("collect expected Inventor metadata sections", || {
-            ctx.collect_hash_set(
+            ctx.collect_btree_set(
                 ctx.admit_iter(
                     &EXPECTED_SECTIONS,
                     "visit expected Inventor metadata sections",
@@ -3220,7 +3219,7 @@ fn validate_segments(
             ctx.get_hash_map(&types_by_token, token, "find Inventor metadata types")?;
         let sections_match = actual_sections
             .map(|actual| {
-                equal_hash_sets(
+                equal_btree_sets(
                     ctx,
                     actual,
                     &expected_sections,
@@ -3347,7 +3346,7 @@ fn validate_segments(
         }
     }
     for record in ctx.admit_iter(&data.unpaired, "validate Inventor unpaired segments")? {
-        if ctx.contains_hash_set(
+        if ctx.contains_btree_set(
             &pair_tokens,
             record.token.as_str(),
             "check Inventor paired segment",
@@ -3367,7 +3366,7 @@ fn validate_segments(
 fn validate_segment_states<P, I, F, G>(
     ctx: &DecodeContext<'_>,
     findings: &mut Vec<Finding>,
-    pairs: &HashSet<&str>,
+    pairs: &BTreeSet<&str>,
     parsed: (&[P], F),
     issues: (&[I], G),
     member: &str,
@@ -3378,27 +3377,30 @@ where
 {
     let (parsed, parsed_token) = parsed;
     let (issues, issue_token) = issues;
-    let (mut states, mut states_storage) =
-        ctx.temporary_set(0, "index Inventor uniqueness keys")?;
-    unique_into(
-        ctx,
-        &mut states_storage,
-        findings,
-        &mut states,
-        parsed,
-        |record| Ok(parsed_token(record)),
-        format_args!("segment {member} state"),
-    )?;
-    unique_into(
-        ctx,
-        &mut states_storage,
-        findings,
-        &mut states,
-        issues,
-        |record| Ok(issue_token(record)),
-        format_args!("segment {member} state"),
-    )?;
-    if !equal_hash_sets(ctx, &states, pairs, "compare Inventor segment states")? {
+    let mut states_storage = ctx.reserve_scoped(0, "index Inventor uniqueness keys")?;
+    let mut states = BTreeSet::new();
+    for token in ctx
+        .admit_iter(parsed, "validate Inventor uniqueness source")?
+        .map(parsed_token)
+        .chain(
+            ctx.admit_iter(issues, "validate Inventor uniqueness source")?
+                .map(issue_token),
+        )
+    {
+        let inserted = states_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut states, token, "index Inventor uniqueness keys")
+        })?;
+        if !inserted {
+            push_finding(
+                ctx,
+                findings,
+                Check::NativeLinks,
+                format_args!("Inventor native data repeats a segment {member} state"),
+                None,
+            )?;
+        }
+    }
+    if !equal_btree_sets(ctx, &states, pairs, "compare Inventor segment states")? {
         push_finding(
             ctx,
             findings,
@@ -3640,33 +3642,33 @@ fn validate_protein_record_coverage(
     data: &NativeData,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let mut positions = HashMap::<&str, HashSet<u64>>::new();
+    let mut positions = BTreeMap::<&str, BTreeSet<u64>>::new();
     let mut positions_storage = ctx.reserve_scoped(0, "index Inventor Protein position groups")?;
     for asset in ctx.admit_iter(
         &data.protein_assets,
         "group Inventor Protein asset positions",
     )? {
         positions_storage.with_storage(|| {
-            match ctx.get_mut_hash_map(
+            match ctx.get_mut_btree_map(
                 &mut positions,
                 &asset.entry_name.as_str(),
                 "find Inventor Protein position group",
             )? {
                 Some(ordinals) => {
-                    ctx.insert_hash_set(
+                    ctx.insert_btree_set(
                         ordinals,
                         asset.ordinal(),
                         "collect Inventor Protein positions",
                     )?;
                 }
                 None => {
-                    let mut ordinals = HashSet::new();
-                    ctx.insert_hash_set(
+                    let mut ordinals = BTreeSet::new();
+                    ctx.insert_btree_set(
                         &mut ordinals,
                         asset.ordinal(),
                         "collect Inventor Protein positions",
                     )?;
-                    ctx.insert_hash_map(
+                    ctx.insert_btree_map(
                         &mut positions,
                         asset.entry_name.as_str(),
                         ordinals,
@@ -3682,26 +3684,26 @@ fn validate_protein_record_coverage(
         "group Inventor Protein rejection positions",
     )? {
         positions_storage.with_storage(|| {
-            match ctx.get_mut_hash_map(
+            match ctx.get_mut_btree_map(
                 &mut positions,
                 &rejection.entry_name.as_str(),
                 "find Inventor Protein position group",
             )? {
                 Some(ordinals) => {
-                    ctx.insert_hash_set(
+                    ctx.insert_btree_set(
                         ordinals,
                         rejection.ordinal,
                         "collect Inventor Protein positions",
                     )?;
                 }
                 None => {
-                    let mut ordinals = HashSet::new();
-                    ctx.insert_hash_set(
+                    let mut ordinals = BTreeSet::new();
+                    ctx.insert_btree_set(
                         &mut ordinals,
                         rejection.ordinal,
                         "collect Inventor Protein positions",
                     )?;
-                    ctx.insert_hash_map(
+                    ctx.insert_btree_map(
                         &mut positions,
                         rejection.entry_name.as_str(),
                         ordinals,
@@ -3778,7 +3780,7 @@ fn validate_ufrx(
     let model_states = data.ufrx.model_states();
     let (model_state_ordinals, _model_state_ordinals_storage) =
         ctx.with_scoped_storage("collect Inventor UFRxDoc model-state ordinals", || {
-            ctx.collect_hash_set(
+            ctx.collect_btree_set(
                 ctx.admit_iter(model_states, "index Inventor UFRxDoc model-state ordinals")?
                     .map(|state| state.ordinal),
                 "collect Inventor UFRxDoc model-state ordinals",
@@ -3790,13 +3792,13 @@ fn validate_ufrx(
         let (expected_ordinals, _expected_ordinals_storage) = ctx.with_scoped_storage(
             "collect expected Inventor UFRxDoc model-state ordinals",
             || {
-                ctx.collect_hash_set(
+                ctx.collect_btree_set(
                     0..count,
                     "collect expected Inventor UFRxDoc model-state ordinals",
                 )
             },
         )?;
-        equal_hash_sets(
+        equal_btree_sets(
             ctx,
             &model_state_ordinals,
             &expected_ordinals,
@@ -4146,24 +4148,13 @@ where
     Ok(())
 }
 
-fn equal_hash_sets<T>(
+fn equal_btree_sets<T: Ord + DecodeCost>(
     ctx: &DecodeContext<'_>,
-    left: &HashSet<T>,
-    right: &HashSet<T>,
+    left: &BTreeSet<T>,
+    right: &BTreeSet<T>,
     operation: &'static str,
-) -> Result<bool, CodecError>
-where
-    T: Eq + std::hash::Hash + DecodeCost,
-{
-    if left.len() != right.len() {
-        return Ok(false);
-    }
-    for value in ctx.admit_iter(left, operation)? {
-        if !ctx.contains_hash_set(right, value, operation)? {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+) -> Result<bool, CodecError> {
+    Ok(left.len() == right.len() && ctx.is_subset_btree_set(left, right, operation)?)
 }
 
 fn increment_hash_count<K: Eq + std::hash::Hash + DecodeCost>(

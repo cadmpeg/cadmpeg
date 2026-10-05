@@ -171,14 +171,16 @@ storage_case!(
         )
     }
 );
-// u64 set buckets use 32/64 bytes, 4/8 control bytes, sixteen trailing
-// controls and at most fifteen alignment bytes. Map buckets have two lanes.
-// The growth peak includes both new and old hash-set bucket storage.
+// u64 set buckets use 8 bytes each, one control byte each, sixteen trailing
+// controls and at most fifteen alignment bytes: 67, 103 and 175 bytes for 4, 8
+// and 16 buckets. Map buckets have two lanes: 99, 167 and 303 bytes. Growth
+// admits the storage for twice the new length, and the old table, bounded the
+// same way, stays live while the new one is filled.
 storage_case!(
     reserve_set_storage,
     67,
-    103,
-    peak = (67, 103 + 67),
+    175,
+    peak = (67 + 67, 175 + 175),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::<u64>::new();
         for value in 0..count {
@@ -193,12 +195,11 @@ storage_case!(
         Ok(values)
     }
 );
-// The growth peak includes both new and old hash-map bucket storage.
 storage_case!(
     reserve_map_storage,
     99,
-    167,
-    peak = (99, 167 + 99),
+    303,
+    peak = (99 + 99, 303 + 303),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::<u64, u64>::new();
         for value in 0..count {
@@ -213,12 +214,11 @@ storage_case!(
         Ok(values)
     }
 );
-// The growth peak includes both new and old hash-set bucket storage.
 storage_case!(
     insert_hash_set_storage,
     67,
-    103,
-    peak = (67, 103 + 67),
+    175,
+    peak = (67 + 67, 175 + 175),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::new();
         for value in 0..count {
@@ -231,12 +231,11 @@ storage_case!(
         Ok(values)
     }
 );
-// The growth peak includes both new and old hash-map bucket storage.
 storage_case!(
     insert_hash_map_storage,
     99,
-    167,
-    peak = (99, 167 + 99),
+    303,
+    peak = (99 + 99, 303 + 303),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::new();
         for value in 0..count {
@@ -250,12 +249,11 @@ storage_case!(
         Ok(values)
     }
 );
-// The growth peak includes both new and old hash-map bucket storage.
 storage_case!(
     admit_hash_map_entry_storage,
     99,
-    167,
-    peak = (99, 167 + 99),
+    303,
+    peak = (99 + 99, 303 + 303),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::new();
         for value in 0..count {
@@ -397,12 +395,11 @@ storage_case!(
         )
     }
 );
-// The growth peak includes both new and old hash-set bucket storage.
 storage_case!(
     collect_hash_set_storage,
     67,
-    103,
-    peak = (67, 103 + 67),
+    175,
+    peak = (67 + 67, 175 + 175),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_hash_set(
             (0..count).map(|value| u64::try_from(value).expect("small test index")),
@@ -410,12 +407,11 @@ storage_case!(
         )
     }
 );
-// The growth peak includes both new and old hash-set bucket storage.
 storage_case!(
     extend_hash_set_storage,
     67,
-    103,
-    peak = (67, 103 + 67),
+    175,
+    peak = (67 + 67, 175 + 175),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::new();
         ctx.extend_hash_set(
