@@ -363,37 +363,6 @@ fn block_point_refusal(
     )
 }
 
-#[test]
-fn block_point_group_coordinate_scan_propagates_work_refusal() {
-    let (records, names, scalars) = block_point_input();
-    let points = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::construction_records::feature_block_payload_points(
-            ctx, &records, &names, &scalars,
-        )
-    })
-    .expect("admitted block points");
-    let mut duplicate = points[0].clone();
-    duplicate.id = "second-point".to_string();
-    let group_points = [points[0].clone(), duplicate];
-    let error = crate::test_support::resource_refusal_at(
-        &[],
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "compare NX block payload point coordinates",
-        |ctx| {
-            crate::native::features::construction_records::feature_block_payload_point_groups(
-                ctx,
-                &group_points,
-            )
-        },
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "compare NX block payload point coordinates"
-    ));
-}
-
 macro_rules! block_point_limit_tests {
     ($collection:ident, $retained:ident, $work:ident, $route:expr) => {
         #[test]

@@ -68,7 +68,7 @@ pub(in crate::native) fn feature_datum_plane_headers(
     inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureDatumPlaneHeader>, cadmpeg_core::CodecError> {
     let indexed = history.container().indexed_om_sections(ctx)?;
-    let input_stores = OperationInputStores::new(ctx, &inputs)?;
+    let input_stores = OperationInputStores::new(ctx, inputs)?;
     let mut headers = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?

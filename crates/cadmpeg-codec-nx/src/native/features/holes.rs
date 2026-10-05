@@ -838,13 +838,7 @@ fn hole_template_candidates<T>(
         else {
             continue;
         };
-        if !eligible(label)
-            || !ctx.starts_with(
-                string.value.as_str(),
-                "Hole_",
-                "check NX hole template string prefix",
-            )?
-        {
+        if !eligible(label) || !string.value.as_str().starts_with("Hole_") {
             continue;
         }
         if let Some((count, _, _)) = ctx.get_mut_btree_map(
@@ -1076,7 +1070,7 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
     history: &FeatureHistory<'_, '_, '_>,
     inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>, cadmpeg_core::CodecError> {
-    let input_stores = OperationInputStores::new(ctx, &inputs)?;
+    let input_stores = OperationInputStores::new(ctx, inputs)?;
     let blocks = data_blocks(ctx, history.container())?;
     let mut block_index = DataBlockIndex::new();
     let mut block_index_storage = ctx.reserve_scoped(0, "NX simple hole data block index")?;
