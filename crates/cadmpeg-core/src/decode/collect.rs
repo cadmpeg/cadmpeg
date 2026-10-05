@@ -1108,10 +1108,12 @@ impl DecodeContext<'_> {
     /// keys are measured where they are stored, and their sum, with one visit
     /// per key, is charged as one amount, so the unspecified visit order
     /// changes neither the total nor where a refusal falls. A key whose own
-    /// measurement admits child traversal charges that inside the walk. The
-    /// caller charges the growth first; its work covers every byte of the old
-    /// table, at least two units per bucket, so the measuring walk and the
-    /// rehash's own walk over allocated buckets are paid even after removals.
+    /// measurement admits child traversal charges that inside the walk.
+    /// Decode hash tables only grow: core offers no removal and the checker
+    /// reports one, so no deleted slot hides buckets from `capacity()`, and
+    /// the old table's storage computed from it is the real allocation. The
+    /// caller charges that storage as work first, at least two units per
+    /// bucket, which pays for the measuring walk and the rehash's own walk.
     fn charge_rehash<'keys, K: DecodeCost + 'keys>(
         &self,
         len: usize,
@@ -1160,6 +1162,8 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.retained_size_overflow_limit(operation))
     }
 
+    // Growth is charged from `capacity()`, which is the table's full capacity
+    // only while the table has no deleted slots; decode tables never remove.
     fn charge_hash_growth<T>(
         &self,
         len: usize,
