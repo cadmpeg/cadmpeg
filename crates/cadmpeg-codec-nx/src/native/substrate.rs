@@ -189,44 +189,63 @@ pub(super) fn pair_stream_indices(
     eligible_deltas: Option<&BTreeSet<usize>>,
 ) -> Result<BTreeMap<usize, Vec<usize>>, CodecError> {
     let mut pairs = BTreeMap::<usize, Vec<usize>>::new();
-    for (delta, stream) in ctx
+    // The nearest preceding partition stream for each schema token.
+    let mut latest_storage = ctx.reserve_scoped(0, "nx delta partition schemas")?;
+    let mut latest_partition = BTreeMap::<Option<&str>, usize>::new();
+    for (ordinal, stream) in ctx
         .admit_iter(streams, "nx delta partition pairs")?
         .enumerate()
     {
-        if stream.kind() != StreamKind::Deltas {
-            continue;
-        }
-        if let Some(eligible) = eligible_deltas {
-            if !ctx.contains_btree_set(eligible, &delta, "nx linked delta candidates")? {
-                continue;
-            }
-        }
         let schema = stream
             .schema_token()
             .map(cadmpeg_parasolid::OwnedSchemaToken::value);
-        let mut partition = None;
-        for (ordinal, candidate) in streams[..delta].iter().enumerate().rev() {
-            ctx.charge_work(1, "nx delta partition scan")?;
-            if candidate.kind() == StreamKind::Partition
-                && ctx.equal(
-                    &candidate
-                        .schema_token()
-                        .map(cadmpeg_parasolid::OwnedSchemaToken::value),
+        match stream.kind() {
+            StreamKind::Partition => {
+                if let Some(latest) = ctx.get_mut_btree_map(
+                    &mut latest_partition,
                     &schema,
                     "nx delta partition schema",
-                )?
-            {
-                partition = Some(ordinal);
-                break;
+                )? {
+                    *latest = ordinal;
+                } else {
+                    latest_storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut latest_partition,
+                            schema,
+                            ordinal,
+                            "nx delta partition schemas",
+                        )
+                    })?;
+                }
             }
+            StreamKind::Deltas => {
+                if let Some(eligible) = eligible_deltas {
+                    if !ctx.contains_btree_set(eligible, &ordinal, "nx linked delta candidates")? {
+                        continue;
+                    }
+                }
+                let Some(&partition) =
+                    ctx.get_btree_map(&latest_partition, &schema, "nx delta partition schema")?
+                else {
+                    continue;
+                };
+                if let Some(deltas) =
+                    ctx.get_mut_btree_map(&mut pairs, &partition, "nx delta pair partitions")?
+                {
+                    ctx.push_vec(deltas, ordinal, "nx delta pair members")?;
+                } else {
+                    let mut deltas = Vec::new();
+                    ctx.push_vec(&mut deltas, ordinal, "nx delta pair members")?;
+                    ctx.insert_btree_map(
+                        &mut pairs,
+                        partition,
+                        deltas,
+                        "nx delta pair partitions",
+                    )?;
+                }
+            }
+            _ => {}
         }
-        let Some(partition) = partition else {
-            continue;
-        };
-        let deltas = ctx
-            .entry_btree_map(&mut pairs, partition, "nx delta pair partitions")?
-            .or_default();
-        ctx.push_vec(deltas, delta, "nx delta pair members")?;
     }
     Ok(pairs)
 }
@@ -602,6 +621,11 @@ mod tests {
     use std::borrow::Cow;
 
     fn one_delta_pair() -> Vec<crate::parasolid::Stream> {
+        delta_pairs(1)
+    }
+
+    /// One partition followed by `deltas` delta streams of the same schema.
+    fn delta_pairs(deltas: usize) -> Vec<crate::parasolid::Stream> {
         let stream = |subtype, file_offset| crate::parasolid::Stream {
             file_offset,
             consumed: 0,
@@ -618,10 +642,12 @@ mod tests {
                 ),
             },
         };
-        vec![
-            stream(crate::parasolid::ParasolidSubtype::Partition, 0),
-            stream(crate::parasolid::ParasolidSubtype::Deltas, 1),
-        ]
+        std::iter::once(stream(crate::parasolid::ParasolidSubtype::Partition, 0))
+            .chain(
+                (1..=deltas)
+                    .map(|offset| stream(crate::parasolid::ParasolidSubtype::Deltas, offset)),
+            )
+            .collect()
     }
 
     fn scan_with_streams(streams: Vec<crate::parasolid::Stream>) -> crate::decode::Scan<'static> {
@@ -702,24 +728,13 @@ mod tests {
 
     #[test]
     fn topology_preparation_refuses_paired_delta_scoped_limit() {
-        let scan = scan_with_streams(one_delta_pair());
-
-        crate::test_support::with_decode_context_over(
+        // Enough paired deltas that their list outgrows the pairing scratch.
+        let scan = scan_with_streams(delta_pairs(64));
+        crate::test_support::resource_refusal_at(
             &[],
-            |policy| {
-                policy.limits.max_materialized_bytes =
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()) - 1;
-            },
-            |ctx| {
-                let error = topology_streams(ctx, &scan)
-                    .expect_err("one paired delta exceeds the scoped limit");
-                assert!(matches!(
-                    error,
-                    cadmpeg_core::CodecError::ResourceLimit(limit)
-                        if limit.dimension == ResourceDimension::MaterializedBytes
-                            && limit.operation == "nx paired topology deltas"
-                ));
-            },
+            ResourceDimension::MaterializedBytes,
+            "nx paired topology deltas",
+            |ctx| topology_streams(ctx, &scan).map(|_| ()),
         );
     }
 
@@ -817,12 +832,26 @@ mod tests {
 
     #[test]
     fn auxiliary_replacement_views_refuse_scoped_storage() {
+        // The semantic parse alone, so pairing scratch does not set the high-water mark.
         let scan = scan_with_streams(one_delta_pair());
+        let paired = vec![1];
         crate::test_support::resource_refusal_at(
             &[],
             ResourceDimension::MaterializedBytes,
             "nx auxiliary replacement views",
-            |ctx| ParsedStreams::parse(ctx, &scan).map(|_| ()),
+            |ctx| {
+                let graph = std::rc::Rc::new(crate::topology::Graph::parse(ctx, &[])?);
+                super::StreamView::parse_semantic(
+                    ctx,
+                    graph,
+                    &[],
+                    0,
+                    &scan,
+                    Some(&paired),
+                    crate::parasolid::ParasolidSubtype::Partition.chart_point_layout(),
+                )
+                .map(|_| ())
+            },
         );
     }
 
@@ -854,12 +883,13 @@ mod tests {
 
     #[test]
     fn delta_pairing_refuses_partition_map_at_collection_limit() {
-        assert!(matches!(
-            pair_under_limits(0, u64::MAX),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx delta pair partitions"
-        ));
+        let streams = one_delta_pair();
+        crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::CollectionItems,
+            "nx delta pair partitions",
+            |ctx| super::pair_stream_indices(ctx, &streams, None),
+        );
     }
 
     #[test]
@@ -873,12 +903,12 @@ mod tests {
     }
 
     #[test]
-    fn delta_pairing_refuses_partition_scan_at_work_limit() {
+    fn delta_pairing_refuses_schema_lookup_at_work_limit() {
         let streams = one_delta_pair();
         crate::test_support::resource_refusal_at(
             &[],
             ResourceDimension::WorkUnits,
-            "nx delta partition scan",
+            "nx delta partition schema",
             |ctx| super::pair_stream_indices(ctx, &streams, None),
         );
     }
@@ -907,8 +937,7 @@ mod tests {
                 work_used(ctx)
             })
         };
-        // Leading streams cost one pairing visit each; the backward partition
-        // scan stops at the adjacent partition and never examines them.
+        // Leading streams cost one pairing visit each and nothing else.
         assert_eq!(pairing_work(3), pairing_work(0) + 3);
     }
 
