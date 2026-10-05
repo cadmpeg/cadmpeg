@@ -202,7 +202,7 @@ pub fn prepaid_nested_fallible_producer(
 
 pub fn prepaid_by_ref_search(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     let mut admitted = ctx.admit_iter(bytes, "by-ref search")?;
-    let found = admitted.by_ref().any(|byte| *byte == 0);
+    let found = admitted.by_ref().any(|byte| *byte == 0); // finding: unproven_decode_charge
     let _remaining = admitted.count();
     Ok(found)
 }
@@ -279,4 +279,11 @@ pub fn fixed_count_outer_flatten(_ctx: &DecodeContext<'_>, left: &[u8], right: &
     for byte in [left, right].into_iter().flatten() { // finding: unproven_decode_charge
         std::hint::black_box(byte);
     }
+}
+
+pub fn charged_search_over_tree(
+    ctx: &DecodeContext<'_>,
+    values: &std::collections::BTreeSet<u32>,
+) -> Result<bool, CodecError> {
+    ctx.any_by(values, |value| Ok(*value == 3), "tree search")
 }
