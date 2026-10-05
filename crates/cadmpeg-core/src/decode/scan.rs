@@ -286,9 +286,8 @@ impl DecodeContext<'_> {
         self.search(values, map, operation)
     }
 
-    /// Steps the source until `visit` returns a result. A source that states
-    /// its exact remaining length ends without a charged end probe; a hint can
-    /// only stop the walk early, never admit a step.
+    /// Steps the source until `visit` returns a result, charging every step
+    /// including the end probe.
     fn search<I: IntoIterator, U>(
         &self,
         values: I,
@@ -296,15 +295,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<Option<U>, CodecError> {
         let mut input = values.into_iter();
-        let mut remaining = match input.size_hint() {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        };
-        while remaining != Some(0) {
-            let Some(value) = self.next_charged(&mut input, operation)? else {
-                break;
-            };
-            remaining = remaining.map(|count| count - 1);
+        while let Some(value) = self.next_charged(&mut input, operation)? {
             if let Some(found) = visit(value)? {
                 return Ok(Some(found));
             }
