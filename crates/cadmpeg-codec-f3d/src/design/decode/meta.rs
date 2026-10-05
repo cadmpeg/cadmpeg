@@ -663,8 +663,7 @@ pub(super) struct TypedPrimaryFrame<'a> {
 
 /// Resolve every entity registered to `type_guid` through the sibling
 /// `MetaStream` primary index and verify its dynamic class tag. The returned
-/// frames are charged as retained; a caller that drops them before decode
-/// returns builds them under a scoped reservation.
+/// frames are charged as retained.
 pub(super) fn typed_primary_frames<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -672,100 +671,145 @@ pub(super) fn typed_primary_frames<'a>(
     type_guid: &str,
     record_kind: &str,
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, "f3d typed primary entities")?;
-    // Each registration of the type with its position in table order.
-    let mut typed = Vec::new();
-    for design_type in ctx.admit_iter(&meta.types, "scan F3D typed primary record types")? {
-        if !guid_matches(&design_type.type_guid, type_guid) {
-            continue;
+    let (frames, storage) =
+        TypedFrameSource::new(bytes, meta).frames(ctx, type_guid, record_kind)?;
+    storage.commit()?;
+    Ok(frames)
+}
+
+/// The primary frames of one `BulkStream`, from which the frames of each
+/// registered type are selected. The primary frames are resolved on the first
+/// selection and held under a scoped reservation for the later ones; each
+/// selection checks the registrations of its own type first.
+pub(super) struct TypedFrameSource<'a, 'b, 'ctx> {
+    bytes: &'b [u8],
+    meta: &'a MetaStream,
+    primary_frames: Option<(Vec<DesignPrimaryFrame<'a>>, ScopedReservation<'ctx>)>,
+}
+
+impl<'a, 'b, 'ctx> TypedFrameSource<'a, 'b, 'ctx> {
+    pub(super) fn new(bytes: &'b [u8], meta: &'a MetaStream) -> Self {
+        Self {
+            bytes,
+            meta,
+            primary_frames: None,
         }
-        for &entity_id in admit_reference_values(
-            ctx,
-            &design_type.entities,
-            "scan F3D typed primary entities",
-        )? {
-            let position = typed.len();
-            ctx.push_scoped_vec(
-                &mut reservation,
-                &mut typed,
-                (entity_id, position),
-                "f3d typed primary entities",
-            )?;
-        }
-    }
-    ctx.sort_unstable_by_key(
-        &mut typed,
-        |registration| *registration,
-        Ord::cmp,
-        "sort F3D typed primary entities",
-    )?;
-    // The first repeated registration in table order is the repeat at the
-    // least position.
-    let mut first_repeat: Option<(usize, u64)> = None;
-    let mut previous = None;
-    for &(entity_id, position) in
-        ctx.admit_iter(&typed, "find repeated F3D typed primary entity")?
-    {
-        if previous.replace(entity_id) == Some(entity_id)
-            && first_repeat.is_none_or(|(least, _)| position < least)
-        {
-            first_repeat = Some((position, entity_id));
-        }
-    }
-    if let Some((_, entity_id)) = first_repeat {
-        return Err(crate::design::text::malformed_design(
-            ctx,
-            format_args!(
-                "F3D Design {record_kind} entity {entity_id} is registered more than once"
-            ),
-        ));
     }
 
-    let mut resolved = Vec::new();
-    let mut frames = Vec::new();
-    let primary_frames = reservation.with_storage(|| design_primary_frames(ctx, bytes, meta))?;
-    for primary_frame in ctx.admit_iter(&primary_frames, "scan F3D resolved primary frames")? {
-        if !guid_matches(&primary_frame.design_type.type_guid, type_guid) {
-            continue;
+    /// Resolve every entity registered to `type_guid` and verify its dynamic
+    /// class tag. The frames are held under the returned reservation.
+    pub(super) fn frames(
+        &mut self,
+        ctx: &'ctx DecodeContext<'_>,
+        type_guid: &str,
+        record_kind: &str,
+    ) -> Result<(Vec<TypedPrimaryFrame<'a>>, ScopedReservation<'ctx>), CodecError> {
+        let mut reservation = ctx.reserve_scoped(0, "f3d typed primary entities")?;
+        // Each registration of the type with its position in table order.
+        let mut typed = Vec::new();
+        for design_type in
+            ctx.admit_iter(&self.meta.types, "scan F3D typed primary record types")?
+        {
+            if !guid_matches(&design_type.type_guid, type_guid) {
+                continue;
+            }
+            for &entity_id in admit_reference_values(
+                ctx,
+                &design_type.entities,
+                "scan F3D typed primary entities",
+            )? {
+                let position = typed.len();
+                ctx.push_scoped_vec(
+                    &mut reservation,
+                    &mut typed,
+                    (entity_id, position),
+                    "f3d typed primary entities",
+                )?;
+            }
         }
-        ctx.push_scoped_vec(
-            &mut reservation,
+        ctx.sort_unstable_by_key(
+            &mut typed,
+            |registration| *registration,
+            Ord::cmp,
+            "sort F3D typed primary entities",
+        )?;
+        // The first repeated registration in table order is the repeat at the
+        // least position.
+        let mut first_repeat: Option<(usize, u64)> = None;
+        let mut previous = None;
+        for &(entity_id, position) in
+            ctx.admit_iter(&typed, "find repeated F3D typed primary entity")?
+        {
+            if previous.replace(entity_id) == Some(entity_id)
+                && first_repeat.is_none_or(|(least, _)| position < least)
+            {
+                first_repeat = Some((position, entity_id));
+            }
+        }
+        if let Some((_, entity_id)) = first_repeat {
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!(
+                    "F3D Design {record_kind} entity {entity_id} is registered more than once"
+                ),
+            ));
+        }
+
+        let mut resolved = Vec::new();
+        let mut frames = Vec::new();
+        let mut frames_storage = ctx.reserve_scoped(0, "f3d typed primary frames")?;
+        let (primary_frames, _) = match &mut self.primary_frames {
+            Some(primary_frames) => primary_frames,
+            slot @ None => {
+                slot.insert(ctx.with_scoped_storage("f3d design primary frames", || {
+                    design_primary_frames(ctx, self.bytes, self.meta)
+                })?)
+            }
+        };
+        for primary_frame in ctx.admit_iter(&*primary_frames, "scan F3D resolved primary frames")? {
+            if !guid_matches(&primary_frame.design_type.type_guid, type_guid) {
+                continue;
+            }
+            ctx.push_scoped_vec(
+                &mut reservation,
+                &mut resolved,
+                primary_frame.entity_id,
+                "f3d resolved primary entities",
+            )?;
+            ctx.push_scoped_vec(
+                &mut frames_storage,
+                &mut frames,
+                TypedPrimaryFrame {
+                    entity_id: primary_frame.entity_id,
+                    start: primary_frame.start,
+                    end: primary_frame.end,
+                    design_type: primary_frame.design_type,
+                },
+                "f3d typed primary frames",
+            )?;
+        }
+        ctx.sort_unstable_by_key(
             &mut resolved,
-            primary_frame.entity_id,
-            "f3d resolved primary entities",
+            |entity_id| *entity_id,
+            Ord::cmp,
+            "sort F3D resolved primary entities",
         )?;
-        ctx.push_vec(
-            &mut frames,
-            TypedPrimaryFrame {
-                entity_id: primary_frame.entity_id,
-                start: primary_frame.start,
-                end: primary_frame.end,
-                design_type: primary_frame.design_type,
+        // Typed entities ascend, so the first unresolved one is the least.
+        if let Some((entity_id, _)) = ctx.find_by(
+            &typed,
+            |(entity_id, _)| {
+                Ok(ctx
+                    .binary_search(&resolved, entity_id, "find unresolved F3D typed entity")?
+                    .is_err())
             },
-            "f3d typed primary frames",
-        )?;
+            "find unresolved F3D typed entity",
+        )? {
+            return Err(crate::design::text::malformed_design(ctx, format_args!(
+                "F3D Design {record_kind} entity {entity_id} has no primary record of its registered class"
+            )));
+        }
+        Ok((frames, frames_storage))
     }
-    ctx.sort_unstable_by_key(
-        &mut resolved,
-        |entity_id| *entity_id,
-        Ord::cmp,
-        "sort F3D resolved primary entities",
-    )?;
-    // Typed entities ascend, so the first unresolved one is the least.
-    if let Some((entity_id, _)) = ctx.find_by(
-        &typed,
-        |(entity_id, _)| {
-            Ok(ctx
-                .binary_search(&resolved, entity_id, "find unresolved F3D typed entity")?
-                .is_err())
-        },
-        "find unresolved F3D typed entity",
-    )? {
-        return Err(crate::design::text::malformed_design(ctx, format_args!(
-            "F3D Design {record_kind} entity {entity_id} has no primary record of its registered class"
-        )));
-    }
-    Ok(frames)
 }
 
 /// Type GUID and record version keyed by the Design entity ids that carry the
