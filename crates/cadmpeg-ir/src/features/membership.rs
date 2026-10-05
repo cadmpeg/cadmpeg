@@ -62,10 +62,16 @@ pub(super) struct Index<'scope, T, S: Admission> {
 
 impl<T: Eq + Hash, S: Admission> Index<'_, T, S> {
     pub(super) fn insert(&mut self, value: T) -> Result<bool, S::Error> {
+        let mut measure = HashedBytes {
+            admission: self.admission,
+            bytes: 0,
+        };
+        value.hash(&mut measure);
         self.admission.work(0)?;
         let inserted = self.values.insert(MemberKey {
             value,
             admission: self.admission,
+            hashed: measure.bytes,
         });
         // Callback refusal fuses the policy; no insertion result escapes before this check.
         self.admission.work(0)?;
@@ -73,14 +79,19 @@ impl<T: Eq + Hash, S: Admission> Index<'_, T, S> {
     }
 }
 
+/// A member and the bytes its hash writes. Comparing two members reads no
+/// more than the bytes both of them hash.
 struct MemberKey<'scope, T, S> {
     value: T,
     admission: &'scope S,
+    hashed: usize,
 }
 
 impl<T: PartialEq, S: Admission> PartialEq for MemberKey<'_, T, S> {
     fn eq(&self, other: &Self) -> bool {
-        self.admission.work(1).is_ok() && self.value == other.value
+        self.admission.work(self.hashed).is_ok()
+            && self.admission.work(other.hashed).is_ok()
+            && self.value == other.value
     }
 }
 impl<T: Eq, S: Admission> Eq for MemberKey<'_, T, S> {}
@@ -94,6 +105,28 @@ impl<T: Hash, S: Admission> Hash for MemberKey<'_, T, S> {
             state,
             admission: self.admission,
         });
+    }
+}
+
+/// Measures the bytes a member's hash writes, admitting each chunk it visits.
+struct HashedBytes<'scope, S> {
+    admission: &'scope S,
+    bytes: usize,
+}
+
+impl<S: Admission> Hasher for HashedBytes<'_, S> {
+    fn finish(&self) -> u64 {
+        0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        if self.admission.work(bytes.len()).is_err() {
+            return;
+        }
+        // Every measured byte was admitted first, so the count stays within
+        // the work counter.
+        if let Some(measured) = self.bytes.checked_add(bytes.len()) {
+            self.bytes = measured;
+        }
     }
 }
 

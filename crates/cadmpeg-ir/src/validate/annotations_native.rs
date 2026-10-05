@@ -536,10 +536,7 @@ pub(super) fn check_native_links(
                     let Some(links) = value.as_array() else {
                         continue;
                     };
-                    if !ctx
-                        .admit_iter(links, "native link shape scan")?
-                        .all(serde_json::Value::is_string)
-                    {
+                    if !ctx.all_by(links, |link| Ok(link.is_string()), "native link shape scan")? {
                         continue;
                     }
                 }

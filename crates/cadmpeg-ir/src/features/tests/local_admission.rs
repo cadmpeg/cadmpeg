@@ -76,7 +76,7 @@ fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
     use cadmpeg_core::CodecError;
 
     fn retain_output<T>(ctx: &DecodeContext<'_>, output: T) -> Result<(), CodecError> {
-        let storage = ctx.reserve_scoped_limit(200, "membership index released")?;
+        let storage = ctx.reserve_scoped_limit(512, "membership index released")?;
         drop(storage);
         drop(output);
         Ok(())
@@ -90,7 +90,7 @@ fn membership_constructors_preserve_refusals_and_release_scoped_indexes() {
             None,
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = 200;
+            policy.limits.max_materialized_bytes = 512;
             policy.limits.max_retained_bytes = 0;
             policy.limits.max_recursion_depth = 0;
             policy.limits.max_collection_items = 8;
