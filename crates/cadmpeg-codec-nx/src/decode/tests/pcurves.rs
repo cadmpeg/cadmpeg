@@ -1424,7 +1424,9 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
             unreachable!();
         };
 
-        assert!(translation_net_normal(surface).is_none());
+        assert!(translation_net_normal(geometry_ctx, surface)
+            .unwrap()
+            .is_none());
         assert_eq!(
             certified_offset_cache_fit(
                 geometry_ctx,
@@ -1449,8 +1451,12 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
         let geometry_budget =
             crate::decode::geometry_work::GeometryWorkBudget::from_context(ctx, 100);
 
+        let mut storage = ctx
+            .reserve_scoped(0, "test offset rectangles")
+            .expect("empty reservation");
         assert!(subdivide_offset_rectangle(
             &mut rectangles,
+            &mut storage,
             [u0, u1, 0.0, 1.0],
             [u, 0.5],
             true,
