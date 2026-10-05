@@ -667,11 +667,14 @@ fn symbolic_thread_text_frames<'a>(
         return Ok(None);
     }
     let frames = crate::om::operation_payload_text_frames(ctx, record)?;
-    let text_frames = ctx
-        .admit_iter(&frames, "count NX symbolic-thread text frames")?
-        .filter(|frame| frame.marker == crate::om::OperationTextMarker::Text)
-        .count();
-    Ok((text_frames >= 2).then_some(frames))
+    let mut text_frames = Vec::new();
+    for frame in ctx.admit_iter(frames, "select NX symbolic-thread text frames")? {
+        if frame.marker == crate::om::OperationTextMarker::Text {
+            ctx.reserve_vec(&mut text_frames, 1, "NX symbolic-thread text frames")?;
+            text_frames.push(frame);
+        }
+    }
+    Ok((text_frames.len() >= 2).then_some(text_frames))
 }
 
 fn owned_symbolic_thread(
@@ -695,11 +698,10 @@ fn owned_symbolic_thread(
         format_feature_history_id(ctx, "symbolic-thread", section_key, operation_ordinal, None)?;
 
     let mut text_frames = Vec::new();
-    let mut ordinal = 0usize;
-    for frame in ctx.admit_iter(frames, "build NX symbolic-thread text frames")? {
-        if frame.marker != crate::om::OperationTextMarker::Text {
-            continue;
-        }
+    for (ordinal, frame) in ctx
+        .admit_iter(frames, "build NX symbolic-thread text frames")?
+        .enumerate()
+    {
         let ordinal_u32 = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX symbolic thread text frame ordinal", 0, 1))?;
         let frame_id = format_feature_history_id(
@@ -725,7 +727,6 @@ fn owned_symbolic_thread(
             value,
             source_offset,
         });
-        ordinal += 1;
     }
     Ok(FeatureSymbolicThread {
         id,
