@@ -13,7 +13,10 @@ pub(super) fn check_pmi(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let definitions = BorrowedIdentities::build(ctx, |add| {
-        for annotation in &ir.model.pmi {
+        for annotation in ctx.admit_iter(
+            ir.model.pmi.as_slice(),
+            "PMI definition identity source scan",
+        )? {
             add(annotation.id.as_str(), &annotation.definition)?;
         }
         Ok(())
@@ -21,7 +24,10 @@ pub(super) fn check_pmi(
     macro_rules! typed_identities {
         ($arena:ident) => {
             BorrowedIdentities::build(ctx, |add| {
-                for item in &ir.model.$arena {
+                for item in ctx.admit_iter(
+                    ir.model.$arena.as_slice(),
+                    concat!("PMI ", stringify!($arena), " identity source scan"),
+                )? {
                     add(item.id.as_str(), ())?;
                 }
                 Ok(())

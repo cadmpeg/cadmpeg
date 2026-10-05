@@ -458,26 +458,21 @@ pub(crate) fn stream_header(
     else {
         return Ok(None);
     };
-    let Some((description_bytes, token, schema_end)) = (|| {
+    let Some((description_bytes, desc_end)) = (|| {
         let desc_len_at = sig + 4;
         let mut view = View::over_retained(payload);
         view.seek(desc_len_at)?;
         let desc_len = usize::from(view.u16_be()?);
         let desc_start = desc_len_at + 2;
         let desc_end = desc_start + desc_len;
-        let description_bytes = payload.get(desc_start..desc_end)?;
-
-        // The padding between description and the length-prefixed schema token is not
-        // fixed, so the `SCH_` marker is located directly; the preceding byte is the
-        // schema length ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#31-stream-header)).
-        let window_end = (desc_end + 64).min(payload.len());
-        let token = cadmpeg_parasolid::find_u8_length_prefixed_schema_token(
-            payload.get(desc_end..window_end)?,
-        )?;
-        Some((description_bytes, token, desc_end + token.end()))
-    })() else {
-        return Ok(None);
-    };
+        Some((payload.get(desc_start..desc_end)?, desc_end))
+    })() else { return Ok(None); };
+    // The padding before the length-prefixed schema token is variable. The
+    // preceding byte bounds the token separately from the first record.
+    let window_end = (desc_end + 64).min(payload.len());
+    let Some(prologue) = payload.get(desc_end..window_end) else { return Ok(None); };
+    let Some(token) = cadmpeg_parasolid::find_u8_length_prefixed_schema_token(ctx, prologue)? else { return Ok(None); };
+    let schema_end = desc_end + token.end();
     let header_work = cadmpeg_core::decode::u64_from_index(description_bytes.len())
         .checked_mul(4)
         .ok_or_else(|| {
@@ -501,7 +496,7 @@ pub(crate) fn stream_header(
 
     let schema_text = token.value();
     let owned_schema = ctx.copy_retained_text(schema_text, "retain Parasolid schema token")?;
-    let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(owned_schema)
+    let schema = cadmpeg_parasolid::OwnedSchemaToken::parse(ctx, owned_schema)?
         .map_err(|_| CodecError::Malformed("Parasolid schema token is invalid".into()))?;
 
     Ok(Some(StreamHeader {

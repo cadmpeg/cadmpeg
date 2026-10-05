@@ -17,19 +17,28 @@ pub(super) fn check_products(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let definitions = BorrowedIdentities::build(ctx, |add| {
-        for definition in &ir.model.product_definitions {
+        for definition in ctx.admit_iter(
+            ir.model.product_definitions.as_slice(),
+            "product definition identity source scan",
+        )? {
             add(definition.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let occurrences = BorrowedIdentities::build(ctx, |add| {
-        for occurrence in &ir.model.occurrences {
+        for occurrence in ctx.admit_iter(
+            ir.model.occurrences.as_slice(),
+            "product occurrence identity source scan",
+        )? {
             add(occurrence.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let bodies = BorrowedIdentities::build(ctx, |add| {
-        for body in &ir.model.bodies {
+        for body in ctx.admit_iter(
+            ir.model.bodies.as_slice(),
+            "product body identity source scan",
+        )? {
             add(body.id.as_str(), ())?;
         }
         Ok(())

@@ -4,7 +4,9 @@
 use std::collections::{HashSet, TryReserveError};
 use std::hash::{Hash, Hasher};
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
+use cadmpeg_core::CodecError;
 
 pub(super) trait Admission: Sized {
     type Error;
@@ -132,37 +134,41 @@ pub(super) fn distinct<T: Eq + Hash, S: Admission>(
 }
 
 /// Admission for ordered insertion, including context-free iterator reconstruction.
-pub(super) trait AppendAdmission {
+pub(super) trait AppendAdmission<T: PartialEq> {
     type Error;
     fn work(&self, count: usize) -> Result<(), Self::Error>;
-    fn push<T>(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error>;
+    fn equal(&self, left: &T, right: &T) -> Result<bool, Self::Error>;
+    fn push(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error>;
 }
 
-impl AppendAdmission for StandardAdmission {
+impl<T: PartialEq> AppendAdmission<T> for StandardAdmission {
     type Error = std::convert::Infallible;
     fn work(&self, _count: usize) -> Result<(), Self::Error> {
         Ok(())
     }
-    fn push<T>(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error> {
+    fn equal(&self, left: &T, right: &T) -> Result<bool, Self::Error> {
+        Ok(left == right)
+    }
+    fn push(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error> {
         values.push(value);
         Ok(())
     }
 }
 
-impl AppendAdmission for DecodeAdmission<'_, '_> {
-    type Error = ResourceLimit;
+impl<T: PartialEq + DecodeCost> AppendAdmission<T> for DecodeAdmission<'_, '_> {
+    type Error = CodecError;
     fn work(&self, count: usize) -> Result<(), Self::Error> {
-        self.ctx
-            .charge_work_limit(u64_from_index(count), self.operation)
+        self.ctx.charge_work(u64_from_index(count), self.operation)
     }
-    fn push<T>(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error> {
-        self.ctx.reserve_vec_limit(values, 1, self.operation)?;
-        values.push(value);
-        Ok(())
+    fn equal(&self, left: &T, right: &T) -> Result<bool, Self::Error> {
+        self.ctx.equal(left, right, self.operation)
+    }
+    fn push(&self, values: &mut Vec<T>, value: T) -> Result<(), Self::Error> {
+        self.ctx.push_vec(values, value, self.operation)
     }
 }
 
-pub(super) fn insert<T: PartialEq, S: AppendAdmission>(
+pub(super) fn insert<T: PartialEq, S: AppendAdmission<T>>(
     admission: &S,
     values: &mut Vec<T>,
     value: T,
@@ -170,7 +176,7 @@ pub(super) fn insert<T: PartialEq, S: AppendAdmission>(
     admission.work(0)?;
     for member in values.iter() {
         admission.work(1)?;
-        if member == &value {
+        if admission.equal(member, &value)? {
             return Ok(false);
         }
     }

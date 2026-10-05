@@ -22,41 +22,22 @@ impl TextureAsset {
     /// Bind this texture to an appearance property.
     pub fn to_ref(&self, ctx: &DecodeContext<'_>, slot: &str) -> Result<TextureRef, CodecError> {
         ctx.charge_collection_items(1, "Protein appearance texture")?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(self.paths.len()),
-            "Protein appearance texture paths",
-        )?;
-        for value in [self.asset_guid.as_str(), slot, &self.schema] {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(value.len()),
-                "Protein appearance texture field",
-            )?;
-        }
-        for path in &self.paths {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(path.len()),
-                "Protein appearance texture path",
-            )?;
-        }
-        if let Some(urn) = &self.urn {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(urn.len()),
-                "Protein appearance texture URN",
-            )?;
-        }
         Ok(TextureRef {
-            asset_guid: self.asset_guid.clone(),
-            slot: slot.to_owned(),
-            schema: self.schema.clone(),
-            paths: self.paths.clone(),
-            urn: self.urn.clone(),
+            asset_guid: ctx.copy_retained_text(&self.asset_guid, "Protein appearance texture field")?,
+            slot: ctx.copy_retained_text(slot, "Protein appearance texture field")?,
+            schema: ctx.copy_retained_text(&self.schema, "Protein appearance texture field")?,
+            paths: ctx.try_collect_vec(
+                self.paths.iter().map(|path| ctx.copy_retained_text(path, "Protein appearance texture path")),
+                "Protein appearance texture paths",
+            )?,
+            urn: self.urn.as_deref()
+                .map(|urn| ctx.copy_retained_text(urn, "Protein appearance texture URN"))
+                .transpose()?,
             mapping: self.mapping.clone(),
             bump: self.bump.clone(),
         })
     }
 }
-
-const PROPERTY_SEARCHES: u64 = 18;
 
 /// Result of projecting one record as a texture asset.
 pub enum TextureAssetResult {
@@ -83,25 +64,6 @@ pub fn texture_asset(
     ) {
         return Ok(TextureAssetResult::NotTexture);
     }
-    // Projection performs at most eighteen searches, each with two name comparisons.
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(record.properties.len()),
-        "inventory Protein texture search work",
-    )?;
-    let search_work = record
-        .properties
-        .keys()
-        .try_fold(0_u64, |total, id| {
-            cadmpeg_core::decode::u64_from_index(id.len())
-                .checked_mul(2)?
-                .checked_add(1)?
-                .checked_mul(PROPERTY_SEARCHES)?
-                .checked_add(total)
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("Protein texture property searches", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_work(search_work, "Protein texture property searches")?;
     let mut distances = [Length::ZERO; 5];
     let mut unknown_count = 0_usize;
     for (index, suffix) in [
@@ -117,7 +79,7 @@ pub fn texture_asset(
         if index == 4 && record.schema != "BumpMapSchema" {
             break;
         }
-        match distance_property(record, suffix) {
+        match distance_property(ctx, record, suffix)? {
             Ok(Some(value)) => distances[index] = value,
             Ok(None) => {}
             Err(DistanceError::UnknownUnit(_)) => unknown_count += 1,
@@ -134,58 +96,48 @@ pub fn texture_asset(
             count: unknown_count,
         });
     }
-    let source_paths = record.properties.iter().find_map(|(id, property)| {
-        (id.ends_with("_Bitmap"))
-            .then(|| property.value())
-            .flatten()
-            .and_then(|value| match value {
-                crate::property::PropertyValue::TextureUri(paths) => Some(paths),
-                _ => None,
-            })
-    });
-    let paths = if let Some(source_paths) = source_paths {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(source_paths.len()),
-            "Protein texture paths",
-        )?;
-        for path in source_paths {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(path.len()),
-                "Protein texture path",
-            )?;
+    let mut source_paths = None;
+    for (id, property) in ctx.admit_iter(&record.properties, "Protein texture bitmap search")? {
+        if !id.ends_with("_Bitmap") {
+            continue;
         }
-        source_paths.clone()
-    } else {
-        Vec::new()
+        let Some(crate::property::PropertyValue::TextureUri(paths)) = property.value() else {
+            continue;
+        };
+        source_paths = Some(paths);
+        break;
+    }
+    let paths = match source_paths {
+        Some(paths) => ctx.try_collect_vec(
+            paths.iter().map(|path| ctx.copy_retained_text(path, "Protein texture path")),
+            "Protein texture paths",
+        )?,
+        None => Vec::new(),
     };
-    let source_urn = record.properties.iter().find_map(|(id, property)| {
-        (id.ends_with("_Bitmap_urn"))
-            .then(|| property.value())
-            .flatten()
-            .and_then(|value| match value {
-                crate::property::PropertyValue::String(value) if !value.is_empty() => Some(value),
-                _ => None,
-            })
-    });
-    let urn = if let Some(source_urn) = source_urn {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(source_urn.len()),
-            "Protein texture URN",
-        )?;
-        Some(source_urn.clone())
-    } else {
-        None
-    };
+    let mut urn = None;
+    for (id, property) in ctx.admit_iter(&record.properties, "Protein texture URN search")? {
+        if !id.ends_with("_Bitmap_urn") {
+            continue;
+        }
+        let Some(crate::property::PropertyValue::String(value)) = property.value() else {
+            continue;
+        };
+        if value.is_empty() {
+            continue;
+        }
+        urn = Some(ctx.copy_retained_text(value, "Protein texture URN")?);
+        break;
+    }
     let mapping = TextureMap2d {
-        map_channel: integer_property(record, "MapChannel").unwrap_or(1),
-        uvw_source: integer_property(record, "MapChannel_UVWSource_Advanced").unwrap_or(0),
-        u_offset: finite_float_property(record, "UOffset", FiniteReal::ZERO),
-        v_offset: finite_float_property(record, "VOffset", FiniteReal::ZERO),
-        u_scale: finite_float_property(record, "UScale", FiniteReal::ONE),
-        v_scale: finite_float_property(record, "VScale", FiniteReal::ONE),
+        map_channel: integer_property(ctx, record, "MapChannel")?.unwrap_or(1),
+        uvw_source: integer_property(ctx, record, "MapChannel_UVWSource_Advanced")?.unwrap_or(0),
+        u_offset: finite_float_property(ctx, record, "UOffset", FiniteReal::ZERO)?,
+        v_offset: finite_float_property(ctx, record, "VOffset", FiniteReal::ZERO)?,
+        u_scale: finite_float_property(ctx, record, "UScale", FiniteReal::ONE)?,
+        v_scale: finite_float_property(ctx, record, "VScale", FiniteReal::ONE)?,
         // A finite angle in degrees is finite in radians: the factor is below one.
         rotation: Angle::new(
-            finite_float_property(record, "WAngle", FiniteReal::ZERO)
+            finite_float_property(ctx, record, "WAngle", FiniteReal::ZERO)?
                 .get()
                 .to_radians(),
         )
@@ -195,8 +147,8 @@ pub fn texture_asset(
                 record.guid
             ))
         })?,
-        repeat_u: boolean_property(record, "URepeat").unwrap_or(true),
-        repeat_v: boolean_property(record, "VRepeat").unwrap_or(true),
+        repeat_u: boolean_property(ctx, record, "URepeat")?.unwrap_or(true),
+        repeat_v: boolean_property(ctx, record, "VRepeat")?.unwrap_or(true),
         real_world_offset_x: distances[0],
         real_world_offset_y: distances[1],
         real_world_scale_x: distances[2],
@@ -204,24 +156,16 @@ pub fn texture_asset(
     };
     let bump = if record.schema == "BumpMapSchema" {
         Some(BumpMap {
-            normal_map: integer_property(record, "bumpmap_Type") == Some(1),
+            normal_map: integer_property(ctx, record, "bumpmap_Type")? == Some(1),
             depth: distances[4],
-            normal_scale: finite_float_property(record, "bumpmap_NormalScale", FiniteReal::ONE),
+            normal_scale: finite_float_property(ctx, record, "bumpmap_NormalScale", FiniteReal::ONE)?,
         })
     } else {
         None
     };
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(record.guid.len()),
-        "Protein texture GUID",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(record.schema.len()),
-        "Protein texture schema",
-    )?;
     let texture = TextureAsset {
-        asset_guid: record.guid.clone(),
-        schema: record.schema.clone(),
+        asset_guid: ctx.copy_retained_text(&record.guid, "Protein texture GUID")?,
+        schema: ctx.copy_retained_text(&record.schema, "Protein texture schema")?,
         paths,
         urn,
         mapping,
@@ -231,15 +175,21 @@ pub fn texture_asset(
 }
 
 fn property_with_suffix<'a>(
+    ctx: &DecodeContext<'_>,
     record: &'a crate::DecodedRecord,
     suffix: &str,
-) -> Option<&'a crate::property::PropertyValue> {
-    let qualified_suffix = format!("_{suffix}");
-    record
-        .properties
-        .iter()
-        .find(|(id, _)| *id == suffix || id.ends_with(&qualified_suffix))
-        .and_then(|(_, property)| property.value())
+) -> Result<Option<&'a crate::property::PropertyValue>, CodecError> {
+    let (qualified_suffix, _reservation) = ctx.format_scoped(
+        format_args!("_{suffix}"), "Protein qualified property suffix",
+    )?;
+    for (id, property) in ctx.admit_iter(&record.properties, "Protein property suffix search")? {
+        if ctx.equal(id.as_str(), suffix, "Protein property name comparison")?
+            || ctx.ends_with(id, &qualified_suffix, "Protein property suffix comparison")?
+        {
+            return Ok(property.value());
+        }
+    }
+    Ok(None)
 }
 
 /// Map Protein property names to the neutral material vocabulary.
@@ -256,31 +206,39 @@ pub fn is_physical_schema(schema: &str) -> bool {
     schema == "PhysMatSchema" || schema.starts_with("Structural") || schema.starts_with("Thermal")
 }
 
-fn integer_property(record: &crate::DecodedRecord, suffix: &str) -> Option<u32> {
-    match property_with_suffix(record, suffix)? {
-        crate::property::PropertyValue::Integer(value) => Some(*value),
+fn integer_property(
+    ctx: &DecodeContext<'_>,
+    record: &crate::DecodedRecord,
+    suffix: &str,
+) -> Result<Option<u32>, CodecError> {
+    Ok(match property_with_suffix(ctx, record, suffix)? {
+        Some(crate::property::PropertyValue::Integer(value)) => Some(*value),
         _ => None,
-    }
+    })
 }
 
-/// The float property the record states under `suffix`, admitted finite, or
-/// `default` when it states none.
+/// The admitted finite float stated under `suffix`, or `default` when absent.
 fn finite_float_property(
+    ctx: &DecodeContext<'_>,
     record: &crate::DecodedRecord,
     suffix: &str,
     default: FiniteReal,
-) -> FiniteReal {
-    match property_with_suffix(record, suffix) {
+) -> Result<FiniteReal, CodecError> {
+    Ok(match property_with_suffix(ctx, record, suffix)? {
         Some(crate::property::PropertyValue::Float(value)) => *value,
         _ => default,
-    }
+    })
 }
 
-fn boolean_property(record: &crate::DecodedRecord, suffix: &str) -> Option<bool> {
-    match property_with_suffix(record, suffix)? {
-        crate::property::PropertyValue::Boolean(value) => Some(*value),
+fn boolean_property(
+    ctx: &DecodeContext<'_>,
+    record: &crate::DecodedRecord,
+    suffix: &str,
+) -> Result<Option<bool>, CodecError> {
+    Ok(match property_with_suffix(ctx, record, suffix)? {
+        Some(crate::property::PropertyValue::Boolean(value)) => Some(*value),
         _ => None,
-    }
+    })
 }
 
 #[derive(Debug, PartialEq)]
@@ -290,23 +248,24 @@ enum DistanceError {
 }
 
 fn distance_property(
+    ctx: &DecodeContext<'_>,
     record: &crate::DecodedRecord,
     suffix: &str,
-) -> Result<Option<Length>, DistanceError> {
+) -> Result<Result<Option<Length>, DistanceError>, CodecError> {
     let Some(crate::property::PropertyValue::Distance { unit, value }) =
-        property_with_suffix(record, suffix)
+        property_with_suffix(ctx, record, suffix)?
     else {
-        return Ok(None);
+        return Ok(Ok(None));
     };
     let factor = match *unit {
         0x2016 => 25.4,
         0x200e => 1.0,
         0x200d => 10.0,
-        unit => return Err(DistanceError::UnknownUnit(unit)),
+        unit => return Ok(Err(DistanceError::UnknownUnit(unit))),
     };
-    Length::new(value.get() * factor)
+    Ok(Length::new(value.get() * factor)
         .map(Some)
-        .ok_or(DistanceError::NonFinite)
+        .ok_or(DistanceError::NonFinite))
 }
 
 #[cfg(test)]
