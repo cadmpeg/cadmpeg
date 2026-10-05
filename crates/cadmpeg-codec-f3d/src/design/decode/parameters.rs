@@ -14,7 +14,7 @@ use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
-use crate::design::decode::dimension_frames::companion_owned_interval;
+use crate::design::decode::dimension_frames::CompanionIntervals;
 use crate::design::decode::record_streams::record_stream;
 use crate::design::decode::sketch::{
     indexed_record_header_at, native_scope_charged, next_indexed_record_offset,
@@ -95,7 +95,9 @@ pub(crate) fn decode_parameters(
 /// Decode the parameter frames of one Design `BulkStream` into `out`. A frame
 /// runs from an indexed-record header to the first header at least one header
 /// length later. After a header that opens no parameter, the next candidate is
-/// the first later header, so each stream byte is searched once.
+/// the first later header, so each stream byte is searched once. Each frame
+/// is parsed under its own scoped reservation; only a kept parameter becomes
+/// retained.
 fn decode_stream_parameters(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -108,6 +110,7 @@ fn decode_stream_parameters(
     let mut last_end_search: Option<(usize, Option<usize>)> = None;
     let mut next = next_indexed_record_offset(ctx, bytes, 0)?;
     while let Some(at) = next {
+        ctx.charge_work(1, "scan F3D parameter frames")?;
         let from = at + indexed_header::LEN;
         let end = match last_end_search {
             Some((searched, found))
@@ -121,7 +124,11 @@ fn decode_stream_parameters(
         let Some(frame) = bytes.get(at..end.unwrap_or(bytes.len())) else {
             break;
         };
-        let Some(parsed) = parse_design_parameter(ctx, frame)? else {
+        let (parsed, parsed_storage) = ctx
+            .with_scoped_storage("f3d parameter frame candidates", || {
+                parse_design_parameter(ctx, frame)
+            })?;
+        let Some(parsed) = parsed else {
             next = overlapping_header(bytes, at).or(end);
             continue;
         };
@@ -137,8 +144,9 @@ fn decode_stream_parameters(
             ctx.reserve_set(&mut emitted_record_indices, 1, "f3d parameter record index")
         })?;
         emitted_record_indices.insert(parsed.record_index);
-        ctx.reserve_vec(out, 1, "f3d decoded parameter records")?;
-        out.push(locate_design_parameter(ctx, parsed, stream, at)?);
+        parsed_storage.commit()?;
+        let parameter = locate_design_parameter(ctx, parsed, stream, at)?;
+        ctx.push_vec(out, parameter, "f3d decoded parameter records")?;
     }
     Ok(())
 }
@@ -1296,7 +1304,8 @@ pub(crate) struct ParameterCompanionInputs<'a, S: std::hash::BuildHasher> {
 /// Bind each companion to its exact owned byte interval and the construction
 /// recipes nested in that interval. A companion whose payload cannot be
 /// resolved is returned unbound. The recipes, entity headers and sketch scopes
-/// are indexed by stream once for the whole pass.
+/// are indexed by stream once for the whole pass, and so are the interval
+/// boundaries of each stream.
 pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     ctx: &DecodeContext<'_>,
     companions: Vec<DesignParameterCompanion>,
@@ -1305,18 +1314,38 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     if companions.is_empty() {
         return Ok(companions);
     }
-    let (records, _storage) = ctx.with_scoped_storage("f3d companion payload records", || {
-        CompanionPayloadRecords::build(ctx, inputs)
-    })?;
-    ctx.try_collect_vec(
-        companions.into_iter().map(|companion| {
-            Ok::<_, CodecError>(
-                match companion_payload(ctx, &companion, inputs, &records)? {
-                    Some(payload) => companion.bound(payload),
-                    None => companion,
-                },
-            )
-        }),
+    let mut payload_storage = ctx.reserve_scoped(0, "f3d companion payloads")?;
+    let mut payloads = Vec::new();
+    {
+        let (records, _storage) = ctx
+            .with_scoped_storage("f3d companion payload records", || {
+                CompanionPayloadRecords::build(ctx, inputs)
+            })?;
+        let mut intervals = CompanionIntervals::new(
+            ctx,
+            inputs.parameters,
+            inputs.owners,
+            inputs.scopes,
+            inputs.headers,
+        )?;
+        for companion in ctx.admit_iter(&companions, "scan F3D companion payloads")? {
+            let payload = companion_payload(ctx, companion, inputs, &records, &mut intervals)?;
+            ctx.push_scoped_vec(
+                &mut payload_storage,
+                &mut payloads,
+                payload,
+                "f3d companion payloads",
+            )?;
+        }
+    }
+    ctx.collect_vec(
+        companions
+            .into_iter()
+            .zip(payloads)
+            .map(|(companion, payload)| match payload {
+                Some(payload) => companion.bound(payload),
+                None => companion,
+            }),
         "f3d bound parameter companions",
     )
 }
@@ -1381,16 +1410,17 @@ impl<'a> CompanionPayloadRecords<'a> {
                 continue;
             };
             let stream = records.stream_mut(ctx, stream)?;
-            let suffix = binding.entity_id.suffix();
-            match stream.last_sketch_scope.get_mut(&suffix) {
-                Some(last) => *last = (*last).max(scope.byte_offset()),
-                None => {
-                    ctx.insert_hash_map(
-                        &mut stream.last_sketch_scope,
-                        suffix,
-                        scope.byte_offset(),
-                        "f3d companion preamble scopes",
-                    )?;
+            match ctx.entry_hash_map(
+                &mut stream.last_sketch_scope,
+                binding.entity_id.suffix(),
+                "f3d companion preamble scopes",
+            )? {
+                Entry::Occupied(mut last) => {
+                    let greatest = (*last.get()).max(scope.byte_offset());
+                    last.insert(greatest);
+                }
+                Entry::Vacant(slot) => {
+                    slot.insert(scope.byte_offset());
                 }
             }
         }
@@ -1519,11 +1549,12 @@ impl StreamPayloadRecords<'_> {
 }
 
 /// Resolve the byte interval and nested recipes one companion owns.
-fn companion_payload<S: std::hash::BuildHasher>(
+fn companion_payload<'a, S: std::hash::BuildHasher>(
     ctx: &DecodeContext<'_>,
-    companion: &DesignParameterCompanion,
+    companion: &'a DesignParameterCompanion,
     inputs: &ParameterCompanionInputs<'_, S>,
     records: &CompanionPayloadRecords<'_>,
+    intervals: &mut CompanionIntervals<'a, '_>,
 ) -> Result<Option<crate::records::parameters::DesignCompanionPayload>, CodecError> {
     let Some(stream) = record_stream(ctx, companion.id())? else {
         return Ok(None);
@@ -1538,16 +1569,7 @@ fn companion_payload<S: std::hash::BuildHasher>(
     else {
         return Ok(None);
     };
-    let Some((start, end)) = companion_owned_interval(
-        ctx,
-        companion,
-        ctx.admit_iter(inputs.parameters, "scan F3D companion parameters")?,
-        inputs.owners,
-        inputs.scopes,
-        inputs.headers,
-        stream_length,
-    )?
-    else {
+    let Some((start, end)) = intervals.interval(ctx, stream, companion, stream_length)? else {
         return Ok(None);
     };
     let (end, owned_ids) = match records.stream(ctx, stream)? {
