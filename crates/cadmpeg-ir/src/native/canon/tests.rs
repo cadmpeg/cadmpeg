@@ -7,8 +7,8 @@ use super::CanonValue;
 use crate::native::NativeNamespace;
 
 #[test]
-fn display_value_charges_escaped_chunks_and_formats_once() {
-    use std::cell::{Cell, RefCell};
+fn display_value_charges_formatted_chunks_and_formats_once() {
+    use std::cell::Cell;
     use std::fmt::Write as _;
 
     struct DisplayText<'a>(&'a Cell<usize>);
@@ -35,11 +35,6 @@ fn display_value_charges_escaped_chunks_and_formats_once() {
     }
 
     let calls = Cell::new(0);
-    let captured = RefCell::new(Vec::new());
-    let sink = |bytes: &[u8]| {
-        captured.borrow_mut().extend_from_slice(bytes);
-        Ok(())
-    };
     let ctx = crate::native::test_ctx();
     let record = super::super::NativeRecord::from_typed_for_decode(
         &ctx,
@@ -47,7 +42,6 @@ fn display_value_charges_escaped_chunks_and_formats_once() {
             id: "test:native:record#display",
             value: DisplayText(&calls),
         },
-        Some(&sink),
     )
     .expect("valid display record");
     assert_eq!(calls.get(), 1);
@@ -55,12 +49,11 @@ fn display_value_charges_escaped_chunks_and_formats_once() {
         record.field("value"),
         Some(serde_json::json!("line\nquote\"\u{1}"))
     );
-    assert_eq!(*captured.borrow(), serde_json::to_vec(&record).unwrap());
 }
 
 #[test]
-fn display_map_key_charges_escaped_chunks_and_formats_once() {
-    use std::cell::{Cell, RefCell};
+fn display_map_key_charges_formatted_chunks_and_formats_once() {
+    use std::cell::Cell;
 
     struct Key<'a>(&'a Cell<usize>);
 
@@ -89,18 +82,11 @@ fn display_map_key_charges_escaped_chunks_and_formats_once() {
     }
 
     let calls = Cell::new(0);
-    let captured = RefCell::new(Vec::new());
-    let sink = |bytes: &[u8]| {
-        captured.borrow_mut().extend_from_slice(bytes);
-        Ok(())
-    };
     let ctx = crate::native::test_ctx();
-    let record =
-        super::super::NativeRecord::from_typed_for_decode(&ctx, &Record(&calls), Some(&sink))
-            .expect("valid key record");
+    let record = super::super::NativeRecord::from_typed_for_decode(&ctx, &Record(&calls))
+        .expect("valid key record");
     assert_eq!(calls.get(), 1);
     assert_eq!(record.field("key\n"), Some(serde_json::json!(7)));
-    assert_eq!(*captured.borrow(), serde_json::to_vec(&record).unwrap());
 }
 
 enum ObjectShape {
@@ -201,9 +187,8 @@ fn a_rejected_sequence_element_does_not_corrupt_rendered_json() {
 }
 
 #[test]
-fn raw_value_streams_unescaped_json_before_materialization() {
+fn raw_value_record_stores_the_parsed_json() {
     use serde_json::value::RawValue;
-    use std::cell::RefCell;
 
     #[derive(Serialize)]
     struct Record {
@@ -216,18 +201,9 @@ fn raw_value_streams_unescaped_json_before_materialization() {
         raw: RawValue::from_string(r#"{ "text": "quoted \"value\"" }"#.to_owned())
             .expect("valid raw JSON"),
     };
-    let captured = RefCell::new(Vec::new());
-    let sink = |bytes: &[u8]| {
-        captured.borrow_mut().extend_from_slice(bytes);
-        Ok(())
-    };
     let ctx = crate::native::test_ctx();
-    let stored = super::super::NativeRecord::from_typed_for_decode(&ctx, &typed, Some(&sink))
-        .expect("valid raw record");
-    assert_eq!(
-        *captured.borrow(),
-        serde_json::to_vec(&typed).expect("reference raw JSON bytes")
-    );
+    let stored =
+        super::super::NativeRecord::from_typed_for_decode(&ctx, &typed).expect("valid raw record");
     assert_eq!(
         stored.field("raw"),
         Some(serde_json::json!({"text": "quoted \"value\""}))
@@ -505,8 +481,7 @@ fn raw_native_resource_refusals_keep_the_caller_dimension() {
     let arena = DecodeArena::new();
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
-    let stored =
-        super::super::NativeRecord::from_typed_for_decode(&service, &record, None).unwrap();
+    let stored = super::super::NativeRecord::from_typed_for_decode(&service, &record).unwrap();
     assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
     for dimension in [
         ResourceDimension::CollectionItems,
@@ -525,7 +500,7 @@ fn raw_native_resource_refusals_keep_the_caller_dimension() {
         }
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error =
-            super::super::NativeRecord::from_typed_for_decode(&limited, &record, None).unwrap_err();
+            super::super::NativeRecord::from_typed_for_decode(&limited, &record).unwrap_err();
         assert!(matches!(cadmpeg_core::CodecError::from(error),
             cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
     }
@@ -600,15 +575,14 @@ fn raw_native_replay_text_uses_scoped_storage() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(json.len()) - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::super::NativeRecord::from_typed_for_decode(&limited, &record, None).unwrap_err();
+    let error = super::super::NativeRecord::from_typed_for_decode(&limited, &record).unwrap_err();
     assert!(
         matches!(cadmpeg_core::CodecError::from(error), cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "serialize native record")
     );
     policy.limits.max_materialized_bytes += 1;
     let (exact, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let stored = super::super::NativeRecord::from_typed_for_decode(&exact, &record, None).unwrap();
+    let stored = super::super::NativeRecord::from_typed_for_decode(&exact, &record).unwrap();
     assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
     let _released = exact
         .reserve_scoped(
@@ -741,7 +715,6 @@ fn canonical_native_key_comparisons_admit_the_complete_key_bound() {
                 entries,
                 key: None,
                 depth: super::MAX_NATIVE_NESTING_DEPTH,
-                sink: None,
             };
             let super::CanonError::Resource(error) = map.insert(String::new(), &7).unwrap_err()
             else {

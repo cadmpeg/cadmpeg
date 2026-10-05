@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-format namespaces retained outside the format-neutral model.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -209,29 +207,6 @@ impl NativeConvertError {
     }
 }
 
-/// Charges serialized writes without retaining their bytes.
-struct ChargingJsonWriter<'a, 'b> {
-    ctx: &'a DecodeContext<'b>,
-    refusal: Option<cadmpeg_core::CodecError>,
-}
-
-impl Write for ChargingJsonWriter<'_, '_> {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        if let Err(error) = self.ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "serialize native record",
-        ) {
-            self.refusal = Some(error);
-            return Err(std::io::Error::other("native record resource limit"));
-        }
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 /// Schema descriptor for a native record's identity and open field map.
 #[derive(Serialize)]
 #[cfg(feature = "schema")]
@@ -346,15 +321,14 @@ impl NativeRecord {
         // Format-boundary fixtures admit the record root and every allowed field container.
         policy.limits.max_recursion_depth = u64_from_index(MAX_NATIVE_NESTING_DEPTH + 1);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Self::from_typed_for_decode(&ctx, record, None)
+        Self::from_typed_for_decode(&ctx, record)
     }
 
     fn from_typed_for_decode<T: Serialize>(
         ctx: &DecodeContext<'_>,
         record: &T,
-        sink: Option<&dyn canon::ByteSink>,
     ) -> Result<Self, NativeConvertError> {
-        let serialized = record.serialize(canon::CanonValue::for_record_with_sink(ctx, sink));
+        let serialized = record.serialize(canon::CanonValue::for_record(ctx));
         ctx.charge_work(0, "construct canonical native value")?;
         let serialized = serialized.map_err(|error| error.into_native(ctx))?;
         let canon::Node::Object(mut fields) = serialized else {
@@ -419,7 +393,6 @@ impl NativeRecord {
                 id: self.id.as_str(),
                 links,
             },
-            None,
         )
         .map_err(CodecError::from)
     }
@@ -700,17 +673,9 @@ where
         let record = record?;
         ctx.reserve_vec(&mut converted, 1, "store native record")
             .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-        let writer = RefCell::new(ChargingJsonWriter { ctx, refusal: None });
-        let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
-        let result = NativeRecord::from_typed_for_decode(ctx, &record, Some(&sink));
-        let record = match result {
+        let record = match NativeRecord::from_typed_for_decode(ctx, &record) {
             Ok(record) => record,
-            Err(error) => {
-                let source = writer
-                    .borrow_mut()
-                    .refusal
-                    .take()
-                    .map_or(error, NativeConvertError::Resource);
+            Err(source) => {
                 if source.resource_limit().is_some() {
                     return Err(E::from(source));
                 }
