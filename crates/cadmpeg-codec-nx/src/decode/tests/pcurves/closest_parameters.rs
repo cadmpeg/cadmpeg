@@ -302,7 +302,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
 }
 
 #[test]
-fn coincident_pcurve_interval_probe_refuses_session_work_limit() {
+fn coincident_pcurve_geometry_probe_refuses_session_work_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
@@ -334,10 +334,12 @@ fn coincident_pcurve_interval_probe_refuses_session_work_limit() {
         .expect("finite line pcurve"),
     );
 
+    // Each separation probe and each probed interval is one unit of the
+    // adaptive geometry budget, which draws on the session work allowance.
     let error = crate::test_support::resource_refusal_at(
         &[],
         ResourceDimension::WorkUnits,
-        "nx coincident pcurve interval probe",
+        "work_budget",
         |ctx| {
             crate::decode::pcurves::coincident_pcurve_pair(
                 ctx,
@@ -355,6 +357,6 @@ fn coincident_pcurve_interval_probe_refuses_session_work_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "nx coincident pcurve interval probe"
+                && limit.operation == "work_budget"
     ));
 }

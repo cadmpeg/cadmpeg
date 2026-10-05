@@ -2,12 +2,11 @@
 //! Certified offset-cache fit and offset-surface parameter inversion.
 
 use super::blend::{
-    blend_surface_parameter_grid_with_index_and_budget,
-    blend_surface_parameters_for_fit_with_grid_and_budget, BlendParameterGrid,
+    blend_surface_parameters_for_fit_with_grid_and_budget, BlendParameterGridCache,
 };
-use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
+use super::geometry_work::{same_text, GeometryWorkBudget};
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
 use crate::topology::Graph;
@@ -2221,47 +2220,57 @@ fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::decode::ResourceLimit> {
-    let mut blend_parameter_grids = BTreeMap::new();
-    continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
-        index,
-        surfaces,
-        chart,
-        fit_tolerance,
-        seeds,
-        geometry_budget,
-        &mut blend_parameter_grids,
+) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::CodecError> {
+    let mut blend_parameter_grids = BlendParameterGridCache::new(geometry_budget.charges)?;
+    Ok(
+        continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
+            index,
+            surfaces,
+            chart,
+            fit_tolerance,
+            seeds,
+            geometry_budget,
+            &mut blend_parameter_grids,
+        )?
+        .map(|(lanes, _storage)| lanes),
     )
 }
 
+/// Continue one surface-intersection branch along `chart`. The two parameter
+/// lanes come back with the scoped reservation that holds their storage.
 pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache<
     'a,
+    'ctx,
 >(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&'a SurfaceId; 2],
     chart: &[Point3],
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
-    geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BTreeMap<&'a str, Option<Vec<(Point2, Point3)>>>,
-) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    geometry_budget: &GeometryWorkBudget<'ctx>,
+    blend_parameter_grids: &mut BlendParameterGridCache<'a, '_>,
+) -> Result<
+    Option<(
+        [Vec<Point2>; 2],
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    )>,
+    cadmpeg_core::CodecError,
+> {
     if chart.len() < 2 || !fit_tolerance.is_finite() || fit_tolerance <= 0.0 {
         return Ok(None);
     }
-    let [first_surface, second_surface] = surfaces.map(SurfaceId::as_str);
-    if first_surface.len() == second_surface.len() {
-        geometry_budget.charges.charge_work_limit(
-            cadmpeg_core::decode::u64_from_index(first_surface.len()),
-            "nx intersection support identity comparison",
-        )?;
-        if first_surface == second_surface {
-            return Ok(None);
-        }
+    if same_text(
+        geometry_budget.charges,
+        surfaces[0].as_str(),
+        surfaces[1].as_str(),
+        "nx intersection support identity comparison",
+    )? {
+        return Ok(None);
     }
     let mut fit_parameters = |side: usize,
                               point: Point3,
                               seed: Option<Point2>|
-     -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+     -> Result<Option<Point2>, cadmpeg_core::CodecError> {
         let surface = surfaces[side];
         let Some(carrier) = index.surfaces(surface.as_str(), geometry_budget.charges)? else {
             return Ok(None);
@@ -2269,15 +2278,15 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         let geometry = &carrier.geometry;
         match geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-                nurbs_surface_parameter_within_tolerance_with_budget(
+                Ok(nurbs_surface_parameter_within_tolerance_with_budget(
                     geometry_budget.charges,
                     nurbs,
                     point,
                     seed,
                     fit_tolerance,
                     geometry_budget,
-                )
-                .map(|parameter| parameter.map(FinitePoint2::get))
+                )?
+                .map(FinitePoint2::get))
             }
             SurfaceGeometry::Procedural { .. } => {
                 let offset = offset_surface_parameters_with_tolerance_with_index_and_budget(
@@ -2291,23 +2300,8 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                 if offset.is_some() {
                     return Ok(offset);
                 }
-                if !blend_parameter_grids.contains_key(surface.as_str()) {
-                    let grid = blend_surface_parameter_grid_with_index_and_budget(
-                        index,
-                        surface,
-                        0,
-                        geometry_budget,
-                    )?;
-                    geometry_budget
-                        .charges
-                        .charge_collection_items_limit(1, "nx intersection blend grid cache")?;
-                    blend_parameter_grids.insert(surface.as_str(), grid);
-                }
-                let grid = blend_parameter_grids
-                    .get(surface.as_str())
-                    .and_then(Option::as_deref)
-                    .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided);
-                blend_surface_parameters_for_fit_with_grid_and_budget(
+                let grid = blend_parameter_grids.grid(index, surface, geometry_budget)?;
+                Ok(blend_surface_parameters_for_fit_with_grid_and_budget(
                     index,
                     surface,
                     point,
@@ -2315,7 +2309,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                     fit_tolerance,
                     grid,
                     geometry_budget,
-                )
+                )?)
             }
             geometry @ SurfaceGeometry::Solved(_) => {
                 Ok(analytic_surface_parameters(geometry, point).map(Point2::from))
@@ -2378,16 +2372,17 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         return Ok(None);
     }
     let mut lanes = [Vec::new(), Vec::new()];
-    let _first_lane_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut lanes[0],
-        chart.len(),
-        "nx intersection first parameter lane",
-    )?;
-    let _second_lane_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut lanes[1],
-        chart.len(),
-        "nx intersection second parameter lane",
-    )?;
+    let mut lane_storage = geometry_budget
+        .charges
+        .reserve_scoped_limit(0, "nx intersection parameter lanes")?;
+    for lane in &mut lanes {
+        geometry_budget.charges.reserve_scoped_vec_limit(
+            &mut lane_storage,
+            lane,
+            chart.len(),
+            "nx intersection parameter lanes",
+        )?;
+    }
     lanes[0].push(Point2::new(current[0], current[1]));
     lanes[1].push(Point2::new(current[2], current[3]));
 
@@ -2485,7 +2480,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         lanes[0].push(Point2::new(current[0], current[1]));
         lanes[1].push(Point2::new(current[2], current[3]));
     }
-    Ok(Some(lanes))
+    Ok(Some((lanes, lane_storage)))
 }
 
 pub(super) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -> f64 {

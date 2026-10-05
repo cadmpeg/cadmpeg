@@ -743,7 +743,102 @@ pub(super) enum BlendParameterGrid<'a> {
     #[cfg(test)]
     Build,
     Disabled,
-    Provided(&'a [(Point2, Point3)]),
+    Provided(&'a BlendSurfaceGrid),
+}
+
+/// Spine parameters a blend parameter grid samples.
+const BLEND_GRID_SPINE_SAMPLES: usize = 9;
+
+/// Section parameters a blend parameter grid samples at each spine parameter.
+const BLEND_GRID_SECTION_SAMPLES: usize = 5;
+
+/// The most samples a blend parameter grid holds.
+const BLEND_GRID_SAMPLES: usize = BLEND_GRID_SPINE_SAMPLES * BLEND_GRID_SECTION_SAMPLES;
+
+/// A fixed lattice of blend parameters and their surface points that seeds a
+/// blend parameter inversion. Samples whose point does not evaluate are left
+/// out, so the grid holds a prefix of its fixed slots.
+#[derive(Clone, Copy)]
+pub(super) struct BlendSurfaceGrid {
+    samples: [(Point2, Point3); BLEND_GRID_SAMPLES],
+    len: usize,
+}
+
+impl BlendSurfaceGrid {
+    /// The parameters of the sample nearest `point`.
+    fn closest_parameters(&self, point: Point3) -> Option<Point2> {
+        self.samples
+            .iter()
+            .take(self.len)
+            .min_by(|(_, first), (_, second)| {
+                Point3::distance(*first, point).total_cmp(&Point3::distance(*second, point))
+            })
+            .map(|(parameters, _)| *parameters)
+    }
+
+    #[cfg(test)]
+    pub(super) fn samples(&self) -> &[(Point2, Point3)] {
+        &self.samples[..self.len]
+    }
+}
+
+/// Blend parameter grids by blend surface identity. A grid is built on its
+/// surface's first request, and a surface whose grid does not build keeps that
+/// answer. The table is held under one scoped reservation until the cache is
+/// dropped.
+pub(super) struct BlendParameterGridCache<'k, 'ctx> {
+    grids: std::collections::BTreeMap<&'k str, Option<BlendSurfaceGrid>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'k, 'ctx> BlendParameterGridCache<'k, 'ctx> {
+    pub(super) fn new(
+        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            grids: std::collections::BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "nx blend parameter grid cache")?,
+        })
+    }
+
+    /// The grid of `surface`, built on the surface's first request.
+    pub(super) fn grid(
+        &mut self,
+        index: &cadmpeg_ir::index::ModelIndex<'_>,
+        surface: &'k SurfaceId,
+        geometry_budget: &GeometryWorkBudget<'_>,
+    ) -> Result<BlendParameterGrid<'_>, cadmpeg_core::CodecError> {
+        let ctx = geometry_budget.charges;
+        if !ctx.contains_key_btree_map(
+            &self.grids,
+            surface.as_str(),
+            "nx blend parameter grid lookup",
+        )? {
+            let grid = blend_surface_parameter_grid_with_index_and_budget(
+                index,
+                surface,
+                0,
+                geometry_budget,
+            )?;
+            let grids = &mut self.grids;
+            self.storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    grids,
+                    surface.as_str(),
+                    grid,
+                    "nx blend parameter grid cache",
+                )
+            })?;
+        }
+        Ok(ctx
+            .get_btree_map(
+                &self.grids,
+                surface.as_str(),
+                "nx blend parameter grid lookup",
+            )?
+            .and_then(Option::as_ref)
+            .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided))
+    }
 }
 
 #[cfg(test)]
@@ -1069,7 +1164,7 @@ fn blend_surface_parameters_inner(
             geometry_budget,
         )?,
         BlendParameterGrid::Disabled => None,
-        BlendParameterGrid::Provided(grid) => closest_blend_surface_grid_parameters(grid, point),
+        BlendParameterGrid::Provided(grid) => grid.closest_parameters(point),
     };
     if let Some(initial) = initial {
         let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
@@ -1178,7 +1273,7 @@ fn coarse_blend_surface_parameters_with_index_and_budget(
     else {
         return Ok(None);
     };
-    Ok(closest_blend_surface_grid_parameters(&grid, point))
+    Ok(grid.closest_parameters(point))
 }
 
 pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
@@ -1186,7 +1281,7 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     surface: &SurfaceId,
     depth: usize,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<Vec<(Point2, Point3)>>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<BlendSurfaceGrid>, cadmpeg_core::decode::ResourceLimit> {
     if depth >= 32 {
         return Ok(None);
     }
@@ -1212,12 +1307,10 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     if !domain.into_iter().all(f64::is_finite) || domain[0] >= domain[1] {
         return Ok(None);
     }
-    let mut grid = Vec::new();
-    let _grid_reservation = geometry_budget.charges.reserve_temporary_vec(
-        &mut grid,
-        9 * 5,
-        "nx blend parameter grid",
-    )?;
+    let mut grid = BlendSurfaceGrid {
+        samples: [(Point2::new(0.0, 0.0), Point3::new(0.0, 0.0, 0.0)); BLEND_GRID_SAMPLES],
+        len: 0,
+    };
     for u_index in 0..=8 {
         let Some(u) = cadmpeg_ir::math::interpolate(domain[0], domain[1], f64::from(u_index) / 8.0)
         else {
@@ -1255,21 +1348,12 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
             let Some(point) = point else {
                 continue;
             };
-            grid.push((parameters, point));
+            // The nine spine and five section samples fill at most every slot.
+            grid.samples[grid.len] = (parameters, point);
+            grid.len += 1;
         }
     }
-    Ok((!grid.is_empty()).then_some(grid))
-}
-
-fn closest_blend_surface_grid_parameters(
-    grid: &[(Point2, Point3)],
-    point: Point3,
-) -> Option<Point2> {
-    grid.iter()
-        .min_by(|(_, first), (_, second)| {
-            Point3::distance(*first, point).total_cmp(&Point3::distance(*second, point))
-        })
-        .map(|(parameters, _)| *parameters)
+    Ok((grid.len != 0).then_some(grid))
 }
 
 pub(super) fn blend_surface_parameters_from_grid_for_fit_and_budget(
@@ -1277,7 +1361,7 @@ pub(super) fn blend_surface_parameters_from_grid_for_fit_and_budget(
     surface: &SurfaceId,
     point: Point3,
     fit_tolerance: f64,
-    grid: &[(Point2, Point3)],
+    grid: &BlendSurfaceGrid,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
@@ -1296,7 +1380,7 @@ pub(super) fn blend_surface_parameters_from_grid_for_fit_with_source_continuatio
     surface: &SurfaceId,
     point: Point3,
     fit_tolerance: f64,
-    grid: &[(Point2, Point3)],
+    grid: &BlendSurfaceGrid,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
@@ -1315,11 +1399,11 @@ fn blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
     surface: &SurfaceId,
     point: Point3,
     fit_tolerance: f64,
-    grid: &[(Point2, Point3)],
+    grid: &BlendSurfaceGrid,
     section_domain: BlendSectionDomain,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(initial) = closest_blend_surface_grid_parameters(grid, point) else {
+    let Some(initial) = grid.closest_parameters(point) else {
         return Ok(None);
     };
     let parameters = refine_blend_surface_parameters_with_section_domain_and_budget(
