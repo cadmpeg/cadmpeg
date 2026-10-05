@@ -407,6 +407,12 @@ admitted and the other advances in constant work; `flatten` and `flat_map`
 need a constant-count inner iterator, such as `char::to_lowercase`. A nested
 loop requires its own admission. Child copies, comparisons and callback work
 require their own operations. Dropping consumed or remaining values is free.
+A search that can stop early (`any`, `all`, `find`, `find_map`, `position`,
+`rposition`) over an admitted iterator is reported: the admission charged
+every visit. `any_by`, `all_by`, `find_by`, `find_map` and `position_by`
+step a fixed-step source and charge each step as it is made, with an end
+probe only when the source does not state its exact length; `rposition_by`
+searches a slice from the end the same way.
 
 The standard reflexive `From<T> for T` and its `Into<T>` forwarding move the
 value. They require no byte scan or allocation admission. A conversion between
@@ -443,20 +449,31 @@ depend on it, and a scan walks the allocated table, which has no exact public
 bound once removals leave deleted slots. Traversal (`iter`, `keys`, `values`,
 `values_mut`, `into_keys`, `into_values`, `IntoIterator`, `for` loops), the
 set relations (`difference`, `intersection`, `union`, `is_subset`,
-`is_disjoint`), whole-table `==`, `clone`, `retain`, `drain` and `extract_if`
-are reported; a collection that decode traverses or compares is a `BTreeMap`,
+`is_disjoint`), the set operators `|`, `&`, `-` and `^`, whole-table `==`,
+`clone`, `retain`, `drain` and `extract_if` are reported; a collection that decode traverses or compares is a `BTreeMap`,
 `BTreeSet` or `Vec`. A keyed operation hashes and compares the key through its
 `Hash` and `PartialEq<Self>` callbacks, and core charges the key's `DecodeCost`
 for them. Standard keys (scalars, strings, `Cow<str>`, `Box`, `Vec`, `Option`,
 slices, arrays and tuples) and keys whose `Hash` and `PartialEq` come from a
-derive expansion are accepted; a hand-written callback or a hand-written
-`automatically_derived` marker retains a finding at the lookup, insertion or
-removal, because std calls the callback where the call graph cannot follow it.
+derive macro's expansion are accepted; a hand-written callback, or an
+`automatically_derived` marker written by hand or by a declarative macro,
+retains a finding at the lookup, insertion or removal, because std calls the
+callback where the call graph cannot follow it. A keyed operation whose key,
+query or builder is a type parameter is proven at each concrete instance and
+reported at the instantiation that fails. `table[key]` through `ops::Index`
+hashes or compares the key without a charge and is reported with
+`get_hash_map` or `get_btree_map`. A B-tree key operation requires a
+standard key, a key whose `Ord` comes from a derive expansion, or
+`serde_value::Value`, which orders by variant and then by content.
 Probing is not charged per probe, so the table must use `RandomState`; a
 fixed-key builder such as `BuildHasherDefault<DefaultHasher>` lets an input
-choose colliding keys and retains a finding. Hash growth charges the rehash of
-every stored key: length times a fixed key cost, or a measuring visit and the
-`DecodeCost` of each variable key.
+choose colliding keys and retains a finding. Hash growth charges the old
+table's bytes first, which pays for walking its allocated buckets, and then
+the rehash of every stored key: length times a fixed key cost, or one visit
+per key plus the sum of each variable key's `DecodeCost`, charged as one
+amount so that the visit order cannot move a refusal. `unique_index` keeps
+only keys that occurred once; a repeated key is removed and remembered in a
+scoped side set.
 
 A scoped storage receipt names its live reservation local. Moving that
 reservation into another owner invalidates the local receipt. Keep the
@@ -492,7 +509,7 @@ or exhausted bound retains an unproven finding.
 | `collection growth outside core operation` | `push_vec`, `reserve_vec`, `append_retained`, `push_retained_char` or the receiver-specific map/set insertion method |
 | `into` | `copy_retained_text` for text; `copy_slice` for Copy slices; `into_boxed_slice` for an owned vector |
 | `comparison` | `equal_bytes` for byte equality; `equal` for value equality; `compare` for ordering; whole hash tables are not compared, use `BTreeSet` or `BTreeMap` |
-| `insert` | `insert_vec` or `insert_scoped_vec` for indexed vector insertion; `insert_hash_map`, `insert_btree_map`, `insert_hash_set` or `insert_btree_set` for keys |
+| `insert` | `insert_vec` for indexed vector insertion, inside `with_storage` for scoped storage; `insert_hash_map`, `insert_btree_map`, `insert_hash_set` or `insert_btree_set` for keys |
 | `any` | `any_by` for slices; `admit_iter` before an iterator consumer |
 | `contains` | `contains_text`, `contains`, `contains_hash_set` or `contains_btree_set`, selected by receiver |
 | `get` | `get_hash_map`, `get_btree_map`, `get_hash_set` or `get_btree_set`, selected by receiver |
@@ -787,7 +804,9 @@ unlimited in the policy of the context under test and arms the probe; the
 first charge of the operation that would raise that context's peak usage
 refuses, reporting the peak as the limit. One decode finds the boundary, and
 `cadmpeg_test_support::refusal::resource_limit_at` replays it one unit below
-the need under the ordinary limit.
+the need under the ordinary limit. A decode charges in the same order on every
+run, so a replay that refuses elsewhere fails the test: it exposes a charge
+sequence that depends on unordered iteration.
 
 Heap sifts charge the maximum `DecodeCost` of all stored operands and the incoming
 value. With `n` operands, the work bound is `n` measuring visits plus
