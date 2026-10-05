@@ -6488,54 +6488,6 @@ pub(super) fn feature_datum_csys_payloads(
     Ok(output)
 }
 
-/// Shared body for construction-payload frame extractors. Reconstruct each
-/// payload's concatenated bytes, build the payload-relative-to-source-offset
-/// mapper once, scan the bytes, and let each family build its record, dropping
-/// frames whose offsets fall outside a source block. Extractors differ only in
-/// their payload block lane, scanner, and output record.
-fn construction_payload_frames<P, S, R>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
-    payloads: &[P],
-    data_blocks: impl Fn(&P) -> &[FeaturePayloadBlock],
-    scan: impl Fn(&[u8]) -> Result<Vec<S>, CodecError>,
-    mut build: impl FnMut(
-        &P,
-        usize,
-        S,
-        &dyn Fn(usize) -> Result<Option<u64>, CodecError>,
-    ) -> Result<Option<R>, CodecError>,
-) -> Result<Vec<R>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut output = Vec::new();
-    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
-        let Some(joined) = JoinedPayload::from_source(
-            ctx,
-            data_blocks(payload).iter().map(|block| &block.id),
-            data_blocks(payload).len(),
-            &blocks,
-        )?
-        else {
-            continue;
-        };
-        let source_offset = |relative: usize| {
-            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
-        };
-        let mut rows = scan(joined.bytes())?.into_iter();
-        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
-            let Some(row) = rows.next() else {
-                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
-            };
-            let Some(record) = build(payload, ordinal, row, &source_offset)? else {
-                continue;
-            };
-            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
-            output.push(record);
-        }
-    }
-    Ok(output)
-}
-
 /// Decode exact scalar-pair frames from reconstructed datum-CSYS payloads.
 pub(super) fn feature_datum_csys_payload_scalar_pairs(
     ctx: &DecodeContext<'_>,
