@@ -30,8 +30,7 @@ impl DecodeCost for ObjectGraph {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<u64, CodecError> {
-        (&self.pos, &self.total_len, &self.catalog_pos, &self.records)
-            .decode_cost(ctx, operation)
+        (&self.pos, &self.total_len, &self.catalog_pos, &self.records).decode_cost(ctx, operation)
     }
 }
 
@@ -494,9 +493,11 @@ impl DecodeCost for PayloadField {
                 (tag, value, offset).decode_cost(ctx, operation)?
             }
             Self::Blob { bytes, offset } => (bytes, offset).decode_cost(ctx, operation)?,
-            Self::BulkTable { count, rows, offset } => {
-                (count, rows, offset).decode_cost(ctx, operation)?
-            }
+            Self::BulkTable {
+                count,
+                rows,
+                offset,
+            } => (count, rows, offset).decode_cost(ctx, operation)?,
             Self::List {
                 declared_count,
                 items,

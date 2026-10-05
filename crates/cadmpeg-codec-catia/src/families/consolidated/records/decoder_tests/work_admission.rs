@@ -7,8 +7,11 @@ fn assert_source_work_refusal(
     operation: &'static str,
     mut run: impl FnMut(&DecodeContext<'_>) -> Result<usize, CodecError>,
 ) {
-    assert_eq!(crate::test_support::with_service_context(|ctx| run(ctx))
-        .expect("service source fixture produces one run"), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| run(ctx))
+            .expect("service source fixture produces one run"),
+        1
+    );
     let result = crate::test_support::with_work_refusal(operation, |ctx| {
         let result = run(ctx);
         if let Err(CodecError::ResourceLimit(limit)) = &result {
@@ -40,8 +43,13 @@ fn consolidated_topology_use_owned_source_preserves_work_refusal() {
 }
 
 fn record(class: u8, token: u8, payload: &[u8]) -> Vec<u8> {
-    let mut bytes = vec![0xb2, 0x03, class,
-        u8::try_from(payload.len()).expect("fixture payload fits u8"), token];
+    let mut bytes = vec![
+        0xb2,
+        0x03,
+        class,
+        u8::try_from(payload.len()).expect("fixture payload fits u8"),
+        token,
+    ];
     bytes.extend_from_slice(payload);
     bytes
 }
@@ -143,9 +151,12 @@ fn resolved_edge_block_owned_source_preserves_work_refusal() {
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_source_work_refusal("catia_resolved_edge_blocks", |ctx| {
         super::super::resolve_consolidated_edge_blocks_from_records(
-            ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
-            .map(|runs| runs.len())
+        .map(|runs| runs.len())
     });
 }
 

@@ -184,7 +184,10 @@ mod tests {
                         }
                     }
                     Ok(identity) => {
-                        assert_eq!(identity.as_str(), format!("catia:model:pmi#entity-record-{offset:010}"));
+                        assert_eq!(
+                            identity.as_str(),
+                            format!("catia:model:pmi#entity-record-{offset:010}")
+                        );
                         assert_eq!(original, None);
                     }
                     Err(error) => panic!("unexpected identity error: {error}"),

@@ -82,8 +82,8 @@ fn inferred_partner_work_refusal(operation: &'static str) {
         SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
-        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, ShellId,
-        SurfaceId, VertexId,
+        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, ShellId, SurfaceId,
+        VertexId,
     };
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 
@@ -94,8 +94,8 @@ fn inferred_partner_work_refusal(operation: &'static str) {
         .into_iter()
         .next()
         .expect("one B2 plane carrier");
-    let plane_geometry = crate::families::b2::records::b2_plane_geometry(&plane_record)
-        .expect("finite B2 plane");
+    let plane_geometry =
+        crate::families::b2::records::b2_plane_geometry(&plane_record).expect("finite B2 plane");
     let SurfaceGeometry::Solved(plane_solved) = &plane_geometry else {
         panic!("B2 plane carrier is solved");
     };
@@ -139,18 +139,18 @@ fn inferred_partner_work_refusal(operation: &'static str) {
         identity: None,
         geometry: carrier_geometry,
     };
-    let carrier_ids = [SurfaceId::mint("catia:test:surface#inferred-carrier".to_owned())
-        .expect("identity grammar")];
-    let standard_surface_ids = [
-        SurfaceId::mint("catia:test:surface#resolved-plane".to_owned())
-            .expect("identity grammar"),
-        SurfaceId::mint("catia:test:surface#unknown-partner".to_owned())
+    let carrier_ids = [
+        SurfaceId::mint("catia:test:surface#inferred-carrier".to_owned())
             .expect("identity grammar"),
     ];
-    let curve_id = CurveId::mint("catia:test:curve#inferred-partner".to_owned())
-        .expect("identity grammar");
-    let edge_id = EdgeId::mint("catia:test:edge#inferred-partner".to_owned())
-        .expect("identity grammar");
+    let standard_surface_ids = [
+        SurfaceId::mint("catia:test:surface#resolved-plane".to_owned()).expect("identity grammar"),
+        SurfaceId::mint("catia:test:surface#unknown-partner".to_owned()).expect("identity grammar"),
+    ];
+    let curve_id =
+        CurveId::mint("catia:test:curve#inferred-partner".to_owned()).expect("identity grammar");
+    let edge_id =
+        EdgeId::mint("catia:test:edge#inferred-partner".to_owned()).expect("identity grammar");
     let procedural_id = ProceduralCurveId::mint("catia:test:procedure#inferred-partner".to_owned())
         .expect("identity grammar");
 
@@ -164,15 +164,17 @@ fn inferred_partner_work_refusal(operation: &'static str) {
             );
         }
     }
-    bytes.extend_from_slice(
-        &crate::test_support::test_a5a8::a5_pcurve_stream_with_uv([0.0, 1.0], [0.0, 1.0]),
-    );
-    bytes.extend_from_slice(
-        &crate::test_support::test_a5a8::a5_pcurve_stream_with_uv([10.0, 11.0], [20.0, 21.0]),
-    );
-    bytes.extend_from_slice(
-        &crate::test_support::test_b2::b2_edge_parameter_stream_for(0.0, 1.0),
-    );
+    bytes.extend_from_slice(&crate::test_support::test_a5a8::a5_pcurve_stream_with_uv(
+        [0.0, 1.0],
+        [0.0, 1.0],
+    ));
+    bytes.extend_from_slice(&crate::test_support::test_a5a8::a5_pcurve_stream_with_uv(
+        [10.0, 11.0],
+        [20.0, 21.0],
+    ));
+    bytes.extend_from_slice(&crate::test_support::test_b2::b2_edge_parameter_stream_for(
+        0.0, 1.0,
+    ));
     bytes.extend_from_slice(
         &crate::test_support::test_a5a8::a5_native_edge_identity_stream(6, 139, 142),
     );
@@ -185,8 +187,7 @@ fn inferred_partner_work_refusal(operation: &'static str) {
                 .expect("identity grammar");
             ir.model.points.push(Point::new(
                 point_id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(position)
-                    .expect("finite fixture point"),
+                cadmpeg_ir::features::FinitePoint3::new(position).expect("finite fixture point"),
                 None,
             ));
             ir.model.vertices.push(Vertex {
@@ -248,13 +249,10 @@ fn inferred_partner_work_refusal(operation: &'static str) {
                 tolerance: None,
             });
             let ring = cadmpeg_test_support::service_decode_context();
-            let boundary = cadmpeg_ir::topology::LoopRing::new(
-                &ring,
-                vec![coedge_id.clone()],
-                Vec::new(),
-            )
-            .expect("fixture ring admission")
-            .expect("valid fixture loop ring");
+            let boundary =
+                cadmpeg_ir::topology::LoopRing::new(&ring, vec![coedge_id.clone()], Vec::new())
+                    .expect("fixture ring admission")
+                    .expect("valid fixture loop ring");
             ir.model.loops.push(Loop {
                 id: loop_id,
                 face: face_id,
@@ -292,8 +290,8 @@ fn inferred_partner_work_refusal(operation: &'static str) {
                     },
                 ),
             )
-        .expect("procedural curve admission")
-        .expect("procedural curve binds to its owner");
+            .expect("procedural curve admission")
+            .expect("procedural curve binds to its owner");
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let aliases = std::collections::HashMap::new();
         let result = super::super::append_resolved_consolidated_surface_curves(
@@ -366,17 +364,26 @@ fn cone_pole_work_refusal(rational: bool) {
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         rational.then(|| vec![1.0, 2.0]),
         false,
-    ).expect("pcurve construction admission").expect("valid pcurve fixture");
+    )
+    .expect("pcurve construction admission")
+    .expect("valid pcurve fixture");
     let pcurve = PcurveGeometry::Nurbs { nurbs };
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        super::super::rechart_equivalent_surface_pcurve(ctx, &pcurve, &source, &target)
-            .map_err(|failure| match failure {
+        super::super::rechart_equivalent_surface_pcurve(ctx, &pcurve, &source, &target).map_err(
+            |failure| match failure {
                 super::super::RechartFailure::Resource(error) => error,
-                super::super::RechartFailure::NonFinite => cadmpeg_core::CodecError::malformed("finite rechart fixture overflowed"),
-            })
+                super::super::RechartFailure::NonFinite => {
+                    cadmpeg_core::CodecError::malformed("finite rechart fixture overflowed")
+                }
+            },
+        )
     };
-    let shifted = crate::test_support::with_service_context(run).expect("service budget").expect("equivalent cone");
-    let PcurveGeometry::Nurbs { nurbs } = shifted else { panic!("NURBS rechart"); };
+    let shifted = crate::test_support::with_service_context(run)
+        .expect("service budget")
+        .expect("equivalent cone");
+    let PcurveGeometry::Nurbs { nurbs } = shifted else {
+        panic!("NURBS rechart");
+    };
     use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
     match nurbs.pole_rows() {
         PcurveNurbsPoles::Polynomial { points } => {
@@ -400,7 +407,9 @@ fn cone_pole_work_refusal(rational: bool) {
         }
         result
     });
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == OPERATION));
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == OPERATION)
+    );
 }
 
 #[test]
@@ -743,13 +752,11 @@ fn a_cone_record_is_refused_when_read_or_builds_its_freeform_carrier() {
             .expect("service decode")
         });
         assert!(carriers.is_empty());
-        assert!(
-            crate::test_support::with_service_context(|ctx| {
-                crate::families::b2::records::b2_cones_from_records(ctx, &bytes, &records)
-                    .map(|mut cones| cones.next().is_none())
-            })
-            .expect("service context admits cones")
-        );
+        assert!(crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::b2_cones_from_records(ctx, &bytes, &records)
+                .map(|mut cones| cones.next().is_none())
+        })
+        .expect("service context admits cones"));
     }
 }
 

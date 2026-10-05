@@ -59,13 +59,9 @@ fn plane_fit_helpers_propagate_exact_work_refusals() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
     crate::test_support::with_work_limit(0, |ctx| {
-        let error = fit_rank_one_e5_plane_axes(
-            ctx,
-            point([0.0; 3]),
-            &pairs,
-            Vector3::new(0.0, 0.0, 1.0),
-        )
-        .expect_err("the rank-one seed scan must refuse before fitting");
+        let error =
+            fit_rank_one_e5_plane_axes(ctx, point([0.0; 3]), &pairs, Vector3::new(0.0, 0.0, 1.0))
+                .expect_err("the rank-one seed scan must refuse before fitting");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("rank-one seed scan must return its resource refusal");
         };
@@ -97,12 +93,7 @@ fn rank_one_plane_endpoints_complete_with_known_normal() {
             (uv([0.0, scale]), point([scale, 0.0, 0.0])),
         ];
         let (u_axis, v_axis, residual) = crate::test_support::with_service_context(|ctx| {
-            fit_rank_one_e5_plane_axes(
-                ctx,
-                point([0.0; 3]),
-                &pairs,
-                Vector3::new(0.0, 1.0, 0.0),
-            )
+            fit_rank_one_e5_plane_axes(ctx, point([0.0; 3]), &pairs, Vector3::new(0.0, 1.0, 0.0))
         })
         .expect("service resource budget")
         .expect("rank-one frame");
@@ -127,12 +118,7 @@ fn plane_axis_fit_rejects_numerically_rank_one_uv_data() {
     .expect("service resource budget")
     .is_none());
     let (_, _, residual) = crate::test_support::with_service_context(|ctx| {
-        fit_rank_one_e5_plane_axes(
-            ctx,
-            point([0.0; 3]),
-            &pairs,
-            Vector3::new(0.0, 1.0, 0.0),
-        )
+        fit_rank_one_e5_plane_axes(ctx, point([0.0; 3]), &pairs, Vector3::new(0.0, 1.0, 0.0))
     })
     .expect("service resource budget")
     .expect("rank-one frame");

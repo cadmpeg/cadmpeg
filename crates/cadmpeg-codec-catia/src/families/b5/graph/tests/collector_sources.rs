@@ -55,9 +55,7 @@ fn b5_ordered_indexed_records_collector_preserves_work_refusal() {
             super::super::indexed_topology_records_and_dependency_candidates(
                 ctx, &bytes, &frames, None,
             )
-            .map(|output| {
-                output.map(|(records, candidates)| (records.len(), candidates.len()))
-            })
+            .map(|output| output.map(|(records, candidates)| (records.len(), candidates.len())))
         },
         |output| output.as_ref().is_some_and(|(records, _)| *records > 0),
     );

@@ -329,7 +329,11 @@ fn insert_source_binding(
     let appearance = insert_appearance(ctx, ir, packet.rgba())?;
     // Hex encoding preserves the source token while excluding key delimiters.
     let key = ctx
-        .split_once(appearance.as_str(), "#", "catia_appearance_source_binding_key")?
+        .split_once(
+            appearance.as_str(),
+            "#",
+            "catia_appearance_source_binding_key",
+        )?
         .map_or("", |(_, key)| key);
     let id = ctx.format_retained(
         format_args!(
@@ -402,7 +406,9 @@ mod tests {
 
     fn assert_identity_grammar_refusal(
         operation: &'static str,
-        mut construct: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+        mut construct: impl FnMut(
+            &cadmpeg_core::decode::DecodeContext<'_>,
+        ) -> Result<(), cadmpeg_core::CodecError>,
     ) {
         let mut observed = false;
         for work in 0..1024 {
@@ -446,7 +452,9 @@ mod tests {
                 ctx,
                 &mut ir,
                 &appearance,
-                AppearanceTarget::Source { source_id: "catia:test:source#0".into() },
+                AppearanceTarget::Source {
+                    source_id: "catia:test:source#0".into(),
+                },
                 0,
             );
             if result.is_err() {

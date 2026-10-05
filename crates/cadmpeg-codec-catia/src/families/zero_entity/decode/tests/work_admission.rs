@@ -12,11 +12,9 @@ use cadmpeg_ir::AnnotationBuilder;
 fn reversed_wire_fixture(ctx: &DecodeContext<'_>, procedural: bool) -> Result<usize, CodecError> {
     let first = Point3::new(0.0, 0.0, 0.0);
     let corner = Point3::new(1.0, 0.0, 0.0);
-    let curve_id =
-        CurveId::mint("catia:test:helix-curve#0".to_string()).expect("identity grammar");
-    let construction_id =
-        ProceduralCurveId::mint("catia:test:helix-construction#0".to_string())
-            .expect("identity grammar");
+    let curve_id = CurveId::mint("catia:test:helix-curve#0".to_string()).expect("identity grammar");
+    let construction_id = ProceduralCurveId::mint("catia:test:helix-construction#0".to_string())
+        .expect("identity grammar");
     let definition = ProceduralCurveDefinition::Helix(
         cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
             [0.0, 1.0],
@@ -43,21 +41,23 @@ fn reversed_wire_fixture(ctx: &DecodeContext<'_>, procedural: bool) -> Result<us
         } else {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    first, Vector3::new(1.0, 0.0, 0.0),
-                ).expect("valid fixture line"),
+                    first,
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid fixture line"),
             ))
         },
         source_object: None,
     });
     if procedural {
-    ir.model
-        .add_procedural_curve(
-            &cadmpeg_ir::document::admission::StandardAdmission,
-            &curve_id,
-            ProceduralCurve::new(construction_id.clone(), definition.clone()),
-        )
-        .expect("valid fixture construction")
-        .expect("valid fixture construction");
+        ir.model
+            .add_procedural_curve(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &curve_id,
+                ProceduralCurve::new(construction_id.clone(), definition.clone()),
+            )
+            .expect("valid fixture construction")
+            .expect("valid fixture construction");
     }
     let support_runs = vec![
         crate::families::zero_entity::records::ZeroEntitySupportRun {
@@ -115,8 +115,11 @@ fn reversed_wire_fixture(ctx: &DecodeContext<'_>, procedural: bool) -> Result<us
 }
 
 fn assert_reversed_lookup_refusal(procedural: bool, operation: &'static str) {
-    assert_eq!(crate::test_support::with_service_context(|ctx| reversed_wire_fixture(ctx, procedural))
-        .expect("service wire fixture"), 2);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| reversed_wire_fixture(ctx, procedural))
+            .expect("service wire fixture"),
+        2
+    );
     let result = crate::test_support::with_work_refusal(operation, |ctx| {
         let result = reversed_wire_fixture(ctx, procedural);
         if let Err(CodecError::ResourceLimit(limit)) = &result {

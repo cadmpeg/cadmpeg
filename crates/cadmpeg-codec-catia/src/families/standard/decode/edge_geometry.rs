@@ -1171,10 +1171,9 @@ pub(super) fn build_standard_edge_curve(
                 "catia_standard_edge_circle_axes",
             )?;
             if let Some(native) = native_support {
-                for carrier in ctx.admit_iter(
-                    &native.carriers,
-                    "catia_standard_native_circle_carriers",
-                )? {
+                for carrier in
+                    ctx.admit_iter(&native.carriers, "catia_standard_native_circle_carriers")?
+                {
                     let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
                         carrier
                     else {
@@ -1913,11 +1912,10 @@ pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>
             let Some(prefix) = choices.get(..index + 1) else {
                 return Ok(None);
             };
-            let compatible = circular_ranges_are_nonoverlapping_or_coincident_by(
-                ctx,
-                prefix,
-                |at| choices[at].as_ref()[usize::from(selected[at])],
-            )?;
+            let compatible =
+                circular_ranges_are_nonoverlapping_or_coincident_by(ctx, prefix, |at| {
+                    choices[at].as_ref()[usize::from(selected[at])]
+                })?;
             if compatible {
                 match visit(ctx, choices, index + 1, selected, states)? {
                     Some(true) => {
@@ -1969,10 +1967,10 @@ pub(super) fn circular_ranges_are_nonoverlapping_or_coincident_by<T>(
         }
     }
 
-for (left_index, _) in ctx
-    .admit_iter(source, "catia_standard_circle_range_pair_left")?
-    .enumerate()
-{
+    for (left_index, _) in ctx
+        .admit_iter(source, "catia_standard_circle_range_pair_left")?
+        .enumerate()
+    {
         let left = range_at(left_index);
         let Some(first_right) = left_index.checked_add(1) else {
             return Err(ctx.refuse_codec_limit(
@@ -2007,8 +2005,7 @@ for (left_index, _) in ctx
             }
             for left_segment in segments(left).into_iter().flatten() {
                 for right_segment in segments(right).into_iter().flatten() {
-                    if left_segment[1].min(right_segment[1])
-                        - left_segment[0].max(right_segment[0])
+                    if left_segment[1].min(right_segment[1]) - left_segment[0].max(right_segment[0])
                         > EPS_STANDARD_DECODE_COARSE_GEOMETRY
                     {
                         return Ok(false);
@@ -2480,10 +2477,12 @@ pub(super) fn attach_standard_lines(
         ) {
             continue;
         }
-        let Some((origin_a, normal_a)) = plane_for_face(ctx, ir, bindings, support.faces[0])? else {
+        let Some((origin_a, normal_a)) = plane_for_face(ctx, ir, bindings, support.faces[0])?
+        else {
             continue;
         };
-        let Some((origin_b, normal_b)) = plane_for_face(ctx, ir, bindings, support.faces[1])? else {
+        let Some((origin_b, normal_b)) = plane_for_face(ctx, ir, bindings, support.faces[1])?
+        else {
             continue;
         };
         let Some((origin, direction)) =

@@ -207,8 +207,8 @@ fn rational_arc_span_generation_preserves_work_refusal() {
     let service = crate::test_support::with_service_context(|ctx| {
         super::super::rational_arc_pcurve(ctx, inputs)
     })
-        .expect("service work budget")
-        .expect("two-span rational arc");
+    .expect("service work budget")
+    .expect("two-span rational arc");
     assert_eq!(
         service
             .distinct_knots

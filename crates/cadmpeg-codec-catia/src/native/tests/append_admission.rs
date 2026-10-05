@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::CodecError;
-use cadmpeg_core::decode::ResourceDimension;
 use crate::native::CatiaNative;
 use crate::test_support::test_object_graph::{
     entity_table_record_with_value, object_graph_from_records, object_graph_record,
 };
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_core::CodecError;
 
 #[test]
 fn native_entity_record_append_preserves_pairing_and_refuses_move_work() {
@@ -18,7 +18,10 @@ fn native_entity_record_append_preserves_pairing_and_refuses_move_work() {
     bytes.extend(object_graph_from_records(&records));
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let result = CatiaNative::decode_with_record_sources(
-            ctx, &bytes, &[], &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            &bytes,
+            &[],
+            &mut crate::nurbs::LaneRefusals::new(),
         );
         if let Err(CodecError::ResourceLimit(limit)) = &result {
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);

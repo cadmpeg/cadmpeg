@@ -138,8 +138,7 @@ fn native_plane_carriers_collector_preserves_work_refusal() {
     assert_source_work_refusal(
         "catia_native_plane_carriers",
         |ctx| {
-            crate::native::consolidated_plane_carriers(ctx, &bytes, &records)
-                .map(|rows| rows.len())
+            crate::native::consolidated_plane_carriers(ctx, &bytes, &records).map(|rows| rows.len())
         },
         |count| *count > 0,
     );
@@ -187,11 +186,8 @@ fn native_zero_face_loops_collector_preserves_work_refusal() {
         "catia_native_zero_face_loops",
         |ctx| {
             converted_zero_support_runs(ctx, &bytes).map(|rows| {
-                rows.iter().any(|run| {
-                    run.face
-                        .as_ref()
-                        .is_some_and(|face| !face.loops.is_empty())
-                })
+                rows.iter()
+                    .any(|run| run.face.as_ref().is_some_and(|face| !face.loops.is_empty()))
             })
         },
         |has_loops| *has_loops,
@@ -203,9 +199,10 @@ fn native_zero_support_occurrences_collector_preserves_work_refusal() {
     let bytes = crate::test_support::test_zero_entity::zero_entity_support_stream();
     assert_source_work_refusal(
         "catia_native_zero_support_occurrences",
-        |ctx| converted_zero_support_runs(ctx, &bytes).map(|runs| {
-            runs.iter().any(|run| !run.supports.is_empty())
-        }),
+        |ctx| {
+            converted_zero_support_runs(ctx, &bytes)
+                .map(|runs| runs.iter().any(|run| !run.supports.is_empty()))
+        },
         |has_supports| *has_supports,
     );
 }

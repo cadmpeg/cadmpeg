@@ -166,7 +166,8 @@ mod tests {
             assert_eq!(vertices, original);
             assert_eq!(vertices.edge_points(1), Some([[0.0; 3], [1.0, 0.0, 0.0]]));
             assert_eq!(
-                vertices.edges()[&1].map(|vertex| vertex.combined_index(vertices.raw_points().len())),
+                vertices.edges()[&1]
+                    .map(|vertex| vertex.combined_index(vertices.raw_points().len())),
                 [0, 1]
             );
         });
@@ -189,12 +190,14 @@ mod tests {
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
         // One edge-map entry and two endpoint references.
-        let vertices = crate::test_support::with_work_limit(3, |ctx| B5Vertices::try_new(
-            ctx,
-            vec![crate::test_support::test_b5::point([0.0; 3])],
-            Vec::new(),
-            BTreeMap::from([(1, [B5VertexRef::Raw(0); 2])]),
-        ))
+        let vertices = crate::test_support::with_work_limit(3, |ctx| {
+            B5Vertices::try_new(
+                ctx,
+                vec![crate::test_support::test_b5::point([0.0; 3])],
+                Vec::new(),
+                BTreeMap::from([(1, [B5VertexRef::Raw(0); 2])]),
+            )
+        })
         .expect("one edge and two endpoints fit the work budget")
         .expect("valid vertex bindings");
         assert_eq!(vertices.edge_points(1), Some([[0.0; 3]; 2]));

@@ -968,7 +968,9 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
 
 fn assert_native_work_refusal_at(
     operation: &'static str,
-    mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+    mut run: impl FnMut(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError>,
 ) {
     let result = crate::test_support::with_work_refusal(operation, |ctx| {
         let result = run(ctx);
@@ -1024,10 +1026,7 @@ fn native_value_block_for_overlap_test(pos: usize) -> crate::value_block::ValueB
     }
 }
 
-fn native_catalog_for_overlap_test(
-    byte_offset: u64,
-    byte_len: u64,
-) -> super::super::CatiaCatalog {
+fn native_catalog_for_overlap_test(byte_offset: u64, byte_len: u64) -> super::super::CatiaCatalog {
     super::super::CatiaCatalog {
         id: String::new(),
         byte_offset,

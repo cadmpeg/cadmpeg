@@ -31,7 +31,10 @@ fn tetrahedron_with_endpoint_roster_and_b5_edges() -> Vec<u8> {
         .main_data_stream
         .as_deref()
         .expect("tetrahedron owns a standard MainDataStream");
-    let brep = scan.brep.as_deref().expect("tetrahedron owns a BREP stream");
+    let brep = scan
+        .brep
+        .as_deref()
+        .expect("tetrahedron owns a BREP stream");
     assert!(brep.starts_with(main));
     let surf = &brep[main.len()..];
 
@@ -72,7 +75,10 @@ fn tetrahedron_with_open_tag_six_and_b5_roster() -> Vec<u8> {
         .main_data_stream
         .as_deref()
         .expect("tetrahedron owns a standard MainDataStream");
-    let brep = scan.brep.as_deref().expect("tetrahedron owns a BREP stream");
+    let brep = scan
+        .brep
+        .as_deref()
+        .expect("tetrahedron owns a BREP stream");
     assert!(brep.starts_with(main_stream));
     let surf = brep[main_stream.len()..].to_vec();
     let mut main = main_stream.to_vec();
@@ -99,7 +105,10 @@ fn coplanar_tetrahedron_with_repeated_edge_rows() -> Vec<u8> {
         .main_data_stream
         .as_deref()
         .expect("tetrahedron owns a standard MainDataStream");
-    let brep = scan.brep.as_deref().expect("tetrahedron owns a BREP stream");
+    let brep = scan
+        .brep
+        .as_deref()
+        .expect("tetrahedron owns a BREP stream");
     assert!(brep.starts_with(main_stream));
     let surf = brep[main_stream.len()..].to_vec();
     let mut main = main_stream.to_vec();
@@ -107,11 +116,13 @@ fn coplanar_tetrahedron_with_repeated_edge_rows() -> Vec<u8> {
     let point_rows = main
         .windows(3)
         .enumerate()
-        .filter_map(|(offset, window)| {
-            (window == [0x05, 0x08, 0x01].as_slice()).then_some(offset)
-        })
+        .filter_map(|(offset, window)| (window == [0x05, 0x08, 0x01].as_slice()).then_some(offset))
         .collect::<Vec<_>>();
-    assert_eq!(point_rows.len(), 4, "tetrahedron serializes four point rows");
+    assert_eq!(
+        point_rows.len(),
+        4,
+        "tetrahedron serializes four point rows"
+    );
     for (offset, position) in point_rows.into_iter().zip([
         [0.0_f32, 0.0, 0.0],
         [1.0, 0.0, 0.0],
@@ -141,16 +152,19 @@ fn coplanar_tetrahedron_with_repeated_edge_rows() -> Vec<u8> {
 
     // Edge two remains exact on face two only; face zero uses a distinct trim handle.
     let face_zero_packet = [
-        0x01, 0x44, 0x01, 0xff, 11, 0, 0, 0, 11, 0x01, 0xf4, 0x00, 0x1e, 0x00, 0x0a,
-        0x00, 0x14, 0x00, 0x1f, 0x00, 0x0b, 0x00, 0x15, 0x00, 0x20, 0x00, 0x0c, 0x00,
-        0x16, 0x00, 0x1e,
+        0x01, 0x44, 0x01, 0xff, 11, 0, 0, 0, 11, 0x01, 0xf4, 0x00, 0x1e, 0x00, 0x0a, 0x00, 0x14,
+        0x00, 0x1f, 0x00, 0x0b, 0x00, 0x15, 0x00, 0x20, 0x00, 0x0c, 0x00, 0x16, 0x00, 0x1e,
     ];
     let face_zero_offsets = main
         .windows(face_zero_packet.len())
         .enumerate()
         .filter_map(|(offset, window)| (window == face_zero_packet).then_some(offset))
         .collect::<Vec<_>>();
-    assert_eq!(face_zero_offsets.len(), 1, "face zero owns its serialized trim packet");
+    assert_eq!(
+        face_zero_offsets.len(),
+        1,
+        "face zero owns its serialized trim packet"
+    );
     let edge_two_handle = face_zero_offsets[0] + 9 + 2 + 4 * 2;
     main[edge_two_handle..edge_two_handle + 2].copy_from_slice(&0x7ffd_u16.to_be_bytes());
 
@@ -261,7 +275,10 @@ impl TetrahedronAttachFixture {
                 (Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0))
             } else {
                 (
-                    first.cross(second).unit().expect("tetrahedron face is nondegenerate"),
+                    first
+                        .cross(second)
+                        .unit()
+                        .expect("tetrahedron face is nondegenerate"),
                     first.unit().expect("tetrahedron face edge is nonzero"),
                 )
             };
@@ -285,9 +302,8 @@ impl TetrahedronAttachFixture {
             else {
                 panic!("face binding owns a serialized surface");
             };
-            surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                face_planes[*face],
-            ));
+            surface.geometry =
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(face_planes[*face]));
         }
 
         let scan = crate::test_support::with_service_context(|ctx| {
@@ -299,27 +315,70 @@ impl TetrahedronAttachFixture {
             .as_deref()
             .expect("topology attach source has a standard spine")
             .to_vec();
-        let brep = scan.brep.as_deref().expect("topology attach source has a BREP").to_vec();
+        let brep = scan
+            .brep
+            .as_deref()
+            .expect("topology attach source has a BREP")
+            .to_vec();
         let source = scan.data.to_vec();
         let mut supports = vec![
-            StandardCurveSupport { pos: 0, tag: 1, faces: [0, 1], geometry: StandardCurveGeometry::Bspline },
-            StandardCurveSupport { pos: 1, tag: 2, faces: [0, 2], geometry: StandardCurveGeometry::Bspline },
-            StandardCurveSupport { pos: 2, tag: 3, faces: [0, 3], geometry: StandardCurveGeometry::Bspline },
-            StandardCurveSupport { pos: 3, tag: 4, faces: [1, 3], geometry: StandardCurveGeometry::Bspline },
-            StandardCurveSupport { pos: 4, tag: 5, faces: [1, 2], geometry: StandardCurveGeometry::Bspline },
-            StandardCurveSupport { pos: 5, tag: 6, faces: [2, 3], geometry: StandardCurveGeometry::Bspline },
+            StandardCurveSupport {
+                pos: 0,
+                tag: 1,
+                faces: [0, 1],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+            StandardCurveSupport {
+                pos: 1,
+                tag: 2,
+                faces: [0, 2],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+            StandardCurveSupport {
+                pos: 2,
+                tag: 3,
+                faces: [0, 3],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+            StandardCurveSupport {
+                pos: 3,
+                tag: 4,
+                faces: [1, 3],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+            StandardCurveSupport {
+                pos: 4,
+                tag: 5,
+                faces: [1, 2],
+                geometry: StandardCurveGeometry::Bspline,
+            },
+            StandardCurveSupport {
+                pos: 5,
+                tag: 6,
+                faces: [2, 3],
+                geometry: StandardCurveGeometry::Bspline,
+            },
         ];
         match shape {
             TetrahedronAttachShape::OneOpenTagSix => supports[5].faces = [2, 2],
             TetrahedronAttachShape::CoplanarRepeatedRows => {
-                for (support, faces) in supports.iter_mut().zip([
-                    [0, 0], [0, 0], [0, 0], [1, 1], [1, 1], [2, 2],
-                ]) {
+                for (support, faces) in
+                    supports
+                        .iter_mut()
+                        .zip([[0, 0], [0, 0], [0, 0], [1, 1], [1, 1], [2, 2]])
+                {
                     support.faces = faces;
                 }
             }
         }
-        Self { ir, bindings, spine, brep, source, supports }
+        Self {
+            ir,
+            bindings,
+            spine,
+            brep,
+            source,
+            supports,
+        }
     }
 
     fn attach(
@@ -378,10 +437,7 @@ impl TetrahedronAttachFixture {
     }
 }
 
-fn assert_tetrahedron_attach_work_refusal(
-    operation: &'static str,
-    shape: TetrahedronAttachShape,
-) {
+fn assert_tetrahedron_attach_work_refusal(operation: &'static str, shape: TetrahedronAttachShape) {
     let decoded = tetrahedron_with_endpoint_roster_and_b5_edges();
     let attached = match shape {
         TetrahedronAttachShape::OneOpenTagSix => tetrahedron_with_open_tag_six_and_b5_roster(),
@@ -418,25 +474,24 @@ fn assert_work_refusal<T>(
     mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
     assert_service_output: impl FnOnce(T),
 ) {
-    let (service_output, service_work_bound) =
-        crate::test_support::with_service_context(|ctx| {
-            let output = run(ctx)?;
-            assert_eq!(ctx.resource_refusal(), None);
-            let CodecError::ResourceLimit(refusal) = ctx
-                .charge_work(u64::MAX, "test service work bound")
-                .expect_err("maximum work charge exceeds the remaining service allowance")
-            else {
-                panic!("service work probe must refuse")
-            };
-            assert_eq!(
-                refusal.dimension,
-                cadmpeg_core::decode::ResourceDimension::WorkUnits
-            );
-            assert_eq!(refusal.operation, "test service work bound");
-            assert_eq!(ctx.resource_refusal(), Some(refusal));
-            Ok::<_, CodecError>((output, refusal.used))
-        })
-        .unwrap_or_else(|error| panic!("service fixture failed before {operation}: {error}"));
+    let (service_output, service_work_bound) = crate::test_support::with_service_context(|ctx| {
+        let output = run(ctx)?;
+        assert_eq!(ctx.resource_refusal(), None);
+        let CodecError::ResourceLimit(refusal) = ctx
+            .charge_work(u64::MAX, "test service work bound")
+            .expect_err("maximum work charge exceeds the remaining service allowance")
+        else {
+            panic!("service work probe must refuse")
+        };
+        assert_eq!(
+            refusal.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
+        assert_eq!(refusal.operation, "test service work bound");
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+        Ok::<_, CodecError>((output, refusal.used))
+    })
+    .unwrap_or_else(|error| panic!("service fixture failed before {operation}: {error}"));
     assert!(service_work_bound > 0, "service fixture must charge work");
     assert_service_output(service_output);
 
@@ -482,13 +537,7 @@ fn refined_surface_record_slots_propagate_work_refusal() {
                 kind: AnalyticSurfaceKind::Plane,
             })];
             let mut surfaces = [None];
-            refine_consolidated_analytic_surfaces(
-                ctx,
-                &[],
-                &[],
-                &mut surfaces,
-                &surface_records,
-            )
+            refine_consolidated_analytic_surfaces(ctx, &[], &[], &mut surfaces, &surface_records)
         },
         |refined| assert!(refined.is_empty()),
     );
@@ -506,14 +555,8 @@ fn native_edge_face_support_rows_propagate_work_refusal() {
                 geometry: StandardCurveGeometry::Line,
             }];
             let mut edge_faces = [[0, 0]];
-            apply_standard_native_edge_faces(
-                ctx,
-                &mut edge_faces,
-                &supports,
-                &[],
-                &HashMap::new(),
-            )
-            .map(|_| edge_faces)
+            apply_standard_native_edge_faces(ctx, &mut edge_faces, &supports, &[], &HashMap::new())
+                .map(|_| edge_faces)
         },
         |edge_faces| assert_eq!(edge_faces, [[0, 0]]),
     );
@@ -533,12 +576,8 @@ fn native_endpoint_evidence_rows_propagate_work_refusal() {
         let scan = crate::container::scan_bytes(ctx, bytes.clone())
             .expect("service profile admits the compatible endpoint fixture");
         assert_eq!(
-            crate::families::standard::records::standard_vertex_roster(
-                ctx,
-                &scan.data,
-                4,
-            )
-            .expect("service budget admits roster scan"),
+            crate::families::standard::records::standard_vertex_roster(ctx, &scan.data, 4,)
+                .expect("service budget admits roster scan"),
             Some(vec![100, 101, 102, 103])
         );
         let edges = crate::families::b5::graph::edge_vertex_references(ctx, &scan.data)
@@ -555,30 +594,33 @@ fn native_endpoint_evidence_rows_propagate_work_refusal() {
         .expect("the endpoint fixture reaches standard topology");
         assert_eq!(output.ir.model.faces.len(), 4);
         assert_eq!(output.ir.model.edges.len(), 6);
-            assert_eq!(
-                output
-                    .report
-                    .coverage
-                    .get("attached_standard_topology_count"),
-                Some(&1),
-                "tetrahedron service coverage: {:#?}", output.report.coverage
-            );
-            assert_eq!(
-                output
-                    .report
-                    .coverage
-                    .get("standard_topology_native_endpoint_pair_count"),
-                Some(&6),
-                "tetrahedron service coverage: {:#?}", output.report.coverage
-            );
-            assert!(
-                output
-                    .report
-                    .coverage
-                    .get("standard_topology_endpoint_domain_choice_count")
-                    .is_some_and(|count| *count > 0),
-                "tetrahedron service coverage: {:#?}", output.report.coverage
-            );
+        assert_eq!(
+            output
+                .report
+                .coverage
+                .get("attached_standard_topology_count"),
+            Some(&1),
+            "tetrahedron service coverage: {:#?}",
+            output.report.coverage
+        );
+        assert_eq!(
+            output
+                .report
+                .coverage
+                .get("standard_topology_native_endpoint_pair_count"),
+            Some(&6),
+            "tetrahedron service coverage: {:#?}",
+            output.report.coverage
+        );
+        assert!(
+            output
+                .report
+                .coverage
+                .get("standard_topology_endpoint_domain_choice_count")
+                .is_some_and(|count| *count > 0),
+            "tetrahedron service coverage: {:#?}",
+            output.report.coverage
+        );
         assert!(output
             .ir
             .model
@@ -743,7 +785,6 @@ fn repeated_face_geometry_rows_propagate_work_refusal() {
     );
 }
 
-
 fn assert_collection_refusal<T>(
     operation: &'static str,
     service: impl FnOnce(),
@@ -798,8 +839,7 @@ fn standard_population_selection_collection_propagates_slot_refusal() {
         "catia_standard_population_selections",
         || {
             crate::test_support::with_service_context(|ctx| {
-                let selections = select(ctx)
-                    .expect("service profile admits population selection");
+                let selections = select(ctx).expect("service profile admits population selection");
                 let Some((first, rest)) = selections else {
                     panic!("source-closed population pair fixture did not pair");
                 };
@@ -824,13 +864,9 @@ fn two_source_closed_tetrahedron_populations() -> Vec<u8> {
             .as_deref()
             .expect("tetrahedron has MainDataStream");
         let brep = scan.brep.as_deref().expect("tetrahedron has BREP");
-        let supports = crate::families::standard::records::standard_curve_supports(
-            ctx,
-            brep,
-            4,
-            Some(6),
-        )
-        .expect("service profile admits source support scan");
+        let supports =
+            crate::families::standard::records::standard_curve_supports(ctx, brep, 4, Some(6))
+                .expect("service profile admits source support scan");
         assert_eq!(supports.len(), 6);
         let support_start = supports[0].pos;
         assert!(support_start < main.len());
@@ -878,8 +914,7 @@ fn standard_plane_parameter_map_propagates_slot_refusal() {
         "catia_plane_param_map",
         || {
             crate::test_support::with_service_context(|ctx| {
-                let output = decode(ctx)
-                    .expect("service profile admits standard decode");
+                let output = decode(ctx).expect("service profile admits standard decode");
                 let output = output.expect("standard CATPart reaches the plane parameter map");
                 assert_eq!(output.ir.model.surfaces.len(), 2);
                 assert_eq!(output.ir.model.curves.len(), 1);

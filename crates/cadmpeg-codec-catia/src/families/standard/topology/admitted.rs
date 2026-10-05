@@ -20,10 +20,7 @@ impl Boundary {
             return Ok(None);
         };
         let mut next_start = first.start_vertex;
-        for coedge in ctx.admit_iter(
-            coedges.as_slice(),
-            "catia_closed_boundary_admission",
-        )? {
+        for coedge in ctx.admit_iter(coedges.as_slice(), "catia_closed_boundary_admission")? {
             if coedge.start_vertex != next_start {
                 return Ok(None);
             }
@@ -88,15 +85,13 @@ impl StandardTopology {
                     return Ok(None);
                 };
                 if ctx
-                    .admit_iter(
-                        boundary.coedges(),
-                        "catia_topology_reference_admission",
-                    )?
+                    .admit_iter(boundary.coedges(), "catia_topology_reference_admission")?
                     .any(|coedge| {
-                    coedge.edge_row >= edge_rows.len()
-                        || coedge.start_vertex >= logical_vertex_count
-                        || coedge.end_vertex >= logical_vertex_count
-                }) {
+                        coedge.edge_row >= edge_rows.len()
+                            || coedge.start_vertex >= logical_vertex_count
+                            || coedge.end_vertex >= logical_vertex_count
+                    })
+                {
                     return Ok(None);
                 }
                 ctx.push_vec(

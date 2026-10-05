@@ -625,7 +625,13 @@ pub(in crate::families) fn b2_use_metadata_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2UseMetadata>, CodecError> {
     let mut uses = Vec::new();
-    for frame in family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x06, "catia_b2_family_record_scan")? {
+    for frame in family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x06,
+        "catia_b2_family_record_scan",
+    )? {
         let payload = ctx.copy_slice(&data[frame.payload..frame.end], "catia_b2_use_payload")?;
         let sense = match payload.last() {
             Some(0x84) => Some(B2UseSense::Sense84),
@@ -725,11 +731,18 @@ pub(in crate::families) fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
 }
 
 pub(crate) fn b2_edge_nodes_from_records<'a>(
-ctx: &DecodeContext<'_>,
-data: &'a [u8],
-records: &'a [ConsolidatedRecord],
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2EdgeNode> + 'a, CodecError> {
-Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x5e, "catia_b2_edge_nodes_records")?.filter_map(move |frame| {
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x5e,
+        "catia_b2_edge_nodes_records",
+    )?
+    .filter_map(move |frame| {
         let token_start = frame.pos.checked_add(4)?;
         let mut token_end = token_start;
         let header_value = compact_int(data, &mut token_end)?;
@@ -791,7 +804,10 @@ pub(crate) fn b2_cone_faces(
     let Some(last) = data.len().checked_sub(5) else {
         return Ok(faces);
     };
-    for (pos, _) in ctx.admit_iter(&data[..last], "catia_b2_cone_face_byte_scan")?.enumerate() {
+    for (pos, _) in ctx
+        .admit_iter(&data[..last], "catia_b2_cone_face_byte_scan")?
+        .enumerate()
+    {
         let Some(width) = data[pos]
             .checked_sub(0xb1)
             .filter(|width| (1..=3).contains(width))
@@ -810,7 +826,8 @@ pub(crate) fn b2_cone_faces(
         if end > data.len() || end - payload < 0x20 {
             continue;
         }
-        let header_token = ctx.admit_iter(&data[pos + 4..payload], "catia_b2_cone_face_header_scan")?
+        let header_token = ctx
+            .admit_iter(&data[pos + 4..payload], "catia_b2_cone_face_header_scan")?
             .enumerate()
             .fold(0u32, |value, (shift, byte)| {
                 value | (u32::from(*byte) << (8 * shift))
@@ -866,7 +883,13 @@ pub(crate) fn b2_reference_lists_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2ReferenceList>, CodecError> {
     let mut lists = Vec::new();
-    for frame in family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x37, "catia_b2_family_record_scan")? {
+    for frame in family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x37,
+        "catia_b2_family_record_scan",
+    )? {
         if frame.header_token != 5
             || !matches!(frame.end - frame.payload, 0x22 | 0x24 | 0x26)
             || frame.end.checked_sub(8).and_then(|at| f64_le(data, at)) != Some(FiniteReal::ONE)
@@ -991,21 +1014,23 @@ fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
 }
 
 pub(crate) fn b2_owner_packets_from_records<'a>(
-ctx: &DecodeContext<'_>,
-data: &'a [u8],
-records: &'a [ConsolidatedRecord],
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2OwnerPacket> + 'a, CodecError> {
-Ok(b2_owner_frames(ctx, records)?.filter_map(|(frame, source_index)| {
-        let mut candidates = [
-            B2OwnerReferenceEncoding::TaggedU16Strong,
-            B2OwnerReferenceEncoding::WidthCodedStrong,
-            B2OwnerReferenceEncoding::AllCompact,
-        ]
-        .into_iter()
-        .filter_map(|encoding| b2_fixed_owner_packet(data, frame, source_index, encoding));
-        let packet = candidates.next()?;
-        candidates.next().is_none().then_some(packet)
-    }))
+    Ok(
+        b2_owner_frames(ctx, records)?.filter_map(|(frame, source_index)| {
+            let mut candidates = [
+                B2OwnerReferenceEncoding::TaggedU16Strong,
+                B2OwnerReferenceEncoding::WidthCodedStrong,
+                B2OwnerReferenceEncoding::AllCompact,
+            ]
+            .into_iter()
+            .filter_map(|encoding| b2_fixed_owner_packet(data, frame, source_index, encoding));
+            let packet = candidates.next()?;
+            candidates.next().is_none().then_some(packet)
+        }),
+    )
 }
 
 /// Resolve backward-distance identities in fixed-nine owner packets within
@@ -1250,25 +1275,20 @@ pub(crate) fn b2_owner_charts_from_records(
             {
                 return Ok(None);
             }
-            let Some(owner) = owners.get(&(owner_record.source_index(), owner_record.byte_offset()))
+            let Some(owner) =
+                owners.get(&(owner_record.source_index(), owner_record.byte_offset()))
             else {
                 return Ok(None);
             };
             let Some(bridge) = owner_chart_bridge(ctx, data, references, carrier_kind)? else {
                 return Ok(None);
             };
-            let (
-                Some(first_point),
-                Some(second_point),
-                Some(third_point),
-                Some(fourth_point),
-            ) = (
+            let (Some(first_point), Some(second_point), Some(third_point), Some(fourth_point)) = (
                 parameter_points.get(&side_05.byte_offset()),
                 parameter_points.get(&side_09.byte_offset()),
                 parameter_points.get(&side_0d.byte_offset()),
                 parameter_points.get(&side_11.byte_offset()),
-            )
-            else {
+            ) else {
                 return Ok(None);
             };
             let points = [first_point, second_point, third_point, fourth_point];
@@ -1308,92 +1328,92 @@ fn owner_chart_bridge(
         "catia_b2_owner_chart_bridge_record_scan",
     )?;
     Ok((|| {
-    let frame = frames.next()?;
-    if frames.next().is_some() {
-        return None;
-    }
-    if frame.header_token != 5 {
-        return None;
-    }
-    let count = match *data.get(frame.payload)? {
-        0x85 => 5,
-        0x88 => 8,
-        _ => return None,
-    };
-    let mut at = frame.payload + 1;
-    let mut references = [None; 8];
-    for slot in references.iter_mut().take(count) {
-        let reference = allocation_reference(data, &mut at)?;
-        *slot = Some(B2OwnerChartBridgeReference {
-            value: reference.value,
-            encoding: reference.encoding,
-        });
-    }
-    if references[0]?.value != 1 {
-        return None;
-    }
-    let carrier_selector = *data.get(at)?;
-    let expected_selector = match carrier {
-        B2OwnerChartCarrier::B28 => 0x05,
-        B2OwnerChartCarrier::B2b => 0x09,
-        B2OwnerChartCarrier::A32 => 0x11,
-    };
-    if carrier_selector != expected_selector {
-        return None;
-    }
-    at += 1;
-    if count == 5 {
-        let unit_token = *data.get(at)?;
-        let construction_radius = PositiveLength::new(f64_le(data, at + 1)?.get())?;
-        let middle_controls = [
-            CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 9)?)?,
-            CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 10)?)?,
-        ];
-        let zeros = data.get(at + 11..at + 19)?;
-        let terminal_control = CatiaOwnerChartTerminalControl::from_byte(*data.get(at + 19)?)?;
-        if unit_token != 0x05
-            || zeros != [0; 8]
-            || data.get(at + 20) != Some(&0x05)
-            || at + 21 != frame.end
-        {
+        let frame = frames.next()?;
+        if frames.next().is_some() {
             return None;
         }
-        let [Some(carrier_surface), Some(support_surface_0), Some(support_surface_1), Some(support_pcurve_0), Some(support_pcurve_1), ..] =
-            references
-        else {
-            return None;
-        };
-        Some(B2OwnerChartBridge::SupportedSurface {
-            pos: frame.pos,
-            carrier_surface,
-            support_surfaces: [support_surface_0, support_surface_1],
-            support_pcurves: [support_pcurve_0, support_pcurve_1],
-            middle_controls,
-            terminal_control,
-            construction_radius,
-        })
-    } else {
-        let control_tokens: [u8; 3] = data.get(at..at + 3)?.try_into().ok()?;
-        let zeros = data.get(at + 3..at + 11)?;
-        let terminal_control = *data.get(at + 11)?;
-        if control_tokens != [0x09, 0x05, 0x05]
-            || zeros != [0; 8]
-            || terminal_control != 0x01
-            || data.get(at + 12) != Some(&0x05)
-            || at + 13 != frame.end
-        {
+        if frame.header_token != 5 {
             return None;
         }
-        let [Some(first), Some(second), Some(third), Some(fourth), Some(fifth), Some(sixth), Some(seventh), Some(eighth)] =
-            references
-        else {
-            return None;
+        let count = match *data.get(frame.payload)? {
+            0x85 => 5,
+            0x88 => 8,
+            _ => return None,
         };
-        Some(B2OwnerChartBridge::Extended {
-            pos: frame.pos,
-            references: [first, second, third, fourth, fifth, sixth, seventh, eighth],
-        })
-    }
+        let mut at = frame.payload + 1;
+        let mut references = [None; 8];
+        for slot in references.iter_mut().take(count) {
+            let reference = allocation_reference(data, &mut at)?;
+            *slot = Some(B2OwnerChartBridgeReference {
+                value: reference.value,
+                encoding: reference.encoding,
+            });
+        }
+        if references[0]?.value != 1 {
+            return None;
+        }
+        let carrier_selector = *data.get(at)?;
+        let expected_selector = match carrier {
+            B2OwnerChartCarrier::B28 => 0x05,
+            B2OwnerChartCarrier::B2b => 0x09,
+            B2OwnerChartCarrier::A32 => 0x11,
+        };
+        if carrier_selector != expected_selector {
+            return None;
+        }
+        at += 1;
+        if count == 5 {
+            let unit_token = *data.get(at)?;
+            let construction_radius = PositiveLength::new(f64_le(data, at + 1)?.get())?;
+            let middle_controls = [
+                CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 9)?)?,
+                CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 10)?)?,
+            ];
+            let zeros = data.get(at + 11..at + 19)?;
+            let terminal_control = CatiaOwnerChartTerminalControl::from_byte(*data.get(at + 19)?)?;
+            if unit_token != 0x05
+                || zeros != [0; 8]
+                || data.get(at + 20) != Some(&0x05)
+                || at + 21 != frame.end
+            {
+                return None;
+            }
+            let [Some(carrier_surface), Some(support_surface_0), Some(support_surface_1), Some(support_pcurve_0), Some(support_pcurve_1), ..] =
+                references
+            else {
+                return None;
+            };
+            Some(B2OwnerChartBridge::SupportedSurface {
+                pos: frame.pos,
+                carrier_surface,
+                support_surfaces: [support_surface_0, support_surface_1],
+                support_pcurves: [support_pcurve_0, support_pcurve_1],
+                middle_controls,
+                terminal_control,
+                construction_radius,
+            })
+        } else {
+            let control_tokens: [u8; 3] = data.get(at..at + 3)?.try_into().ok()?;
+            let zeros = data.get(at + 3..at + 11)?;
+            let terminal_control = *data.get(at + 11)?;
+            if control_tokens != [0x09, 0x05, 0x05]
+                || zeros != [0; 8]
+                || terminal_control != 0x01
+                || data.get(at + 12) != Some(&0x05)
+                || at + 13 != frame.end
+            {
+                return None;
+            }
+            let [Some(first), Some(second), Some(third), Some(fourth), Some(fifth), Some(sixth), Some(seventh), Some(eighth)] =
+                references
+            else {
+                return None;
+            };
+            Some(B2OwnerChartBridge::Extended {
+                pos: frame.pos,
+                references: [first, second, third, fourth, fifth, sixth, seventh, eighth],
+            })
+        }
     })())
 }
 
@@ -1502,23 +1522,23 @@ fn b2_fixed_owner_packet(
 }
 
 fn b2_owner_frames<'a>(
-ctx: &DecodeContext<'_>,
-records: &'a [ConsolidatedRecord],
+    ctx: &DecodeContext<'_>,
+    records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = (ConsolidatedFrame, usize)> + 'a, CodecError> {
-Ok(ctx
-    .admit_iter(records, "catia_b2_owner_packet_records")?
-    .filter(|record| record.family() == ConsolidatedFamily::B && record.class() == 0x62)
-    .filter_map(|record| {
-        Some((
-            ConsolidatedFrame {
-                pos: record.byte_offset(),
-                payload: record.payload()?.start,
-                end: record.range()?.end,
-                header_token: record.header_token(),
-            },
-            record.source_index(),
-        ))
-    }))
+    Ok(ctx
+        .admit_iter(records, "catia_b2_owner_packet_records")?
+        .filter(|record| record.family() == ConsolidatedFamily::B && record.class() == 0x62)
+        .filter_map(|record| {
+            Some((
+                ConsolidatedFrame {
+                    pos: record.byte_offset(),
+                    payload: record.payload()?.start,
+                    end: record.range()?.end,
+                    header_token: record.header_token(),
+                },
+                record.source_index(),
+            ))
+        }))
 }
 
 fn compact_owner_identity(data: &[u8], at: &mut usize) -> Option<(u32, B2OwnerIdentityEncoding)> {
@@ -1584,7 +1604,13 @@ pub(crate) fn b2_counted_61_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2Counted61>, CodecError> {
     let mut output = Vec::new();
-    for frame in family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x61, "catia_b2_family_record_scan")? {
+    for frame in family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x61,
+        "catia_b2_family_record_scan",
+    )? {
         let Some(count) = data
             .get(frame.payload)
             .and_then(|byte| byte.checked_sub(0x80))
@@ -1653,7 +1679,13 @@ pub(crate) fn b2_long_61_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2Long61>, CodecError> {
     let mut output = Vec::new();
-    for frame in family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x61, "catia_b2_family_record_scan")? {
+    for frame in family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x61,
+        "catia_b2_family_record_scan",
+    )? {
         let Some(payload_len) = frame.end.checked_sub(frame.payload) else {
             continue;
         };
@@ -1688,7 +1720,8 @@ pub(crate) fn b2_long_61_from_records(
         }
         if !members_view.is_empty()
             || members.is_empty()
-            || ctx.admit_iter(&members, "catia_b2_long61_member_order")?
+            || ctx
+                .admit_iter(&members, "catia_b2_long61_member_order")?
                 .windows(NonZeroUsize::new(2).ok_or_else(|| {
                     ctx.refuse_codec_limit("catia_b2_long61_member_order", u64::MAX, u64::MAX)
                 })?)
@@ -1799,7 +1832,14 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2FaceNode5f> + 'a, CodecError> {
-    Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x5f, "catia_b2_family_record_scan")?.filter_map(|frame| {
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x5f,
+        "catia_b2_family_record_scan",
+    )?
+    .filter_map(|frame| {
         if data.get(frame.payload) != Some(&0x82) {
             return None;
         }
@@ -1916,9 +1956,7 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
     }
     let counted_owners = b2_counted_owners_from_records(ctx, data, records)?;
     let (owners, _owners_reservation) = ctx.collect_scoped_btree_map(
-        counted_owners
-            .into_iter()
-            .map(|value| (value.pos, value)),
+        counted_owners.into_iter().map(|value| (value.pos, value)),
         "catia_b2_counted_owner_index",
     )?;
     let mut owners = owners;
@@ -1973,11 +2011,18 @@ fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
 }
 
 pub(crate) fn b2_parameter_points_from_records<'a>(
-ctx: &DecodeContext<'_>,
-data: &'a [u8],
-records: &'a [ConsolidatedRecord],
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2ParameterPoint> + 'a, CodecError> {
-Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x18, "catia_b2_parameter_points_records")?.filter_map(|frame| {
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x18,
+        "catia_b2_parameter_points_records",
+    )?
+    .filter_map(|frame| {
         if frame.header_token != 5 {
             return None;
         }
@@ -2179,7 +2224,13 @@ pub(in crate::families) fn b2_class25_descriptors_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2Class25Descriptor>, CodecError> {
     let mut descriptors = Vec::new();
-    for frame in family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x18, "catia_b2_family_record_scan")? {
+    for frame in family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x18,
+        "catia_b2_family_record_scan",
+    )? {
         let parsed = (|| {
             if frame.header_token != 5 {
                 return None;
@@ -2374,8 +2425,14 @@ pub(in crate::families) fn b2_spatial_circles_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2SpatialCircle> + 'a, CodecError> {
-    Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x0f, "catia_b2_family_record_scan")?
-        .filter_map(|frame| parse_b2_spatial_circle(data, frame)))
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x0f,
+        "catia_b2_family_record_scan",
+    )?
+    .filter_map(|frame| parse_b2_spatial_circle(data, frame)))
 }
 
 fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2SpatialCircle> {
@@ -2425,7 +2482,13 @@ pub(in crate::families) fn b2_nurbs_curves_from_records(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<B2NurbsCurve>, CodecError> {
     let mut curves = Vec::new();
-    for frame in family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x16, "catia_b2_family_record_scan")? {
+    for frame in family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x16,
+        "catia_b2_family_record_scan",
+    )? {
         if let Some(curve) = parse_b2_nurbs_curve(ctx, data, frame, refusal)? {
             ctx.push_vec(&mut curves, curve, "catia_b2_nurbs_curves")?;
         }
@@ -2554,8 +2617,7 @@ fn parse_b2_nurbs_curve(
         .admit_iter(weight_bytes, "catia_b2_nurbs_weight_emit")?
         .chunks(weight_width)
     {
-        let Some(weight) = f64_le(chunk, 0)
-            .and_then(|weight| PositiveReal::new(weight.get()))
+        let Some(weight) = f64_le(chunk, 0).and_then(|weight| PositiveReal::new(weight.get()))
         else {
             return Ok(None);
         };
@@ -2813,7 +2875,11 @@ pub(crate) fn b2_embedded_cylinders_from_records<'a>(
     records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = Result<B2EmbeddedCylinder, CodecError>> + 'a, CodecError> {
     let Some(window_size) = NonZeroUsize::new(3) else {
-        return Err(ctx.refuse_codec_limit("catia_b2_embedded_cylinder_marker_scan", u64::MAX, u64::MAX));
+        return Err(ctx.refuse_codec_limit(
+            "catia_b2_embedded_cylinder_marker_scan",
+            u64::MAX,
+            u64::MAX,
+        ));
     };
     let mut groups = b2_groups_from_records(ctx, data, records)?.peekable();
     let mut active = None::<(usize, usize, usize)>;
@@ -2826,10 +2892,15 @@ pub(crate) fn b2_embedded_cylinders_from_records<'a>(
             if let Some((wrapper_pos, search, end)) = active.as_mut() {
                 while *search + 3 <= *end {
                     let relative = match ctx
-                        .admit_iter(&data[*search..*end], "catia_b2_embedded_cylinder_marker_scan")
-                        .map(|bytes| bytes.windows(window_size)
-                            .position(|bytes| bytes == [0x03, 0x28, 0x5a]))
-                    {
+                        .admit_iter(
+                            &data[*search..*end],
+                            "catia_b2_embedded_cylinder_marker_scan",
+                        )
+                        .map(|bytes| {
+                            bytes
+                                .windows(window_size)
+                                .position(|bytes| bytes == [0x03, 0x28, 0x5a])
+                        }) {
                         Ok(Some(relative)) => relative,
                         Ok(None) => break,
                         Err(error) => {
@@ -2891,7 +2962,13 @@ fn b2_construction_offset_supports_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2OffsetSupport>, CodecError> {
     let mut out = Vec::new();
-    for frame in family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x30, "catia_b2_family_record_scan")? {
+    for frame in family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x30,
+        "catia_b2_family_record_scan",
+    )? {
         let pos = frame.pos;
         let payload = frame.payload;
         if frame.header_token != 5 || data.get(payload) != Some(&0x05) {
@@ -2965,7 +3042,14 @@ pub(crate) fn b2_cones_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2Cone> + 'a, CodecError> {
-    Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x29, "catia_b2_family_record_scan")?.filter_map(move |frame| {
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x29,
+        "catia_b2_family_record_scan",
+    )?
+    .filter_map(move |frame| {
         let pos = frame.pos;
         let p = frame.payload;
         if frame.end - p != 0xb8 {
@@ -3070,7 +3154,14 @@ pub(crate) fn b2_revolutions_from_records<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2Revolution> + 'a, CodecError> {
-    Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x2d, "catia_b2_family_record_scan")?.filter_map(move |frame| {
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x2d,
+        "catia_b2_family_record_scan",
+    )?
+    .filter_map(move |frame| {
         let p = frame.payload;
         let Ok(reference_token) = data.get(p).copied().ok_or(()).and_then(|token| {
             crate::native::CatiaRevolutionReferenceToken::try_from(token).map_err(|_| ())
@@ -3238,11 +3329,18 @@ fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
 }
 
 pub(crate) fn b2_line_profiles_from_records<'a>(
-ctx: &DecodeContext<'_>,
-data: &'a [u8],
-records: &'a [ConsolidatedRecord],
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2LineProfile> + 'a, CodecError> {
-Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x0e, "catia_b2_line_profiles_records")?.filter_map(|frame| {
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x0e,
+        "catia_b2_line_profiles_records",
+    )?
+    .filter_map(|frame| {
         if frame.end - frame.payload != 9 * 8 {
             return None;
         }
@@ -3276,11 +3374,18 @@ fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
 }
 
 pub(crate) fn b2_tori_from_records<'a>(
-ctx: &DecodeContext<'_>,
-data: &'a [u8],
-records: &'a [ConsolidatedRecord],
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2Torus> + 'a, CodecError> {
-Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x2b, "catia_b2_tori_records")?.filter_map(move |frame| {
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x2b,
+        "catia_b2_tori_records",
+    )?
+    .filter_map(move |frame| {
         let p = frame.payload;
         (frame.end.checked_sub(p) == Some(200)).then_some(())?;
         let values = read_f64_array::<25>(data, p)?;
@@ -3343,11 +3448,18 @@ fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
 }
 
 pub(crate) fn b2_spheres_from_records<'a>(
-ctx: &DecodeContext<'_>,
-data: &'a [u8],
-records: &'a [ConsolidatedRecord],
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2Sphere> + 'a, CodecError> {
-Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x2a, "catia_b2_spheres_records")?.filter_map(move |frame| {
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x2a,
+        "catia_b2_spheres_records",
+    )?
+    .filter_map(move |frame| {
         let p = frame.payload;
         (frame.end.checked_sub(p) == Some(152)).then_some(())?;
         let values = read_f64_array::<19>(data, p)?;
@@ -3417,11 +3529,18 @@ fn b2_groups(data: &[u8]) -> Vec<B2Group> {
 }
 
 pub(crate) fn b2_groups_from_records<'a>(
-ctx: &DecodeContext<'_>,
-data: &'a [u8],
-records: &'a [ConsolidatedRecord],
+    ctx: &DecodeContext<'_>,
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
 ) -> Result<impl Iterator<Item = B2Group> + 'a, CodecError> {
-Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x60, "catia_b2_groups_records")?.filter_map(move |frame| {
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x60,
+        "catia_b2_groups_records",
+    )?
+    .filter_map(move |frame| {
         let mut at = frame.payload;
         if compact_int(data, &mut at)? != 32 {
             return None;
@@ -3486,37 +3605,42 @@ pub(crate) fn b2_cylinders_from_records<'a>(
 ) -> Result<impl Iterator<Item = Result<B2Cylinder, CodecError>> + 'a, CodecError> {
     let mut embedded = b2_embedded_cylinders_from_records(ctx, data, records)?.peekable();
     let mut failed = false;
-    Ok(family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x28, "catia_b2_cylinder_records")?.filter_map(
-        move |frame| {
-            if failed {
-                return None;
-            }
-            let Some(cylinder) = parse_b2_cylinder(data, frame) else {
-                return None;
-            };
-            loop {
-                match embedded.peek() {
-                    Some(Err(_)) => {
-                        failed = true;
-                        return match embedded.next() {
-                            Some(Err(error)) => Some(Err(error)),
-                            _ => None,
-                        };
-                    }
-                    Some(Ok(entry)) if entry.pos < cylinder.pos => match embedded.next() {
-                        Some(Ok(_)) => {}
-                        Some(Err(error)) => {
-                            failed = true;
-                            return Some(Err(error));
-                        }
-                        None => return Some(Ok(cylinder)),
-                    },
-                    Some(Ok(entry)) if entry.pos == cylinder.pos => return None,
-                    _ => return Some(Ok(cylinder)),
+    Ok(family_frames_from_records(
+        ctx,
+        records,
+        ConsolidatedFamily::B,
+        0x28,
+        "catia_b2_cylinder_records",
+    )?
+    .filter_map(move |frame| {
+        if failed {
+            return None;
+        }
+        let Some(cylinder) = parse_b2_cylinder(data, frame) else {
+            return None;
+        };
+        loop {
+            match embedded.peek() {
+                Some(Err(_)) => {
+                    failed = true;
+                    return match embedded.next() {
+                        Some(Err(error)) => Some(Err(error)),
+                        _ => None,
+                    };
                 }
+                Some(Ok(entry)) if entry.pos < cylinder.pos => match embedded.next() {
+                    Some(Ok(_)) => {}
+                    Some(Err(error)) => {
+                        failed = true;
+                        return Some(Err(error));
+                    }
+                    None => return Some(Ok(cylinder)),
+                },
+                Some(Ok(entry)) if entry.pos == cylinder.pos => return None,
+                _ => return Some(Ok(cylinder)),
             }
-        },
-    ))
+        }
+    }))
 }
 
 fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder> {
@@ -3772,7 +3896,14 @@ pub(in crate::families) fn b2_offset_supports_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2OffsetSupport>, CodecError> {
     let mut offsets = ctx.collect_vec(
-        family_frames_from_records(ctx, records, ConsolidatedFamily::B, 0x31, "catia_b2_family_record_scan")?.filter_map(|frame| {
+        family_frames_from_records(
+            ctx,
+            records,
+            ConsolidatedFamily::B,
+            0x31,
+            "catia_b2_family_record_scan",
+        )?
+        .filter_map(|frame| {
             if frame.header_token != 5 {
                 return None;
             }
@@ -3848,7 +3979,9 @@ pub(in crate::families) fn offset_support_carriers(
                 && v0 >= v_min - v_tolerance
                 && v1 <= v_max + v_tolerance;
             let has_v_limit = |limit: f64| -> Result<bool, CodecError> {
-                for knot in ctx.admit_iter(surface.v_knots().as_slice(), "catia_b2_offset_knot_scan")? {
+                for knot in
+                    ctx.admit_iter(surface.v_knots().as_slice(), "catia_b2_offset_knot_scan")?
+                {
                     if (*knot - limit).abs() <= v_tolerance {
                         return Ok(true);
                     }

@@ -139,7 +139,12 @@ mod tests {
 
     #[test]
     fn malformed_history_identity_preserves_error_text_and_format_refusal() {
-        for value in ["short", "catia:graph:object#", "catia:graph:object#a#b", "catia:graph:object#é\n"] {
+        for value in [
+            "short",
+            "catia:graph:object#",
+            "catia:graph:object#a#b",
+            "catia:graph:object#é\n",
+        ] {
             let expected = CodecError::malformed(
                 cadmpeg_ir::ids::Identity::new(value).expect_err("invalid identity"),
             );
@@ -155,7 +160,8 @@ mod tests {
             assert_eq!(actual, expected);
         }
         let (result, original) = crate::test_support::with_retained_limit(5, |ctx| {
-            let result = neutral_history_id(ctx, "short", &cadmpeg_ir::identity_component!("feature"));
+            let result =
+                neutral_history_id(ctx, "short", &cadmpeg_ir::identity_component!("feature"));
             (result, ctx.resource_refusal())
         });
         let Err(CodecError::ResourceLimit(limit)) = result else {

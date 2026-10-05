@@ -91,10 +91,9 @@ fn b2_circle_frame_scan_propagates_work_refusal() {
     let refused = crate::test_support::with_work_refusal(operation, |ctx| {
         let result = (|| {
             ctx.collect_vec(
-                ctx.admit_iter(&records, operation)?
-                    .filter_map(|record| {
-                        crate::families::b2::records::b2_circle_from_record(&bytes, record)
-                    }),
+                ctx.admit_iter(&records, operation)?.filter_map(|record| {
+                    crate::families::b2::records::b2_circle_from_record(&bytes, record)
+                }),
                 "catia_b2_circles_test",
             )
             .map(|_| ())
