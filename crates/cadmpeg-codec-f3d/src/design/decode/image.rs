@@ -6,7 +6,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::container::ContainerScan;
 use crate::design::decode::record_streams::in_stream;
 use crate::design::decode::sketch::{
-    append_percent_encoded, native_scope_charged, percent_encoded_len,
+    append_percent_encoded, native_scope_charged, native_scope_scoped, percent_encoded_len,
 };
 use crate::design::decode::text::rsplit_once_ascii;
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
@@ -79,7 +79,8 @@ pub(super) fn embedded_image_asset(
 }
 
 /// The media type a file name's extension states. A name that starts with its
-/// only `.` has no extension.
+/// only `.` has no extension. Each extension test reads at most the four
+/// bytes of a candidate.
 fn image_media_type(
     ctx: &DecodeContext<'_>,
     file_name: &str,
@@ -96,7 +97,7 @@ fn image_media_type(
         ("jpeg", "image/jpeg"),
         ("png", "image/png"),
     ] {
-        if ctx.eq_ignore_ascii_case(extension, candidate, OPERATION)? {
+        if extension.eq_ignore_ascii_case(candidate) {
             return Ok(Some(media_type));
         }
     }
@@ -104,6 +105,8 @@ fn image_media_type(
 }
 
 /// Decode image scopes in their owning streams, ordered by native identity.
+/// Each parsed image is held under its own scoped reservation until the
+/// duplicates of its identity are dropped; the kept images become retained.
 pub(super) fn decode_scoped_images<T>(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -117,35 +120,53 @@ pub(super) fn decode_scoped_images<T>(
     ) -> Result<Option<T>, CodecError>,
     id: impl Fn(&T) -> &str,
 ) -> Result<Vec<T>, CodecError> {
-    let mut images = Vec::new();
+    let mut scratch = ctx.reserve_scoped(0, "f3d scoped image candidates")?;
+    let mut parsed = Vec::new();
     for entry in ctx
         .admit_iter(&scan.entries, "scan F3D image stream entries")?
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = native_scope_charged(ctx, &entry.name)?;
+        let (_stream_storage, stream) = native_scope_scoped(ctx, &entry.name)?;
         for scope in ctx.admit_iter(scopes, "scan F3D image owner scopes")? {
-            if !ctx.equal_bytes(
-                scope.kind_name().as_bytes(),
-                kind.as_str().as_bytes(),
-                "match F3D image owner scope kind",
-            )? || !in_stream(ctx, &scope.id, &stream)?
-            {
+            // The kind is a literal name, so the comparison is constant.
+            if scope.kind_name() != kind.as_str() || !in_stream(ctx, &scope.id, &stream)? {
                 continue;
             }
-            if let Some(image) = parse(ctx, bytes, &entry.name, scope)? {
-                ctx.reserve_vec(&mut images, 1, "f3d scoped image records")?;
-                images.push(image);
+            let (image, storage) = ctx.with_scoped_storage("f3d scoped image records", || {
+                parse(ctx, bytes, &entry.name, scope)
+            })?;
+            if let Some(image) = image {
+                ctx.push_scoped_vec(
+                    &mut scratch,
+                    &mut parsed,
+                    (image, storage),
+                    "f3d scoped image candidates",
+                )?;
             }
         }
     }
     ctx.stable_sort_by(
-        &mut images[..],
-        |value| id(value),
+        &mut parsed[..],
+        |(image, _)| id(image),
         Ord::cmp,
         "sort f3d design image 1",
     )?;
-    images.dedup_by(|a, b| id(a) == id(b));
+    let mut images = Vec::new();
+    for (image, storage) in parsed {
+        ctx.charge_work(1, "dedup f3d design images")?;
+        if let Some(kept) = images.last() {
+            if ctx.equal_bytes(
+                id(kept).as_bytes(),
+                id(&image).as_bytes(),
+                "dedup f3d design images",
+            )? {
+                continue;
+            }
+        }
+        storage.commit()?;
+        ctx.push_vec(&mut images, image, "f3d scoped image records")?;
+    }
     Ok(images)
 }
 
@@ -261,26 +282,33 @@ mod tests {
         let kind = crate::records::feature::scope::DesignFeatureKind::Fillet;
         with_scan(&archive, |scan| {
             for (dimension, operation) in [
-                (ResourceDimension::RetainedBytes, "f3d native stream key"),
+                (
+                    ResourceDimension::MaterializedBytes,
+                    "f3d scoped native stream key",
+                ),
+                (
+                    ResourceDimension::CollectionItems,
+                    "f3d scoped image candidates",
+                ),
                 (
                     ResourceDimension::CollectionItems,
                     "f3d scoped image records",
                 ),
             ] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                if dimension == ResourceDimension::RetainedBytes {
-                    policy.limits.max_retained_bytes = 0;
-                } else {
-                    policy.limits.max_collection_items = 0;
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let error =
+                    crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+                        super::decode_scoped_images(
+                            ctx,
+                            scan,
+                            std::slice::from_ref(&scope),
+                            &kind,
+                            |_, _, _, _| Ok(Some(17_u32)),
+                            |_| "image",
+                        )
+                    });
                 assert!(matches!(
-                    super::decode_scoped_images(
-                        &ctx, scan, std::slice::from_ref(&scope), &kind,
-                        |_, _, _, _| Ok(Some(17_u32)), |_| "image",
-                    ),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(failure)
                         if failure.dimension == dimension && failure.operation == operation
                 ));
             }

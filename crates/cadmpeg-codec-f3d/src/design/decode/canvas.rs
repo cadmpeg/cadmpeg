@@ -5,7 +5,7 @@ use crate::bytes::lp_utf16_bounded_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::image::embedded_image_asset;
-use crate::design::decode::record_streams::{in_stream, record_stream};
+use crate::design::decode::record_streams::{has_stream, record_stream};
 use crate::design::decode::scopes::shared_frames::{exact_indexed_header_at, marked_reference};
 use crate::design::decode::sketch::{next_indexed_record_header, IndexedRecordHeader};
 use crate::design::decode::text::retain_class_tag;
@@ -53,14 +53,12 @@ pub(crate) fn project_canvas_images(
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
     for image in ctx.admit_iter(images, "scan F3D Canvas images")? {
-        let Some(image_stream) = record_stream(ctx, &image.id)? else {
-            continue;
-        };
+        let image_stream = record_stream(ctx, &image.id)?;
         let Some(scope) = ctx.find_by(
             scopes,
             |scope| {
                 Ok(scope.record_index == image.scope_record_index
-                    && in_stream(ctx, &scope.id, image_stream)?)
+                    && has_stream(ctx, &scope.id, image_stream)?)
             },
             "find F3D Canvas image scopes",
         )?
@@ -87,7 +85,11 @@ pub(crate) fn project_canvas_images(
         };
         let (mirror_u, mirror_v) = image.geometry().boundary.mirroring();
         let [minimum, maximum] = image.geometry().boundary.extents();
-        let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
+        // The asset is retained only when it is the first with its ID.
+        let (asset, asset_storage) = ctx.with_scoped_storage("f3d Canvas assets", || {
+            embedded_image_asset(ctx, scan, image.asset_name())
+        })?;
+        let Some(asset) = asset else {
             continue;
         };
         let asset_id = asset
@@ -104,6 +106,7 @@ pub(crate) fn project_canvas_images(
             },
             "find F3D Canvas asset",
         )? {
+            asset_storage.commit()?;
             ctx.push_vec(&mut assets, asset, "f3d Canvas assets")?;
         }
         let (opacity, frame) = image.geometry().payload.decoded();
@@ -150,10 +153,9 @@ pub(crate) fn project_canvas_images(
     Ok(assets)
 }
 
-/// The fixed members of a Canvas geometry record at `geometry_at` whose
-/// paired record opens at `paired_at`.
+/// The fixed members after the prologue of a Canvas geometry record at
+/// `geometry_at` whose paired record opens at `paired_at`.
 struct CanvasGeometryFrame {
-    prologue: DesignCanvasPrologue,
     boundary: DesignCanvasBounds,
     payload: DesignCanvasGeometryPayload,
     plane_entity_suffix: u32,
@@ -182,8 +184,6 @@ fn canvas_geometry_frame(
     geometry_at: usize,
     paired_at: usize,
 ) -> Option<CanvasGeometryFrame> {
-    let prologue =
-        DesignCanvasPrologue::try_from(*bytes_at::<15>(bytes, geometry_at + 11)?).ok()?;
     let paired_component_at = paired_at + 19;
     if !zeros_at::<8>(bytes, paired_at + 11) {
         return None;
@@ -238,7 +238,6 @@ fn canvas_geometry_frame(
         DesignCanvasGeometryPayload::try_from(bytes.get(geometry_at + 69..geometry_at + 146)?)
             .ok()?;
     Some(CanvasGeometryFrame {
-        prologue,
         boundary,
         payload,
         plane_entity_suffix,
@@ -268,6 +267,11 @@ fn parse_canvas_image(
         return Ok(None);
     };
     let geometry_at = geometry.offset;
+    let Some(prologue) = bytes_at::<15>(bytes, geometry_at + 11)
+        .and_then(|prologue| DesignCanvasPrologue::try_from(*prologue).ok())
+    else {
+        return Ok(None);
+    };
     let Some(paired) = next_indexed_record_header(ctx, bytes, geometry_at + 11, carries_geometry)?
     else {
         return Ok(None);
@@ -333,7 +337,7 @@ fn parse_canvas_image(
         geometry_record_index,
         geometry_offset,
         label,
-        frame.prologue,
+        prologue,
         frame.boundary,
         frame.payload,
     ) else {
@@ -571,38 +575,31 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "find F3D Canvas neutral feature")
             );
-            let asset_id_len = crate::ids::neutral_asset_id(ENTRY).as_str().len();
-            let base = 3 + "a.png".len() + crate::ids::native_scope(ENTRY).len() + asset_id_len;
-            for (retained, items, dimension, operation) in [
+            for (dimension, operation) in [
                 (
-                    u64::MAX,
-                    0,
-                    ResourceDimension::CollectionItems,
-                    "f3d Canvas assets",
+                    ResourceDimension::MaterializedBytes,
+                    "f3d embedded image data",
                 ),
                 (
-                    u64::try_from(base + asset_id_len - 1).unwrap(),
-                    u64::MAX,
                     ResourceDimension::RetainedBytes,
                     "f3d image feature asset identifier",
                 ),
+                (ResourceDimension::RetainedBytes, "f3d Canvas assets"),
+                (ResourceDimension::CollectionItems, "f3d Canvas assets"),
             ] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = retained;
-                policy.limits.max_collection_items = items;
-
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = super::project_canvas_images(
-                    &ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&image),
-                    &mut [feature()],
-                );
+                let error =
+                    crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+                        super::project_canvas_images(
+                            ctx,
+                            scan,
+                            std::slice::from_ref(&scope),
+                            std::slice::from_ref(&image),
+                            &mut [feature()],
+                        )
+                    });
                 assert!(matches!(
-                    result,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(failure)
                         if failure.dimension == dimension && failure.operation == operation
                 ));
             }
