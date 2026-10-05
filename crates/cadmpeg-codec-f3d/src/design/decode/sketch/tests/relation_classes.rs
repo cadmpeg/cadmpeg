@@ -341,9 +341,7 @@ fn push_glyph_run(out: &mut Vec<u8>, text: u32, translation: f64) {
 }
 
 fn relation_class_of(type_guid: &str, version: u32) -> Option<SketchRelationClass> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        SketchRelationClass::of(ctx, type_guid, version).unwrap()
-    })
+    SketchRelationClass::of(type_guid, version)
 }
 
 #[test]

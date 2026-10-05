@@ -190,9 +190,7 @@ fn typed_line_accepts_the_referenced_compact_planar_form() {
 }
 
 fn class_of(type_guid: &str, version: u32, module: &str) -> Option<SketchCurveClass> {
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        SketchCurveClass::of(ctx, type_guid, version, module).unwrap()
-    })
+    SketchCurveClass::of(type_guid, version, module)
 }
 
 #[test]
