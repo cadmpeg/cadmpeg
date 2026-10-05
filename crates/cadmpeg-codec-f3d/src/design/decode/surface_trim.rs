@@ -169,12 +169,14 @@ fn exact_surface_trim_operation(
     )? {
         return Ok(None);
     }
-    let chain_records = [
-        surface_trim_chain_record(ctx, first_chain)?,
-        surface_trim_chain_record(ctx, second_chain)?,
-    ];
-    let operation = DesignSurfaceTrimOperation::try_from(
-        crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
+    // The class tags join the entries' storage, which becomes retained only
+    // when the carrier is complete.
+    let operation = entries_storage.with_storage(|| {
+        let chain_records = [
+            surface_trim_chain_record(ctx, first_chain)?,
+            surface_trim_chain_record(ctx, second_chain)?,
+        ];
+        let wire = crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
             id: String::new(),
             scope_record_index: scope.record_index,
             selection_record_index,
@@ -198,8 +200,9 @@ fn exact_surface_trim_operation(
             trailing_value: prefix.trailing_value,
             trailing_value_offset: u64_from_index(prefix.trailing_value_offset),
             trailing_zero_offset: u64_from_index(prefix.trailing_zero_offset),
-        },
-    );
+        };
+        Ok::<_, CodecError>(DesignSurfaceTrimOperation::try_from(wire))
+    })?;
     let Ok(operation) = operation else {
         return Ok(None);
     };
