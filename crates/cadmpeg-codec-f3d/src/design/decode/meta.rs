@@ -844,44 +844,6 @@ pub(super) fn stream_types_by_entity<'a>(
     Ok(by_entity)
 }
 
-/// Complete type-table row keyed by the segment-local dynamic class tag.
-pub(super) fn stream_types_by_class_tag<'a>(
-    ctx: &DecodeContext<'_>,
-    types: &'a [SegmentType],
-    bulk_entry_name: &str,
-) -> Result<HashMap<u32, &'a SegmentType>, CodecError> {
-    let mut by_class_tag = HashMap::new();
-    let Some(prefix) = bulk_entry_name.strip_suffix(BULK_STREAM_SUFFIX) else {
-        return Ok(by_class_tag);
-    };
-    let mut ordinal = 0usize;
-    for design_type in ctx.admit_iter(types, "scan F3D types by class tag")? {
-        let Some(scope) = record_stream(ctx, design_type.id())? else {
-            continue;
-        };
-        if !meta_scope_matches_bulk(ctx, scope, prefix)? {
-            continue;
-        }
-        let this_ordinal = ordinal;
-        ordinal = ordinal.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("F3D type class-tag ordinal", u64::MAX - 1, u64::MAX)
-        })?;
-        let Some(class_tag) = u32::try_from(this_ordinal)
-            .ok()
-            .and_then(|ordinal| ordinal.checked_add(256))
-        else {
-            continue;
-        };
-        ctx.insert_hash_map(
-            &mut by_class_tag,
-            class_tag,
-            design_type,
-            "f3d stream types by class tag",
-        )?;
-    }
-    Ok(by_class_tag)
-}
-
 /// Compare an encoded native `MetaStream` scope with the name prefix of a
 /// sibling `BulkStream` without materializing either name. Each prefix
 /// character is admitted as the comparison reaches it.

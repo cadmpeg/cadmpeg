@@ -2505,8 +2505,11 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
         self.native.design_parameters =
             crate::design::decode::parameters::decode_parameters(ctx, scan)?;
-        self.native.design_entity_headers =
-            crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
+        self.native.design_entity_headers = crate::design::decode::sketch::decode_entity_headers(
+            ctx,
+            scan,
+            &self.native.design_types,
+        )?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
             ctx,
             scan,
@@ -2515,6 +2518,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
             ctx,
             scan,
+            &self.native.design_types,
             &self.native.design_record_headers,
         )?;
         extend_related_design_records(self.ctx, scan, &mut self.native)?;
@@ -2560,10 +2564,13 @@ impl<'a> F3dDecodeSession<'a> {
             points: &self.native.sketch_points,
             curves: &self.native.sketch_curve_identities,
         };
+        // The dimension passes share one index of each record stream.
+        let mut dimension_records = crate::design::decode::sketch::RecordOffsetCache::new(ctx)?;
         self.native.design_dimension_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
             )?
             .try_into()
             .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
@@ -2571,29 +2578,35 @@ impl<'a> F3dDecodeSession<'a> {
             crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
                 &self.native.design_entity_headers,
             )?;
         self.native.design_dimension_presentation_frames =
             crate::design::decode::dimension_frames::decode_dimension_presentation_frames(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
+                &self.native.design_types,
                 &self.native.design_entity_headers,
             )?;
         self.native.design_dimension_locus_groups =
             crate::design::decode::dimension_frames::decode_dimension_locus_groups(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
                 &self.native.design_entity_headers,
             )?;
         self.native.design_dimension_null_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
                 ctx,
                 &dimension_inputs,
+                &mut dimension_records,
                 &self.native.design_dimension_locus_pairs,
                 &self.native.design_dimension_locus_groups,
             )?
             .try_into()
             .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
+        drop(dimension_records);
         crate::design::dimensions::remove_dimension_frame_relations(
             ctx,
             &mut self.native.sketch_relations,

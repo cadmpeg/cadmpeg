@@ -170,25 +170,9 @@ fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "f3d stream types by entity"
     ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::stream_types_by_class_tag(&ctx, &types, &bulk_name)
-        .err()
-        .unwrap();
-    assert!(matches!(error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "f3d stream types by class tag"
-    ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let by_entity = super::stream_types_by_entity(&ctx, &types, &bulk_name).unwrap();
     assert_eq!(by_entity.get(&17), Some(&(type_guid, 7)));
-    let by_class = super::stream_types_by_class_tag(&ctx, &types, &bulk_name).unwrap();
-    assert_eq!(
-        by_class
-            .get(&256)
-            .map(|design_type| design_type.type_guid.as_str()),
-        Some(type_guid)
-    );
     assert!(
         super::stream_types_by_entity(&ctx, &types, "other/BulkStream.dat")
             .unwrap()
