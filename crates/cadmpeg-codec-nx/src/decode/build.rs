@@ -2,9 +2,9 @@
 //! Geometry decode, active-body selection, and inactive-topology prune.
 
 use super::emit::{
-    annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology,
-    retain_unknown_stream_data, retain_unresolved_topology_carriers, source_meta, surface_tag,
-    unknown_stream_metadata,
+    annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology, keep_marks,
+    retain_marked, retain_unknown_stream_data, retain_unresolved_topology_carriers, source_meta,
+    surface_tag, unknown_stream_metadata,
 };
 use super::geometry_work::{
     GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
@@ -1319,6 +1319,7 @@ pub(super) fn try_decode_geometry(
                 curves: &mut curves_by_xmt,
                 pcurves: &pcurves_by_xmt,
                 source_stream: &source_stream,
+                storage: &mut stream_storage,
             },
             &mut annotations,
         )?;
@@ -1958,30 +1959,6 @@ fn extend_endpoint_witnesses(
         }
     }
     Ok(())
-}
-
-/// Visit values once and record which of them `keep` admits. The marks let a
-/// caller release its borrows before [`retain_marked`] edits the arena.
-fn keep_marks<T>(
-    ctx: &DecodeContext<'_>,
-    storage: &mut ScopedReservation<'_>,
-    values: &[T],
-    mut keep: impl FnMut(&T) -> Result<bool, CodecError>,
-    operation: &'static str,
-) -> Result<Vec<bool>, CodecError> {
-    let mut marks = Vec::new();
-    ctx.reserve_scoped_vec(storage, &mut marks, values.len(), operation)?;
-    for value in ctx.admit_iter(values, operation)? {
-        marks.push(keep(value)?);
-    }
-    Ok(marks)
-}
-
-/// Keep the arena values whose mark is set, in order. The marks were produced
-/// by one admitted pass over the same arena.
-fn retain_marked<T>(values: &mut Vec<T>, marks: Vec<bool>) {
-    let mut marks = marks.into_iter();
-    values.retain(|_| marks.next().unwrap_or(false));
 }
 
 /// Add every surface and curve reachable from the used carriers through
