@@ -38,6 +38,16 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 /// The fixed fields of a class-279 derived-instance scope and its class-310
 /// relation record.
 struct DerivedInstanceFrame {
@@ -50,38 +60,50 @@ struct DerivedInstanceFrame {
 }
 
 fn derived_instance_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DerivedInstanceFrame> {
+) -> Result<Option<DerivedInstanceFrame>, CodecError> {
     use derived_instance_279_261 as layout;
     use derived_instance_relation_310 as relation;
     if scope.class_tag.as_str() != "279"
         || scope.paired_class_tag.as_str() != "261"
         || scope.frame_length() != u64_from_index(layout::LEN)
     {
-        return None;
+        return Ok(None);
     }
-    let [&relation_record_index] = scope.reference_members().values_array::<1>()?;
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let [&relation_record_index] = try_some!(scope.reference_members().values_array::<1>());
+    let start = try_some!(usize::try_from(scope.byte_offset()).ok());
     if bytes.get(start + layout::REFERENCE_MARKER) != Some(&layout::REFERENCE_MARKER_VALUE)
         || !zeros_at::<{ layout::REFERENCE_COUNT - (layout::REFERENCE_RECORD_INDEX + 4) }>(
             bytes,
             start + layout::REFERENCE_RECORD_INDEX + 4,
         )
-        || View::u32_le_at(bytes, start + layout::REFERENCE_COUNT)? != layout::REFERENCE_COUNT_VALUE
-        || marked_record_reference(bytes, start + layout::RELATION_REFERENCE)?
-            != relation_record_index
+        || try_some!(View::u32_le_at(bytes, start + layout::REFERENCE_COUNT))
+            != layout::REFERENCE_COUNT_VALUE
+        || try_some!(marked_record_reference(
+            bytes,
+            start + layout::RELATION_REFERENCE
+        )) != relation_record_index
         || bytes.get(start + layout::RELATION_REFERENCE + 11) != Some(&0)
     {
-        return None;
+        return Ok(None);
     }
-    let reference_record_index = View::u32_le_at(bytes, start + layout::REFERENCE_RECORD_INDEX)?;
+    let reference_record_index = try_some!(View::u32_le_at(
+        bytes,
+        start + layout::REFERENCE_RECORD_INDEX
+    ));
     let transform_offset = start + layout::TRANSFORM;
-    let transform = rigid_transform_at(bytes, transform_offset)?;
-    let relation_at = records.first_offset(relation_record_index)?;
-    let (relation_kind, _) =
-        lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
+    let transform = try_some!(rigid_transform_at(bytes, transform_offset));
+    let relation_at = try_some!(records.first_offset(relation_record_index));
+    let (relation_kind, _) = try_some!(lp_ascii_filtered_view(
+        ctx,
+        bytes,
+        relation_at,
+        3..=3,
+        u8::is_ascii_graphic
+    )?);
     if relation_at >= start
         || relation_kind != "310"
         || !zeros_at::<{ relation::CARRIER_MARKER - (relation::INDEXED_HEADER + 11) }>(
@@ -100,22 +122,28 @@ fn derived_instance_frame(
             relation_at + relation::MIDDLE_RECORD_INDEX + 4,
         )
         || bytes.get(relation_at + relation::SCOPE_MARKER) != Some(&relation::SCOPE_MARKER_VALUE)
-        || View::u32_le_at(bytes, relation_at + relation::SCOPE_RECORD_INDEX)? != scope.record_index
+        || try_some!(View::u32_le_at(
+            bytes,
+            relation_at + relation::SCOPE_RECORD_INDEX
+        )) != scope.record_index
         || !zeros_at::<{ relation::LEN - (relation::SCOPE_RECORD_INDEX + 4) }>(
             bytes,
             relation_at + relation::SCOPE_RECORD_INDEX + 4,
         )
     {
-        return None;
+        return Ok(None);
     }
-    Some(DerivedInstanceFrame {
+    Ok(Some(DerivedInstanceFrame {
         reference_record_index,
         relation_record_index,
         relation_at,
-        carrier_record_index: View::u32_le_at(bytes, relation_at + relation::CARRIER_RECORD_INDEX)?,
+        carrier_record_index: try_some!(View::u32_le_at(
+            bytes,
+            relation_at + relation::CARRIER_RECORD_INDEX
+        )),
         transform,
         transform_offset,
-    })
+    }))
 }
 
 pub(super) fn exact_derived_instance_construction(
@@ -131,7 +159,7 @@ pub(super) fn exact_derived_instance_construction(
     ) {
         return Ok(None);
     }
-    let Some(frame) = derived_instance_frame(bytes, records, scope) else {
+    let Some(frame) = derived_instance_frame(ctx, bytes, records, scope)? else {
         return Ok(None);
     };
     if next_indexed_record_offset(ctx, bytes, frame.relation_at + 1)?
@@ -582,27 +610,30 @@ fn component_insert_placement(
         }
         ("296", "263") => {
             return grouped(crate::xref::grouped_component_insert_identity(
+                ctx,
                 bytes,
                 carrier_at,
                 relation_at,
                 carrier_record_index,
-            ));
+            )?);
         }
         ("410", "261") => {
             return grouped(crate::xref::grouped_component_insert_identity_class380(
+                ctx,
                 bytes,
                 carrier_at,
                 relation_at,
                 carrier_record_index,
-            ));
+            )?);
         }
         ("434", "266") => {
             return grouped(crate::xref::grouped_component_insert_identity_class341(
+                ctx,
                 bytes,
                 carrier_at,
                 relation_at,
                 carrier_record_index,
-            ));
+            )?);
         }
         _ => {}
     }
@@ -862,11 +893,12 @@ fn exact_component_insert_class_426_relation<'a>(
         return Ok(None);
     };
     Ok(crate::xref::grouped_component_insert_identity_class369(
+        ctx,
         bytes,
         carrier_at,
         relation_at,
         carrier_record_index,
-    )
+    )?
     .map(|(role, role_offset)| (carrier_record_index, role, role_offset)))
 }
 

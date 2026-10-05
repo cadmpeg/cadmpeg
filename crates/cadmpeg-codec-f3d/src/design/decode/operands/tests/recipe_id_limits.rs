@@ -48,7 +48,11 @@ fn recipe_operand_ids_refuse_retained_limit() {
         1,
     );
     let stream = "Design/BulkStream.dat";
-    let scope_len = crate::ids::native_scope(stream).len();
+    let scope_len = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scope(ctx, stream, "retain F3D native scope")
+            .expect("test F3D native identity")
+    })
+    .len();
     for (limit, operation) in [
         (recipe.id.len() - 1, "f3d recipe operand recipe ID"),
         (recipe.id.len() + scope_len, "f3d edge operand ID"),

@@ -323,7 +323,10 @@ impl DesignMeshTextureTable {
     ) -> Result<Vec<&DesignMeshTextureResource>, CodecError> {
         let operation = "order F3D mesh texture resources";
         let mut resources = ctx.collection_vec(self.resources.len(), operation)?;
-        resources.extend(&self.resources);
+        resources.extend(ctx.admit_iter(
+            &self.resources,
+            "scan F3D mesh texture resources for flag order",
+        )?);
         ctx.stable_sort_by(&mut resources, |value| &value.ordinal, Ord::cmp, operation)?;
         Ok(resources)
     }
@@ -1656,6 +1659,25 @@ pub(crate) struct DesignMeshRecordIdentity {
     record_index: std::num::NonZeroU32,
     byte_offset: u64,
     frame_length: u64,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignMeshRecordIdentity {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.class_tag,
+                self.record_index,
+                self.byte_offset,
+                self.frame_length,
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[cfg(test)]

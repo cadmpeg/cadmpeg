@@ -1545,7 +1545,12 @@ fn dimension_annotation_interval_refuses_collection_limit() {
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
         format!(
             "{}:parameter-companion#100",
-            crate::ids::native_scope(STREAM)
+            crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                ctx,
+                STREAM,
+                "retain F3D native scope"
+            )
+            .expect("test F3D native identity"))
         ),
         100,
         crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
@@ -1639,13 +1644,26 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
             4.0,
         ))
         .unwrap();
-        parameter.id = format!("{}:design-parameter#301", crate::ids::native_scope(STREAM));
+        parameter.id = format!(
+            "{}:design-parameter#301",
+            crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                ctx,
+                STREAM,
+                "retain F3D native scope"
+            )
+            .expect("test F3D native identity"))
+        );
         parameter.record_index = 301;
         let owner =
             DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
                 id: format!(
                     "{}:design-parameter-owner#300",
-                    crate::ids::native_scope(STREAM)
+                    crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                        ctx,
+                        STREAM,
+                        "retain F3D native scope"
+                    )
+                    .expect("test F3D native identity"))
                 ),
                 byte_offset: 0,
                 frame_length: 104,
@@ -1663,7 +1681,15 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
             })
             .unwrap();
         let recipe = crate::records::recipes::ConstructionRecipe {
-            id: format!("{}:construction-recipe#1", crate::ids::native_scope(STREAM)),
+            id: format!(
+                "{}:construction-recipe#1",
+                crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                    ctx,
+                    STREAM,
+                    "retain F3D native scope"
+                )
+                .expect("test F3D native identity"))
+            ),
             byte_offset: recipe_byte_offset,
             kind: crate::records::recipes::ConstructionRecipeKind::Edge,
             design: None,
@@ -1730,7 +1756,12 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
         let companion = crate::records::parameters::DesignParameterCompanion::unbound(
             format!(
                 "{}:parameter-companion#302",
-                crate::ids::native_scope(STREAM)
+                crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                    ctx,
+                    STREAM,
+                    "retain F3D native scope"
+                )
+                .expect("test F3D native identity"))
             ),
             0,
             crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),

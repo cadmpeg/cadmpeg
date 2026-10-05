@@ -60,11 +60,11 @@ pub(crate) fn decode_recipes(
     scan: &ContainerScan,
 ) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D parameter recipe streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D parameter recipe streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         decode_stream(ctx, bytes, &entry.name, &mut out)?;
     }
     Ok(out)
@@ -76,11 +76,11 @@ pub(crate) fn decode_parameters(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignParameter>, CodecError> {
     let mut out = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D parameter streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D parameter streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         decode_stream_parameters(ctx, bytes, &entry.name, &mut out)?;
     }
     ctx.stable_sort_by(
@@ -723,10 +723,10 @@ pub(crate) fn decode_parameter_owners(
     // Each Design `BulkStream` by native scope, with its header index once a
     // parameter owner needs it.
     let mut streams = HashMap::<String, (&ContainerEntry, Option<IndexedRecordOffsets>)>::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D parameter owner streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D parameter owner streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
         let previous = reservation.with_storage(|| {
             let stream = native_scope_charged(ctx, &entry.name)?;
             ctx.insert_hash_map(
@@ -774,7 +774,7 @@ pub(crate) fn decode_parameter_owners(
         let (entry, records) = ctx
             .get_mut_hash_map(&mut streams, scope, "find F3D parameter owner stream")?
             .ok_or_else(|| malformed("has no containing Design BulkStream"))?;
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let records = match records {
             Some(records) => records,
             slot @ None => {
@@ -1187,11 +1187,12 @@ pub(crate) fn decode_parameter_companions(
         else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope)
+        let Some(entry) =
+            scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, scope)?
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let Some(parsed) = usize::try_from(header.byte_offset)
             .ok()
             .and_then(|at| bytes.get(at..at.checked_add(companion_prefix::LEN)?))

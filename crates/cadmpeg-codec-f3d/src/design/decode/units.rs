@@ -325,10 +325,10 @@ pub(crate) fn decode_document_length_unit(
     ctx.find_map(
         &scan.entries,
         |entry| {
-            if !scan.is_design_stream(entry, ContainerRole::Bulkstream) {
+            if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
                 return Ok(None);
             }
-            let Ok(bytes) = scan.entry_bytes(&entry.name) else {
+            let Ok(bytes) = scan.entry_bytes(ctx, &entry.name) else {
                 return Ok(None);
             };
             decode_modeling_length_unit(ctx, bytes)

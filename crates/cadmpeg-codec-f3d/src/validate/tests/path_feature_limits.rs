@@ -75,3 +75,26 @@ fn path_feature_invalid_entity_refuses_retained_limit() {
         if limit.operation == "retain F3D validation entity")
     );
 }
+
+#[test]
+fn loft_operand_role_scan_preserves_work_refusal() {
+    use crate::records::feature::extrude::DesignExtrudeOperation;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "count F3D Loft body roles",
+        0,
+        |decode| {
+            super::super::loft_operand_roles_are_valid(
+                decode,
+                DesignExtrudeOperation::NewBody,
+                &[(DesignOperandRole::PROFILE, 1)],
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "count F3D Loft body roles")
+    );
+}

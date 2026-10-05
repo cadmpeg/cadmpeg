@@ -31,6 +31,16 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 pub(super) fn exact_surface_extend_operation(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -528,7 +538,7 @@ pub(super) fn exact_ruled_surface_operation(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Result<Option<DesignRuledSurfaceOperation>, CodecError> {
-    let Some(prologue) = ruled_surface_prologue(bytes, start) else {
+    let Some(prologue) = ruled_surface_prologue(ctx, bytes, start)? else {
         return Ok(None);
     };
     // The distance and angle owners lead the ordered reference table.
@@ -632,37 +642,47 @@ struct RuledSurfacePrologue {
     corner_offset: usize,
 }
 
-fn ruled_surface_prologue(bytes: &[u8], start: usize) -> Option<RuledSurfacePrologue> {
-    if !zeros_at::<9>(bytes, start.checked_add(11)?) {
-        return None;
+fn ruled_surface_prologue(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+) -> Result<Option<RuledSurfacePrologue>, CodecError> {
+    if !zeros_at::<9>(bytes, try_some!(start.checked_add(11))) {
+        return Ok(None);
     }
-    let method_offset = start.checked_add(20)?;
-    let method = match View::u32_le_at(bytes, method_offset)? {
+    let method_offset = try_some!(start.checked_add(20));
+    let method = match try_some!(View::u32_le_at(bytes, method_offset)) {
         0 => DesignRuledSurfaceMethod::Tangent,
         1 => DesignRuledSurfaceMethod::Normal,
         2 => DesignRuledSurfaceMethod::Direction,
-        _ => return None,
+        _ => return Ok(None),
     };
-    if !zeros_at::<3>(bytes, start.checked_add(24)?) {
-        return None;
+    if !zeros_at::<3>(bytes, try_some!(start.checked_add(24))) {
+        return Ok(None);
     }
-    let alternate_face_offset = start.checked_add(27)?;
-    let alternate_face = match bytes.get(alternate_face_offset)? {
+    let alternate_face_offset = try_some!(start.checked_add(27));
+    let alternate_face = match try_some!(bytes.get(alternate_face_offset)) {
         0 => false,
         1 => true,
-        _ => return None,
+        _ => return Ok(None),
     };
-    let (angle_owner_record_index, _) =
-        exact_same_segment_record_reference(bytes, start.checked_add(28)?)?;
-    let (distance_owner_record_index, _) =
-        exact_same_segment_record_reference(bytes, start.checked_add(39)?)?;
-    let corner_offset = start.checked_add(50)?;
-    let corner = match View::u32_le_at(bytes, corner_offset)? {
+    let (angle_owner_record_index, _) = try_some!(exact_same_segment_record_reference(
+        ctx,
+        bytes,
+        try_some!(start.checked_add(28))
+    )?);
+    let (distance_owner_record_index, _) = try_some!(exact_same_segment_record_reference(
+        ctx,
+        bytes,
+        try_some!(start.checked_add(39))
+    )?);
+    let corner_offset = try_some!(start.checked_add(50));
+    let corner = match try_some!(View::u32_le_at(bytes, corner_offset)) {
         0 => DesignRuledSurfaceCorner::Rounded,
         1 => DesignRuledSurfaceCorner::Mitered,
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some(RuledSurfacePrologue {
+    Ok(Some(RuledSurfacePrologue {
         method,
         method_offset,
         alternate_face,
@@ -671,7 +691,7 @@ fn ruled_surface_prologue(bytes: &[u8], start: usize) -> Option<RuledSurfaceProl
         distance_owner_record_index,
         corner,
         corner_offset,
-    })
+    }))
 }
 
 /// The counted list of eleven-byte record references at `count_at` and the
@@ -704,7 +724,7 @@ fn ruled_surface_reference_list(
     for ordinal in 0..count {
         ctx.charge_work(1, "read F3D ruled surface references")?;
         let Some((record_index, _)) =
-            exact_same_segment_record_reference(bytes, first + ordinal * 11)
+            exact_same_segment_record_reference(ctx, bytes, first + ordinal * 11)?
         else {
             return Ok(None);
         };

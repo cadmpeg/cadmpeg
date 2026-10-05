@@ -2519,11 +2519,13 @@ fn same_sketch_layout(before: Option<&SketchCurveGeometry>, after: &SketchCurveG
 }
 
 pub(super) fn encode_sketch_relation_state(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     relation_id: &str,
     raw_bytes: &[u8],
     state: u64,
 ) -> Result<Vec<u8>, CodecError> {
-    match crate::design::decode::sketch::relation_mask_width(raw_bytes).ok_or_else(|| {
+    let width = crate::design::decode::sketch::relation_mask_width(ctx, raw_bytes)?;
+    match width.ok_or_else(|| {
         CodecError::malformed(format_args!(
             "F3D sketch relation {relation_id} has no valid mask-width discriminator"
         ))
@@ -2542,6 +2544,7 @@ pub(super) fn encode_sketch_relation_state(
 }
 
 pub(super) fn validate_sketch_relation_edits(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<Vec<ByteEdit>>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2661,6 +2664,7 @@ pub(super) fn validate_sketch_relation_edits(
         )?;
         if relation.definition.state() != before.definition.state() {
             let encoded = encode_sketch_relation_state(
+                ctx,
                 &relation.id,
                 before.raw_bytes(),
                 relation.definition.state(),

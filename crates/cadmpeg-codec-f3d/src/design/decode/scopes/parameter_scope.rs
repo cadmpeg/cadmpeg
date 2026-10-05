@@ -80,17 +80,17 @@ pub(crate) fn decode_parameter_scopes(
     // payload and would repeat every scope ID.
     let mut names_storage = ctx.reserve_scoped(0, STREAMS_OPERATION)?;
     let mut names = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D parameter-scope streams")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D parameter-scope streams")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
         names_storage
             .with_storage(|| ctx.push_vec(&mut names, entry.name.as_str(), STREAMS_OPERATION))?;
     }
     ctx.sort_unstable_by(&mut names, |name| *name, Ord::cmp, STREAMS_OPERATION)?;
     ctx.dedup_vec(&mut names, STREAMS_OPERATION)?;
     for name in ctx.admit_iter(&names, STREAMS_OPERATION)? {
-        let bytes = scan.entry_bytes(name)?;
+        let bytes = scan.entry_bytes(ctx, name)?;
         // The stream scope, record index and type table live for this stream only.
         let (stream, _stream_storage) = ctx
             .with_scoped_storage("f3d Design parameter-scope stream", || {
@@ -751,21 +751,20 @@ fn admitted_scope_variant(
     if following.is_empty() {
         return Ok(None);
     }
-    let is_history_bound = |(_, _, index): &(&str, u32, usize)| {
+    let is_history_bound = |(_, _, index): &(&str, u32, usize)| -> Result<bool, CodecError> {
         let scope = &scopes[*index];
-        let bound = scope.history_state_id().is_some_and(|state_id| {
-            crate::history::effective_scope_previous_history_state_id(scope, histories).is_some_and(
-                |previous_state_id| {
-                    crate::history::unique_history_state_pair(
-                        histories,
-                        state_id,
-                        previous_state_id,
-                    )
-                    .is_some()
-                },
-            )
-        });
-        Ok(bound)
+        let Some(state_id) = scope.history_state_id() else {
+            return Ok(false);
+        };
+        let Some(previous_state_id) =
+            crate::history::effective_scope_previous_history_state_id(ctx, scope, histories)?
+        else {
+            return Ok(false);
+        };
+        Ok(
+            crate::history::unique_history_state_pair(ctx, histories, state_id, previous_state_id)?
+                .is_some(),
+        )
     };
     let history_bound = ctx.position_by(group, is_history_bound, HISTORY_OPERATION)?;
     let keep = match history_bound {

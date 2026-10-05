@@ -42,7 +42,11 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
         (
             None,
             Some(u64_from_index(
-                crate::ids::native_scope("BulkStream.dat").len(),
+                crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_scope(ctx, "BulkStream.dat", "retain F3D native scope")
+                        .expect("test F3D native identity")
+                })
+                .len(),
             )),
             false,
             ResourceDimension::RetainedBytes,
@@ -53,7 +57,12 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
             Some(u64_from_index(
                 format!(
                     "{}:sketch-relation#7",
-                    crate::ids::native_scope("BulkStream.dat")
+                    crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                        ctx,
+                        "BulkStream.dat",
+                        "retain F3D native scope"
+                    )
+                    .expect("test F3D native identity"))
                 )
                 .len(),
             )),
@@ -145,10 +154,21 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
         admitted[0].id,
         format!(
             "{}:sketch-relation#7",
-            crate::ids::native_scope("BulkStream.dat")
+            crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                ctx,
+                "BulkStream.dat",
+                "retain F3D native scope"
+            )
+            .expect("test F3D native identity"))
         )
     );
     assert_eq!(admitted[0].raw_bytes(), record);
+}
+
+fn tested_relation_mask_width(record: &[u8]) -> Option<SketchRelationMaskWidth> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        relation_mask_width(ctx, record).unwrap()
+    })
 }
 
 fn tested_parse_classed_sketch_relation(
@@ -394,7 +414,7 @@ fn relation_classes_are_named_by_type_guid() {
 fn relation_leading_block_selects_member_run_and_mask_width() {
     let modern = relation_record(&[(300, 0)], &[], 201, 0x0020_0000_0000, &[300]);
     assert_eq!(
-        relation_mask_width(&modern),
+        tested_relation_mask_width(&modern),
         Some(SketchRelationMaskWidth::U64)
     );
     let modern_parsed =
@@ -411,7 +431,7 @@ fn relation_leading_block_selects_member_run_and_mask_width() {
 
     let legacy = legacy_relation_record(201, 0x8000_0000, &[300]);
     assert_eq!(
-        relation_mask_width(&legacy),
+        tested_relation_mask_width(&legacy),
         Some(SketchRelationMaskWidth::U32)
     );
     let legacy_parsed =
@@ -429,7 +449,7 @@ fn relation_leading_block_selects_member_run_and_mask_width() {
 
     let mut invalid = legacy;
     invalid[19] = 2;
-    assert_eq!(relation_mask_width(&invalid), None);
+    assert_eq!(tested_relation_mask_width(&invalid), None);
     assert!(tested_parse_classed_sketch_relation(&invalid, SketchRelationClass::Plain).is_none());
 }
 

@@ -13,6 +13,16 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 /// How many values a search selected, keeping the only one.
 pub(super) enum UniqueMatch<T> {
     Zero,
@@ -63,11 +73,18 @@ pub(in crate::design::decode) fn exact_indexed_header_at(
         .map(|header| header.class_tag)
 }
 
-pub(super) fn exact_same_segment_record_reference(bytes: &[u8], at: usize) -> Option<(u32, u64)> {
+pub(super) fn exact_same_segment_record_reference(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+) -> Result<Option<(u32, u64)>, CodecError> {
     let mut cursor = at;
-    let reference = take_reference(bytes, &mut cursor)?;
-    let target = u32::try_from(reference.local()?.0).ok()?;
-    (cursor == at.checked_add(11)?).then_some((target, u64::try_from(at.checked_add(1)?).ok()?))
+    let reference = try_some!(take_reference(ctx, bytes, &mut cursor)?);
+    let target = try_some!(u32::try_from(try_some!(reference.local()).0).ok());
+    Ok((cursor == try_some!(at.checked_add(11))).then_some((
+        target,
+        try_some!(u64::try_from(try_some!(at.checked_add(1))).ok()),
+    )))
 }
 
 pub(in crate::design::decode) fn rigid_transform_at(

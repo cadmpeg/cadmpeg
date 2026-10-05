@@ -859,9 +859,15 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         &bytes,
     );
     let mut group = group;
-    group.id = crate::ids::native_scoped_id(stream_name, "operand-group", 90);
+    group.id = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scoped_id(ctx, stream_name, "operand-group", 90)
+            .expect("test F3D native identity")
+    });
     let header = DesignRecordHeader {
-        id: crate::ids::native_scoped_id(stream_name, "record", 100),
+        id: crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scoped_id(ctx, stream_name, "record", 100)
+                .expect("test F3D native identity")
+        }),
         byte_offset: 0,
         class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned()).unwrap(),
         record_index: 100,
@@ -984,7 +990,11 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         ));
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        let id_len = crate::ids::native_scope(stream_name).len()
+        let id_len = crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scope(ctx, stream_name, "retain F3D native scope")
+                .expect("test F3D native identity")
+        })
+        .len()
             + ":design-entity-selection-operand#".len()
             + 1;
         policy.limits.max_retained_bytes = u64::try_from(72 + id_len - 1).unwrap();
@@ -1234,7 +1244,14 @@ fn extrude_selection_group_output_refuses_collection_and_id_limits() {
         .unwrap()
         .expect("counted Extrude selection group");
     let stream = "Design/BulkStream.dat";
-    let native_scope_len = u64::try_from(crate::ids::native_scope(stream).len()).unwrap();
+    let native_scope_len = u64::try_from(
+        crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scope(ctx, stream, "retain F3D native scope")
+                .expect("test F3D native identity")
+        })
+        .len(),
+    )
+    .unwrap();
     for (collection_limit, retained_limit, dimension, operation) in [
         (
             0,

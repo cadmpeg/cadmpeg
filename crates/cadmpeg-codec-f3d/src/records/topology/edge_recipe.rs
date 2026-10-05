@@ -15,6 +15,25 @@ pub(crate) struct DesignEdgeRecipeSelectorContext {
     pub(crate) boundary_count_matching_edge_slots: Vec<i64>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeRecipeSelectorContext {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.selector,
+                &self.clauses,
+                &self.incidence_matching_edge_slots,
+                &self.boundary_count_matching_edge_slots,
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     pub(super) static EDGE_RECIPE_SELECTOR_CONTEXT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -86,6 +105,20 @@ impl Serialize for DesignEdgeRecipeSelectorContext {
 pub(crate) struct DesignEdgeRecipeSelectorClause {
     pub(crate) entry: DesignTopologyRecipeEntry,
     pub(crate) triplet_edge_slots: [Vec<i64>; 2],
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeRecipeSelectorClause {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.entry, &self.triplet_edge_slots),
+            ctx,
+            operation,
+        )
+    }
 }
 
 impl DesignEdgeRecipeSelectorContext {
@@ -197,6 +230,20 @@ pub(crate) struct DesignEdgeRecipeStructure {
     pub(crate) sides: Vec<DesignTopologyRecipeSide>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignEdgeRecipeStructure {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.root, &self.sides),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// The alternate two-clause structure used by a fixed-path `SurfacePatch`
 /// edge recipe.
 #[derive(Debug, PartialEq, Deserialize)]
@@ -204,6 +251,16 @@ pub(crate) struct DesignEdgeRecipeStructure {
 pub(crate) struct DesignSurfacePatchRecipeStructure {
     /// Ordered clauses in the recipe program.
     pub(crate) clauses: [DesignSurfacePatchRecipeClause; 2],
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignSurfacePatchRecipeStructure {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&self.clauses, ctx, operation)
+    }
 }
 
 #[cfg(test)]
@@ -279,6 +336,25 @@ pub(crate) struct DesignSurfacePatchRecipeClause {
     pub(crate) edge_reference_ordinals: [u32; 2],
     /// Ordered topology entries in the payload.
     pub(crate) entries: Vec<DesignTopologyRecipeEntry>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignSurfacePatchRecipeClause {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.fields,
+                &self.face_reference_ordinals,
+                &self.edge_reference_ordinals,
+                &self.entries,
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -375,6 +451,25 @@ pub(crate) struct DesignTopologyRecipeSide {
     pub(crate) payload_prefix: Vec<i32>,
     /// Ordered eight-word payload entries.
     pub(crate) entries: Vec<DesignTopologyRecipeEntry>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignTopologyRecipeSide {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.header_value,
+                &self.scalars,
+                &self.payload_prefix,
+                &self.entries,
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -488,6 +583,24 @@ pub(crate) struct DesignTopologyRecipeEntry {
     pub(crate) topology_triplets: [DesignTopologyRecipeTriplet; 2],
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignTopologyRecipeEntry {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                &self.selector,
+                &self.boundary_edge_count,
+                &self.topology_triplets,
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct DesignTopologyRecipeEntryWire {
     /// Nonnegative clause-local selector, strictly increasing within one clause.
@@ -563,6 +676,20 @@ pub(crate) struct DesignTopologyRecipeTriplet {
     pub(crate) incident: Option<DesignTopologyIncident>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignTopologyRecipeTriplet {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.outer, &self.middle, &self.incident),
+            ctx,
+            operation,
+        )
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct DesignTopologyRecipeTripletWire {
     /// Equal positive first and third words, not exceeding the containing
@@ -635,6 +762,20 @@ pub(crate) struct DesignTopologyIncident {
     pub(crate) side: DesignTopologyIncidentSide,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for DesignTopologyIncident {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(&self.ordinal, &self.side),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Which loop edge incident to a recipe vertex is named by a topology triplet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -643,6 +784,18 @@ pub(crate) enum DesignTopologyIncidentSide {
     Preceding,
     /// Edge immediately following the vertex in cyclic loop order.
     Following,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for DesignTopologyIncidentSide {
+    const FIXED_BYTES: Option<u64> = Some(1);
+
+    fn decode_cost(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(1)
+    }
 }
 
 cadmpeg_core::named_optional_field!(

@@ -577,7 +577,10 @@ fn member_run_placement_decodes_in_a_stream_whose_name_is_escaped() {
         0,
     );
 
-    let scope = crate::ids::native_scope(STREAM);
+    let scope = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scope(ctx, STREAM, "retain F3D native scope")
+            .expect("test F3D native identity")
+    });
     assert!(scope.contains("%20"));
     let entity = DesignEntityHeader {
         id: format!("{scope}:design-entity-header#0"),

@@ -355,13 +355,14 @@ fn mirror_construction(
     let Some(stream) = record_stream(ctx, &scope.id)? else {
         return Ok(None);
     };
-    let Some(entry) = sources
-        .scan
-        .design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+    let Some(entry) =
+        sources
+            .scan
+            .design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
     else {
         return Ok(None);
     };
-    let bytes = sources.scan.entry_bytes(&entry.name)?;
+    let bytes = sources.scan.entry_bytes(ctx, &entry.name)?;
     let scope_record_index = scope.record_index;
     let in_scope = |group: &DesignConstructionOperandGroup| -> Result<bool, CodecError> {
         Ok(group.scope_record_index == scope_record_index && in_stream(ctx, &group.id, stream)?)

@@ -16,7 +16,10 @@ fn presentation_types(meta_name: &str) -> Vec<crate::records::entity_header::Seg
             crate::design::test_support::design_type(type_guid, None, 0, "MSketch", vec![]);
         design_type.byte_offset = u64::try_from(ordinal).unwrap();
         crate::records::entity_header::SegmentType::try_new(
-            crate::ids::native_design_type_id(meta_name, design_type.byte_offset),
+            crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_type_id(ctx, meta_name, design_type.byte_offset)
+                    .expect("test F3D native identity")
+            }),
             design_type,
         )
         .unwrap()
@@ -44,7 +47,10 @@ fn presentation_streams_are_segments_registering_both_presentation_types() {
         "FusionAssetName[Active]/Design3/BulkStream.dat",
     ]
     .map(|name| {
-        let scope = crate::ids::native_scope(name);
+        let scope = crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scope(ctx, name, "retain F3D native scope")
+                .expect("test F3D native identity")
+        });
         scope
             .strip_suffix(crate::design::decode::sketch::BULK_STREAM_FILE)
             .unwrap()
@@ -209,7 +215,10 @@ fn dimension_annotation_interval_owner_scan_refuses_work_limit() {
     use zip::CompressionMethod;
 
     const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let native_scope = crate::ids::native_scope(STREAM);
+    let native_scope = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scope(ctx, STREAM, "retain F3D native scope")
+            .expect("test F3D native identity")
+    });
     let owner = crate::records::parameters::DesignParameterOwner::try_from(
         crate::records::parameters::DesignParameterOwnerWire {
             id: format!("{native_scope}:design-parameter-owner#10"),

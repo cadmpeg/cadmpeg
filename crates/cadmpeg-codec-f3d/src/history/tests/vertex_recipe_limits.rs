@@ -62,11 +62,14 @@ fn select(
 
 fn bind_input_states(
     max_items: u64,
-    max_retained_bytes: u64,
+    max_materialized_bytes: u64,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use crate::records::entity_header::{DesignFeatureTimeline, DesignTimelineFrame};
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    let stream = "f3d:Design/BulkStream.dat";
+    // A long stream name makes the copied scope identity outgrow the
+    // temporary peak of the ordinal indexes built before it.
+    let stream = format!("f3d:{}/BulkStream.dat", "D".repeat(4096));
+    let stream = stream.as_str();
     let mut source = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
         DesignFeatureKind::Extrude,
@@ -106,7 +109,9 @@ fn bind_input_states(
     let mut scopes = vec![source, target];
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained_bytes;
+    policy.limits.max_retained_bytes = u64::MAX;
+    // Temporary copied index keys stay in the live scoped reservation.
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::super::bind_vertex_recipe_history(&ctx, &mut scopes, &[timeline], &[])
@@ -133,7 +138,7 @@ fn vertex_recipe_face_slots_refuse_collection_limit() {
 #[test]
 fn vertex_recipe_scope_id_refuses_retained_limit() {
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy F3D vertex recipe scope identity",
         |cap| bind_input_states(u64::MAX, cap),
     );

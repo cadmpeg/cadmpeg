@@ -138,7 +138,12 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
     );
     assert_eq!(
         types[0].id(),
-        &crate::ids::native_design_type_id(meta_name, types[0].byte_offset)
+        &crate::test_support::with_decode_context(|ctx| crate::ids::native_design_type_id(
+            ctx,
+            meta_name,
+            types[0].byte_offset
+        )
+        .expect("test F3D native identity"))
     );
 }
 
@@ -153,7 +158,9 @@ fn stream_type_indexes_refuse_limits_and_match_escaped_scope() {
     let design_type =
         crate::design::test_support::design_type(type_guid, None, 7, "Fusion", vec![17]);
     let design_type = crate::records::entity_header::SegmentType::try_new(
-        crate::ids::native_design_type_id(&meta_name, 0),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_type_id(ctx, &meta_name, 0).expect("test F3D native identity")
+        }),
         design_type,
     )
     .unwrap();
@@ -377,7 +384,13 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
     bulk.extend_from_slice(&[0, 0]);
     bulk.extend_from_slice(&0_u32.to_le_bytes());
     let arena = DecodeArena::new();
-    let prefix_len = u64_from_index(crate::ids::native_scope(stream).len());
+    let prefix_len = u64_from_index(
+        crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scope(ctx, stream, "retain F3D native scope")
+                .expect("test F3D native identity")
+        })
+        .len(),
+    );
     let suffix_len = u64_from_index(":design-feature-timeline#0".len());
     for (allowance, operation) in [
         (prefix_len - 1, "f3d native stream key"),
@@ -415,7 +428,10 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
     )
     .unwrap()
     .unwrap();
-    let expected_id = crate::ids::native_design_feature_timeline_id(stream, 0);
+    let expected_id = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_design_feature_timeline_id(ctx, stream, 0)
+            .expect("test F3D native identity")
+    });
     assert_eq!(timeline.id(), &expected_id);
 }
 
@@ -680,7 +696,10 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
     assert_eq!(spaces[0].context_uuid.as_str(), context_uuid);
     assert_eq!(
         spaces[0].id,
-        crate::ids::native_design_component_naming_space_id(bulk_name, 2)
+        crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_component_naming_space_id(ctx, bulk_name, 2)
+                .expect("test F3D native identity")
+        })
     );
 }
 

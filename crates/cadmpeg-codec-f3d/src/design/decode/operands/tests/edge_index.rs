@@ -48,11 +48,15 @@ fn fixture_scope(
 
 fn fixture_work_plane_scope() -> crate::records::feature::scope::DesignParameterScope {
     let mut scope = fixture_scope(crate::records::feature::scope::DesignFeatureKind::WorkPlane);
-    scope.id = crate::ids::native_scoped_id(
-        "FusionAssetName[Active]/Design1/BulkStream.dat",
-        "scope",
-        12,
-    );
+    scope.id = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scoped_id(
+            ctx,
+            "FusionAssetName[Active]/Design1/BulkStream.dat",
+            "scope",
+            12,
+        )
+        .expect("test F3D native identity")
+    });
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
@@ -228,11 +232,15 @@ fn edge_identity_scope_search_refuses_work_limit() {
     );
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut scope = fixture_scope(crate::records::feature::scope::DesignFeatureKind::Fillet);
-        scope.id = crate::ids::native_scoped_id(
-            "FusionAssetName[Active]/Design1/BulkStream.dat",
-            "scope",
-            12,
-        );
+        scope.id = crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scoped_id(
+                ctx,
+                "FusionAssetName[Active]/Design1/BulkStream.dat",
+                "scope",
+                12,
+            )
+            .expect("test F3D native identity")
+        });
         let group = fixture_edge_identity_group();
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
@@ -296,11 +304,15 @@ fn fixture_stream_scope(
     references: &[u32],
 ) -> crate::records::feature::scope::DesignParameterScope {
     let mut scope = fixture_scope(kind);
-    scope.id = crate::ids::native_scoped_id(
-        "FusionAssetName[Active]/Design1/BulkStream.dat",
-        "scope",
-        12,
-    );
+    scope.id = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_scoped_id(
+            ctx,
+            "FusionAssetName[Active]/Design1/BulkStream.dat",
+            "scope",
+            12,
+        )
+        .expect("test F3D native identity")
+    });
     scope
         .try_edit(|draft| {
             draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
@@ -536,11 +548,15 @@ fn indexed_face_operand_reference_ordinals_refuse_work_limit() {
     );
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let mut scope = fixture_scope(crate::records::feature::scope::DesignFeatureKind::Shell);
-        scope.id = crate::ids::native_scoped_id(
-            "FusionAssetName[Active]/Design1/BulkStream.dat",
-            "scope",
-            12,
-        );
+        scope.id = crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scoped_id(
+                ctx,
+                "FusionAssetName[Active]/Design1/BulkStream.dat",
+                "scope",
+                12,
+            )
+            .expect("test F3D native identity")
+        });
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
             "scan F3D indexed face operand reference ordinals",

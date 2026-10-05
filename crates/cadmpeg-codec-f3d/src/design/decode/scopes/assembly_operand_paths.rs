@@ -22,6 +22,16 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+/// Unwrap an `Option`, ending a fallible parse with `Ok(None)` when it is empty.
+macro_rules! try_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 pub(super) fn exact_assembly_operand_paths(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -36,7 +46,9 @@ pub(super) fn exact_assembly_operand_paths(
     for (slot, relative_offset) in paths.iter_mut().zip(locator_offsets) {
         let Some((locator_record_index, locator_reference_offset)) = scope_at
             .checked_add(relative_offset)
-            .and_then(|at| exact_same_segment_record_reference(bytes, at))
+            .map(|at| exact_same_segment_record_reference(ctx, bytes, at))
+            .transpose()?
+            .flatten()
         else {
             return Ok(None);
         };
@@ -128,12 +140,17 @@ struct LocatorFrame<'bytes> {
 }
 
 fn locator_frame<'bytes>(
+    ctx: &DecodeContext<'_>,
     bytes: &'bytes [u8],
     scope: &DesignParameterScope,
     locator_record_index: u32,
     locator_at: usize,
-) -> Option<LocatorFrame<'bytes>> {
-    let class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
+) -> Result<Option<LocatorFrame<'bytes>>, CodecError> {
+    let class_tag = try_some!(exact_indexed_header_at(
+        bytes,
+        locator_at,
+        locator_record_index
+    ));
     let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
@@ -144,15 +161,15 @@ fn locator_frame<'bytes>(
             if class_tag != b"390"
                 || !zeros_at::<{ variable_path_locator::SCOPE_BACKLINK - PADDING }>(
                     bytes,
-                    locator_at.checked_add(PADDING)?,
+                    try_some!(locator_at.checked_add(PADDING)),
                 )
                 || rigid_transform_at(
                     bytes,
-                    locator_at.checked_add(variable_path_locator::TRANSFORM)?,
+                    try_some!(locator_at.checked_add(variable_path_locator::TRANSFORM)),
                 )
                 .is_none()
             {
-                return None;
+                return Ok(None);
             }
             (
                 variable_path_locator::LEN,
@@ -164,18 +181,22 @@ fn locator_frame<'bytes>(
         } else {
             if !zeros_at::<{ path_locator::NONZERO_RECORD_REFERENCE - path_locator::ZERO_RUN_10 }>(
                 bytes,
-                locator_at.checked_add(path_locator::ZERO_RUN_10)?,
-            ) || exact_same_segment_record_reference(
+                try_some!(locator_at.checked_add(path_locator::ZERO_RUN_10)),
+            ) || try_some!(exact_same_segment_record_reference(
+                ctx,
                 bytes,
-                locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
-            )?
+                try_some!(locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)),
+            )?)
             .0 == 0
-                || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
-                || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?)
-                    .is_none()
-                || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
+                || bytes.get(try_some!(locator_at.checked_add(path_locator::ZERO_32))) != Some(&0)
+                || rigid_transform_at(
+                    bytes,
+                    try_some!(locator_at.checked_add(path_locator::TRANSFORM)),
+                )
+                .is_none()
+                || bytes.get(try_some!(locator_at.checked_add(path_locator::ZERO_161))) != Some(&0)
             {
-                return None;
+                return Ok(None);
             }
             (
                 path_locator::LEN,
@@ -186,33 +207,45 @@ fn locator_frame<'bytes>(
             )
         };
     let (scope_record_index, scope_reference_offset) =
-        exact_same_segment_record_reference(bytes, locator_at.checked_add(scope_backlink)?)?;
+        try_some!(exact_same_segment_record_reference(
+            ctx,
+            bytes,
+            try_some!(locator_at.checked_add(scope_backlink))
+        )?);
     let (wrapper_record_index, wrapper_reference_offset) =
-        exact_same_segment_record_reference(bytes, locator_at.checked_add(wrapper_reference)?)?;
+        try_some!(exact_same_segment_record_reference(
+            ctx,
+            bytes,
+            try_some!(locator_at.checked_add(wrapper_reference))
+        )?);
     // A variable-reference wrapper lies at most 65 records past its locator,
     // so a path has at most 64 span records.
     let wrapper_in_range = if variable_reference {
-        (locator_record_index.checked_add(2)?..=locator_record_index.checked_add(65)?)
+        (try_some!(locator_record_index.checked_add(2))
+            ..=try_some!(locator_record_index.checked_add(65)))
             .contains(&wrapper_record_index)
     } else {
-        wrapper_record_index == locator_record_index.checked_add(2)?
+        wrapper_record_index == try_some!(locator_record_index.checked_add(2))
     };
     // Both locator layouts end with a two-byte zero tail.
     if scope_record_index != scope.record_index
         || !wrapper_in_range
-        || View::u32_le_at(bytes, locator_at.checked_add(constant_two)?)? != 2
-        || !zeros_at::<2>(bytes, locator_at.checked_add(zero_tail)?)
+        || try_some!(View::u32_le_at(
+            bytes,
+            try_some!(locator_at.checked_add(constant_two))
+        )) != 2
+        || !zeros_at::<2>(bytes, try_some!(locator_at.checked_add(zero_tail)))
     {
-        return None;
+        return Ok(None);
     }
-    Some(LocatorFrame {
+    Ok(Some(LocatorFrame {
         class_tag,
         variable_reference,
         scope_reference_offset,
         wrapper_record_index,
         wrapper_reference_offset,
-        path_at: locator_at.checked_add(locator_length)?,
-    })
+        path_at: try_some!(locator_at.checked_add(locator_length)),
+    }))
 }
 
 fn exact_assembly_operand_path_envelope(
@@ -223,7 +256,7 @@ fn exact_assembly_operand_path_envelope(
     locator_reference_offset: u64,
     locator_at: usize,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
-    let Some(locator) = locator_frame(bytes, scope, locator_record_index, locator_at) else {
+    let Some(locator) = locator_frame(ctx, bytes, scope, locator_record_index, locator_at)? else {
         return Ok(None);
     };
     let variable_reference = locator.variable_reference;
@@ -257,6 +290,7 @@ fn exact_assembly_operand_path_envelope(
         return Ok(None);
     };
     let Some(path_reference_offset) = wrapper_frame(
+        ctx,
         bytes,
         wrapper_at,
         *wrapper_class_tag,
@@ -264,7 +298,8 @@ fn exact_assembly_operand_path_envelope(
         variable_reference,
         path_spans.len(),
         path_record_index,
-    ) else {
+    )?
+    else {
         return Ok(None);
     };
     let continuations = path_spans.get(1..).unwrap_or(&[]);
@@ -273,7 +308,7 @@ fn exact_assembly_operand_path_envelope(
         let references_match = ctx.all_by(
             continuations,
             |(record_index, _, _)| {
-                let matches = exact_same_segment_record_reference(bytes, reference_at)
+                let matches = exact_same_segment_record_reference(ctx, bytes, reference_at)?
                     .map(|reference| reference.0)
                     == Some(*record_index);
                 reference_at += 11;
@@ -349,6 +384,7 @@ fn exact_assembly_operand_path_envelope(
 /// The path-reference offset of the wrapper record at `wrapper_at`, which
 /// ends at `wrapper_end` and names the first of `span_count` path records.
 fn wrapper_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     wrapper_at: usize,
     wrapper_class_tag: [u8; 3],
@@ -356,11 +392,14 @@ fn wrapper_frame(
     variable_reference: bool,
     span_count: usize,
     path_record_index: u32,
-) -> Option<u64> {
+) -> Result<Option<u64>, CodecError> {
     let (expected_wrapper_length, expected_span_count) = if variable_reference {
         (
-            path_wrapper::LEN.checked_add(span_count.checked_sub(1)?.checked_mul(11)?)?,
-            u32::try_from(span_count).ok()?,
+            try_some!(path_wrapper::LEN
+                .checked_add(try_some!(
+                    try_some!(span_count.checked_sub(1)).checked_mul(11)
+                ))),
+            try_some!(u32::try_from(span_count).ok()),
         )
     } else {
         (path_wrapper::LEN, 1)
@@ -368,23 +407,26 @@ fn wrapper_frame(
     if variable_reference && wrapper_class_tag != *b"397"
         || !zeros_at::<{ path_wrapper::CONSTANT_ONE_BYTE - path_wrapper::ZERO_RUN_10 }>(
             bytes,
-            wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?,
+            try_some!(wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)),
         )
-        || bytes.get(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?) != Some(&1)
-        || View::u32_le_at(
+        || bytes.get(try_some!(
+            wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)
+        )) != Some(&1)
+        || try_some!(View::u32_le_at(
             bytes,
-            wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_WORD)?,
-        )? != expected_span_count
-        || wrapper_end != wrapper_at.checked_add(expected_wrapper_length)?
+            try_some!(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_WORD)),
+        )) != expected_span_count
+        || wrapper_end != try_some!(wrapper_at.checked_add(expected_wrapper_length))
     {
-        return None;
+        return Ok(None);
     }
     let (referenced_path_record_index, path_reference_offset) =
-        exact_same_segment_record_reference(
+        try_some!(exact_same_segment_record_reference(
+            ctx,
             bytes,
-            wrapper_at.checked_add(path_wrapper::PATH_REFERENCE)?,
-        )?;
-    (referenced_path_record_index == path_record_index).then_some(path_reference_offset)
+            try_some!(wrapper_at.checked_add(path_wrapper::PATH_REFERENCE)),
+        )?);
+    Ok((referenced_path_record_index == path_record_index).then_some(path_reference_offset))
 }
 
 /// Read the counted relaxed GUID at `*position` into `guids` and advance past
@@ -448,7 +490,7 @@ fn exact_assembly_operand_path(
     link: DesignAssemblyOperandPathLink,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     let Some((class_tag, after_tag)) =
-        lp_ascii_filtered_view(bytes, start, 1..=8, u8::is_ascii_digit)
+        lp_ascii_filtered_view(ctx, bytes, start, 1..=8, u8::is_ascii_digit)?
     else {
         return Ok(None);
     };

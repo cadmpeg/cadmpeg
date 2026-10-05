@@ -114,3 +114,27 @@ fn body_recipe_reference_count_fixes_nested_frame_offsets() {
         assert!(serde_json::from_value::<DesignBodyRecipeOperand>(invalid).is_err());
     }
 }
+
+#[test]
+fn operand_owner_cost_counts_tag_and_active_fields() {
+    use cadmpeg_core::decode::cost::DecodeCost;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    // One tag byte and two u32 fields for a group; one tag and one u32 for a scope reference.
+    assert_eq!(
+        super::DesignOperandOwner::Group {
+            group_record_index: 3,
+            group_member_ordinal: 4,
+        }
+        .decode_cost(&ctx, "test F3D operand owner cost")
+        .unwrap(),
+        9
+    );
+    assert_eq!(
+        super::DesignOperandOwner::ScopeReference {
+            scope_reference_ordinal: 5,
+        }
+        .decode_cost(&ctx, "test F3D operand owner cost")
+        .unwrap(),
+        5
+    );
+}

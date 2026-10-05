@@ -49,7 +49,7 @@ pub(super) fn embedded_image_entry<'scan>(
     const OPERATION: &str = "find F3D embedded image entry";
     let mut found = None;
     for entry in ctx.admit_iter(&scan.entries, OPERATION)? {
-        if !scan.is_design_asset_entry(entry, ContainerRole::Image) {
+        if !scan.is_design_asset_entry(ctx, entry, ContainerRole::Image)? {
             continue;
         }
         let file_name = rsplit_once_ascii(ctx, &entry.name, b'/', OPERATION)?
@@ -73,7 +73,10 @@ pub(super) fn embedded_image_asset(
     id: cadmpeg_ir::assets::AssetId,
 ) -> Result<Asset, CodecError> {
     let media_type = image_media_type(ctx, asset_name)?.map(str::to_owned);
-    let data = ctx.copy_retained(scan.entry_bytes(&entry.name)?, "f3d embedded image data")?;
+    let data = ctx.copy_retained(
+        scan.entry_bytes(ctx, &entry.name)?,
+        "f3d embedded image data",
+    )?;
     let name = ctx.copy_retained_text(asset_name, "f3d embedded image name")?;
     let native_ref = native_scope_charged(ctx, &entry.name)?;
     Asset::try_new(
@@ -136,11 +139,11 @@ pub(super) fn decode_scoped_images<T>(
 ) -> Result<Vec<T>, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "f3d scoped image candidates")?;
     let mut parsed = Vec::new();
-    for entry in ctx
-        .admit_iter(&scan.entries, "scan F3D image stream entries")?
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
+    for entry in ctx.admit_iter(&scan.entries, "scan F3D image stream entries")? {
+        if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
+            continue;
+        }
+        let bytes = scan.entry_bytes(ctx, &entry.name)?;
         let (_stream_storage, stream) = native_scope_scoped(ctx, &entry.name)?;
         let mut stream_records = None;
         for scope in ctx.admit_iter(scopes, "scan F3D image owner scopes")? {
@@ -272,7 +275,10 @@ mod tests {
         zip.start_file(ENTRY, stored).unwrap();
         zip.write_all(b"scope").unwrap();
         let archive = zip.finish().unwrap().into_inner();
-        let stream = crate::ids::native_scope(ENTRY);
+        let stream = crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_scope(ctx, ENTRY, "retain F3D native scope")
+                .expect("test F3D native identity")
+        });
         let scope: crate::records::feature::scope::DesignParameterScope =
             serde_json::from_value(serde_json::json!({
                 "id": format!("{stream}:scope#1"),

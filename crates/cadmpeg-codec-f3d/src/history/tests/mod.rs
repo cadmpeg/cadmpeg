@@ -8,6 +8,7 @@ mod body_recipe_budget;
 mod body_recipe_selection_limits;
 mod body_selection;
 mod budgets;
+mod combination;
 mod component_spaces;
 mod draft;
 mod edge_operands;
@@ -24,6 +25,7 @@ mod selections;
 mod state_pairs;
 mod surface_stitch;
 mod topology_budget;
+mod transitions;
 mod vertex_recipe_limits;
 
 mod recipe_transitions;

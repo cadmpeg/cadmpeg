@@ -844,6 +844,48 @@ fn body_recipe_history_fixture() -> (
     (scope, history, operands, candidate)
 }
 
+fn body_recipe_history_two_reference_fixture() -> (
+    crate::records::feature::scope::DesignParameterScope,
+    AsmHistory,
+    Vec<crate::records::topology::body_recipe::DesignBodyRecipeOperand>,
+    cadmpeg_ir::ids::FaceId,
+) {
+    let (scope, history, mut operands, candidate) = body_recipe_history_fixture();
+    let mut draft = operands
+        .pop()
+        .expect("one body recipe operand")
+        .into_draft();
+    let mut second = draft.references[0].clone();
+    second.design_reference = 302;
+    second.design_reference_offset = 37;
+    second.form_offset = 45;
+    draft.references.push(second);
+    draft.nested_record_index_offset = 50;
+    draft.asset_id_offset = 68;
+    let operand = crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft)
+        .expect("two-reference body recipe operand");
+    (scope, history, vec![operand], candidate)
+}
+
+fn body_recipe_history_refusal(operation: &'static str) -> cadmpeg_core::CodecError {
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |decode_ctx| {
+            let (scope, history, mut operands, _) = body_recipe_history_two_reference_fixture();
+            bind_body_recipe_operand_history_candidates(
+                decode_ctx,
+                &mut operands,
+                &[],
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&history),
+            )
+            .map(|_| ())
+        },
+    )
+}
+
 #[test]
 fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     let (scope, history, mut operands, candidate) = body_recipe_history_fixture();
@@ -867,6 +909,220 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     assert_eq!(operands[0].resolved_body_state_id, Some(1));
     assert_eq!(operands[0].resolved_body_slot, Some(1));
     assert_eq!(operands[0].resolved_body_face_slots, [10, 11, 12]);
+}
+
+#[test]
+fn body_recipe_two_reference_intersection_preserves_shared_body() {
+    let (scope, history, mut operands, candidate) = body_recipe_history_two_reference_fixture();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_body_recipe_operand_history_candidates(
+            decode_ctx,
+            &mut operands,
+            &[],
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        )
+    })
+    .unwrap();
+
+    assert_eq!(operands[0].references().len(), 2);
+    for reference in operands[0].references() {
+        assert_eq!(
+            reference.preceding_candidate_faces.as_slice(),
+            std::slice::from_ref(&candidate)
+        );
+        assert_eq!(reference.preceding_body_slots, [1]);
+    }
+    assert_eq!(operands[0].resolved_body_slot, Some(1));
+}
+
+#[test]
+fn body_recipe_empty_first_reference_skips_secondary_slot_scan() {
+    let (scope, history, mut operands, candidate) = body_recipe_history_two_reference_fixture();
+    operands[0]
+        .reference_bindings_mut()
+        .next()
+        .expect("first reference")
+        .candidate_faces
+        .clear();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_body_recipe_operand_history_candidates(
+            decode_ctx,
+            &mut operands,
+            &[],
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        )
+    })
+    .unwrap();
+
+    assert!(operands[0].references()[0].preceding_body_slots.is_empty());
+    assert_eq!(operands[0].references()[1].preceding_body_slots, [1]);
+    assert_eq!(operands[0].resolved_body_slot, None);
+    assert_eq!(
+        operands[0].references()[1].preceding_candidate_faces,
+        [candidate]
+    );
+}
+
+#[test]
+fn body_recipe_reference_slot_scan_refuses_work_limit() {
+    let operation = "scan F3D body recipe references with empty body slots";
+    assert!(matches!(
+        body_recipe_history_refusal(operation),
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn body_recipe_intersection_reference_scan_refuses_work_limit() {
+    let operation = "scan F3D body recipe intersection references";
+    assert!(matches!(
+        body_recipe_history_refusal(operation),
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn body_recipe_intersection_membership_refuses_work_limit() {
+    let operation = "check F3D body recipe intersection membership";
+    assert!(matches!(
+        body_recipe_history_refusal(operation),
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
+}
+
+#[test]
+fn body_recipe_history_refuses_guid_copy_limits() {
+    use crate::records::identity::RecordedValue;
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+        ConstructionRecipeSelector,
+    };
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let recipe = ConstructionRecipe {
+        id: "recipe".into(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Body,
+        design: Some(ConstructionRecipeDesign {
+            id: RecordedValue {
+                value: "301".into(),
+                offset: 0,
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: 9,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: Some(RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
+    };
+
+    for operation in [
+        "copy F3D body recipe asset ID",
+        "copy F3D body recipe context ID",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |decode| {
+                let (scope, history, mut operands, _) = body_recipe_history_fixture();
+                bind_body_recipe_operand_history_candidates(
+                    decode,
+                    &mut operands,
+                    std::slice::from_ref(&recipe),
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&history),
+                )
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn body_recipe_history_accounts_temporary_identity_lookup_key() {
+    use crate::records::identity::RecordedValue;
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+        ConstructionRecipeSelector,
+    };
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let recipe = ConstructionRecipe {
+        id: "recipe".into(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Body,
+        design: Some(ConstructionRecipeDesign {
+            id: RecordedValue {
+                value: "301".into(),
+                offset: 0,
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: 9,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: Some(RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
+    };
+
+    let (scope, history, mut operands, _) = body_recipe_history_fixture();
+    operands.push(operands[0].clone());
+    if let Some(duplicate_reference) = operands[1].reference_bindings_mut().next() {
+        duplicate_reference.candidate_faces.clear();
+    }
+    crate::test_support::with_decode_context(|decode| {
+        bind_body_recipe_operand_history_candidates(
+            decode,
+            &mut operands,
+            std::slice::from_ref(&recipe),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        )
+    })
+    .unwrap();
+
+    assert_eq!(operands[0].resolved_body_slot, Some(1));
+    assert_eq!(operands[1].resolved_body_slot, Some(1));
+    assert_eq!(operands[1].resolved_body_state_id, Some(1));
+    assert_eq!(operands[1].resolved_body_face_slots, [10, 11, 12]);
+
+    let operation = "copy F3D body recipe asset ID";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        2,
+        |decode| {
+            let (scope, history, mut operands, _) = body_recipe_history_fixture();
+            operands.push(operands[0].clone());
+            if let Some(duplicate_reference) = operands[1].reference_bindings_mut().next() {
+                duplicate_reference.candidate_faces.clear();
+            }
+            bind_body_recipe_operand_history_candidates(
+                decode,
+                &mut operands,
+                std::slice::from_ref(&recipe),
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&history),
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
+    ));
 }
 
 #[test]

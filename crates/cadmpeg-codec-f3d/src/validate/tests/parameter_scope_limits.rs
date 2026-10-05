@@ -74,3 +74,127 @@ fn invalid_parameter_scope_preserves_finding() {
         );
     })
 }
+
+#[test]
+fn parameter_scope_kind_comparison_preserves_work_refusal() {
+    crate::test_support::with_decode_context(|service| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native();
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "compare F3D parameter scope kind",
+            0,
+            |decode| {
+                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                ctx.decode = decode;
+                super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D parameter scope kind")
+        );
+    });
+}
+
+#[test]
+fn component_pattern_occurrence_checks_preserve_work_refusal() {
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrence, DesignComponentOccurrenceDraft,
+        DesignComponentOccurrencePlacement,
+    };
+    use crate::records::feature::patterns::{
+        DesignPatternComponentInstance, DesignPatternInstance, DesignRectangularPatternInstances,
+    };
+    use crate::records::identity::Located;
+    use crate::records::sketch_placement::SketchPlacementMatrix;
+    let component = "11111111-2222-4333-8444-555555555555";
+    let seed_guid = "22222222-3333-4444-8555-666666666666";
+    let generated_guid = "33333333-4444-4555-8666-777777777777";
+    let occurrence = |index: u32, guid: &str, placement| {
+        DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+            id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{index}"),
+            class_tag: "256".to_owned().try_into().unwrap(),
+            record_index: index,
+            byte_offset: u64::from(index) * 10,
+            component_record_index: 700,
+            component_guid: component.to_owned().try_into().unwrap(),
+            occurrence_guid: guid.to_owned().try_into().unwrap(),
+            placement,
+        })
+        .unwrap()
+    };
+    let native = crate::native::F3dNative {
+        design_component_occurrences: vec![
+            occurrence(1, seed_guid, DesignComponentOccurrencePlacement::Base),
+            occurrence(
+                2,
+                generated_guid,
+                DesignComponentOccurrencePlacement::Explicit {
+                    ordinal: std::num::NonZeroU32::new(2).unwrap(),
+                    transform: SketchPlacementMatrix::IDENTITY,
+                },
+            ),
+        ],
+        ..Default::default()
+    };
+    let row = |index, guid: &str| DesignPatternComponentInstance {
+        instance: DesignPatternInstance {
+            record_index: index,
+            transform: Located {
+                value: SketchPlacementMatrix::IDENTITY,
+                offset: u64::from(index) * 10 + 209,
+            },
+        },
+        occurrence_guid: guid.to_owned().try_into().unwrap(),
+    };
+    let instances = DesignRectangularPatternInstances::Components {
+        component_guid: component.to_owned().try_into().unwrap(),
+        seed: row(1, seed_guid),
+        generated: vec![row(2, generated_guid)],
+    };
+    crate::test_support::with_decode_context(|decode| {
+        assert!(super::super::valid_component_pattern_occurrences(
+            decode,
+            &native,
+            "f3d:Design/BulkStream.dat",
+            &instances
+        )
+        .unwrap());
+        assert!(!super::super::valid_component_pattern_occurrences(
+            decode,
+            &native,
+            "f3d:Other/BulkStream.dat",
+            &instances
+        )
+        .unwrap());
+    });
+    for operation in [
+        "find F3D pattern seed occurrence",
+        "compare F3D pattern seed occurrence stream",
+        "compare F3D pattern seed component GUID",
+        "compare F3D pattern seed occurrence GUID",
+        "validate F3D generated component occurrences",
+        "find F3D generated component occurrence",
+        "compare F3D generated occurrence stream",
+        "compare F3D generated component GUID",
+        "compare F3D generated occurrence GUID",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |decode| {
+                super::super::valid_component_pattern_occurrences(
+                    decode,
+                    &native,
+                    "f3d:Design/BulkStream.dat",
+                    &instances,
+                )
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+        );
+    }
+}

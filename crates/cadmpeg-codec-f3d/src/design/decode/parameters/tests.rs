@@ -1051,7 +1051,12 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
         DesignParameterOwner::try_from(crate::records::parameters::DesignParameterOwnerWire {
             id: format!(
                 "{}:design-parameter-owner#1",
-                crate::ids::native_scope(STREAM)
+                crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                    ctx,
+                    STREAM,
+                    "retain F3D native scope"
+                )
+                .expect("test F3D native identity"))
             ),
             byte_offset: 1,
             frame_length: 104,
@@ -1069,7 +1074,10 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
         })
         .unwrap();
     let header = crate::records::decal::DesignRecordHeader {
-        id: crate::ids::native_design_record_header_id(STREAM, 0),
+        id: crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_record_header_id(ctx, STREAM, 0)
+                .expect("test F3D native identity")
+        }),
         record_index: 46,
         class_tag: crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
         byte_offset: 0,
@@ -1081,7 +1089,13 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
     zip.write_all(&prefix).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     with_scan(&archive, |scan| {
-        let scope_len = u64_from_index(crate::ids::native_scope(STREAM).len());
+        let scope_len = u64_from_index(
+            crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_scope(ctx, STREAM, "retain F3D native scope")
+                    .expect("test F3D native identity")
+            })
+            .len(),
+        );
         for (items, retained, dimension, operation) in [
             (
                 0,
@@ -1191,7 +1205,12 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
             decoded[0].id(),
             format!(
                 "{}:design-parameter-companion#0",
-                crate::ids::native_scope(STREAM)
+                crate::test_support::with_decode_context(|ctx| crate::ids::native_scope(
+                    ctx,
+                    STREAM,
+                    "retain F3D native scope"
+                )
+                .expect("test F3D native identity"))
             )
         );
     });
@@ -1218,7 +1237,10 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let parameter = crate::records::parameters::DesignParameter::try_from(
         crate::records::parameters::DesignParameterDraft::<String> {
-            id: crate::ids::native_design_parameter_id(stream, 200),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_parameter_id(ctx, stream, 200)
+                    .expect("test F3D native identity")
+            }),
             byte_offset: 200,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
@@ -1249,7 +1271,10 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     )
     .unwrap();
     let header = crate::records::decal::DesignRecordHeader {
-        id: crate::ids::native_design_record_header_id(stream, 0),
+        id: crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_record_header_id(ctx, stream, 0)
+                .expect("test F3D native identity")
+        }),
         record_index: 44,
         class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
         byte_offset: 0,
@@ -1325,7 +1350,10 @@ fn parameter_owner_maps_and_output_refuse_collection_limit() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let parameter = crate::records::parameters::DesignParameter::try_from(
         crate::records::parameters::DesignParameterDraft::<String> {
-            id: crate::ids::native_design_parameter_id(stream, 200),
+            id: crate::test_support::with_decode_context(|ctx| {
+                crate::ids::native_design_parameter_id(ctx, stream, 200)
+                    .expect("test F3D native identity")
+            }),
             byte_offset: 200,
             class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
                 .unwrap(),
@@ -1356,7 +1384,10 @@ fn parameter_owner_maps_and_output_refuse_collection_limit() {
     )
     .unwrap();
     let header = crate::records::decal::DesignRecordHeader {
-        id: crate::ids::native_design_record_header_id(stream, 0),
+        id: crate::test_support::with_decode_context(|ctx| {
+            crate::ids::native_design_record_header_id(ctx, stream, 0)
+                .expect("test F3D native identity")
+        }),
         record_index: 44,
         class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
         byte_offset: 0,
@@ -1863,7 +1894,14 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
             assert_eq!(owner.evaluated_value().get(), 2.5);
             assert_eq!(
                 owner.id(),
-                &crate::ids::native_design_parameter_owner_id("Design/BulkStream.dat", frame_start)
+                &crate::test_support::with_decode_context(|ctx| {
+                    crate::ids::native_design_parameter_owner_id(
+                        ctx,
+                        "Design/BulkStream.dat",
+                        frame_start,
+                    )
+                    .expect("test F3D native identity")
+                })
             );
         }
     }

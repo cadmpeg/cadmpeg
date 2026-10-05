@@ -236,7 +236,11 @@ fn sketch_text_with_retained_limit(
 #[test]
 fn sketch_text_identifier_refuses_retained_limit() {
     let bytes = indexed_sketch_text_record(1);
-    let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
+    let id_len = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_sketch_text_id(ctx, "Design/BulkStream.dat", 7)
+            .expect("test F3D native identity")
+    })
+    .len();
     let text_len = "Arial".len() + "B6 Probe 47".len();
     let error =
         sketch_text_with_retained_limit(&bytes, 3, u64::try_from(text_len + id_len - 1).unwrap());
@@ -251,7 +255,11 @@ fn sketch_text_identifier_refuses_retained_limit() {
 #[test]
 fn sketch_text_raw_bytes_refuse_retained_limit() {
     let bytes = indexed_sketch_text_record(1);
-    let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
+    let id_len = crate::test_support::with_decode_context(|ctx| {
+        crate::ids::native_sketch_text_id(ctx, "Design/BulkStream.dat", 7)
+            .expect("test F3D native identity")
+    })
+    .len();
     let text_len = "Arial".len() + "B6 Probe 47".len();
     let maximum = u64::try_from(text_len + id_len + bytes.len() - 1).unwrap();
     let error = sketch_text_with_retained_limit(&bytes, 3, maximum);

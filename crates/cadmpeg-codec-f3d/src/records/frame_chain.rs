@@ -35,3 +35,13 @@ impl RecordFrameChain {
 }
 
 mod identity_rewrite;
+
+impl cadmpeg_core::decode::cost::DecodeCost for RecordFrameChain {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        (&self.record_index, &self.byte_offset).decode_cost(ctx, operation)
+    }
+}

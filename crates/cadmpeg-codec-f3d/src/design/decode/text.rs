@@ -288,12 +288,16 @@ mod tests {
                             .unwrap()
                     })
                     .filter(|(text, _)| text.as_bytes().iter().all(allowed));
-                    let borrowed = lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed)
-                        .map(|(value, end)| (value.to_owned(), end));
+                    let borrowed = crate::test_support::with_decode_context(|ctx| {
+                        lp_ascii_filtered_view(ctx, &bytes, 0, bounds.clone(), allowed).unwrap()
+                    })
+                    .map(|(value, end)| (value.to_owned(), end));
                     assert_eq!(borrowed, original);
                     bytes.pop();
                     assert_eq!(
-                        lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed),
+                        crate::test_support::with_decode_context(|ctx| {
+                            lp_ascii_filtered_view(ctx, &bytes, 0, bounds.clone(), allowed).unwrap()
+                        }),
                         None
                     );
                     bytes.push(*field.last().unwrap_or(&0));
