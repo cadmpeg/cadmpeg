@@ -747,7 +747,7 @@ mod tests {
         crate::resolved_features::parameters::enrich_history_parameters(
             &ctx,
             &mut histories,
-            [&lane],
+            std::slice::from_ref(&lane),
             true,
         )
         .expect("move-face parameter enrichment succeeds");
