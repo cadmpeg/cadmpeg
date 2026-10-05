@@ -14,8 +14,9 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use zip::CompressionMethod;
 
 use super::{
-    decode_parameters, parse_design_parameter_record, parse_legacy_parameter_owner_68,
-    parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
+    decode_parameters, legacy_parameter_owner_68_layout, legacy_parameter_owner_88_layout,
+    parse_design_parameter_record, parse_parameter_companion, parse_parameter_owner,
+    ParsedParameterOwner,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::records::{
@@ -25,6 +26,46 @@ use crate::records::{
 use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
+
+impl ParsedParameterOwner {
+    /// Locate this owner in a test stream through the decode path.
+    pub(in crate::design) fn into_record(
+        self,
+        stream: &str,
+        frame_start: u64,
+    ) -> Option<DesignParameterOwner> {
+        self.locate(
+            &cadmpeg_test_support::service_decode_context(),
+            stream,
+            frame_start,
+        )
+        .expect("service decode context")
+    }
+}
+
+/// The legacy 68-byte owner frame with its class tag retained.
+fn parse_legacy_parameter_owner_68(
+    ctx: &DecodeContext<'_>,
+    frame: &[u8],
+    evaluated: crate::records::identity::Located<f64>,
+    frame_start: u64,
+) -> Result<Option<ParsedParameterOwner>, cadmpeg_core::CodecError> {
+    legacy_parameter_owner_68_layout(frame, evaluated, frame_start)
+        .map(|layout| layout.retain(ctx))
+        .transpose()
+}
+
+/// The legacy 88-byte owner frame with its class tag retained.
+fn parse_legacy_parameter_owner_88(
+    ctx: &DecodeContext<'_>,
+    frame: &[u8],
+    evaluated: crate::records::identity::Located<f64>,
+    frame_start: u64,
+) -> Result<Option<ParsedParameterOwner>, cadmpeg_core::CodecError> {
+    legacy_parameter_owner_88_layout(frame, evaluated, frame_start)
+        .map(|layout| layout.retain(ctx))
+        .transpose()
+}
 
 #[test]
 fn design_parameter_class_tag_refuses_retained_bytes() {
@@ -1442,6 +1483,137 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         [
             format!("{stream}:construction-recipe#30"),
             format!("{stream}:construction-recipe#31"),
+        ]
+    );
+}
+
+/// A sketch scope at `byte_offset` of `stream` that binds `entity`.
+fn sketch_scope(
+    stream: &str,
+    byte_offset: u64,
+    entity: &str,
+) -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut, DesignSketchEntityBinding,
+    };
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:parameter-scope#{byte_offset}"),
+        DesignFeatureKind::Sketch,
+        12,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = byte_offset;
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let DesignScopePayloadMut::Sketch(slot) = scope.payload_mut() else {
+        panic!("sketch scope payload");
+    };
+    *slot = Some(DesignSketchEntityBinding {
+        entity_id: crate::records::identity::DesignEntityId::try_from(entity.to_owned()).unwrap(),
+        entity_reference_offset: 0,
+    });
+    scope
+}
+
+/// An entity header at `byte_offset` of `stream` for `entity`.
+fn entity_header(
+    stream: &str,
+    byte_offset: u64,
+    entity: &str,
+) -> crate::records::entity_header::DesignEntityHeader {
+    crate::records::entity_header::DesignEntityHeader {
+        id: format!("{stream}:design-entity-header#{byte_offset}"),
+        byte_offset,
+        entity_id: crate::records::identity::DesignEntityId::try_from(entity.to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("366".to_owned()).unwrap(),
+        optional_slot_present: false,
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
+            Some("MSketch".into()),
+            None,
+            crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+        )
+        .unwrap(),
+    }
+}
+
+#[test]
+fn parameter_companion_payload_ends_at_the_first_later_sketch_preamble() {
+    let native = "f3d:native";
+    let other = "f3d:other";
+    let companion = DesignParameterCompanion::unbound(
+        format!("{native}:design-parameter-companion#20"),
+        20,
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        1,
+        2,
+        std::num::NonZeroU64::new(1).unwrap(),
+        62,
+    );
+    // The scope at 100 ends the interval at 100; scopes at or after it name
+    // the preambles the companion does not own.
+    let scopes = [
+        sketch_scope(native, 2, "Sketch_4"),
+        sketch_scope(native, 100, "Sketch_1"),
+        sketch_scope(native, 104, "Sketch_2"),
+        sketch_scope(other, 104, "Sketch_3"),
+    ];
+    let entities = [
+        // Bound only by a scope before the interval end.
+        entity_header(native, 80, "Sketch_4"),
+        // Bound by no scope.
+        entity_header(native, 82, "Sketch_5"),
+        // Bound only by a scope of another stream.
+        entity_header(native, 84, "Sketch_3"),
+        entity_header(native, 94, "Sketch_2"),
+        entity_header(native, 90, "Sketch_1"),
+        // A preamble entity of another stream.
+        entity_header(other, 86, "Sketch_1"),
+    ];
+    let recipe = |stream: &str, byte_offset| ConstructionRecipe {
+        id: format!("{stream}:construction-recipe#{byte_offset}"),
+        byte_offset,
+        kind: ConstructionRecipeKind::Edge,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    let recipes = [
+        recipe(native, 92),
+        recipe(native, 85),
+        recipe(other, 81),
+        recipe(native, 79),
+        recipe(native, 70),
+    ];
+    let bound = super::bind_parameter_companion_payloads(
+        &cadmpeg_test_support::service_decode_context(),
+        vec![companion],
+        &super::ParameterCompanionInputs {
+            parameters: &[],
+            owners: &[],
+            scopes: &scopes,
+            entities: &entities,
+            headers: &[],
+            recipes: &recipes,
+            stream_lengths: &std::collections::HashMap::from([(native.to_owned(), 200)]),
+        },
+    )
+    .unwrap();
+
+    let payload = bound[0].payload().expect("bound payload");
+    assert_eq!(payload.byte_offset(), 78);
+    assert_eq!(payload.byte_length(), 12);
+    assert_eq!(
+        payload.owned_recipe_ids(),
+        [
+            format!("{native}:construction-recipe#79"),
+            format!("{native}:construction-recipe#85"),
         ]
     );
 }
