@@ -1109,17 +1109,10 @@ pub(in crate::native) fn feature_operation_body_members(
         )? {
             let groups = crate::om::operation_body_members(ctx, record.body_view())?;
             for group in ctx.admit_iter(groups, "visit NX operation body member groups")? {
-                let mut group_members = group.members.into_iter();
-                for ordinal in
-                    ctx.admit_iter(&(0..group_members.len()), "visit NX operation body members")?
+                for (ordinal, member) in ctx
+                    .admit_iter(group.members, "visit NX operation body members")?
+                    .enumerate()
                 {
-                    let Some(member) = group_members.next() else {
-                        return Err(ctx.refuse_codec_limit(
-                            "visit NX operation body members",
-                            0,
-                            1,
-                        ));
-                    };
                     let ordinal = u32::try_from(ordinal).map_err(|_| {
                         ctx.refuse_codec_limit("NX operation body member ordinal", 0, 1)
                     })?;
@@ -1516,17 +1509,7 @@ pub(in crate::native) fn feature_operation_body_reference_lanes(
                     }
                     crate::om::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) => {
                         let mut references = Vec::new();
-                        let mut values = values.into_iter();
-                        for _ in
-                            ctx.admit_iter(&(0..values.len()), "resolve NX body object references")?
-                        {
-                            let Some(value) = values.next() else {
-                                return Err(ctx.refuse_codec_limit(
-                                    "resolve NX body object references",
-                                    0,
-                                    1,
-                                ));
-                            };
+                        for value in ctx.admit_iter(values, "resolve NX body object references")? {
                             let data_block = charged_unique_offset_data_block(
                                 ctx,
                                 &indexed,
