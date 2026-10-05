@@ -790,8 +790,8 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
         }
         let start_angle = second[1].atan2(second[0]);
         let mut end_angle = first[1].atan2(first[0]);
+        // `atan2` lies in [-pi, pi], so at most two turns bring the end past the start.
         while end_angle <= start_angle {
-            ctx.charge_work(1, "creo trimmed section arc angle normalization")?;
             end_angle += std::f64::consts::TAU;
         }
         let Some(start_angle) = Angle::new(start_angle) else {

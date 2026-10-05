@@ -698,7 +698,8 @@ fn dimension_identity_includes_its_feature_definition() {
         .rows[0]
         .dimension_type = 4;
     assert_eq!(
-        section_circle_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_circle_geometry(
+            ctx,
             &BTreeMap::from([(7, [1.0, 2.0])]),
             &crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &definition))
                 .expect("test section solve"),
@@ -710,7 +711,8 @@ fn dimension_identity_includes_its_feature_definition() {
                 .circles()
                 .cloned()
                 .collect::<Vec<_>>()[0],
-        ),
+        ))
+        .expect("admitted test lookup"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(1.0, 2.0),

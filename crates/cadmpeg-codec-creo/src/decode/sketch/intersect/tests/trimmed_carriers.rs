@@ -292,9 +292,8 @@ fn arc_carriers_use_trim_vertices() {
     let points = BTreeMap::from([(7, [2.0, 0.0]), (8, [0.0, 0.0]), (9, [0.0, 2.0])]);
 
     let normalization_vertices = BTreeMap::from([(1, [-2.0, -0.0]), (2, [-2.0, 0.0])]);
-    let normalized = crate::test_support::assert_work_boundaries(
-        &["creo trimmed section arc angle normalization"],
-        |ctx| {
+    let normalized =
+        crate::decode::with_test_decode_ctx(|ctx| -> Result<_, cadmpeg_core::CodecError> {
             let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)?;
             trimmed_section_segment_geometry_with_missing_line(
                 ctx,
@@ -305,8 +304,8 @@ fn arc_carriers_use_trim_vertices() {
                 &segment,
                 None,
             )
-        },
-    );
+        })
+        .expect("service trimmed arc");
     let Some(SketchGeometryDefinition::Arc {
         start_angle,
         end_angle,

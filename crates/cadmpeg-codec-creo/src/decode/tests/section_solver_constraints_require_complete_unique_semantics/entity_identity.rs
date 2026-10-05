@@ -379,7 +379,8 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         sense: 0,
     };
     assert_eq!(
-        section_point_row_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_point_row_geometry(
+            ctx,
             &crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &opaque_point))
                 .expect("test section solve"),
             &opaque_point
@@ -390,7 +391,8 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
                 .points()
                 .cloned()
                 .collect::<Vec<_>>()[0],
-        ),
+        ))
+        .expect("admitted test lookup"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: Point2::new(0.0, 2.0),
@@ -465,10 +467,12 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         offset: 602,
     };
     assert_eq!(
-        section_centered_line_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_centered_line_geometry(
+            ctx,
             &BTreeMap::from([(0, [3.0, -1.0]), (1, [3.0, 5.0]), (2, [3.0, 2.0]),]),
             &centered_line,
-        ),
+        ))
+        .expect("admitted test lookup"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(3.0, -1.0),
@@ -478,13 +482,15 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         )
     );
     assert_eq!(
-        section_centered_line_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_centered_line_geometry(
+            ctx,
             &BTreeMap::from([(0, [3.0, -1.0]), (1, [3.0, 5.0]), (2, [3.0, 2.0]),]),
             &crate::feature::definitions::FeatureCenteredLineSegment {
                 center_id: 0,
                 ..centered_line.clone()
             },
-        ),
+        ))
+        .expect("admitted test lookup"),
         None
     );
     let reference_line = crate::feature::definitions::FeatureReferenceLineSegment {
@@ -495,10 +501,12 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         offset: 603,
     };
     assert_eq!(
-        section_reference_line_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_reference_line_geometry(
+            ctx,
             &BTreeMap::from([(7, [-4.0, 2.0]), (8, [6.0, 2.0])]),
             &reference_line,
-        ),
+        ))
+        .expect("admitted test lookup"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                 origin: Point2::new(-4.0, 2.0),
@@ -508,10 +516,12 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         )
     );
     assert_eq!(
-        section_reference_line_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_reference_line_geometry(
+            ctx,
             &BTreeMap::from([(7, [-4.0, 2.0]), (8, [-4.0, 2.0])]),
             &reference_line,
-        ),
+        ))
+        .expect("admitted test lookup"),
         None
     );
     let axis_reference_line = crate::feature::definitions::FeatureReferenceLineSegment {
@@ -566,13 +576,15 @@ fn section_solver_entity_identity_and_loci_require_unique_semantics() {
         None
     );
     assert_eq!(
-        section_reference_line_geometry(
+        crate::decode::with_test_decode_ctx(|ctx| section_reference_line_geometry(
+            ctx,
             &BTreeMap::from([(7, [-4.0, 2.0])]),
             &crate::feature::definitions::FeatureReferenceLineSegment {
                 point_ids: [Some(7), None],
                 ..reference_line
             },
-        ),
+        ))
+        .expect("admitted test lookup"),
         None
     );
     let mut endpoint_families = definition.clone();

@@ -805,8 +805,7 @@ pub(super) fn transfer_section_entities(
     let mut generated_saved_geometries = Vec::new();
     // discarded-value: The visitor continues through every semantic saved entity.
     let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |saved| {
-        let Some((internal_id, geometry, offset)) = saved_section_entity_geometry(ctx, saved)?
-        else {
+        let Some((internal_id, geometry, offset)) = saved_section_entity_geometry(saved) else {
             return Ok(ControlFlow::Continue(()));
         };
         let unique_internal_id = ctx.contains_btree_set(

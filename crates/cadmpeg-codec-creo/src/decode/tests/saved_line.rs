@@ -226,18 +226,14 @@ fn saved_line_joins_through_order_table() {
         panic!("saved line");
     };
     incomplete_line.endpoints[1][1] = None;
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| saved_section_entity_geometry(
-            ctx,
-            &incomplete
-                .saved_section
-                .as_ref()
-                .expect("saved section")
-                .entities[0]
-        ))
-        .expect("admitted test lookup")
-        .is_none()
-    );
+    assert!(saved_section_entity_geometry(
+        &incomplete
+            .saved_section
+            .as_ref()
+            .expect("saved section")
+            .entities[0]
+    )
+    .is_none());
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &incomplete))
             .expect("service section identities"),
@@ -1424,8 +1420,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     );
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| saved_section_entity_geometry(ctx, &entity))
-            .expect("admitted test lookup"),
+        saved_section_entity_geometry(&entity),
         Some((
             7,
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
@@ -1436,10 +1431,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
             19,
         ))
     );
-    let (_, geometry, _) =
-        crate::decode::with_test_decode_ctx(|ctx| saved_section_entity_geometry(ctx, &entity))
-            .expect("admitted test lookup")
-            .expect("complete saved circle");
+    let (_, geometry, _) = saved_section_entity_geometry(&entity).expect("complete saved circle");
     assert!(is_full_circle_geometry(&geometry));
 
     let circle = crate::feature::definitions::FeatureCircleSegment {

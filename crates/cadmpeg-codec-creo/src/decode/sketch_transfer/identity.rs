@@ -430,7 +430,7 @@ pub(in super::super) fn materialized_saved_section_external_ids(
             crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
                 saved_spline_sketch_geometry(ctx, spline, refusal)?.is_some()
             }
-            _ => saved_section_entity_geometry(ctx, entity)?.is_some(),
+            _ => saved_section_entity_geometry(entity).is_some(),
         };
         if !materializes {
             return Ok(ControlFlow::Continue(()));

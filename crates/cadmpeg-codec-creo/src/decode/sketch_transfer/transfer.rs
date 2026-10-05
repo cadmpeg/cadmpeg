@@ -343,80 +343,44 @@ pub(in super::super) fn transfer_sketches(
         let mut centered_line_geometries = BTreeMap::new();
         let mut reference_line_geometries = BTreeMap::new();
         if let Some(table) = &definition.segments {
-            for segment in ctx
-                .admit_iter(table.rows.as_slice(), "creo transfer circle geometry rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Circle(segment) => Some(segment),
-                    _ => None,
-                })
+            for row in
+                ctx.admit_iter(table.rows.as_slice(), "creo transfer segment geometry rows")?
             {
-                if let Some(geometry) = section_circle_geometry(&points, &radii, segment) {
-                    ctx.insert_btree_map(
+                let (geometry, offset, geometries, operation) = match row {
+                    SegmentRow::Circle(segment) => (
+                        section_circle_geometry(ctx, &points, &radii, segment)?,
+                        segment.offset,
                         &mut circle_geometries,
-                        segment.offset,
-                        geometry,
                         "creo section circle geometry nodes",
-                    )?;
-                }
-            }
-            for segment in ctx
-                .admit_iter(table.rows.as_slice(), "creo transfer point geometry rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Point(segment) => Some(segment),
-                    _ => None,
-                })
-            {
-                if let Some(geometry) = section_point_row_geometry(&points, segment) {
-                    ctx.insert_btree_map(
+                    ),
+                    SegmentRow::Point(segment) => (
+                        section_point_row_geometry(ctx, &points, segment)?,
+                        segment.offset,
                         &mut point_geometries,
-                        segment.offset,
-                        geometry,
                         "creo section point geometry nodes",
-                    )?;
-                }
-            }
-            for segment in ctx
-                .admit_iter(
-                    table.rows.as_slice(),
-                    "creo transfer centered-line geometry rows",
-                )?
-                .filter_map(|row| match row {
-                    SegmentRow::CenteredLine(segment) => Some(segment),
-                    _ => None,
-                })
-            {
-                if let Some(geometry) = section_centered_line_geometry(&points, segment) {
-                    ctx.insert_btree_map(
+                    ),
+                    SegmentRow::CenteredLine(segment) => (
+                        section_centered_line_geometry(ctx, &points, segment)?,
+                        segment.offset,
                         &mut centered_line_geometries,
-                        segment.offset,
-                        geometry,
                         "creo section centered-line geometry nodes",
-                    )?;
-                }
-            }
-            for segment in ctx
-                .admit_iter(
-                    table.rows.as_slice(),
-                    "creo transfer reference-line geometry rows",
-                )?
-                .filter_map(|row| match row {
-                    SegmentRow::ReferenceLine(segment) => Some(segment),
-                    _ => None,
-                })
-            {
-                if let Some(geometry) = resolved_section_reference_line_geometry(
-                    ctx,
-                    definition,
-                    &variable_points,
-                    &points,
-                    segment,
-                )? {
-                    ctx.insert_btree_map(
-                        &mut reference_line_geometries,
+                    ),
+                    SegmentRow::ReferenceLine(segment) => (
+                        resolved_section_reference_line_geometry(
+                            ctx,
+                            definition,
+                            &variable_points,
+                            &points,
+                            segment,
+                        )?,
                         segment.offset,
-                        geometry,
+                        &mut reference_line_geometries,
                         "creo section reference-line geometry nodes",
-                    )?;
+                    ),
+                    _ => continue,
+                };
+                if let Some(geometry) = geometry {
+                    ctx.insert_btree_map(geometries, offset, geometry, operation)?;
                 }
             }
         }

@@ -683,7 +683,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let (entities, _entity_storage) = semantic_saved_section_entities(ctx, definition)?;
         for entity in ctx.admit_iter(&entities, "creo saved section geometry traversal")? {
             let Some((internal_id, section_geometry, offset)) =
-                saved_section_entity_geometry(ctx, entity)?
+                saved_section_entity_geometry(entity)
             else {
                 continue;
             };
