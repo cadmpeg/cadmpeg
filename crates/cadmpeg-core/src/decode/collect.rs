@@ -1109,11 +1109,11 @@ impl DecodeContext<'_> {
     /// per key, is charged as one amount, so the unspecified visit order
     /// changes neither the total nor where a refusal falls. A key whose own
     /// measurement admits child traversal charges that inside the walk.
-    /// Decode hash tables only grow: core offers no removal and the checker
-    /// reports one, so no deleted slot hides buckets from `capacity()`, and
-    /// the old table's storage computed from it is the real allocation. The
-    /// caller charges that storage as work first, at least two units per
-    /// bucket, which pays for the measuring walk and the rehash's own walk.
+    /// The caller charges growth first. When the table reallocates, that work
+    /// bounds the old table's storage, at least two units per bucket, which
+    /// pays for this measuring walk and the rehash's own walk. When it rehashes
+    /// in place, both walks are paid by the insertions that filled its deleted
+    /// slots, as `charge_hash_growth` states.
     fn charge_rehash<'keys, K: DecodeCost + 'keys>(
         &self,
         len: usize,
@@ -1162,8 +1162,21 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.retained_size_overflow_limit(operation))
     }
 
-    // Growth is charged from `capacity()`, which is the table's full capacity
-    // only while the table has no deleted slots; decode tables never remove.
+    // `capacity()` is the live entries plus the remaining growth allowance; a
+    // removal leaves a deleted slot that counts in neither, so the real table
+    // can hold more buckets than `capacity()` implies. Hashbrown grows only
+    // when the new length exceeds `capacity()`. It then reallocates only when
+    // the new length exceeds half the real capacity, to the larger of the new
+    // length and the real capacity plus one: at most twice the new length.
+    // Otherwise it rehashes in place and allocates nothing. Storage for twice
+    // the new length therefore bounds both the old table it walks and the new
+    // table it allocates. Charging that bound as work, and its excess over the
+    // storage of `capacity()` as retained bytes, keeps the retained total at
+    // or above the real allocation, because earlier growth already charged at
+    // least the old table. An in-place rehash walks every bucket of a table
+    // whose deleted slots each came from an insertion since the last rehash,
+    // and it runs only when those slots are at least half the real capacity,
+    // so the insertions that filled them pay for the walk.
     fn charge_hash_growth<T>(
         &self,
         len: usize,
@@ -1182,11 +1195,16 @@ impl DecodeContext<'_> {
             2..=3 => 7,
             _ => 3,
         };
-        let old = self.hash_storage_bytes::<T>(capacity, operation)?;
-        let bytes = self.hash_storage_bytes::<T>(required.max(minimum), operation)? - old;
-        self.charge_work_limit(u64_from_index(old), operation)?;
+        let largest = required
+            .checked_mul(2)
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?
+            .max(minimum);
+        let bound = self.hash_storage_bytes::<T>(largest, operation)?;
+        let counted = self.hash_storage_bytes::<T>(capacity, operation)?;
+        let bytes = bound - counted;
+        self.charge_work_limit(u64_from_index(bound), operation)?;
         self.charge_retained_limit(u64_from_index(bytes), operation)?;
-        let overlap = self.reserve_scoped_limit(u64_from_index(old), operation)?;
+        let overlap = self.reserve_scoped_limit(u64_from_index(bound), operation)?;
         Ok((bytes, overlap))
     }
 

@@ -2601,10 +2601,15 @@ mod tests {
         let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
         let id_bytes =
             u64::try_from(parameters[0].id.as_str().len()).expect("identity byte length fits u64");
-        // Indexing, dependency visits, closure flags, and the first queue step use 174 units.
+        // The index table's growth bound is four buckets of (&ParameterId, usize) slots with
+        // their control bytes, alignment and trailing controls. Indexing, dependency visits,
+        // closure flags, and the first queue step use the remaining units.
+        let index_table =
+            u64::try_from(4 * std::mem::size_of::<(&ParameterId, usize)>() + 15 + 4 + 16)
+                .expect("table bytes fit u64");
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units =
-            (3 + 4 + 6 * id_bytes) + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
+            index_table + (3 + 4 + 6 * id_bytes) + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
@@ -2808,25 +2813,27 @@ mod tests {
             kinds.push(shared_add(ordinal));
         }
         let mut policy = DecodePolicy::service();
-        // Plan bytes count 16-bucket visiting/length maps, a 4-bucket set, and 12 vector slots.
-        let plan_bytes = 16 * std::mem::size_of::<u32>()
-            + 16
-            + 31
-            + 4 * std::mem::size_of::<u32>()
-            + 4
-            + 31
-            + 16 * std::mem::size_of::<(u32, super::MeasuredExpression)>()
-            + 16
-            + 31
+        // A table's storage is its buckets' slots, one control byte per bucket, at most 15
+        // alignment bytes and 16 trailing controls.
+        let table = |slot: usize, buckets: usize| buckets * slot + 15 + buckets + 16;
+        // Growing a table to eight entries admits its 16-bucket bound at the fourth entry
+        // and its 32-bucket bound at the eighth, each net of the 4- or 8-bucket table
+        // already counted.
+        let grown = |slot: usize| table(slot, 16) + table(slot, 32) - table(slot, 8);
+        // Plan bytes count the eight-entry visiting and length maps, a 4-bucket set, and 12
+        // vector slots.
+        let plan_bytes = grown(std::mem::size_of::<u32>())
+            + table(std::mem::size_of::<u32>(), 4)
+            + grown(std::mem::size_of::<(u32, super::MeasuredExpression)>())
             + 12 * std::mem::size_of::<u32>();
-        // Five rendered lengths total 213 bytes; their memo table has eight buckets.
-        // The sixth shared-add node needs 2*121+7 bytes, above every earlier replacement peak.
+        // Six rendered lengths total 462 bytes; their memo table admitted its 16-bucket
+        // bound at the fourth entry and holds no more than seven. Growing it to 16 buckets
+        // peaks at twice that bound (the table and its transient allocation), which the
+        // text of the seventh node, 2*249+7 bytes, exceeds with every earlier peak below it.
         let live = plan_bytes
-            + (1 + 9 + 25 + 57 + 121)
-            + 8 * std::mem::size_of::<(u32, String)>()
-            + 8
-            + 31;
-        let next_length = 2 * 121 + 7;
+            + (1 + 9 + 25 + 57 + 121 + 249)
+            + table(std::mem::size_of::<(u32, String)>(), 16);
+        let next_length = 2 * 249 + 7;
         policy.limits.max_materialized_bytes =
             cadmpeg_core::decode::u64_from_index(live + next_length - 1);
         assert!(matches!(

@@ -4942,6 +4942,31 @@ fn retain_unbound_presentation_record(
     Ok(())
 }
 
+/// Records one object's membership in a group: a new group grows the
+/// workspace and the key table before the member link is copied.
+fn admit_group_member(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    group_members: &mut HashMap<i32, Vec<String>>,
+    group: i32,
+    source_order: usize,
+) -> Result<(), CodecError> {
+    if !group_members.contains_key(&group) {
+        workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+            i32,
+            Vec<String>,
+        )>()))?;
+        ctx.reserve_map(group_members, 1, "Rhino group member keys")?;
+    }
+    let members = group_members.entry(group).or_default();
+    ctx.reserve_vec(members, 1, "Rhino group member links")?;
+    members.push(ctx.format_retained(
+        format_args!("rhino:object:record#{source_order:06}"),
+        "Rhino group member link",
+    )?);
+    Ok(())
+}
+
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
@@ -5469,18 +5494,13 @@ pub(crate) fn install(
         };
         if let Some(attributes) = object.attributes.parsed() {
             for group in &attributes.groups {
-                if !group_members.contains_key(group) {
-                    group_member_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                        std::mem::size_of::<(i32, Vec<String>)>(),
-                    ))?;
-                    ctx.reserve_map(&mut group_members, 1, "Rhino group member keys")?;
-                }
-                let members = group_members.entry(*group).or_default();
-                ctx.reserve_vec(members, 1, "Rhino group member links")?;
-                members.push(ctx.format_retained(
-                    format_args!("rhino:object:record#{source_order:06}"),
-                    "Rhino group member link",
-                )?);
+                admit_group_member(
+                    ctx,
+                    &mut group_member_workspace,
+                    &mut group_members,
+                    *group,
+                    source_order,
+                )?;
             }
         }
         if object.class_uuid == LIGHT {
