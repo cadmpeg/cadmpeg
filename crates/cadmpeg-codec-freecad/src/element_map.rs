@@ -44,9 +44,10 @@ enum ElementMapCarrier<'a, 'input> {
 pub(crate) fn parse(
     ctx: &DecodeContext<'_>,
     document: &[u8],
-    file_version: usize,
+    file_version: Option<usize>,
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(document.len()),
@@ -202,9 +203,14 @@ pub(crate) fn parse(
                     parsed,
                 })
             }
-            ElementMapCarrier::Legacy(marker) => {
-                parse_legacy_element_map(ctx, marker, file_version, &entry_data)?
-            }
+            ElementMapCarrier::Legacy(marker) => parse_legacy_element_map(
+                ctx,
+                marker,
+                file_version,
+                &entry_data,
+                &property.id,
+                losses,
+            )?,
         };
         let Some(payload) = payload else {
             continue;
@@ -531,8 +537,10 @@ fn mapped_name_count(parsed: &ParsedMap) -> usize {
 fn parse_legacy_element_map(
     ctx: &DecodeContext<'_>,
     marker: roxmltree::Node<'_, '_>,
-    file_version: usize,
+    file_version: Option<usize>,
     entry_data: &HashMap<&str, &[u8]>,
+    owner: &str,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<MapPayload>, CodecError> {
     let source_entry = marker
         .attribute("file")
@@ -572,6 +580,15 @@ fn parse_legacy_element_map(
     if declared_count == 0 {
         return Ok(None);
     }
+    let Some(file_version) = file_version else {
+        let message = ctx.format_retained(format_args!("property {owner} inline legacy ElementMap requires a verified FileVersion; source XML retained without assigning an encoding"), "FreeCAD element map version diagnostic")?;
+        ctx.push_vec(
+            losses,
+            crate::loss::FreecadLossCode::ElementMapVersionUnresolved.note(message),
+            "FreeCAD element map losses",
+        )?;
+        return Ok(None);
+    };
     let records = if file_version > 1 {
         let (bytes, _reservation) = node_text_bytes(ctx, marker)?;
         parse_legacy_stream(ctx, &bytes, Some(declared_count))?.1

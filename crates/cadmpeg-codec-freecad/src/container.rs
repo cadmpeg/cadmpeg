@@ -571,13 +571,24 @@ pub(crate) fn parse_document(
     }
     let schema_version = canonical_attribute(ctx, root, "SchemaVersion", "schemaVersion")?
         .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
-    let file_version =
-        canonical_attribute(ctx, root, "FileVersion", "fileVersion")?.unwrap_or_else(|| "0".into());
+    let file_version = metadata_attribute(
+        ctx,
+        root,
+        "FileVersion",
+        "fileVersion",
+        crate::loss::FreecadLossCode::FileVersionNoncanonical,
+        losses,
+    )?
+    .unwrap_or_else(|| "0".into());
     schema_version
         .parse::<u32>()
         .map_err(|_| CodecError::Malformed("Document.xml SchemaVersion is invalid".into()))?;
-    let file_version =
-        crate::native::FileVersion::try_from(file_version).map_err(CodecError::Malformed)?;
+    let file_version = crate::native::FileVersion::from(file_version);
+    if file_version.value().is_none() {
+        ctx.push_vec(losses, crate::loss::FreecadLossCode::FileVersionUnverified.note(
+            ctx.format_retained(format_args!("Document FileVersion {:?} is not an unsigned integer; version-dependent inline element maps remain source-only", file_version.as_str()), "FCStd file version diagnostic")?
+        ), "FCStd container losses")?;
+    }
     let schema = crate::dialect::FcstdDialect::from_schema_version(&schema_version);
     let (declaration_tag, data_tag, record_tag) = schema.persistence_tags();
     // discarded-value: the data section's uniqueness is the check; ? states its refusal and the node has no reader
@@ -606,33 +617,14 @@ pub(crate) fn parse_document(
     }
     let mut domains = ctx.collection_vec(domain_set.len(), "FCStd document domain list")?;
     domains.extend(domain_set);
-    let program_version = match (
-        root.attribute("ProgramVersion"),
-        root.attribute("programVersion"),
-    ) {
-        (canonical, None) => canonical
-            .map(|value| ctx.copy_retained_text(value, "FCStd program version"))
-            .transpose()?,
-        (canonical, Some(alias)) => {
-            let conflict = canonical.is_some_and(|value| value != alias);
-            let message = if conflict {
-                "Document has conflicting ProgramVersion and programVersion metadata; program version omitted"
-            } else {
-                "Document uses programVersion metadata; read as ProgramVersion"
-            };
-            let message = ctx.copy_retained_text(message, "FCStd program version diagnostic")?;
-            ctx.push_vec(
-                losses,
-                crate::loss::FreecadLossCode::ProgramVersionNoncanonical.note(message),
-                "FCStd container losses",
-            )?;
-            if conflict {
-                None
-            } else {
-                Some(ctx.copy_retained_text(alias, "FCStd program version")?)
-            }
-        }
-    };
+    let program_version = metadata_attribute(
+        ctx,
+        root,
+        "ProgramVersion",
+        "programVersion",
+        crate::loss::FreecadLossCode::ProgramVersionNoncanonical,
+        losses,
+    )?;
     let document = DocumentFacts {
         id: crate::native::native_id("document", "0"),
         file_version,
@@ -642,6 +634,33 @@ pub(crate) fn parse_document(
         domains,
     };
     Ok((document, schema_version))
+}
+
+/// Canonical metadata controls interpretation when a noncanonical alias conflicts.
+fn metadata_attribute(
+    ctx: &DecodeContext<'_>,
+    root: roxmltree::Node<'_, '_>,
+    canonical: &str,
+    alias: &str,
+    code: crate::loss::FreecadLossCode,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Option<String>, CodecError> {
+    let value = root.attribute(canonical);
+    if let Some(alias_value) = root.attribute(alias) {
+        let message = if value.is_some_and(|value| value != alias_value) {
+            ctx.format_retained(format_args!("Document has conflicting {canonical} and {alias} declarations; retaining canonical {canonical}"), "FCStd metadata diagnostic")?
+        } else {
+            ctx.format_retained(
+                format_args!("Document uses {alias} metadata; read as {canonical}"),
+                "FCStd metadata diagnostic",
+            )?
+        };
+        ctx.push_vec(losses, code.note(message), "FCStd container losses")?;
+    }
+    value
+        .or_else(|| root.attribute(alias))
+        .map(|value| ctx.copy_retained_text(value, "FCStd version metadata"))
+        .transpose()
 }
 
 pub(crate) fn logical_ledger(

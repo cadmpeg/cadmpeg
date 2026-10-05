@@ -1021,7 +1021,8 @@ fn cube_emits_full_brep_hierarchy() {
     // 6 loops * 4 coedges = 24 oriented edges.
     assert_eq!(s.matches("ORIENTED_EDGE").count(), 24);
     assert_eq!(s.matches("= EDGE_LOOP(").count(), 6);
-    assert_eq!(s.matches("FACE_OUTER_BOUND").count(), 6);
+    assert_eq!(s.matches("FACE_OUTER_BOUND").count(), 0);
+    assert_eq!(s.matches("FACE_BOUND").count(), 6);
     // Every line edge carries a LINE curve.
     assert_eq!(s.matches("= LINE(").count(), 12);
 }
@@ -1088,6 +1089,52 @@ fn every_reference_resolves() {
                 i += 1;
             }
         }
+    }
+}
+
+#[test]
+fn unclassified_face_loops_round_trip_without_inventing_outer_roles() {
+    let mut ir = unit_cube().expect("unit cube fixture");
+    for face in &mut ir.model.faces {
+        face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(face.loops.to_vec());
+    }
+    let output = export(&ir);
+    assert_eq!(output.matches("FACE_OUTER_BOUND").count(), 0);
+    assert_eq!(output.matches("FACE_BOUND").count(), 6);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+    assert!(decoded.ir().model.faces.iter().all(|face| matches!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
+    )));
+}
+
+#[test]
+fn periodic_two_rim_face_keeps_unclassified_bounds_through_export() {
+    let original = include_str!("data/periodic_two_rims.p21");
+    for source in [
+        original.to_owned(),
+        original.replace("FACE_BOUND", "FACE_OUTER_BOUND"),
+    ] {
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().model.loops.len(), 2);
+        let output = export(decoded.ir());
+        assert_eq!(output.matches("FACE_OUTER_BOUND").count(), 0);
+        assert_eq!(output.matches("FACE_BOUND").count(), 2);
+        let round_trip = StepCodec::default()
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(round_trip.ir().model.faces.len(), 1);
+        assert_eq!(round_trip.ir().model.loops.len(), 2);
+        assert!(matches!(
+            round_trip.ir().model.faces[0].loops,
+            cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
+        ));
     }
 }
 

@@ -60,8 +60,10 @@ fn legacy_side_entry_name_refuses_at_matching_retained_limit() {
             super::parse_legacy_element_map(
                 ctx,
                 xml.root_element(),
-                1,
+                Some(1),
                 &std::collections::HashMap::default(),
+                "test-property",
+                &mut Vec::new(),
             )
         },
     );
@@ -100,7 +102,7 @@ fn string_table_record_refuses_on_collection_limit() {
     crate::test_support::assert_collection_refusal_at(
         document,
         "FreeCAD string table records",
-        |ctx| parse(ctx, document, 1, &[], &[]),
+        |ctx| parse(ctx, document, Some(1), &[], &[], &mut Vec::new()),
     );
 }
 
@@ -171,7 +173,16 @@ fn test_parse(
     ),
     CodecError,
 > {
-    in_decode_context(|ctx| parse(ctx, document, file_version, properties, entries))
+    in_decode_context(|ctx| {
+        parse(
+            ctx,
+            document,
+            Some(file_version),
+            properties,
+            entries,
+            &mut Vec::new(),
+        )
+    })
 }
 
 fn test_parse_string_table(
@@ -374,6 +385,57 @@ fn admits_legacy_direct_element_carrier() {
 }
 
 #[test]
+fn unverified_file_version_withholds_only_nonempty_inline_legacy_maps() {
+    let inline = test_property(
+        "Part::PropertyPartShape",
+        r#"<Property><Part ElementMap="1.0"/><ElementMap count="1"><Element key="FaceStable" value="Face1"/></ElementMap></Property>"#,
+    );
+    let side = test_property(
+        "Part::PropertyPartShape",
+        r#"<Property><Part ElementMap="1.0"/><ElementMap file="Shape.Map.txt"/></Property>"#,
+    );
+    let empty = test_property(
+        "Part::PropertyPartShape",
+        r#"<Property><Part ElementMap="1.0"/><ElementMap count="0"/></Property>"#,
+    );
+    for (property, entries, count, loss_count) in [
+        (inline, Vec::new(), 0, 1),
+        (
+            side,
+            vec![legacy_entry("Shape.Map.txt", b"1\nFace1 FaceStable 0\n")],
+            1,
+            0,
+        ),
+        (empty, Vec::new(), 0, 0),
+    ] {
+        in_decode_context(|ctx| {
+            let mut losses = Vec::new();
+            let (_, maps) = parse(
+                ctx,
+                b"<Document/>",
+                None,
+                &[property],
+                &entries,
+                &mut losses,
+            )
+            .unwrap();
+            assert_eq!(maps.len(), count);
+            assert_eq!(losses.len(), loss_count);
+            if let Some(loss) = losses.first() {
+                assert_eq!(
+                    loss.code,
+                    crate::loss::FreecadLossCode::ElementMapVersionUnresolved
+                        .note("")
+                        .code
+                );
+            }
+            Ok::<(), CodecError>(())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn element_map_identity_refuses_at_retained_limit() {
     let property = test_property(
         "Part::PropertyPartShape",
@@ -382,7 +444,16 @@ fn element_map_identity_refuses_at_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
         b"<Document/>",
         "FreeCAD native child identity",
-        |ctx| parse(ctx, b"<Document/>", 1, std::slice::from_ref(&property), &[]),
+        |ctx| {
+            parse(
+                ctx,
+                b"<Document/>",
+                Some(1),
+                std::slice::from_ref(&property),
+                &[],
+                &mut Vec::new(),
+            )
+        },
     );
 }
 

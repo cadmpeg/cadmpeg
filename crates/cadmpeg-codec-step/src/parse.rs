@@ -965,7 +965,8 @@ impl Parser<'_, '_, '_> {
         if !implementation_level.is_edition3() && data.is_empty() {
             return self.err("historical implementation levels require one DATA section");
         }
-        if implementation_level.is_edition3()
+        if !header_admission.implementation_level.is_unverified()
+            && implementation_level.is_edition3()
             && data.len() == 1
             && data[0].parameters.is_empty()
             && schema_names_for_matching.len() != 1

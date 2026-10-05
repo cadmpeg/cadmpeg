@@ -34,6 +34,8 @@ pub(crate) enum SatLossCode {
     GeometryProceduralSurfaceUntyped,
     /// A header tolerance cannot supply a positive finite document tolerance.
     HeaderToleranceUnresolved,
+    /// Independently framed product metadata is malformed.
+    HeaderMetadataNoncanonical,
     /// The stream was read with a grammar its own save-format declaration does
     /// not select.
     SourceDialectUnverified,
@@ -46,6 +48,7 @@ impl SatLossCode {
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
         Self::HeaderToleranceUnresolved,
+        Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
     ];
 
@@ -56,6 +59,7 @@ impl SatLossCode {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
             Self::HeaderToleranceUnresolved => "header.tolerance-unresolved",
+            Self::HeaderMetadataNoncanonical => "header.metadata-noncanonical",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
         }
     }
@@ -67,6 +71,7 @@ impl SatLossCode {
             Self::GeometryFramedWithoutCarriers => Severity::Blocking,
             Self::GeometryProceduralSurfaceUntyped
             | Self::HeaderToleranceUnresolved
+            | Self::HeaderMetadataNoncanonical
             | Self::SourceDialectUnverified => Severity::Warning,
         }
     }
@@ -77,6 +82,7 @@ impl SatLossCode {
             | Self::GeometryProceduralSurfaceUntyped
             | Self::HeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::HeaderMetadataNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
         }
     }
 
@@ -96,6 +102,38 @@ impl SatLossCode {
     }
 }
 
+/// Project shared text-header recovery into codec losses for decode and inspection.
+pub(crate) fn text_header_losses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    header: &cadmpeg_asm::sat::TextHeader,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    for diagnostic in &header.diagnostics {
+        let code = match diagnostic.kind {
+            cadmpeg_asm::sat::HeaderDiagnosticKind::ProductMetadata => {
+                SatLossCode::HeaderMetadataNoncanonical
+            }
+            cadmpeg_asm::sat::HeaderDiagnosticKind::Tolerance => {
+                SatLossCode::HeaderToleranceUnresolved
+            }
+        };
+        let message = ctx.format_retained(
+            format_args!("{}; independent records retained", diagnostic.error),
+            "SAT header loss text",
+        )?;
+        ctx.push_vec(
+            losses,
+            code.note(message)
+                .with_provenance(cadmpeg_ir::SourceProvenance::root(
+                    "sat",
+                    cadmpeg_core::decode::u64_from_index(diagnostic.error.offset),
+                )),
+            "SAT header losses",
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::SatLossCode;
@@ -111,6 +149,7 @@ mod tests {
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
                 "header.tolerance-unresolved",
+                "header.metadata-noncanonical",
                 "source.kernel-dialect-unverified",
             ]
         );

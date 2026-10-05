@@ -88,6 +88,47 @@ pub(super) struct TopologyData {
     pub(super) vertices_by_source: BTreeMap<u64, Vec<VertexId>>,
 }
 
+/// A recovered neutral face cannot fully represent conflicting source roles.
+/// Withdraw those claims so exact face and bound records enter source fidelity,
+/// including bounds also referenced by another, conforming face.
+pub(super) fn retain_noncanonical_face_sources(
+    exchange: &Exchange,
+    topology: &TopologyData,
+    typed: &mut HashSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    for &face_step in topology.faces_by_source.keys() {
+        let Some(record) = exchange.records().get(&face_step) else {
+            continue;
+        };
+        let Some(info) = face_attributes(face_step, record, exchange, &mut BTreeSet::new(), ctx)?
+        else {
+            continue;
+        };
+        ctx.charge_work(
+            u64_from_index(info.bounds.len()),
+            "step_noncanonical_face_bounds",
+        )?;
+        let outer_count = info
+            .bounds
+            .iter()
+            .filter(|id| {
+                exchange
+                    .records()
+                    .get(id)
+                    .is_some_and(|record| record.partial("FACE_OUTER_BOUND").is_some())
+            })
+            .count();
+        if outer_count > 1 {
+            typed.remove(&face_step);
+            for id in info.typed.into_iter().chain(info.bounds) {
+                typed.remove(&id);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn topology_commit_error(
     context: &str,
     error: &DraftError,

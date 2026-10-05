@@ -508,6 +508,19 @@ fn decode_exchange_mode(
     session.body.losses.append(&mut post_decode_losses);
 
     session.charge_stage("step_opaque_record_retention")?;
+    let recovered_boundary_roles = session
+        .body
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::FaceMultipleOuterBounds.kind());
+    if recovered_boundary_roles {
+        topology::retain_noncanonical_face_sources(
+            exchange,
+            &topology.value,
+            &mut session.typed_records,
+            session.ctx,
+        )?;
+    }
     let opaque_offsets = match mode {
         DecodeMode::Decode(_) => BTreeSet::new(),
         DecodeMode::Inspect => {
@@ -524,7 +537,26 @@ fn decode_exchange_mode(
             if session.typed_records.contains(&id) {
                 continue;
             }
-            let unknown_id = opaque_record_id(id, record, session.ctx)?;
+            let mut unknown_id = opaque_record_id(id, record, session.ctx)?;
+            if let Some(faces) = topology.value.faces_by_source.get(&id) {
+                session.ctx.charge_work(
+                    u64_from_index(faces.len()),
+                    "step_recovered_source_identity",
+                )?;
+                if faces
+                    .iter()
+                    .any(|face| face.as_str() == unknown_id.as_str())
+                {
+                    // A source FACE can share its normal identity with the
+                    // recovered neutral Face. Give its exact source image a
+                    // separate identity; reference links still resolve both.
+                    unknown_id = UnknownId::mint(session.ctx.format_retained(
+                        format_args!("step:file:retained-data#{id}"),
+                        "step_recovered_source_identity",
+                    )?)
+                    .map_err(CodecError::malformed)?;
+                }
+            }
             session
                 .ctx
                 .insert_btree_map(&mut opaque_ids, id, unknown_id, "step_opaque_ids")?;

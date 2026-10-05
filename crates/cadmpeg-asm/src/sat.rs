@@ -36,6 +36,24 @@ pub enum Terminator {
     Acis,
 }
 
+/// An independently framed header value that could not be interpreted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeaderDiagnostic {
+    /// Whether the omitted value is descriptive metadata or a kernel tolerance.
+    pub kind: HeaderDiagnosticKind,
+    /// Source location and reason.
+    pub error: StreamError,
+}
+
+/// Header recovery classes shared by SAT and Fusion SMT callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeaderDiagnosticKind {
+    /// Counted product strings did not conform to the product-line grammar.
+    ProductMetadata,
+    /// A tolerance cannot enter the normalized kernel header.
+    Tolerance,
+}
+
 /// The three header lines of a text stream: the four binary header words, the
 /// three product strings, and the three kernel doubles.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,18 +65,22 @@ pub struct TextHeader {
     /// Flags word: bit 0 marks a history partition, bits 1..=7 the revision.
     pub flags: u64,
     /// Product family string.
-    pub product_family: String,
+    pub product_family: Option<String>,
     /// Product version string.
-    pub product_version: String,
+    pub product_version: Option<String>,
     /// Save date string.
-    pub save_date: String,
+    pub save_date: Option<String>,
     /// Length unit of the stream, in millimetres per unit.
     scale: PositiveReal,
     /// Absolute distance tolerance in stream length units.
-    resabs: NonNegativeReal,
+    resabs: Option<NonNegativeReal>,
     /// Normal tolerance.
-    resnor: NonNegativeReal,
-    normalized_resabs_cm: NonNegativeReal,
+    resnor: Option<NonNegativeReal>,
+    normalized_resabs_cm: Option<NonNegativeReal>,
+    /// Recovery notes; framing, unit, and resource failures remain fatal.
+    pub diagnostics: Vec<HeaderDiagnostic>,
+    /// Exact source extent of the three independently framed header lines.
+    pub source_span: std::ops::Range<usize>,
 }
 
 impl TextHeader {
@@ -68,12 +90,17 @@ impl TextHeader {
     }
 
     /// Absolute distance tolerance in stream length units.
-    pub const fn resabs(&self) -> NonNegativeReal {
+    pub const fn resabs(&self) -> Option<NonNegativeReal> {
         self.resabs
     }
 
+    /// Absolute distance tolerance normalized to kernel centimetres.
+    pub const fn resabs_cm(&self) -> Option<NonNegativeReal> {
+        self.normalized_resabs_cm
+    }
+
     /// Normal tolerance.
-    pub const fn resnor(&self) -> NonNegativeReal {
+    pub const fn resnor(&self) -> Option<NonNegativeReal> {
         self.resnor
     }
 
@@ -90,12 +117,12 @@ impl TextHeader {
             save_format_version: Some(self.save_format_version),
             entity_count: Some(self.entity_count),
             flags: Some(self.flags),
-            product_family: Some(copy(&self.product_family)?),
-            product_version: Some(copy(&self.product_version)?),
-            save_date: Some(copy(&self.save_date)?),
+            product_family: self.product_family.as_deref().map(copy).transpose()?,
+            product_version: self.product_version.as_deref().map(copy).transpose()?,
+            save_date: self.save_date.as_deref().map(copy).transpose()?,
             scale: Some(10.0),
-            linear: Some(self.normalized_resabs_cm.get()),
-            angular: Some(self.resnor.get()),
+            linear: self.resabs_cm().map(NonNegativeReal::get),
+            angular: self.resnor.map(NonNegativeReal::get),
         })
     }
 }
@@ -275,13 +302,12 @@ fn header_int<T: std::str::FromStr>(
 
 /// Read one `N <bytes>` counted string from a header line's raw byte slice.
 /// Header strings use a bare count without the record encoding's `@` prefix.
-fn counted_string(
-    ctx: &DecodeContext<'_>,
-    line: &[u8],
+fn counted_string<'a>(
+    line: &'a [u8],
     pos: &mut usize,
     at: usize,
     what: &str,
-) -> Result<String, StreamFailure> {
+) -> Result<&'a [u8], StreamError> {
     while *pos < line.len() && is_ws(line[*pos]) {
         *pos += 1;
     }
@@ -302,8 +328,7 @@ fn counted_string(
             format: StreamFormat::Text,
             offset: at,
             reason: format!("header {what} count has no separator"),
-        }
-        .into());
+        });
     }
     *pos += 1;
     let end = pos
@@ -314,14 +339,7 @@ fn counted_string(
             offset: at,
             reason: format!("truncated {what} string"),
         })?;
-    let value = std::str::from_utf8(&line[*pos..end]).map_err(|error| StreamError {
-        format: StreamFormat::Text,
-        offset: at + *pos + error.valid_up_to(),
-        reason: format!("header {what} string is not valid UTF-8"),
-    })?;
-    let value = ctx
-        .copy_retained_text(value, "retain SAT header string")
-        .map_err(StreamFailure::from_operation)?;
+    let value = &line[*pos..end];
     *pos = end;
     Ok(value)
 }
@@ -331,6 +349,7 @@ fn parse_header(
     bytes: &[u8],
     pos: &mut usize,
 ) -> Result<TextHeader, StreamFailure> {
+    let header_start = *pos;
     let at = *pos;
     let line1 = header_line(bytes, pos, "save-format")?;
     let mut fields = line1.split(|b| is_ws(*b)).filter(|field| !field.is_empty());
@@ -362,76 +381,133 @@ fn parse_header(
     let line2 = &bytes[line2_start..line2_end];
     *pos = line2_end + 1;
     let mut cursor = 0usize;
-    let product_family = counted_string(ctx, line2, &mut cursor, at, "product family")?;
-    let product_version = counted_string(ctx, line2, &mut cursor, at, "product version")?;
-    let save_date = counted_string(ctx, line2, &mut cursor, at, "save date")?;
-    if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
-        return Err(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "product header line must contain three counted strings".to_string(),
+    let mut diagnostics = Vec::new();
+    let mut products = [None, None, None];
+    for (slot, what) in products
+        .iter_mut()
+        .zip(["product family", "product version", "save date"])
+    {
+        let field = counted_string(line2, &mut cursor, at, what);
+        let framed = field.is_ok();
+        let text = field.and_then(|bytes| {
+            std::str::from_utf8(bytes).map_err(|error| StreamError {
+                format: StreamFormat::Text,
+                offset: at + cursor - bytes.len() + error.valid_up_to(),
+                reason: format!("header {what} string is not valid UTF-8"),
+            })
+        });
+        match text {
+            Ok(value) => {
+                *slot = Some(
+                    ctx.copy_retained_text(value, "retain SAT header string")
+                        .map_err(StreamFailure::from_operation)?,
+                );
+            }
+            Err(error) => {
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(error.reason.len()),
+                    "SAT header diagnostic text",
+                )
+                .map_err(StreamFailure::from_operation)?;
+                ctx.push_vec(
+                    &mut diagnostics,
+                    HeaderDiagnostic {
+                        kind: HeaderDiagnosticKind::ProductMetadata,
+                        error,
+                    },
+                    "SAT header diagnostics",
+                )
+                .map_err(StreamFailure::from_operation)?;
+                // The newline frames this entire metadata line. A damaged
+                // count does not justify guessing the next string boundary.
+                if !framed {
+                    cursor = line2.len();
+                    break;
+                }
+            }
         }
-        .into());
     }
+    if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
+        ctx.push_vec(
+            &mut diagnostics,
+            HeaderDiagnostic {
+                kind: HeaderDiagnosticKind::ProductMetadata,
+                error: StreamError {
+                    format: StreamFormat::Text,
+                    offset: at + cursor,
+                    reason: ctx
+                        .copy_retained_text(
+                            "product header line has extra fields",
+                            "SAT header diagnostic text",
+                        )
+                        .map_err(StreamFailure::from_operation)?,
+                },
+            },
+            "SAT header diagnostics",
+        )
+        .map_err(StreamFailure::from_operation)?;
+    }
+    let [product_family, product_version, save_date] = products;
 
     let at = *pos;
     let line3 = header_line(bytes, pos, "tolerance")?;
     let mut fields = line3.split(|b| is_ws(*b)).filter(|field| !field.is_empty());
     let line3: [Option<&[u8]>; 3] = std::array::from_fn(|_| fields.next());
-    if line3.iter().any(Option::is_none) || fields.next().is_some() {
-        return Err(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "tolerance header line must contain three fields".to_string(),
-        }
-        .into());
-    }
-    let float = |field: Option<&[u8]>, what: &str| -> Result<f64, StreamFailure> {
+    let extra_fields = fields.next().is_some();
+    let float = |field: Option<&[u8]>| -> Option<f64> {
         field
             .and_then(|field| std::str::from_utf8(field).ok())
             .and_then(|field| field.parse().ok())
-            .ok_or_else(|| {
-                StreamFailure::Malformed(StreamError {
-                    format: StreamFormat::Text,
-                    offset: at,
-                    reason: format!("header line has no valid {what} value"),
-                })
-            })
     };
-    let scale = PositiveReal::new(float(line3[0], "scale")?).ok_or_else(|| {
+    let scale = float(line3[0]).and_then(PositiveReal::new).ok_or_else(|| {
         StreamFailure::Malformed(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header scale must be finite and positive".to_string(),
         })
     })?;
-    let raw_resabs = float(line3[1], "resabs")?;
-    let raw_resnor = float(line3[2], "resnor")?;
-    let (Some(resabs), Some(resnor)) = (
-        NonNegativeReal::new(raw_resabs),
-        NonNegativeReal::new(raw_resnor),
-    ) else {
-        return Err(StreamFailure::Malformed(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "header tolerances must be finite and nonnegative".to_string(),
-        }));
+    let mut tolerance = |field, what| -> Result<Option<NonNegativeReal>, StreamFailure> {
+        let value = float(field)
+            .and_then(NonNegativeReal::new)
+            .filter(|value| value.get() > 0.0);
+        if value.is_none() {
+            ctx.push_vec(&mut diagnostics, HeaderDiagnostic {
+                kind: HeaderDiagnosticKind::Tolerance,
+                error: StreamError { format: StreamFormat::Text, offset: at,
+                    reason: ctx.format_retained(format_args!("header {what} must be finite and positive for document tolerance; tolerance omitted"), "SAT header diagnostic text").map_err(StreamFailure::from_operation)? },
+            }, "SAT header diagnostics").map_err(StreamFailure::from_operation)?;
+        }
+        Ok(value)
     };
-    let normalized_resabs = resabs_cm(scale, resabs);
-    if resabs.get() > 0.0 && (!normalized_resabs.is_finite() || normalized_resabs == 0.0) {
-        return Err(StreamFailure::NotImplemented(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "header resabs cannot be represented in centimetres".to_string(),
-        }));
+    let resabs = tolerance(line3[1], "resabs")?;
+    let resnor = tolerance(line3[2], "resnor")?;
+    let normalized_resabs_cm = resabs
+        .and_then(|value| NonNegativeReal::new(resabs_cm(scale, value)))
+        .filter(|value| value.get() > 0.0);
+    for reason in [
+        extra_fields.then_some("tolerance header line has extra fields"),
+        (resabs.is_some() && normalized_resabs_cm.is_none())
+            .then_some("header resabs cannot be represented in centimetres; tolerance omitted"),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        ctx.push_vec(
+            &mut diagnostics,
+            HeaderDiagnostic {
+                kind: HeaderDiagnosticKind::Tolerance,
+                error: StreamError {
+                    format: StreamFormat::Text,
+                    offset: at,
+                    reason: ctx
+                        .copy_retained_text(reason, "SAT header diagnostic text")
+                        .map_err(StreamFailure::from_operation)?,
+                },
+            },
+            "SAT header diagnostics",
+        )
+        .map_err(StreamFailure::from_operation)?;
     }
-    let normalized_resabs_cm = NonNegativeReal::new(normalized_resabs).ok_or_else(|| {
-        StreamFailure::NotImplemented(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "header resabs cannot be represented in centimetres".to_string(),
-        })
-    })?;
     Ok(TextHeader {
         save_format_version,
         entity_count,
@@ -443,6 +519,8 @@ fn parse_header(
         resabs,
         resnor,
         normalized_resabs_cm,
+        diagnostics,
+        source_span: header_start..*pos,
     })
 }
 
@@ -2292,12 +2370,21 @@ mod tests {
         assert_eq!(asm.header.save_format_version, 23200);
         assert_eq!(asm.header.entity_count, 2);
         assert_eq!(asm.header.flags, 2);
-        assert_eq!(asm.header.product_family, "Autodesk Neutron");
-        assert_eq!(asm.header.product_version, "ASM 232.4.0.65535 OSX");
-        assert_eq!(asm.header.save_date, "Fri Jul 17 14:46:47 2026");
+        assert_eq!(
+            asm.header.product_family.as_deref(),
+            Some("Autodesk Neutron")
+        );
+        assert_eq!(
+            asm.header.product_version.as_deref(),
+            Some("ASM 232.4.0.65535 OSX")
+        );
+        assert_eq!(
+            asm.header.save_date.as_deref(),
+            Some("Fri Jul 17 14:46:47 2026")
+        );
         assert!(approx(asm.header.scale().get(), 1.0));
-        assert!(approx(asm.header.resabs().get(), 1.0e-6));
-        assert!(approx(asm.header.resnor().get(), 1.0e-10));
+        assert!(approx(asm.header.resabs().unwrap().get(), 1.0e-6));
+        assert!(approx(asm.header.resnor().unwrap().get(), 1.0e-10));
         assert_eq!(asm.records.len(), 1);
         assert_eq!(asm.records[0].name, "asmheader");
         assert_eq!(
@@ -2349,7 +2436,7 @@ mod tests {
         assert_eq!(header.flags, Some(2));
         // The token values were converted; the reported unit is centimetres.
         assert_eq!(header.scale, Some(10.0));
-        let expected_resabs_cm = stream.header.resabs().get() / 10.0;
+        let expected_resabs_cm = stream.header.resabs().unwrap().get() / 10.0;
         assert_eq!(header.linear, Some(expected_resabs_cm));
     }
 
@@ -2360,7 +2447,7 @@ mod tests {
         let source = source.replacen("1 1e-06 1.0e-10", "25.4 1e-06 1.0e-10", 1);
         let stream = parse(source.as_bytes()).expect("inch-scale stream");
         let actual = kernel_header(&stream.header).linear.expect("resabs");
-        let expected_resabs_cm = stream.header.resabs().get() * 2.54;
+        let expected_resabs_cm = stream.header.resabs().unwrap().get() * 2.54;
         assert!((actual / expected_resabs_cm - 1.0).abs() < f64::EPSILON);
     }
 
@@ -2371,8 +2458,8 @@ mod tests {
         let source = source.replacen("1 1e-06 1.0e-10", "25.4 1e-06 1.0e-10", 1);
         let stream = parse(source.as_bytes()).expect("positive scale and nonnegative tolerances");
         let scale: PositiveReal = stream.header.scale();
-        let resabs: NonNegativeReal = stream.header.resabs();
-        let resnor: NonNegativeReal = stream.header.resnor();
+        let resabs: NonNegativeReal = stream.header.resabs().unwrap();
+        let resnor: NonNegativeReal = stream.header.resnor().unwrap();
         assert_eq!(scale.get(), 25.4);
         assert_eq!(resabs.get(), 1.0e-6);
         assert_eq!(resnor.get(), 1.0e-10);
@@ -2381,16 +2468,19 @@ mod tests {
     }
 
     #[test]
-    fn text_header_refuses_unrepresentable_resabs_conversion() {
+    fn text_header_omits_unrepresentable_resabs_conversion() {
         let source = String::from_utf8(asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n"))
             .expect("ASCII stream");
         for replacement in ["20 1.7976931348623157e308 1.0e-10", "5e-324 1 1.0e-10"] {
             let source = source.replacen("1 1e-06 1.0e-10", replacement, 1);
-            let error = parse(source.as_bytes()).expect_err("resabs cannot be normalized");
-            assert_eq!(
-                error.reason,
-                "header resabs cannot be represented in centimetres"
-            );
+            let stream =
+                parse(source.as_bytes()).expect("independent records survive invalid tolerance");
+            assert_eq!(kernel_header(&stream.header).linear, None);
+            assert_eq!(stream.header.diagnostics.len(), 1);
+            assert!(stream.header.diagnostics[0]
+                .error
+                .reason
+                .contains("cannot be represented"));
         }
     }
 
@@ -2411,7 +2501,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_header_tolerances_are_rejected() {
+    fn invalid_header_tolerances_are_omitted_without_losing_records() {
         for (resabs, resnor) in [
             ("-1", "1.0e-10"),
             ("NaN", "1.0e-10"),
@@ -2431,13 +2521,39 @@ mod tests {
                 replacement.bytes(),
             );
 
-            let error = parse(&stream).expect_err("invalid tolerance must fail");
-            assert_eq!(error.offset, tolerance_start);
-            assert_eq!(
-                error.reason,
-                "header tolerances must be finite and nonnegative"
-            );
+            let parsed = parse(&stream).expect("tolerance metadata does not frame records");
+            assert_eq!(parsed.records.len(), 1);
+            assert_eq!(parsed.header.diagnostics.len(), 1);
+            assert_eq!(parsed.header.diagnostics[0].error.offset, tolerance_start);
+            assert!(parsed.header.resabs().is_none() || parsed.header.resnor().is_none());
         }
+    }
+
+    #[test]
+    fn recoverable_header_metadata_propagates_resource_refusals() {
+        let source =
+            String::from_utf8(asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n")).unwrap();
+        let source = source
+            .lines()
+            .enumerate()
+            .map(|(index, line)| {
+                if index == 1 {
+                    "bad product metadata"
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).unwrap();
+        let error =
+            super::parse(&ctx, source.as_bytes()).expect_err("diagnostics use the caller budget");
+        assert!(
+            matches!(error, StreamFailure::Resource(limit) if limit.operation == "SAT header diagnostics")
+        );
     }
 
     #[test]
@@ -2459,7 +2575,16 @@ mod tests {
                     malformed.extend_from_slice(bytes);
                 }
             }
-            assert!(parse(&malformed).is_err(), "header line {line}");
+            if line == 0 {
+                assert!(
+                    parse(&malformed).is_err(),
+                    "structural header words must frame"
+                );
+            } else {
+                let parsed = parse(&malformed).expect("extra metadata is independently framed");
+                assert_eq!(parsed.header.diagnostics.len(), 1);
+                assert_eq!(parsed.records.len(), 1);
+            }
         }
     }
 
@@ -2474,9 +2599,11 @@ mod tests {
             .expect("product-family separator");
         malformed.remove(separator);
 
-        let error = parse(&malformed).expect_err("missing counted-string separator must fail");
+        let parsed = parse(&malformed).expect("product-line newline preserves records");
+        assert_eq!(parsed.header.product_family, None);
+        assert_eq!(parsed.records.len(), 1);
         assert_eq!(
-            error.offset,
+            parsed.header.diagnostics[0].error.offset,
             valid.iter().position(|byte| *byte == b'\n').unwrap() + 1
         );
     }
@@ -2523,11 +2650,16 @@ mod tests {
             .expect("counted string offset");
         counted[counted_offset] = 0xff;
 
-        for (bytes, expected_offset) in [
-            (header, header_offset),
-            (bare, bare_offset),
-            (counted, counted_offset),
-        ] {
+        let recovered = parse(&header).expect("header UTF-8 defect does not affect record framing");
+        assert_eq!(recovered.header.diagnostics[0].error.offset, header_offset);
+        assert_eq!(recovered.header.product_family, None);
+        assert_eq!(
+            recovered.header.product_version.as_deref(),
+            Some("ASM 232.4.0.65535 OSX")
+        );
+        assert!(recovered.header.save_date.is_some());
+        assert_eq!(recovered.records.len(), 1);
+        for (bytes, expected_offset) in [(bare, bare_offset), (counted, counted_offset)] {
             let error = parse(&bytes).expect_err("invalid UTF-8 must fail");
             assert_eq!(error.offset, expected_offset);
         }

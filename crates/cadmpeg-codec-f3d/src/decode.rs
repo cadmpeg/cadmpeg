@@ -5608,17 +5608,29 @@ fn build_geometry_ir(
 /// and region comparisons in this crate act on.
 const MIN_ANALYTIC_LINEAR_TOLERANCE_MM: f64 = 1.0e-7;
 
-/// Admit the kernel header tolerances `resabs` and `resnor`. A stated `resabs`
-/// below the analytic floor cannot drive profile and region matching, so it is
-/// refused here and never floored at a comparison site.
-fn admit_kernel_tolerances(resabs: f64, resnor: f64) -> Result<Tolerances, CodecError> {
-    let linear_mm = resabs * 10.0;
-    let tolerances = Tolerances::new(linear_mm, resnor).map_err(CodecError::Malformed)?;
-    if linear_mm < MIN_ANALYTIC_LINEAR_TOLERANCE_MM {
-        return Err(CodecError::NotImplemented(format!(
-            "kernel header resabs {linear_mm} mm is below the analytic linear \
-             tolerance floor {MIN_ANALYTIC_LINEAR_TOLERANCE_MM} mm"
-        )));
+/// Admit each optional kernel tolerance independently. An unrepresentable value
+/// leaves the document default; reports diagnose it from the retained header.
+/// A valid `resabs` below the analytic floor remains unsupported because it
+/// cannot drive profile and region matching at the declared precision.
+fn admit_kernel_tolerances(
+    resabs: Option<f64>,
+    resnor: Option<f64>,
+) -> Result<Tolerances, CodecError> {
+    let mut tolerances = Tolerances::default();
+    if let Some(linear) =
+        resabs.and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value * 10.0))
+    {
+        if linear.get() < MIN_ANALYTIC_LINEAR_TOLERANCE_MM {
+            return Err(CodecError::NotImplemented(format!(
+                "kernel header resabs {} mm is below the analytic linear \
+                 tolerance floor {MIN_ANALYTIC_LINEAR_TOLERANCE_MM} mm",
+                linear.get()
+            )));
+        }
+        tolerances.linear = linear;
+    }
+    if let Some(angular) = resnor.and_then(cadmpeg_ir::scalar::PositiveAngle::new) {
+        tolerances.angular = angular;
     }
     Ok(tolerances)
 }
@@ -5734,9 +5746,7 @@ fn source_attributes_and_tolerances(
                 )?;
             }
         }
-        if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
-            tolerances = admit_kernel_tolerances(resabs, resnor)?;
-        }
+        tolerances = admit_kernel_tolerances(h.linear, h.angular)?;
     }
 
     Ok((attributes, tolerances))
@@ -6025,9 +6035,7 @@ fn build_metadata_ir(
                     )?;
                 }
             }
-            if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
-                ir.tolerances = admit_kernel_tolerances(resabs, resnor)?;
-            }
+            ir.tolerances = admit_kernel_tolerances(h.linear, h.angular)?;
         }
 
         append_metadata_unknown(ctx, &mut unknowns, brep)?;

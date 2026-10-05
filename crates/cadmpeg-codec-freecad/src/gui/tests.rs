@@ -12,6 +12,41 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+#[test]
+fn conflicting_producer_alias_keeps_canonical_transparency_interpretation() {
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="A"><Properties Count="1"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287453952"/></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let decode = |attributes: &str| {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1" {attributes}><Objects Count="1"><Object type="Part::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("GuiDocument.xml", gui),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+    let canonical = decode(r#"ProgramVersion="1.0R39109""#);
+    let conflicting = decode(r#"ProgramVersion="1.0R39109" programVersion="1.1R42000""#);
+    let modern = decode(r#"ProgramVersion="1.1R42000""#);
+    assert!(!canonical.ir().model.appearances.is_empty());
+    assert_eq!(
+        canonical.ir().model.appearances,
+        conflicting.ir().model.appearances
+    );
+    assert_ne!(
+        canonical.ir().model.appearances,
+        modern.ir().model.appearances
+    );
+    assert!(conflicting.report().losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::ProgramVersionNoncanonical
+            .note("")
+            .code));
+}
+
 fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle) {
     use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
     use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};

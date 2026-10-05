@@ -234,7 +234,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         )?),
         None => None,
     };
-    build_result(
+    let mut result = build_result(
         ctx,
         payload,
         attributes,
@@ -242,7 +242,30 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         Some(branch),
         matched,
         &kernel,
-    )
+    )?;
+    crate::loss::text_header_losses(ctx, &text_header, &mut result.body.losses)?;
+    if !text_header.diagnostics.is_empty() {
+        let mut retained = ctx.collection_vec(1, "SAT recovered header records")?;
+        retained.push(cadmpeg_ir::UnknownRecord::retained(
+            cadmpeg_ir::ids::UnknownId::mint(
+                ctx.copy_retained_text("sat:source:header#0", "SAT header identity")?,
+            )
+            .map_err(CodecError::malformed)?,
+            cadmpeg_core::decode::u64_from_index(text_header.source_span.start),
+            ctx.copy_retained(
+                &bytes[text_header.source_span],
+                "SAT recovered header bytes",
+            )?,
+            Vec::new(),
+        ));
+        result.source_fidelity.attach_native_unknown_records(
+            &mut result.ir,
+            FORMAT,
+            retained,
+            ctx,
+        )?;
+    }
+    Ok(result)
 }
 
 /// Refusal for bytes whose SAT discriminant matched but whose stream did not

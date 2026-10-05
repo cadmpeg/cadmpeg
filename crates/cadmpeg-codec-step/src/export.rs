@@ -2148,23 +2148,15 @@ impl<'a> Builder<'a> {
             if let Some(r) = self.emit_face(fid) {
                 face_refs.push(r);
             } else {
-                let outer = self.faces.get(fid.as_str()).is_some_and(|face| {
-                    face.loops
-                        .iter()
-                        .any(|loop_id| face.loop_role(loop_id) == LoopBoundaryRole::Outer)
-                        || face.loops.iter().next().is_some_and(|loop_id| {
-                            !face.loops.iter().any(|candidate| {
-                                face.loop_role(candidate) == LoopBoundaryRole::Outer
-                            }) && self.loops.contains_key(loop_id.as_str())
-                        })
-                });
+                let code = match self.faces.get(fid.as_str()).map(|face| &face.loops) {
+                    Some(cadmpeg_ir::topology::FaceLoops::Classified { .. }) => {
+                        StepLossCode::ShellOmittedOuterFace
+                    }
+                    _ => StepLossCode::ShellOmittedUnclassifiedFace,
+                };
                 self.topology_relation_loss(
                     format!("shell:{shell_id}:face:{fid}"),
-                    if outer {
-                        StepLossCode::ShellOmittedOuterFace
-                    } else {
-                        StepLossCode::ShellOmittedInnerFace
-                    },
+                    code,
                     format!(
                         "shell {shell_id} omitted face {fid} because the face has no writable topology"
                     ),
@@ -2182,36 +2174,28 @@ impl<'a> Builder<'a> {
 
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
-        let surface_id = face.surface.as_str().to_owned();
+        let surface_id = face.surface.as_str();
         // A face resting on an unknown (opaque) surface cannot become an
         // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
         // loss rather than fabricate placeholder geometry.
-        if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
+        if let Some(surf) = self.surfaces.get(surface_id) {
             if !geometry::surface_is_supported(surf.geometry.solved()?) {
                 self.unknown_surface_faces.insert(face_id.to_string());
                 return None;
             }
         }
-        let face_loops = face.loops.to_vec();
-        let loop_ids: Vec<String> = face_loops.iter().map(|l| l.as_str().to_owned()).collect();
         let same_sense = matches!(face.sense, Sense::Forward);
 
-        let Some(surf_ref) = self.emit_surface(&surface_id) else {
+        let Some(surf_ref) = self.emit_surface(surface_id) else {
             self.unknown_surface_faces.insert(face_id.to_string());
             return None;
         };
 
         let mut bound_refs = Vec::new();
-        for (i, lid) in loop_ids.iter().enumerate() {
-            let loop_id = &face_loops[i];
+        for loop_id in &face.loops {
+            let lid = loop_id.as_str();
             if let Some(loop_ref) = self.emit_loop(lid) {
-                let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer
-                    || (i == 0
-                        && !face
-                            .loops
-                            .iter()
-                            .any(|id| face.loop_role(id) == LoopBoundaryRole::Outer))
-                {
+                let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer {
                     "FACE_OUTER_BOUND"
                 } else {
                     "FACE_BOUND"
@@ -2219,19 +2203,14 @@ impl<'a> Builder<'a> {
                 let b = self.emitter.emit(kind, &format!("'',{loop_ref},.T."));
                 bound_refs.push(b);
             } else {
-                let outer = face.loop_role(loop_id) == LoopBoundaryRole::Outer
-                    || (i == 0
-                        && !face
-                            .loops
-                            .iter()
-                            .any(|id| face.loop_role(id) == LoopBoundaryRole::Outer));
+                let code = match face.loop_role(loop_id) {
+                    LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
+                    LoopBoundaryRole::Inner => StepLossCode::FaceOmittedInnerLoop,
+                    LoopBoundaryRole::Unspecified => StepLossCode::FaceOmittedUnclassifiedLoop,
+                };
                 self.topology_relation_loss(
                     format!("face:{face_id}:loop:{lid}"),
-                    if outer {
-                        StepLossCode::FaceOmittedOuterLoop
-                    } else {
-                        StepLossCode::FaceOmittedInnerLoop
-                    },
+                    code,
                     format!(
                         "face {face_id} omitted loop {lid} because the loop has no writable topology"
                     ),

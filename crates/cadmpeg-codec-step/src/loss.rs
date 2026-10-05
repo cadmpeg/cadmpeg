@@ -277,12 +277,14 @@ pub(crate) enum StepLossCode {
     RegionOmittedVoidShell,
     /// A shell omitted an outer face with no writable topology.
     ShellOmittedOuterFace,
-    /// A shell omitted an inner face with no writable topology.
-    ShellOmittedInnerFace,
+    /// A shell omitted a face whose boundary roles are unspecified.
+    ShellOmittedUnclassifiedFace,
     /// A face omitted an outer loop with no writable topology.
     FaceOmittedOuterLoop,
     /// A face omitted an inner loop with no writable topology.
     FaceOmittedInnerLoop,
+    /// A face omitted a loop whose boundary role is unspecified.
+    FaceOmittedUnclassifiedLoop,
     /// A face has no writable bounds.
     FaceNoWritableBounds,
     /// A loop was omitted because its record is missing.
@@ -445,9 +447,10 @@ impl StepLossCode {
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
         Self::ShellOmittedOuterFace,
-        Self::ShellOmittedInnerFace,
+        Self::ShellOmittedUnclassifiedFace,
         Self::FaceOmittedOuterLoop,
         Self::FaceOmittedInnerLoop,
+        Self::FaceOmittedUnclassifiedLoop,
         Self::FaceNoWritableBounds,
         Self::LoopRecordMissing,
         Self::LoopVertexMissing,
@@ -614,9 +617,10 @@ impl StepLossCode {
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
-            Self::ShellOmittedInnerFace => "topology.shell-omitted-inner-face",
+            Self::ShellOmittedUnclassifiedFace => "topology.shell-omitted-unclassified-face",
             Self::FaceOmittedOuterLoop => "topology.face-omitted-outer-loop",
             Self::FaceOmittedInnerLoop => "topology.face-omitted-inner-loop",
+            Self::FaceOmittedUnclassifiedLoop => "topology.face-omitted-unclassified-loop",
             Self::FaceNoWritableBounds => "topology.face-no-writable-bounds",
             Self::LoopRecordMissing => "topology.loop-record-missing",
             Self::LoopVertexMissing => "topology.loop-vertex-missing",
@@ -658,7 +662,9 @@ impl StepLossCode {
             | Self::RegionNoWritableOuterShell
             | Self::RegionOmittedVoidShell
             | Self::ShellOmittedOuterFace
+            | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
+            | Self::FaceOmittedUnclassifiedLoop
             | Self::FaceNoWritableBounds
             | Self::LoopCoedgeRecordMissing
             | Self::LoopEdgeNotWritable
@@ -765,8 +771,9 @@ impl StepLossCode {
             | Self::RegionNoWritableOuterShell
             | Self::RegionOmittedVoidShell
             | Self::ShellOmittedOuterFace
-            | Self::ShellOmittedInnerFace
+            | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
+            | Self::FaceOmittedUnclassifiedLoop
             | Self::FaceOmittedInnerLoop
             | Self::FaceNoWritableBounds
             | Self::LoopRecordMissing
@@ -996,9 +1003,10 @@ mod tests {
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",
                 "topology.shell-omitted-outer-face",
-                "topology.shell-omitted-inner-face",
+                "topology.shell-omitted-unclassified-face",
                 "topology.face-omitted-outer-loop",
                 "topology.face-omitted-inner-loop",
+                "topology.face-omitted-unclassified-loop",
                 "topology.face-no-writable-bounds",
                 "topology.loop-record-missing",
                 "topology.loop-vertex-missing",

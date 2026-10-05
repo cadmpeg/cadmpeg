@@ -75,6 +75,36 @@ fn header_recovery_does_not_hide_lost_framing_or_ambiguous_schema() {
 }
 
 #[test]
+fn unverified_implementation_level_does_not_impose_edition3_schema_cardinality() {
+    let original = include_str!("../../../tests/fixtures/ap214_sheet.p21").replace(
+        "'AUTOMOTIVE_DESIGN'",
+        "'AUTOMOTIVE_DESIGN','SHAPE_APPEARANCE_LAYER_MIM'",
+    );
+    let codec = crate::StepCodec::default();
+    let expected = codec
+        .decode(&mut Cursor::new(&original), &DecodeOptions::default())
+        .unwrap();
+    for source in [
+        original.replace("'2;1'", "' '"),
+        original
+            .lines()
+            .filter(|line| !line.starts_with("FILE_DESCRIPTION"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    ] {
+        let recovered = codec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert!(!recovered.report().losses.is_empty());
+    }
+    // A verified declaration still carries the edition's conformance rules.
+    assert!(
+        with_service_context(original.replace("'2;1'", "'4;3'").as_bytes(), parse_inner).is_err()
+    );
+}
+
+#[test]
 fn missing_file_name_keeps_geometry_and_retains_header_bytes() {
     let original = include_str!("../../../tests/fixtures/ap214_sheet.p21");
     let source = original

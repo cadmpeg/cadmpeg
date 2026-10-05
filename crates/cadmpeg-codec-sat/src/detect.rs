@@ -43,7 +43,7 @@ pub(crate) fn classify(
 }
 
 /// Whether the prefix opens like a text stream: a first line of four ASCII
-/// integer fields (the four header words) followed by a counted-string line.
+/// integer fields (the four header words) followed by a separately framed header.
 fn looks_like_text_stream(prefix: &[u8]) -> bool {
     if !sat::has_text_magic(prefix) {
         return false;
@@ -62,7 +62,12 @@ fn looks_like_text_stream(prefix: &[u8]) -> bool {
             return false;
         }
     }
-    fields.next().is_none() && prefix.get(line_end + 1).is_some_and(u8::is_ascii_digit)
+    if fields.next().is_some() {
+        return false;
+    }
+    // The first header line is the discriminant. Product metadata does not
+    // control admission; its own newline is checked by the text parser.
+    prefix.get(line_end + 1).is_some()
 }
 
 pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
@@ -121,6 +126,7 @@ pub(crate) fn inspect(
     let bytes = root.window();
     let mut attributes = BTreeMap::new();
     let mut notes = Vec::new();
+    let mut losses = Vec::new();
     let Some(kind) = classify(ctx, bytes)? else {
         return Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
@@ -178,6 +184,7 @@ pub(crate) fn inspect(
             };
             let text = match &parsed {
                 Ok((kernel, stream)) => {
+                    crate::loss::text_header_losses(ctx, &stream.header, &mut losses)?;
                     header_attributes(ctx, kernel, stream.terminator.into(), &mut attributes)?;
                     for (key, value) in [
                         (
@@ -227,7 +234,9 @@ pub(crate) fn inspect(
             crate::dialect::layers(&evidence)
         }
     };
-    let losses = crate::dialect::dialect_loss(&kernel).into_iter().collect();
+    if let Some(loss) = crate::dialect::dialect_loss(&kernel) {
+        ctx.push_vec(&mut losses, loss, "SAT inspect dialect losses")?;
+    }
     Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched)
             .with_for_decode(ctx, kernel, "collect SAT dialect layers")

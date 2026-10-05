@@ -27,8 +27,9 @@ pub(crate) fn build_decode_report(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     transfer: cadmpeg_ir::report::decode::DecodeTransfer,
-    losses: Vec<LossNote>,
+    mut losses: Vec<LossNote>,
 ) -> Result<DecodeBody, cadmpeg_core::CodecError> {
+    header_losses(ctx, scan, &mut losses)?;
     Ok(DecodeBody {
         transfer,
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
@@ -95,8 +96,105 @@ pub(crate) fn build_inspection_summary(
         "append F3D inspection dialect losses",
     )?;
     let mut summary = crate::container::summarize(ctx, scan, layers)?;
+    header_losses(ctx, scan, &mut losses)?;
     summary.losses = losses;
     Ok(summary)
+}
+
+/// Preserve per-entry recovery diagnostics on all inspection and decode routes.
+fn header_losses(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan.breps.len()),
+        "F3D header tolerance losses",
+    )?;
+    for brep in &scan.breps {
+        let Some(header) = brep
+            .kernel
+            .as_ref()
+            .and_then(crate::container::KernelFraming::model_metadata)
+        else {
+            continue;
+        };
+        kernel_tolerance_losses(ctx, &brep.name, header.linear, header.angular, losses)?;
+    }
+    for name in crate::container::text_brep_names(scan) {
+        let Some(crate::container::TextBrepFraming::Parsed(stream)) = scan.text_breps.get(name)
+        else {
+            continue;
+        };
+        kernel_tolerance_losses(
+            ctx,
+            name,
+            stream
+                .header
+                .resabs_cm()
+                .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+            stream
+                .header
+                .resnor()
+                .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+            losses,
+        )?;
+        for diagnostic in &stream.header.diagnostics {
+            let message = ctx.format_retained(
+                format_args!(
+                    "text BREP {name}: {}; independent records retained",
+                    diagnostic.error
+                ),
+                "F3D text header loss text",
+            )?;
+            let stream_name = cadmpeg_ir::StreamName::try_from(
+                ctx.copy_retained_text(name, "F3D text header source stream")?,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+            ctx.push_vec(
+                losses,
+                crate::loss::F3dLossCode::TextHeaderNoncanonical
+                    .note(message)
+                    .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
+                        "f3d",
+                        stream_name,
+                        cadmpeg_core::decode::u64_from_index(diagnostic.error.offset),
+                    )),
+                "F3D text header losses",
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Interpret only positive finite tolerances in the canonical document units.
+fn kernel_tolerance_losses(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    linear_cm: Option<f64>,
+    angular: Option<f64>,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    for (field, value) in [
+        ("resabs", linear_cm.map(|value| value * 10.0)),
+        ("resnor", angular),
+    ] {
+        if value.is_some_and(|value| !value.is_finite() || value <= 0.0) {
+            let message = ctx.format_retained(format_args!("BREP {name} header {field} cannot supply a positive finite document tolerance; value left uninterpreted"), "F3D kernel tolerance loss text")?;
+            let stream = cadmpeg_ir::StreamName::try_from(
+                ctx.copy_retained_text(name, "F3D kernel tolerance source stream")?,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+            ctx.push_vec(
+                losses,
+                crate::loss::F3dLossCode::KernelHeaderToleranceUnresolved
+                    .note(message)
+                    .with_provenance(cadmpeg_ir::SourceProvenance::in_stream("f3d", stream, 0)),
+                "F3D kernel tolerance losses",
+            )?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

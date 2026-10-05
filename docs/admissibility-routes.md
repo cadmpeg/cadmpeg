@@ -11,14 +11,14 @@ This table does not describe every entity-level admission rule.
 | STEP | `parse::validate_header` locates records by name. Description, filename, and optional header conformance produce diagnostics. A unique readable schema remains required. Nonconforming headers are retained by `reader::decode_exchange_mode`. |
 | IGES | `global::Resolution` reports unusable metadata per field; `resolve` applies the existing field-specific fallbacks. Delimiters must resolve before fields can be framed. |
 | Rhino | `container::scan` accepts an absent or short introductory comment. Chunk bounds remain required. Table order is still used to obtain the writer version before decoding object records. |
-| FreeCAD | `container::parse_document` reports aliased or conflicting producer-version metadata. `SchemaVersion` selects persistence tags; duplicate persistence sections remain ambiguous. |
+| FreeCAD | `container::parse_document` diagnoses version aliases and retains the canonical value on conflict. Invalid `FileVersion` remains unverified; only nonempty inline legacy element maps depend on its interpretation. Independent B-rep geometry and self-framed maps survive. `SchemaVersion` selects persistence tags; duplicate persistence sections remain ambiguous. |
 | Inventor | `property_set::inventory` retains malformed property streams as `PropertySetState::Malformed`. The compound storage and RSeStorage are needed to locate model data. |
-| Fusion | `container::scan` uses the manifests to resolve the Design asset folder. Manifest failures cannot be treated as absent producer metadata: the selected asset determines which model is decoded. |
+| Fusion | `container::scan` uses the manifests to resolve the Design asset folder. Manifest failures cannot be treated as absent producer metadata: the selected asset determines which model is decoded. Text SMT uses shared SAT header recovery. Text and binary kernel tolerances are admitted independently, with diagnostics and defaults for unusable values or unit conversion overflow. Valid precision below the analytic floor remains unsupported. |
 | SolidWorks | `container` skips unreadable optional expanded payloads while propagating resource failures. Body streams are selected by their stream names and Parasolid headers. |
 | CATIA | `container::scan_bytes` collects directory and segment facts without a whole-file parse Result. Segment boundaries and downstream model admission are separate from descriptive metadata. |
 | Creo | `container::scan_bytes` collects framed sections without a whole-file parse Result. The section scan and semantic admission remain separate. |
 | NX | `container::scan_bytes` validates directory offsets, overlap, and file spans. These locate payloads; they are not descriptive header fields. |
-| SAT/ASM | `decode::build_result` reports invalid header tolerances and retains defaults. Record-stream location and reference width are interpretation fields. |
+| SAT/ASM | `sat::parse_header` recovers malformed newline-framed product metadata and optional tolerances. Decode retains exact noncanonical header bytes and reports defaults for unresolved tolerances. Unit scale, record-stream framing, and reference width remain required interpretation fields. |
 
 Successful decode is not a valid IR. Decoder and export gates use documented
 subsets of [`Check`](../crates/cadmpeg-ir/src/report.rs); final document

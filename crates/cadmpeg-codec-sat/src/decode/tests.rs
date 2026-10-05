@@ -35,6 +35,43 @@ fn sphere_radius(result: &DecodeResult) -> f64 {
 }
 
 #[test]
+fn text_header_metadata_recovery_preserves_geometry_and_exact_header() {
+    for original in [text_sphere_stream(1.0), acis_text_sphere_stream(23_200)] {
+        let original = String::from_utf8(original).unwrap();
+        let expected = decode_bytes(original.as_bytes());
+        for source in [
+            original.replace("9 Synthetic", ""),
+            original.replace(
+                "16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic",
+                "bad producer metadata",
+            ),
+            original.replace("9.999999999999999547e-07", "invalid"),
+            original.replace("1.000000000000000036e-10", "NaN"),
+            original.replace("1.000000000000000036e-10", ""),
+        ] {
+            let recovered =
+                cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+            assert_eq!(recovered.ir().model, expected.ir().model);
+            assert!(!recovered.report().losses.is_empty());
+            let header_end = source.match_indices('\n').nth(2).unwrap().0 + 1;
+            assert_eq!(
+                recovered
+                    .source_fidelity()
+                    .retained_record("sat:source:header#0")
+                    .unwrap()
+                    .data(),
+                Some(&source.as_bytes()[..header_end])
+            );
+            assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+                .unwrap()
+                .findings
+                .iter()
+                .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error));
+        }
+    }
+}
+
+#[test]
 fn both_encodings_decode_the_same_solid() {
     let text = decode_bytes(&text_sphere_stream(1.0));
     let asm_binary = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::Asm));
@@ -525,7 +562,7 @@ fn sat_container_only_ignores_malformed_entity_payload() {
 }
 
 #[test]
-fn sat_header_conversion_refuses_as_not_implemented() {
+fn sat_header_conversion_keeps_geometry_with_default_tolerance() {
     for line in ["20 1.7976931348623157e308 0", "1 5e-324 0"] {
         let source = String::from_utf8(text_sphere_stream(1.0)).expect("text fixture");
         let bytes = source.replacen(
@@ -538,16 +575,19 @@ fn sat_header_conversion_refuses_as_not_implemented() {
                 container_only,
                 ..Default::default()
             };
-            let error = SatCodec
+            let result = SatCodec
                 .decode(&mut Cursor::new(bytes.as_bytes()), &options)
-                .expect_err("converted positive tolerance cannot be represented");
-            assert!(
-                matches!(
-                    error,
-                    cadmpeg_ir::DecodeFailure::Codec(CodecError::NotImplemented(_))
-                ),
-                "{line}, container={container_only}: {error:?}"
+                .expect("unrepresentable tolerance does not control record decode");
+            assert_eq!(
+                result.ir().tolerances.linear,
+                cadmpeg_ir::CadIr::empty().tolerances.linear
             );
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == SatLossCode::HeaderToleranceUnresolved.kind()));
+            assert_eq!(result.ir().model.faces.len(), usize::from(!container_only));
         }
     }
 }
@@ -569,16 +609,28 @@ fn sat_recognized_header_values_refuse_as_malformed() {
                 container_only,
                 ..Default::default()
             };
-            let error = SatCodec
-                .decode(&mut Cursor::new(bytes.as_bytes()), &options)
-                .expect_err("recognized tolerance grammar has invalid values");
-            assert!(
-                matches!(
-                    error,
-                    cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_))
-                ),
-                "{line}, container={container_only}: {error:?}"
-            );
+            let result = SatCodec.decode(&mut Cursor::new(bytes.as_bytes()), &options);
+            if line.starts_with("1 ") {
+                let recovered = result.expect("invalid tolerance does not control record decode");
+                assert!(recovered
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|loss| loss.code == SatLossCode::HeaderToleranceUnresolved.kind()));
+                assert_eq!(
+                    recovered.ir().model.faces.len(),
+                    usize::from(!container_only)
+                );
+            } else {
+                let error = result.expect_err("invalid scale prevents geometry interpretation");
+                assert!(
+                    matches!(
+                        error,
+                        cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_))
+                    ),
+                    "{line}: {error:?}"
+                );
+            }
         }
     }
 }

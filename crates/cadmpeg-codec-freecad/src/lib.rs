@@ -870,7 +870,7 @@ impl CodecBackend for FcstdCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        let scan = container::scan(ctx, root)?;
+        let mut scan = container::scan(ctx, root)?;
         let mut admitted_entities = 0_u64;
         let mut attributes = container::source_attributes(ctx, &scan)?;
         let thumbnail = scan
@@ -951,6 +951,7 @@ impl CodecBackend for FcstdCodec {
                 scan.document.file_version.value(),
                 &graph.properties,
                 &entry_records,
+                &mut scan.losses,
             )?;
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;

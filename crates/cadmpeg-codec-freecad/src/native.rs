@@ -705,18 +705,17 @@ mod tests {
     }
 
     #[test]
-    fn file_version_preserves_spelling_and_rejects_invalid_wire() {
+    fn file_version_preserves_spelling_and_unverified_declarations() {
         let wire = serde_json::json!({"id":"document", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
         let record = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
-        assert_eq!(record.file_version.value(), 1);
+        assert_eq!(record.file_version.value(), Some(1));
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
         for spelling in ["-1", "", "abc", "184467440737095516160"] {
             let mut invalid = wire.clone();
             invalid["file_version"] = serde_json::json!(spelling);
-            assert!(serde_json::from_value::<super::DocumentFacts>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("file_version"));
+            let record = serde_json::from_value::<super::DocumentFacts>(invalid.clone()).unwrap();
+            assert_eq!(record.file_version.value(), None);
+            assert_eq!(serde_json::to_value(record).unwrap(), invalid);
         }
     }
 
@@ -2697,23 +2696,20 @@ impl DocumentKind {
     }
 }
 
-/// Parsed file version with its exact source spelling.
+/// File-version declaration with its exact spelling and optional interpretation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileVersion {
     spelling: String,
-    value: usize,
+    value: Option<usize>,
 }
-impl TryFrom<String> for FileVersion {
-    type Error = String;
-    fn try_from(spelling: String) -> Result<Self, Self::Error> {
-        let value = spelling
-            .parse()
-            .map_err(|_| "file_version must parse as usize".to_owned())?;
-        Ok(Self { spelling, value })
+impl From<String> for FileVersion {
+    fn from(spelling: String) -> Self {
+        let value = spelling.parse().ok();
+        Self { spelling, value }
     }
 }
 impl FileVersion {
-    pub(crate) fn value(&self) -> usize {
+    pub(crate) fn value(&self) -> Option<usize> {
         self.value
     }
     pub(crate) fn as_str(&self) -> &str {
@@ -2799,7 +2795,7 @@ impl TryFrom<DocumentFactsWire> for DocumentFacts {
     fn try_from(wire: DocumentFactsWire) -> Result<Self, Self::Error> {
         let value = Self {
             id: wire.id,
-            file_version: wire.file_version.try_into()?,
+            file_version: wire.file_version.into(),
             program_version: wire.program_version,
             root_name: wire.root_name,
             object_count: wire.object_count,

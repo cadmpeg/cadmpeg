@@ -174,6 +174,10 @@ pub(crate) enum F3dLossCode {
     KernelCarrierUnparseable,
     /// Two F3Z member layers resolved to the same core dialect identity.
     DialectLayerCollision,
+    /// A framed text B-rep carries malformed header metadata or tolerances.
+    TextHeaderNoncanonical,
+    /// An optional kernel tolerance cannot enter the canonical document units.
+    KernelHeaderToleranceUnresolved,
 }
 
 impl F3dLossCode {
@@ -255,6 +259,8 @@ impl F3dLossCode {
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
         Self::DialectLayerCollision,
+        Self::TextHeaderNoncanonical,
+        Self::KernelHeaderToleranceUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -342,6 +348,8 @@ impl F3dLossCode {
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
             Self::DialectLayerCollision => "source.dialect-layer-collision",
+            Self::TextHeaderNoncanonical => "brep.text-header-noncanonical",
+            Self::KernelHeaderToleranceUnresolved => "brep.header-tolerance-unresolved",
         }
     }
 
@@ -423,7 +431,9 @@ impl F3dLossCode {
             | Self::SourceDialectDisplaced
             | Self::KernelDialectUnverified
             | Self::KernelCarrierUnparseable
-            | Self::DialectLayerCollision => Severity::Warning,
+            | Self::DialectLayerCollision
+            | Self::TextHeaderNoncanonical
+            | Self::KernelHeaderToleranceUnresolved => Severity::Warning,
         }
     }
 
@@ -509,6 +519,8 @@ impl F3dLossCode {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
+            Self::TextHeaderNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
         }
     }
 
@@ -619,6 +631,8 @@ mod tests {
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
                 "source.dialect-layer-collision",
+                "brep.text-header-noncanonical",
+                "brep.header-tolerance-unresolved",
             ]
         );
     }

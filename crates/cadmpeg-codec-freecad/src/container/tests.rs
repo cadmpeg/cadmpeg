@@ -841,7 +841,7 @@ fn producer_version_metadata_does_not_refuse_the_document() {
     for (attributes, expected) in [
         ("programVersion=\"1.0\"", Some("1.0")),
         ("ProgramVersion=\"1.0\" programVersion=\"1.0\"", Some("1.0")),
-        ("ProgramVersion=\"1.0\" programVersion=\"2.0\"", None),
+        ("ProgramVersion=\"1.0\" programVersion=\"2.0\"", Some("1.0")),
     ] {
         let xml = format!(
             "<Document SchemaVersion=\"4\" {attributes}><Objects Count=\"0\"/><ObjectData Count=\"0\"/></Document>"
@@ -865,5 +865,64 @@ fn producer_version_metadata_does_not_refuse_the_document() {
             == crate::loss::FreecadLossCode::ProgramVersionNoncanonical
                 .note("")
                 .code));
+    }
+}
+
+#[test]
+fn invalid_file_version_preserves_independent_brep_geometry_and_declaration() {
+    use std::io::Read;
+    let original = crate::test_support::test_archive::GEOMETRY;
+    let expected = FcstdCodec
+        .decode(&mut Cursor::new(original), &DecodeOptions::default())
+        .unwrap();
+    assert!(!expected.ir().model.faces.is_empty());
+    let mut source = zip::ZipArchive::new(Cursor::new(original)).unwrap();
+    let mut entries = Vec::new();
+    for index in 0..source.len() {
+        let mut entry = source.by_index(index).unwrap();
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).unwrap();
+        entries.push((entry.name().to_owned(), bytes));
+    }
+    for version in ["bad", "-1", "", "184467440737095516160"] {
+        let modified = entries
+            .iter()
+            .map(|(name, bytes)| {
+                let bytes = if name == "Document.xml" {
+                    String::from_utf8(bytes.clone())
+                        .unwrap()
+                        .replace("FileVersion=\"1\"", &format!("FileVersion=\"{version}\""))
+                        .into_bytes()
+                } else {
+                    bytes.clone()
+                };
+                (name.clone(), bytes)
+            })
+            .collect::<Vec<_>>();
+        let borrowed = modified
+            .iter()
+            .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+            .collect::<Vec<_>>();
+        let bytes = archive_entries(&borrowed);
+        let recovered = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert!(recovered.report().losses.iter().any(|loss| loss.code
+            == crate::loss::FreecadLossCode::FileVersionUnverified
+                .note("")
+                .code));
+        assert_eq!(
+            recovered
+                .ir()
+                .source
+                .as_ref()
+                .unwrap()
+                .dialect()
+                .unwrap()
+                .declared()["file_version"],
+            version
+        );
+        crate::test_support::test_archive::assert_valid_document(recovered.ir());
     }
 }

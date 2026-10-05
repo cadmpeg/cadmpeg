@@ -1517,8 +1517,9 @@ so the decoder states none: it assigns no outer role and the face carries
 follow the normal path, and the enclosing root is retained. The
 `topology.face-multiple-outer-bounds` warning identifies the face and the
 count. This result is independent of the serialized order of the `bounds` SET.
-On export the first loop in face order is written as `FACE_OUTER_BOUND` and
-the remaining loops as `FACE_BOUND`.
+The original face and bound records remain exact source records with their
+reference links. Unclassified loops state no outer role. A `FACE` may carry
+only `FACE_BOUND` records; its `FACE_OUTER_BOUND` count need not be positive.
 
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
 conic. Its positive-v axis is the counterclockwise perpendicular. ISO

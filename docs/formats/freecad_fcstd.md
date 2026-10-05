@@ -98,10 +98,17 @@ dependency graph to be acyclic.
 
 ## 3. Version dispatch
 
-`SchemaVersion` alone selects the object envelope. `ProgramVersion` is metadata. An absent
-`FileVersion` has value zero. `FileVersion` does not select the object or property-container
+`SchemaVersion` alone selects the object envelope. `ProgramVersion` selects legacy
+transparency conversion and feature-value migrations, including chamfer direction
+and hole-cut enumeration. An absent `FileVersion` has value zero.
+`FileVersion` does not select the object or property-container
 envelope. It selects versioned side-entry details such as string tables and complex geometry.
 Property runtime type and value tag select a property-value grammar.
+
+The decoder retains an unparseable `FileVersion` without numeric interpretation.
+Nonempty version-dependent inline legacy element maps remain source-only; independently
+framed B-rep and side-entry data still decode. Canonical version attributes control
+interpretation when a lowercase alias conflicts, with a diagnostic for the conflict.
 
 Document properties and object properties use the same `Properties` container in schemas 2, 3,
 and 4. The document root has at most one direct `Properties` container; duplicate root

@@ -634,13 +634,8 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             pcurves: Vec::new(),
         },
     });
-    let face_loops = ir.model.faces[0]
-        .loops
-        .iter()
-        .cloned()
-        .chain(std::iter::once(inner))
-        .collect();
-    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(face_loops);
+    let outer = ir.model.faces[0].loops.iter().next().unwrap().clone();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
     let output = export(&ir);
     let (exchange, diagnostics) =
         crate::test_support::with_service_context(output.as_bytes(), crate::parse::parse_inner)
@@ -744,6 +739,41 @@ fn duplicate_face_outer_bound_witnesses_recover_unspecified_loops_in_any_order()
             .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
         assert_eq!(decoded.ir().model.faces.len(), 1);
         assert_eq!(decoded.ir().model.loops.len(), 2);
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .unwrap()
+            .findings
+            .iter()
+            .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error));
+        // Recovery keeps the original role claims as exact source records.
+        let decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+        let unknowns = decoded
+            .ir()
+            .native
+            .namespace("step")
+            .unwrap()
+            .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+            .unwrap();
+        for step in [7, 9, 10] {
+            let source = std::str::from_utf8(input).unwrap();
+            let start = source.find(&format!("#{step}=")).unwrap();
+            let end = start + source[start..].find(';').unwrap() + 1;
+            let (id, retained) = decoded
+                .source_fidelity()
+                .retained_records()
+                .iter()
+                .find(|(_, record)| record.data() == Some(&input[start..end]))
+                .expect("noncanonical topology source survives");
+            assert_eq!(
+                retained.offset(),
+                cadmpeg_core::decode::u64_from_index(start)
+            );
+            assert!(!unknowns
+                .iter()
+                .find(|record| record.id == *id)
+                .unwrap()
+                .links
+                .is_empty());
+        }
         let face = decoded.ir().model.faces.first().expect("one face");
         let cadmpeg_ir::topology::FaceLoops::Unspecified { loops } = &face.loops else {
             panic!(

@@ -47,6 +47,12 @@ pub(crate) enum FreecadLossCode {
     PcurveNotTransferred,
     /// Producer version metadata used an alias or conflicting declarations.
     ProgramVersionNoncanonical,
+    /// Persistence version metadata used a lowercase alias.
+    FileVersionNoncanonical,
+    /// Persistence file-version declaration cannot select a legacy map encoding.
+    FileVersionUnverified,
+    /// Nonempty inline legacy map has no verified file-version interpretation.
+    ElementMapVersionUnresolved,
 }
 
 impl FreecadLossCode {
@@ -64,6 +70,9 @@ impl FreecadLossCode {
         Self::SourceGuiPropertyKeyBlank,
         Self::PcurveNotTransferred,
         Self::ProgramVersionNoncanonical,
+        Self::FileVersionNoncanonical,
+        Self::FileVersionUnverified,
+        Self::ElementMapVersionUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -85,6 +94,9 @@ impl FreecadLossCode {
             Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
+            Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
+            Self::FileVersionUnverified => "metadata.file-version-unverified",
+            Self::ElementMapVersionUnresolved => "element-map.version-unresolved",
         }
     }
 
@@ -102,7 +114,10 @@ impl FreecadLossCode {
             | Self::SourceGuiSchemaUnverified
             | Self::SourceGuiPropertyKeyBlank
             | Self::PcurveNotTransferred
-            | Self::ProgramVersionNoncanonical => Severity::Warning,
+            | Self::ProgramVersionNoncanonical
+            | Self::FileVersionNoncanonical
+            | Self::FileVersionUnverified
+            | Self::ElementMapVersionUnresolved => Severity::Warning,
         }
     }
 
@@ -117,7 +132,10 @@ impl FreecadLossCode {
             | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
-            Self::ProgramVersionNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::ProgramVersionNoncanonical
+            | Self::FileVersionNoncanonical
+            | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
@@ -169,6 +187,9 @@ mod tests {
                 "source.gui-property-key-blank",
                 "pcurve.not-transferred",
                 "metadata.program-version-noncanonical",
+                "metadata.file-version-noncanonical",
+                "metadata.file-version-unverified",
+                "element-map.version-unresolved",
             ]
         );
     }
