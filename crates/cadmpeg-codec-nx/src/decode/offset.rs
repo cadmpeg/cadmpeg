@@ -3066,7 +3066,6 @@ pub(super) fn surface_parameters(
 ) -> Result<Option<FinitePoint2>, cadmpeg_core::decode::ResourceLimit> {
     let mut surface = match surface {
         SurfaceGeometry::Procedural { .. } => {
-            ctx.charge_work_limit(1, "nx support parameter surface visit")?;
             return Ok(FinitePoint2::new(Point2::new(uv[0], uv[1])));
         }
         SurfaceGeometry::Solved(surface) => surface,

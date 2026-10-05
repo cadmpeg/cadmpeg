@@ -1013,7 +1013,12 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
         );
         let span = crate::decode::blend::ScalarBezierSpan {
             domain: [0.0, 1.0],
-            controls: vec![-1.0, 1.0],
+            controls: crate::decode::blend::ScopedValues::copy_of(
+                geometry_ctx,
+                &[-1.0, 1.0],
+                "test controls",
+            )
+            .expect("two controls fit the scoped budget"),
         };
 
         let refusal = crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
