@@ -9,6 +9,7 @@ use super::shared_frames::find_frame;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::{f64s_at, finite_reals_at};
 use crate::design::decode::byte_fields::zeros_at;
+use crate::design::decode::operands::reference_at;
 use crate::design::decode::record_streams::{in_stream, record_stream};
 use crate::design::decode::reference_runs::{admit_reference_values, reference_position};
 use crate::design::decode::sketch::{
@@ -30,15 +31,6 @@ use cadmpeg_ir::scalar::FiniteReal;
 const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
 
 const EPS_SCOPES_SAME_TRANSFORM_BASIS_E10: f64 = 1.0e-10;
-
-/// The member at `index` of a reference run, read directly from its storage.
-fn reference_at(run: &ReferenceRun<u32>, index: usize) -> Option<u32> {
-    match (run.unlocated_values(), run.located_rows()) {
-        (Some(values), _) => values.get(index).copied(),
-        (None, Some(rows)) => rows.get(index).map(|row| row.value),
-        (None, None) => None,
-    }
-}
 
 /// Whether record `id` has the stream scope `stream`; an absent scope
 /// matches only an absent one.
@@ -258,19 +250,25 @@ fn rectangular_pattern_run(
 ) -> Result<Option<Vec<TransformCandidate>>, CodecError> {
     let mut starts =
         ctx.vector_storage(members.len(), "f3d rectangular pattern reference starts")?;
-    for record_index in admit_reference_values(
+    // The scan stops at the first member without a header.
+    let unindexed = reference_position(
         ctx,
         members,
+        |record_index| {
+            let Some(start) = records.first_offset(*record_index) else {
+                return Ok(true);
+            };
+            ctx.push_vec(
+                &mut starts,
+                start,
+                "f3d rectangular pattern reference starts",
+            )?;
+            Ok(false)
+        },
         "scan F3D rectangular pattern scope references",
-    )? {
-        let Some(start) = records.first_offset(*record_index) else {
-            return Ok(None);
-        };
-        ctx.push_vec(
-            &mut starts,
-            start,
-            "f3d rectangular pattern reference starts",
-        )?;
+    )?;
+    if unindexed.is_some() {
+        return Ok(None);
     }
     ctx.sort_unstable_by(
         &mut starts,
@@ -281,7 +279,8 @@ fn rectangular_pattern_run(
 
     let mut candidates = ctx.vector_storage(count, "f3d rectangular pattern candidate groups")?;
     let mut scanned_bytes = 0_usize;
-    for ordinal in ctx.admit_iter(&(0..count), "scan F3D rectangular pattern record indexes")? {
+    for ordinal in 0..count {
+        ctx.charge_work(1, "scan F3D rectangular pattern record indexes")?;
         let Some(start) =
             pattern_record_index(members, ordinal).and_then(|index| records.first_offset(index))
         else {
@@ -336,16 +335,13 @@ fn rectangular_pattern_run(
         return Ok(None);
     };
     // Distinct endpoint pairs give distinct runs, so the run is unique when
-    // exactly one pair has evenly spaced intermediates.
+    // exactly one pair has evenly spaced intermediates. Each pair is admitted
+    // as the search reaches it; the search stops at a second run.
     let mut selected = None;
-    for first in ctx.admit_iter(
-        first_candidates,
-        "scan F3D rectangular pattern first candidates",
-    )? {
-        for last in ctx.admit_iter(
-            final_candidates,
-            "scan F3D rectangular pattern final candidates",
-        )? {
+    for first in first_candidates {
+        ctx.charge_work(1, "scan F3D rectangular pattern first candidates")?;
+        for last in final_candidates {
+            ctx.charge_work(1, "scan F3D rectangular pattern final candidates")?;
             if !same_transform_basis(&first.0, &last.0) {
                 continue;
             }
@@ -401,10 +397,8 @@ fn rectangular_pattern_steps(
             position += 1.0;
             let fraction = position / intervals;
             let mut matched = None;
-            for candidate in ctx.admit_iter(
-                record_candidates,
-                "scan F3D rectangular pattern intermediate candidates",
-            )? {
+            for candidate in record_candidates {
+                ctx.charge_work(1, "scan F3D rectangular pattern intermediate candidates")?;
                 let evenly_spaced = same_transform_basis(&first.0, &candidate.0)
                     && translation_delta(&first.0, &candidate.0)
                         .iter()
@@ -990,10 +984,10 @@ fn exact_pattern_identity_wrapper(
     {
         return Ok(None);
     }
-    let Some(after_asset_id) = relaxed_guid_end(ctx, bytes, start + 29)? else {
+    let Some(after_asset_id) = relaxed_guid_end(bytes, start + 29) else {
         return Ok(None);
     };
-    let Some(after_context_id) = relaxed_guid_end(ctx, bytes, after_asset_id)? else {
+    let Some(after_context_id) = relaxed_guid_end(bytes, after_asset_id) else {
         return Ok(None);
     };
     if View::u32_le_at(bytes, after_context_id) != Some(2)

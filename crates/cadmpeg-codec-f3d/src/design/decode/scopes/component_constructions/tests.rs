@@ -1218,38 +1218,10 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     identity[34..38].copy_from_slice(&relation_record_index.to_le_bytes());
     identity[44..46].copy_from_slice(&[1, 1]);
     identity[46..122].copy_from_slice(&null_guid);
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        assert_eq!(
-            super::exact_component_insert_identity_scope_shifted(
-                ctx,
-                &identity,
-                0,
-                relation_record_index,
-            )
-            .unwrap(),
-            Some(occurrence_identity)
-        );
-    });
-    let identity_error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "match F3D UTF-16 ASCII field",
-        0,
-        |ctx| {
-            super::exact_component_insert_identity_scope_shifted(
-                ctx,
-                &identity,
-                0,
-                relation_record_index,
-            )
-        },
+    assert_eq!(
+        super::exact_component_insert_identity_scope_shifted(&identity, 0, relation_record_index),
+        Some(occurrence_identity)
     );
-    assert!(matches!(
-        identity_error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "match F3D UTF-16 ASCII field"
-                && limit.additional == 72
-    ));
 
     let transform: [[f64; 4]; 4] = [
         [1.0, 0.0, 0.0, 4.0],
@@ -1268,33 +1240,10 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
         matrix[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     matrix[178..254].copy_from_slice(&null_guid);
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        assert_eq!(
-            super::exact_component_insert_scope_414_264_389(
-                ctx,
-                &matrix,
-                0,
-                relation_record_index,
-            )
-            .unwrap(),
-            Some((transform.try_into().unwrap(), Some(50), occurrence_identity))
-        );
-    });
-    let matrix_error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "match F3D UTF-16 ASCII field",
-        0,
-        |ctx| {
-            super::exact_component_insert_scope_414_264_389(ctx, &matrix, 0, relation_record_index)
-        },
+    assert_eq!(
+        super::exact_component_insert_scope_414_264_389(&matrix, 0, relation_record_index),
+        Some((transform.try_into().unwrap(), Some(50), occurrence_identity))
     );
-    assert!(matches!(
-        matrix_error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "match F3D UTF-16 ASCII field"
-                && limit.additional == 72
-    ));
 }
 
 #[test]

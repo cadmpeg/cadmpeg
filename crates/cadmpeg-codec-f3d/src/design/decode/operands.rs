@@ -8,7 +8,6 @@ use crate::records::topology::{
 
 use cadmpeg_core::container::ContainerRole;
 
-use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
 use crate::container::ContainerScan;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
@@ -16,7 +15,7 @@ use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates_charged, contiguous_i32_program,
     decode_recipe_references_charged, recipe_record_prefix,
 };
-use crate::design::decode::record_streams::{in_stream, record_stream, StreamOffsets};
+use crate::design::decode::record_streams::{in_stream, record_stream};
 use crate::design::decode::reference_runs::{admit_reference_values, reference_position};
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::parameter_scope::payload_prologue;
@@ -86,7 +85,7 @@ use cadmpeg_core::decode::{
     index_from_u32, u64_from_index, DecodeContext, ScopedReservation, View,
 };
 use cadmpeg_core::CodecError;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// The kind of `scope`, except a native kind, whose name is not copied.
 fn known_scope_kind(scope: &DesignParameterScope) -> Option<DesignFeatureKind> {
@@ -99,7 +98,7 @@ fn scope_family(scope: &DesignParameterScope) -> Option<DesignFeatureFamily> {
 }
 
 /// The value at `index` of a reference run, read with fixed work.
-fn reference_at(run: &ReferenceRun<u32>, index: usize) -> Option<u32> {
+pub(super) fn reference_at(run: &ReferenceRun<u32>, index: usize) -> Option<u32> {
     match (run.unlocated_values(), run.located_rows()) {
         (Some(values), _) => values.get(index).copied(),
         (None, Some(rows)) => rows.get(index).map(|row| row.value),
@@ -244,63 +243,28 @@ fn groups_by_scope<'a, 'c>(
     )
 }
 
-/// Header offsets of every native stream, ordered by stream and offset.
-fn sorted_stream_offsets<'a, 'c>(
-    ctx: &'c DecodeContext<'_>,
-    headers: &'a [DesignRecordHeader],
-) -> Result<StreamOffsets<'a, 'c>, CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "f3d edge operand stream offset")?;
-    let mut offsets = Vec::new();
-    for header in ctx.admit_iter(headers, "index F3D edge operand offsets")? {
-        let Some(stream) = record_stream(ctx, &header.id)? else {
-            continue;
-        };
-        storage.with_storage(|| {
-            ctx.push_vec(
-                &mut offsets,
-                (stream, header.byte_offset),
-                "f3d edge operand stream offset",
-            )
-        })?;
-    }
-    ctx.sort_unstable_by(
-        &mut offsets,
-        |pair| pair,
-        Ord::cmp,
-        "sort f3d edge operand stream offsets",
-    )?;
-    Ok((offsets, storage))
-}
-
-/// The first header offset of `stream` after `after` in `sorted_stream_offsets`
-/// output. The ordered pairs are bisected.
+/// The first header offset of `stream` after `after`. The ordered headers are
+/// bisected.
 fn next_stream_offset(
     ctx: &DecodeContext<'_>,
-    offsets: &[(&str, u64)],
+    headers: &StreamOrdered<'_, '_, DesignRecordHeader>,
     stream: &str,
     after: u64,
 ) -> Result<Option<u64>, CodecError> {
-    const OPERATION: &str = "find next F3D edge operand stream offset";
+    let headers = headers.of_stream(ctx, stream)?;
     let at = ctx.partition_point(
-        offsets,
-        |(candidate, offset)| {
-            Ok(match ctx.compare(*candidate, stream, OPERATION)? {
-                std::cmp::Ordering::Less => true,
-                std::cmp::Ordering::Equal => *offset <= after,
-                std::cmp::Ordering::Greater => false,
-            })
-        },
-        OPERATION,
+        headers,
+        |(_, header)| Ok(header.byte_offset <= after),
+        "find next F3D edge operand stream offset",
     )?;
-    let Some((candidate, offset)) = offsets.get(at) else {
-        return Ok(None);
-    };
-    Ok(ctx
-        .equal_bytes(candidate.as_bytes(), stream.as_bytes(), OPERATION)?
-        .then_some(*offset))
+    Ok(headers.get(at).map(|(_, header)| header.byte_offset))
 }
 
 /// Decode edge-recipe operand frames named by edge-selecting feature scopes.
+#[expect(
+    clippy::zero_sized_map_values,
+    reason = "a key set is a map: a core set insert charges the set's length, a map insert only its key"
+)]
 pub(crate) fn decode_edge_operands(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -312,7 +276,7 @@ pub(crate) fn decode_edge_operands(
     let record_headers = headers;
     let headers = indexed_operand_headers(ctx, record_headers)?;
     let mut terminal_storage = ctx.reserve_scoped(0, "f3d edge operand terminal member")?;
-    let mut terminal_group_members = HashSet::new();
+    let mut terminal_group_members = HashMap::new();
     for group in ctx.admit_iter(groups, "index F3D edge operand terminal groups")? {
         let Some(member) = group.members().last() else {
             continue;
@@ -321,14 +285,25 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         terminal_storage.with_storage(|| {
-            ctx.insert_hash_set(
+            ctx.insert_hash_map(
                 &mut terminal_group_members,
                 (stream, group.scope_record_index, member.value),
+                (),
                 "f3d edge operand terminal member",
             )
         })?;
     }
-    let (stream_offsets, _stream_offsets_storage) = sorted_stream_offsets(ctx, record_headers)?;
+    let stream_offsets = StreamOrdered::build(
+        ctx,
+        record_headers,
+        |_| true,
+        |header| header.id.as_str(),
+        |header| header.byte_offset,
+        (
+            "index F3D edge operand offsets",
+            "f3d edge operand stream offset",
+        ),
+    )?;
     let scope_groups = groups_by_scope(ctx, groups)?;
     let mut index_storage = ctx.reserve_scoped(0, "f3d operand stream index")?;
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
@@ -341,10 +316,15 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let mut member_storage = ctx.reserve_scoped(0, "f3d edge operand member index")?;
-        let mut member_indices = HashSet::new();
+        let mut member_indices = HashMap::new();
         let mut insert_member = |index: u32| {
             member_storage.with_storage(|| {
-                ctx.insert_hash_set(&mut member_indices, index, "f3d edge operand member index")
+                ctx.insert_hash_map(
+                    &mut member_indices,
+                    index,
+                    (),
+                    "f3d edge operand member index",
+                )
             })
         };
         for group in ctx.admit_iter(
@@ -403,7 +383,7 @@ pub(crate) fn decode_edge_operands(
         .copied()
         .enumerate()
         {
-            if !ctx.contains_hash_set(
+            if !ctx.contains_key_hash_map(
                 &member_indices,
                 &record_index,
                 "find F3D edge operand member index",
@@ -416,7 +396,7 @@ pub(crate) fn decode_edge_operands(
             let Some(header) = headers.get(ctx, stream, record_index)? else {
                 continue;
             };
-            let terminal_group_limit = if ctx.contains_hash_set(
+            let terminal_group_limit = if ctx.contains_key_hash_map(
                 &terminal_group_members,
                 &(stream, scope.record_index, header.record_index),
                 "find F3D edge operand terminal member",
@@ -905,11 +885,7 @@ pub(crate) fn bind_work_plane_constructions(
                 Ok(parameter.record_index == owner.parameter_record_index()
                     && parameter.owner_record_index() == Some(owner.record_index())
                     && parameter.evaluated_value().get() == 0.0
-                    && ctx.equal_bytes(
-                        parameter.source_kind().as_bytes(),
-                        b"ExtraOffset",
-                        "match F3D WorkPlane offset parameter kind",
-                    )?
+                    && parameter.source_kind().as_bytes() == b"ExtraOffset"
                     && in_stream(ctx, &parameter.id, stream)?)
             },
             "find F3D WorkPlane offset parameters",
@@ -1215,6 +1191,10 @@ fn is_legacy_as_built_421(scope: &DesignParameterScope) -> bool {
 }
 
 /// Decode face-recipe operand frames named by grouped and direct feature references.
+#[expect(
+    clippy::zero_sized_map_values,
+    reason = "a key set is a map: a core set insert charges the set's length, a map insert only its key"
+)]
 pub(crate) fn decode_face_operands(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -1233,10 +1213,12 @@ pub(crate) fn decode_face_operands(
     )?;
     let mut out = Vec::new();
     let mut seen_storage = ctx.reserve_scoped(0, "f3d face operand seen key")?;
-    let mut seen = HashSet::new();
+    let mut seen = HashMap::new();
     let mut first_visit = |key| {
-        seen_storage
-            .with_storage(|| ctx.insert_hash_set(&mut seen, key, "f3d face operand seen key"))
+        seen_storage.with_storage(|| {
+            ctx.insert_hash_map(&mut seen, key, (), "f3d face operand seen key")
+                .map(|previous| previous.is_none())
+        })
     };
     let mut index_storage = ctx.reserve_scoped(0, "f3d operand stream index")?;
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
@@ -1834,13 +1816,23 @@ fn sort_and_dedup_faces(
 
 /// Candidate faces of the recipe references that carry `design_reference`.
 /// The set is held in the returned scoped reservation.
+#[expect(
+    clippy::zero_sized_map_values,
+    reason = "a key set is a map: a core set insert charges the set's length, a map insert only its key"
+)]
 fn referenced_operand_faces<'a, 'c>(
     ctx: &'c DecodeContext<'_>,
     references: &'a [crate::records::dimensions::DesignRecipeReference],
     design_reference: i64,
-) -> Result<(HashSet<&'a cadmpeg_ir::ids::FaceId>, ScopedReservation<'c>), CodecError> {
+) -> Result<
+    (
+        HashMap<&'a cadmpeg_ir::ids::FaceId, ()>,
+        ScopedReservation<'c>,
+    ),
+    CodecError,
+> {
     ctx.with_scoped_storage("f3d referenced face candidate", || {
-        let mut referenced = HashSet::new();
+        let mut referenced = HashMap::new();
         for reference in ctx.admit_iter(references, "scan F3D face operand references")? {
             if reference.design_reference != design_reference {
                 continue;
@@ -1849,7 +1841,7 @@ fn referenced_operand_faces<'a, 'c>(
                 &reference.candidate_faces,
                 "scan F3D referenced face candidates",
             )? {
-                ctx.insert_hash_set(&mut referenced, face, "f3d referenced face candidate")?;
+                ctx.insert_hash_map(&mut referenced, face, (), "f3d referenced face candidate")?;
             }
         }
         Ok::<_, CodecError>(referenced)
@@ -1891,7 +1883,11 @@ pub(crate) fn bind_face_operand_candidates(
             referenced_operand_faces(ctx, &operand.recipe_references, design_reference)?;
         let mut unreferenced = Vec::new();
         for face in ctx.admit_iter(&operand.candidate_faces, "scan F3D face operand candidates")? {
-            if !ctx.contains_hash_set(&referenced, &face, "find F3D referenced face candidate")? {
+            if !ctx.contains_key_hash_map(
+                &referenced,
+                &face,
+                "find F3D referenced face candidate",
+            )? {
                 push_operand_face_candidate(ctx, &mut unreferenced, face)?;
             }
         }
@@ -2011,34 +2007,31 @@ pub(crate) fn bind_sketch_profiles(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        // Each reference is admitted as the search reaches it; the search
+        // stops at a second profile.
         let mut unique = None;
-        let mut multiple = false;
-        for (ordinal, record_index) in admit_reference_values(
+        let mut ordinal = 0_usize;
+        let multiple = reference_position(
             ctx,
             scope.reference_members(),
+            |&record_index| {
+                let here = ordinal;
+                ordinal += 1;
+                let (Ok(here), Some(header)) =
+                    (u32::try_from(here), headers.get(ctx, stream, record_index)?)
+                else {
+                    return Ok(false);
+                };
+                let Some(profile) =
+                    parse_sketch_profile(ctx, bytes, stream, here, header, entities)?
+                else {
+                    return Ok(false);
+                };
+                Ok(unique.replace(profile).is_some())
+            },
             "scan F3D sketch-profile references",
-        )?
-        .copied()
-        .enumerate()
-        {
-            let (Ok(ordinal), Some(header)) = (
-                u32::try_from(ordinal),
-                headers.get(ctx, stream, record_index)?,
-            ) else {
-                continue;
-            };
-            let Some(profile) =
-                parse_sketch_profile(ctx, bytes, stream, ordinal, header, entities)?
-            else {
-                continue;
-            };
-            if unique.is_some() {
-                multiple = true;
-                break;
-            }
-            unique = Some(profile);
-        }
-        let Some(profile) = unique.filter(|_| !multiple) else {
+        )?;
+        let Some(profile) = unique.filter(|_| multiple.is_none()) else {
             continue;
         };
         let Some(scope) = scopes.get_mut(position) else {
@@ -2303,7 +2296,7 @@ pub(crate) fn decode_loft_legacy_body_carriers(
 ) -> Result<Vec<DesignLoftLegacyBodyCarrier>, CodecError> {
     let headers = indexed_operand_headers(ctx, headers)?;
     let mut seen_storage = ctx.reserve_scoped(0, "f3d legacy Loft body carrier seen key")?;
-    let mut seen = HashSet::new();
+    let mut seen = HashMap::new();
     let mut out = Vec::new();
     for scope in ctx.admit_iter(scopes, "scan F3D legacy loft scopes")? {
         if !matches!(
@@ -2327,17 +2320,23 @@ pub(crate) fn decode_loft_legacy_body_carriers(
         let Some(header) = headers.get(ctx, stream, record_index)? else {
             continue;
         };
-        // A carrier keeps the first scope that names it.
-        let key = (entry.name.as_str(), header.byte_offset);
-        if ctx.contains_hash_set(&seen, &key, "find F3D legacy Loft body carrier seen key")? {
+        // A carrier keeps the first scope that names it and parses.
+        let seen = &mut seen;
+        let parsed = seen_storage.with_storage(move || {
+            ctx.entry_hash_map(
+                seen,
+                (entry.name.as_str(), header.byte_offset),
+                "f3d legacy Loft body carrier seen key",
+            )
+            .map(|entry| entry.or_insert(false))
+        })?;
+        if *parsed {
             continue;
         }
         let Some(carrier) = parse_loft_legacy_body_carrier(ctx, bytes, scope, header)? else {
             continue;
         };
-        seen_storage.with_storage(|| {
-            ctx.insert_hash_set(&mut seen, key, "f3d legacy Loft body carrier seen key")
-        })?;
+        *parsed = true;
         push_loft_legacy_body_carrier(ctx, &mut out, carrier, &entry.name, header.byte_offset)?;
     }
     ctx.stable_sort_by(
@@ -2696,7 +2695,8 @@ fn fillet_parameters<'a, 'c>(
     for (_, parameter) in ctx.admit_iter(&owned, "classify F3D Fillet parameters")? {
         let source_kind = parameter.source_kind().as_bytes();
         for (kind, list) in FILLET_PARAMETER_KINDS.iter().zip(&mut by_kind) {
-            if ctx.equal_bytes(source_kind, kind, "match F3D Fillet parameter kind")? {
+            // Each kind is a short literal.
+            if source_kind == *kind {
                 storage.with_storage(|| {
                     ctx.push_vec(list, *parameter, "f3d Fillet parameters by kind")
                 })?;
@@ -3323,9 +3323,11 @@ fn take_counted_record_references(
     {
         return Ok(None);
     }
+    // The count is read from the frame, so each reference is admitted as the
+    // scan reaches it; the scan stops at the first malformed one.
     let mut references = Vec::new();
-    ctx.reserve_capacity(&mut references, count, operation)?;
-    for _ in ctx.admit_iter(&(0..count), operation)? {
+    for _ in 0..count {
+        ctx.charge_work(1, operation)?;
         let Some((value, offset)) = take_record_reference(bytes, cursor) else {
             return Ok(None);
         };
@@ -3836,7 +3838,7 @@ pub(crate) fn decode_construction_operand_identities(
 ) -> Result<Vec<DesignConstructionOperandIdentity>, CodecError> {
     let headers = indexed_operand_headers(ctx, headers)?;
     let mut seen_storage = ctx.reserve_scoped(0, "f3d construction identity seen key")?;
-    let mut seen = HashSet::new();
+    let mut seen = HashMap::new();
     let mut out = Vec::new();
     for group in ctx.admit_iter(groups, "scan F3D construction identity groups")? {
         let Some(trailing_record_index) = group
@@ -3857,9 +3859,17 @@ pub(crate) fn decode_construction_operand_identities(
         let Some(wrapper_header) = headers.get(ctx, stream, trailing_record_index)? else {
             continue;
         };
-        // An identity keeps the first group that names its wrapper.
-        let key = (entry.name.as_str(), wrapper_header.byte_offset);
-        if ctx.contains_hash_set(&seen, &key, "find F3D construction identity seen key")? {
+        // An identity keeps the first group that names its wrapper and parses.
+        let seen = &mut seen;
+        let parsed = seen_storage.with_storage(move || {
+            ctx.entry_hash_map(
+                seen,
+                (entry.name.as_str(), wrapper_header.byte_offset),
+                "f3d construction identity seen key",
+            )
+            .map(|entry| entry.or_insert(false))
+        })?;
+        if *parsed {
             continue;
         }
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -3868,9 +3878,7 @@ pub(crate) fn decode_construction_operand_identities(
         else {
             continue;
         };
-        seen_storage.with_storage(|| {
-            ctx.insert_hash_set(&mut seen, key, "f3d construction identity seen key")
-        })?;
+        *parsed = true;
         identity.id = design_record_id_charged(
             ctx,
             &entry.name,
@@ -3891,62 +3899,6 @@ pub(crate) fn decode_construction_operand_identities(
         "sort f3d design operands 15",
     )?;
     Ok(out)
-}
-
-/// Lost-edge records with their native streams, ordered by stream and then by
-/// record byte offset; records at one offset keep their input order. The list
-/// is held in scoped storage for as long as it lives.
-struct StreamLostEdges<'a, 'c> {
-    edges: Vec<(&'a str, &'a LostEdgeReference)>,
-    _storage: ScopedReservation<'c>,
-}
-
-impl<'a, 'c> StreamLostEdges<'a, 'c> {
-    fn build(
-        ctx: &'c DecodeContext<'_>,
-        lost_edges: &'a [LostEdgeReference],
-    ) -> Result<Self, CodecError> {
-        let mut storage = ctx.reserve_scoped(0, "f3d lost-edge stream records")?;
-        let mut edges = Vec::new();
-        for edge in ctx.admit_iter(lost_edges, "scan F3D lost-edge records")? {
-            let Some(stream) = record_stream(ctx, &edge.id)? else {
-                continue;
-            };
-            storage.with_storage(|| {
-                ctx.push_vec(&mut edges, (stream, edge), "f3d lost-edge stream records")
-            })?;
-        }
-        ctx.stable_sort_by_key(
-            &mut edges[..],
-            |(stream, edge)| (*stream, edge.record_byte_offset()),
-            Ord::cmp,
-            "sort f3d design operands 16",
-        )?;
-        Ok(Self {
-            edges,
-            _storage: storage,
-        })
-    }
-
-    /// The records of `stream` in byte order. The ordered list is bisected.
-    fn of_stream(
-        &self,
-        ctx: &DecodeContext<'_>,
-        stream: &str,
-    ) -> Result<&[(&'a str, &'a LostEdgeReference)], CodecError> {
-        const OPERATION: &str = "find F3D stream lost-edge records";
-        let start = ctx.partition_point(
-            &self.edges,
-            |(candidate, _)| Ok(ctx.compare(*candidate, stream, OPERATION)?.is_lt()),
-            OPERATION,
-        )?;
-        let end = ctx.partition_point(
-            &self.edges,
-            |(candidate, _)| Ok(ctx.compare(*candidate, stream, OPERATION)?.is_le()),
-            OPERATION,
-        )?;
-        Ok(self.edges.get(start..end).unwrap_or(&[]))
-    }
 }
 
 fn copy_lost_edge_run_ids(
@@ -3973,9 +3925,46 @@ pub(crate) fn bind_lost_edge_groups(
     identities: &[DesignConstructionOperandIdentity],
     lost_edges: &[LostEdgeReference],
 ) -> Result<(), CodecError> {
-    const IDENTITY_OPERATION: &str = "find F3D construction identities";
-    const TERMINAL_OPERATION: &str = "scan F3D lost-edge terminals";
-    let stream_edges = StreamLostEdges::build(ctx, lost_edges)?;
+    const TERMINAL_OPERATION: &str = "f3d lost-edge terminals";
+    const RUN_OPERATION: &str = "scan F3D lost-edge run";
+    let identities = RecordGroups::build(
+        ctx,
+        identities,
+        |identity| (identity.id.as_str(), identity.group_record_index),
+        "index F3D construction identities",
+    )?;
+    let edges = StreamOrdered::build(
+        ctx,
+        lost_edges,
+        |_| true,
+        |edge| edge.id.as_str(),
+        LostEdgeReference::record_byte_offset,
+        ("scan F3D lost-edge records", "f3d lost-edge stream records"),
+    )?;
+    // The first record, in stream and byte order, that names each following
+    // header, and whether a later record names it too.
+    let mut terminal_storage = ctx.reserve_scoped(0, TERMINAL_OPERATION)?;
+    let mut terminals: HashMap<(&str, u32, u64, u32), (usize, bool)> = HashMap::new();
+    for (position, (stream, edge)) in ctx
+        .admit_iter(&edges.entries, "index F3D lost-edge terminals")?
+        .enumerate()
+    {
+        let terminals = &mut terminals;
+        let key = (
+            *stream,
+            edge.next_record_index,
+            edge.next_byte_offset(),
+            edge.next_class_tag.code(),
+        );
+        match terminal_storage
+            .with_storage(move || ctx.entry_hash_map(terminals, key, TERMINAL_OPERATION))?
+        {
+            std::collections::hash_map::Entry::Occupied(mut found) => found.get_mut().1 = true,
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert((position, false));
+            }
+        }
+    }
     for position in ctx.admit_iter(&(0..groups.len()), "bind F3D lost-edge groups")? {
         let Some(group) = groups.get_mut(position) else {
             continue;
@@ -3985,43 +3974,36 @@ pub(crate) fn bind_lost_edge_groups(
         let Some(stream) = record_stream(ctx, &group.id)? else {
             continue;
         };
-        let is_group_identity = |identity: &DesignConstructionOperandIdentity| {
-            Ok(identity.group_record_index == group.record_index
-                && in_stream(ctx, &identity.id, stream)?)
+        let identity = match identities.get(ctx, stream, group.record_index)? {
+            [] => continue,
+            [identity] => *identity,
+            [..] => {
+                return Err(crate::design::text::malformed_design(
+                    ctx,
+                    format_args!(
+                        "Fusion construction group {} has multiple identity chains",
+                        group.record_index
+                    ),
+                ));
+            }
         };
-        let Some(identity_at) =
-            ctx.position_by(identities, is_group_identity, IDENTITY_OPERATION)?
+        let Some(wrapper) = identity.wrappers().first() else {
+            continue;
+        };
+        let Some(&(terminal, multiple)) = ctx.get_hash_map(
+            &terminals,
+            &(
+                stream,
+                wrapper.record_index,
+                wrapper.byte_offset,
+                wrapper.class_tag.code(),
+            ),
+            TERMINAL_OPERATION,
+        )?
         else {
             continue;
         };
-        let later = identities.get(identity_at + 1..).unwrap_or(&[]);
-        if ctx.any_by(later, is_group_identity, IDENTITY_OPERATION)? {
-            return Err(crate::design::text::malformed_design(
-                ctx,
-                format_args!(
-                    "Fusion construction group {} has multiple identity chains",
-                    group.record_index
-                ),
-            ));
-        }
-        let Some(wrapper) = identities
-            .get(identity_at)
-            .and_then(|identity| identity.wrappers().first())
-        else {
-            continue;
-        };
-        let wrapper_class_code = wrapper.class_tag.code();
-        let edges = stream_edges.of_stream(ctx, stream)?;
-        let is_terminal = |(_, edge): &(&str, &LostEdgeReference)| {
-            Ok(edge.next_record_index == wrapper.record_index
-                && edge.next_byte_offset() == wrapper.byte_offset
-                && edge.next_class_tag.code() == wrapper_class_code)
-        };
-        let Some(terminal) = ctx.position_by(edges, is_terminal, TERMINAL_OPERATION)? else {
-            continue;
-        };
-        let later = edges.get(terminal + 1..).unwrap_or(&[]);
-        if ctx.any_by(later, is_terminal, TERMINAL_OPERATION)? {
+        if multiple {
             return Err(crate::design::text::malformed_design(
                 ctx,
                 format_args!(
@@ -4030,26 +4012,26 @@ pub(crate) fn bind_lost_edge_groups(
                 ),
             ));
         }
-        let (Some(preceding), Some((_, mut current))) =
-            (edges.get(..terminal), edges.get(terminal))
-        else {
-            continue;
-        };
-        // The run extends backward while each record names its successor.
-        let start = ctx
-            .rposition_by(
-                preceding,
-                |(_, previous)| {
-                    let chained = previous.next_byte_offset() == current.record_byte_offset()
-                        && previous.next_record_index == current.record_index
-                        && previous.next_class_tag.code() == current.class_tag.code();
-                    current = previous;
-                    Ok(!chained)
-                },
-                "scan F3D lost-edge run",
-            )?
-            .map_or(0, |broken| broken + 1);
-        let Some(run) = edges.get(start..=terminal) else {
+        // The run extends backward through the records of its stream while
+        // each record names its successor. Each visited record is admitted.
+        let stream_start = edges.stream_start(ctx, stream)?;
+        let mut start = terminal;
+        while start > stream_start {
+            ctx.charge_work(1, RUN_OPERATION)?;
+            let (Some((_, previous)), Some((_, current))) =
+                (edges.entries.get(start - 1), edges.entries.get(start))
+            else {
+                break;
+            };
+            if previous.next_byte_offset() != current.record_byte_offset()
+                || previous.next_record_index != current.record_index
+                || previous.next_class_tag.code() != current.class_tag.code()
+            {
+                break;
+            }
+            start -= 1;
+        }
+        let Some(run) = edges.entries.get(start..=terminal) else {
             continue;
         };
         if run.len() != group.members().len() {
@@ -4478,9 +4460,12 @@ fn parse_extrude_selection_group(
     })() else {
         return Ok(None);
     };
-    let mut members = ctx.vector_storage(member_count, MEMBERS_OPERATION)?;
-    let mut member_offsets = ctx.vector_storage(member_count, OFFSETS_OPERATION)?;
-    for _ in ctx.admit_iter(&(0..member_count), MEMBERS_OPERATION)? {
+    // The count is read from the frame, so each member is admitted as the scan
+    // reaches it; the scan stops at the first unmarked one.
+    let mut members = Vec::new();
+    let mut member_offsets = Vec::new();
+    for _ in 0..member_count {
+        ctx.charge_work(1, MEMBERS_OPERATION)?;
         let (Some(member), Some(member_offset), Some(next)) = (
             position
                 .checked_add(1)
@@ -4678,6 +4663,11 @@ pub(super) fn parse_entity_selection_operand(
     else {
         return Ok(None);
     };
+    let Some(class_tag) =
+        crate::design::decode::text::class_tag_from_view(ctx, header.class_tag.as_str())?
+    else {
+        return Ok(None);
+    };
     Ok(DesignEntitySelectionOperand::try_new(
         crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
             id: String::new(),
@@ -4686,7 +4676,7 @@ pub(super) fn parse_entity_selection_operand(
             group_member_ordinal,
             record_index: frame.record_index,
             byte_offset: frame.byte_offset,
-            class_tag: frame.class_tag,
+            class_tag,
             asset_id,
             asset_id_offset: frame.asset_id_offset,
             context_id,
@@ -4712,7 +4702,6 @@ pub(super) fn parse_entity_selection_operand(
 pub(in crate::design::decode) struct EntitySelectionFrame {
     pub(super) record_index: u32,
     pub(super) byte_offset: u64,
-    class_tag: crate::records::references::DesignClassTag,
     pub(super) asset_id: String,
     pub(super) asset_id_offset: u64,
     pub(super) context_id: String,
@@ -4791,10 +4780,10 @@ pub(super) fn parse_entity_selection_prefix(
     let Some(asset_start) = entity_selection_asset_start(bytes, start, record_index) else {
         return Ok(None);
     };
-    let Some(after_asset_id) = relaxed_guid_end(ctx, bytes, asset_start)? else {
+    let Some(after_asset_id) = relaxed_guid_end(bytes, asset_start) else {
         return Ok(None);
     };
-    let Some(after_context_id) = relaxed_guid_end(ctx, bytes, after_asset_id)? else {
+    let Some(after_context_id) = relaxed_guid_end(bytes, after_asset_id) else {
         return Ok(None);
     };
     let (Some(asset_id_offset), Some(context_id_offset), Some(trailer_at)) = (
@@ -5055,12 +5044,7 @@ pub(super) fn parse_entity_selection_frame(
     else {
         return Ok(None);
     };
-    let sketch_curve = identity.class_tag == b"361"
-        && ctx.equal_bytes(
-            class_tag.as_bytes(),
-            b"338",
-            "match F3D entity selection class tag",
-        )?;
+    let sketch_curve = identity.class_tag == b"361" && class_tag.as_bytes() == b"338";
     let Some((primary_identity_offset, primary_identity, secondary)) = entity_selection_identities(
         bytes,
         sketch_curve,
@@ -5084,13 +5068,13 @@ pub(super) fn parse_entity_selection_frame(
     else {
         return Ok(None);
     };
-    let Some(class_tag) = crate::design::decode::text::class_tag_from_view(ctx, class_tag)? else {
+    // A class tag is three ASCII digits; callers that keep it copy it.
+    if class_tag.len() != 3 || !class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
         return Ok(None);
-    };
+    }
     Ok(Some(EntitySelectionFrame {
         record_index,
         byte_offset,
-        class_tag,
         asset_id: prefix.asset_id,
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
@@ -5145,6 +5129,17 @@ impl<'a, 'c, T> StreamOrdered<'a, 'c, T> {
         })
     }
 
+    /// The position of the first record of `stream`, or of the first record
+    /// of a later stream. The ordered list is bisected.
+    fn stream_start(&self, ctx: &DecodeContext<'_>, stream: &str) -> Result<usize, CodecError> {
+        const OPERATION: &str = "find F3D stream records";
+        ctx.partition_point(
+            &self.entries,
+            |(candidate, _)| Ok(ctx.compare(*candidate, stream, OPERATION)?.is_lt()),
+            OPERATION,
+        )
+    }
+
     /// The records of `stream` in byte order. The ordered list is bisected.
     fn of_stream(
         &self,
@@ -5152,11 +5147,7 @@ impl<'a, 'c, T> StreamOrdered<'a, 'c, T> {
         stream: &str,
     ) -> Result<&[(&'a str, &'a T)], CodecError> {
         const OPERATION: &str = "find F3D stream records";
-        let start = ctx.partition_point(
-            &self.entries,
-            |(candidate, _)| Ok(ctx.compare(*candidate, stream, OPERATION)?.is_lt()),
-            OPERATION,
-        )?;
+        let start = self.stream_start(ctx, stream)?;
         let end = ctx.partition_point(
             &self.entries,
             |(candidate, _)| Ok(ctx.compare(*candidate, stream, OPERATION)?.is_le()),
@@ -5655,13 +5646,11 @@ fn parse_body_recipe_operand_frame_with_index(
     })() else {
         return Ok(None);
     };
+    // The count is read from the frame, so each reference is admitted as the
+    // scan reaches it.
     let mut references = Vec::new();
-    ctx.reserve_capacity(
-        &mut references,
-        reference_count,
-        "f3d body recipe references",
-    )?;
-    for _ in ctx.admit_iter(&(0..reference_count), "f3d body recipe references")? {
+    for _ in 0..reference_count {
+        ctx.charge_work(1, "f3d body recipe references")?;
         let Some((reference, next)) = (|| {
             let form_at = cursor.checked_add(8)?;
             Some((
@@ -5696,10 +5685,10 @@ fn parse_body_recipe_operand_frame_with_index(
     })() else {
         return Ok(None);
     };
-    let Some(after_asset_id) = relaxed_guid_end(ctx, bytes, asset_id_at)? else {
+    let Some(after_asset_id) = relaxed_guid_end(bytes, asset_id_at) else {
         return Ok(None);
     };
-    let Some(after_context_id) = relaxed_guid_end(ctx, bytes, after_asset_id)? else {
+    let Some(after_context_id) = relaxed_guid_end(bytes, after_asset_id) else {
         return Ok(None);
     };
     let Some((selector_tail, selector_tail_at)) = (|| {
@@ -6129,55 +6118,94 @@ struct ExtrudeIdentityTail {
     next_byte_offset: u64,
 }
 
+/// The end of the counted class tag of the indexed header at `at`: at most
+/// 2000 graphic ASCII bytes. The byte test stops at the first other byte and
+/// admits each byte it reads.
+fn graphic_class_tag_end(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+) -> Result<Option<usize>, CodecError> {
+    let Some((tag, end)) = (|| {
+        let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+        if length > 2000 {
+            return None;
+        }
+        let start = at.checked_add(4)?;
+        let end = start.checked_add(length)?;
+        Some((bytes.get(start..end)?, end))
+    })() else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .all_by(
+            tag,
+            |byte| Ok(byte.is_ascii_graphic()),
+            "validate F3D Extrude identity next class tag",
+        )?
+        .then_some(end))
+}
+
 /// Read the identity-member tail after the context GUID that ends at
 /// `after_context_id`, for a member whose fixed frame ends at `fixed_end`.
 fn extrude_identity_tail(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     after_context_id: usize,
     fixed_end: usize,
-) -> Option<ExtrudeIdentityTail> {
-    let tail_slot_offset = after_context_id.checked_add(4)?;
-    let tail_slot_present = match bytes.get(tail_slot_offset)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
-    if View::u32_le_at(bytes, after_context_id)? != 2 {
-        return None;
-    }
-    let (next_record_index, next_byte_offset) =
-        if View::u32_le_at(bytes, tail_slot_offset.checked_add(1)?) == Some(0)
-            && after_context_id.checked_add(9)? == fixed_end
-        {
-            if fixed_end == bytes.len() {
-                (0, u64::try_from(fixed_end).ok()?)
-            } else {
-                let (_, after_next_tag) =
-                    lp_ascii_filtered_view(bytes, fixed_end, 0..=2000, u8::is_ascii_graphic)?;
-                (
-                    View::u32_le_at(bytes, after_next_tag)?,
-                    u64::try_from(fixed_end).ok()?,
-                )
-            }
-        } else if bytes_at::<3>(bytes, tail_slot_offset.checked_add(1)?)? == &[0; 3] {
-            let mut cursor = tail_slot_offset.checked_add(4)?;
-            let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-            let next_at = cursor;
-            let (_, after_next_tag) =
-                lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
-            if View::u32_le_at(bytes, after_next_tag)? != next_record_index {
-                return None;
-            }
-            (next_record_index, u64::try_from(next_at).ok()?)
-        } else {
-            return None;
+) -> Result<Option<ExtrudeIdentityTail>, CodecError> {
+    let Some((tail_slot_offset, tail_slot_present)) = (|| {
+        let tail_slot_offset = after_context_id.checked_add(4)?;
+        let tail_slot_present = match bytes.get(tail_slot_offset)? {
+            0 => false,
+            1 => true,
+            _ => return None,
         };
-    Some(ExtrudeIdentityTail {
+        (View::u32_le_at(bytes, after_context_id)? == 2)
+            .then_some((tail_slot_offset, tail_slot_present))
+    })() else {
+        return Ok(None);
+    };
+    let Some(slot_end) = tail_slot_offset.checked_add(1) else {
+        return Ok(None);
+    };
+    let next = if View::u32_le_at(bytes, slot_end) == Some(0)
+        && after_context_id.checked_add(9) == Some(fixed_end)
+    {
+        if fixed_end == bytes.len() {
+            Some((0, fixed_end))
+        } else {
+            graphic_class_tag_end(ctx, bytes, fixed_end)?
+                .and_then(|after_next_tag| View::u32_le_at(bytes, after_next_tag))
+                .map(|next_record_index| (next_record_index, fixed_end))
+        }
+    } else if bytes_at::<3>(bytes, slot_end) == Some(&[0; 3]) {
+        let mut cursor = slot_end + 3;
+        match take_record_reference(bytes, &mut cursor) {
+            Some((next_record_index, _)) => graphic_class_tag_end(ctx, bytes, cursor)?
+                .filter(|after_next_tag| {
+                    View::u32_le_at(bytes, *after_next_tag) == Some(next_record_index)
+                })
+                .map(|_| (next_record_index, cursor)),
+            None => None,
+        }
+    } else {
+        None
+    };
+    let Some((next_record_index, next_at)) = next else {
+        return Ok(None);
+    };
+    let (Ok(tail_slot_offset), Ok(next_byte_offset)) =
+        (u64::try_from(tail_slot_offset), u64::try_from(next_at))
+    else {
+        return Ok(None);
+    };
+    Ok(Some(ExtrudeIdentityTail {
         tail_slot_present,
-        tail_slot_offset: u64::try_from(tail_slot_offset).ok()?,
+        tail_slot_offset,
         next_record_index,
         next_byte_offset,
-    })
+    }))
 }
 
 fn parse_extrude_identity_member(
@@ -6200,14 +6228,14 @@ fn parse_extrude_identity_member(
     })() else {
         return Ok(None);
     };
-    let Some(after_asset_id) = relaxed_guid_end(ctx, bytes, asset_at)? else {
+    let Some(after_asset_id) = relaxed_guid_end(bytes, asset_at) else {
         return Ok(None);
     };
-    let Some(after_context_id) = relaxed_guid_end(ctx, bytes, after_asset_id)? else {
+    let Some(after_context_id) = relaxed_guid_end(bytes, after_asset_id) else {
         return Ok(None);
     };
     let (Some(tail), Some(context_id_offset)) = (
-        extrude_identity_tail(bytes, after_context_id, fixed_end),
+        extrude_identity_tail(ctx, bytes, after_context_id, fixed_end)?,
         after_asset_id
             .checked_add(4)
             .and_then(|at| u64::try_from(at).ok()),
@@ -6269,10 +6297,10 @@ fn parse_edge_identity_member(
     })() else {
         return Ok(None);
     };
-    let Some(after_asset_id) = relaxed_guid_end(ctx, bytes, asset_at)? else {
+    let Some(after_asset_id) = relaxed_guid_end(bytes, asset_at) else {
         return Ok(None);
     };
-    if relaxed_guid_end(ctx, bytes, after_asset_id)?.is_none() {
+    if relaxed_guid_end(bytes, after_asset_id).is_none() {
         return Ok(None);
     }
     let (Some(asset_id_offset), Some(context_id_offset)) = (
@@ -6346,7 +6374,7 @@ pub(in crate::design) fn parse_sketch_profile(
     })() else {
         return Ok(None);
     };
-    let Some(after_asset_id) = relaxed_guid_end(ctx, bytes, asset_at)? else {
+    let Some(after_asset_id) = relaxed_guid_end(bytes, asset_at) else {
         return Ok(None);
     };
     let Some((entity_suffix, after_entity_suffix)) = utf16_decimal_u64(bytes, after_asset_id)
@@ -6535,9 +6563,11 @@ fn parse_sketch_profile_region_selection(
         return Ok(None);
     };
 
+    // Both counts are read from the frame, so each region and member is
+    // admitted as the scan reaches it; the scan stops at the first malformed one.
     let mut regions = Vec::new();
-    ctx.reserve_capacity(&mut regions, region_count, REGIONS_OPERATION)?;
-    for region_ordinal in ctx.admit_iter(&(0..region_count), REGIONS_OPERATION)? {
+    for region_ordinal in 0..region_count {
+        ctx.charge_work(1, REGIONS_OPERATION)?;
         let Some((member_count_offset, member_count)) = (|| {
             if region_ordinal != 0 {
                 if bytes.get(cursor) != Some(&1) {
@@ -6571,8 +6601,8 @@ fn parse_sketch_profile_region_selection(
         };
 
         let mut members = Vec::new();
-        ctx.reserve_capacity(&mut members, member_count, MEMBERS_OPERATION)?;
-        for _ in ctx.admit_iter(&(0..member_count), MEMBERS_OPERATION)? {
+        for _ in 0..member_count {
+            ctx.charge_work(1, MEMBERS_OPERATION)?;
             let Some(member) = sketch_profile_region_member(bytes, cursor) else {
                 return Ok(None);
             };
@@ -6975,12 +7005,9 @@ fn parse_edge_operand(
         )?,
         None => None,
     };
-    let id_stream = ctx
-        .strip_prefix(
-            stream,
-            crate::ids::SCHEME_PREFIX,
-            "strip F3D edge operand scheme",
-        )?
+    // The scheme prefix is a short literal.
+    let id_stream = stream
+        .strip_prefix(crate::ids::SCHEME_PREFIX)
         .unwrap_or(stream);
     let id = design_record_id_charged(
         ctx,
@@ -7386,11 +7413,12 @@ fn edge_recipe_counted_side_candidates<'w>(
     if scalar_count > remaining.len() {
         return Ok(Vec::new());
     }
+    // The count is read from the recipe, so each scalar is admitted as the scan
+    // reaches it; the scan stops at the first missing delimiter.
     let mut scalar_storage = ctx.reserve_scoped(0, "f3d recipe scalars")?;
     let mut scalars = Vec::new();
-    scalar_storage
-        .with_storage(|| ctx.reserve_capacity(&mut scalars, scalar_count, "f3d recipe scalars"))?;
-    for _ in ctx.admit_iter(&(0..scalar_count), "f3d recipe scalars")? {
+    for _ in 0..scalar_count {
+        ctx.charge_work(1, "f3d recipe scalars")?;
         let Some((&scalar, tail)) = remaining.split_first() else {
             return Ok(Vec::new());
         };
@@ -7898,12 +7926,9 @@ pub(super) fn parse_face_operand(
     };
     let recipe_prefix_bytes = ctx.copy_retained(recipe_prefix_bytes, "f3d face operand prefix")?;
     let recipe_id = ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID")?;
-    let id_stream = ctx
-        .strip_prefix(
-            stream,
-            crate::ids::SCHEME_PREFIX,
-            "strip F3D face operand scheme",
-        )?
+    // The scheme prefix is a short literal.
+    let id_stream = stream
+        .strip_prefix(crate::ids::SCHEME_PREFIX)
         .unwrap_or(stream);
     let id = design_record_id_charged(
         ctx,

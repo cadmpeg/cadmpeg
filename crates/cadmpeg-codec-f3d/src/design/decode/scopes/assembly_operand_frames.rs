@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact assembly operand frames, including as-built frames.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::u64_from_index;
 
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
 use super::shared_frames::marked_record_reference;
@@ -20,27 +19,22 @@ use crate::records::feature::scope::DesignParameterScope;
 /// The two operand frames an assembly scope embeds. A legacy class-388 scope
 /// also passes its full scope check.
 pub(super) fn exact_assembly_operand_frames(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Result<Option<[DesignAssemblyOperandFrame; 2]>, CodecError> {
-    let Some(frame_variant) = AssemblyScopeGeneration::new(
+) -> Option<[DesignAssemblyOperandFrame; 2]> {
+    let frame_variant = AssemblyScopeGeneration::new(
         scope.frame_length(),
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )
-    .operand_frame_variant() else {
-        return Ok(None);
-    };
-    let Some(frames) = operand_frames_at(bytes, scope, frame_variant) else {
-        return Ok(None);
-    };
+    .operand_frame_variant()?;
+    let frames = operand_frames_at(bytes, scope, frame_variant)?;
     if frame_variant == AssemblyOperandFrameVariant::LegacyClass388
-        && exact_legacy_class_388_scope(ctx, bytes, scope)?.is_none()
+        && exact_legacy_class_388_scope(bytes, scope).is_none()
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(frames))
+    Some(frames)
 }
 
 /// The fixed-layout operand frames of `scope` under `frame_variant`.

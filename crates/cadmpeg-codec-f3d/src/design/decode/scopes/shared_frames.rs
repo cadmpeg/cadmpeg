@@ -13,6 +13,44 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
+/// How many values a search selected, keeping the only one.
+pub(super) enum UniqueMatch<T> {
+    Zero,
+    One(T),
+    Many,
+}
+
+impl<T> UniqueMatch<T> {
+    /// The only selected value.
+    pub(super) fn one(self) -> Option<T> {
+        match self {
+            Self::One(value) => Some(value),
+            Self::Zero | Self::Many => None,
+        }
+    }
+}
+
+/// Classify the values `predicate` selects. The search stops at the second
+/// selected value and charges only the values it visits.
+pub(super) fn unique_match<'values, T>(
+    ctx: &DecodeContext<'_>,
+    values: &'values [T],
+    mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+    operation: &'static str,
+) -> Result<UniqueMatch<&'values T>, CodecError> {
+    let Some(first) = ctx.position_by(values, &mut predicate, operation)? else {
+        return Ok(UniqueMatch::Zero);
+    };
+    let (Some(value), Some(rest)) = (values.get(first), values.get(first + 1..)) else {
+        return Ok(UniqueMatch::Zero);
+    };
+    Ok(if ctx.any_by(rest, predicate, operation)? {
+        UniqueMatch::Many
+    } else {
+        UniqueMatch::One(value)
+    })
+}
+
 /// The class tag of the indexed-record header at `start` when that header
 /// carries `record_index`.
 pub(in crate::design::decode) fn exact_indexed_header_at(

@@ -3,13 +3,14 @@
 
 use super::parameter_scope::payload_prologue;
 use super::point_data::record_name_end;
+use super::shared_frames::find_frame;
 use crate::bytes::finite_reals_at;
 use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_entity_selection_frame;
-use crate::design::decode::reference_runs::admit_reference_values;
 use crate::design::decode::sketch::indexed_record_header_at;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::retain_class_tag;
 use crate::records::feature::hole;
 use crate::records::feature::hole::DesignHoleConstruction;
 use crate::records::feature::hole::DesignHoleFaceSelection;
@@ -49,49 +50,45 @@ pub(in crate::design::decode) fn exact_hole_construction(
     stream_types: &HashMap<u64, (&str, u32)>,
     required_scope_kind: &scope::DesignFeatureKind,
 ) -> Result<Option<DesignHoleConstruction>, CodecError> {
-    if !ctx.equal_bytes(
-        scope.kind_name().as_bytes(),
-        required_scope_kind.as_str().as_bytes(),
-        "match F3D Hole scope kind",
-    )? {
+    // The required kind is a known kind, whose name is a short literal.
+    if scope.kind_name().as_bytes() != required_scope_kind.as_str().as_bytes() {
         return Ok(None);
     }
     let mut candidate = None;
-    for record_index in admit_reference_values(
-        ctx,
-        scope.reference_members(),
-        "scan F3D Hole scope references",
-    )?
-    .copied()
-    {
+    // Each reference is admitted as the search reaches it; the search stops at
+    // a second carrier frame.
+    for &record_index in scope.reference_members().values() {
+        ctx.charge_work(1, "scan F3D Hole scope references")?;
         let Some((type_guid, version)) = stream_types.get(&u64::from(record_index)).copied() else {
             continue;
         };
-        if !matches!(version, 1 | 4)
-            || !ctx.equal_bytes(
-                type_guid.as_bytes(),
-                HOLE_POINT_DATA_TYPE_GUID.as_bytes(),
-                "match F3D Hole carrier type GUID",
-            )?
+        // A fixed 36-byte comparison.
+        if !matches!(version, 1 | 4) || type_guid.as_bytes() != HOLE_POINT_DATA_TYPE_GUID.as_bytes()
         {
             continue;
         }
-        for (start, paired_at) in records.frames(ctx, record_index)? {
-            let Some(payload_at) =
-                record_name_end(ctx, bytes, start, "validate F3D hole ASCII field")?
-            else {
-                continue;
-            };
-            let Some(frame) = hole_carrier_frame(ctx, bytes, paired_at, payload_at, version)?
-            else {
-                continue;
-            };
-            if candidate
-                .replace((record_index, start, paired_at, frame))
-                .is_some()
-            {
-                return Ok(None);
-            }
+        let second = find_frame(
+            ctx,
+            records,
+            record_index,
+            |start, paired_at| {
+                let Some(payload_at) =
+                    record_name_end(ctx, bytes, start, "validate F3D hole ASCII field")?
+                else {
+                    return Ok(false);
+                };
+                let Some(frame) = hole_carrier_frame(ctx, bytes, paired_at, payload_at, version)?
+                else {
+                    return Ok(false);
+                };
+                Ok(candidate
+                    .replace((record_index, start, paired_at, frame))
+                    .is_some())
+            },
+            "scan F3D Hole carrier frames",
+        )?;
+        if second.is_some() {
+            return Ok(None);
         }
     }
     let Some((record_index, start, paired_at, frame)) = candidate else {
@@ -116,73 +113,79 @@ fn exact_hole_face_selection(
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Result<Option<DesignHoleFaceSelection>, CodecError> {
     let mut candidate = None;
-    for record_index in admit_reference_values(
-        ctx,
-        scope.reference_members(),
-        "scan F3D Hole face-selection scope references",
-    )?
-    .copied()
-    {
+    // Each reference is admitted as the search reaches it; the search stops at
+    // a second selection.
+    for &record_index in scope.reference_members().values() {
+        ctx.charge_work(1, "scan F3D Hole face-selection scope references")?;
         let Some((type_guid, 1)) = stream_types.get(&u64::from(record_index)).copied() else {
             continue;
         };
-        if !ctx.equal_bytes(
-            type_guid.as_bytes(),
-            HOLE_FACE_SELECTION_TYPE_GUID.as_bytes(),
-            "match F3D Hole face-selection type GUID",
-        )? {
+        // A fixed 36-byte comparison.
+        if type_guid.as_bytes() != HOLE_FACE_SELECTION_TYPE_GUID.as_bytes() {
             continue;
         }
-        for (start, _paired_at) in records.frames(ctx, record_index)? {
-            let Some(header) = indexed_record_header_at(bytes, start) else {
-                continue;
-            };
-            let Ok(class_tag) = std::str::from_utf8(header.class_tag) else {
-                continue;
-            };
-            let Some(frame) = parse_entity_selection_frame(
-                ctx,
-                bytes,
-                record_index,
-                u64_from_index(start),
-                class_tag,
-            )?
-            else {
-                continue;
-            };
-            let Ok(asset_id) =
-                crate::records::mesh::DesignRelaxedGuidText::try_from(frame.asset_id)
-            else {
-                continue;
-            };
-            let Ok(context_id) =
-                crate::records::mesh::DesignRelaxedGuidText::try_from(frame.context_id)
-            else {
-                continue;
-            };
-            let next = DesignHoleFaceSelection {
-                record_index: frame.record_index,
-                byte_offset: frame.byte_offset,
-                class_tag: header.retain_class_tag(ctx, "copy F3D class tag")?,
-                asset_id,
-                asset_id_offset: frame.asset_id_offset,
-                context_id,
-                context_id_offset: frame.context_id_offset,
-                identity_record_index: frame.identity_record_index,
-                identity_record_offset: frame.identity_record_offset,
-                primary_identity: frame.primary_identity,
-                primary_identity_offset: frame.primary_identity_offset,
-                secondary: frame.secondary,
-                historical_face_candidates: Vec::new(),
-                next_record_index: frame.next_record_index,
-                next_byte_offset: frame.next_byte_offset,
-            };
-            if candidate.replace(next).is_some() {
-                return Ok(None);
-            }
+        let second = find_frame(
+            ctx,
+            records,
+            record_index,
+            |start, _| {
+                let Some(header) = indexed_record_header_at(bytes, start) else {
+                    return Ok(false);
+                };
+                let Ok(class_tag) = std::str::from_utf8(header.class_tag) else {
+                    return Ok(false);
+                };
+                let Some(mut frame) = parse_entity_selection_frame(
+                    ctx,
+                    bytes,
+                    record_index,
+                    u64_from_index(start),
+                    class_tag,
+                )?
+                else {
+                    return Ok(false);
+                };
+                let Ok(asset_id) = crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    std::mem::take(&mut frame.asset_id),
+                ) else {
+                    return Ok(false);
+                };
+                let Ok(context_id) = crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    std::mem::take(&mut frame.context_id),
+                ) else {
+                    return Ok(false);
+                };
+                Ok(candidate
+                    .replace((frame, asset_id, context_id, header.class_tag))
+                    .is_some())
+            },
+            "scan F3D Hole face-selection frames",
+        )?;
+        if second.is_some() {
+            return Ok(None);
         }
     }
-    Ok(candidate)
+    // The class tag is copied only for the selection that is kept.
+    let Some((frame, asset_id, context_id, class_tag)) = candidate else {
+        return Ok(None);
+    };
+    Ok(Some(DesignHoleFaceSelection {
+        record_index: frame.record_index,
+        byte_offset: frame.byte_offset,
+        class_tag: retain_class_tag(ctx, *class_tag, "copy F3D class tag")?,
+        asset_id,
+        asset_id_offset: frame.asset_id_offset,
+        context_id,
+        context_id_offset: frame.context_id_offset,
+        identity_record_index: frame.identity_record_index,
+        identity_record_offset: frame.identity_record_offset,
+        primary_identity: frame.primary_identity,
+        primary_identity_offset: frame.primary_identity_offset,
+        secondary: frame.secondary,
+        historical_face_candidates: Vec::new(),
+        next_record_index: frame.next_record_index,
+        next_byte_offset: frame.next_byte_offset,
+    }))
 }
 
 /// Field offsets of a validated point-and-direction carrier frame.
@@ -218,8 +221,11 @@ fn hole_carrier_frame(
     let Some(frame) = hole_carrier_layout(body, cursor, paired_at, version) else {
         return Ok(None);
     };
+    // The count is read from the frame, so each reference is admitted as the
+    // scan reaches it; the scan stops at the first unmarked one.
     let mut cursor = frame.inputs_at;
-    for _ in ctx.admit_iter(&(0..frame.input_count), "scan F3D Hole input records")? {
+    for _ in 0..frame.input_count {
+        ctx.charge_work(1, "scan F3D Hole input records")?;
         if input_record(body, &mut cursor).is_none() {
             return Ok(None);
         }
@@ -331,6 +337,7 @@ fn hole_construction(
         }
         None => None,
     };
+    // `hole_carrier_frame` read every input, so the copy runs to the end.
     let mut input_records = ctx.vector_storage(frame.input_count, "f3d Hole input records")?;
     let mut cursor = frame.inputs_at;
     for _ in ctx.admit_iter(&(0..frame.input_count), "scan F3D Hole input records")? {

@@ -426,7 +426,8 @@ fn exact_coil_face_selection(
         return Ok(None);
     };
     // The face-operand parser reads the selection header; its copies of the
-    // scope ID and class tag are dropped when this search returns.
+    // scope ID and class tag, and the parsed operand, are dropped when this
+    // search returns.
     let mut header_storage = ctx.reserve_scoped(0, "f3d Coil selection header")?;
     let id = ctx.copy_scoped_text(
         &scope.id,
@@ -449,19 +450,21 @@ fn exact_coil_face_selection(
         class_tag,
         record_index: selection_record_index,
     };
-    let Some(face) = parse_face_operand(
-        ctx,
-        bytes,
-        records,
-        crate::design::decode::operands::FaceOperandFrame {
-            scope,
-            scope_reference_ordinal: 0,
-            group_ownership: None,
-            next_byte_offset: Some(u64_from_index(transform_start)),
-            header: &header,
-        },
-        recipes,
-    )?
+    let Some(face) = header_storage.with_storage(|| {
+        parse_face_operand(
+            ctx,
+            bytes,
+            records,
+            crate::design::decode::operands::FaceOperandFrame {
+                scope,
+                scope_reference_ordinal: 0,
+                group_ownership: None,
+                next_byte_offset: Some(u64_from_index(transform_start)),
+                header: &header,
+            },
+            recipes,
+        )
+    })?
     else {
         return Ok(None);
     };
@@ -738,7 +741,10 @@ pub(super) fn bind_coil_extent_from_parameters(
     // At most five owned parameters name an extent; empty slots sort last.
     let mut owned: [Option<(u32, &str)>; 5] = [None; 5];
     let mut count = 0usize;
-    for owner in ctx.admit_iter(parameter_owners, "scan F3D Coil parameter owners")? {
+    // Each owner is admitted as the scan reaches it; a sixth owned parameter
+    // stops the scan.
+    for owner in parameter_owners {
+        ctx.charge_work(1, "scan F3D Coil parameter owners")?;
         if owner.scope_record_index() != scope.record_index || !in_stream(ctx, owner.id(), stream)?
         {
             continue;

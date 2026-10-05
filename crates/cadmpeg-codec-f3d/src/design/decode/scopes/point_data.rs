@@ -2,9 +2,9 @@
 //! Exact point-data levels and work-point constructions.
 
 use super::parameter_scope::payload_prologue;
+use super::shared_frames::find_frame;
 use crate::bytes::finite_reals_at;
 use crate::bytes::take_reference;
-use crate::design::decode::reference_runs::admit_reference_values;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
@@ -123,8 +123,11 @@ fn point_data_level(
     })() else {
         return Ok(None);
     };
+    // The count is read from the frame, so each reference is admitted as the
+    // scan reaches it; the scan stops at the first unmarked one.
     let mut cursor = level.inputs_at;
-    for _ in ctx.admit_iter(&(0..level.input_count), "scan F3D point-data inputs")? {
+    for _ in 0..level.input_count {
+        ctx.charge_work(1, "scan F3D point-data inputs")?;
         if input_reference(body, &mut cursor).is_none() {
             return Ok(None);
         }
@@ -193,19 +196,15 @@ pub(super) fn exact_work_point_construction(
         ctx,
         bytes,
         records,
-        admit_reference_values(
-            ctx,
-            scope.reference_members(),
-            "scan F3D WorkPoint scope references",
-        )?
-        .copied(),
+        scope.reference_members().values().copied(),
         stream_types,
     )
 }
 
 /// The only point-data frame among the frames of `point_record_indices`
-/// whose level reads a finite position. Its input run is copied into the
-/// output only after the frame is known to be the only one.
+/// whose level reads a finite position. Each record index is admitted as the
+/// search reaches it, and the search stops at a second frame. The input run
+/// is copied into the output only after the frame is known to be the only one.
 pub(in crate::design::decode) fn exact_point_data_construction(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -215,44 +214,48 @@ pub(in crate::design::decode) fn exact_point_data_construction(
 ) -> Result<Option<DesignWorkPointConstruction>, CodecError> {
     let mut candidate = None;
     for record_index in point_record_indices {
+        ctx.charge_work(1, "scan F3D point-data record indexes")?;
         // A class tag is `256` plus an index into the segment's own type
         // table, so it names a different class in every segment and cannot
         // select the point-data class. The type GUID can.
         let stored = stream_types.get(&u64::from(record_index)).copied();
         if let Some((type_guid, _)) = stored {
-            if !ctx.equal_bytes(
-                type_guid.as_bytes(),
-                POINT_DATA_TYPE_GUID.as_bytes(),
-                "match F3D point-data type GUID",
-            )? {
+            // A fixed 36-byte comparison.
+            if type_guid.as_bytes() != POINT_DATA_TYPE_GUID.as_bytes() {
                 continue;
             }
         }
-        for (start, paired) in records.frames(ctx, record_index)? {
-            let Some(payload_at) =
-                record_name_end(ctx, bytes, start, "validate F3D point-data ASCII field")?
-            else {
-                continue;
-            };
-            let Some(level) = unique_point_data_level(
-                ctx,
-                bytes,
-                payload_at,
-                paired,
-                stored.map(|(_, version)| version),
-            )?
-            else {
-                continue;
-            };
-            if finite_reals_at::<3>(bytes, level.position_at).is_none() {
-                continue;
-            }
-            if candidate
-                .replace((record_index, start, paired, level))
-                .is_some()
-            {
-                return Ok(None);
-            }
+        let second = find_frame(
+            ctx,
+            records,
+            record_index,
+            |start, paired| {
+                let Some(payload_at) =
+                    record_name_end(ctx, bytes, start, "validate F3D point-data ASCII field")?
+                else {
+                    return Ok(false);
+                };
+                let Some(level) = unique_point_data_level(
+                    ctx,
+                    bytes,
+                    payload_at,
+                    paired,
+                    stored.map(|(_, version)| version),
+                )?
+                else {
+                    return Ok(false);
+                };
+                if finite_reals_at::<3>(bytes, level.position_at).is_none() {
+                    return Ok(false);
+                }
+                Ok(candidate
+                    .replace((record_index, start, paired, level))
+                    .is_some())
+            },
+            "scan F3D point-data frames",
+        )?;
+        if second.is_some() {
+            return Ok(None);
         }
     }
     let Some((record_index, start, paired, level)) = candidate else {
@@ -277,6 +280,7 @@ fn point_data_construction(
     ) else {
         return Ok(None);
     };
+    // `point_data_level` read every input, so the copy runs to the end.
     let mut inputs = ctx.vector_storage(level.input_count, "f3d point-data inputs")?;
     let mut cursor = level.inputs_at;
     for _ in ctx.admit_iter(&(0..level.input_count), "scan F3D point-data inputs")? {

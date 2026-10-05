@@ -78,7 +78,7 @@ fn hole_scopes_propagate_reference_and_ascii_scan_refusals() {
     for operation in [
         "scan F3D Hole face-selection scope references",
         "scan F3D Hole scope references",
-        "scan F3D indexed record frames",
+        "scan F3D Hole carrier frames",
         "validate F3D hole ASCII field",
     ] {
         let error = crate::test_support::resource_refusal_at(

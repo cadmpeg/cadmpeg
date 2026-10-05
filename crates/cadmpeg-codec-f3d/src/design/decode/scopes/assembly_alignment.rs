@@ -152,7 +152,7 @@ pub(super) fn exact_assembly_alignment(
         generation.operand_frame_variant() == Some(AssemblyOperandFrameVariant::LegacyClass388);
     let variable_reference =
         crate::design::assembly::variable_reference_assembly_generation(class_tags.0, class_tags.1);
-    if legacy_class_388 && exact_legacy_class_388_scope(ctx, bytes, scope)?.is_none() {
+    if legacy_class_388 && exact_legacy_class_388_scope(bytes, scope).is_none() {
         return Ok(None);
     }
 
@@ -269,7 +269,7 @@ pub(super) fn exact_assembly_alignment(
             }
             None => None,
         }
-    } else if let Some(frames) = exact_assembly_operand_frames(ctx, bytes, scope)? {
+    } else if let Some(frames) = exact_assembly_operand_frames(bytes, scope) {
         let qualifiers = if legacy_class_383 {
             exact_legacy_class_383_operand_paths(ctx, bytes, records, scope, &frames)?
                 .map(occurrence_paths)

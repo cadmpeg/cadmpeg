@@ -234,10 +234,8 @@ fn exact_assembly_operand_path_envelope(
     let mut span_storage = ctx.reserve_scoped(0, "f3d assembly path spans")?;
     let mut path_spans = Vec::new();
     let mut record_at = locator.path_at;
-    for record_index in ctx.admit_iter(
-        &(path_record_index..locator.wrapper_record_index),
-        "scan F3D assembly path span records",
-    )? {
+    // `locator_frame` bounds the path at 64 span records.
+    for record_index in path_record_index..locator.wrapper_record_index {
         let Some(next) = next_indexed_record_offset(ctx, bytes, record_at + 1)? else {
             return Ok(None);
         };
@@ -503,7 +501,7 @@ fn exact_assembly_operand_path(
                 "f3d assembly path occurrences",
             )?;
             let mut position = after_tag + 18;
-            for _ in ctx.admit_iter(&(0..count), "scan F3D assembly path occurrences")? {
+            for _ in 0..count {
                 if !take_located_guid(
                     ctx,
                     record,

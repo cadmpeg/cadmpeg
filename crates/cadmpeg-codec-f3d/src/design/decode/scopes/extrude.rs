@@ -127,21 +127,20 @@ pub(super) fn exact_extrude_prologue(
         return Ok(Some(prologue));
     }
     if let Some(prologue) = exact_shifted_reference_aware_extrude_prologue(
-        ctx,
         bytes,
         start,
         reference_count_at,
         reference_members,
-    )? {
+    ) {
         return Ok(Some(prologue));
     }
     if let Some(prologue) =
-        legacy_class_397::exact_symmetric_extrude_prologue(ctx, bytes, frame, reference_members)?
+        legacy_class_397::exact_symmetric_extrude_prologue(bytes, frame, reference_members)
     {
         return Ok(Some(prologue));
     }
     if let Some(prologue) =
-        exact_class_338_two_sided_distance_extrude_prologue(ctx, bytes, frame, reference_members)?
+        exact_class_338_two_sided_distance_extrude_prologue(bytes, frame, reference_members)
     {
         return Ok(Some(prologue));
     }
@@ -1580,22 +1579,18 @@ fn shifted_reference_aware_fields(
 /// reference run at ten, eleven or thirteen members, so each membership test
 /// reads at most thirteen values.
 fn exact_shifted_reference_aware_extrude_prologue(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
-    let Some((prologue, guid_at, expected_guid_end)) =
-        shifted_reference_aware_fields(bytes, start, reference_count_at, reference_members)
-    else {
-        return Ok(None);
-    };
-    let guid_end = fixed_guid_end(ctx, bytes, guid_at)?;
-    Ok((guid_end == Some(expected_guid_end)
+) -> Option<DesignExtrudePrologue> {
+    let (prologue, guid_at, expected_guid_end) =
+        shifted_reference_aware_fields(bytes, start, reference_count_at, reference_members)?;
+    let guid_end = fixed_guid_end(bytes, guid_at);
+    (guid_end == Some(expected_guid_end)
         && expected_guid_end.checked_add(3) == Some(reference_count_at)
         && zeros_at::<3>(bytes, expected_guid_end))
-    .then_some(prologue))
+    .then_some(prologue)
 }
 
 pub(super) fn exact_extrude_extent(
@@ -2047,11 +2042,10 @@ fn class_338_two_sided_distance_fields(
 /// The class-338 two-sided distance Extrude prologue. Its GUID ends three
 /// zero bytes before the reference count.
 fn exact_class_338_two_sided_distance_extrude_prologue(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     frame: ExtrudeScopeFrame<'_>,
     reference_members: &[u32],
-) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+) -> Option<DesignExtrudePrologue> {
     let ExtrudeScopeFrame {
         start,
         paired_at,
@@ -2059,7 +2053,7 @@ fn exact_class_338_two_sided_distance_extrude_prologue(
         paired_class_tag,
         reference_count_at,
     } = frame;
-    let Some(prologue) = class_338_two_sided_distance_fields(
+    let prologue = class_338_two_sided_distance_fields(
         bytes,
         start,
         paired_at,
@@ -2067,16 +2061,12 @@ fn exact_class_338_two_sided_distance_extrude_prologue(
         paired_class_tag,
         reference_count_at,
         reference_members,
-    ) else {
-        return Ok(None);
-    };
+    )?;
     // The fields lie inside the frame, so these offsets do not overflow.
     let guid_end = start + 279;
-    Ok(
-        (fixed_guid_end(ctx, bytes, start + class_338_legacy::GUID)? == Some(guid_end)
-            && zeros_at::<3>(bytes, guid_end))
-        .then_some(prologue),
-    )
+    (fixed_guid_end(bytes, start + class_338_legacy::GUID) == Some(guid_end)
+        && zeros_at::<3>(bytes, guid_end))
+    .then_some(prologue)
 }
 
 #[cfg(test)]

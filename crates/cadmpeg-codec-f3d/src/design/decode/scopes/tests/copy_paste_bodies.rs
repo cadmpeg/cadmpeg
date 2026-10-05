@@ -197,7 +197,7 @@ fn copy_paste_body_scans_propagate_work_refusals() {
         cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::WorkUnits
                 && refusal.operation == operation
-                && refusal.additional == 2
+                && refusal.additional == 1
     ));
 }
 

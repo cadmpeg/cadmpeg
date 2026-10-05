@@ -930,11 +930,9 @@ pub(super) fn bind_hem_operation_from_parameters(
                         if first_kind_matches.is_some() {
                             return Ok(true);
                         }
-                        first_kind_matches = Some(ctx.equal_bytes(
-                            parameter.source_kind().as_bytes(),
-                            expected.as_bytes(),
-                            "match F3D Hem parameter kind",
-                        )?);
+                        // `expected` is a short literal.
+                        first_kind_matches =
+                            Some(parameter.source_kind().as_bytes() == expected.as_bytes());
                         Ok(false)
                     },
                     "find F3D Hem owner parameters",

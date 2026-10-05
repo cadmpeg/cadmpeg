@@ -82,19 +82,6 @@ fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
             Some((503, u64_from_index(identity_offset)))
         );
     });
-    let guid_error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "validate F3D counted relaxed GUID",
-        0,
-        |ctx| exact_pattern_identity_wrapper(ctx, &bytes, &records, record_index),
-    );
-    assert!(matches!(
-        guid_error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "validate F3D counted relaxed GUID"
-                && limit.additional == 72
-    ));
     let header_error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "find F3D indexed record header",

@@ -42,22 +42,12 @@ fn fixed_guid_scan_matches_decoded_relaxed_guid_validation() {
         })
         .and_then(|(guid, end)| crate::bytes::is_guid_relaxed(&guid).then_some(end));
         assert_eq!(
-            crate::design::decode::text::fixed_guid_end(
-                &cadmpeg_test_support::service_decode_context(),
-                &bytes,
-                0,
-            )
-            .unwrap(),
+            crate::design::decode::text::fixed_guid_end(&bytes, 0,),
             prior
         );
         bytes.pop();
         assert_eq!(
-            crate::design::decode::text::fixed_guid_end(
-                &cadmpeg_test_support::service_decode_context(),
-                &bytes,
-                0,
-            )
-            .unwrap(),
+            crate::design::decode::text::fixed_guid_end(&bytes, 0,),
             None
         );
     }

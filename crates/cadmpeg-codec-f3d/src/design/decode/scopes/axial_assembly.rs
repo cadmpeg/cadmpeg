@@ -2,11 +2,11 @@
 //! Bind axial assembly operand targets and joint-origin frames from assemblies.
 
 use super::combine::take_external_reference_identity;
-use super::component_constructions::unique_match;
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
+use super::shared_frames::unique_match;
 use super::work_geometry::ScopePlacementFrame;
 use crate::bytes::take_reference;
 use crate::design::decode::byte_fields::zeros_at;
@@ -320,7 +320,8 @@ fn exact_assembly_axial_operand_target(
                         None => Ok(false),
                     },
                     "find F3D axial component insert",
-                )?;
+                )?
+                .one();
                 match component_insert {
                     Some(component_insert) => Some(
                         DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
@@ -359,6 +360,7 @@ fn exact_assembly_axial_operand_target(
         },
         "find F3D axial root joint origin",
     )?
+    .one()
     .map(
         |origin| DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
             scope_record_index: origin.record_index,
@@ -399,21 +401,31 @@ fn exact_assembly_axial_component_operand<'bytes>(
         |start| Ok(*start < search_start),
         "find F3D axial component candidate offsets",
     )?;
+    // Candidates are tested under scoped storage; only the one that is kept
+    // is read again into retained storage.
     let mut candidate = None;
     let ambiguous = ctx.position_by(
         offsets.get(first..).unwrap_or(&[]),
         |&start| {
-            let Some(next) = exact_assembly_axial_component_operand_at(
-                ctx, bytes, records, scope, frame, start,
-            )?
-            else {
+            let (operand, _storage) =
+                ctx.with_scoped_storage("f3d axial component candidate", || {
+                    exact_assembly_axial_component_operand_at(
+                        ctx, bytes, records, scope, frame, start,
+                    )
+                })?;
+            if operand.is_none() {
                 return Ok(false);
-            };
-            Ok(candidate.replace(next).is_some())
+            }
+            Ok(candidate.replace(start).is_some())
         },
         "scan F3D axial component candidate offsets",
     )?;
-    Ok(if ambiguous.is_some() { None } else { candidate })
+    match candidate {
+        Some(start) if ambiguous.is_none() => {
+            exact_assembly_axial_component_operand_at(ctx, bytes, records, scope, frame, start)
+        }
+        _ => Ok(None),
+    }
 }
 
 /// The two axis references, with their offsets, of the axial construction

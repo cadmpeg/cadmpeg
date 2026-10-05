@@ -186,9 +186,7 @@ fn legacy_path_header_check_reads_no_further_than_the_expected_header() {
 fn legacy_class_412_identity_guid_push_refuses_each_collection_item() {
     let bytes = path_fixture();
     let start = path_locator::LEN;
-    crate::design::test_support::with_test_decode_context(|ctx| {
-        assert!(super::legacy_class_412_path_layout(ctx, &bytes, start).unwrap());
-    });
+    assert!(super::legacy_class_412_path_layout(&bytes, start));
     let identity_guids = crate::design::test_support::with_test_decode_context(|ctx| {
         super::legacy_class_412_identity_guids(ctx, &bytes, start)
             .expect("valid legacy class-412 path")
