@@ -118,6 +118,7 @@ fn typed_dimension_companions_refuse_collection_limit() {
                 crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
                     ctx,
                     &inputs,
+                    &mut crate::design::decode::sketch::RecordOffsetCache::new(ctx)?,
                     std::slice::from_ref(&pair),
                     &[],
                 )
@@ -186,6 +187,7 @@ fn dimension_presentation_sketch_scopes_refuse_collection_limit() {
                 crate::design::decode::dimension_frames::decode_dimension_presentation_frames(
                     ctx,
                     &inputs,
+                    &mut crate::design::decode::sketch::RecordOffsetCache::new(ctx)?,
                     &types,
                     &[],
                 )
@@ -272,6 +274,7 @@ fn dimension_annotation_interval_owner_scan_refuses_work_limit() {
                 crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
                     ctx,
                     &inputs,
+                    &mut crate::design::decode::sketch::RecordOffsetCache::new(ctx)?,
                     &[],
                 )
             },

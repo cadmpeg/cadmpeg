@@ -58,10 +58,11 @@ fn presentation_frame(
     Option<crate::records::dimensions::DesignDimensionPresentationFrame>,
     cadmpeg_core::CodecError,
 > {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     let tables = super::PresentationStreamTables {
         geometry_indices,
         sketch_entities: &[270],
-        records: crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        records: &records,
         owners_by_scope: HashMap::new(),
     };
     parse_dimension_presentation_frame(ctx, bytes, start, &tables, |code| Ok(code == 281))
@@ -1578,7 +1579,14 @@ fn dimension_annotation_interval_refuses_collection_limit() {
             ResourceDimension::CollectionItems,
             "f3d dimension annotation intervals",
             0,
-            |ctx| super::decode_dimension_annotation_frames(ctx, &inputs, &[]),
+            |ctx| {
+                super::decode_dimension_annotation_frames(
+                    ctx,
+                    &inputs,
+                    &mut crate::design::decode::sketch::RecordOffsetCache::new(ctx)?,
+                    &[],
+                )
+            },
         );
         assert!(matches!(
             refusal,
@@ -1586,9 +1594,11 @@ fn dimension_annotation_interval_refuses_collection_limit() {
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d dimension annotation intervals"
         ));
+        let ctx = cadmpeg_test_support::service_decode_context();
         let admitted = super::decode_dimension_annotation_frames(
-            &cadmpeg_test_support::service_decode_context(),
+            &ctx,
             &inputs,
+            &mut crate::design::decode::sketch::RecordOffsetCache::new(&ctx).unwrap(),
             &[],
         )
         .unwrap();
@@ -1675,13 +1685,6 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
                 1,
                 "f3d dimension recipe owners",
             ),
-            (
-                &[][..],
-                &[][..],
-                std::slice::from_ref(&recipe),
-                0,
-                "f3d dimension recipe index",
-            ),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
@@ -1702,6 +1705,28 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
                         && failure.operation == operation
             ));
         }
+        // The recipe index is built once a dimension owner exists.
+        let refusal = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d dimension recipe index",
+            0,
+            |ctx| {
+                super::decode_dimension_recipe_records(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&parameter),
+                    std::slice::from_ref(&owner),
+                    &[],
+                    std::slice::from_ref(&recipe),
+                )
+            },
+        );
+        assert!(matches!(
+            refusal,
+            CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == "f3d dimension recipe index"
+        ));
         let companion = crate::records::parameters::DesignParameterCompanion::unbound(
             format!(
                 "{}:parameter-companion#302",
@@ -1837,6 +1862,7 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
             && failure.operation == "f3d dimension geometry indices"));
 }
 
+mod bindings;
 mod companion_limits;
 
 mod intervals;

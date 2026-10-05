@@ -76,26 +76,25 @@ impl IndexedRecordOffsets {
         let mut record_indexes = Vec::new();
         for header in indexed_record_offsets(ctx, bytes)? {
             ctx.push_vec(&mut headers, header.offset, "f3d indexed record offset")?;
-            if let Some(group) = ctx.get_mut_hash_map(
+            match ctx.entry_hash_map(
                 &mut by_record_index,
-                &header.record_index,
+                header.record_index,
                 "f3d indexed record key",
             )? {
-                ctx.push_vec(group, header.offset, "f3d indexed record offset")?;
-                continue;
+                std::collections::hash_map::Entry::Occupied(group) => {
+                    ctx.push_vec(group.into_mut(), header.offset, "f3d indexed record offset")?;
+                }
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    ctx.push_vec(
+                        &mut record_indexes,
+                        header.record_index,
+                        "f3d indexed record order",
+                    )?;
+                    let mut group = Vec::new();
+                    ctx.push_vec(&mut group, header.offset, "f3d indexed record offset")?;
+                    slot.insert(group);
+                }
             }
-            ctx.push_vec(
-                &mut record_indexes,
-                header.record_index,
-                "f3d indexed record order",
-            )?;
-            ctx.push_hash_group(
-                &mut by_record_index,
-                header.record_index,
-                header.offset,
-                "f3d indexed record key",
-                "f3d indexed record offset",
-            )?;
         }
         Ok(Self {
             headers,
@@ -244,74 +243,73 @@ impl IndexedRecordOffsets {
     }
 }
 
-/// The records of one input slice that have a scope, grouped by scope:
-/// ascending by scope, and within a scope in input order.
-pub(super) struct ByStream<'a, T> {
+/// The records of one input slice that have a text key, such as a stream
+/// scope, grouped by key: ascending by key, and within a key in input order.
+pub(super) struct Grouped<'a, T> {
     records: Vec<(&'a str, &'a T)>,
 }
 
-impl<'a, T> ByStream<'a, T> {
-    /// Group `records` by the scope `scope_of` reads from each record; a
-    /// record without one is left out.
+impl<'a, T> Grouped<'a, T> {
+    /// Group `records` by the key `key_of` reads from each record; a record
+    /// without one is left out.
     pub(super) fn build(
         ctx: &DecodeContext<'_>,
         records: &'a [T],
-        scope_of: impl Fn(&'a T) -> Result<Option<&'a str>, CodecError>,
+        key_of: impl Fn(&'a T) -> Result<Option<&'a str>, CodecError>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let mut grouped = Vec::new();
         for record in ctx.admit_iter(records, operation)? {
-            if let Some(scope) = scope_of(record)? {
-                ctx.push_vec(&mut grouped, (scope, record), operation)?;
+            if let Some(key) = key_of(record)? {
+                ctx.push_vec(&mut grouped, (key, record), operation)?;
             }
         }
-        // The stable sort keeps the records of each scope in input order.
-        ctx.stable_sort_by(&mut grouped[..], |(scope, _)| *scope, Ord::cmp, operation)?;
+        // The stable sort keeps the records of each key in input order.
+        ctx.stable_sort_by(&mut grouped[..], |(key, _)| *key, Ord::cmp, operation)?;
         Ok(Self { records: grouped })
     }
 
-    /// The records of `scope` with their scope, in input order. Two
-    /// bisections locate them.
+    /// The records of `key` with their key, in input order. Two bisections
+    /// locate them.
     pub(super) fn run(
         &self,
         ctx: &DecodeContext<'_>,
-        scope: &str,
+        key: &str,
     ) -> Result<&[(&'a str, &'a T)], CodecError> {
-        let run = stream_range(ctx, &self.records, |(record_scope, _)| record_scope, scope)?;
+        let run = key_range(ctx, &self.records, |(record_key, _)| record_key, key)?;
         Ok(self.records.get(run).unwrap_or(&[]))
     }
 
-    /// The records of `scope`, in input order, each admitted as visited
-    /// work.
+    /// The records of `key`, in input order, each admitted as visited work.
     pub(super) fn of(
         &self,
         ctx: &DecodeContext<'_>,
-        scope: &str,
+        key: &str,
         operation: &'static str,
     ) -> Result<impl Iterator<Item = &'a T> + '_, CodecError> {
         Ok(ctx
-            .admit_iter(self.run(ctx, scope)?, operation)?
+            .admit_iter(self.run(ctx, key)?, operation)?
             .map(|(_, record)| *record))
     }
 }
 
-/// The positions of the values of `values`, ascending by the scope that
-/// `stream_of` projects, whose scope is `stream`. Two bisections locate them.
-pub(super) fn stream_range<V>(
+/// The positions of the values of `values`, ascending by the text key that
+/// `key_of` projects, whose key is `key`. Two bisections locate them.
+pub(super) fn key_range<V>(
     ctx: &DecodeContext<'_>,
     values: &[V],
-    stream_of: impl Fn(&V) -> &str,
-    stream: &str,
+    key_of: impl Fn(&V) -> &str,
+    key: &str,
 ) -> Result<std::ops::Range<usize>, CodecError> {
-    let operation = "find F3D stream records";
+    let operation = "find F3D grouped records";
     let first = ctx.partition_point(
         values,
-        |value| Ok(ctx.compare(stream_of(value), stream, operation)?.is_lt()),
+        |value| Ok(ctx.compare(key_of(value), key, operation)?.is_lt()),
         operation,
     )?;
     let end = ctx.partition_point(
         values,
-        |value| Ok(ctx.compare(stream_of(value), stream, operation)?.is_le()),
+        |value| Ok(ctx.compare(key_of(value), key, operation)?.is_le()),
         operation,
     )?;
     Ok(first..end)
@@ -427,13 +425,13 @@ fn clone_sketch_entity_id_charged(
 
 /// Stream indexes built on first use, keyed by borrowed stream identity and
 /// held under one scoped reservation until the cache is dropped.
-pub(in crate::design) struct RecordOffsetCache<'s, 'ctx> {
+pub(crate) struct RecordOffsetCache<'s, 'ctx> {
     indexes: HashMap<&'s str, IndexedRecordOffsets>,
     storage: ScopedReservation<'ctx>,
 }
 
 impl<'s, 'ctx> RecordOffsetCache<'s, 'ctx> {
-    pub(in crate::design) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+    pub(crate) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             indexes: HashMap::new(),
             storage: ctx.reserve_scoped(0, "f3d indexed stream cache")?,
@@ -2140,7 +2138,7 @@ pub(crate) fn decode_sketch_relations(
     // The types of each segment, keyed by the native scope of the segment's
     // type-table stream without its file name.
     let types_by_segment = storage.with_storage(|| {
-        ByStream::build(
+        Grouped::build(
             ctx,
             types,
             |design_type| {
