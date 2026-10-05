@@ -10,7 +10,10 @@ mod native_admission;
 mod presentation_admission;
 mod property_admission;
 
-use super::{built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataProjection};
+use super::{
+    built_in_property_name, known_property_set_fmtid, normalize_property_name, preview_bytes,
+    push_hex, MetadataProjection,
+};
 use crate::loss::InventorLossCode;
 use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
 use crate::property_set::PropertyValue;
@@ -39,6 +42,52 @@ fn built_in_properties_are_selected_by_embedded_set_identity() {
     );
     assert!(known_property_set_fmtid("Design Tracking Properties").is_some());
     assert!(built_in_property_name("Unknown Set", 5).is_none());
+}
+
+#[test]
+fn property_name_normalization_admits_scans_and_retained_output() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert_eq!(
+        normalize_property_name(&ctx, "Part Number 42").expect("normalized name"),
+        "partnumber42"
+    );
+    assert_eq!(
+        normalize_property_name(&ctx, "Étage #1").expect("normalized Unicode name"),
+        "étage1"
+    );
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    assert!(matches!(
+        normalize_property_name(&ctx, "Name"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "normalize Inventor property name"
+    ));
+}
+
+#[test]
+fn hexadecimal_digit_append_refuses_before_mutation() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let mut text = String::new();
+    assert!(matches!(
+        push_hex(&ctx, &mut text, 0xaf),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "format Inventor byte as hexadecimal"
+    ));
+    assert!(text.is_empty());
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    push_hex(&ctx, &mut text, 0xaf).expect("admitted hexadecimal digits");
+    assert_eq!(text, "af");
 }
 
 #[test]
@@ -79,21 +128,40 @@ fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
 }
 
 #[test]
-fn metadata_projection_refuses_retained_limits_before_normalized_name_and_value() {
+fn metadata_projection_refuses_scoped_and_retained_limits_before_normalized_name_and_value() {
     let arena = DecodeArena::new();
-    for (cap, operation) in [
-        (9, "retain Inventor normalized property name"),
-        (12, "retain Inventor metadata value"),
+    // The 10-byte normalized key is scoped; the 3-byte P-1 value is retained.
+    for (dimension, cap, operation) in [
+        (
+            ResourceDimension::MaterializedBytes,
+            "partnumber".len() - 1,
+            "retain Inventor normalized property name",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "P-1".len() - 1,
+            "retain Inventor metadata value",
+        ),
     ] {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
+        match dimension {
+            ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes =
+                    u64::try_from(cap).expect("normalized name length fits");
+            }
+            ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes =
+                    u64::try_from(cap).expect("metadata value length fits");
+            }
+            _ => panic!("test resource dimension"),
+        }
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
         let mut projection = MetadataProjection::default();
         assert!(matches!(
             projection.consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
+                if limit.dimension == dimension
                     && limit.operation == operation
         ));
     }
@@ -197,11 +265,10 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .expect("synthetic Inventor container decodes structurally");
     assert_eq!(decoded.report().format(), "inventor");
     assert!(!decoded.report().container_only());
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == InventorLossCode::GeometryKernelCarrierNotTransferred
+            .kind(&cadmpeg_test_support::service_decode_context())
+            .expect("expected loss code")));
     let native_findings = validation_findings(decoded.ir());
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
     // The structural fixture has no readable registry body. The schema-31
@@ -230,7 +297,9 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         // The structural fixture has no `RSeDb` stream and no segment, so it
         // declares neither version this codec gates on and is admitted
         // unverified.
-        [InventorLossCode::SourceDialectUnverified.kind()]
+        [InventorLossCode::SourceDialectUnverified
+            .kind(&cadmpeg_test_support::service_decode_context())
+            .expect("expected loss code")]
     );
     let namespace = container_only
         .ir()
@@ -349,11 +418,10 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         wire::coverage(decoded.report())["active_kernel_carriers"],
         1
     );
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == InventorLossCode::GeometryKernelCarrierNotTransferred
+            .kind(&cadmpeg_test_support::service_decode_context())
+            .expect("expected loss code")));
 
     let native = decoded
         .ir()
@@ -495,11 +563,12 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
     // And the recovery is still declared: the unverified band charges, the
     // verified one does not.
     let charged = |decoded: &cadmpeg_ir::codec::DecodeResult| {
-        decoded
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == InventorLossCode::KernelDialectUnverified.kind())
+        decoded.report().losses.iter().any(|loss| {
+            loss.code
+                == InventorLossCode::KernelDialectUnverified
+                    .kind(&cadmpeg_test_support::service_decode_context())
+                    .expect("expected loss code")
+        })
     };
     assert!(charged(&unverified));
     assert!(!charged(&verified));

@@ -9,7 +9,6 @@
 //! closure.
 
 use crate::document::CadIr;
-use crate::index::identities::BorrowedIdentities;
 use crate::report::{
     check::{Check, Finding, ValidationReport},
     loss::LossNote,
@@ -178,16 +177,10 @@ fn validate_model_with_index(
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ctx, ir, &mut findings)?;
     check_products(ctx, ir, &mut findings)?;
-    let reference_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities(ctx) {
-            add(id?, ())?;
-        }
-        Ok(())
-    })?;
-    check_presentation(ctx, ir, &reference_ids, &mut findings)?;
-    check_drawings(ctx, ir, &reference_ids, &mut findings)?;
-    check_semantic_annotations(ctx, ir, &reference_ids, &mut findings)?;
-    check_typed_references(ctx, ir, &reference_ids, &mut findings)?;
+    check_presentation(ctx, ir, ids, &mut findings)?;
+    check_drawings(ctx, ir, ids, &mut findings)?;
+    check_semantic_annotations(ctx, ir, ids, &mut findings)?;
+    check_typed_references(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ctx, ids.native_view())?,
@@ -211,19 +204,17 @@ fn validate_annotations<'a>(
     ctx: &DecodeContext<'_>,
     ids: &crate::index::ModelIndex<'a>,
     annotations: &crate::annotations::Annotations,
-    additional: impl IntoIterator<Item = &'a str>,
+    additional: Option<&'a SourceFidelity>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let all_ids = BorrowedIdentities::build(ctx, |add| {
-        for id in ids.identities(ctx) {
-            add(id?, ())?;
-        }
-        for id in additional {
-            add(id, ())?;
-        }
-        Ok(())
-    })?;
-    check_annotations(ctx, ids.native_view(), annotations, &all_ids, findings)
+    check_annotations(
+        ctx,
+        ids.native_view(),
+        annotations,
+        ids,
+        additional,
+        findings,
+    )
 }
 
 fn validate_model_with_annotations(
@@ -234,13 +225,7 @@ fn validate_model_with_annotations(
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir, ctx)?;
     let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
-    validate_annotations(
-        ctx,
-        &index,
-        annotations,
-        std::iter::empty(),
-        &mut report.findings,
-    )?;
+    validate_annotations(ctx, &index, annotations, None, &mut report.findings)?;
     Ok(report)
 }
 
@@ -284,10 +269,7 @@ pub fn validate_neutral_with_source_fidelity(
             ctx,
             &index,
             &source_fidelity.annotations,
-            source_fidelity
-                .retained_records()
-                .keys()
-                .map(crate::ids::UnknownId::as_str),
+            Some(source_fidelity),
             &mut report.findings,
         )?;
         Ok(report)
@@ -306,6 +288,47 @@ mod tests {
     use crate::sketches::{Sketch, SketchId};
     use crate::CadIr;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn source_fidelity_identities_resolve_annotations_without_admitting_neutral_references() {
+        let id = "test:source:unknown#record";
+        let mut ir = CadIr::empty();
+        ir.model.drawings.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "test:model:drawing#source", "object": id, "kind": "page",
+                "runtime_type": "Test", "order": 7, "native_ref": id
+            }))
+            .unwrap(),
+        );
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let stream = crate::annotations::StreamHandle::new(
+            &ctx,
+            crate::stream_name!("test:source"),
+            "fixture source stream",
+        )
+        .unwrap();
+        let mut annotations = crate::AnnotationBuilder::new();
+        annotations.note(&ctx, id, &stream, 0, None).unwrap();
+        let mut source = crate::SourceFidelity::default();
+        source.annotations = annotations.build();
+        source
+            .insert_retained_record(
+                id.try_into().unwrap(),
+                crate::source_fidelity::RetainedSourceRecord::whole("test:source", Vec::new()),
+            )
+            .unwrap();
+        let report =
+            super::validate_neutral_with_source_fidelity(&ir, &source, Vec::new()).unwrap();
+        assert!(!report.findings.iter().any(|finding| {
+            finding.check == crate::report::check::Check::Annotations
+                && finding.entity.as_deref() == Some(id)
+        }));
+        assert!(report.findings.iter().any(|finding| {
+            finding.check == crate::report::check::Check::ReferentialIntegrity
+                && finding.entity.as_deref() == Some("test:model:drawing#source")
+                && finding.message == "invalid drawing reference, order, or numeric state"
+        }));
+    }
 
     #[test]
     fn validation_finding_preserves_the_original_storage_refusal() {

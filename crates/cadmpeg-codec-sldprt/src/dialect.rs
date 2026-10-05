@@ -186,7 +186,7 @@ pub(crate) fn classify_layers(
                 format_args!("{}", stream.header.schema.value()),
                 "retain SLDPRT Parasolid schema",
             )?;
-            let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(schema)
+            let schema = cadmpeg_parasolid::OwnedSchemaToken::parse(ctx, schema)?
                 .map_err(|_| CodecError::Malformed("invalid admitted Parasolid schema".into()))?;
             ctx.reserve_vec(&mut kernels, 1, "collect SLDPRT Parasolid layers")?;
             kernels.push((schema, cadmpeg_parasolid::Carrier::new(carrier)));

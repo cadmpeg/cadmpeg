@@ -6,8 +6,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
 use super::{
-    admit_container_entries, admit_summary_loss_slot, classify, find_summary_entry,
-    insert_attribute, summary_note, InventorContainer,
+    admit_container_entries, classify, find_summary_entry, insert_attribute, summary_note,
+    InventorContainer,
 };
 use crate::test_support::test_fixtures::{fixture, primary_envelope_fixture_with_broken_metadata};
 use crate::InventorCodec;
@@ -55,17 +55,14 @@ fn container_summary_attribute_refuses_before_insert() {
         .expect("service context");
     let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
     let mut entries = snapshot
-        .container_entries(&setup, classify)
+        .container_entries(&setup, |entry| {
+            classify(&setup, entry).expect("classification")
+        })
         .expect("summary admission");
     let entry = entries.first_mut().expect("fixture entry");
     insert_attribute(&setup, entry, "test", format_args!("value")).expect("service attribute");
     assert_eq!(entry.attributes["test"], "value");
-    let node_bytes = 22 * std::mem::size_of::<String>()
-        + 16 * std::mem::size_of::<usize>()
-        + 2 * std::mem::align_of::<String>().max(std::mem::align_of::<usize>());
-    // The insertion admits one node at an empty map or a five-key bound step, plus key/value text.
-    let nodes = usize::from(entry.attributes.len().is_multiple_of(5));
-    let storage = cadmpeg_core::decode::u64_from_index(node_bytes * nodes);
+    // The retained key is four bytes; the five-byte value is admitted before the map node.
     for (collection_cap, retained_cap, dimension, operation) in [
         (
             0,
@@ -81,7 +78,7 @@ fn container_summary_attribute_refuses_before_insert() {
         ),
         (
             u64::MAX,
-            storage + 8,
+            8,
             ResourceDimension::RetainedBytes,
             "retain Inventor summary attribute value",
         ),
@@ -107,7 +104,9 @@ fn container_summary_search_refuses_work_limit_before_scan() {
         .expect("service context");
     let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
     let mut entries = snapshot
-        .container_entries(&setup, classify)
+        .container_entries(&setup, |entry| {
+            classify(&setup, entry).expect("classification")
+        })
         .expect("summary admission");
     assert!(
         find_summary_entry(&setup, &mut entries, snapshot.entries()[0].directory_id())
@@ -162,15 +161,17 @@ fn container_summary_loss_slot_refuses_before_loss_construction() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let mut losses = Vec::<cadmpeg_ir::report::loss::LossNote>::new();
     assert!(matches!(
-        admit_summary_loss_slot(&ctx, &matched),
+        ctx.reserve_vec(&mut losses, 1, "collect Inventor summary loss"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor summary loss"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_summary_loss_slot(&ctx, &matched).expect("admitted loss slot");
+    ctx.reserve_vec(&mut losses, 1, "collect Inventor summary loss")
+        .expect("admitted loss slot");
 }
 
 #[test]
