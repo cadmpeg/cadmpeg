@@ -12,9 +12,8 @@ use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
 
 #[test]
-fn native_charging_writer_refuses_retained_limit_before_record_buffer_growth() {
+fn native_record_conversion_refuses_retained_limit_before_record_growth() {
     use std::cell::Cell;
-    use std::io::Write;
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use serde::ser::SerializeMap;
@@ -35,13 +34,6 @@ fn native_charging_writer_refuses_retained_limit_before_record_buffer_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(json.len()).unwrap() - 1;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut writer = super::ChargingJsonWriter {
-        ctx: &limited,
-        refusal: None,
-    };
-    writer.write_all(json).unwrap();
-    assert!(writer.refusal.is_none());
     policy.limits.max_retained_bytes +=
         cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<NativeRecord>());
 
@@ -1117,31 +1109,6 @@ fn native_arena_sort_refuses_work_limit() {
     assert!(matches!(cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits));
-}
-
-#[test]
-fn native_json_writer_has_no_storage_charge() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use std::io::Write;
-    let arena = DecodeArena::new();
-    let bytes = br#"{"id":"test:native:record#first","payload":"a retained string"}"#;
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(bytes.len());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut writer = super::ChargingJsonWriter {
-        ctx: &ctx,
-        refusal: None,
-    };
-    writer.write_all(bytes).unwrap();
-    assert!(writer.refusal.is_none());
-    assert!(writer.write_all(b" ").is_err());
-    assert!(
-        matches!(writer.refusal, Some(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 1)
-    );
 }
 
 #[test]
