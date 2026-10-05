@@ -3285,7 +3285,7 @@ pub(super) fn external_reference_indexed_records(
     }
     let parsed = container.external_reference_indexed_records(ctx)?;
     let mut output = Vec::new();
-    for (_index, (entry, record)) in ctx.admit_iter(parsed, "NX OM parsed visits")?.enumerate() {
+    for (entry, record) in ctx.admit_iter(parsed, "NX OM parsed visits")? {
         let Some((entry_offset, _)) = entry.file_span() else {
             continue;
         };
@@ -4142,7 +4142,7 @@ fn registry_definitions<T>(
         visit(
             entry,
             section.base_offset(),
-            &*section.types,
+            &section.types,
             &section.fields,
             false,
         )?;
@@ -4296,10 +4296,7 @@ pub(super) fn object_records(
             .enumerate()
         {
             let record_references = record.references(ctx, records.len())?;
-            for (_index, reference) in ctx
-                .admit_iter(record_references, "NX OM record references visits")?
-                .enumerate()
-            {
+            for reference in ctx.admit_iter(record_references, "NX OM record references visits")? {
                 let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
                     continue;
                 };
@@ -5246,10 +5243,7 @@ pub(super) fn data_block_control_handle_pairs(
         })?;
     }
     let mut pairs = Vec::new();
-    for (_index, (data_block, mut block_references)) in ctx
-        .admit_iter(by_block, "NX OM by block visits")?
-        .enumerate()
-    {
+    for (data_block, mut block_references) in ctx.admit_iter(by_block, "NX OM by block visits")? {
         ctx.stable_sort_by(
             &mut block_references,
             |value| &value.0.source_offset,
@@ -5604,9 +5598,8 @@ pub(super) fn data_block_column_index_tables(
         })?;
     }
     let mut output = Vec::new();
-    for (_index, (section_ordinal, linked)) in ctx
-        .admit_iter(linked_by_section, "NX column index linked sections")?
-        .enumerate()
+    for (section_ordinal, linked) in
+        ctx.admit_iter(linked_by_section, "NX column index linked sections")?
     {
         let Some(targets) = ctx.remove_btree_map(
             &mut targets_by_section,
@@ -5965,10 +5958,7 @@ pub(super) fn object_record_handle_pairs(
         })?;
     }
     let mut pairs = Vec::new();
-    for (_index, (record, mut record_references)) in ctx
-        .admit_iter(by_record, "NX OM by record visits")?
-        .enumerate()
-    {
+    for (record, mut record_references) in ctx.admit_iter(by_record, "NX OM by record visits")? {
         ctx.stable_sort_by(
             &mut record_references,
             |value| &value.0.source_offset,
@@ -6203,7 +6193,7 @@ pub(super) fn persistent_handles(
     }
     drop(members);
     let mut handles = Vec::new();
-    for (_index, (value, group)) in ctx.admit_iter(groups, "NX OM groups visits")?.enumerate() {
+    for (value, group) in ctx.admit_iter(groups, "NX OM groups visits")? {
         ctx.reserve_vec(&mut handles, 1, "NX persistent handles")?;
         let id = ctx.format_retained(
             format_args!("nx:om-persistent-handles:handle#{value:08x}"),
@@ -6381,10 +6371,7 @@ pub(super) fn expressions(
                 "NX expression table markers",
             )
         })?;
-        for (_index, expression) in ctx
-            .admit_iter(numeric_records, "NX OM numeric records visits")?
-            .enumerate()
-        {
+        for expression in ctx.admit_iter(numeric_records, "NX OM numeric records visits")? {
             // The table is the last marker that ends at or before the expression.
             let preceding = ctx.partition_point(
                 &table_offsets,

@@ -147,10 +147,7 @@ pub(in crate::native) fn rm_display_color_assignments(
         let source_base = entry.file_span().map_or(0, |(offset, _)| offset)
             + cadmpeg_core::decode::u64_from_index(record_area_offset);
         let linked_rows = crate::om::column_row::scan::linked_rows(ctx, record_area)?;
-        for (_index, row) in ctx
-            .admit_iter(linked_rows, "NX display color linked rows visits")?
-            .enumerate()
-        {
+        for row in ctx.admit_iter(linked_rows, "NX display color linked rows visits")? {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())
             else {
@@ -189,10 +186,7 @@ pub(in crate::native) fn rm_display_color_assignments(
             )?;
         }
         let target_rows = crate::om::column_row::scan::target_rows(ctx, record_area)?;
-        for (_index, row) in ctx
-            .admit_iter(target_rows, "NX display color target rows visits")?
-            .enumerate()
-        {
+        for row in ctx.admit_iter(target_rows, "NX display color target rows visits")? {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())
             else {
