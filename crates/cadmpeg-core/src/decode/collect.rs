@@ -1105,9 +1105,13 @@ impl DecodeContext<'_> {
 
     /// Charges rehashing every stored key when hash-table growth reallocates.
     /// Fixed-cost keys are charged without visiting the table. Variable-cost
-    /// keys are measured where they are stored: one more visit per key, and the
-    /// unspecified visit order does not affect the sum. Bucket visits are
-    /// amortized by the insertions that filled the table.
+    /// keys are measured where they are stored, and their sum, with one visit
+    /// per key, is charged as one amount, so the unspecified visit order
+    /// changes neither the total nor where a refusal falls. A key whose own
+    /// measurement admits child traversal charges that inside the walk. The
+    /// caller charges the growth first; its work covers every byte of the old
+    /// table, at least two units per bucket, so the measuring walk and the
+    /// rehash's own walk over allocated buckets are paid even after removals.
     fn charge_rehash<'keys, K: DecodeCost + 'keys>(
         &self,
         len: usize,
@@ -1119,11 +1123,11 @@ impl DecodeContext<'_> {
         if let Some(bytes) = K::FIXED_BYTES {
             return self.charge_work(self.cost_product(len, bytes, operation)?, operation);
         }
-        self.charge_work(len, operation)?;
+        let mut bytes = len;
         for key in keys {
-            self.charge_key(key, 1, operation)?;
+            bytes = self.cost_sum(bytes, key.decode_cost(self, operation)?, operation)?;
         }
-        Ok(())
+        self.charge_work(bytes, operation)
     }
 
     // SwissTable has a maximum 7/8 load, power-of-two bucket storage, and
@@ -1203,11 +1207,11 @@ impl DecodeContext<'_> {
             .len()
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+        let (bytes, _growth) =
+            self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
         if required > values.capacity() {
             self.charge_rehash(values.len(), values.iter(), operation)?;
         }
-        let (bytes, _growth) =
-            self.charge_hash_growth::<T>(values.len(), values.capacity(), count, operation)?;
         values.try_reserve(count).map_err(|_| {
             self.budget
                 .retained_allocation_failed(u64_from_index(bytes), operation)
@@ -1235,11 +1239,11 @@ impl DecodeContext<'_> {
             .len()
             .checked_add(count)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+        let (bytes, _growth) =
+            self.charge_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?;
         if required > values.capacity() {
             self.charge_rehash(values.len(), values.keys(), operation)?;
         }
-        let (bytes, _growth) =
-            self.charge_hash_growth::<(K, V)>(values.len(), values.capacity(), count, operation)?;
         values.try_reserve(count).map_err(|_| {
             self.budget
                 .retained_allocation_failed(u64_from_index(bytes), operation)
