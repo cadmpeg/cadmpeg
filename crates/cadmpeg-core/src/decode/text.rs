@@ -178,15 +178,21 @@ impl DecodeContext<'_> {
         T::parse_radix(self, text, radix, operation)
     }
 
-    /// Charge the complete text scan and retain its result with the exact input.
+    /// Charge each character visited up to the first non-whitespace one, and
+    /// retain the result with the exact input.
     pub fn validate_nonblank_text<S: TextSource>(
         &self,
         source: S,
         operation: &'static str,
     ) -> Result<crate::text::NonBlankText<S>, super::ResourceLimit> {
-        let nonblank = self
-            .admit_iter(source.as_text(), operation)?
-            .any(|character| !character.is_whitespace());
+        let mut nonblank = false;
+        for character in source.as_text().chars() {
+            self.charge_work_limit(1, operation)?;
+            if !character.is_whitespace() {
+                nonblank = true;
+                break;
+            }
+        }
         Ok(crate::text::NonBlankText { source, nonblank })
     }
 

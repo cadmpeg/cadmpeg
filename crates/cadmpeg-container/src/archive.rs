@@ -625,12 +625,11 @@ fn central_directory_inventory(
             .filter(|&start| bytes.get(start..start + 4) == Some(b"PK\x06\x07".as_slice()))
         {
             let record_start = ctx
-                .admit_iter(&bytes[..locator_start], "ZIP64 end record search")?
-                .windows(
-                    std::num::NonZeroUsize::new(4)
-                        .ok_or_else(|| CodecError::Malformed("zero ZIP signature width".into()))?,
-                )
-                .rposition(|signature| signature == b"PK\x06\x06")
+                .rfind_bytes(
+                    &bytes[..locator_start],
+                    b"PK\x06\x06",
+                    "ZIP64 end record search",
+                )?
                 .ok_or_else(|| CodecError::Malformed("ZIP64 end record is absent".into()))?;
             let record_size = View::u64_le_at(bytes, record_start + 4)
                 .ok_or_else(|| CodecError::Malformed("ZIP64 end record is truncated".into()))?;
@@ -680,12 +679,7 @@ fn central_directory_inventory(
             .get(search_start..search_end)
             .ok_or_else(|| CodecError::Malformed("ZIP directory search range is invalid".into()))?;
         let relative = ctx
-            .admit_iter(search, "ZIP central header search")?
-            .windows(
-                std::num::NonZeroUsize::new(4)
-                    .ok_or_else(|| CodecError::Malformed("zero ZIP signature width".into()))?,
-            )
-            .position(|window| window == b"PK\x01\x02")
+            .find_bytes(search, b"PK\x01\x02", "ZIP central header search")?
             .ok_or_else(|| CodecError::Malformed("ZIP central header is absent".into()))?;
         let start = search_start
             .checked_add(relative)

@@ -346,7 +346,10 @@ fn selection_reference_constructors_admit_text_before_validation() {
                 11 => finish(VertexSelection::native(text, &ctx)),
                 _ => unreachable!(),
             };
-            if allowance < 8 {
+            // A historical vertex's native token is validated up to its first
+            // letter, past two spaces; the other owners charge the whole reference.
+            let need = if owner == 10 { 3 } else { 8 };
+            if allowance < need {
                 let limit = result.unwrap_err();
                 assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
                 assert!(
