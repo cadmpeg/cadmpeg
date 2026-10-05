@@ -1237,7 +1237,11 @@ pub(crate) fn project(
             entity.identity.segment_token.as_str(),
             entity.identity.record_ordinal,
         );
-        if !ctx.contains_key_hash_map(&raw_entities, &key, "access Inventor sketch records")? {
+        if ctx
+            .get_hash_map(&raw_entities, &key, "access Inventor sketch records")?
+            .and_then(Option::as_ref)
+            .is_none()
+        {
             unresolved_entities += 1;
             continue;
         }
@@ -1314,7 +1318,11 @@ pub(crate) fn project(
             sketch.identity.segment_token.as_str(),
             sketch.identity.record_ordinal,
         );
-        if !ctx.contains_key_hash_map(&raw_sketches, &key, "access Inventor sketch records")? {
+        if ctx
+            .get_hash_map(&raw_sketches, &key, "access Inventor sketch records")?
+            .and_then(Option::as_ref)
+            .is_none()
+        {
             unresolved_sketches += 1;
             continue;
         }
@@ -1485,14 +1493,18 @@ pub(crate) fn project(
         ctx.reserve_scoped(0, "index projected Inventor sketch constraint")?;
     let mut projected_constraint_keys = HashSet::new();
     for constraint in ctx.admit_iter(&inventory.constraints, "visit Inventor sketch items")? {
-        if ctx.contains_key_hash_map(
-            &raw_constraints,
-            &(
-                constraint.identity.segment_token.as_str(),
-                constraint.identity.record_ordinal,
-            ),
-            "access Inventor sketch records",
-        )? {
+        if ctx
+            .get_hash_map(
+                &raw_constraints,
+                &(
+                    constraint.identity.segment_token.as_str(),
+                    constraint.identity.record_ordinal,
+                ),
+                "access Inventor sketch records",
+            )?
+            .and_then(Option::as_ref)
+            .is_some()
+        {
             if let Some(projected) =
                 project_constraint(ctx, constraint, &projected_entity_by_key, &parameter_index)
                     .transpose()?
