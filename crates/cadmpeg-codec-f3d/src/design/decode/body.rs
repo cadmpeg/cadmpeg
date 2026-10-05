@@ -1409,11 +1409,12 @@ fn selected_body_map_records<'ctx>(
 /// Every named body map, modern or snapshot, must name a distinct binary BREP
 /// entry of the Design asset: the multiset of map names equals the multiset of
 /// BREP entry basenames. Without any named map the result is every distinct
-/// BREP entry basename.
-pub(crate) fn design_model_blob_names(
-    ctx: &DecodeContext<'_>,
+/// BREP entry basename. The names are decode scratch held under the returned
+/// reservation.
+pub(crate) fn design_model_blob_names<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<String>, CodecError> {
+) -> Result<(Vec<String>, ScopedReservation<'ctx>), CodecError> {
     let mut storage = ctx.reserve_scoped(0, "f3d body-map carrier names")?;
     // Every named carrier and whether its stream selects it.
     let mut carriers = Vec::new();
@@ -1485,6 +1486,7 @@ pub(crate) fn design_model_blob_names(
         "sort F3D archive BREP names",
     )?;
 
+    let mut names_storage = ctx.reserve_scoped(0, "f3d design model blob names")?;
     let mut names = Vec::new();
     if !saw_design_stream || carriers.is_empty() {
         ctx.dedup_by(
@@ -1499,10 +1501,16 @@ pub(crate) fn design_model_blob_names(
             "deduplicate F3D archive BREP names",
         )?;
         for name in ctx.admit_iter(&archive_names, "copy F3D archive BREP names")? {
-            let name = ctx.copy_retained_text(name, "f3d archive BREP basename")?;
-            ctx.push_vec(&mut names, name, "f3d design model blob names")?;
+            let name =
+                ctx.copy_scoped_text(name, &mut names_storage, "f3d archive BREP basename")?;
+            ctx.push_scoped_vec(
+                &mut names_storage,
+                &mut names,
+                name,
+                "f3d design model blob names",
+            )?;
         }
-        return Ok(names);
+        return Ok((names, names_storage));
     }
 
     ctx.sort_unstable_by(
@@ -1546,10 +1554,15 @@ pub(crate) fn design_model_blob_names(
                 continue;
             }
         }
-        let name = ctx.copy_retained_text(name, "f3d selected body-map name")?;
-        ctx.push_vec(&mut names, name, "f3d design model blob names")?;
+        let name = ctx.copy_scoped_text(name, &mut names_storage, "f3d selected body-map name")?;
+        ctx.push_scoped_vec(
+            &mut names_storage,
+            &mut names,
+            name,
+            "f3d design model blob names",
+        )?;
     }
-    Ok(names)
+    Ok((names, names_storage))
 }
 
 /// Decode every ordered Design BREP body-map pair and resolve each pair in its
@@ -1740,6 +1753,13 @@ pub(crate) struct DecodedBodyVisibility {
     pub(crate) visible: bool,
 }
 
+/// Body visibilities keyed by blob name and body selector, and the scoped
+/// storage that holds them.
+type BodyVisibilities<'ctx> = (
+    HashMap<(String, u64), DecodedBodyVisibility>,
+    ScopedReservation<'ctx>,
+);
+
 /// Decode per-body display visibility from the Design `BulkStream`.
 ///
 /// Each BREP body-map record resolves blob-qualified body selectors to Design
@@ -1752,13 +1772,7 @@ pub(crate) struct DecodedBodyVisibility {
 pub(crate) fn decode_all_body_visibility<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<
-    (
-        HashMap<(String, u64), DecodedBodyVisibility>,
-        ScopedReservation<'ctx>,
-    ),
-    CodecError,
-> {
+) -> Result<BodyVisibilities<'ctx>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "f3d body visibility entries")?;
     let mut out = HashMap::new();
     for entry in ctx
@@ -2650,11 +2664,7 @@ mod tests {
                     .unwrap()
                     .visible
             );
-            let names = super::design_model_blob_names(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
-            .unwrap();
+            let (names, _storage) = super::design_model_blob_names(&ctx, scan).unwrap();
             assert_eq!(names, ["BREP.synthetic.smbh"]);
             let bindings = super::decode_design_body_bindings(
                 &cadmpeg_test_support::service_decode_context(),
@@ -2734,13 +2744,9 @@ mod tests {
                     ResourceDimension::MaterializedBytes,
                     "f3d body-map carrier name",
                 ),
-                (
-                    ResourceDimension::RetainedBytes,
-                    "f3d selected body-map name",
-                ),
             ] {
                 assert_refuses_at(dimension, operation, |ctx| {
-                    super::design_model_blob_names(ctx, scan)
+                    super::design_model_blob_names(ctx, scan).map(|_| ())
                 });
             }
             for (dimension, operation) in [
@@ -2792,11 +2798,8 @@ mod tests {
         }
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let names = super::design_model_blob_names(
-                &cadmpeg_test_support::service_decode_context(),
-                scan,
-            )
-            .unwrap();
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let (names, _storage) = super::design_model_blob_names(&ctx, scan).unwrap();
             assert_eq!(names, ["BREP.a.smb", "BREP.b.smbh"]);
         });
     }
