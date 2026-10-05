@@ -537,8 +537,6 @@ fn loop_and_endpoint_incidences_bind_an_unframed_pcurve_occurrence() {
     })
     .expect("service budget");
     assert_eq!(service, BTreeMap::from([(9, 11)]));
-
-
 }
 
 #[test]
@@ -701,9 +699,8 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
         BTreeMap::from([(9, 11)])
     );
 
-    let refused = crate::test_support::with_work_refusal(
-        "catia_b5_record_reference_range_scan",
-        |ctx| {
+    let refused =
+        crate::test_support::with_work_refusal("catia_b5_curve_wrapper_pcurve_search", |ctx| {
             let result = implicit_pcurve_bindings(
                 ctx,
                 &records,
@@ -720,12 +717,11 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
             result
-        },
-    );
+        });
     assert!(matches!(
         refused,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "catia_b5_record_reference_range_scan"
+                && limit.operation == "catia_b5_curve_wrapper_pcurve_search"
     ));
 }

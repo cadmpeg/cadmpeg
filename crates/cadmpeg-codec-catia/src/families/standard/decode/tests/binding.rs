@@ -649,7 +649,7 @@ fn standard_native_binding_arrays_refuse_before_each_collection() {
         geometry: StandardCurveGeometry::Line,
     }];
     let native_edges = BTreeMap::from([(70, [100, 300])]);
-    let native_support_ids = HashSet::from([70]);
+    let native_support_ids = HashMap::from([(70, ())]);
     let mut operations = HashSet::new();
     for limit in 0..=10 {
         match crate::test_support::with_collection_limit(limit, |ctx| {
@@ -717,15 +717,20 @@ fn standard_object_journal_merges_matching_edge_dialects_and_rejects_conflicts()
     let mut edges = BTreeMap::from([(70, [500, 300])]);
     crate::test_support::with_service_context(|ctx| {
         assert!(merge_standard_edge_vertex_references(
-            ctx, &mut edges,
+            ctx,
+            &mut edges,
             &BTreeMap::from([(70, [500, 300]), (90, [100, 500])]),
             |vertices| *vertices,
-        ).expect("edge sources fit service limits"));
+        )
+        .expect("edge sources fit service limits"));
         assert_eq!(edges, BTreeMap::from([(70, [500, 300]), (90, [100, 500])]));
         assert!(!merge_standard_edge_vertex_references(
-            ctx, &mut edges, &BTreeMap::from([(70, [300, 500])]),
+            ctx,
+            &mut edges,
+            &BTreeMap::from([(70, [300, 500])]),
             |vertices| *vertices,
-        ).expect("edge sources fit service limits"));
+        )
+        .expect("edge sources fit service limits"));
     });
 }
 
@@ -792,10 +797,14 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
         vec![[10, 11]],
     ];
 
-    crate::test_support::with_service_context(|ctx| corroborate_successor_endpoint_points(
-        ctx, &mut options,
-        &[[None, Some(5)], [Some(6), None], [None, None]],
-    )).expect("endpoint evidence fits service limits");
+    crate::test_support::with_service_context(|ctx| {
+        corroborate_successor_endpoint_points(
+            ctx,
+            &mut options,
+            &[[None, Some(5)], [Some(6), None], [None, None]],
+        )
+    })
+    .expect("endpoint evidence fits service limits");
 
     assert_eq!(
         options,
@@ -803,7 +812,10 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
     );
 
     let mut joint_options = vec![vec![[2, 4], [2, 5], [3, 5]]];
-    crate::test_support::with_service_context(|ctx| corroborate_successor_endpoint_points(ctx, &mut joint_options, &[[Some(2), Some(5)]])).expect("endpoint evidence fits service limits");
+    crate::test_support::with_service_context(|ctx| {
+        corroborate_successor_endpoint_points(ctx, &mut joint_options, &[[Some(2), Some(5)]])
+    })
+    .expect("endpoint evidence fits service limits");
     assert_eq!(joint_options, [vec![[2, 5]]]);
 }
 

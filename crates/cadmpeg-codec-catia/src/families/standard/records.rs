@@ -16,7 +16,6 @@ use cadmpeg_ir::scalar::{
 };
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::num::NonZeroUsize;
 
 use crate::families::standard::fbb::FbbPopulationLayout;
 use crate::layout::analytic_surface_cone as analytic_cone;
@@ -261,7 +260,10 @@ fn standard_surface_record_table(
         }
     }
     let mut analytic_ranges = Vec::new();
-    for record in ctx.admit_iter(&records, "catia_standard_iteration")?.map(|(_, value)| value) {
+    for record in ctx
+        .admit_iter(&records, "catia_standard_iteration")?
+        .map(|(_, value)| value)
+    {
         if let StandardSurfaceRecord::Analytic(prefix) = record {
             ctx.push_vec(
                 &mut analytic_ranges,
@@ -330,7 +332,10 @@ fn standard_surface_record_table(
     )?;
     ordered_records.extend(records.into_values());
     let mut record_indices = HashMap::new();
-    for (index, record) in ctx.admit_iter(&ordered_records, "catia_standard_iteration")?.enumerate() {
+    for (index, record) in ctx
+        .admit_iter(&ordered_records, "catia_standard_iteration")?
+        .enumerate()
+    {
         ctx.insert_hash_map(
             &mut record_indices,
             record.pos(),
@@ -370,7 +375,10 @@ pub(super) fn standard_surface_record_groups(
         has_predecessor[successor] = true;
     }
     let mut groups = Vec::new();
-    for (start, has_prior) in ctx.admit_iter(&has_predecessor, "catia_standard_iteration")?.enumerate() {
+    for (start, has_prior) in ctx
+        .admit_iter(&has_predecessor, "catia_standard_iteration")?
+        .enumerate()
+    {
         if *has_prior {
             continue;
         }
@@ -688,20 +696,9 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
     let mut out = Vec::new();
     let mut duplicate_targets = HashSet::new();
     let mut seen_targets = HashSet::new();
-    let mut p = 0usize;
-    while p + MARKER.len() + 40 <= brep.len() {
-        let Some(window_size) = NonZeroUsize::new(MARKER.len()) else {
-            return Err(ctx.refuse_codec_limit("catia_standard_iteration", u64::MAX, u64::MAX));
-        };
-        let Some(relative) = ctx
-            .admit_iter(&brep[p..], "catia_standard_iteration")?
-            .windows(window_size)
-            .position(|w| w == MARKER)
-        else {
-            break;
-        };
-        let pos = p + relative;
-        p = pos + 1;
+    // The marker has no proper prefix equal to a suffix, so the
+    // non-overlapping matches are all matches.
+    for pos in ctx.find_bytes_iter(brep, MARKER, "catia_plane_marker_scan")? {
         if pos < 4 || pos + MARKER.len() + 40 > brep.len() {
             continue;
         }
@@ -718,7 +715,7 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
                 "catia_plane_duplicate_targets",
             )?;
         }
-        let Some(normal) = normals.get(&target).copied() else {
+        let Some(&normal) = ctx.get_hash_map(normals, &target, "catia_plane_normal_lookup")? else {
             continue;
         };
         let [x, y, z] = bounds.sphere_center;
@@ -732,7 +729,17 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
             "catia_plane_params",
         )?;
     }
-    out.retain(|plane| !duplicate_targets.contains(&plane.target));
+    ctx.retain_vec(
+        &mut out,
+        |plane| {
+            Ok(!ctx.contains_hash_set(
+                &duplicate_targets,
+                &plane.target,
+                "catia_plane_duplicate_filter",
+            )?)
+        },
+        "catia_plane_duplicate_filter",
+    )?;
     Ok(out)
 }
 
@@ -1133,7 +1140,8 @@ mod tests {
         let bytes = [0, 0x60];
         assert!(!crate::test_support::with_service_context(|ctx| {
             super::standard_curve_support_has_predecessor(ctx, &bytes, 1, 1)
-        }).expect("service resource budget"));
+        })
+        .expect("service resource budget"));
         crate::test_support::with_work_limit(0, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::standard_curve_support_has_predecessor(ctx, &bytes, 1, 1)

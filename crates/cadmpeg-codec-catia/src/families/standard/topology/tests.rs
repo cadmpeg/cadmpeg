@@ -3,7 +3,6 @@ use cadmpeg_ir::features::NonEmptyMembers;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::{incidence_cycles, solve_boundary_orientation_constraints, StandardTopologyDraft};
-use std::collections::HashMap;
 
 fn with_zero_retained<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -598,7 +597,7 @@ fn standard_boundary_constraints_propagate_collection_refusal() {
         solve_boundary_orientation_constraints(
             ctx,
             2,
-            &HashMap::from([(0, vec![(0, false), (1, false)])]),
+            &std::collections::BTreeMap::from([(0, vec![(0, false), (1, false)])]),
             true,
         )?;
         Ok(())
@@ -612,7 +611,7 @@ fn standard_boundary_flips_propagate_collection_refusal() {
         solve_boundary_orientation_constraints(
             ctx,
             2,
-            &HashMap::from([(0, vec![(0, false), (1, false)])]),
+            &std::collections::BTreeMap::from([(0, vec![(0, false), (1, false)])]),
             true,
         )?;
         Ok(())
@@ -624,7 +623,7 @@ fn standard_boundary_flips_propagate_collection_refusal() {
 fn standard_boundary_inner_collections_refuse_each_limit() {
     use std::collections::HashSet;
 
-    let edge_uses = HashMap::from([
+    let edge_uses = std::collections::BTreeMap::from([
         (0, vec![(0, false), (1, false)]),
         (1, vec![(1, false), (2, true)]),
     ]);
@@ -1159,27 +1158,14 @@ fn incidence_cycles_refuse_before_invalid_edges_and_nested_growth() {
 
 #[test]
 fn incidence_cycles_refuse_work_limit_before_unseen_scan() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // Eight scalar-key hash reads, the first-insertion growth of the edge set
-    // and the vertex map, and the two-row sort precede the unseen scan. A first
-    // insertion is bounded by a four-bucket table: buckets times element size,
-    // 15 bytes of group padding, one control byte per bucket and the 16-byte
-    // trailer.
-    let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-    let four_buckets =
-        |element: usize| cadmpeg_core::decode::u64_from_index(4 * element + 15 + 4 + 16);
-    let hash_growth = four_buckets(std::mem::size_of::<usize>())
-        + four_buckets(std::mem::size_of::<(usize, usize)>());
-    policy.limits.max_work_units = 8 * index_bytes + 4 + hash_growth + 10 * index_bytes * 3 * 8;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let result = incidence_cycles(&ctx, &[0, 1], &[[0, 1], [1, 0]]);
+    let refused = crate::test_support::with_work_refusal("catia_incidence_unseen_scan", |ctx| {
+        incidence_cycles(ctx, &[0, 1], &[[0, 1], [1, 0]])
+    });
     assert!(matches!(
-        result,
+        refused,
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "catia_incidence_unseen_scan"
@@ -1188,7 +1174,7 @@ fn incidence_cycles_refuse_work_limit_before_unseen_scan() {
 
 #[test]
 fn boundary_orientation_constraints_retain_the_flip_assignment() {
-    let edge_uses = HashMap::from([
+    let edge_uses = std::collections::BTreeMap::from([
         (0, vec![(0, false), (1, false)]),
         (1, vec![(1, false), (2, true)]),
     ]);
@@ -1243,15 +1229,24 @@ fn standard_topology_copy_scans_propagate_caller_work_refusals() {
         faces: vec![FaceTopologyDraft {
             boundaries: vec![BoundaryDraft {
                 coedges: NonEmptyMembers::one(CoedgeUse {
-                    edge_row: 0, reversed: false, start_vertex: 0, end_vertex: 0,
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 0,
                 }),
             }],
         }],
-        edge_rows: Vec::new(), vertex_points: Vec::new(), logical_vertex_count: 0,
+        edge_rows: Vec::new(),
+        vertex_points: Vec::new(),
+        logical_vertex_count: 0,
     };
-    for (cap, operation) in [(0, "catia_standard_topology_copy_faces"), (1, "catia_standard_topology_copy_boundaries")] {
+    for (cap, operation) in [
+        (0, "catia_standard_topology_copy_faces"),
+        (1, "catia_standard_topology_copy_boundaries"),
+    ] {
         crate::test_support::with_work_limit(cap, |ctx| {
-            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = topology.clone_charged(ctx) else {
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = topology.clone_charged(ctx)
+            else {
                 panic!("topology source scan must refuse");
             };
             assert_eq!(limit.operation, operation);
@@ -1262,13 +1257,18 @@ fn standard_topology_copy_scans_propagate_caller_work_refusals() {
 
 #[test]
 fn standard_boundary_constraint_scan_propagates_caller_work_refusal() {
-    let uses = HashMap::from([(0, vec![(0, false), (1, true)])]);
+    let uses = std::collections::BTreeMap::from([(0, vec![(0, false), (1, true)])]);
     // Two indexed constraint rows precede the admitted edge-use source.
     crate::test_support::with_work_limit(2, |ctx| {
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = solve_boundary_orientation_constraints(ctx, 2, &uses, true) else {
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            solve_boundary_orientation_constraints(ctx, 2, &uses, true)
+        else {
             panic!("constraint source scan must refuse");
         };
-        assert_eq!(limit.operation, "catia_standard_boundary_constraint_sources");
+        assert_eq!(
+            limit.operation,
+            "catia_standard_boundary_constraint_sources"
+        );
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
 }
@@ -1282,7 +1282,12 @@ fn reconstructed_union_root_sources_propagate_caller_work_refusals() {
     let row = EdgeRow::new(1, vec![7, 7], EdgeBoundaryLayout::CompleteBoundaryRun)
         .expect("admitted edge row");
     let selected = [MeshFaceBoundaryAssignment {
-        boundaries: vec![vec![MeshBoundaryEdgeCandidate { edge: 0, start: 0, end: 1, reversed: Some(false) }]],
+        boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+            edge: 0,
+            start: 0,
+            end: 1,
+            reversed: Some(false),
+        }]],
     }];
     let directions = [vec![vec![false]]];
     for operation in [
@@ -1296,24 +1301,46 @@ fn reconstructed_union_root_sources_propagate_caller_work_refusals() {
             let result = if operation == "catia_reconstruct_root_edge_rows" {
                 super::reconstruct(ctx, vec![row.clone()], Vec::new(), &[])
             } else {
-                super::reconstruct_mesh_selection(ctx, std::slice::from_ref(&row), &[], &selected, &directions)
+                super::reconstruct_mesh_selection(
+                    ctx,
+                    std::slice::from_ref(&row),
+                    &[],
+                    &selected,
+                    &directions,
+                )
             };
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
             result
         });
-        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation));
+        assert!(
+            matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
+        );
     }
     crate::test_support::with_service_context(|ctx| {
         let topology = super::reconstruct(ctx, vec![row.clone()], Vec::new(), &[])
-            .expect("service work budget").expect("untrimmed edge topology");
+            .expect("service work budget")
+            .expect("untrimmed edge topology");
         assert_eq!(topology.logical_vertex_count, 2);
-        let topology = super::reconstruct_mesh_selection(ctx, std::slice::from_ref(&row), &[], &selected, &directions)
-            .expect("service work budget").expect("single boundary topology");
+        let topology = super::reconstruct_mesh_selection(
+            ctx,
+            std::slice::from_ref(&row),
+            &[],
+            &selected,
+            &directions,
+        )
+        .expect("service work budget")
+        .expect("single boundary topology");
         assert_eq!(topology.logical_vertex_count, 1);
-        assert_eq!(topology.faces[0].boundaries[0].coedges.as_slice()[0].start_vertex, 0);
-        assert_eq!(topology.faces[0].boundaries[0].coedges.as_slice()[0].end_vertex, 0);
+        assert_eq!(
+            topology.faces[0].boundaries[0].coedges.as_slice()[0].start_vertex,
+            0
+        );
+        assert_eq!(
+            topology.faces[0].boundaries[0].coedges.as_slice()[0].end_vertex,
+            0
+        );
     });
 }
 

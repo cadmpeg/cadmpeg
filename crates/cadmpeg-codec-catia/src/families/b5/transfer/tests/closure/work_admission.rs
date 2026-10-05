@@ -1,15 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Work admission of owner operations.
 
-use super::{b5_edge_support_definition, charged_b5_edge_support_definition, charged_curve_on_parameter_range, charged_rational_arc, rational_arc};
-use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::{PcurveGeometry, PcurveNurbs}, CurveGeometry, SolvedCurveGeometry};
+use super::{
+    b5_edge_support_definition, charged_b5_edge_support_definition,
+    charged_curve_on_parameter_range, charged_rational_arc, rational_arc,
+};
+use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve,
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    CurveGeometry, SolvedCurveGeometry,
+};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 #[test]
 fn edge_support_pcurve_copy_refuses_collection_limit() {
-    let surfaces = HashMap::from([(
+    let surfaces = std::collections::BTreeMap::from([(
         10,
         SurfaceId::mint("catia:b5:surface#10".to_string()).expect("identity grammar"),
     )]);
@@ -123,10 +130,13 @@ fn reparameterized_nurbs_knots_refuse_collection_limit_below_need() {
 fn b5_oriented_member_order_propagates_caller_work_refusal() {
     let orientation = super::super::super::OrientedLoop {
         flipped: true,
-        members: vec![super::super::super::OrientedLoopMember {
-            reversed: false,
-            pcurve_reversed: false,
-        }; 2],
+        members: vec![
+            super::super::super::OrientedLoopMember {
+                reversed: false,
+                pcurve_reversed: false,
+            };
+            2
+        ],
     };
     crate::test_support::with_work_limit(1, |ctx| {
         let error = match orientation.member_order(ctx) {
@@ -140,7 +150,13 @@ fn b5_oriented_member_order_propagates_caller_work_refusal() {
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
     crate::test_support::with_work_limit(2, |ctx| {
-        assert_eq!(orientation.member_order(ctx).expect("two member visits")
-            .rev().collect::<Vec<_>>(), vec![0, 1]);
+        assert_eq!(
+            orientation
+                .member_order(ctx)
+                .expect("two member visits")
+                .rev()
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
     });
 }

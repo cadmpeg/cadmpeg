@@ -206,22 +206,17 @@ fn standard_native_edge_face_carrier_and_candidate_limits_refuse() {
             kind: AnalyticSurfaceKind::Cylinder,
         })
     });
-    let owners = HashMap::from([(700, HashSet::from([20]))]);
-    for (limit, operation) in [
-        (0, "catia_standard_native_face_carriers"),
-        (2, "catia_standard_native_face_candidates"),
-    ] {
-        let mut faces = [[0, 0]];
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::standard::decode::apply_standard_native_edge_faces(
-                ctx, &mut faces, &supports, &records, &owners,
-            )
-        });
-        assert!(
-            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
-            if refusal.operation == operation)
-        );
-    }
+    let owners = HashMap::from([(700, vec![20])]);
+    let mut faces = [[0, 0]];
+    let result = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::standard::decode::apply_standard_native_edge_faces(
+            ctx, &mut faces, &supports, &records, &owners,
+        )
+    });
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+        if refusal.operation == "catia_standard_native_face_carriers")
+    );
     let mut faces = [[0, 0]];
     crate::test_support::with_service_context(|ctx| {
         crate::families::standard::decode::apply_standard_native_edge_faces(

@@ -450,20 +450,27 @@ fn native_resolved_input_refuses_entity_set_limit() {
 
 #[test]
 fn native_entity_reference_refuses_retained_copy() {
-    let entities =
-        std::collections::HashMap::from([(("graph".to_string(), 10_u32), "entity-10".to_string())]);
-    let classes =
-        std::collections::HashMap::from([(("graph".to_string(), 10_u32), "param".to_string())]);
-    let terminal_nulls = std::collections::HashMap::new();
+    use std::collections::HashMap;
+    let entities = HashMap::from([(
+        "graph".to_string(),
+        HashMap::from([(10_u32, "entity-10".to_string())]),
+    )]);
+    let classes = HashMap::from([("graph", HashMap::from([(10_u32, "param")]))]);
+    let maxima = HashMap::new();
+    let references = crate::native::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        maxima: &maxima,
+    };
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        crate::native::entity_reference(ctx, "graph", 10, &entities, &classes, &terminal_nulls)
+        crate::native::entity_reference(ctx, "graph", 10, &references)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_reference_entity")
     );
     let service = crate::test_support::with_service_context(|ctx| {
-        crate::native::entity_reference(ctx, "graph", 10, &entities, &classes, &terminal_nulls)
+        crate::native::entity_reference(ctx, "graph", 10, &references)
     })
     .expect("service profile admits entity reference");
     assert_eq!(service.entity(), Some("entity-10"));

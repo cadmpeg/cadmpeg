@@ -189,17 +189,17 @@ fn native_graph_projection_refuses_caller_limits() {
             .expect("service profile admits object graph parsing")
             .expect("fixture has an object graph");
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
-    super::super::projection::native_object_graph(ctx, &parsed, Vec::new(), None, None)
+        super::super::projection::native_object_graph(ctx, &parsed, Vec::new(), None, None)
     });
     assert!(matches!(retained, Err(CodecError::ResourceLimit(limit))
         if limit.operation == "catia_native_graph_id"));
     let collection = crate::test_support::with_collection_limit(0, |ctx| {
-    super::super::projection::native_object_graph(ctx, &parsed, Vec::new(), None, None)
+        super::super::projection::native_object_graph(ctx, &parsed, Vec::new(), None, None)
     });
     assert!(matches!(collection, Err(CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
     let admitted = crate::test_support::with_service_context(|ctx| {
-    super::super::projection::native_object_graph(ctx, &parsed, Vec::new(), None, None)
+        super::super::projection::native_object_graph(ctx, &parsed, Vec::new(), None, None)
     })
     .expect("service profile admits native graph projection");
     assert!(!admitted.0.records.is_empty());
@@ -210,11 +210,10 @@ fn native_graph_record_link_updates_preserve_work_refusal() {
     use cadmpeg_core::CodecError;
 
     let bytes = object_graph_stream();
-    let parsed = crate::test_support::with_service_context(|ctx| {
-        crate::object_graph::parse(ctx, &bytes)
-    })
-    .expect("service object-graph parse budget")
-    .expect("fixture has an object graph");
+    let parsed =
+        crate::test_support::with_service_context(|ctx| crate::object_graph::parse(ctx, &bytes))
+            .expect("service object-graph parse budget")
+            .expect("fixture has an object graph");
     let service = crate::test_support::with_service_context(|ctx| {
         super::super::projection::native_object_graph(ctx, &parsed, Vec::new(), None, None)
     })
@@ -224,13 +223,8 @@ fn native_graph_record_link_updates_preserve_work_refusal() {
 
     let operation = "catia_native_graph_record_link_updates";
     let refused = crate::test_support::with_work_refusal(operation, |ctx| {
-        let result = super::super::projection::native_object_graph(
-            ctx,
-            &parsed,
-            Vec::new(),
-            None,
-            None,
-        );
+        let result =
+            super::super::projection::native_object_graph(ctx, &parsed, Vec::new(), None, None);
         if let Err(CodecError::ResourceLimit(limit)) = &result {
             assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
         }
@@ -545,7 +539,7 @@ fn native_configuration_production_propagates_retained_refusal() {
     let references = super::super::CatiaEntityReferenceIndex {
         entities: &entities,
         classes: &classes,
-        terminal_nulls: &terminal_nulls,
+        maxima: &terminal_nulls,
     };
     let configuration = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::object_production(
@@ -567,9 +561,7 @@ fn native_configuration_production_propagates_retained_refusal() {
             ctx,
             row_entity.entity_id,
             row_object,
-            &entities,
-            &classes,
-            &terminal_nulls,
+            &references,
         )
     });
     assert!(
@@ -861,23 +853,23 @@ fn configuration_chain_derivation_refuses_collection_limit() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     let classes = crate::test_support::with_service_context(|ctx| {
-        super::super::entity_class_index(
-            ctx,
-            &native.object_graphs,
-        )
+        super::super::entity_class_index(ctx, &native.object_graphs)
     })
     .expect("native class index fits service limits");
     let (_, _, entities, terminal_nulls, _) = crate::test_support::with_service_context(|ctx| {
         super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
     })
     .expect("native semantic indices fit service limits");
+    let references = super::super::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        maxima: &terminal_nulls,
+    };
     let derive = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         super::super::derive_schema_configuration_row_chains(
             ctx,
             &native.entity_records,
-            &entities,
-            &classes,
-            &terminal_nulls,
+            &references,
         )
     };
     assert!(matches!(
@@ -902,13 +894,16 @@ fn configuration_group_entry_propagates_caller_refusals() {
         super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
     })
     .expect("native semantic indices fit service limits");
+    let references = super::super::CatiaEntityReferenceIndex {
+        entities: &entities,
+        classes: &classes,
+        maxima: &terminal_nulls,
+    };
     let derive = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         super::super::derive_schema_configuration_row_chains(
             ctx,
             &native.entity_records,
-            &entities,
-            &classes,
-            &terminal_nulls,
+            &references,
         )
     };
     let refused = crate::test_support::with_work_refusal("catia_configuration_groups", |ctx| {
@@ -957,28 +952,29 @@ fn configuration_group_entry_propagates_caller_refusals() {
 
 #[test]
 fn terminal_null_entity_id_scan_propagates_caller_work_refusal() {
-    let record_indices = std::collections::HashMap::from([(2_u32, 0_usize), (8, 1)]);
-    let empty = std::collections::HashMap::new();
-    let overflow = std::collections::HashMap::from([(u32::MAX, 0_usize)]);
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    let records = &native.object_graphs[0].records;
+    let maximum = records
+        .iter()
+        .filter_map(crate::native::CatiaObjectRecord::entity_id)
+        .max()
+        .expect("graph has an entity record");
     crate::test_support::with_service_context(|ctx| {
         assert_eq!(
-            super::super::terminal_null_entity_id(ctx, &record_indices)?,
-            Some(9)
+            super::super::terminal_null_entity_id(ctx, records)?,
+            maximum.checked_add(1)
         );
-        assert_eq!(super::super::terminal_null_entity_id(ctx, &empty)?, None);
-        assert_eq!(
-            super::super::terminal_null_entity_id(ctx, &overflow)?,
-            None
-        );
+        assert_eq!(super::super::terminal_null_entity_id(ctx, &[])?, None);
         Ok::<_, cadmpeg_core::CodecError>(())
     })
     .expect("service terminal null identity scan");
     let refused = crate::test_support::with_work_refusal(
         "catia_native_terminal_null_entity_id_scan",
         |ctx| {
-            let result = super::super::terminal_null_entity_id(ctx, &record_indices);
+            let result = super::super::terminal_null_entity_id(ctx, records);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal(), Some(*limit));
+                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
             }
             result.map(|_| ())
         },
@@ -1006,7 +1002,7 @@ fn native_semantic_indices_refuse_collection_and_retained_limits() {
     });
     assert!(
         matches!(class_retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_class_graph")
+        if limit.operation == "catia_native_class_index")
     );
     let classes = crate::test_support::with_service_context(|ctx| {
         super::super::entity_class_index(ctx, &native.object_graphs)
@@ -1618,10 +1614,12 @@ fn native_input_ordinal_scan_propagates_caller_work_refusal() {
             panic!("resource refusal required")
         };
         assert_eq!(limit.operation, "catia_native_input_ordinal_visits");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
     });
     crate::test_support::with_work_limit(2, |ctx| {
-        assert!(crate::native::dependency_matches_input(ctx, &dependency, &input)
-            .expect("two ordinal bytes fit caller work"));
+        assert!(
+            crate::native::dependency_matches_input(ctx, &dependency, &input)
+                .expect("two ordinal bytes fit caller work")
+        );
     });
 }

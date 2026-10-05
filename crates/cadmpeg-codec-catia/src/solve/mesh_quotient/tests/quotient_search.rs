@@ -1462,7 +1462,7 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
 #[test]
 fn partial_boundary_orientation_constraints_reject_an_odd_parity_cycle() {
     catia_test_context!(ctx);
-    let mut edge_uses = HashMap::from([
+    let mut edge_uses = std::collections::BTreeMap::from([
         (0, vec![(0, false), (1, false)]),
         (1, vec![(1, false), (2, false)]),
         (2, vec![(2, false), (0, false)]),

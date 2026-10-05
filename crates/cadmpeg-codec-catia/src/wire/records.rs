@@ -105,13 +105,9 @@ pub(crate) fn family_pcurves_from_records(
     family: ConsolidatedFamily,
 ) -> Result<Vec<ConsolidatedPcurve>, CodecError> {
     let mut pcurves = Vec::new();
-    for frame in family_frames_from_records(
-        ctx,
-        records,
-        family,
-        0x20,
-        "catia_consolidated_pcurve_scan",
-    )? {
+    for frame in
+        family_frames_from_records(ctx, records, family, 0x20, "catia_consolidated_pcurve_scan")?
+    {
         if let Some(pcurve) =
             parse_consolidated_pcurve(ctx, data, frame.pos, frame.payload, frame.end)?
         {
@@ -1087,26 +1083,27 @@ fn scan_vertex_rows<'a>(
     bytes: &'a [u8],
 ) -> Result<impl Iterator<Item = (Range<usize>, FinitePoint3)> + 'a, CodecError> {
     let last_complete_start = bytes.len().checked_sub(15);
-let mut skip_until = 0usize;
-Ok(ctx.admit_iter(bytes, "catia_vertex_row_scan")?
-    .enumerate()
-    .filter_map(move |(start, byte)| {
-        if last_complete_start.is_none_or(|last| start > last)
-            || start < skip_until
-            || *byte != 0x05
-            || bytes[start + 1] != 0x08
-            || bytes[start + 2] != 0x01
-        {
-            return None;
-        }
-        let end = start + 15;
-        skip_until = end;
-        let x = f32_le(bytes, start + 3);
-        let y = f32_le(bytes, start + 7);
-        let z = f32_le(bytes, start + 11);
-        FinitePoint3::new(Point3::new(f64::from(x), f64::from(y), f64::from(z)))
-            .map(|point| (start..end, point))
-    }))
+    let mut skip_until = 0usize;
+    Ok(ctx
+        .admit_iter(bytes, "catia_vertex_row_scan")?
+        .enumerate()
+        .filter_map(move |(start, byte)| {
+            if last_complete_start.is_none_or(|last| start > last)
+                || start < skip_until
+                || *byte != 0x05
+                || bytes[start + 1] != 0x08
+                || bytes[start + 2] != 0x01
+            {
+                return None;
+            }
+            let end = start + 15;
+            skip_until = end;
+            let x = f32_le(bytes, start + 3);
+            let y = f32_le(bytes, start + 7);
+            let z = f32_le(bytes, start + 11);
+            FinitePoint3::new(Point3::new(f64::from(x), f64::from(y), f64::from(z)))
+                .map(|point| (start..end, point))
+        }))
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
@@ -1212,17 +1209,23 @@ mod tests {
         // The complete source bytes are admitted once before row parsing.
         crate::test_support::with_work_limit(work, |ctx| {
             let rows = super::scan_vertex_rows(ctx, &bytes)
-                .expect("source bytes fit work limit").collect::<Vec<_>>();
+                .expect("source bytes fit work limit")
+                .collect::<Vec<_>>();
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].0, 16..31);
-            assert_eq!(rows[0].1.get(), cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
+            assert_eq!(
+                rows[0].1.get(),
+                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+            );
         });
         crate::test_support::with_work_limit(work - 1, |ctx| {
             let error = match super::scan_vertex_rows(ctx, &bytes) {
                 Ok(_) => panic!("whole source must be admitted"),
                 Err(error) => error,
             };
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal required") };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("resource refusal required")
+            };
             assert_eq!(limit.operation, "catia_vertex_row_scan");
             assert_eq!(ctx.resource_refusal(), Some(limit));
         });
@@ -1370,16 +1373,19 @@ mod tests {
             super::pcurve_layout(&bytes, payload.start, payload.end).expect("layout");
         let late = lanes[6] + (count - 1) * 8;
         bytes[late..late + 8].copy_from_slice(&f64::NAN.to_le_bytes());
-        crate::test_support::with_work_limit(0, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) =
-                super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
-                    .expect_err("scalar scan needs work")
-            else {
-                panic!("resource refusal")
-            };
-            assert_eq!(limit.operation, "catia_pcurve_scalar_scan");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
+        let refused = crate::test_support::with_work_refusal("catia_pcurve_scalar_scan", |ctx| {
+            let result =
+                super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A);
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            }
+            result
         });
+        assert!(matches!(
+            refused,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_pcurve_scalar_scan"
+        ));
         assert!(crate::test_support::with_service_context(|ctx| {
             super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
         })
@@ -1534,22 +1540,20 @@ mod tests {
         assert_eq!(records[1].class, 0x34);
         assert_eq!(records[1].source_range, spanning_start..bytes.len());
         assert!(records[1].range().is_none());
-        assert!(
-            crate::test_support::with_service_context(|ctx| {
-                Ok::<_, cadmpeg_core::CodecError>(
-                    family_frames_from_records(
-                        ctx,
-                        &records,
-                        ConsolidatedFamily::A,
-                        0x34,
-                        "catia_test_family_frame_scan",
-                    )?
-                    .next()
-                    .is_none(),
-                )
-            })
-            .expect("service frame scan budget")
-        );
+        assert!(crate::test_support::with_service_context(|ctx| {
+            Ok::<_, cadmpeg_core::CodecError>(
+                family_frames_from_records(
+                    ctx,
+                    &records,
+                    ConsolidatedFamily::A,
+                    0x34,
+                    "catia_test_family_frame_scan",
+                )?
+                .next()
+                .is_none(),
+            )
+        })
+        .expect("service frame scan budget"));
     }
 
     #[test]

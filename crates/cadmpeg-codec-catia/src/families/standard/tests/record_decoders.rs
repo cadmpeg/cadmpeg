@@ -1514,7 +1514,7 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[stream],
-            &HashSet::from([100, 501]),
+            &std::collections::BTreeSet::from([100, 501]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -1539,7 +1539,7 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[stream],
-            &HashSet::from([100, 501]),
+            &std::collections::BTreeSet::from([100, 501]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -1569,7 +1569,7 @@ fn standard_freeform_tag_rejects_conflicting_standalone_a8_carriers() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[first],
-            &HashSet::from([100]),
+            &std::collections::BTreeSet::from([100]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -1588,7 +1588,7 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[stream],
-            &HashSet::from([100]),
+            &std::collections::BTreeSet::from([100]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -1606,7 +1606,7 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[a8_freeform_curve_stream()],
-            &HashSet::from([0x1234_5678]),
+            &std::collections::BTreeSet::from([0x1234_5678]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -1638,7 +1638,7 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[first, second],
-            &HashSet::new(),
+            &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -1667,17 +1667,14 @@ fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[stream],
-            &HashSet::new(),
+            &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
     .expect("service resource budget");
 
-    assert_eq!(
-        evidence.edge_owner_faces.get(&300),
-        Some(&HashSet::from([500]))
-    );
+    assert_eq!(evidence.edge_owner_faces.get(&300), Some(&vec![500]));
 }
 
 #[test]
@@ -1687,7 +1684,7 @@ fn standard_object_evidence_rejects_repeated_topology_namespaces() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[stream.clone(), stream],
-            &HashSet::new(),
+            &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -1718,7 +1715,7 @@ fn standard_object_evidence_does_not_join_topology_across_runs() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[stream],
-            &HashSet::new(),
+            &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -1750,7 +1747,7 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
         crate::families::standard::decode::standard_object_evidence_from_streams(
             ctx,
             &[stream],
-            &HashSet::from([501]),
+            &std::collections::BTreeSet::from([501]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -1799,7 +1796,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             &mut edge_faces,
             &supports,
             &records,
-            &HashMap::from([(700, HashSet::from([20, 900]))]),
+            &HashMap::from([(700, vec![20, 900])]),
         )
     })
     .expect("service context admits native edge faces");
@@ -1820,7 +1817,7 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
             &mut ambiguous,
             &supports,
             &repeated_records,
-            &HashMap::from([(700, HashSet::from([20]))]),
+            &HashMap::from([(700, vec![20])]),
         )
     })
     .expect("service context admits ambiguous native edge faces");
@@ -1857,7 +1854,7 @@ fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence(
             &mut edge_faces,
             &supports,
             &records,
-            &HashMap::from([(700, HashSet::from([10]))]),
+            &HashMap::from([(700, vec![10])]),
         )
     })
     .expect("service context admits one owner occurrence");

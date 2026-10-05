@@ -4562,15 +4562,21 @@ fn design_objects(
     entity_records: &[CatiaEntityRecord],
 ) -> Result<Vec<CatiaDesignObject>, CodecError> {
     let definition_value_entities = ctx.collect_hash_set(
-        ctx.admit_iter(entity_records, "catia_design_definition_value_source_visits")?
-            .filter(|entity| entity.definition_value().is_some())
-            .map(|entity| entity.id.as_str()),
+        ctx.admit_iter(
+            entity_records,
+            "catia_design_definition_value_source_visits",
+        )?
+        .filter(|entity| entity.definition_value().is_some())
+        .map(|entity| entity.id.as_str()),
         "catia_design_definition_values",
     )?;
     let definition_chain_value_entities = ctx.collect_hash_set(
-        ctx.admit_iter(entity_records, "catia_design_definition_chain_source_visits")?
-            .filter(|entity| entity.definition_chain_value().is_some())
-            .map(|entity| entity.id.as_str()),
+        ctx.admit_iter(
+            entity_records,
+            "catia_design_definition_chain_source_visits",
+        )?
+        .filter(|entity| entity.definition_chain_value().is_some())
+        .map(|entity| entity.id.as_str()),
         "catia_design_definition_chains",
     )?;
     let mut objects = Vec::new();
@@ -4581,6 +4587,7 @@ fn design_objects(
                 .filter_map(|(index, record)| Some((record.entity_id()?, index))),
             "catia_design_record_indices",
         )?;
+        let terminal_null_entity_id = terminal_null_entity_id(ctx, &graph.records)?;
         let mut fields = Vec::<(u32, Vec<&CatiaObjectRecord>)>::new();
         let mut owner_indices = HashMap::<u32, usize>::new();
         for record in ctx.admit_iter(&graph.records, "catia_native_design_graph_record_visits")? {
@@ -4684,7 +4691,10 @@ fn design_objects(
                         ctx.push_vec(&mut relations, relation, "catia_design_relations")?;
                     }
                 }
-                for reference in ctx.admit_iter(&record.references, "catia_native_design_record_reference_visits")? {
+                for reference in ctx.admit_iter(
+                    &record.references,
+                    "catia_native_design_record_reference_visits",
+                )? {
                     let Some(target_field) = reference.target() else {
                         continue;
                     };
@@ -4714,8 +4724,13 @@ fn design_objects(
                     ctx.push_vec(&mut relations, relation, "catia_design_relations")?;
                 }
             }
-            let parallel_reference_table =
-                design_parallel_reference_table(ctx, &records, graph, &record_indices)?;
+            let parallel_reference_table = design_parallel_reference_table(
+                ctx,
+                &records,
+                graph,
+                &record_indices,
+                terminal_null_entity_id,
+            )?;
             let object = CatiaDesignObject {
                 id,
                 parent: ctx.copy_retained_text(&graph.id, "catia_design_parent")?,
@@ -4748,6 +4763,7 @@ fn design_parallel_reference_table(
     records: &[&CatiaObjectRecord],
     graph: &CatiaObjectGraph,
     record_indices: &HashMap<u32, usize>,
+    terminal_null_entity_id: Option<u32>,
 ) -> Result<Option<CatiaDesignParallelReferenceTable>, CodecError> {
     if records.len() < 2 {
         return Ok(None);
@@ -4787,7 +4803,6 @@ fn design_parallel_reference_table(
         return Ok(None);
     };
     let row_count = first_items.len();
-    let terminal_null_entity_id = terminal_null_entity_id(ctx, record_indices)?;
     if ctx
         .admit_iter(&columns, "catia_native_parallel_reference_column_checks")?
         .any(|(_, references)| references.len() != row_count)
@@ -4795,9 +4810,14 @@ fn design_parallel_reference_table(
         return Ok(None);
     }
     let mut rows = Vec::new();
-    for (row, _) in ctx.admit_iter(*first_items, "catia_native_parallel_reference_rows")?.enumerate() {
+    for (row, _) in ctx
+        .admit_iter(*first_items, "catia_native_parallel_reference_rows")?
+        .enumerate()
+    {
         let mut cells = Vec::new();
-        for (_, references) in ctx.admit_iter(&columns, "catia_native_parallel_reference_row_cells")? {
+        for (_, references) in
+            ctx.admit_iter(&columns, "catia_native_parallel_reference_row_cells")?
+        {
             let ListItem::Reference {
                 value: target_entity_id,
                 offset: payload_offset,
@@ -4871,9 +4891,8 @@ fn design_parallel_reference_table(
                 }
             }
             if matches {
-                matching_design_object = Some(
-                    ctx.copy_retained_text(member, "catia_design_matching_object")?,
-                );
+                matching_design_object =
+                    Some(ctx.copy_retained_text(member, "catia_design_matching_object")?);
             }
         }
         let reference_row = CatiaDesignReferenceRow {
@@ -4936,7 +4955,11 @@ fn visit_payload_references(
                     .admit_iter(items, "catia_native_payload_reference_items")?
                     .enumerate()
                 {
-                    if let ListItem::Reference { value, offset: item_offset } = item {
+                    if let ListItem::Reference {
+                        value,
+                        offset: item_offset,
+                    } = item
+                    {
                         visit(
                             *value,
                             *item_offset,
@@ -4984,15 +5007,17 @@ fn resolved_payload_references(
     Ok(references)
 }
 
+/// Returns the id after a graph's largest record entity id: the graph's
+/// terminal null.
 fn terminal_null_entity_id(
     ctx: &DecodeContext<'_>,
-    record_indices: &HashMap<u32, usize>,
+    records: &[CatiaObjectRecord],
 ) -> Result<Option<u32>, CodecError> {
-    let maximum = ctx
-        .admit_iter(record_indices, "catia_native_terminal_null_entity_id_scan")?
-        .map(|(entity_id, _)| *entity_id)
-        .max();
-    Ok(maximum.and_then(|entity_id| entity_id.checked_add(1)))
+    Ok(ctx
+        .admit_iter(records, "catia_native_terminal_null_entity_id_scan")?
+        .filter_map(CatiaObjectRecord::entity_id)
+        .max()
+        .and_then(|entity_id| entity_id.checked_add(1)))
 }
 
 fn resolved_storage_link(
@@ -5058,20 +5083,25 @@ fn entity_value_schema_selections(
         return Ok(Vec::new());
     };
     let selector_indices = ctx.collect_vec(
-        ctx.admit_iter(fields, "catia_native_value_selector_source_visits")?.enumerate().filter_map(|(index, field)| {
-            let value_block::ValueField::SchemaSelector { ordinal, .. } = field else {
-                return None;
-            };
-            usize::try_from(*ordinal)
-                .ok()
-                .filter(|ordinal| *ordinal < catalog.entries.len())
-                .map(|_| index)
-        }),
+        ctx.admit_iter(fields, "catia_native_value_selector_source_visits")?
+            .enumerate()
+            .filter_map(|(index, field)| {
+                let value_block::ValueField::SchemaSelector { ordinal, .. } = field else {
+                    return None;
+                };
+                usize::try_from(*ordinal)
+                    .ok()
+                    .filter(|ordinal| *ordinal < catalog.entries.len())
+                    .map(|_| index)
+            }),
         "catia_native_value_selector_indices",
     )?;
     let mut selections = Vec::new();
     for (rank, index) in ctx
-        .admit_iter(&selector_indices, "catia_native_value_selector_index_visits")?
+        .admit_iter(
+            &selector_indices,
+            "catia_native_value_selector_index_visits",
+        )?
         .enumerate()
     {
         let value_block::ValueField::SchemaSelector { ordinal, offset } = &fields[*index] else {
@@ -5093,11 +5123,12 @@ fn entity_value_schema_selections(
         for packet in ctx
             .admit_iter(packets, "catia_native_selected_packet_visits")?
             .filter(|packet| {
-            packet.byte_range().is_some_and(|range| {
-                value_start_offset.is_some_and(|start| range.start >= start)
-                    && value_end_offset.is_none_or(|end| range.end <= end)
+                packet.byte_range().is_some_and(|range| {
+                    value_start_offset.is_some_and(|start| range.start >= start)
+                        && value_end_offset.is_none_or(|end| range.end <= end)
+                })
             })
-        }) {
+        {
             ctx.push_vec(
                 &mut selected_packets,
                 packet.copy_charged(ctx)?,
@@ -5448,10 +5479,7 @@ fn relation_type_signature_charged(
         };
         if digits.is_empty()
             || !ctx
-                .admit_iter(
-                    digits.as_bytes(),
-                    "catia_native_signature_parameter_digits",
-                )?
+                .admit_iter(digits.as_bytes(), "catia_native_signature_parameter_digits")?
                 .all(u8::is_ascii_digit)
             || input_type.is_empty()
         {
@@ -5459,8 +5487,7 @@ fn relation_type_signature_charged(
         }
         Ok(Some(CatiaRelationTypeInput {
             parameter: ctx.copy_retained_text(parameter, "catia_native_signature_parameter")?,
-            input_type: ctx
-                .copy_retained_text(input_type, "catia_native_signature_input_type")?,
+            input_type: ctx.copy_retained_text(input_type, "catia_native_signature_input_type")?,
         }))
     };
     if !input_clause.is_empty() {
@@ -5481,7 +5508,7 @@ fn relation_type_signature_charged(
             }
         }
         let Some(input) = parse_clause(&input_clause[clause_start..])? else {
-                return Ok(None);
+            return Ok(None);
         };
         ctx.push_vec(&mut inputs, input, "catia_native_signature_inputs")?;
     }
@@ -5498,7 +5525,10 @@ fn relation_type_signature_charged(
         .enumerate()
     {
         if ctx
-            .admit_iter(&inputs[..index], "catia_native_signature_prior_input_checks")?
+            .admit_iter(
+                &inputs[..index],
+                "catia_native_signature_prior_input_checks",
+            )?
             .any(|prior| prior.parameter == input.parameter)
         {
             return Ok(None);
@@ -5658,10 +5688,7 @@ fn entity_incidences(
         .filter(|record| record.parent == graph_id)
     {
         for reference in ctx
-            .admit_iter(
-                &record.references,
-                "catia_native_incidence_references",
-            )?
+            .admit_iter(&record.references, "catia_native_incidence_references")?
             .filter(|reference| reference.entity_id() == entity_id)
         {
             let incidence = CatiaEntityIncomingReference {
@@ -6172,22 +6199,13 @@ fn object_production(
         entity.entity_id,
         object,
         &entity.value_schema_selections,
-        references.entities,
-        references.classes,
-        references.terminal_nulls,
+        references,
     )? {
         return Ok(Some(
             CatiaEntityObjectProduction::SchemaConfigurationRecord(record),
         ));
     }
-    if let Some(link) = schema_configuration_row_link(
-        ctx,
-        entity.entity_id,
-        object,
-        references.entities,
-        references.classes,
-        references.terminal_nulls,
-    )? {
+    if let Some(link) = schema_configuration_row_link(ctx, entity.entity_id, object, references)? {
         return Ok(Some(
             CatiaEntityObjectProduction::SchemaConfigurationRowLink(link),
         ));
@@ -6231,9 +6249,7 @@ fn relation_program_instance(
                         ctx,
                         &object.parent,
                         context_entity_id,
-                        entity_references.entities,
-                        entity_references.classes,
-                        entity_references.terminal_nulls,
+                        entity_references,
                     )?,
                 },
                 program_entity_id,
@@ -6251,9 +6267,7 @@ fn relation_program_instance(
                         ctx,
                         &object.parent,
                         trailing_entity_id,
-                        entity_references.entities,
-                        entity_references.classes,
-                        entity_references.terminal_nulls,
+                        entity_references,
                     )?,
                 },
                 program_entity_id,
@@ -6262,11 +6276,13 @@ fn relation_program_instance(
         } else {
             return Ok(None);
         };
-    let selected_expression = ctx
-        .admit_iter(relation_expressions, "catia_native_program_lookup")?
-        .find_map(|((graph, id), expression)| {
-            (graph == &object.parent && *id == program_entity_id).then_some(expression)
-        });
+    let selected_expression = graph_identity_row(
+        ctx,
+        relation_expressions,
+        &object.parent,
+        program_entity_id,
+        "catia_native_program_lookup",
+    )?;
     let parameter_dependencies = if let Some(expression) = selected_expression {
         relation_parameter_dependencies(
             ctx,
@@ -6285,18 +6301,14 @@ fn relation_program_instance(
         None
     };
     let mut reference_incidences = Vec::new();
-    for field in ctx.admit_iter(&object.payload.fields, "catia_native_program_reference_field_visits")? {
+    for field in ctx.admit_iter(
+        &object.payload.fields,
+        "catia_native_program_reference_field_visits",
+    )? {
         let PayloadField::Reference { value, offset } = field else {
             continue;
         };
-        let reference = entity_reference(
-            ctx,
-            &object.parent,
-            *value,
-            entity_references.entities,
-            entity_references.classes,
-            entity_references.terminal_nulls,
-        )?;
+        let reference = entity_reference(ctx, &object.parent, *value, entity_references)?;
         ctx.push_vec(
             &mut reference_incidences,
             CatiaPayloadEntityReference {
@@ -6312,17 +6324,13 @@ fn relation_program_instance(
             ctx,
             &object.parent,
             program_entity_id,
-            entity_references.entities,
-            entity_references.classes,
-            entity_references.terminal_nulls,
+            entity_references,
         )?,
         repeated_entity: entity_reference(
             ctx,
             &object.parent,
             repeated_reference_entity_id,
-            entity_references.entities,
-            entity_references.classes,
-            entity_references.terminal_nulls,
+            entity_references,
         )?,
         reference_incidences,
         relation_expression: selected_expression
@@ -6339,25 +6347,34 @@ fn entity_reference(
     ctx: &DecodeContext<'_>,
     graph_id: &str,
     entity_id: u32,
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
+    references: &CatiaEntityReferenceIndex<'_>,
 ) -> Result<CatiaEntityReference, CodecError> {
-    if terminal_nulls.get(graph_id).copied() == Some(entity_id) {
+    let terminal_null = ctx
+        .get_hash_map(
+            references.maxima,
+            graph_id,
+            "catia_native_reference_terminal",
+        )?
+        .and_then(|maximum| maximum.checked_add(1));
+    if terminal_null == Some(entity_id) {
         return Ok(CatiaEntityReference::Null { entity_id });
     }
-    let entity = ctx
-        .admit_iter(entities, "catia_native_reference_lookup")?
-        .find_map(|((graph, id), entity)| {
-        (graph == graph_id && *id == entity_id).then_some(entity)
-    });
+    let entity = graph_identity_row(
+        ctx,
+        references.entities,
+        graph_id,
+        entity_id,
+        "catia_native_reference_lookup",
+    )?;
     Ok(match entity {
         Some(entity) => {
-            let class_name = ctx
-                .admit_iter(entity_classes, "catia_native_reference_class_lookup")?
-                .find_map(|((graph, id), class_name)| {
-                (graph == graph_id && *id == entity_id).then_some(class_name)
-            });
+            let class_name = graph_identity_row(
+                ctx,
+                references.classes,
+                graph_id,
+                entity_id,
+                "catia_native_reference_class_lookup",
+            )?;
             CatiaEntityReference::Resolved {
                 entity_id,
                 entity: ctx.copy_retained_text(entity, "catia_native_reference_entity")?,
@@ -6382,17 +6399,13 @@ fn reference_signature(
         ctx,
         graph_id,
         production.first_reference(),
-        entity_references.entities,
-        entity_references.classes,
-        entity_references.terminal_nulls,
+        entity_references,
     )?;
     let second_entity = entity_reference(
         ctx,
         graph_id,
         production.second_reference(),
-        entity_references.entities,
-        entity_references.classes,
-        entity_references.terminal_nulls,
+        entity_references,
     )?;
     Ok(CatiaReferenceSignature {
         production,
@@ -6408,7 +6421,10 @@ fn derive_reference_signature_cohorts(
     let mut cohorts = Vec::<CatiaReferenceSignatureCohort>::new();
     let mut cohort_by_pair = HashMap::<(&str, u32), usize>::new();
     let mut next_ordinal_by_graph = HashMap::<&str, u64>::new();
-    for entity in ctx.admit_iter(entity_records, "catia_native_reference_cohort_entity_visits")? {
+    for entity in ctx.admit_iter(
+        entity_records,
+        "catia_native_reference_cohort_entity_visits",
+    )? {
         let Some(signature) = &entity.reference_signature else {
             continue;
         };
@@ -6425,25 +6441,24 @@ fn derive_reference_signature_cohorts(
             )?;
             continue;
         }
-        let ordinal =
-            if let Some(next) = ctx.get_mut_hash_map(
+        let ordinal = if let Some(next) = ctx.get_mut_hash_map(
+            &mut next_ordinal_by_graph,
+            entity.object_graph.as_str(),
+            "catia_native_cohort_ordinal_lookup",
+        )? {
+            *next = next.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_native_cohort_ordinal", u64::MAX, u64::MAX)
+            })?;
+            *next
+        } else {
+            ctx.insert_hash_map(
                 &mut next_ordinal_by_graph,
                 entity.object_graph.as_str(),
-                "catia_native_cohort_ordinal_lookup",
-            )? {
-                *next = next.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("catia_native_cohort_ordinal", u64::MAX, u64::MAX)
-                })?;
-                *next
-            } else {
-                ctx.insert_hash_map(
-                    &mut next_ordinal_by_graph,
-                    entity.object_graph.as_str(),
-                    0,
-                    "catia_native_cohort_ordinals",
-                )?;
-                0
-            };
+                0,
+                "catia_native_cohort_ordinals",
+            )?;
+            0
+        };
         let Some((namespace, graph_key)) = entity.object_graph.split_once('#') else {
             continue;
         };
@@ -6547,9 +6562,7 @@ fn schema_configuration_record(
     entity_id: u32,
     object: &CatiaObjectRecord,
     value_schema_selections: &[CatiaEntityValueSchemaSelection],
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
+    references: &CatiaEntityReferenceIndex<'_>,
 ) -> Result<Option<CatiaSchemaConfigurationRecord>, CodecError> {
     if object.entity_id() != Some(entity_id)
         || object.lead != 0x12
@@ -6588,14 +6601,7 @@ fn schema_configuration_record(
         schema_name: ctx.copy_retained_text(&selection.name, "catia_native_configuration_name")?,
         entity_reference: CatiaPayloadEntityReference {
             payload_offset: u64_from_index(*entity_offset),
-            reference: entity_reference(
-                ctx,
-                &object.parent,
-                *referenced_entity_id,
-                entities,
-                entity_classes,
-                terminal_nulls,
-            )?,
+            reference: entity_reference(ctx, &object.parent, *referenced_entity_id, references)?,
         },
     }))
 }
@@ -6604,9 +6610,7 @@ fn schema_configuration_row_link(
     ctx: &DecodeContext<'_>,
     entity_id: u32,
     object: &CatiaObjectRecord,
-    entities: &HashMap<(String, u32), String>,
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &CatiaTerminalNullByGraphIndex,
+    references: &CatiaEntityReferenceIndex<'_>,
 ) -> Result<Option<CatiaSchemaConfigurationRowLink>, CodecError> {
     if object.entity_id() != Some(entity_id)
         || object.lead != 0x12
@@ -6627,23 +6631,9 @@ fn schema_configuration_row_link(
         return Ok(None);
     };
     Ok(Some(CatiaSchemaConfigurationRowLink {
-        class_reference: entity_reference(
-            ctx,
-            &object.parent,
-            class_entity_id,
-            entities,
-            entity_classes,
-            terminal_nulls,
-        )?,
+        class_reference: entity_reference(ctx, &object.parent, class_entity_id, references)?,
         successor_payload_offset: u64_from_index(*successor_offset),
-        successor: entity_reference(
-            ctx,
-            &object.parent,
-            *successor_entity_id,
-            entities,
-            entity_classes,
-            terminal_nulls,
-        )?,
+        successor: entity_reference(ctx, &object.parent, *successor_entity_id, references)?,
     }))
 }
 
@@ -6785,9 +6775,7 @@ fn formula_relation(
                 ctx,
                 &object.parent,
                 *expression_entity_id,
-                entity_references.entities,
-                entity_references.classes,
-                entity_references.terminal_nulls,
+                entity_references,
             )?,
         },
         output_entity: CatiaPayloadEntityReference {
@@ -6798,14 +6786,7 @@ fn formula_relation(
                         entity_id: *parameter_entity_id,
                     }
                 } else {
-                    entity_reference(
-                        ctx,
-                        &object.parent,
-                        *parameter_entity_id,
-                        entity_references.entities,
-                        entity_references.classes,
-                        entity_references.terminal_nulls,
-                    )?
+                    entity_reference(ctx, &object.parent, *parameter_entity_id, entity_references)?
                 }
             },
         },
@@ -6819,36 +6800,82 @@ struct CatiaRelationExpressionEntity {
     source: String,
     signature: Option<CatiaRelationTypeSignature>,
 }
-type CatiaRelationExpressionEntityIndex = HashMap<(String, u32), CatiaRelationExpressionEntity>;
-type CatiaEntityByGraphIdentityIndex = HashMap<(String, u32), String>;
-type CatiaEntityClassByGraphIdentityIndex = HashMap<(String, u32), String>;
-type CatiaTerminalNullByGraphIndex = HashMap<String, u32>;
+/// Rows keyed by object graph and then by entity id within that graph, so a
+/// lookup hashes the borrowed graph text once and allocates nothing.
+type CatiaGraphIdentityIndex<K, V> = HashMap<K, HashMap<u32, V>>;
+type CatiaRelationExpressionEntityIndex =
+    CatiaGraphIdentityIndex<String, CatiaRelationExpressionEntity>;
+type CatiaEntityByGraphIdentityIndex = CatiaGraphIdentityIndex<String, String>;
+type CatiaEntityClassByGraphIdentityIndex<'g> = CatiaGraphIdentityIndex<&'g str, &'g str>;
+/// The largest entity id of each object graph. The id after it is the graph's
+/// terminal null.
+type CatiaMaximumEntityByGraphIndex = HashMap<String, u32>;
 type CatiaParameterBindingIndex = HashMap<String, HashMap<String, Vec<CatiaEntityReference>>>;
 
 struct CatiaEntityReferenceIndex<'a> {
     entities: &'a CatiaEntityByGraphIdentityIndex,
-    classes: &'a CatiaEntityClassByGraphIdentityIndex,
-    terminal_nulls: &'a CatiaTerminalNullByGraphIndex,
+    classes: &'a CatiaEntityClassByGraphIdentityIndex<'a>,
+    maxima: &'a CatiaMaximumEntityByGraphIndex,
 }
 
-fn entity_class_index(
+/// Looks up one entity row of a graph-identity index.
+fn graph_identity_row<'v, K: std::borrow::Borrow<str> + Eq + std::hash::Hash, V>(
     ctx: &DecodeContext<'_>,
-    graphs: &[CatiaObjectGraph],
-) -> Result<CatiaEntityClassByGraphIdentityIndex, CodecError> {
+    index: &'v CatiaGraphIdentityIndex<K, V>,
+    graph: &str,
+    entity_id: u32,
+    operation: &'static str,
+) -> Result<Option<&'v V>, CodecError> {
+    let Some(rows) = ctx.get_hash_map(index, graph, operation)? else {
+        return Ok(None);
+    };
+    ctx.get_hash_map(rows, &entity_id, operation)
+}
+
+/// Inserts one entity row of a graph-identity index, building the graph key
+/// only when the graph has no rows yet.
+fn insert_graph_identity_row<K: std::borrow::Borrow<str> + Eq + std::hash::Hash + DecodeCost, V>(
+    ctx: &DecodeContext<'_>,
+    index: &mut CatiaGraphIdentityIndex<K, V>,
+    graph: &str,
+    graph_key: impl FnOnce() -> Result<K, CodecError>,
+    entity_id: u32,
+    value: V,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !ctx.contains_key_hash_map(index, graph, operation)? {
+        ctx.insert_hash_map(index, graph_key()?, HashMap::new(), operation)?;
+    }
+    let Some(rows) = ctx.get_mut_hash_map(index, graph, operation)? else {
+        return Err(CodecError::malformed(
+            "CATIA graph identity rows disappeared",
+        ));
+    };
+    // discarded-value: a later row for the same entity replaces the earlier one.
+    let _ = ctx.insert_hash_map(rows, entity_id, value, operation)?;
+    Ok(())
+}
+
+fn entity_class_index<'g>(
+    ctx: &DecodeContext<'_>,
+    graphs: &'g [CatiaObjectGraph],
+) -> Result<CatiaEntityClassByGraphIdentityIndex<'g>, CodecError> {
     let mut classes = HashMap::new();
     for graph in ctx.admit_iter(graphs, "catia_native_class_graph_visits")? {
         for record in ctx.admit_iter(&graph.records, "catia_native_class_record_visits")? {
-        let (Some(entity_id), Some(class_name)) = (record.entity_id(), record.class_name()) else {
-            continue;
-        };
-        let graph = ctx.copy_retained_text(&record.parent, "catia_native_class_graph")?;
-        let class_name = ctx.copy_retained_text(class_name, "catia_native_class_name")?;
-        ctx.insert_hash_map(
-            &mut classes,
-            (graph, entity_id),
-            class_name,
-            "catia_native_class_index",
-        )?;
+            let (Some(entity_id), Some(class_name)) = (record.entity_id(), record.class_name())
+            else {
+                continue;
+            };
+            insert_graph_identity_row(
+                ctx,
+                &mut classes,
+                &record.parent,
+                || Ok(record.parent.as_str()),
+                entity_id,
+                class_name,
+                "catia_native_class_index",
+            )?;
         }
     }
     Ok(classes)
@@ -6857,13 +6884,13 @@ fn entity_class_index(
 fn semantic_entity_indices(
     ctx: &DecodeContext<'_>,
     entities: &[CatiaEntityRecord],
-    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
+    entity_classes: &CatiaEntityClassByGraphIdentityIndex<'_>,
 ) -> Result<
     (
         CatiaRelationExpressionIndex,
         CatiaRelationExpressionEntityIndex,
         CatiaEntityByGraphIdentityIndex,
-        CatiaTerminalNullByGraphIndex,
+        CatiaMaximumEntityByGraphIndex,
         CatiaParameterBindingIndex,
     ),
     CodecError,
@@ -6887,8 +6914,6 @@ fn semantic_entity_indices(
                 source,
                 "catia_native_expression_index",
             )?;
-            let graph =
-                ctx.copy_retained_text(&entity.object_graph, "catia_native_expression_graph")?;
             let row = CatiaRelationExpressionEntity {
                 entity: ctx.copy_retained_text(&entity.id, "catia_native_expression_entity")?,
                 source: ctx.copy_retained_text(
@@ -6897,18 +6922,23 @@ fn semantic_entity_indices(
                 )?,
                 signature: expression.signature_charged(ctx)?,
             };
-            ctx.insert_hash_map(
+            insert_graph_identity_row(
+                ctx,
                 &mut relation_expression_entities,
-                (graph, entity.entity_id),
+                &entity.object_graph,
+                || ctx.copy_retained_text(&entity.object_graph, "catia_native_expression_graph"),
+                entity.entity_id,
                 row,
                 "catia_native_expression_entity_index",
             )?;
         }
-        let graph = ctx.copy_retained_text(&entity.object_graph, "catia_native_entity_graph")?;
         let id = ctx.copy_retained_text(&entity.id, "catia_native_entity_id")?;
-        ctx.insert_hash_map(
+        insert_graph_identity_row(
+            ctx,
             &mut entities_by_graph_identity,
-            (graph, entity.entity_id),
+            &entity.object_graph,
+            || ctx.copy_retained_text(&entity.object_graph, "catia_native_entity_graph"),
+            entity.entity_id,
             id,
             "catia_native_entity_index",
         )?;
@@ -6945,7 +6975,8 @@ fn semantic_entity_indices(
             &mut parameter_bindings,
             entity.object_graph.as_str(),
             "catia_native_binding_graph_lookup",
-        )? else {
+        )?
+        else {
             return Err(CodecError::malformed(
                 "CATIA parameter-binding graph disappeared",
             ));
@@ -6959,14 +6990,17 @@ fn semantic_entity_indices(
             bindings,
             parameter.binding.value.as_str(),
             "catia_native_binding_symbol_lookup",
-        )? else {
+        )?
+        else {
             return Err(CodecError::malformed("CATIA parameter binding disappeared"));
         };
-        let class_name = ctx
-            .admit_iter(entity_classes, "catia_native_binding_class_lookup")?
-            .find_map(|((graph, id), class_name)| {
-            (graph == &entity.object_graph && *id == entity.entity_id).then_some(class_name)
-        });
+        let class_name = graph_identity_row(
+            ctx,
+            entity_classes,
+            &entity.object_graph,
+            entity.entity_id,
+            "catia_native_binding_class_lookup",
+        )?;
         let reference = CatiaEntityReference::Resolved {
             entity_id: entity.entity_id,
             entity: ctx.copy_retained_text(&entity.id, "catia_native_binding_entity")?,
@@ -6976,22 +7010,11 @@ fn semantic_entity_indices(
         };
         ctx.push_vec(references, reference, "catia_native_binding_references")?;
     }
-    let mut terminal_nulls = HashMap::new();
-    for (graph, maximum) in maxima {
-        if let Some(identity) = maximum.checked_add(1) {
-            ctx.insert_hash_map(
-                &mut terminal_nulls,
-                graph,
-                identity,
-                "catia_native_terminal_nulls",
-            )?;
-        }
-    }
     Ok((
         relation_expressions,
         relation_expression_entities,
         entities_by_graph_identity,
-        terminal_nulls,
+        maxima,
         parameter_bindings,
     ))
 }
@@ -7044,9 +7067,10 @@ pub(crate) fn dependency_matches_input(
     let Some(ordinal) = suffix.strip_prefix('/') else {
         return Ok(false);
     };
-    Ok(!ordinal.is_empty() && ctx
-        .admit_iter(ordinal.as_bytes(), "catia_native_input_ordinal_visits")?
-        .all(u8::is_ascii_digit))
+    Ok(!ordinal.is_empty()
+        && ctx
+            .admit_iter(ordinal.as_bytes(), "catia_native_input_ordinal_visits")?
+            .all(u8::is_ascii_digit))
 }
 
 fn resolved_relation_program_inputs(
@@ -7062,9 +7086,7 @@ fn resolved_relation_program_inputs(
         .map(u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_native_input_matching", u64::MAX, u64::MAX))?;
     ctx.charge_work(work, "catia_native_input_matching")?;
-    for dependency in
-        ctx.admit_iter(dependencies, "catia_native_input_dependency_checks")?
-    {
+    for dependency in ctx.admit_iter(dependencies, "catia_native_input_dependency_checks")? {
         let mut matching = 0usize;
         for input in ctx.admit_iter(&signature.inputs, "catia_native_input_signature_checks")? {
             if dependency_matches_input(ctx, dependency, input)? {
@@ -7080,8 +7102,8 @@ fn resolved_relation_program_inputs(
     for input in ctx.admit_iter(&signature.inputs, "catia_native_input_signature_visits")? {
         let mut selected = None::<&CatiaEntityReference>;
         let mut occurrence_count = 0usize;
-        for dependency in ctx
-            .admit_iter(dependencies, "catia_native_input_candidate_dependencies")?
+        for dependency in
+            ctx.admit_iter(dependencies, "catia_native_input_candidate_dependencies")?
         {
             if !dependency_matches_input(ctx, dependency, input)? {
                 continue;
@@ -8272,9 +8294,7 @@ fn consolidated_circles(
     let mut circles = Vec::new();
     for (index, circle) in ctx
         .admit_iter(records, "catia_b2_family_record_scan")?
-        .filter_map(|record| {
-            crate::families::b2::records::b2_circle_from_record(bytes, record)
-        })
+        .filter_map(|record| crate::families::b2::records::b2_circle_from_record(bytes, record))
         .enumerate()
     {
         let value = CatiaConsolidatedCircle {
@@ -8323,236 +8343,249 @@ fn legacy_entity_runs(
             .into_iter()
             .enumerate()
             .map(|(index, run)| -> Result<_, CodecError> {
-        let id = ctx.format_retained(
-            format_args!("catia:legacy:entity-run#{index:08}"),
-            "catia_native_legacy_run_id",
-        )?;
-        let byte_offset = run.first_identity.offset;
-        let identities = ctx.collect_vec(
-            run.identities(ctx)?.map(|identity| CatiaLegacyEntityIdentity {
-                byte_offset: u64_from_index(identity.offset),
-                entity_id: identity.entity_id,
-                lead: identity.lead,
-            }),
-            "catia_native_legacy_identities",
-        )?;
-        let schema_program = run
-            .schema_program
-            .map(|program| -> Result<_, CodecError> {
-                Ok(CatiaLegacySchemaProgram {
-                    byte_offset: u64_from_index(program.offset),
-                    boundary_byte_offset: u64_from_index(program.boundary_offset),
-                    boundary: match program.boundary {
-                        legacy_entity::LegacySchemaProgramBoundary::VendorFooter => {
-                            CatiaLegacySchemaProgramBoundary::VendorFooter
-                        }
-                        legacy_entity::LegacySchemaProgramBoundary::StreamDirectory => {
-                            CatiaLegacySchemaProgramBoundary::StreamDirectory
-                        }
-                    },
-                    data: program.bytes,
-                    identifiers: ctx.collect_vec(
-                        program.identifiers.into_iter().map(|identifier| {
-                            CatiaLegacySchemaIdentifier {
-                                byte_offset: u64_from_index(identifier.offset),
-                                value: identifier.value,
+                let id = ctx.format_retained(
+                    format_args!("catia:legacy:entity-run#{index:08}"),
+                    "catia_native_legacy_run_id",
+                )?;
+                let byte_offset = run.first_identity.offset;
+                let identities = ctx.collect_vec(
+                    run.identities(ctx)?
+                        .map(|identity| CatiaLegacyEntityIdentity {
+                            byte_offset: u64_from_index(identity.offset),
+                            entity_id: identity.entity_id,
+                            lead: identity.lead,
+                        }),
+                    "catia_native_legacy_identities",
+                )?;
+                let schema_program = run
+                    .schema_program
+                    .map(|program| -> Result<_, CodecError> {
+                        Ok(CatiaLegacySchemaProgram {
+                            byte_offset: u64_from_index(program.offset),
+                            boundary_byte_offset: u64_from_index(program.boundary_offset),
+                            boundary: match program.boundary {
+                                legacy_entity::LegacySchemaProgramBoundary::VendorFooter => {
+                                    CatiaLegacySchemaProgramBoundary::VendorFooter
+                                }
+                                legacy_entity::LegacySchemaProgramBoundary::StreamDirectory => {
+                                    CatiaLegacySchemaProgramBoundary::StreamDirectory
+                                }
+                            },
+                            data: program.bytes,
+                            identifiers: ctx.collect_vec(
+                                program.identifiers.into_iter().map(|identifier| {
+                                    CatiaLegacySchemaIdentifier {
+                                        byte_offset: u64_from_index(identifier.offset),
+                                        value: identifier.value,
+                                    }
+                                }),
+                                "catia_native_legacy_schema_identifiers",
+                            )?,
+                        })
+                    })
+                    .transpose()?;
+                let role_selectors = ctx.collect_vec(
+                    run.role_selectors.into_iter().map(legacy_role_selector),
+                    "catia_native_legacy_roles",
+                )?;
+                let text_fields = ctx.collect_vec(
+                    run.text_fields
+                        .into_iter()
+                        .map(|field| CatiaLegacyTextField {
+                            byte_offset: u64_from_index(field.offset),
+                            entity_id: field.entity_id,
+                            encoding: match field.encoding {
+                                legacy_entity::LegacyTextEncoding::U8InclusiveLength => {
+                                    CatiaLegacyTextEncoding::U8InclusiveLength
+                                }
+                                legacy_entity::LegacyTextEncoding::ZeroU32Length => {
+                                    CatiaLegacyTextEncoding::ZeroU32Length
+                                }
+                                legacy_entity::LegacyTextEncoding::U8InclusiveLengthE3RoleTail => {
+                                    CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
+                                }
+                            },
+                            role: field.role.map(legacy_role_selector),
+                            value: field.value,
+                        }),
+                    "catia_native_legacy_text_fields",
+                )?;
+                let relations = ctx.try_collect_vec(
+                    run.relations
+                        .into_iter()
+                        .map(|relation| -> Result<_, CodecError> {
+                            let (inputs, output, result_type) =
+                                relation.signature.into_parts(ctx)?;
+                            let parameter = |parameter: legacy_entity::LegacyRelationParameter| {
+                                CatiaLegacyRelationParameter {
+                                    parameter: parameter.parameter,
+                                    value_type: parameter.value_type,
+                                }
+                            };
+                            Ok(CatiaLegacyRelation {
+                                entity_id: relation.entity_id,
+                                body_selector: relation.body_selector,
+                                parameter_selector: relation.parameter_selector,
+                                parameter_entity_id: relation.parameter_entity_id,
+                                expression_offset: u64_from_index(relation.expression_offset),
+                                expression: relation.expression,
+                                signature_offset: u64_from_index(relation.signature_offset),
+                                type_signature: relation.type_signature,
+                                inputs: ctx.collect_vec(
+                                    inputs.into_iter().map(parameter),
+                                    "catia_native_legacy_relation_inputs",
+                                )?,
+                                output: output.map(parameter),
+                                result_type,
+                            })
+                        }),
+                    "catia_native_legacy_relations",
+                )?;
+                let scalar_values = ctx.try_collect_vec(
+                    run.scalar_values
+                        .into_iter()
+                        .map(|value| -> Result<_, CodecError> {
+                            Ok(CatiaLegacyScalarValue {
+                                id: ctx.format_retained(
+                                    format_args!(
+                                        "catia:legacy:scalar#{index:08}-{:016}",
+                                        value.offset
+                                    ),
+                                    "catia_native_legacy_scalar_id",
+                                )?,
+                                byte_offset: u64_from_index(value.offset),
+                                entity_id: value.entity_id,
+                                encoding: match value.encoding {
+                                    legacy_entity::LegacyScalarEncoding::Named84 => {
+                                        CatiaLegacyScalarEncoding::Named84
+                                    }
+                                    legacy_entity::LegacyScalarEncoding::Standalone85 => {
+                                        CatiaLegacyScalarEncoding::Standalone85
+                                    }
+                                },
+                                name_field: value.name_offset.map(u64_from_index),
+                                name: value.name,
+                                evaluation: match value.evaluation {
+                                    legacy_entity::LegacyScalarEvaluation::Value(bits) => {
+                                        CatiaLegacyScalarEvaluation::Value { bits }
+                                    }
+                                    legacy_entity::LegacyScalarEvaluation::Unset => {
+                                        CatiaLegacyScalarEvaluation::Unset
+                                    }
+                                },
+                            })
+                        }),
+                    "catia_native_legacy_scalars",
+                )?;
+                let string_values = ctx.try_collect_vec(
+                    run.string_values
+                        .into_iter()
+                        .map(|value| -> Result<_, CodecError> {
+                            Ok(CatiaLegacyStringValue {
+                                id: ctx.format_retained(
+                                    format_args!(
+                                        "catia:legacy:string#{index:08}-{:016}",
+                                        value.offset
+                                    ),
+                                    "catia_native_legacy_string_id",
+                                )?,
+                                byte_offset: u64_from_index(value.offset),
+                                entity_id: value.entity_id,
+                                name_field: value.name_offset.map(u64_from_index),
+                                name: value.name,
+                                value: value.value,
+                            })
+                        }),
+                    "catia_native_legacy_strings",
+                )?;
+                let integer_values = ctx.try_collect_vec(
+                    run.integer_values
+                        .into_iter()
+                        .map(|value| -> Result<_, CodecError> {
+                            Ok(CatiaLegacyIntegerValue {
+                                id: ctx.format_retained(
+                                    format_args!(
+                                        "catia:legacy:integer#{index:08}-{:016}",
+                                        value.offset
+                                    ),
+                                    "catia_native_legacy_integer_id",
+                                )?,
+                                byte_offset: u64_from_index(value.offset),
+                                entity_id: value.entity_id,
+                                encoding: match value.encoding {
+                                    legacy_entity::LegacyIntegerEncoding::Inline => {
+                                        CatiaLegacyIntegerEncoding::Inline
+                                    }
+                                    legacy_entity::LegacyIntegerEncoding::WideI32 => {
+                                        CatiaLegacyIntegerEncoding::WideI32
+                                    }
+                                },
+                                name_field: value.name_offset.map(u64_from_index),
+                                name: value.name,
+                                value: value.value,
+                            })
+                        }),
+                    "catia_native_legacy_integers",
+                )?;
+                let row = CatiaLegacyEntityRun {
+                    id,
+                    byte_offset: u64_from_index(byte_offset),
+                    byte_len: u64_from_index(run.catalog_offset - byte_offset),
+                    catalog_offset: u64_from_index(run.catalog_offset),
+                    schema_program,
+                    outer_container: None,
+                    identities,
+                    role_selectors,
+                    text_fields,
+                    schema_fields: ctx.collect_vec(
+                        run.schema_fields
+                            .into_iter()
+                            .map(|field| CatiaLegacySchemaField {
+                                byte_offset: u64_from_index(field.offset),
+                                entity_id: field.entity_id,
+                                role_byte_offset: u64_from_index(field.role_offset),
+                                boundary_role_byte_offset: u64_from_index(
+                                    field.boundary_role_offset,
+                                ),
+                                field_code: field.field_code,
+                                payload: field.payload,
+                            }),
+                        "catia_native_legacy_schema_fields",
+                    )?,
+                    relations,
+                    synchronous_states: ctx.collect_vec(
+                        run.synchronous_states.into_iter().map(|state| {
+                            CatiaLegacyRelationSynchronousState {
+                                role_byte_offset: u64_from_index(state.role_offset),
+                                entity_id: state.entity_id,
+                                selector: state.selector,
+                                synchronous: state.synchronous,
                             }
                         }),
-                        "catia_native_legacy_schema_identifiers",
+                        "catia_native_legacy_synchronous_states",
                     )?,
-                })
-            })
-            .transpose()?;
-        let role_selectors = ctx.collect_vec(
-            run.role_selectors.into_iter().map(legacy_role_selector),
-            "catia_native_legacy_roles",
-        )?;
-        let text_fields = ctx.collect_vec(
-            run.text_fields
-                .into_iter()
-                .map(|field| CatiaLegacyTextField {
-                    byte_offset: u64_from_index(field.offset),
-                    entity_id: field.entity_id,
-                    encoding: match field.encoding {
-                        legacy_entity::LegacyTextEncoding::U8InclusiveLength => {
-                            CatiaLegacyTextEncoding::U8InclusiveLength
-                        }
-                        legacy_entity::LegacyTextEncoding::ZeroU32Length => {
-                            CatiaLegacyTextEncoding::ZeroU32Length
-                        }
-                        legacy_entity::LegacyTextEncoding::U8InclusiveLengthE3RoleTail => {
-                            CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
-                        }
-                    },
-                    role: field.role.map(legacy_role_selector),
-                    value: field.value,
-                }),
-            "catia_native_legacy_text_fields",
-        )?;
-        let relations = ctx.try_collect_vec(
-            run.relations
-                .into_iter()
-                .map(|relation| -> Result<_, CodecError> {
-                    let (inputs, output, result_type) = relation.signature.into_parts(ctx)?;
-                    let parameter = |parameter: legacy_entity::LegacyRelationParameter| {
-                        CatiaLegacyRelationParameter {
-                            parameter: parameter.parameter,
-                            value_type: parameter.value_type,
-                        }
-                    };
-                    Ok(CatiaLegacyRelation {
-                        entity_id: relation.entity_id,
-                        body_selector: relation.body_selector,
-                        parameter_selector: relation.parameter_selector,
-                        parameter_entity_id: relation.parameter_entity_id,
-                        expression_offset: u64_from_index(relation.expression_offset),
-                        expression: relation.expression,
-                        signature_offset: u64_from_index(relation.signature_offset),
-                        type_signature: relation.type_signature,
-                        inputs: ctx.collect_vec(
-                            inputs.into_iter().map(parameter),
-                            "catia_native_legacy_relation_inputs",
-                        )?,
-                        output: output.map(parameter),
-                        result_type,
-                    })
-                }),
-            "catia_native_legacy_relations",
-        )?;
-        let scalar_values = ctx.try_collect_vec(
-            run.scalar_values
-                .into_iter()
-                .map(|value| -> Result<_, CodecError> {
-                    Ok(CatiaLegacyScalarValue {
-                        id: ctx.format_retained(
-                            format_args!("catia:legacy:scalar#{index:08}-{:016}", value.offset),
-                            "catia_native_legacy_scalar_id",
-                        )?,
-                        byte_offset: u64_from_index(value.offset),
-                        entity_id: value.entity_id,
-                        encoding: match value.encoding {
-                            legacy_entity::LegacyScalarEncoding::Named84 => {
-                                CatiaLegacyScalarEncoding::Named84
+                    type_descriptors: ctx.collect_vec(
+                        run.type_descriptors.into_iter().map(|descriptor| {
+                            CatiaLegacyTypeDescriptor {
+                                byte_offset: u64_from_index(descriptor.offset),
+                                entity_id: descriptor.entity_id,
+                                value: match descriptor.value {
+                                    legacy_entity::LegacyTypeValue::Name(value) => {
+                                        CatiaLegacyTypeValue::Name { value }
+                                    }
+                                    legacy_entity::LegacyTypeValue::Selector(value) => {
+                                        CatiaLegacyTypeValue::Selector { value }
+                                    }
+                                },
                             }
-                            legacy_entity::LegacyScalarEncoding::Standalone85 => {
-                                CatiaLegacyScalarEncoding::Standalone85
-                            }
-                        },
-                        name_field: value.name_offset.map(u64_from_index),
-                        name: value.name,
-                        evaluation: match value.evaluation {
-                            legacy_entity::LegacyScalarEvaluation::Value(bits) => {
-                                CatiaLegacyScalarEvaluation::Value { bits }
-                            }
-                            legacy_entity::LegacyScalarEvaluation::Unset => {
-                                CatiaLegacyScalarEvaluation::Unset
-                            }
-                        },
-                    })
-                }),
-            "catia_native_legacy_scalars",
-        )?;
-        let string_values = ctx.try_collect_vec(
-            run.string_values
-                .into_iter()
-                .map(|value| -> Result<_, CodecError> {
-                    Ok(CatiaLegacyStringValue {
-                        id: ctx.format_retained(
-                            format_args!("catia:legacy:string#{index:08}-{:016}", value.offset),
-                            "catia_native_legacy_string_id",
-                        )?,
-                        byte_offset: u64_from_index(value.offset),
-                        entity_id: value.entity_id,
-                        name_field: value.name_offset.map(u64_from_index),
-                        name: value.name,
-                        value: value.value,
-                    })
-                }),
-            "catia_native_legacy_strings",
-        )?;
-        let integer_values = ctx.try_collect_vec(
-            run.integer_values
-                .into_iter()
-                .map(|value| -> Result<_, CodecError> {
-                    Ok(CatiaLegacyIntegerValue {
-                        id: ctx.format_retained(
-                            format_args!("catia:legacy:integer#{index:08}-{:016}", value.offset),
-                            "catia_native_legacy_integer_id",
-                        )?,
-                        byte_offset: u64_from_index(value.offset),
-                        entity_id: value.entity_id,
-                        encoding: match value.encoding {
-                            legacy_entity::LegacyIntegerEncoding::Inline => {
-                                CatiaLegacyIntegerEncoding::Inline
-                            }
-                            legacy_entity::LegacyIntegerEncoding::WideI32 => {
-                                CatiaLegacyIntegerEncoding::WideI32
-                            }
-                        },
-                        name_field: value.name_offset.map(u64_from_index),
-                        name: value.name,
-                        value: value.value,
-                    })
-                }),
-            "catia_native_legacy_integers",
-        )?;
-        let row = CatiaLegacyEntityRun {
-            id,
-            byte_offset: u64_from_index(byte_offset),
-            byte_len: u64_from_index(run.catalog_offset - byte_offset),
-            catalog_offset: u64_from_index(run.catalog_offset),
-            schema_program,
-            outer_container: None,
-            identities,
-            role_selectors,
-            text_fields,
-            schema_fields: ctx.collect_vec(
-                run.schema_fields
-                    .into_iter()
-                    .map(|field| CatiaLegacySchemaField {
-                        byte_offset: u64_from_index(field.offset),
-                        entity_id: field.entity_id,
-                        role_byte_offset: u64_from_index(field.role_offset),
-                        boundary_role_byte_offset: u64_from_index(field.boundary_role_offset),
-                        field_code: field.field_code,
-                        payload: field.payload,
-                    }),
-                "catia_native_legacy_schema_fields",
-            )?,
-            relations,
-            synchronous_states: ctx.collect_vec(
-                run.synchronous_states.into_iter().map(|state| {
-                    CatiaLegacyRelationSynchronousState {
-                        role_byte_offset: u64_from_index(state.role_offset),
-                        entity_id: state.entity_id,
-                        selector: state.selector,
-                        synchronous: state.synchronous,
-                    }
-                }),
-                "catia_native_legacy_synchronous_states",
-            )?,
-            type_descriptors: ctx.collect_vec(
-                run.type_descriptors
-                    .into_iter()
-                    .map(|descriptor| CatiaLegacyTypeDescriptor {
-                        byte_offset: u64_from_index(descriptor.offset),
-                        entity_id: descriptor.entity_id,
-                        value: match descriptor.value {
-                            legacy_entity::LegacyTypeValue::Name(value) => {
-                                CatiaLegacyTypeValue::Name { value }
-                            }
-                            legacy_entity::LegacyTypeValue::Selector(value) => {
-                                CatiaLegacyTypeValue::Selector { value }
-                            }
-                        },
-                    }),
-                "catia_native_legacy_type_descriptors",
-            )?,
-            scalar_values,
-            string_values,
-            integer_values,
-        };
-        Ok(row)
+                        }),
+                        "catia_native_legacy_type_descriptors",
+                    )?,
+                    scalar_values,
+                    string_values,
+                    integer_values,
+                };
+                Ok(row)
             }),
         "catia_native_legacy_runs",
     )
@@ -8629,10 +8662,8 @@ fn consolidated_class61_records(
         "catia_native_class61_sort",
     )?;
     ctx.try_collect_vec(
-        class61_records
-            .into_iter()
-            .enumerate()
-            .map(|(index, (pos, header_token, payload))| -> Result<_, CodecError> {
+        class61_records.into_iter().enumerate().map(
+            |(index, (pos, header_token, payload))| -> Result<_, CodecError> {
                 Ok(CatiaConsolidatedClass61Record {
                     id: ctx.format_retained(
                         format_args!("catia:consolidated:class61-record#{index:00}"),
@@ -8642,7 +8673,8 @@ fn consolidated_class61_records(
                     header_token,
                     payload,
                 })
-            }),
+            },
+        ),
         "catia_native_class61_records",
     )
 }
@@ -8809,7 +8841,10 @@ fn consolidated_cone_faces(
     parameter_points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<Vec<CatiaConsolidatedConeFace>, CodecError> {
     let mut point_ids = HashMap::new();
-    for point in ctx.admit_iter(parameter_points, "catia_native_cone_face_parameter_point_visits")? {
+    for point in ctx.admit_iter(
+        parameter_points,
+        "catia_native_cone_face_parameter_point_visits",
+    )? {
         let id = ctx.copy_retained_text(&point.id, "catia_native_cone_face_point_index_id")?;
         ctx.insert_hash_map(
             &mut point_ids,
@@ -8822,8 +8857,9 @@ fn consolidated_cone_faces(
     for record in ctx
         .admit_iter(records, "catia_native_cone_face_record_visits")?
         .filter(|record| {
-        record.family() == crate::wire::records::ConsolidatedFamily::B && record.class() == 0x18
-    }) {
+            record.family() == crate::wire::records::ConsolidatedFamily::B && record.class() == 0x18
+        })
+    {
         if let Some(range) = record.range() {
             ctx.insert_hash_map(
                 &mut class18_ends,
@@ -8839,40 +8875,42 @@ fn consolidated_cone_faces(
             .into_iter()
             .enumerate()
             .map(|(index, face)| -> Result<_, CodecError> {
-        let mut positions = Vec::new();
-        let mut next = face.end;
-        while let Some(&end) = class18_ends.get(&next) {
-            let position = u64_from_index(next);
-            ctx.push_vec(&mut positions, position, "catia_native_cone_face_positions")?;
-            next = end;
-        }
-        let mut bound_points = Vec::new();
-        for position in ctx.admit_iter(&positions, "catia_native_cone_face_position_visits")? {
-            let Some(id) = point_ids.get(position) else {
-                bound_points.clear();
-                break;
-            };
-            let id = ctx.copy_retained_text(id, "catia_native_cone_face_parameter_id")?;
-            ctx.push_vec(
-                &mut bound_points,
-                id,
-                "catia_native_cone_face_parameter_points",
-            )?;
-        }
-        let byte_offset = u64_from_index(face.pos);
-        let byte_len = u64_from_index(face.end - face.pos);
-        Ok(CatiaConsolidatedConeFace {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:cone-face#{index:00}"),
-                "catia_native_cone_face_id",
-            )?,
-            byte_offset,
-            byte_len,
-            program: face.program,
-            angular_scale: face.angular_scale,
-            half_angle: face.half_angle,
-            parameter_points: bound_points,
-        })
+                let mut positions = Vec::new();
+                let mut next = face.end;
+                while let Some(&end) = class18_ends.get(&next) {
+                    let position = u64_from_index(next);
+                    ctx.push_vec(&mut positions, position, "catia_native_cone_face_positions")?;
+                    next = end;
+                }
+                let mut bound_points = Vec::new();
+                for position in
+                    ctx.admit_iter(&positions, "catia_native_cone_face_position_visits")?
+                {
+                    let Some(id) = point_ids.get(position) else {
+                        bound_points.clear();
+                        break;
+                    };
+                    let id = ctx.copy_retained_text(id, "catia_native_cone_face_parameter_id")?;
+                    ctx.push_vec(
+                        &mut bound_points,
+                        id,
+                        "catia_native_cone_face_parameter_points",
+                    )?;
+                }
+                let byte_offset = u64_from_index(face.pos);
+                let byte_len = u64_from_index(face.end - face.pos);
+                Ok(CatiaConsolidatedConeFace {
+                    id: ctx.format_retained(
+                        format_args!("catia:consolidated:cone-face#{index:00}"),
+                        "catia_native_cone_face_id",
+                    )?,
+                    byte_offset,
+                    byte_len,
+                    program: face.program,
+                    angular_scale: face.angular_scale,
+                    half_angle: face.half_angle,
+                    parameter_points: bound_points,
+                })
             }),
         "catia_native_cone_faces",
     )
@@ -8979,7 +9017,8 @@ fn consolidated_cylinder_groups(
     let mut groups = Vec::new();
     let mut cylinders = Vec::new();
     let mut embedded =
-        crate::families::b2::records::b2_embedded_cylinders_from_records(ctx, bytes, records)?.peekable();
+        crate::families::b2::records::b2_embedded_cylinders_from_records(ctx, bytes, records)?
+            .peekable();
     for group in crate::families::b2::records::b2_groups_from_records(ctx, bytes, records)? {
         let group_pos = group.pos;
         let group = CatiaConsolidatedGroup {
@@ -9243,7 +9282,8 @@ fn consolidated_parameter_points(
 
     let mut points = Vec::new();
     for (index, point) in
-        crate::families::b2::records::b2_parameter_points_from_records(ctx, bytes, records)?.enumerate()
+        crate::families::b2::records::b2_parameter_points_from_records(ctx, bytes, records)?
+            .enumerate()
     {
         let payload = match point.payload {
             B2ParameterPointPayload::Scalar { value } => {
@@ -9285,52 +9325,52 @@ fn consolidated_plane_carriers(
             .into_iter()
             .enumerate()
             .map(|(index, carrier)| -> Result<_, CodecError> {
-        let payload = match carrier.payload {
-            B2PlaneCarrierPayload::PointDirection2 {
-                origin,
-                frame,
-                tail,
-            } => {
-                let [x, y, _] = origin.coordinates();
-                let direction = frame.reference().as_raw();
-                CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-                    point: [x, y].into(),
-                    direction: [direction.x, direction.y],
-                    tail,
-                }
-            }
-            B2PlaneCarrierPayload::PointDirection3 {
-                origin,
-                direction,
-                tail,
-                ..
-            } => {
-                let [x, y, _] = origin.coordinates();
-                CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-                    point: [x, y].into(),
-                    direction,
-                    tail,
-                }
-            }
-            B2PlaneCarrierPayload::PointTail { point, tail } => {
-                CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
-            }
-            B2PlaneCarrierPayload::ScalarLane { selector, values } => {
-                CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, values }
-            }
-        };
-        Ok(CatiaConsolidatedPlaneCarrier {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:plane-carrier#{index:00}"),
-                "catia_native_plane_carrier_id",
-            )?,
-            byte_offset: u64_from_index(carrier.pos),
-            byte_len: u64_from_index(carrier.end - carrier.pos),
-            width: carrier.width,
-            flag: carrier.flag,
-            header_token: carrier.header_token,
-            payload,
-        })
+                let payload = match carrier.payload {
+                    B2PlaneCarrierPayload::PointDirection2 {
+                        origin,
+                        frame,
+                        tail,
+                    } => {
+                        let [x, y, _] = origin.coordinates();
+                        let direction = frame.reference().as_raw();
+                        CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
+                            point: [x, y].into(),
+                            direction: [direction.x, direction.y],
+                            tail,
+                        }
+                    }
+                    B2PlaneCarrierPayload::PointDirection3 {
+                        origin,
+                        direction,
+                        tail,
+                        ..
+                    } => {
+                        let [x, y, _] = origin.coordinates();
+                        CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
+                            point: [x, y].into(),
+                            direction,
+                            tail,
+                        }
+                    }
+                    B2PlaneCarrierPayload::PointTail { point, tail } => {
+                        CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
+                    }
+                    B2PlaneCarrierPayload::ScalarLane { selector, values } => {
+                        CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, values }
+                    }
+                };
+                Ok(CatiaConsolidatedPlaneCarrier {
+                    id: ctx.format_retained(
+                        format_args!("catia:consolidated:plane-carrier#{index:00}"),
+                        "catia_native_plane_carrier_id",
+                    )?,
+                    byte_offset: u64_from_index(carrier.pos),
+                    byte_len: u64_from_index(carrier.end - carrier.pos),
+                    width: carrier.width,
+                    flag: carrier.flag,
+                    header_token: carrier.header_token,
+                    payload,
+                })
             }),
         "catia_native_plane_carriers",
     )
@@ -9346,14 +9386,14 @@ fn consolidated_reference_lists(
             .into_iter()
             .enumerate()
             .map(|(index, list)| -> Result<_, CodecError> {
-        Ok(CatiaConsolidatedReferenceList {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:reference-list#{index:00}"),
-                "catia_native_reference_list_id",
-            )?,
-            byte_offset: u64_from_index(list.pos),
-            references: list.references,
-        })
+                Ok(CatiaConsolidatedReferenceList {
+                    id: ctx.format_retained(
+                        format_args!("catia:consolidated:reference-list#{index:00}"),
+                        "catia_native_reference_list_id",
+                    )?,
+                    byte_offset: u64_from_index(list.pos),
+                    references: list.references,
+                })
             }),
         "catia_native_reference_lists",
     )
@@ -9396,24 +9436,25 @@ fn consolidated_pcurves(
             .into_iter()
             .enumerate()
             .map(|(index, (pcurve, family))| -> Result<_, CodecError> {
-        let (knots, points, first_derivatives, second_derivatives) = pcurve.native_lanes(ctx)?;
-        Ok(CatiaConsolidatedPcurve {
-            id: ctx.format_retained(
-                format_args!("catia:consolidated:pcurve#{index:00}"),
-                "catia_native_pcurve_id",
-            )?,
-            byte_offset: u64_from_index(pcurve.pos),
-            family,
-            support_id: pcurve.support_id,
-            degree: crate::wire::records::ConsolidatedPcurve::DEGREE,
-            extrapolation_sites: pcurve.extrapolation_sites,
-            knots,
-            points,
-            first_derivatives,
-            second_derivatives,
-            range: pcurve.range,
-            tail: pcurve.tail,
-        })
+                let (knots, points, first_derivatives, second_derivatives) =
+                    pcurve.native_lanes(ctx)?;
+                Ok(CatiaConsolidatedPcurve {
+                    id: ctx.format_retained(
+                        format_args!("catia:consolidated:pcurve#{index:00}"),
+                        "catia_native_pcurve_id",
+                    )?,
+                    byte_offset: u64_from_index(pcurve.pos),
+                    family,
+                    support_id: pcurve.support_id,
+                    degree: crate::wire::records::ConsolidatedPcurve::DEGREE,
+                    extrapolation_sites: pcurve.extrapolation_sites,
+                    knots,
+                    points,
+                    first_derivatives,
+                    second_derivatives,
+                    range: pcurve.range,
+                    tail: pcurve.tail,
+                })
             }),
         "catia_native_pcurves",
     )
@@ -9525,7 +9566,8 @@ fn consolidated_line_profiles(
 ) -> Result<Vec<CatiaConsolidatedLineProfile>, CodecError> {
     let mut profiles = Vec::new();
     for (index, line) in
-        crate::families::b2::records::b2_line_profiles_from_records(ctx, bytes, records)?.enumerate()
+        crate::families::b2::records::b2_line_profiles_from_records(ctx, bytes, records)?
+            .enumerate()
     {
         let value = CatiaConsolidatedLineProfile {
             id: ctx.format_retained(
@@ -9632,48 +9674,50 @@ fn zero_entity_support_runs(
                     let terminal_control = face.terminal_control.as_byte();
                     let loops = face.loops.unwrap_or_default();
                     let native_loops = ctx.try_collect_vec(
-                        loops.into_iter().map(|loop_record| -> Result<_, CodecError> {
-                            let mut typed_records = Vec::new();
-                            ctx.reserve_vec(
-                                &mut typed_records,
-                                loop_record.typed_references.len(),
-                                "catia_native_zero_typed_records",
-                            )?;
-                            for ordinal in ctx.admit_iter(
-                                &loop_record.typed_references,
-                                "catia_native_zero_typed_reference_visits",
-                            )? {
-                                let Some(record) = zero_entity_record(records, *ordinal) else {
-                                    typed_records.clear();
-                                    break;
-                                };
-                                typed_records.push(ctx.copy_retained_text(
-                                    &record.id,
-                                    "catia_native_zero_typed_record_id",
-                                )?);
-                            }
-                            let mut member_ids = Vec::new();
-                            ctx.reserve_vec(
-                                &mut member_ids,
-                                loop_record.members.member_ids().count(),
-                                "catia_native_zero_member_ids",
-                            )?;
-                            member_ids.extend(loop_record.members.member_ids());
-                            Ok(CatiaZeroEntityLoop {
-                                byte_offset: u64_from_index(loop_record.pos),
-                                record_ordinal: loop_record.record_ordinal,
-                                tag: loop_record.tag,
-                                member_ids,
-                                typed_references: loop_record.typed_references,
-                                typed_records,
-                                support_record_ordinals: loop_record.support_record_ordinals,
-                                terminal_id: loop_record.members.terminal_id(),
-                                gap: loop_record.members.gap(),
-                                loop_class: loop_record.loop_class.as_byte(),
-                                forward_senses: loop_record.forward_senses,
-                                oriented_model_endpoints: loop_record.oriented_model_endpoints,
-                            })
-                        }),
+                        loops
+                            .into_iter()
+                            .map(|loop_record| -> Result<_, CodecError> {
+                                let mut typed_records = Vec::new();
+                                ctx.reserve_vec(
+                                    &mut typed_records,
+                                    loop_record.typed_references.len(),
+                                    "catia_native_zero_typed_records",
+                                )?;
+                                for ordinal in ctx.admit_iter(
+                                    &loop_record.typed_references,
+                                    "catia_native_zero_typed_reference_visits",
+                                )? {
+                                    let Some(record) = zero_entity_record(records, *ordinal) else {
+                                        typed_records.clear();
+                                        break;
+                                    };
+                                    typed_records.push(ctx.copy_retained_text(
+                                        &record.id,
+                                        "catia_native_zero_typed_record_id",
+                                    )?);
+                                }
+                                let mut member_ids = Vec::new();
+                                ctx.reserve_vec(
+                                    &mut member_ids,
+                                    loop_record.members.member_ids().count(),
+                                    "catia_native_zero_member_ids",
+                                )?;
+                                member_ids.extend(loop_record.members.member_ids());
+                                Ok(CatiaZeroEntityLoop {
+                                    byte_offset: u64_from_index(loop_record.pos),
+                                    record_ordinal: loop_record.record_ordinal,
+                                    tag: loop_record.tag,
+                                    member_ids,
+                                    typed_references: loop_record.typed_references,
+                                    typed_records,
+                                    support_record_ordinals: loop_record.support_record_ordinals,
+                                    terminal_id: loop_record.members.terminal_id(),
+                                    gap: loop_record.members.gap(),
+                                    loop_class: loop_record.loop_class.as_byte(),
+                                    forward_senses: loop_record.forward_senses,
+                                    oriented_model_endpoints: loop_record.oriented_model_endpoints,
+                                })
+                            }),
                         "catia_native_zero_face_loops",
                     )?;
                     Some(CatiaZeroEntityFace {
@@ -9689,8 +9733,9 @@ fn zero_entity_support_runs(
                     None
                 };
                 let supports = ctx.collect_vec(
-                    run.supports.into_iter().map(|support| {
-                        CatiaZeroEntitySupportOccurrence {
+                    run.supports
+                        .into_iter()
+                        .map(|support| CatiaZeroEntitySupportOccurrence {
                             byte_offset: u64_from_index(support.pos),
                             record_ordinal: support.record_ordinal,
                             tag: support.tag,
@@ -9702,8 +9747,7 @@ fn zero_entity_support_runs(
                             model_parameters: support.model_parameters,
                             model_midpoint: support.model_midpoint,
                             model_endpoints: support.model_endpoints,
-                        }
-                    }),
+                        }),
                     "catia_native_zero_support_occurrences",
                 )?;
                 Ok(CatiaZeroEntitySupportRun {
@@ -9741,7 +9785,13 @@ fn zero_entity_endpoint_pair_candidates(
         candidates.len(),
         "catia_native_zero_endpoint_pairs",
     )?;
-    for (index, candidate) in ctx.admit_iter(&candidates, "catia_native_zero_endpoint_pair_candidate_visits")?.enumerate() {
+    for (index, candidate) in ctx
+        .admit_iter(
+            &candidates,
+            "catia_native_zero_endpoint_pair_candidate_visits",
+        )?
+        .enumerate()
+    {
         let [face_first, face_second] = candidate.face_record_ordinals.map(|ordinal| {
             ctx.format_retained(
                 format_args!("catia:zero-entity:record#{ordinal}"),
@@ -9775,14 +9825,23 @@ fn zero_entity_endpoint_locus_candidates(
         candidates.len(),
         "catia_native_zero_endpoint_loci",
     )?;
-    for (index, candidate) in ctx.admit_iter(&candidates, "catia_native_zero_endpoint_locus_candidate_visits")?.enumerate() {
+    for (index, candidate) in ctx
+        .admit_iter(
+            &candidates,
+            "catia_native_zero_endpoint_locus_candidate_visits",
+        )?
+        .enumerate()
+    {
         let mut endpoints = Vec::new();
         ctx.reserve_vec(
             &mut endpoints,
             candidate.incident_endpoint_pair_endpoints.len(),
             "catia_native_zero_locus_incidence",
         )?;
-        for &(pair, endpoint_index) in ctx.admit_iter(&candidate.incident_endpoint_pair_endpoints, "catia_native_zero_locus_incidence_visits")? {
+        for &(pair, endpoint_index) in ctx.admit_iter(
+            &candidate.incident_endpoint_pair_endpoints,
+            "catia_native_zero_locus_incidence_visits",
+        )? {
             endpoints.push(CatiaZeroEntityEndpointPairEndpoint {
                 endpoint_pair: zero_entity_endpoint_pair_id(ctx, pair.ordinal())?,
                 endpoint_index,
@@ -9849,7 +9908,10 @@ fn zero_entity_oriented_use_pairs(
     )?;
     let mut output = Vec::new();
     ctx.reserve_vec(&mut output, pairs.len(), "catia_native_zero_oriented_pairs")?;
-    for (index, pair) in ctx.admit_iter(&pairs, "catia_native_zero_oriented_pair_visits")?.enumerate() {
+    for (index, pair) in ctx
+        .admit_iter(&pairs, "catia_native_zero_oriented_pair_visits")?
+        .enumerate()
+    {
         output.push(CatiaZeroEntityOrientedUsePair {
             id: ctx.format_retained(
                 format_args!("catia:zero-entity:oriented-use-pair#{index}"),
@@ -9921,7 +9983,10 @@ fn zero_entity_vertex_incidences(
         incidences.len(),
         "catia_native_zero_vertex_incidences",
     )?;
-    for (index, record) in ctx.admit_iter(&incidences, "catia_native_zero_incidence_visits")?.enumerate() {
+    for (index, record) in ctx
+        .admit_iter(&incidences, "catia_native_zero_incidence_visits")?
+        .enumerate()
+    {
         let vertex_record = zero_entity_vertex_owner(records, record.record_ordinal)
             .map(|owner| ctx.copy_retained_text(&owner.id, "catia_native_zero_vertex_owner_id"))
             .transpose()?;
@@ -10001,7 +10066,7 @@ impl CatiaNative {
         let consolidated_records = crate::wire::records::consolidated_records_in_sources(
             ctx,
             bytes,
-        ctx.admit_iter(sources, "catia_native_consolidated_source_visits")?,
+            ctx.admit_iter(sources, "catia_native_consolidated_source_visits")?,
         )?;
         Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)
     }
@@ -10019,28 +10084,29 @@ impl CatiaNative {
         };
         let parsed_finjpl = container::finjpl_segments(ctx, &container::BodyExtent::whole(bytes))?;
         let finjpl_segments = ctx.try_collect_vec(
-            parsed_finjpl
-                .into_iter()
-                .enumerate()
-                .map(|(index, segment)| -> Result<_, CodecError> {
-            let id = ctx.format_retained(
-                format_args!("catia:outer:finjpl#{index}"),
-                "catia_native_finjpl_id",
-            )?;
-            let family = ctx
-                .copy_retained_text(finjpl_family(segment.kind()), "catia_native_finjpl_family")?;
-            let data =
-                ctx.copy_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
-            Ok(CatiaFinjplSegment {
-                    id,
-                    byte_offset: u64_from_index(segment.range.start),
-                    byte_len: u64_from_index(segment.range.end - segment.range.start),
-                    type_word: segment.type_word,
-                    family,
-                    name: segment.name,
-                    data,
-                })
-                }),
+            parsed_finjpl.into_iter().enumerate().map(
+                |(index, segment)| -> Result<_, CodecError> {
+                    let id = ctx.format_retained(
+                        format_args!("catia:outer:finjpl#{index}"),
+                        "catia_native_finjpl_id",
+                    )?;
+                    let family = ctx.copy_retained_text(
+                        finjpl_family(segment.kind()),
+                        "catia_native_finjpl_family",
+                    )?;
+                    let data =
+                        ctx.copy_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
+                    Ok(CatiaFinjplSegment {
+                        id,
+                        byte_offset: u64_from_index(segment.range.start),
+                        byte_len: u64_from_index(segment.range.end - segment.range.start),
+                        type_word: segment.type_word,
+                        family,
+                        name: segment.name,
+                        data,
+                    })
+                },
+            ),
             "catia_native_finjpl_segments",
         )?;
         let mut parsed_catalogs = catalog::parse(ctx, bytes)?;
@@ -10048,9 +10114,9 @@ impl CatiaNative {
         let paired_object_graph_roots = ctx.collect_hash_map(
             ctx.admit_iter(&entity_runs, "catia_native_paired_graph_root_source_visits")?
                 .filter_map(|run| {
-                let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
-                (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
-            }),
+                    let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
+                    (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
+                }),
             "catia_native_paired_graph_roots",
         )?;
         let mut alias_rows = ctx.try_collect_vec(
@@ -10083,7 +10149,10 @@ impl CatiaNative {
         )?;
         let mut entity_records = Vec::new();
         let mut object_graphs = Vec::new();
-        for graph in ctx.admit_iter(&parsed_object_graphs, "catia_native_parsed_object_graph_visits")? {
+        for graph in ctx.admit_iter(
+            &parsed_object_graphs,
+            "catia_native_parsed_object_graph_visits",
+        )? {
             let entities = entity_runs
                 .remove(&(graph.pos, graph.records.len()))
                 .unwrap_or_default();
@@ -10184,13 +10253,13 @@ impl CatiaNative {
             relation_expressions,
             relation_expression_entities,
             entities_by_graph_identity,
-            terminal_nulls_by_graph,
+            maximum_entity_by_graph,
             parameter_bindings,
         ) = semantic_entity_indices(ctx, &entity_records, &entity_classes_by_graph_identity)?;
         let entity_references = CatiaEntityReferenceIndex {
             entities: &entities_by_graph_identity,
             classes: &entity_classes_by_graph_identity,
-            terminal_nulls: &terminal_nulls_by_graph,
+            maxima: &maximum_entity_by_graph,
         };
         for entity in &mut entity_records {
             if let Some(signature) = entity.reference_signature.take() {
@@ -10202,18 +10271,14 @@ impl CatiaNative {
                 )?);
             }
             let mut object = None;
-            for graph in ctx.admit_iter(
-                &object_graphs,
-                "catia_native_entity_object_graph_lookup",
-            )? {
+            for graph in
+                ctx.admit_iter(&object_graphs, "catia_native_entity_object_graph_lookup")?
+            {
                 if graph.id != entity.object_graph {
                     continue;
                 }
                 object = ctx
-                    .admit_iter(
-                        &graph.records,
-                        "catia_native_entity_object_record_lookup",
-                    )?
+                    .admit_iter(&graph.records, "catia_native_entity_object_record_lookup")?
                     .find(|record| record.id == entity.object_record);
                 break;
             }
@@ -10231,13 +10296,8 @@ impl CatiaNative {
             )?;
         }
         let reference_signature_cohorts = derive_reference_signature_cohorts(ctx, &entity_records)?;
-        let schema_configuration_row_chains = derive_schema_configuration_row_chains(
-            ctx,
-            &entity_records,
-            &entities_by_graph_identity,
-            &entity_classes_by_graph_identity,
-            &terminal_nulls_by_graph,
-        )?;
+        let schema_configuration_row_chains =
+            derive_schema_configuration_row_chains(ctx, &entity_records, &entity_references)?;
         filter_nested_alias_rows(
             ctx,
             &mut alias_rows,
@@ -10295,11 +10355,11 @@ impl CatiaNative {
             let object_graph = ctx
                 .admit_iter(&object_graphs, "catia_native_value_block_graph_lookup")?
                 .find(|graph| {
-                graph
-                    .byte_offset
-                    .checked_add(graph.byte_len)
-                    .is_some_and(|end| end == block_pos)
-            });
+                    graph
+                        .byte_offset
+                        .checked_add(graph.byte_len)
+                        .is_some_and(|end| end == block_pos)
+                });
             let value = CatiaValueBlock::from_parts(ctx, block, catalog, object_graph)?;
             ctx.push_vec(&mut value_blocks, value, "catia_native_value_blocks")?;
         }
@@ -10481,80 +10541,106 @@ fn filter_nested_alias_rows(
             let Some(row_start) = row.row_byte_offset() else {
                 return Ok(false);
             };
-            if ctx
-                .admit_iter(object_graphs, "catia_native_alias_graph_overlap_scan")?
-                .any(|graph| extents_overlap(row_start, 24, graph.byte_offset, graph.byte_len))
-            {
-                return Ok(false);
-            }
-            if ctx
-                .admit_iter(value_blocks, "catia_native_alias_value_block_overlap_scan")?
-                .any(|block| {
-                    extents_overlap(
+            Ok(!(ctx.any_by(
+                object_graphs,
+                |graph| {
+                    Ok(extents_overlap(
+                        row_start,
+                        24,
+                        graph.byte_offset,
+                        graph.byte_len,
+                    ))
+                },
+                "catia_native_alias_graph_overlap_scan",
+            )? || ctx.any_by(
+                value_blocks,
+                |block| {
+                    Ok(extents_overlap(
                         row_start,
                         24,
                         u64_from_index(block.pos),
                         u64_from_index(block.total_len()),
-                    )
-                })
-            {
-                return Ok(false);
-            }
-            Ok(!ctx
-                .admit_iter(catalogs, "catia_native_alias_catalog_overlap_scan")?
-                .any(|catalog| {
-                    extents_overlap(row_start, 24, catalog.byte_offset, catalog.byte_len)
-                }))
+                    ))
+                },
+                "catia_native_alias_value_block_overlap_scan",
+            )? || ctx.any_by(
+                catalogs,
+                |catalog| {
+                    Ok(extents_overlap(
+                        row_start,
+                        24,
+                        catalog.byte_offset,
+                        catalog.byte_len,
+                    ))
+                },
+                "catia_native_alias_catalog_overlap_scan",
+            )?))
         },
         "catia_native_alias_rows_retain",
     )
 }
 
-/// Admit all extent comparisons before removing inventories nested inside another frame.
+/// Removes inventories nested inside another frame, searching each candidate
+/// container only until the first one that contains it.
 fn filter_nested_inventory(
     ctx: &DecodeContext<'_>,
     graphs: &mut Vec<object_graph::ObjectGraph>,
     blocks: &mut Vec<value_block::ValueBlock>,
     catalogs: &mut Vec<catalog::Catalog>,
 ) -> Result<(), CodecError> {
+    let graph_contains =
+        |graphs: &[object_graph::ObjectGraph], pos, len, operation: &'static str| {
+            ctx.any_by(
+                graphs,
+                |graph| Ok(extent_contains(graph.pos, graph.total_len, pos, len)),
+                operation,
+            )
+        };
+    let block_contains = |blocks: &[value_block::ValueBlock], pos, len, operation: &'static str| {
+        ctx.any_by(
+            blocks,
+            |block| Ok(extent_contains(block.pos, block.total_len(), pos, len)),
+            operation,
+        )
+    };
     ctx.retain_vec(
         blocks,
         |block| {
-            Ok(!ctx
-                .admit_iter(graphs, "catia_native_inventory_block_graph_overlap_scan")?
-                .any(|graph| {
-                    extent_contains(graph.pos, graph.total_len, block.pos, block.total_len())
-                }))
+            Ok(!graph_contains(
+                graphs,
+                block.pos,
+                block.total_len(),
+                "catia_native_inventory_block_graph_overlap_scan",
+            )?)
         },
         "catia_native_inventory_blocks_retain",
     )?;
     ctx.retain_vec(
         graphs,
         |graph| {
-            Ok(!ctx
-                .admit_iter(blocks, "catia_native_inventory_graph_block_overlap_scan")?
-                .any(|block| {
-                    extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len)
-                }))
+            Ok(!block_contains(
+                blocks,
+                graph.pos,
+                graph.total_len,
+                "catia_native_inventory_graph_block_overlap_scan",
+            )?)
         },
         "catia_native_inventory_graphs_retain",
     )?;
     ctx.retain_vec(
         catalogs,
         |catalog| {
-            if ctx
-                .admit_iter(graphs, "catia_native_inventory_catalog_graph_overlap_scan")?
-                .any(|graph| {
-                    extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
-                })
-            {
-                return Ok(false);
-            }
-            Ok(!ctx
-                .admit_iter(blocks, "catia_native_inventory_catalog_block_overlap_scan")?
-                .any(|block| {
-                    extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
-                }))
+            Ok(!(graph_contains(
+                graphs,
+                catalog.pos,
+                catalog.total_len,
+                "catia_native_inventory_catalog_graph_overlap_scan",
+            )? || block_contains(
+                blocks,
+                catalog.pos,
+                catalog.total_len,
+                "catia_native_inventory_catalog_block_overlap_scan",
+            )?))
         },
         "catia_native_inventory_catalogs_retain",
     )?;
