@@ -83,40 +83,39 @@ fn geometry_route_refuses_work_limit() {
 
 #[test]
 fn unknown_carrier_reachability_pass_refuses_session_work_limit() {
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &[],
-        |policy| policy.limits.max_work_units = 0,
+        ResourceDimension::WorkUnits,
+        "nx unknown carrier reachability pass",
         |ctx| {
-            let mut ir = cadmpeg_ir::document::CadIr::empty();
-            let error = super::prune_unreferenced_unknown_carriers(ctx, &mut ir)
-                .expect_err("the first unknown-carrier pass needs work");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "nx unknown carrier reachability pass"
-            ));
+            super::prune_unreferenced_unknown_carriers(
+                ctx,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+            )
         },
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "nx unknown carrier reachability pass"
+    ));
 }
 
 #[test]
 fn inactive_geometry_reachability_pass_refuses_session_work_limit() {
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &[],
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            let mut ir = cadmpeg_ir::document::CadIr::empty();
-            let error = super::prune_inactive_geometry(ctx, &mut ir)
-                .expect_err("the first active-geometry pass needs work");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "nx active geometry reachability pass"
-            ));
-        },
+        ResourceDimension::WorkUnits,
+        "nx active geometry reachability pass",
+        |ctx| super::prune_inactive_geometry(ctx, &mut cadmpeg_ir::document::CadIr::empty()),
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "nx active geometry reachability pass"
+    ));
 }
 
 #[test]
@@ -200,17 +199,15 @@ fn live_annotations_refuse_first_identity_at_collection_limit() {
 fn rmfastload_stream_index_parse_propagates_work_refusal() {
     let body = cadmpeg_ir::ids::BodyId::mint("nx:s3:body#selected").unwrap();
     let selected = std::collections::BTreeSet::from([body]);
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &[],
-        |policy| policy.limits.max_work_units = 0,
-        |ctx| {
-            let error = super::rmfastload_stream_indices(ctx, &selected).unwrap_err();
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-                panic!("stream parsing must propagate the work refusal");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "nx rmfastload stream index");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        },
+        ResourceDimension::WorkUnits,
+        "nx rmfastload stream index",
+        |ctx| super::rmfastload_stream_indices(ctx, &selected),
     );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("stream parsing must propagate the work refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "nx rmfastload stream index");
 }
