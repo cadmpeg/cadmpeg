@@ -13,13 +13,13 @@ use super::reference::ConstructionReference;
 use super::swp104_branch::FeatureSwp104LeadingBranch;
 use super::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 use super::{
-    construction_payload_frames, format_feature_child_id, format_feature_history_id,
-    offset_data_block_bytes, parse_sketch_point_name, FeatureBlockConstruction,
-    FeatureBlockDimension, FeatureBlockDimensions, FeatureBlockPayloadNamedRecord,
-    FeatureBlockPayloadPoint, FeatureBlockPayloadPointGroup, FeatureBodyReference,
-    FeatureConstructionMember, FeatureConstructionOwner, FeatureConstructionPayload,
-    FeatureExtrudeConstructionProfile, FeatureExtrudeConstructionProfileReference,
-    FeatureExtrudePayloadHeader, FeatureExtrudeProfileReference, FeatureHistory, FeatureInputBlock,
+    format_feature_child_id, format_feature_history_id, offset_data_block_bytes,
+    parse_sketch_point_name, FeatureBlockConstruction, FeatureBlockDimension,
+    FeatureBlockDimensions, FeatureBlockPayloadNamedRecord, FeatureBlockPayloadPoint,
+    FeatureBlockPayloadPointGroup, FeatureBodyReference, FeatureConstructionMember,
+    FeatureConstructionOwner, FeatureConstructionPayload, FeatureExtrudeConstructionProfile,
+    FeatureExtrudeConstructionProfileReference, FeatureExtrudePayloadHeader,
+    FeatureExtrudeProfileReference, FeatureHistory, FeatureInputBlock,
     FeatureOperationBody11Continuation, FeatureOperationBodyMember, FeatureOperationBodyOperand,
     FeatureOperationBodyReferenceLane, FeatureOperationBodyReferences, FeatureOperationLabel,
     FeatureParameterBinding, FeaturePayloadScalar, FeaturePayloadScalarPair,
@@ -786,29 +786,42 @@ pub(in crate::native) fn feature_surface_construction_scalar_pairs(
     container: &Container,
     payloads: &[FeatureSurfaceConstructionPayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, cadmpeg_core::CodecError> {
-    construction_payload_frames(
-        ctx,
-        container,
-        payloads,
-        |payload| payload.content.blocks(),
-        |bytes| crate::om::binary64_pair::object_pairs(ctx, bytes),
-        |payload, ordinal, pair, source_offset| {
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    let mut output = Vec::new();
+    for payload in ctx.admit_iter(payloads, "scan NX construction payloads")? {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            payload.content.blocks().iter().map(|block| &block.id),
+            payload.content.blocks().len(),
+            &blocks,
+        )?
+        else {
+            continue;
+        };
+        let source_offset = |relative: usize| {
+            joined.source_offset(ctx, cadmpeg_core::decode::u64_from_index(relative))
+        };
+        let mut rows = crate::om::binary64_pair::object_pairs(ctx, joined.bytes())?.into_iter();
+        for ordinal in ctx.admit_iter(&(0..rows.len()), "scan NX construction payload frames")? {
+            let Some(pair) = rows.next() else {
+                return Err(ctx.refuse_codec_limit("scan NX construction payload frames", 0, 1));
+            };
             let Some(frame) = pair.into_wire_frame() else {
-                return Ok(None);
+                continue;
             };
             let Some(first) = source_offset(pair.value_offsets()[0])? else {
-                return Ok(None);
+                continue;
             };
             let Some(second) = source_offset(pair.value_offsets()[1])? else {
-                return Ok(None);
+                continue;
             };
             let Some(source) = source_offset(pair.offset())? else {
-                return Ok(None);
+                continue;
             };
             let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX surface scalar pair ordinal", 0, 1))?;
-            Ok(Some(FeaturePayloadScalarPair {
+            let record = FeaturePayloadScalarPair {
                 id,
                 operation_label: ctx
                     .copy_retained_text(&payload.operation_label, "NX surface scalar pair label")?,
@@ -820,9 +833,12 @@ pub(in crate::native) fn feature_surface_construction_scalar_pairs(
                 ordinal,
                 value_source_offsets: [first, second],
                 source_offset: source,
-            }))
-        },
-    )
+            };
+            ctx.reserve_vec(&mut output, 1, "NX construction payload frames")?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode exact printable string frames from reconstructed surface payloads.
