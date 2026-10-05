@@ -95,7 +95,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let mut admitted_entities = 0_u64;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+        let (ir, annotations, unknowns, mut pmi_losses, _native) = build_metadata_ir(
             ctx,
             &scan,
             &classification,
@@ -122,7 +122,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ctx.charge_entities(u64_from_index(streams.len()), "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(ctx, &scan, &streams, &classification)?
         {
-            let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
+            let (ir, annotations, unknowns, mut pmi_losses, native) = build_geometry_ir(
                 ctx,
                 &mut scan,
                 &classification,
@@ -137,12 +137,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             )?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(ctx, &ir, &mut report)?;
-            append_design_losses(ctx, &ir, &mut report)?;
+            append_design_losses_with(ctx, &ir, Some(&native), &mut report)?;
             return decode_result(ctx, ir, report, annotations, unknowns);
         }
     }
 
-    let (ir, annotations, unknowns, mut pmi_losses) = build_metadata_ir(
+    let (ir, annotations, unknowns, mut pmi_losses, native) = build_metadata_ir(
         ctx,
         &scan,
         &classification,
@@ -161,7 +161,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         "append SLDPRT PMI losses",
     )?;
     report.losses.append(&mut pmi_losses);
-    append_design_losses(ctx, &ir, &mut report)?;
+    append_design_losses_with(ctx, &ir, Some(&native), &mut report)?;
     decode_result(ctx, ir, report, annotations, unknowns)
 }
 
@@ -472,18 +472,13 @@ fn has_incoherent_refs<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>(
     Ok(false)
 }
 
+/// Scan a model read back from its native namespace, as a test fixture does.
+#[cfg(test)]
 fn append_design_losses(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     report: &mut DecodeBody,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
-        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
-        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitFaceTool,
-    };
-    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
-
     let native = match ir.native.namespace("sldprt") {
         None => None,
         Some(namespace) => match crate::native::SldprtNative::load_charged(ctx, namespace) {
@@ -494,6 +489,23 @@ fn append_design_losses(
             },
         },
     };
+    append_design_losses_with(ctx, ir, native.as_ref(), report)
+}
+
+/// Report what the decoded design leaves unresolved, reading the native
+/// records the decode stored.
+fn append_design_losses_with(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    native: Option<&crate::native::SldprtNative>,
+    report: &mut DecodeBody,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{
+        AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
+        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
+        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitFaceTool,
+    };
+    use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
     let active_configurations = ctx
         .admit_iter(
@@ -3092,6 +3104,16 @@ fn ensure_display_appearance(
     Ok(id)
 }
 
+/// A decoded model, its source annotations, unknown records, PMI losses, and
+/// the native records it stored, which the design-loss scan reads directly.
+type BuiltIr = (
+    CadIr,
+    Annotations,
+    Vec<UnknownRecord>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+    crate::native::SldprtNative,
+);
+
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
     scan: &mut ContainerScan<'_>,
@@ -3099,15 +3121,7 @@ fn build_geometry_ir(
     decoded: DecodedBrep,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
-) -> Result<
-    (
-        CadIr,
-        Annotations,
-        Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-    CodecError,
-> {
+) -> Result<BuiltIr, CodecError> {
     fn add_opaque_link<'a>(
         ctx: &DecodeContext<'_>,
         opaque_links: &mut BTreeMap<&'a str, Vec<String>>,
@@ -4158,7 +4172,7 @@ fn build_geometry_ir(
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
     ir.finalize(ctx)?;
-    Ok((ir, annotations, unknowns, pmi_losses))
+    Ok((ir, annotations, unknowns, pmi_losses, native))
 }
 
 fn assign_native_configuration_indices(
@@ -4617,15 +4631,7 @@ fn build_metadata_ir(
     classification: &crate::dialect::LayerClassification,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
-) -> Result<
-    (
-        CadIr,
-        Annotations,
-        Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-    CodecError,
-> {
+) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
@@ -5074,7 +5080,7 @@ fn build_metadata_ir(
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
     ir.finalize(ctx)?;
-    Ok((ir, annotations, unknowns, pmi_losses))
+    Ok((ir, annotations, unknowns, pmi_losses, native))
 }
 
 #[derive(Clone, Copy)]
