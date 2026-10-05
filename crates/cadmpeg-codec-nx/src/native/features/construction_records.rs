@@ -2700,7 +2700,11 @@ pub(in crate::native) fn feature_block_dimensions(
         if !sources_agree {
             continue;
         }
-        let id = if let Some((prefix, suffix)) = construction.id.split_once("block-construction") {
+        let id = if let Some((prefix, suffix)) = ctx.split_once(
+            &construction.id,
+            "block-construction",
+            "split NX block dimensions identity",
+        )? {
             ctx.format_retained(
                 format_args!("{prefix}block-dimensions{suffix}"),
                 "NX block dimensions identity",
