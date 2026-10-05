@@ -34,7 +34,7 @@ use cadmpeg_ir::{
     },
     scalar::Length,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const EPS_HOLE_POSITION: f64 = 1.0e-8;
 const EPS_HOLE_GEOMETRY: f64 = 1.0e-9;
@@ -1720,10 +1720,10 @@ pub(crate) fn project_hole_position_sketches(
     const OPERATION: &str = "project SLDPRT hole position sketches";
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
-    let mut native_features = HashMap::new();
+    let mut native_features = BTreeMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, OPERATION)?;
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut native_features,
             feature.id.as_str(),
             feature,
@@ -2132,11 +2132,11 @@ pub(crate) fn project_spatial_hole_position_sketches(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const INDEX_OPERATION: &str = "index SLDPRT spatial position features";
-    let mut native_features = HashMap::new();
+    let mut native_features = BTreeMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, INDEX_OPERATION)?;
         let key = feature.id.as_str();
-        ctx.insert_hash_map(&mut native_features, key, feature, INDEX_OPERATION)?;
+        ctx.insert_btree_map(&mut native_features, key, feature, INDEX_OPERATION)?;
     }
     for index in 0..features.len() {
         let feature = &features[index];
@@ -2485,11 +2485,11 @@ pub(crate) fn project_generated_hole_axes(
 ) -> Result<(), CodecError> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
-    let mut native_features = HashMap::new();
+    let mut native_features = BTreeMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, "index SLDPRT generated hole features")?;
         let key = feature.id.as_str();
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut native_features,
             key,
             feature,
@@ -3609,10 +3609,10 @@ pub(crate) fn project_hole_axes(
     const INDEX_OPERATION: &str = "index SLDPRT hole position features";
 
     let surfaces = topology.surfaces;
-    let mut native_features = HashMap::new();
+    let mut native_features = BTreeMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, INDEX_OPERATION)?;
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut native_features,
             feature.id.as_str(),
             feature,
@@ -3638,7 +3638,7 @@ pub(crate) fn project_hole_axes(
                 .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
         model_sketches.insert(native, sketch);
     }
-    let mut hole_positions = HashMap::new();
+    let mut hole_positions = BTreeMap::new();
     for hole in native_features.values() {
         ctx.charge_work(1, INDEX_OPERATION)?;
         if classify(hole) != Some(FeatureClass::Hole) {
@@ -3657,8 +3657,12 @@ pub(crate) fn project_hole_axes(
         let Some(position) = position else {
             continue;
         };
-        ctx.reserve_map(&mut hole_positions, 1, INDEX_OPERATION)?;
-        hole_positions.insert(hole.id.as_str(), position);
+        ctx.insert_btree_map(
+            &mut hole_positions,
+            hole.id.as_str(),
+            position,
+            INDEX_OPERATION,
+        )?;
     }
     let mut position_features = HashSet::new();
     for position in hole_positions.values() {
@@ -4367,11 +4371,11 @@ pub(crate) fn project_bore_backed_position_sketches(
         0,
         "SLDPRT project_bore_backed_position_sketches lookup storage",
     )?;
-    let mut native_features = HashMap::new();
+    let mut native_features = BTreeMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, OPERATION)?;
         lookup_storage.with_storage(|| {
-            ctx.insert_hash_map(
+            ctx.insert_btree_map(
                 &mut native_features,
                 feature.id.as_str(),
                 feature,

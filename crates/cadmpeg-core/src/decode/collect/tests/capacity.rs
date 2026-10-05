@@ -109,10 +109,6 @@ fn flat_copies_do_not_charge_storage_for_empty_or_zero_sized_values() {
             .expect("admitted test operation"),
         vec![(); 3]
     );
-    assert!(ctx
-        .copy_retained_set(&HashSet::<u64>::new(), "empty set copy")
-        .expect("admitted test operation")
-        .is_empty());
     assert!(ctx.finish_session().is_ok());
 }
 

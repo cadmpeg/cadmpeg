@@ -387,16 +387,45 @@ operation before work. Filtering and skipping can inspect input before a
 yielded iteration; a charge in that iteration does not admit those visits.
 
 Use `ctx.admit_iter(source, operation)?` before adapting an input-sized
-source. `IterSource` is implemented by core alone for slices, vectors,
-boxed slices, arrays, text, queues, maps, sets and unsigned integer ranges.
-`Range` and `RangeInclusive` support `u8`, `u16`, `u32`, `u64`, `u128`
-and `usize`. Range admission checks the exact remaining visit count before
-the first visit. A count that exceeds `u64` refuses and fuses the caller budget.
-Text admission counts bytes for both byte and character traversal.
-An iterator size hint does not establish admission. `AdmittedIter` owns
-one traversal; its source cannot be extracted or cloned. Adapters retain admission. A nested loop
-or a `flat_map` inner source requires its own admission. Child copies,
-comparisons and callback work require their own operations.
+source. The source is consumed and its exact visit bound is charged before
+the first visit. `IterSource` is implemented by core alone: borrowed slices,
+vectors, boxed slices, arrays, options, text, queues, B-tree maps and sets
+and JSON maps yield references; mutable slices, vectors, arrays and B-tree
+maps yield mutable references; owned vectors, arrays, options, B-tree maps and
+sets and JSON maps move their values; `&DialectLayers` yields its primary and
+extra layers. `Range` and `RangeInclusive` support `u8`, `u16`, `u32`, `u64`,
+`u128` and `usize`, by value or by reference. Range admission checks the exact
+remaining visit count before the first visit. A count that exceeds `u64`
+refuses and fuses the caller budget. Text admission counts bytes for both
+byte and character traversal. Hash tables are not sources. An iterator size
+hint does not establish admission. `AdmittedIter` owns one traversal; its
+source cannot be extracted or cloned. Map-like adapters with checked callbacks
+keep the admission; filters, skips and `step_by` keep it only over an admitted
+or constant-count base; `cloned` keeps it for Copy or fixed-clone items;
+`chain` keeps it when both sides are admitted; `zip` keeps it when one side is
+admitted and the other advances in constant work; `flatten` and `flat_map`
+need a constant-count inner iterator, such as `char::to_lowercase`. A nested
+loop requires its own admission. Child copies, comparisons and callback work
+require their own operations. Dropping consumed or remaining values is free.
+A search that can stop early (`any`, `all`, `find`, `find_map`, `position`,
+`rposition`) over an admitted iterator is reported: the admission charged
+every visit. `any_by`, `all_by`, `find_by`, `find_map` and `position_by`
+step a fixed-step source and charge each step as it is made, including the
+end probe of a search that finds nothing; `rposition_by`
+searches a slice from the end the same way.
+
+The standard reflexive `From<T> for T` and its `Into<T>` forwarding move the
+value. They require no byte scan or allocation admission. A conversion between
+fixed-size `Copy` values requires a proven fixed body. A `Copy` result alone
+does not prove that its constructor performs fixed work.
+
+A source of unknown length, such as XML children or a `from_fn` closure, is
+stepped with `while let Some(item) = ctx.next_charged(&mut source, operation)?`,
+which charges one unit before every `next`, including the end probe. Each
+`next` must do constant work: a standard one-step iterator, adapters over an
+admitted base, or a checked closure. A filtering adapter over a raw slice can
+scan any number of items in one step and retains a finding. Core collectors
+step their sources the same way.
 
 `DecodeCost` states the bytes read by a hash or comparison, including owned
 children. Core implements standard values. An owning crate implements its
@@ -410,8 +439,44 @@ and storage. Work receipts match the character. Storage receipts also
 identify the output string. Each receipt is consumed once and is invalidated
 by mutation. Scoped text uses the same operation inside
 `reservation.with_storage`.
-Range receipts identify the range kind and each bound. Truncation consumes
-the receipt for the same vector's removed suffix and cutoff.
+Range receipts identify the range kind and each bound. A move receipt for a
+vector's suffix from an index pays for `Vec::insert` at that index.
+Truncating or clearing a collection needs no receipt.
+
+Decode code uses `HashMap` and `HashSet` only for keyed lookup and
+insertion. A removal leaves a deleted slot that `capacity()` no longer
+counts, and core charges growth from `capacity()`, so a removal is reported;
+a collection that shrinks is a `BTreeMap` or `BTreeSet`. Iteration order is unspecified, so decoded output must not
+depend on it, and a scan walks the allocated table, which has no exact public
+bound once removals leave deleted slots. Traversal (`iter`, `keys`, `values`,
+`values_mut`, `into_keys`, `into_values`, `IntoIterator`, `for` loops), the
+set relations (`difference`, `intersection`, `union`, `is_subset`,
+`is_disjoint`), the set operators `|`, `&`, `-` and `^`, whole-table `==`,
+`clone`, `retain`, `drain` and `extract_if` are reported; a collection that decode traverses or compares is a `BTreeMap`,
+`BTreeSet` or `Vec`. A keyed operation hashes and compares the key through its
+`Hash` and `PartialEq<Self>` callbacks, and core charges the key's `DecodeCost`
+for them. Standard keys (scalars, strings, `Cow<str>`, `Box`, `Vec`, `Option`,
+slices, arrays and tuples) and keys whose `Hash` and `PartialEq` come from a
+derive macro's expansion are accepted; a hand-written callback, or an
+`automatically_derived` marker written by hand or by a declarative macro,
+retains a finding at the lookup, insertion or removal, because std calls the
+callback where the call graph cannot follow it. A keyed operation whose key,
+query or builder is a type parameter is proven at each concrete instance and
+reported at the instantiation that fails. `table[key]` through `ops::Index`
+hashes or compares the key without a charge and is reported with
+`get_hash_map` or `get_btree_map`. A B-tree key operation requires a
+standard key, a key whose `Ord` comes from a derive expansion, or
+`serde_value::Value`, which orders by variant and then by content.
+Probing is not charged per probe, so the table must use `RandomState`; a
+fixed-key builder such as `BuildHasherDefault<DefaultHasher>` lets an input
+choose colliding keys and retains a finding. Hash growth charges the old
+table's bytes first, which pays for walking its buckets because an
+insert-only table's `capacity()` counts all of them, and then
+the rehash of every stored key: length times a fixed key cost, or one visit
+per key plus the sum of each variable key's `DecodeCost`, charged as one
+amount so that the visit order cannot move a refusal. `unique_index` maps a
+key that occurred once to `Some` and keeps a `None` tombstone for a repeated
+key; uniqueness is tested through `get`, not `contains_key`.
 
 A scoped storage receipt names its live reservation local. Moving that
 reservation into another owner invalidates the local receipt. Keep the
@@ -436,20 +501,25 @@ Compiler-verified key and move receipts retain their operation-site identity
 when generic bodies are imported into another checked crate. A receipt
 admits that site alone.
 
+Imported generic proof tracks each concrete instance with its fixed and paid
+operands. Chain depth is bounded by the compiler recursion limit; distinct
+states are bounded by its checked square. An unavailable body, expanding type
+or exhausted bound retains an unproven finding.
+
 | Operation shape | Core method |
 | --- | --- |
 | `for loop` | `admit_iter` on the base before adapters |
 | `collection growth outside core operation` | `push_vec`, `reserve_vec`, `append_retained`, `push_retained_char` or the receiver-specific map/set insertion method |
 | `into` | `copy_retained_text` for text; `copy_slice` for Copy slices; `into_boxed_slice` for an owned vector |
-| `comparison` | `equal_bytes` for byte equality; `equal` for value equality; `compare` for ordering |
-| `insert` | `insert_hash_map`, `insert_btree_map`, `insert_hash_set` or `insert_btree_set`; for a string character, encode it in a four-byte stack buffer and use `replace_text_range` with an empty range |
+| `comparison` | `equal_bytes` for byte equality; `equal` for value equality; `compare` for ordering; whole hash tables are not compared, use `BTreeSet` or `BTreeMap` |
+| `insert` | `insert_vec` for indexed vector insertion, inside `with_storage` for scoped storage; `insert_hash_map`, `insert_btree_map`, `insert_hash_set` or `insert_btree_set` for keys |
 | `any` | `any_by` for slices; `admit_iter` before an iterator consumer |
 | `contains` | `contains_text`, `contains`, `contains_hash_set` or `contains_btree_set`, selected by receiver |
 | `get` | `get_hash_map`, `get_btree_map`, `get_hash_set` or `get_btree_set`, selected by receiver |
 | `format!` | `format_retained` |
 | `contains_key` | `contains_key_hash_map` or `contains_key_btree_map` |
 | `clone` | `copy_retained_text`, `copy_slice` or `collect_vec` with charged child construction |
-| `collect` | `collect_vec`, `try_collect_vec`, `collect_hash_map`, `collect_hash_set`, `collect_scoped_btree_map` or `collect_btree_set` |
+| `collect` | `collect_vec`, `try_collect_vec`, `try_collect_scoped_vec`, `collect_text`, `collect_scoped_text`, `collect_hash_map`, `collect_hash_set`, `collect_scoped_btree_map` or `collect_btree_set` |
 | `all` | `all_by` for slices; `admit_iter` before an iterator consumer |
 | `trait implementation unresolved` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `find` | `find_by` for slices; `find_text` or `find_bytes` for text/bytes; `admit_iter` for iterator consumers |
@@ -460,12 +530,12 @@ admits that site alone.
 | `external operation temporary or result storage` | `reserve_scoped` for a checked temporary bound, or `collection_vec`/`copy_retained_text` for caller-owned output; opaque allocation stays unproven |
 | `eq_ignore_ascii_case` | `eq_ignore_ascii_case` |
 | `parse` | `parse_text` |
-| `extend` | `extend_vec` for vectors; for strings, `admit_iter` on the base, then `push_retained_char` for each character or `append_retained` for each text item |
+| `extend` | `extend_vec` for vectors, options, arrays and borrowed Copy slices; for strings, `collect_text`, or `admit_iter` on the base, then `push_retained_char` for each character or `append_retained` for each text item |
 | `get_mut` | `get_mut_hash_map` or `get_mut_btree_map` |
 | `try_fold` | `fold` for slices; `admit_iter` before iterator consumption |
 | `Display output extent unresolved` | `format_retained` |
-| `attribute` | `charge_work` |
-| `retain` | `retain_vec` |
+| `attribute` | `xml_attribute` |
+| `retain` | `retain_vec` for vectors; `retain_btree_map` or `retain_btree_set` for B-trees; hash tables are not scan-retained |
 | `cmp` | `compare` |
 | `sum` | `sum` for slices; `admit_iter` before a standard scalar consumer |
 | `entry` | `entry_hash_map` or `entry_btree_map`; subsequent insertion uses typed storage admission |
@@ -484,7 +554,7 @@ admits that site alone.
 | `serialize` | `parse_json` for derived decode trees; `parse_json_value` for value trees. Rebuild serialized owned fields with `collect_vec` and `format_retained`; custom Serde calls remain unproven |
 | `deserialize` | `parse_json` for derived decode trees; `parse_json_value` for value trees. Rebuild serialized owned fields with `collect_vec` and `format_retained`; custom Serde calls remain unproven |
 | `Clone element layout unresolved` | `collect_vec` with a concrete charged child factory |
-| `remove` | `remove_hash_map`, `remove_btree_map`, `remove_hash_set` or `remove_btree_set` |
+| `remove` | `remove_btree_map` or `remove_btree_set`; hash tables are insert-only |
 | `vector collection storage reuse` | `collect_vec` |
 | `nth` | `admit_iter` |
 | `copy_from_slice` | `copy_into` |
@@ -500,18 +570,18 @@ admits that site alone.
 | `append` | `append_vec` |
 | `conversion implementation unresolved` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `dedup_by` | `dedup_by` |
-| `has_tag_name` | `charge_work` |
+| `has_tag_name` | `xml_has_tag_name` |
 | `reverse` | `reverse` |
 | `dedup_by_key` | `dedup_by_key` |
 | `join` | `join_retained` |
 | `truncate` | `truncate_vec` |
 | `make_ascii_lowercase` | `make_ascii_lowercase` |
-| `root_element` | `charge_work` |
+| `root_element` | `xml_root_element` |
 | `to_ascii_lowercase` | `to_ascii_lowercase` |
 | `min_by_key` | `min_by_key` |
 | `starts_with` | `starts_with` |
 | `into_owned` | `copy_retained_text` for a borrowed text variant; move an owned variant |
-| `with_capacity` | `collection_vec` |
+| `with_capacity` | `collection_vec` for vectors; `retained_string` or `scoped_string` for strings |
 | `binary_search` | `binary_search` |
 | `rposition` | `rposition_by` for slices; `admit_iter` before an iterator consumer |
 | `partition_point` | `partition_point` |
@@ -525,7 +595,7 @@ admits that site alone.
 | `drain` | `drain_vec` |
 | `from_str_radix` | `parse_radix` |
 | `min_by` | `min_by` |
-| `is_disjoint` | `is_disjoint_hash_set` or `is_disjoint_btree_set` |
+| `is_disjoint` | `is_disjoint_btree_set`; hash sets are not traversed |
 | `fill` | `fill` |
 | `max_by_key` | `max_by_key` |
 | `replace` | `replace_text` |
@@ -540,12 +610,13 @@ admits that site alone.
 | `external operation missing summary: annotations::_::_serde::Serialize::serialize` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `generic instantiation contains an indirect call` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `from_utf8_lossy` | `copy_retained_lossy_utf8` |
+| `decode` (`encoding_rs`) | `charge_work` for the source bytes, then `decode_to_string_without_replacement` into `retained_string` output; it writes only within the admitted capacity and reports when the output is full |
 | `ends_with` | `ends_with` |
 | `last` | `admit_iter` |
 | `get_key_value` | `get_key_value_hash_map` or `get_key_value_btree_map` |
 | `trim_matches` | `trim_matches` |
 | `trim_start` | `trim_start_text` |
-| `is_subset` | `is_subset_hash_set` or `is_subset_btree_set` |
+| `is_subset` | `is_subset_btree_set`; hash sets are not traversed |
 | `owning vector iterator collection may move or copy` | `collect_vec` |
 | `binary_search_by_key` | `binary_search_by_key` |
 | `trim_start_matches` | `trim_start_matches` |
@@ -561,7 +632,7 @@ admits that site alone.
 | `rfind` | `rfind_text` or `rfind_bytes`; `admit_iter` before reverse iterator search |
 | `resize` | `resize_with` |
 | `to_str` | `validate_utf8` |
-| `remove_entry` | `remove_entry_hash_map` or `remove_entry_btree_map` |
+| `remove_entry` | `remove_entry_btree_map`; hash tables are insert-only |
 | `try_for_each` | `admit_iter` |
 | `binary_search_by` | `binary_search_by` |
 | `decompress` | `begin_expand` and `charge_work` for compressed bytes; shared container inflate operations own the scan |
@@ -593,6 +664,7 @@ admits that site alone.
 | `make_mut` | `copy_retained_text` or `collect_vec` to construct the replacement; shared copy-on-write storage requires concrete proof |
 | `lzma_decompress_with_options` | `begin_expand`, `charge_work` and `reserve_scoped`; the concrete decoder workspace bound must be established |
 | `decode_to_utf8_without_replacement` | `collection_vec` for output slots and `charge_work` for the input; bounded slice decoder |
+| `decode_to_string_without_replacement` | `retained_string` for the caller's output capacity and `charge_work` for the exact source bytes; the pinned decoder writes only spare capacity |
 | `decode` | `collection_vec` and `charge_work`; replace allocating decoders with their bounded slice forms |
 | `for_label` | `charge_work` for label bytes |
 | `splice` | `splice_vec` |
@@ -603,11 +675,7 @@ admits that site alone.
 | `decompress_stream` | `open_zstd`; its reader owns each admitted stream step |
 | `find_frame_compressed_size` | `charge_work` for compressed frame bytes |
 | `external operation missing summary: dialect::FormatIdentityPayload::format` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
-| `external operation missing summary: codec::CodecBackend::detect_impl` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
-| `external operation missing summary: codec::CodecBackend::validate_native` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
-| `external operation missing summary: codec::CodecBackend::inspect_impl` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `external operation missing summary: codec::Codec::decode_with_context` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
-| `external operation missing summary: codec::CodecBackend::decode_impl` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `external operation missing summary: document::EntityRewrite::rewrite` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `external operation missing summary: schema::EntitySchema::identity` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `external operation missing summary: features::patterns::CompositeStages::try_map_stage_lengths_owned` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
@@ -617,7 +685,7 @@ admits that site alone.
 | `external operation missing summary: native::canon::ByteSink::write_bytes` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `write_all` | `charge_work` for source bytes; use `begin_expand` when the target owns expanded storage |
 | `sort` | `stable_sort_by` |
-| `by_index` | `ArchiveSnapshot::new` and `ArchiveSnapshot::open` in cadmpeg-container; expansion uses `begin_expand` |
+| `by_index` | `ArchiveSnapshot::probe_readable_names` for tolerant name probes; `ArchiveSnapshot::new` and `ArchiveSnapshot::open` for payloads; expansion uses `begin_expand` |
 | `external operation missing summary: std::f64::<impl f64>::log2` | `charge_work` for a resolved operand bound and `reserve_scoped` for checked temporary bytes; resolve the concrete implementation before admission |
 | `custom comparison work` | `equal` or `compare`; the concrete comparison body must admit child work |
 
@@ -647,11 +715,60 @@ resource refusal. Serialization builds its text outside decode admission.
 `Deserialize` and `Serialize` implementation bodies are Serde callbacks.
 They are excluded from decode body analysis. Deserialization admission is
 checked at the decode call. `parse_json` accepts a derived type tree: each
-contained nonstandard type must have derived deserialization.
+contained nonstandard type must have deserialization derived by `serde_derive`.
+An `automatically_derived` marker alone does not establish this origin.
 `parse_json_value` owns the value-tree parser bound. A custom deserializer,
 a contained custom deserializer, or deserialization outside these operations
 retains an `unproven_decode_charge` finding at the calling site. Serde
 callbacks carry no hidden or thread-local context.
+
+Derived deserialization with `try_from`, `from`, `with`, `deserialize_with`,
+`default`, `skip`, `skip_deserializing`, `flatten`, `untagged`, `tag` or
+`content` can call custom code or scan buffered values again. `remote` derivation also requires a separate
+callback proof.
+Derivation alone does not prove those callbacks. Decode reads a plain wire
+type and applies its context-taking constructor afterward.
+
+Typed JSON maps and sets require standard scalar or String keys. Hash
+containers also require the standard RandomState hasher and Global allocator.
+Custom key hashing, equality, ordering and hasher construction remain unproven.
+A JSON parse pass, the bounding parse and the typed validation alike, charges
+the input length times two plus one key search: a scan, a copy of each string
+and the comparisons of one B-tree search path, the smaller of the entry count
+and the per-level search bound. A `raw_value` carrier can replay its string at
+every nesting level and charges the input length times the entry count and
+the nesting depth. The conversion from the parsed tree charges one step per
+value plus the key comparisons. The validation result uses scoped storage;
+the conversion result uses retained storage.
+
+The target proof bounds container storage, including live old and new buffers,
+against the typed parser allowance. Inline element size and container layout
+use the target architecture. A sequence member supplies one value allowance
+for each JSON node it must occupy: its own node and one for each required
+field of a derived record. Recursive targets must consume a JSON value
+before revisiting the same type. Transparent, Option and pointer wrappers do
+not establish that progress.
+
+Serde deserialization is context-free reconstruction. A `TryFrom<String>`
+callback selected by `#[serde(try_from = ...)]` keeps its signature and uses
+standard allocation. It is not a decode body. Decode reads the raw wire value
+and passes the caller's `DecodeContext` to its constructor. Validation has one
+implementation parameterised by a typed admission. Decode admission charges
+the caller and returns the original refusal. Context-free admission has the
+failure type `Infallible`.
+
+`schema::structural::project` charges each node it emits, the text it copies,
+its scoped storage, nesting depth and the charged B-tree lookups of map
+entries. The source's `Serialize` implementations are Serde callbacks outside
+body analysis, so the checker reports each project call whose concrete source
+reaches a `Serialize` implementation; a custom implementation that copies or
+scans before emitting, such as a `to_vec`, a base64 encoding or a
+`#[serde(into)]` clone, is the work those findings protect.
+
+A shared `const fn` grammar validator has one implementation for constant
+construction and runtime decode. The runtime caller charges the scanned extent
+through its context immediately before calling the validator. Constant callers
+keep their existing signatures and perform no runtime admission.
 
 A checked context operation owns its work admission. Its call site carries
 no duplicate body finding. An unavailable or unresolved implementation
@@ -675,16 +792,34 @@ work. The checker does not silently accept an undecided
 operation.
 
 The fixture tests are in `crates/cadmpeg-decode-policy/fixtures` and are run
-by the compiler integration suite:
+by the compiler integration suite. Fixtures that link the real core, container
+and IR crates read the MIR of their non-generic functions, so the dependencies
+are built with it encoded:
 
 ```
-cargo +nightly-2026-09-08 test -q --manifest-path crates/cadmpeg-decode-policy/Cargo.toml --lib
+RUSTFLAGS=-Zalways-encode-mir cargo +nightly-2026-09-08 test -q --manifest-path crates/cadmpeg-decode-policy/Cargo.toml --lib
 ```
+
+A refusal test finds a named boundary with
+`cadmpeg_core::decode::refusal_probe::RefusalProbe` (core feature
+`test-support`, enabled by `cadmpeg-test-support`). It leaves the dimension
+unlimited in the policy of the context under test and arms the probe; the
+first charge of the operation that would raise that context's peak usage
+refuses, reporting the peak as the limit. One decode finds the boundary, and
+`cadmpeg_test_support::refusal::resource_limit_at` replays it one unit below
+the need under the ordinary limit. A decode charges in the same order on every
+run, so a replay that refuses elsewhere fails the test: it exposes a charge
+sequence that depends on unordered iteration.
 
 Heap sifts charge the maximum `DecodeCost` of all stored operands and the incoming
 value. With `n` operands, the work bound is `n` measuring visits plus
 `(bit_length(n) + 1) * 4 * (maximum_operand_bytes + size_of::<T>())`.
 Heap capacity growth has its own retained, scoped and movement charges.
-Hash growth charges the old bucket storage as movement work, in addition to stored
-key visits and hash bytes. Tree insertion and removal charge four passes over the
-bounded node storage for shifts, splits, merges and parent-link repair.
+Hash growth charges the old bucket storage as movement work, in addition to the
+rehash of stored keys. A B-tree of h levels holds at least 2 * 6^(h-1) - 1
+entries. A tree lookup charges the key's cost for at most eleven comparisons
+per level, and never more comparisons than stored keys. Tree insertion and
+removal charge four passes over the nodes of the search path plus a new root
+for shifts, splits, merges and parent-link repair. Insertion charges no work
+proportional to the stored length. Truncating, clearing, filling or
+compacting a vector charges nothing for the values it releases.

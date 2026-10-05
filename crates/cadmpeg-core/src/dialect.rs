@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 
-use crate::decode::DecodeContext;
+use crate::decode::{cost::DecodeCost, DecodeContext};
 use crate::CodecError;
 
 #[cfg(feature = "schema")]
@@ -125,6 +125,20 @@ impl DialectId {
     fn parts(&self) -> (&str, &str) {
         let (namespace, qualified_name) = self.as_str().split_at(self.namespace_len);
         (namespace, &qualified_name[1..])
+    }
+}
+
+impl DecodeCost for DialectId {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        ctx.cost_sum(
+            self.as_str().decode_cost(ctx, operation)?,
+            crate::decode::u64_from_index(std::mem::size_of::<usize>()),
+            operation,
+        )
     }
 }
 
@@ -552,7 +566,19 @@ impl DialectLayers {
 
     /// Iterates over the primary layer followed by every extra layer.
     pub fn iter(&self) -> impl Iterator<Item = &DialectMatch> {
+        self.layers()
+    }
+
+    /// The primary layer followed by every extra layer, as a concrete iterator.
+    pub(crate) fn layers(
+        &self,
+    ) -> std::iter::Chain<std::iter::Once<&DialectMatch>, std::slice::Iter<'_, DialectMatch>> {
         std::iter::once(&self.primary).chain(&self.extra)
+    }
+
+    /// Returns the number of layers after the primary layer.
+    pub(crate) fn extra_layer_count(&self) -> usize {
+        self.extra.len()
     }
 }
 
@@ -814,6 +840,7 @@ mod tests {
 
     use std::collections::BTreeMap;
 
+    use crate::decode::cost::DecodeCost;
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
 
@@ -832,6 +859,47 @@ mod tests {
             DialectMatch::residual(crate::dialect_id!("parasolid:unknown")).with_instance(instance);
         assert_eq!(matched.instance(), Some("embedded-body"));
         assert_eq!(matched.instance().expect("instance").as_ptr(), address);
+    }
+
+    #[test]
+    fn dialect_id_cost_counts_the_complete_utf8_string() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        for id in [
+            crate::dialect_id!("rhino:archive-80"),
+            DialectId::parse("nx:version-5".to_owned()).expect("valid dialect id"),
+        ] {
+            assert_eq!(
+                id.decode_cost(&ctx, "compare dialect id")
+                    .expect("string cost"),
+                u64::try_from(id.as_str().len() + std::mem::size_of::<usize>())
+                    .expect("test cost fits")
+            );
+        }
+    }
+
+    #[test]
+    fn dialect_id_equality_refusal_is_sticky_before_comparison() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let id = crate::dialect_id!("rhino:archive-80");
+        let CodecError::ResourceLimit(first) = ctx
+            .equal(&id, &id, "compare dialect id")
+            .expect_err("dialect key work refuses")
+        else {
+            panic!("resource refusal")
+        };
+        let CodecError::ResourceLimit(repeated) = ctx
+            .equal(&id, &id, "repeat dialect comparison")
+            .expect_err("sticky refusal precedes comparison")
+        else {
+            panic!("resource refusal")
+        };
+        assert_eq!(first, repeated);
+        assert_eq!(ctx.resource_refusal(), Some(first));
     }
 
     #[derive(serde::Deserialize)]
@@ -1142,11 +1210,12 @@ mod tests {
         );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Visits, copies and key comparisons use 28 units; insertions move four passes through 1+2 bounded nodes.
+        // Two visits, four one-byte copies and two one-key comparisons use 8 units;
+        // insertions move four passes through 1+2 bounded nodes.
         let node_bytes = 22 * std::mem::size_of::<String>()
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<String>();
-        let work = 28 + 4 * 3 * crate::decode::u64_from_index(node_bytes);
+        let work = 8 + 4 * 3 * crate::decode::u64_from_index(node_bytes);
         policy.limits.max_work_units = work;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert_eq!(

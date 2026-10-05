@@ -20,7 +20,9 @@ fn parameter_uniqueness_preserves_first_values_and_negative_zero() {
 
 #[test]
 fn parameter_uniqueness_admits_source_before_projection_and_comparison_before_storage() {
-    for cap in [0, 3] {
+    // Four units admit the source, the first value's empty search probe and
+    // its scratch copy; the second value's first comparison refuses.
+    for cap in [0, 4] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
@@ -54,8 +56,9 @@ fn parameter_uniqueness_admits_source_before_projection_and_comparison_before_st
 fn parameter_uniqueness_admits_only_visited_candidates() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // The total is four source slots, three scratch copies, and four visited comparisons.
-    policy.limits.max_work_units = 11;
+    // The total is four source slots, three scratch copies, four visited
+    // comparisons and three end probes of the searches that found nothing.
+    policy.limits.max_work_units = 14;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let values =
         super::super::unique(&ctx, &[1.0, 2.0, 3.0, 1.0], |value| FiniteReal::new(*value)).unwrap();
