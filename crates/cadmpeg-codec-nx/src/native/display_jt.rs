@@ -6030,26 +6030,35 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
         }
         let mut visiting = HashSet::new();
         let mut visiting_storage = ctx.reserve_scoped(0, "nx JT visiting nodes")?;
-        self.resolve(ctx, object_id, &mut visiting, &mut visiting_storage)
+        let mut paths_storage = ctx.reserve_scoped(0, "nx JT resolved paths")?;
+        Ok(self
+            .resolve(
+                ctx,
+                object_id,
+                &mut visiting,
+                &mut visiting_storage,
+                &mut paths_storage,
+            )?
+            .map(|paths| (paths, paths_storage)))
     }
 
-    fn resolve<'paths>(
+    /// Every path state of `object_id`. All path storage, including the
+    /// node-path buffers that outlive this call, is held by `paths_storage`.
+    fn resolve(
         &self,
-        ctx: &'paths DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         object_id: u32,
         visiting: &mut HashSet<u32>,
         visiting_storage: &mut ScopedReservation<'_>,
-    ) -> Result<Option<JtResolvedPaths<'paths>>, CodecError> {
+        paths_storage: &mut ScopedReservation<'_>,
+    ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
         let _depth = ctx.enter_nested("resolve JT node path")?;
         let Some(&base) = ctx.get_btree_map(&self.by_object, &object_id, "nx JT node index")?
         else {
             return Ok(None);
         };
         if base.flags & 1 != 0 {
-            return Ok(Some((
-                Vec::new(),
-                ctx.reserve_scoped(0, "nx JT resolved paths")?,
-            )));
+            return Ok(Some(Vec::new()));
         }
         if ctx.contains_hash_set(visiting, &object_id, "nx JT visiting nodes")? {
             return Ok(None);
@@ -6057,21 +6066,20 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
         visiting_storage
             .with_storage(|| ctx.insert_hash_set(visiting, object_id, "nx JT visiting nodes"))?;
         let mut parent_states = Vec::new();
-        let mut parent_states_storage = ctx.reserve_scoped(0, "nx JT parent path states")?;
         if let Some(ids) = ctx.get_hash_map(&self.parents, &object_id, "nx JT parent index")? {
             for &id in ctx.admit_iter(ids, "resolve JT parent paths")? {
-                let Some((paths, _paths_storage)) =
-                    self.resolve(ctx, id, visiting, visiting_storage)?
+                let Some(paths) =
+                    self.resolve(ctx, id, visiting, visiting_storage, paths_storage)?
                 else {
                     return Ok(None);
                 };
-                parent_states_storage.with_storage(|| {
+                paths_storage.with_storage(|| {
                     ctx.extend_vec(&mut parent_states, paths, "nx JT parent path states")
                 })?;
             }
         } else {
             ctx.push_scoped_vec(
-                &mut parent_states_storage,
+                paths_storage,
                 &mut parent_states,
                 DisplayJtPath {
                     matrix: [
@@ -6094,7 +6102,6 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
         let instance_id =
             ctx.get_hash_map(&self.instance_ids, &object_id, "nx JT instance index")?;
         let mut results = Vec::new();
-        let mut results_storage = ctx.reserve_scoped(0, "nx JT resolved paths")?;
         let path_count = parent_states.len();
         let mut parent_states = parent_states.into_iter();
         for _ in ctx.admit_iter(&(0..path_count), "resolve JT path states")? {
@@ -6138,21 +6145,16 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
                     .push(ctx.copy_retained_text(instance_id, "nx JT instance path identity")?);
             }
             ctx.reserve_scoped_vec(
-                &mut results_storage,
+                paths_storage,
                 &mut path.node_path,
                 1,
                 "nx JT node path nodes",
             )?;
             path.node_path.push(object_id);
-            ctx.reserve_scoped_vec(
-                &mut results_storage,
-                &mut results,
-                1,
-                "nx JT resolved paths",
-            )?;
+            ctx.reserve_scoped_vec(paths_storage, &mut results, 1, "nx JT resolved paths")?;
             results.push(path);
         }
-        Ok(Some((results, results_storage)))
+        Ok(Some(results))
     }
 }
 
