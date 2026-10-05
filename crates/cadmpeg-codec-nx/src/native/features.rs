@@ -3710,7 +3710,7 @@ fn unique_operation_header_identities<'ctx>(
             Some(key)
                 if ctx
                     .get_hash_map(&unique, &key.as_str(), "find NX operation header key")?
-                    .is_some() =>
+                    .is_some_and(Option::is_some) =>
             {
                 Some(ctx.copy_retained_text(key, "retain NX operation header identity")?)
             }
@@ -5464,7 +5464,7 @@ pub(super) fn feature_body_segment_uses(
                         &(data_block_use.data_block.as_str(), reference.body.value()),
                         "match NX body object frames",
                     )?
-                    .is_none()
+                    .is_none_or(Option::is_none)
                 {
                     continue;
                 }
@@ -5635,7 +5635,7 @@ pub(super) fn feature_body_data_block_uses(
                 &operation_label,
                 "check NX feature body reference uniqueness",
             )?
-            .is_none()
+            .is_none_or(Option::is_none)
         {
             continue;
         }

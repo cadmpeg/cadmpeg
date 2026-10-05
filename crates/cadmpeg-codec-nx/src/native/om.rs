@@ -4167,7 +4167,7 @@ fn registry_definitions<T>(
         visit(
             entry,
             section.base_offset(),
-            &section.types,
+            &*section.types,
             &section.fields,
             false,
         )?;
@@ -5505,7 +5505,7 @@ pub(super) fn part_color_tables(
             continue;
         };
         let Some(class) = ctx.find_by(
-            &section.types,
+            &*section.types,
             |definition| Ok(definition.name == CLASS_NAME),
             "NX part color registry types",
         )?
@@ -6298,7 +6298,7 @@ pub(super) fn expression_declarations(
         .enumerate()
     {
         if !ctx.any_by(
-            &section.types,
+            &*section.types,
             |definition| Ok(definition.name == "UGS::EXP_expression"),
             "NX expression declaration registry types",
         )? {

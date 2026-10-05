@@ -3641,11 +3641,14 @@ pub(super) fn parasolid_attribute_field_names(
     )?;
     let mut relations = Vec::new();
     for definition in ctx.admit_iter(definitions, "resolve NX attribute field names")? {
-        if !ctx.contains_key_hash_map(
-            &definitions_by_identity,
-            &(definition.stream_ordinal, u32::from(definition.xmt)),
-            "NX attribute field definition index",
-        )? {
+        if !ctx
+            .get_hash_map(
+                &definitions_by_identity,
+                &(definition.stream_ordinal, u32::from(definition.xmt)),
+                "NX attribute field definition index",
+            )?
+            .is_some_and(Option::is_some)
+        {
             continue;
         }
         let Some(field_names_xmt) = definition.field_names_xmt else {
@@ -5000,11 +5003,13 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
                     let Ok(ordinal) = u32::try_from(ordinal) else {
                         return Ok(true);
                     };
-                    Ok(!ctx.contains_key_hash_map(
-                        &fields_by_identity,
-                        &(entity.id.as_str(), ordinal),
-                        "NX topology attribute field index",
-                    )?)
+                    Ok(!ctx
+                        .get_hash_map(
+                            &fields_by_identity,
+                            &(entity.id.as_str(), ordinal),
+                            "NX topology attribute field index",
+                        )?
+                        .is_some_and(Option::is_some))
                 },
                 "NX topology attribute field validation work",
             )

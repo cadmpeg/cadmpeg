@@ -13,7 +13,7 @@ mod scene_admission_tests;
 mod segment_admission_tests;
 mod version;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
@@ -6028,7 +6028,7 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
         if !ctx.contains_key_btree_map(&self.by_object, &object_id, "nx JT node index")? {
             return Ok(None);
         }
-        let mut visiting = HashSet::new();
+        let mut visiting = BTreeSet::new();
         let mut visiting_storage = ctx.reserve_scoped(0, "nx JT visiting nodes")?;
         let mut paths_storage = ctx.reserve_scoped(0, "nx JT resolved paths")?;
         Ok(self
@@ -6048,7 +6048,7 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
         &self,
         ctx: &DecodeContext<'_>,
         object_id: u32,
-        visiting: &mut HashSet<u32>,
+        visiting: &mut BTreeSet<u32>,
         visiting_storage: &mut ScopedReservation<'_>,
         paths_storage: &mut ScopedReservation<'_>,
     ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
@@ -6060,11 +6060,11 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
         if base.flags & 1 != 0 {
             return Ok(Some(Vec::new()));
         }
-        if ctx.contains_hash_set(visiting, &object_id, "nx JT visiting nodes")? {
+        if ctx.contains_btree_set(visiting, &object_id, "nx JT visiting nodes")? {
             return Ok(None);
         }
         visiting_storage
-            .with_storage(|| ctx.insert_hash_set(visiting, object_id, "nx JT visiting nodes"))?;
+            .with_storage(|| ctx.insert_btree_set(visiting, object_id, "nx JT visiting nodes"))?;
         let mut parent_states = Vec::new();
         if let Some(ids) = ctx.get_hash_map(&self.parents, &object_id, "nx JT parent index")? {
             for &id in ctx.admit_iter(ids, "resolve JT parent paths")? {
@@ -6098,7 +6098,7 @@ impl<'a, 'ctx> JtSceneGraph<'a, 'ctx> {
                 "nx JT root path state",
             )?;
         }
-        ctx.remove_hash_set(visiting, &object_id, "nx JT visiting nodes")?;
+        ctx.remove_btree_set(visiting, &object_id, "nx JT visiting nodes")?;
         let instance_id =
             ctx.get_hash_map(&self.instance_ids, &object_id, "nx JT instance index")?;
         let mut results = Vec::new();
