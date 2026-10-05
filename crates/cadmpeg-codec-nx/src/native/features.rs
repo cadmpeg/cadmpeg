@@ -4473,7 +4473,7 @@ impl<'a, 'ctx> PartitionGroupIndex<'a, 'ctx> {
         groups: &'a [crate::native::parasolid::ParasolidGroupRecord],
         group_members: &'a [crate::native::parasolid::ParasolidGroupMember],
     ) -> Result<Self, CodecError> {
-        let (groups, _groups_storage) =
+        let (groups, groups_storage) =
             ctx.with_scoped_storage("NX body GROUP node index", || {
                 let mut grouped =
                     HashMap::<u32, Vec<&crate::native::parasolid::ParasolidGroupRecord>>::new();
@@ -4488,7 +4488,7 @@ impl<'a, 'ctx> PartitionGroupIndex<'a, 'ctx> {
                 }
                 Ok::<_, CodecError>(grouped)
             })?;
-        let (members, _members_storage) =
+        let (members, members_storage) =
             ctx.with_scoped_storage("NX body GROUP member node index", || {
                 let mut grouped =
                     HashMap::<u32, Vec<&crate::native::parasolid::ParasolidGroupMember>>::new();
@@ -4506,8 +4506,8 @@ impl<'a, 'ctx> PartitionGroupIndex<'a, 'ctx> {
         Ok(Self {
             groups,
             members,
-            _groups_storage,
-            _members_storage,
+            _groups_storage: groups_storage,
+            _members_storage: members_storage,
         })
     }
 
