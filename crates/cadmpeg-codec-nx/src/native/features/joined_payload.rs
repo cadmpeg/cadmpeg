@@ -5,8 +5,10 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
+/// One source block occupying `start..end` of the joined bytes.
 struct SourceSpan {
-    byte_len: u64,
+    end: u64,
+    start: u64,
     source_offset: u64,
 }
 
@@ -20,46 +22,43 @@ impl<'ctx> JoinedPayload<'ctx> {
     pub(super) fn from_source<'a>(
         ctx: &'ctx DecodeContext<'_>,
         ids: impl Iterator<Item = &'a String> + Clone,
+        count: usize,
         blocks: &BTreeMap<String, (&[u8], u64)>,
     ) -> Result<Option<Self>, CodecError> {
-        let count = ids
-            .clone()
-            .try_fold(0usize, |count, _| count.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload blocks", 0, 1))?;
-        let mut byte_len = 0usize;
-        for id in ids.clone() {
-            let Some((fragment, _)) = blocks.get(id).copied() else {
-                return Ok(None);
-            };
-            byte_len = byte_len
-                .checked_add(fragment.len())
-                .ok_or_else(|| ctx.refuse_codec_limit("join NX feature payload bytes", 0, 1))?;
-        }
-        ctx.charge_work(u64_from_index(count), "scan NX feature payload blocks")?;
-        ctx.charge_work(u64_from_index(byte_len), "copy NX feature payload bytes")?;
-        ctx.charge_collection_items(u64_from_index(count), "NX feature payload spans")?;
-        let mut reservation = ctx.reserve_scoped(0, "join NX feature payload")?;
+        const OPERATION: &str = "join NX feature payload";
+        let mut reservation = ctx.reserve_scoped(0, OPERATION)?;
         let mut bytes = Vec::new();
-        reservation.with_storage(|| {
-            ctx.reserve_capacity(&mut bytes, byte_len, "allocate NX feature payload bytes")
-        })?;
         let mut sources = Vec::new();
-        reservation.with_storage(|| {
-            ctx.reserve_capacity(&mut sources, count, "allocate NX feature payload spans")
-        })?;
-        for id in ids {
-            let Some((fragment, source_offset)) = blocks.get(id).copied() else {
+        let mut ids = ids;
+        for _ in ctx.admit_iter(&(0_usize..count), "copy NX feature payload blocks")? {
+            let Some(id) = ids.next() else {
                 return Ok(None);
             };
-            if source_offset
-                .checked_add(u64_from_index(fragment.len()))
-                .is_none()
-            {
+            let Some(&(fragment, source_offset)) =
+                ctx.get_btree_map(blocks, id.as_str(), "copy NX feature payload blocks")?
+            else {
+                return Ok(None);
+            };
+            let fragment_len = u64_from_index(fragment.len());
+            if source_offset.checked_add(fragment_len).is_none() {
                 return Ok(None);
             }
-            bytes.extend_from_slice(fragment);
+            let start = u64_from_index(bytes.len());
+            let end = start
+                .checked_add(fragment_len)
+                .ok_or_else(|| ctx.refuse_codec_limit("join NX feature payload bytes", 0, 1))?;
+            reservation.with_storage(|| {
+                ctx.extend_retained_bytes(&mut bytes, fragment, "copy NX feature payload bytes")
+            })?;
+            ctx.reserve_scoped_vec(
+                &mut reservation,
+                &mut sources,
+                1,
+                "NX feature payload spans",
+            )?;
             sources.push(SourceSpan {
-                byte_len: u64_from_index(fragment.len()),
+                end,
+                start,
                 source_offset,
             });
         }
@@ -74,19 +73,24 @@ impl<'ctx> JoinedPayload<'ctx> {
         &self.bytes
     }
 
-    fn source_spans(&self) -> impl Iterator<Item = (u64, u64, u64)> + '_ {
-        let mut at = 0;
-        self.sources.iter().map(move |span| {
-            let start = at;
-            at += span.byte_len;
-            (start, span.byte_len, span.source_offset)
-        })
-    }
-
-    pub(super) fn source_offset(&self, relative: u64) -> Option<u64> {
-        self.source_spans().find_map(|(start, length, source)| {
-            (relative >= start && relative - start < length).then(|| source + (relative - start))
-        })
+    /// Map a joined-byte offset to its source file offset.
+    pub(super) fn source_offset(
+        &self,
+        ctx: &DecodeContext<'_>,
+        relative: u64,
+    ) -> Result<Option<u64>, CodecError> {
+        // Spans are contiguous, so their ends do not decrease; the first span
+        // ending after the offset is the only one that can contain it.
+        let index = ctx.partition_point(
+            &self.sources,
+            |span| Ok(span.end <= relative),
+            "map NX feature payload source offset",
+        )?;
+        Ok(self
+            .sources
+            .get(index)
+            .filter(|span| span.start <= relative)
+            .and_then(|span| span.source_offset.checked_add(relative - span.start)))
     }
 }
 
@@ -104,12 +108,12 @@ mod tests {
                 ("empty".to_owned(), (&[][..], u64::MAX)),
                 ("b".to_owned(), (&[3, 4, 5][..], 100)),
             ]);
-            let joined = JoinedPayload::from_source(ctx, ids.iter(), &blocks)
+            let joined = JoinedPayload::from_source(ctx, ids.iter(), ids.len(), &blocks)
                 .unwrap()
                 .unwrap();
             assert_eq!(joined.bytes(), [1, 2, 3, 4, 5]);
             assert_eq!(
-                [0, 1, 2, 4, 5, u64::MAX].map(|offset| joined.source_offset(offset)),
+                [0, 1, 2, 4, 5, u64::MAX].map(|offset| joined.source_offset(ctx, offset).unwrap()),
                 [Some(10), Some(11), Some(100), Some(102), None, None]
             );
         });
@@ -120,10 +124,45 @@ mod tests {
         crate::test_support::with_decode_context(|ctx| {
             let ids = ["a".to_owned()];
             let blocks = BTreeMap::from([("a".to_owned(), (&[1, 2][..], u64::MAX))]);
-            assert!(JoinedPayload::from_source(ctx, ids.iter(), &blocks)
-                .unwrap()
-                .is_none());
+            assert!(
+                JoinedPayload::from_source(ctx, ids.iter(), ids.len(), &blocks)
+                    .unwrap()
+                    .is_none()
+            );
         });
+    }
+
+    #[test]
+    fn source_offset_propagates_work_refusal() {
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let ids = ["block#2".to_string(), "block#3".to_string()];
+        let blocks = BTreeMap::from([
+            ("block#2".to_string(), (&[0x30, 0x43][..], 120_u64)),
+            (
+                "block#3".to_string(),
+                (&[0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72][..], 900_u64),
+            ),
+        ]);
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "map NX feature payload source offset",
+            |ctx| {
+                let Some(joined) = JoinedPayload::from_source(ctx, ids.iter(), ids.len(), &blocks)?
+                else {
+                    return Ok(());
+                };
+                assert_eq!(joined.source_offset(ctx, 0)?, Some(120));
+                Ok(())
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "map NX feature payload source offset"
+        ));
     }
 
     #[test]
@@ -140,6 +179,7 @@ mod tests {
             let joined = crate::native::features::joined_payload::JoinedPayload::from_source(
                 ctx,
                 ids.iter(),
+                ids.len(),
                 &blocks,
             )
             .expect("required invariant")
@@ -150,22 +190,25 @@ mod tests {
             );
             assert_eq!(
                 joined
-                    .source_spans()
-                    .map(|(start, _, _)| start)
+                    .sources
+                    .iter()
+                    .map(|span| span.start)
                     .collect::<Vec<_>>(),
                 [0, 2]
             );
             assert_eq!(
                 joined
-                    .source_spans()
-                    .map(|(_, length, _)| length)
+                    .sources
+                    .iter()
+                    .map(|span| span.end - span.start)
                     .collect::<Vec<_>>(),
                 [2, 6]
             );
             assert_eq!(
                 joined
-                    .source_spans()
-                    .map(|(_, _, source)| source)
+                    .sources
+                    .iter()
+                    .map(|span| span.source_offset)
                     .collect::<Vec<_>>(),
                 [120, 900]
             );
@@ -175,6 +218,7 @@ mod tests {
                 crate::native::features::joined_payload::JoinedPayload::from_source(
                     ctx,
                     missing.iter(),
+                    missing.len(),
                     &blocks
                 )
                 .unwrap()

@@ -26,8 +26,14 @@ fn datum_descriptor_refusal(
     .expect("composed feature-history container");
     let (constructions, headers) = crate::test_support::with_decode_context(|ctx| {
         Ok::<_, cadmpeg_core::CodecError>((
-            feature_datum_csys_constructions(ctx, &container)?,
-            feature_datum_plane_headers(ctx, &container)?,
+            feature_datum_csys_constructions(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
+            feature_datum_plane_headers(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )?,
         ))
     })
     .expect("datum descriptor inputs");

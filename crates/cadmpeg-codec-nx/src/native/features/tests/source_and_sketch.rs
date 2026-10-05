@@ -106,10 +106,16 @@ fn unique_offset_data_store_rejects_a_second_matching_section() {
     let first = section();
     let second = section();
     let single = section();
-    assert_eq!(unique_offset_data_store(&[(entry, single)], &[1]), Some(0));
-    let indexed = [(entry, first), (entry, second)];
-
-    assert_eq!(unique_offset_data_store(&indexed, &[1]), None);
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            unique_offset_data_store(ctx, &[(entry, single)], &[1])?,
+            Some(0)
+        );
+        let indexed = [(entry, first), (entry, second)];
+        assert_eq!(unique_offset_data_store(ctx, &indexed, &[1])?, None);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -1002,6 +1008,24 @@ fn nx_sketch_ordinal_text_parsing_propagates_work_refusal() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "parse NX sketch block ordinal"
+    ));
+}
+
+#[test]
+fn nx_sketch_ordinal_digit_scan_propagates_work_refusal() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "check NX sketch point ordinal digits",
+        |ctx| parse_sketch_point_name(ctx, "Point1"),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "check NX sketch point ordinal digits"
     ));
 }
 

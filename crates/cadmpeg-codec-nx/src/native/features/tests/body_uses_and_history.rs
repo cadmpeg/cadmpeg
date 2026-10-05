@@ -32,7 +32,10 @@ fn boolean_native_route_refusal(
     })
     .expect("Boolean native container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
-        crate::native::features::feature_boolean_operations(ctx, &container)
+        crate::native::features::feature_boolean_operations(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted native Boolean operations");
     assert_eq!(admitted.len(), 1);
@@ -44,7 +47,10 @@ fn boolean_native_route_refusal(
             configure(policy);
         },
         |ctx| {
-            crate::native::features::feature_boolean_operations(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| {
+                    crate::native::features::feature_boolean_operations(ctx, &history)
+                })
                 .expect_err("native Boolean resource limit")
         },
     )

@@ -4,7 +4,7 @@
 use super::payload_content::FeaturePayloadContent;
 use super::{
     charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
-    visit_feature_history_operation_records, FeatureConstructionOwner, FeatureConstructionPayload,
+    FeatureConstructionOwner, FeatureConstructionPayload, FeatureHistory,
 };
 use crate::container::Container;
 use crate::om::fset_references::{word_reference_bytes, FsetReferences};
@@ -198,59 +198,50 @@ pub(in crate::native) enum FeatureFsetReferenceGroup {
 /// roles to either reference group.
 pub(in crate::native) fn feature_fset_reference_graphs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = history.container().indexed_om_sections(ctx)?;
     let mut graphs = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let projected =
-                (|| -> Result<Option<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError> {
-                    let Some(graph) = FsetReferences::read(record.payload_view()) else {
-                        return Ok(None);
-                    };
-                    let Some(references) = graph.resolve(entry_offset, |index| {
-                        charged_unique_offset_data_block(ctx, &indexed, u32::from(index))
-                    })?
-                    else {
-                        return Ok(None);
-                    };
-                    let id = format_feature_history_id(
-                        ctx,
-                        "fset-reference-graph",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?;
-                    let operation_label = format_feature_history_id(
-                        ctx,
-                        "operation-label",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?;
-                    ctx.reserve_vec(&mut graphs, 1, "NX FSET reference graphs")?;
-                    Ok(Some(FeatureFsetReferenceGraph {
-                        id,
-                        operation_label,
-                        references,
-                    }))
-                })();
-            match projected {
-                Ok(Some(graph)) => graphs.push(graph),
-                Ok(None) => {}
-                Err(error) => failure = Some(error),
-            }
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
+            let Some(graph) = FsetReferences::read(record.payload_view()) else {
+                continue;
+            };
+            let Some(references) = graph.resolve(entry_offset, |index| {
+                charged_unique_offset_data_block(ctx, &indexed, u32::from(index))
+            })?
+            else {
+                continue;
+            };
+            let id = format_feature_history_id(
+                ctx,
+                "fset-reference-graph",
+                section_key,
+                operation_ordinal,
+                None,
+            )?;
+            let operation_label = format_feature_history_id(
+                ctx,
+                "operation-label",
+                section_key,
+                operation_ordinal,
+                None,
+            )?;
+            ctx.reserve_vec(&mut graphs, 1, "NX FSET reference graphs")?;
+            let graph = FeatureFsetReferenceGraph {
+                id,
+                operation_label,
+                references,
+            };
+            graphs.push(graph);
+        }
     }
     Ok(graphs)
 }
@@ -264,7 +255,7 @@ pub(in crate::native) fn feature_fset_construction_payloads(
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut output = Vec::new();
-    for graph in graphs {
+    for graph in ctx.admit_iter(graphs, "scan NX FSET reference graphs")? {
         for (group, source_blocks) in [
             (
                 FeatureFsetReferenceGroup::First,
@@ -294,7 +285,11 @@ fn fset_construction_payload_from_group(
     source_blocks: &[(u16, Option<String>)],
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
-    if source_blocks.iter().any(|(_, target)| target.is_none()) {
+    if ctx.any_by(
+        source_blocks,
+        |(_, target)| Ok(target.is_none()),
+        "validate NX FSET source block targets",
+    )? {
         return Ok(None);
     }
 
@@ -311,7 +306,7 @@ fn fset_construction_payload_from_group(
             "allocate NX FSET source block references",
         )
     })?;
-    for (_, target) in source_blocks {
+    for (_, target) in ctx.admit_iter(source_blocks, "copy NX FSET source block targets")? {
         let Some(block) = target else {
             return Ok(None);
         };
@@ -330,11 +325,15 @@ fn fset_construction_payload_from_group(
     else {
         return Ok(None);
     };
-    if data_blocks.iter().any(|block| {
-        block
-            .rsplit_once(":block#")
-            .is_none_or(|(prefix, _)| prefix != store)
-    }) {
+    if ctx.any_by(
+        &data_blocks,
+        |block| {
+            Ok(block
+                .rsplit_once(":block#")
+                .is_none_or(|(prefix, _)| prefix != store))
+        },
+        "validate NX FSET source block owners",
+    )? {
         return Ok(None);
     }
     let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {

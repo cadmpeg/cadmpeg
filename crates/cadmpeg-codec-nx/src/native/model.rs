@@ -37,6 +37,7 @@ use crate::native::features::pattern::FeaturePatternConstructionString;
 use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
 use crate::native::features::pattern::FeaturePatternReference;
 use crate::native::features::pattern::FeaturePatternTransformLane;
+use crate::native::features::FeatureHistory;
 
 use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
 use super::display_jt::{
@@ -585,14 +586,23 @@ pub(crate) fn extract_segment_lineage(
     container: &Container,
     streams: &[Stream],
 ) -> Result<SegmentLineage, CodecError> {
+    segment_lineage(ctx, &FeatureHistory::new(ctx, container)?, streams)
+}
+
+fn segment_lineage(
+    ctx: &DecodeContext<'_>,
+    feature_history: &FeatureHistory<'_, '_, '_>,
+    streams: &[Stream],
+) -> Result<SegmentLineage, CodecError> {
+    let container = feature_history.container();
     let bindings = segment_body_bindings(ctx, container, streams)?;
-    let labels = feature_operation_labels(ctx, container)?;
-    let references = feature_body_references(ctx, container)?;
+    let labels = feature_operation_labels(ctx, feature_history)?;
+    let references = feature_body_references(ctx, feature_history)?;
     let blocks = data_blocks(ctx, container)?;
-    let inputs = feature_input_blocks(ctx, container)?;
+    let inputs = feature_input_blocks(ctx, feature_history)?;
     let body_data_block_uses = feature_body_data_block_uses(ctx, &references, &inputs, &blocks)?;
-    let body_reference_occurrences = feature_body_reference_occurrences(ctx, container)?;
-    let members = feature_operation_body_members(ctx, container)?;
+    let body_reference_occurrences = feature_body_reference_occurrences(ctx, feature_history)?;
+    let members = feature_operation_body_members(ctx, feature_history)?;
     let operands = feature_operation_body_operands(
         ctx,
         &members,
@@ -601,7 +611,7 @@ pub(crate) fn extract_segment_lineage(
         &blocks,
         &bindings,
     )?;
-    let booleans = feature_boolean_operations(ctx, container)?;
+    let booleans = feature_boolean_operations(ctx, feature_history)?;
     let statuses = segment_body_lineage_statuses(
         ctx,
         &crate::native::segments::BodyLineageInputs {
@@ -719,6 +729,7 @@ impl NativeModel {
         parsed: &mut ParsedStreams,
         precomputed_lineage: Option<SegmentLineage>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
+        let feature_history = FeatureHistory::new(ctx, container)?;
         let SegmentLineage {
             bindings: segment_body_bindings,
             labels: feature_operation_labels,
@@ -733,7 +744,7 @@ impl NativeModel {
             statuses: segment_body_lineage_statuses,
         } = match precomputed_lineage {
             Some(lineage) => lineage,
-            None => extract_segment_lineage(ctx, container, streams)?,
+            None => segment_lineage(ctx, &feature_history, streams)?,
         };
         let data_block_object_frames = data_block_object_frames(ctx, container)?;
         let segment_index_rows = segment_index_rows(ctx, container)?;
@@ -831,18 +842,18 @@ impl NativeModel {
         )?;
         let om_record_areas = om_record_areas(ctx, container)?;
         let audit_trail_rows = audit_trail_rows(ctx, container)?;
-        let operation_state_journal_groups = operation_state_journal_groups(ctx, container)?;
-        let operation_state_counters = operation_state_counters(ctx, container)?;
-        let operation_state_groups = operation_state_groups(ctx, container)?;
-        let operation_state_messages = operation_state_messages(ctx, container)?;
-        let operation_state_statuses = operation_state_statuses(ctx, container)?;
-        let operation_state_slot_lanes = operation_state_slot_lanes(ctx, container)?;
-        let feature_operation_records = feature_operation_records(ctx, container)?;
+        let operation_state_journal_groups = operation_state_journal_groups(ctx, &feature_history)?;
+        let operation_state_counters = operation_state_counters(ctx, &feature_history)?;
+        let operation_state_groups = operation_state_groups(ctx, &feature_history)?;
+        let operation_state_messages = operation_state_messages(ctx, &feature_history)?;
+        let operation_state_statuses = operation_state_statuses(ctx, &feature_history)?;
+        let operation_state_slot_lanes = operation_state_slot_lanes(ctx, &feature_history)?;
+        let feature_operation_records = feature_operation_records(ctx, &feature_history)?;
         let feature_unlabeled_operation_records =
-            feature_unlabeled_operation_records(ctx, container)?;
+            feature_unlabeled_operation_records(ctx, &feature_history)?;
         let feature_unlabeled_operation_body_writes =
-            feature_unlabeled_operation_body_writes(ctx, container)?;
-        let feature_operation_body_writes = feature_operation_body_writes(ctx, container)?;
+            feature_unlabeled_operation_body_writes(ctx, &feature_history)?;
+        let feature_operation_body_writes = feature_operation_body_writes(ctx, &feature_history)?;
         let feature_operation_body_image_segment_uses = feature_operation_body_image_segment_uses(
             ctx,
             &feature_operation_body_writes,
@@ -872,19 +883,23 @@ impl NativeModel {
         )?;
         let feature_operation_tagged_references = feature_operation_object_references(
             ctx,
-            container,
+            &feature_history,
             crate::om::direct_reference::ReferenceFieldKind::Tagged17,
         )?;
         let feature_operation_data_block_references = feature_operation_object_references(
             ctx,
-            container,
+            &feature_history,
             crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
         )?;
-        let feature_operation_common_frames = feature_operation_common_frames(ctx, container)?;
+        let feature_operation_common_frames =
+            feature_operation_common_frames(ctx, &feature_history)?;
         let feature_operation_terminal_discriminators =
-            feature_operation_terminal_discriminators(ctx, container)?;
-        let feature_operation_terminal_frames =
-            feature_operation_terminal_frames(ctx, container, &feature_operation_common_frames)?;
+            feature_operation_terminal_discriminators(ctx, &feature_history)?;
+        let feature_operation_terminal_frames = feature_operation_terminal_frames(
+            ctx,
+            &feature_history,
+            &feature_operation_common_frames,
+        )?;
         let feature_operation_state_journal_uses = feature_operation_state_journal_uses(
             ctx,
             &feature_operation_labels,
@@ -892,8 +907,8 @@ impl NativeModel {
             &feature_operation_terminal_frames,
             &operation_state_journal_groups,
         )?;
-        let feature_payload_strings = feature_payload_strings(ctx, container)?;
-        let feature_symbolic_threads = feature_symbolic_threads(ctx, container)?;
+        let feature_payload_strings = feature_payload_strings(ctx, &feature_history)?;
+        let feature_symbolic_threads = feature_symbolic_threads(ctx, &feature_history)?;
         let feature_threaded_hole_templates = feature_threaded_hole_templates(
             ctx,
             &feature_operation_labels,
@@ -907,9 +922,9 @@ impl NativeModel {
             &feature_payload_strings,
         )?;
         let feature_simple_hole_repeated_scalar_lanes =
-            feature_simple_hole_repeated_scalar_lanes(ctx, container)?;
+            feature_simple_hole_repeated_scalar_lanes(ctx, &feature_history)?;
         let feature_simple_hole_repeated_scalar_lane_block_references =
-            feature_simple_hole_repeated_scalar_lane_block_references(ctx, container)?;
+            feature_simple_hole_repeated_scalar_lane_block_references(ctx, &feature_history)?;
         let feature_simple_hole_construction_groups = feature_simple_hole_construction_groups(
             ctx,
             &feature_operation_labels,
@@ -917,7 +932,7 @@ impl NativeModel {
             &feature_simple_hole_repeated_scalar_lane_block_references,
         )?;
         let feature_hole_package_construction_group_lanes =
-            feature_hole_package_construction_group_lanes(ctx, container)?;
+            feature_hole_package_construction_group_lanes(ctx, &feature_history)?;
         let feature_hole_package_construction_group_uses =
             feature_hole_package_construction_group_uses(
                 ctx,
@@ -1038,7 +1053,8 @@ impl NativeModel {
             &display_jt_segments,
             &display_jt_documents,
         )?;
-        let feature_datum_csys_constructions = feature_datum_csys_constructions(ctx, container)?;
+        let feature_datum_csys_constructions =
+            feature_datum_csys_constructions(ctx, &feature_history)?;
         let feature_datum_csys_payloads =
             feature_datum_csys_payloads(ctx, container, &feature_datum_csys_constructions)?;
         let feature_datum_csys_payload_scalar_pairs =
@@ -1049,7 +1065,7 @@ impl NativeModel {
             feature_datum_csys_payload_scalars(ctx, container, &feature_datum_csys_payloads)?;
         let feature_datum_csys_descriptors =
             feature_datum_csys_descriptors(ctx, container, &feature_datum_csys_constructions)?;
-        let feature_datum_plane_headers = feature_datum_plane_headers(ctx, container)?;
+        let feature_datum_plane_headers = feature_datum_plane_headers(ctx, &feature_history)?;
         let feature_datum_plane_block_uses = feature_datum_plane_block_uses(
             ctx,
             &feature_datum_plane_headers,
@@ -1074,9 +1090,9 @@ impl NativeModel {
             &feature_datum_csys_constructions,
             &feature_input_blocks,
         )?;
-        let feature_sketch_references = feature_sketch_references(ctx, container)?;
+        let feature_sketch_references = feature_sketch_references(ctx, &feature_history)?;
         let feature_projected_curve_references =
-            feature_projected_curve_references(ctx, container)?;
+            feature_projected_curve_references(ctx, &feature_history)?;
         let feature_projected_curve_construction_payloads =
             feature_projected_curve_construction_payloads(
                 ctx,
@@ -1090,15 +1106,16 @@ impl NativeModel {
                 container,
                 &feature_projected_curve_construction_payloads,
             )?;
-        let feature_fset_reference_graphs = feature_fset_reference_graphs(ctx, container)?;
+        let feature_fset_reference_graphs = feature_fset_reference_graphs(ctx, &feature_history)?;
         let feature_fset_construction_payloads =
             feature_fset_construction_payloads(ctx, container, &feature_fset_reference_graphs)?;
-        let feature_delete_reference_fields = feature_delete_reference_fields(ctx, container)?;
+        let feature_delete_reference_fields =
+            feature_delete_reference_fields(ctx, &feature_history)?;
         let feature_delete_construction_payloads =
             feature_delete_construction_payloads(ctx, container, &feature_delete_reference_fields)?;
-        let feature_pattern_references = feature_pattern_references(ctx, container)?;
+        let feature_pattern_references = feature_pattern_references(ctx, &feature_history)?;
         let feature_pattern_counted_reference_lanes =
-            feature_pattern_counted_reference_lanes(ctx, container)?;
+            feature_pattern_counted_reference_lanes(ctx, &feature_history)?;
         let feature_pattern_construction_payloads = feature_pattern_construction_payloads(
             ctx,
             container,
@@ -1115,22 +1132,23 @@ impl NativeModel {
             container,
             &feature_pattern_construction_payloads,
         )?;
-        let feature_pattern_transform_lanes = feature_pattern_transform_lanes(ctx, container)?;
+        let feature_pattern_transform_lanes =
+            feature_pattern_transform_lanes(ctx, &feature_history)?;
         let feature_multi_instance_output_lanes =
-            feature_multi_instance_output_lanes(ctx, container)?;
+            feature_multi_instance_output_lanes(ctx, &feature_history)?;
         let feature_identical_instance_output_lanes =
-            feature_identical_instance_output_lanes(ctx, container)?;
+            feature_identical_instance_output_lanes(ctx, &feature_history)?;
         let feature_point_construction_headers =
-            feature_point_construction_headers(ctx, container)?;
+            feature_point_construction_headers(ctx, &feature_history)?;
         let feature_point_construction_scalar_lanes = feature_point_construction_scalar_lanes(
             ctx,
             container,
             &feature_point_construction_headers,
         )?;
         let feature_draft_construction_references =
-            feature_draft_construction_references(ctx, container)?;
+            feature_draft_construction_references(ctx, &feature_history)?;
         let feature_draft_construction_index_lanes =
-            feature_draft_construction_index_lanes(ctx, container)?;
+            feature_draft_construction_index_lanes(ctx, &feature_history)?;
         let feature_draft_construction_payloads = feature_draft_construction_payloads(
             ctx,
             container,
@@ -1164,9 +1182,9 @@ impl NativeModel {
                 &feature_draft_construction_payloads,
             )?;
         let feature_draft_construction_terminal_lanes =
-            feature_draft_construction_terminal_lanes(ctx, container)?;
+            feature_draft_construction_terminal_lanes(ctx, &feature_history)?;
         let feature_surface_construction_references =
-            feature_surface_construction_references(ctx, container)?;
+            feature_surface_construction_references(ctx, &feature_history)?;
         let feature_surface_construction_payloads = feature_surface_construction_payloads(
             ctx,
             container,
@@ -1183,32 +1201,34 @@ impl NativeModel {
             &feature_surface_construction_payloads,
         )?;
         let feature_surface_construction_branches =
-            feature_surface_construction_branches(ctx, container)?;
-        let feature_swp104_leading_branches = feature_swp104_leading_branches(ctx, container)?;
+            feature_surface_construction_branches(ctx, &feature_history)?;
+        let feature_swp104_leading_branches =
+            feature_swp104_leading_branches(ctx, &feature_history)?;
         let feature_thru_curve_construction_branch_groups =
-            feature_thru_curve_construction_branch_groups(ctx, container)?;
+            feature_thru_curve_construction_branch_groups(ctx, &feature_history)?;
         let feature_thru_curve_construction_envelopes =
-            feature_thru_curve_construction_envelopes(ctx, container)?;
+            feature_thru_curve_construction_envelopes(ctx, &feature_history)?;
         let feature_extrude_profile_references =
-            feature_extrude_profile_references(ctx, container)?;
-        let feature_extrude_payload_headers = feature_extrude_payload_headers(ctx, container)?;
+            feature_extrude_profile_references(ctx, &feature_history)?;
+        let feature_extrude_payload_headers =
+            feature_extrude_payload_headers(ctx, &feature_history)?;
         let feature_operation_body_scalar_triples =
-            feature_operation_body_scalar_triples(ctx, container)?;
+            feature_operation_body_scalar_triples(ctx, &feature_history)?;
         let feature_operation_body_11_continuations =
-            feature_operation_body_11_continuations(ctx, container)?;
+            feature_operation_body_11_continuations(ctx, &feature_history)?;
         let feature_operation_body_reference_lanes =
-            feature_operation_body_reference_lanes(ctx, container)?;
+            feature_operation_body_reference_lanes(ctx, &feature_history)?;
         let feature_extrude_construction_profiles =
             feature_extrude_construction_profiles(ctx, &feature_extrude_profile_references)?;
         let feature_extrude_payload_32_branches =
-            feature_extrude_payload_32_branches(ctx, container)?;
+            feature_extrude_payload_32_branches(ctx, &feature_history)?;
         let feature_extrude_32_constructions = feature_extrude_32_constructions(
             ctx,
             &feature_extrude_profile_references,
             &feature_extrude_payload_32_branches,
         )?;
         let feature_block_construction_references =
-            feature_block_construction_references(ctx, container)?;
+            feature_block_construction_references(ctx, &feature_history)?;
         let feature_block_constructions =
             feature_block_constructions(ctx, &feature_block_construction_references)?;
         let feature_block_construction_payloads =

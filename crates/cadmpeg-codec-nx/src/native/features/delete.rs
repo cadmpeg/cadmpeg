@@ -4,7 +4,7 @@
 use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use super::{
     charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
-    visit_feature_history_operation_records,
+    FeatureHistory,
 };
 use crate::container::Container;
 use crate::om::delete_references::DeleteReferences;
@@ -165,59 +165,50 @@ impl TryFrom<DeleteReferenceFieldWire> for FeatureDeleteReferenceField {
 /// their non-null slots without assigning a target object family.
 pub(in crate::native) fn feature_delete_reference_fields(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
+    history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections(ctx)?;
+    let indexed = history.container().indexed_om_sections(ctx)?;
     let mut fields = Vec::new();
-    let mut failure = None;
-    visit_feature_history_operation_records(
-        ctx,
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let projected =
-                (|| -> Result<Option<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
-                    let Some(field) = DeleteReferences::read(record.payload_view()) else {
-                        return Ok(None);
-                    };
-                    let Some(references) = field.resolve(entry_offset, |token| {
-                        charged_unique_offset_data_block(ctx, &indexed, token.value())
-                    })?
-                    else {
-                        return Ok(None);
-                    };
-                    let id = format_feature_history_id(
-                        ctx,
-                        "delete-reference-field",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?;
-                    let operation_label = format_feature_history_id(
-                        ctx,
-                        "operation-label",
-                        section_key,
-                        operation_ordinal,
-                        None,
-                    )?;
-                    ctx.reserve_vec(&mut fields, 1, "NX DELETE reference fields")?;
-                    Ok(Some(FeatureDeleteReferenceField {
-                        id,
-                        operation_label,
-                        references,
-                    }))
-                })();
-            match projected {
-                Ok(Some(field)) => fields.push(field),
-                Ok(None) => {}
-                Err(error) => failure = Some(error),
-            }
-        },
-    )?;
-    if let Some(error) = failure {
-        return Err(error);
+    for history_section in
+        ctx.admit_iter(history.sections(), "visit NX feature history sections")?
+    {
+        let section_key = history_section.key.as_str();
+        let entry_offset = history_section.entry_offset;
+        for &(operation_ordinal, record) in ctx.admit_iter(
+            &history_section.records,
+            "visit NX feature operation records",
+        )? {
+            let Some(field) = DeleteReferences::read(record.payload_view()) else {
+                continue;
+            };
+            let Some(references) = field.resolve(entry_offset, |token| {
+                charged_unique_offset_data_block(ctx, &indexed, token.value())
+            })?
+            else {
+                continue;
+            };
+            let id = format_feature_history_id(
+                ctx,
+                "delete-reference-field",
+                section_key,
+                operation_ordinal,
+                None,
+            )?;
+            let operation_label = format_feature_history_id(
+                ctx,
+                "operation-label",
+                section_key,
+                operation_ordinal,
+                None,
+            )?;
+            ctx.reserve_vec(&mut fields, 1, "NX DELETE reference fields")?;
+            let field = FeatureDeleteReferenceField {
+                id,
+                operation_label,
+                references,
+            };
+            fields.push(field);
+        }
     }
     Ok(fields)
 }
@@ -231,7 +222,7 @@ pub(in crate::native) fn feature_delete_construction_payloads(
 ) -> Result<Vec<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut output = Vec::new();
-    for field in fields {
+    for field in ctx.admit_iter(fields, "scan NX DELETE reference fields")? {
         let Some(payload) = delete_construction_payload_from_field(ctx, field, &blocks)? else {
             continue;
         };
@@ -247,12 +238,16 @@ fn delete_construction_payload_from_field(
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Result<Option<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
     let slots = field.references.slots();
-    if slots.iter().any(|reference| {
-        reference
-            .as_ref()
-            .and_then(|(_, block)| block.as_ref())
-            .is_none()
-    }) {
+    if ctx.any_by(
+        slots,
+        |reference| {
+            Ok(reference
+                .as_ref()
+                .and_then(|(_, block)| block.as_ref())
+                .is_none())
+        },
+        "validate NX DELETE source block references",
+    )? {
         return Ok(None);
     }
 
@@ -288,11 +283,15 @@ fn delete_construction_payload_from_field(
     else {
         return Ok(None);
     };
-    if data_blocks.iter().any(|block| {
-        block
-            .rsplit_once(":block#")
-            .is_none_or(|(prefix, _)| prefix != store)
-    }) {
+    if ctx.any_by(
+        &data_blocks,
+        |block| {
+            Ok(block
+                .rsplit_once(":block#")
+                .is_none_or(|(prefix, _)| prefix != store))
+        },
+        "validate NX DELETE source block owners",
+    )? {
         return Ok(None);
     }
     let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {

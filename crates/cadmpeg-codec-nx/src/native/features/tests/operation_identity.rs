@@ -231,7 +231,12 @@ fn body_partition_join_refusal(
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(
-                cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), "SCH_TEST".into()).expect("service token admission").expect("schema token"),
+                cadmpeg_parasolid::OwnedSchemaToken::parse(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "SCH_TEST".into(),
+                )
+                .expect("service token admission")
+                .expect("schema token"),
             ),
         },
     };
@@ -387,15 +392,23 @@ fn operation_header_identity_witness_survives_reordering() {
 fn feature_label_identity_retains_the_complete_header_ordinal() {
     let container = unlabeled_history_fixture();
 
-    let labels =
-        crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &container))
-            .unwrap();
+    let labels = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_labels(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    })
+    .unwrap();
     assert_eq!(labels.len(), 2);
     assert!(labels[0].id.ends_with("-0000000000"));
     assert!(labels[1].id.ends_with("-0000000002"));
-    let records =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
-            .unwrap();
+    let records = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    })
+    .unwrap();
     assert_eq!(records[1].operation_label, labels[1].id);
 }
 
@@ -409,7 +422,11 @@ fn feature_label_refusal(
         |policy| {
             configure(policy);
         },
-        |ctx| feature_operation_labels(ctx, &container).unwrap_err(),
+        |ctx| {
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_operation_labels(ctx, &history))
+                .unwrap_err()
+        },
     )
 }
 
@@ -417,9 +434,13 @@ fn feature_operation_record_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = unlabeled_history_fixture();
-    let admitted =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
-            .expect("admitted feature operation records");
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    })
+    .expect("admitted feature operation records");
     assert_eq!(admitted.len(), 2);
 
     crate::test_support::with_decode_context_over(
@@ -428,7 +449,8 @@ fn feature_operation_record_refusal(
             configure(policy);
         },
         |ctx| {
-            feature_operation_records(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_operation_records(ctx, &history))
                 .expect_err("feature operation record resource limit")
         },
     )
@@ -563,7 +585,11 @@ fn unlabeled_record_refusal(
         |policy| {
             configure(policy);
         },
-        |ctx| feature_unlabeled_operation_records(ctx, &container).unwrap_err(),
+        |ctx| {
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_unlabeled_operation_records(ctx, &history))
+                .unwrap_err()
+        },
     )
 }
 
@@ -571,7 +597,10 @@ fn unlabeled_record_refusal(
 fn unlabeled_record_route_preserves_source_order() {
     let container = unlabeled_history_fixture();
     let records = crate::test_support::with_decode_context(|ctx| {
-        feature_unlabeled_operation_records(ctx, &container)
+        feature_unlabeled_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
     assert_eq!(records.len(), 1);
@@ -651,12 +680,20 @@ fn operation_header_identity_survives_offset_store_insertion() {
     })
     .expect("second synthetic container");
 
-    let first_labels =
-        crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &first))
-            .unwrap();
-    let second_labels =
-        crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &second))
-            .unwrap();
+    let first_labels = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_labels(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &first)?,
+        )
+    })
+    .unwrap();
+    let second_labels = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_labels(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &second)?,
+        )
+    })
+    .unwrap();
     assert_eq!(
         first_labels[0].objects.values(),
         [Some(1), Some(2), None, None]
@@ -670,12 +707,20 @@ fn operation_header_identity_survives_offset_store_insertion() {
         second_labels[0].stable_identity
     );
 
-    let first_records =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &first))
-            .unwrap();
-    let second_records =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &second))
-            .unwrap();
+    let first_records = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &first)?,
+        )
+    })
+    .unwrap();
+    let second_records = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &second)?,
+        )
+    })
+    .unwrap();
     assert_eq!(
         first_records[0].stable_identity,
         second_records[0].stable_identity
@@ -731,7 +776,10 @@ fn operation_body_write_retains_identity_group_and_image() {
     })
     .expect("synthetic body-write container");
     let writes = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
     let [first, second] = writes.as_slice() else {
@@ -774,7 +822,11 @@ fn operation_object_reference_refusal(
     })
     .expect("synthetic direct-reference container");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_operation_object_references(ctx, &container, kind)
+        feature_operation_object_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            kind,
+        )
     };
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted operation object reference");
@@ -871,14 +923,26 @@ fn operation_common_frame_refusal(
     })
     .expect("synthetic common-frame container");
     let common = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_common_frames(ctx, &container)
+        feature_operation_common_frames(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted operation common frames");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         if terminal {
-            feature_operation_terminal_frames(ctx, &container, &common).map(|records| records.len())
+            feature_operation_terminal_frames(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+                &common,
+            )
+            .map(|records| records.len())
         } else {
-            feature_operation_common_frames(ctx, &container).map(|records| records.len())
+            feature_operation_common_frames(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )
+            .map(|records| records.len())
         }
     };
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
@@ -922,15 +986,21 @@ fn feature_payload_reference_refusal(
     })
     .expect("synthetic feature payload container");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route_kind {
-        FeaturePayloadReferenceRoute::Text => {
-            feature_payload_strings(ctx, &container).map(|items| items.len())
-        }
-        FeaturePayloadReferenceRoute::PrimaryBody => {
-            feature_body_references(ctx, &container).map(|items| items.len())
-        }
-        FeaturePayloadReferenceRoute::BodyOccurrences => {
-            feature_body_reference_occurrences(ctx, &container).map(|items| items.len())
-        }
+        FeaturePayloadReferenceRoute::Text => feature_payload_strings(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|items| items.len()),
+        FeaturePayloadReferenceRoute::PrimaryBody => feature_body_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|items| items.len()),
+        FeaturePayloadReferenceRoute::BodyOccurrences => feature_body_reference_occurrences(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|items| items.len()),
     };
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted feature payload route");
@@ -964,8 +1034,12 @@ fn input_block_refusal(
         )
     })
     .expect("synthetic input-block container");
-    let route =
-        |ctx: &cadmpeg_core::decode::DecodeContext<'_>| feature_input_blocks(ctx, &container);
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_input_blocks(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    };
     let admitted =
         crate::test_support::with_decode_context(|ctx| route(ctx)).expect("admitted input block");
     assert_eq!(admitted.len(), 1);
@@ -1204,7 +1278,10 @@ fn operation_body_write_refusal(
     })
     .expect("synthetic body-write container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted operation body writes");
     assert_eq!(admitted.len(), 1);
@@ -1216,7 +1293,8 @@ fn operation_body_write_refusal(
             configure(policy);
         },
         |ctx| {
-            feature_operation_body_writes(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_operation_body_writes(ctx, &history))
                 .expect_err("operation body-write resource limit")
         },
     )
@@ -1275,7 +1353,10 @@ fn operation_body_write_resolves_one_unique_image_block() {
     .expect("synthetic body-image store");
 
     let writes = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
 
@@ -1303,7 +1384,10 @@ fn body_image_segment_use_requires_one_plain_alias() {
     })
     .expect("synthetic body-image store");
     let writes = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
     let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
@@ -1409,7 +1493,10 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     })
     .expect("synthetic body-image store");
     let writes = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
     let binding =
@@ -1432,8 +1519,12 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(
-                cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), "SCH_TEST".into()).expect("service token admission")
-                    .expect("the fixture text is a schema token"),
+                cadmpeg_parasolid::OwnedSchemaToken::parse(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "SCH_TEST".into(),
+                )
+                .expect("service token admission")
+                .expect("the fixture text is a schema token"),
             ),
         },
     };

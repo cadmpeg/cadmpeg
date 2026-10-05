@@ -78,6 +78,30 @@ fn sketch_point_group_route_refuses_work_limit() {
 }
 
 #[test]
+fn sketch_point_group_coordinate_scan_propagates_work_refusal() {
+    let point = FeatureSketchPoint {
+        id: "point".to_string(),
+        operation_label: "operation".to_string(),
+        named_record: "record".to_string(),
+        name: "Point1".to_string(),
+        coordinates: cadmpeg_ir::units::FiniteVector::new([1.0, 2.0]).expect("finite point"),
+        scalar_fields: ["scalar-a".to_string(), "scalar-b".to_string()],
+    };
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare NX sketch point group coordinates",
+        |ctx| feature_sketch_point_groups(ctx, std::slice::from_ref(&point)),
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "compare NX sketch point group coordinates"
+    ));
+}
+
+#[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     let payload = FeatureConstructionPayload {
         id: "payload".to_string(),
@@ -94,7 +118,9 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
                 },
             ],
             cadmpeg_ir::hash::digest::Sha256Digest::digest(b"00"),
+            &crate::native::features::payload_content::ContextFreeFeaturePayloadBlockAdmission,
         )
+        .unwrap()
         .unwrap(),
     };
     let name = |id: &str, ordinal, offset| FeaturePayloadName {
@@ -434,4 +460,58 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
         .unwrap()
         .is_empty()
     );
+}
+
+#[test]
+fn sketch_point_use_coordinate_scan_propagates_work_refusal() {
+    let operation_label = "operation".to_string();
+    let group = crate::native::features::FeatureSketchPointGroup {
+        id: "group".to_string(),
+        operation_label: operation_label.clone(),
+        name: "Point1".to_string(),
+        points: vec!["point".to_string()],
+        coordinates: cadmpeg_ir::units::FiniteVector::new([1.0, 2.0]).expect("finite point"),
+    };
+    let named_point = OffsetStoreNamedPoint {
+        id: "named-point".to_string(),
+        name: "Point1".to_string(),
+        data_blocks: vec!["block-10".to_string()],
+        values: [(1.0, 200), (2.0, 220)].map(|(value, source_offset)| {
+            crate::native::features::FeatureBinary64ScalarToken {
+                scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value))
+                    .expect("valid shifted scalar"),
+                source_offset,
+            }
+        }),
+        source_offset: 190,
+    };
+    let block_use = FeatureSketchNamedPointBlockUse {
+        id: "block-use".to_string(),
+        operation_label,
+        sketch_reference: "reference".to_string(),
+        reference_ordinal: 0,
+        named_point: named_point.id.clone(),
+        data_block: "block-10".to_string(),
+        point_block_ordinal: 0,
+        source_offset: 300,
+    };
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare NX sketch point-use coordinates",
+        |ctx| {
+            feature_sketch_point_uses(
+                ctx,
+                std::slice::from_ref(&group),
+                std::slice::from_ref(&named_point),
+                std::slice::from_ref(&block_use),
+            )
+        },
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "compare NX sketch point-use coordinates"
+    ));
 }
