@@ -928,7 +928,14 @@ fn feature_body_data_block_uses_refuse_collection_at_caller_limit() {
         &[],
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "NX feature body block uses",
-        |ctx| feature_body_data_block_uses(ctx, &[reference.clone()], &[input.clone()], &blocks),
+        |ctx| {
+            feature_body_data_block_uses(
+                ctx,
+                std::slice::from_ref(&reference),
+                std::slice::from_ref(&input),
+                &blocks,
+            )
+        },
     );
     assert!(matches!(
         error,
