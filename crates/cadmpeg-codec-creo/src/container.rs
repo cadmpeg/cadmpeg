@@ -2475,7 +2475,7 @@ fn feature_row_has_model_identity(
                         )? {
                             Some(suffix) => ctx.strip_prefix(
                                 suffix,
-                                separator,
+                                *separator,
                                 "creo feature identity ordinal prefix",
                             )?,
                             None => None,
