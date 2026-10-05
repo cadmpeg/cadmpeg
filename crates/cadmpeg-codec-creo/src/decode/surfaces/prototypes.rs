@@ -627,7 +627,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
     }
     let mut transferred = 0;
     for parameter in ctx.admit_iter(
-        &scan.surfaces.parameters,
+        &*scan.surfaces.parameters,
         "creo transfer positional spline replays parameters traversal",
     )? {
         if parameter.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {

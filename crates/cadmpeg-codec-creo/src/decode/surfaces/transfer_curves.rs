@@ -1061,7 +1061,7 @@ mod tests {
         duplicate_extrusion: bool,
     ) -> (container::ContainerScan<'static>, CadIr) {
         let mut scan = crate::test_support::empty_container_scan();
-        scan.surfaces.rows = vec![
+        scan.surfaces.rows = crate::surface::unique_rows::UniqueIdRows::from_rows(vec![
             surface::SurfaceRow {
                 id: 1,
                 kind: surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
@@ -1080,7 +1080,7 @@ mod tests {
                 next_surface: 0,
                 offset: 0,
             },
-        ];
+        ]);
         scan.curves.topology_rows = vec![curve::CurveTopologyRow {
             id: 10,
             type_byte: 0,

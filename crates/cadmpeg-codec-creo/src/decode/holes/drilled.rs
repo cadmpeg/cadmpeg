@@ -30,7 +30,7 @@ pub(in crate::decode) fn stepped_hole_form(
     ctx: &DecodeContext<'_>,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<Option<HoleForm>, CodecError> {
     let mut candidates = 0;
     for table in tables
@@ -93,7 +93,7 @@ fn split_patch_table_is_counterbore(
     ctx: &DecodeContext<'_>,
     feature_id: u32,
     table: &crate::feature::entity::FeatureEntityTable,
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<bool, CodecError> {
     let mut surface_count = 0;
     let mut cylinder_count = 0;
@@ -264,7 +264,7 @@ fn paired_hole_replay_surfaces_by_source(
     ctx: &DecodeContext<'_>,
     feature_id: u32,
     table: &crate::feature::entity::FeatureEntityTable,
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<Option<BTreeMap<u32, ReplaySurfacePair>>, CodecError> {
     let entry_kind = |entry: &crate::feature::entity::FeatureEntityTableEntry| {
         if table.contains_surface_id(entry.entity_id) {
@@ -396,7 +396,7 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
     ctx: &DecodeContext<'_>,
     feature_id: u32,
     tables: &'a [crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<Option<SimpleDrilledHoleRecipe<'a>>, CodecError> {
     let mut candidate = None;
     for table in tables

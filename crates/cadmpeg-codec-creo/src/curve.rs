@@ -9722,7 +9722,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     circles: &[Fc05Circle],
     topology: &[CurveTopologyRow],
-    surfaces: &[crate::surface::SurfaceRow],
+    surfaces: &crate::surface::SurfaceRows,
 ) -> Result<Vec<Fc05CylinderCapPair>, cadmpeg_core::CodecError> {
     use std::collections::BTreeMap;
 

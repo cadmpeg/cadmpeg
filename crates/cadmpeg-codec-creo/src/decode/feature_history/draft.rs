@@ -929,7 +929,7 @@ pub(in super::super) fn schema_feature_definition(
             ));
         }
         let mut plane_ids = ctx
-            .admit_iter(&scan.surfaces.rows, "creo schema datum surface rows")?
+            .admit_iter(&*scan.surfaces.rows, "creo schema datum surface rows")?
             .filter(|row| {
                 row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
             })
@@ -1169,7 +1169,7 @@ pub(in super::super) fn unbounded_feature_plane_definition(
     feature_id: u32,
 ) -> Result<Option<IrFeatureDefinition>, cadmpeg_core::CodecError> {
     let Some(row) = exactly_one(
-        ctx.admit_iter(&scan.surfaces.rows, "creo unbounded feature plane rows")?
+        ctx.admit_iter(&*scan.surfaces.rows, "creo unbounded feature plane rows")?
             .filter(|row| {
                 row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
             }),

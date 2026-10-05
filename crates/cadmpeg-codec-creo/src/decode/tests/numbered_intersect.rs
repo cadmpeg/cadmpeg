@@ -141,7 +141,7 @@ fn generated_surface_face_refs_with_service(
         generated_surface_face_refs(
             ctx,
             source_ids,
-            rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             result_surface_ids,
             available_features,
         )
@@ -186,7 +186,7 @@ fn native_feature_dependency_ids_with_service(
             operations,
             entity_tables,
             replay,
-            surface_rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(surface_rows.to_vec()),
             (feature_id, prototype_dependencies),
         )
     })
@@ -207,7 +207,12 @@ fn feature_output_surface_dependencies_with_service(
     feature_id: u32,
 ) -> Vec<u32> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        feature_output_surface_dependencies(ctx, tables, rows, feature_id)
+        feature_output_surface_dependencies(
+            ctx,
+            tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            feature_id,
+        )
     })
     .expect("service profile admits output surface dependencies")
 }
@@ -1046,7 +1051,8 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
         table(144, 67, vec![entry(150, 200, Some(144), 31)], 30),
         table(144, 100, vec![entry(150, 145, None, 41)], 40),
     ];
-    scan.surfaces.rows = vec![row(98, 97), row(145, 144)];
+    scan.surfaces.rows =
+        crate::surface::unique_rows::UniqueIdRows::from_rows(vec![row(98, 97), row(145, 144)]);
     scan.features
         .surface_merge_replay_affected_ids
         .push(replay(416, vec![103, 150], 100));

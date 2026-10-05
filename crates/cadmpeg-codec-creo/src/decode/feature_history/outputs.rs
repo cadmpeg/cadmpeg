@@ -149,7 +149,7 @@ fn feature_output_bodies_with_history(
         Ok(())
     };
     for row in ctx
-        .admit_iter(&scan.surfaces.rows, "creo generated surface rows")?
+        .admit_iter(&*scan.surfaces.rows, "creo generated surface rows")?
         .filter(|row| row.feature_id == feature_id)
     {
         add_surface_outputs(row.id)?;

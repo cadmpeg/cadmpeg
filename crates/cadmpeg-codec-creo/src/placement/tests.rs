@@ -177,7 +177,7 @@ fn placement_reference_ids_refuse_before_growth() {
     });
     let sources = PlacementSources {
         datums: &[],
-        surface_rows: &[],
+        surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
         model_planes: &[],
         outline_planes: &[],
         plane_envelopes: &[],
@@ -359,7 +359,7 @@ fn resolves_perpendicular_datum_frame() {
                     datum(3, crate::axis::Axis::X, 1.0),
                     datum(4, crate::axis::Axis::Z, 3.0),
                 ],
-                surface_rows: &[],
+                surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[],
@@ -419,7 +419,7 @@ fn resolves_reference_flip_from_selected_positional_row() {
                 datum(3, crate::axis::Axis::X, 1.0),
                 datum(4, crate::axis::Axis::Z, 3.0),
             ],
-            surface_rows: &[],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -475,7 +475,7 @@ fn rejects_duplicate_selected_positional_reference_rows() {
                 datum(3, crate::axis::Axis::X, 1.0),
                 datum(4, crate::axis::Axis::Z, 3.0),
             ],
-            surface_rows: &[],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -514,7 +514,7 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
             &[definition],
             &PlacementSources {
                 datums: &[],
-                surface_rows: &[],
+                surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[],
@@ -640,7 +640,7 @@ fn resolves_generated_section_from_declared_cap_pair() {
                     datum(2, crate::axis::Axis::X, 0.0),
                     datum(191, crate::axis::Axis::X, 8.0),
                 ],
-                surface_rows: &rows,
+                surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
                 model_planes: &[],
                 outline_planes: &outlines,
                 plane_envelopes: &[],
@@ -775,7 +775,9 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
                 datum(4, crate::axis::Axis::Z, 0.0),
                 datum(799, crate::axis::Axis::Y, 1.0),
             ],
-            surface_rows: std::slice::from_ref(&generated_plane),
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                std::slice::from_ref(&generated_plane).to_vec(),
+            ),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -806,7 +808,9 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
                 datum(4, crate::axis::Axis::Z, 0.0),
                 datum(799, crate::axis::Axis::Y, 1.0),
             ],
-            surface_rows: &[generated_plane, duplicate_plane],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                [generated_plane, duplicate_plane].to_vec(),
+            ),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -861,7 +865,7 @@ fn resolves_orientation_from_an_outline_plane_carrier() {
         &[definition],
         &PlacementSources {
             datums: &[datum(2, crate::axis::Axis::X, 2.0)],
-            surface_rows: &[],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
             model_planes: &[],
             outline_planes: &[reference],
             plane_envelopes: &[],
@@ -931,7 +935,7 @@ fn resolves_generated_sketch_datum_from_unique_parent_relation() {
                 datum(2, crate::axis::Axis::X, 0.0),
                 datum(4, crate::axis::Axis::Y, 0.0),
             ],
-            surface_rows: &[],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[],
@@ -1018,7 +1022,7 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
         &[definition],
         &PlacementSources {
             datums: &[datum(2, crate::axis::Axis::X, 0.0)],
-            surface_rows: &[row],
+            surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([row].to_vec()),
             model_planes: &[],
             outline_planes: &[],
             plane_envelopes: &[envelope],
@@ -1158,7 +1162,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     .with_surface_ids([819, 822])];
     let sources = PlacementSources {
         datums: &[],
-        surface_rows: &rows,
+        surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
         model_planes: &[],
         outline_planes: &[],
         plane_envelopes: &[],
@@ -1361,7 +1365,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
     .with_surface_ids([13, 18, 23, 25, 27, 29])];
     let sources = PlacementSources {
         datums: &[],
-        surface_rows: &[],
+        surface_rows: &crate::surface::unique_rows::UniqueIdRows::from_rows([].to_vec()),
         model_planes: &[],
         outline_planes: &outlines,
         plane_envelopes: &[],

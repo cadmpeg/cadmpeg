@@ -100,8 +100,10 @@ fn positional_frame_planes(
     parameters: &[SurfaceParameterRecord],
     rows: &[SurfaceRow],
 ) -> Vec<OutlinePlane> {
+    let parameters = crate::surface::SurfaceParameters::from_rows(parameters.to_vec());
+    let rows = crate::surface::SurfaceRows::from_rows(rows.to_vec());
     super::with_decode_ctx(&[], |ctx| {
-        crate::surface::positional_frame_planes(ctx, parameters, rows)
+        crate::surface::positional_frame_planes(ctx, &parameters, &rows)
     })
 }
 
@@ -347,8 +349,8 @@ fn positional_frame_limit_error(limit: u64) -> cadmpeg_core::CodecError {
         .expect("empty root");
     crate::surface::positional_frame_planes(
         &ctx,
-        std::slice::from_ref(&record),
-        std::slice::from_ref(&row),
+        &crate::surface::SurfaceParameters::from_rows(vec![record]),
+        &crate::surface::SurfaceRows::from_rows(vec![row]),
     )
     .expect_err("positional plane collection exceeds limit")
 }

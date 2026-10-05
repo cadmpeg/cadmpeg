@@ -173,10 +173,14 @@ pub(crate) fn cylinders(
     payload: &[u8],
 ) -> Result<Vec<DatumCylinder>, CodecError> {
     let rows = crate::surface::rows(ctx, payload)?;
-    let parameters = crate::surface::parameter_records(ctx, payload)?;
+    let parameters = crate::surface::SurfaceParameters::new(
+        ctx,
+        crate::surface::parameter_records(ctx, payload)?,
+        "creo datum cylinder parameter index",
+    )?;
     let mut cylinders = Vec::new();
-    for row in rows
-        .iter()
+    for row in ctx
+        .admit_iter(&rows, "creo datum cylinder rows")?
         .filter(|row| row.id != 0 && row.kind == SurfaceKind::Cylinder)
     {
         let Some(parameter) = crate::surface::unique_surface_parameter(&parameters, row.id) else {

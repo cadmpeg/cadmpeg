@@ -783,7 +783,7 @@ fn is_neutral_face_reference(
         crate::container::Layout::LegacyAscii(_)
     ) || ctx
         .admit_iter(
-            &scan.surfaces.rows,
+            &*scan.surfaces.rows,
             "creo neutral face reference surface search",
         )?
         .any(|row| row.id == face_id))

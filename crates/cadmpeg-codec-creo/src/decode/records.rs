@@ -3746,7 +3746,7 @@ mod curve_projection_limit_tests {
 pub(super) fn surface_parameter_records<'a>(
     ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan,
-    rows: &'a [crate::surface::SurfaceRow],
+    rows: &'a crate::surface::SurfaceRows,
     parameters: &'a [crate::surface::SurfaceParameterRecord],
     namespace: &str,
 ) -> Result<Vec<CreoSurfaceParameterRecord<'a>>, CodecError> {

@@ -23,7 +23,12 @@ fn feature_surface_transitions_with_service(
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<Vec<(u32, u32)>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        super::feature_surface_transitions(ctx, feature_id, tables, rows)
+        super::feature_surface_transitions(
+            ctx,
+            feature_id,
+            tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
     })
     .expect("service profile admits surface transitions")
 }
@@ -53,15 +58,16 @@ fn one_knit_scan() -> crate::container::ContainerScan<'static> {
         table(97, 67, entry(98, 0, 31), 30).with_surface_ids([98]),
         table(416, 100, entry(103, 98, 41), 40),
     ];
-    scan.surfaces.rows = vec![crate::surface::SurfaceRow {
-        id: 98,
-        kind: crate::surface::SurfaceKind::Plane,
-        feature_id: 97,
-        reversed: false,
-        boundary_type: crate::surface::BoundaryType::Code00,
-        next_surface: 0,
-        offset: 0,
-    }];
+    scan.surfaces.rows =
+        crate::surface::unique_rows::UniqueIdRows::from_rows(vec![crate::surface::SurfaceRow {
+            id: 98,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 97,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 0,
+        }]);
     scan.features.surface_merge_replay_affected_ids.push(
         crate::feature::rows::FeatureSurfaceMergeAffectedIds {
             feature_id: 416,
@@ -257,7 +263,9 @@ fn generated_face_reference_error(
                 generated_surface_face_refs(
                     &trial_ctx,
                     &[201],
-                    std::slice::from_ref(&row),
+                    &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                        std::slice::from_ref(&row).to_vec(),
+                    ),
                     &results,
                     &available,
                 )
@@ -269,7 +277,7 @@ fn generated_face_reference_error(
     let error = generated_surface_face_refs(
         &ctx,
         &[201],
-        std::slice::from_ref(&row),
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(std::slice::from_ref(&row).to_vec()),
         &results,
         &available,
     )
@@ -372,14 +380,26 @@ fn topology_limit_error(
                     &trial_policy,
                 )
                 .expect("root");
-                super::feature_result_topology(&trial_ctx, &tables, &rows, &curve_rows, 17)
+                super::feature_result_topology(
+                    &trial_ctx,
+                    &tables,
+                    &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                    &curve_rows,
+                    17,
+                )
             },
         );
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::feature_result_topology(&ctx, &tables, &rows, &curve_rows, 17)
-        .expect_err("one result member exceeds the resource limit");
+    let error = super::feature_result_topology(
+        &ctx,
+        &tables,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        &curve_rows,
+        17,
+    )
+    .expect_err("one result member exceeds the resource limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -449,7 +469,13 @@ fn feature_result_distinctness_refuses_work_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            super::feature_result_topology(&ctx, &tables, &rows, &[], 17)
+            super::feature_result_topology(
+                &ctx,
+                &tables,
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                &[],
+                17,
+            )
         },
     );
     assert!(
@@ -471,7 +497,7 @@ fn feature_result_topology_arena_refuses_collection_limit() {
     let (tables, rows) = one_result_surface();
     let mut scan = crate::test_support::empty_container_scan();
     scan.features.entity_tables = tables;
-    scan.surfaces.rows = rows;
+    scan.surfaces.rows = crate::surface::unique_rows::UniqueIdRows::from_rows(rows);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId::mint("creo:model:feature#17").expect("fixture identity"),
@@ -536,9 +562,20 @@ fn result_surface_limit_error(limit: u64, by_feature: bool, operation: &'static 
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = if by_feature {
-        super::feature_result_surface_ids_by_feature(&ctx, &tables, &rows).map(|_| ())
+        super::feature_result_surface_ids_by_feature(
+            &ctx,
+            &tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
+        .map(|_| ())
     } else {
-        super::feature_result_surface_ids(&ctx, &tables, &rows, 17).map(|_| ())
+        super::feature_result_surface_ids(
+            &ctx,
+            &tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            17,
+        )
+        .map(|_| ())
     }
     .expect_err("the result surface exceeds the collection limit");
     assert!(
@@ -573,9 +610,18 @@ fn feature_result_surface_map_nodes_refuse_collection_limit() {
 fn feature_result_surface_roster_preserves_order() {
     let (tables, rows) = one_result_surface();
     crate::decode::with_test_decode_ctx(|ctx| {
-        let ids = super::feature_result_surface_ids(ctx, &tables, &rows, 17)?;
+        let ids = super::feature_result_surface_ids(
+            ctx,
+            &tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            17,
+        )?;
         assert_eq!(ids, Some(vec![201]));
-        let by_feature = super::feature_result_surface_ids_by_feature(ctx, &tables, &rows)?;
+        let by_feature = super::feature_result_surface_ids_by_feature(
+            ctx,
+            &tables,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )?;
         assert_eq!(by_feature.get(&17), Some(&vec![201]));
         Ok::<(), cadmpeg_core::CodecError>(())
     })
@@ -701,8 +747,13 @@ fn thicken_offset_limit_error(limit: u64, operation: &'static str) {
     policy.limits.max_collection_items = limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = super::thicken_plane_offset(&ctx, &[(11, 201)], &planes, &rows)
-        .expect_err("one thicken offset exceeds the collection limit");
+    let error = super::thicken_plane_offset(
+        &ctx,
+        &[(11, 201)],
+        &planes,
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+    )
+    .expect_err("one thicken offset exceeds the collection limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == operation),
@@ -817,9 +868,21 @@ fn transition_limit_error(limit: u64, operation: &'static str, dependency_route:
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = if dependency_route {
-        super::surface_transition_dependencies(&ctx, 17, &[table], &rows).map(|_| ())
+        super::surface_transition_dependencies(
+            &ctx,
+            17,
+            &[table],
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
+        .map(|_| ())
     } else {
-        super::feature_surface_transitions(&ctx, 17, &[table], &rows).map(|_| ())
+        super::feature_surface_transitions(
+            &ctx,
+            17,
+            &[table],
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        )
+        .map(|_| ())
     }
     .expect_err("one transition exceeds the collection limit");
     assert!(
@@ -920,7 +983,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(
             ctx,
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             97
         ))
         .expect("service profile admits the result surfaces"),
@@ -930,7 +993,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         crate::decode::with_test_decode_ctx(|ctx| feature_result_topology(
             ctx,
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             &curve_rows,
             97
         ))
@@ -946,7 +1009,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         crate::decode::with_test_decode_ctx(|ctx| feature_result_topology(
             ctx,
             std::slice::from_ref(&table),
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             &curve_rows,
             97
         ))
@@ -967,7 +1030,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(
             ctx,
             &[duplicate],
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             97
         ))
         .expect("service profile admits the duplicate check")
@@ -981,7 +1044,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(
             ctx,
             &[missing],
-            &rows,
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
             97
         ))
         .expect("service profile admits the missing-row check")
@@ -1000,7 +1063,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(
             ctx,
             &[foreign],
-            &[row(145, 144)],
+            &crate::surface::unique_rows::UniqueIdRows::from_rows([row(145, 144)].to_vec()),
             97
         ))
         .expect("service profile admits the foreign-row check")
@@ -1016,7 +1079,15 @@ fn feature_result_identity_validation_refuses_at_work_boundaries() {
             "creo feature result topology identity validation",
             "creo feature result owner identity validation",
         ],
-        |ctx| feature_result_topology(ctx, &tables, &rows, &[], 17),
+        |ctx| {
+            feature_result_topology(
+                ctx,
+                &tables,
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                &[],
+                17,
+            )
+        },
     )
     .expect("one feature result topology");
     assert_eq!(
@@ -1056,7 +1127,9 @@ fn generated_surface_result_id_membership_refuses_work_and_preserves_face() {
             generated_surface_face_refs(
                 ctx,
                 &[201],
-                std::slice::from_ref(&row),
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                    std::slice::from_ref(&row).to_vec(),
+                ),
                 &results,
                 &available,
             )
@@ -1092,7 +1165,9 @@ fn generated_surface_feature_membership_miss_preserves_result_id_laziness() {
             generated_surface_face_refs(
                 ctx,
                 &[201],
-                std::slice::from_ref(&row),
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                    std::slice::from_ref(&row).to_vec(),
+                ),
                 &results,
                 &available,
             )
@@ -1116,7 +1191,7 @@ fn generated_surface_feature_membership_miss_preserves_result_id_laziness() {
     assert!(generated_surface_face_refs(
         &ctx,
         &[201],
-        std::slice::from_ref(&row),
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(std::slice::from_ref(&row).to_vec()),
         &results,
         &available,
     )
@@ -1126,7 +1201,9 @@ fn generated_surface_feature_membership_miss_preserves_result_id_laziness() {
         generated_surface_face_refs(
             ctx,
             &[201],
-            std::slice::from_ref(&row),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                std::slice::from_ref(&row).to_vec(),
+            ),
             &results,
             &available,
         )
@@ -1160,7 +1237,9 @@ fn generated_surface_feature_identity_validation_refuses_at_work_boundary() {
             generated_surface_face_refs(
                 ctx,
                 &[201],
-                std::slice::from_ref(&row),
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(
+                    std::slice::from_ref(&row).to_vec(),
+                ),
                 &results,
                 &available,
             )

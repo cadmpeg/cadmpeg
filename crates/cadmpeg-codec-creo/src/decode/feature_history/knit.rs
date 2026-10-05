@@ -349,7 +349,7 @@ pub(in super::super) fn feature_surface_transitions(
     ctx: &DecodeContext<'_>,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    surface_rows: &[crate::surface::SurfaceRow],
+    surface_rows: &crate::surface::SurfaceRows,
 ) -> Result<Option<Vec<(u32, u32)>>, CodecError> {
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut outputs = 0usize;
@@ -478,7 +478,7 @@ pub(in super::super) fn surface_transition_dependencies(
     ctx: &DecodeContext<'_>,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    surface_rows: &[crate::surface::SurfaceRow],
+    surface_rows: &crate::surface::SurfaceRows,
 ) -> Result<Vec<u32>, CodecError> {
     let mut dependencies = Vec::new();
     let transitions =
@@ -499,7 +499,7 @@ pub(in super::super) fn thicken_plane_offset(
     ctx: &DecodeContext<'_>,
     transitions: &[(u32, u32)],
     planes: &BTreeMap<u32, PlaneEquation>,
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<Option<(f64, ThickenSide)>, CodecError> {
     let mut offsets = Vec::new();
     for &(source_id, output_id) in
@@ -571,7 +571,7 @@ pub(in super::super) fn thicken_plane_offset(
 pub(in super::super) fn feature_result_surface_ids(
     ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
     feature_id: u32,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
@@ -609,7 +609,7 @@ pub(in super::super) fn feature_result_surface_ids(
 pub(super) fn feature_result_surface_ids_by_feature(
     ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
     let mut local_storage = ctx.reserve_scoped(0, "Creo feature selection workspace")?;
     let mut unique_features = BTreeSet::new();
@@ -641,7 +641,7 @@ pub(super) fn feature_result_surface_ids_by_feature(
 pub(in super::super) fn feature_result_topology(
     ctx: &DecodeContext<'_>,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    surface_rows: &[crate::surface::SurfaceRow],
+    surface_rows: &crate::surface::SurfaceRows,
     curve_rows: &[crate::curve::CurveTopologyRow],
     feature_id: u32,
 ) -> Result<Option<FeatureResultTopology>, CodecError> {
@@ -712,7 +712,7 @@ pub(in super::super) fn feature_result_topology(
 pub(in super::super) fn generated_surface_face_refs(
     ctx: &DecodeContext<'_>,
     source_ids: &[u32],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
     result_surface_ids: &BTreeMap<u32, Vec<u32>>,
     available_features: &BTreeSet<IrFeatureId>,
 ) -> Result<Option<Vec<GeneratedFaceRef>>, CodecError> {

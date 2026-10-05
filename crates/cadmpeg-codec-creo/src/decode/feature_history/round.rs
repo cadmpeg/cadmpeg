@@ -368,7 +368,7 @@ pub(in super::super) fn unique_surface_parameter_record<'a>(
     row: &crate::surface::SurfaceRow,
 ) -> Result<Option<&'a crate::surface::SurfaceParameterRecord>, cadmpeg_core::CodecError> {
     Ok(exactly_one(
-        ctx.admit_iter(&scan.surfaces.parameters, "creo surface parameter records")?
+        ctx.admit_iter(&*scan.surfaces.parameters, "creo surface parameter records")?
             .filter(|record| record.offset == row.offset),
     ))
 }
@@ -546,7 +546,7 @@ pub(in super::super) fn round_constant_radius(
     }
     let mut generated_rows = Vec::new();
     for row in ctx
-        .admit_iter(&scan.surfaces.rows, "creo generated round surface rows")?
+        .admit_iter(&*scan.surfaces.rows, "creo generated round surface rows")?
         .filter(|row| row.feature_id == feature_id)
     {
         ctx.reserve_vec(&mut generated_rows, 1, "creo generated round rows")?;
@@ -688,7 +688,10 @@ fn complete_direct_placed_cylinder_radius_agreement(
 ) -> Result<Option<bool>, cadmpeg_core::CodecError> {
     let mut agrees = true;
     for row in ctx
-        .admit_iter(&scan.surfaces.rows, "creo direct placed round surface rows")?
+        .admit_iter(
+            &*scan.surfaces.rows,
+            "creo direct placed round surface rows",
+        )?
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
@@ -1128,7 +1131,7 @@ pub(in super::super) fn round_placed_cylinder_radii(
 ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
     let mut radii = Vec::new();
     for row in ctx
-        .admit_iter(&scan.surfaces.rows, "creo placed round surface rows")?
+        .admit_iter(&*scan.surfaces.rows, "creo placed round surface rows")?
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
@@ -1176,7 +1179,7 @@ fn round_direct_radii(
     feature_id: u32,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let generated_count = ctx
-        .admit_iter(&scan.surfaces.rows, "creo direct round surface rows")?
+        .admit_iter(&*scan.surfaces.rows, "creo direct round surface rows")?
         .filter(|row| row.feature_id == feature_id)
         .count();
     if generated_count == 0 {
@@ -1193,7 +1196,7 @@ pub(in super::super) fn round_observed_radii(
 ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
     let mut radii = Vec::new();
     for row in ctx
-        .admit_iter(&scan.surfaces.rows, "creo observed round surface rows")?
+        .admit_iter(&*scan.surfaces.rows, "creo observed round surface rows")?
         .filter(|row| row.feature_id == feature_id)
     {
         let Some(parameters) = unique_surface_parameter_record(ctx, scan, row)? else {
@@ -1393,7 +1396,7 @@ pub(in super::super) fn chamfer_constant_distance(
     feature_id: u32,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
     let mut candidates = ctx
-        .admit_iter(&scan.surfaces.rows, "creo chamfer generated surface rows")?
+        .admit_iter(&*scan.surfaces.rows, "creo chamfer generated surface rows")?
         .filter(|row| row.feature_id == feature_id);
     let Some(first) = candidates.next() else {
         return Ok(None);
@@ -1405,7 +1408,7 @@ pub(in super::super) fn chamfer_constant_distance(
     }
     let mut cones = Vec::new();
     for row in ctx
-        .admit_iter(&scan.surfaces.rows, "creo chamfer generated surface rows")?
+        .admit_iter(&*scan.surfaces.rows, "creo chamfer generated surface rows")?
         .filter(|row| row.feature_id == feature_id)
     {
         let Some(cone) = chamfer_cone_equation(scan, ir, source_carriers, row) else {
@@ -1428,7 +1431,7 @@ pub(in super::super) fn chamfer_constant_distance(
     let mut support_plane_ids = BTreeSet::new();
     for id in ctx.admit_iter(affected_ids, "creo chamfer support plane IDs")? {
         let mut rows = ctx
-            .admit_iter(&scan.surfaces.rows, "creo chamfer support surface rows")?
+            .admit_iter(&*scan.surfaces.rows, "creo chamfer support surface rows")?
             .filter(|row| row.id == *id);
         let first_row = rows.next();
         let second_row = rows.next();

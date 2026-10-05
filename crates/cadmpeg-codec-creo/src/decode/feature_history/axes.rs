@@ -99,7 +99,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
 
     let rows = ctx
         .admit_iter(
-            &scan.surfaces.rows,
+            &*scan.surfaces.rows,
             "creo full-turn revolution surface rows",
         )?
         .filter(|row| row.feature_id == feature_id);
@@ -565,7 +565,7 @@ pub(in super::super) fn geometry_generator_features(
     }
     let mut map_storage = ctx.reserve_scoped(0, "Creo generator map storage")?;
     let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
-    for row in ctx.admit_iter(&scan.surfaces.rows, "creo generator surface rows")? {
+    for row in ctx.admit_iter(&*scan.surfaces.rows, "creo generator surface rows")? {
         if row.feature_id == 0 {
             continue;
         }

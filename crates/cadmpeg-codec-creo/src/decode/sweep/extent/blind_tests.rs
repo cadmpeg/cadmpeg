@@ -370,7 +370,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         .expect("admitted extent")
         .is_none());
 
-        scan.surfaces.rows[3].reversed = false;
+        scan.surfaces.rows.edit(|rows| rows[3].reversed = false);
         assert!(generated_rectilinear_plane_extent(
             ctx,
             &scan,
@@ -381,7 +381,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         )
         .expect("admitted extent")
         .is_none());
-        scan.surfaces.rows[3].reversed = true;
+        scan.surfaces.rows.edit(|rows| rows[3].reversed = true);
         ir.model.surfaces.pop();
         assert!(generated_rectilinear_plane_extent(
             ctx,

@@ -479,7 +479,7 @@ pub(super) fn source_meta(
         ctx,
         crate::coverage::DECODED_POSITIONAL_EXTRUSION_DIRECTION_COUNT,
         ctx.admit_iter(
-            &scan.surfaces.parameters,
+            &*scan.surfaces.parameters,
             "creo parameters coverage traversal",
         )?
         .filter(|record| {

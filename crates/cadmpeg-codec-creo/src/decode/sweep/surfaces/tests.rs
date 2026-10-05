@@ -136,25 +136,25 @@ fn revolved_nurbs_surface_refuses_each_collection_boundary() {
 fn generated_surface_binding_requires_one_matching_row() {
     let row = surface_row(31, 7, crate::surface::SurfaceKind::Plane);
     assert!(unique_feature_surface_row(
-        std::slice::from_ref(&row),
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(std::slice::from_ref(&row).to_vec()),
         31,
         7,
         crate::surface::SurfaceKind::Plane,
     ));
     assert!(!unique_feature_surface_row(
-        std::slice::from_ref(&row),
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(std::slice::from_ref(&row).to_vec()),
         31,
         8,
         crate::surface::SurfaceKind::Plane,
     ));
     assert!(!unique_feature_surface_row(
-        std::slice::from_ref(&row),
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(std::slice::from_ref(&row).to_vec()),
         31,
         7,
         crate::surface::SurfaceKind::Cylinder,
     ));
     assert!(!unique_feature_surface_row(
-        &[row.clone(), row],
+        &crate::surface::unique_rows::UniqueIdRows::from_rows([row.clone(), row].to_vec()),
         31,
         7,
         crate::surface::SurfaceKind::Plane,

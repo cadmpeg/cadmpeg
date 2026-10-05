@@ -72,7 +72,7 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     round_feature_ids: &BTreeSet<u32>,
     tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<Vec<(u32, u32, usize)>, cadmpeg_core::CodecError> {
     let mut pairs = Vec::new();
     for table in ctx.admit_iter(tables, "creo rowless round feature tables")? {
@@ -88,9 +88,11 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
         {
             continue;
         }
-        let rowless_present = ctx
-            .admit_iter(rows, "creo rowless round surface ID search")?
-            .any(|row| row.id == rowless.entity_id);
+        let rowless_present = ctx.any_by(
+            &**rows,
+            |row| Ok(row.id == rowless.entity_id),
+            "creo rowless round surface ID search",
+        )?;
         if rowless_present {
             continue;
         }
@@ -262,7 +264,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         };
         let mut selected_row = None;
         let mut ambiguous_row = false;
-        for row in ctx.admit_iter(&scan.surfaces.rows, "creo constrained slot cylinder rows")? {
+        for row in ctx.admit_iter(&*scan.surfaces.rows, "creo constrained slot cylinder rows")? {
             if row.feature_id != *feature_id || row.kind != crate::surface::SurfaceKind::Cylinder {
                 continue;
             }
@@ -1171,7 +1173,10 @@ pub(in super::super) fn transfer_positional_cylinders(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
     let mut round_feature_ids = BTreeSet::new();
-    for row in ctx.admit_iter(&scan.surfaces.rows, "creo positional cylinder surface rows")? {
+    for row in ctx.admit_iter(
+        &*scan.surfaces.rows,
+        "creo positional cylinder surface rows",
+    )? {
         if row.kind == crate::surface::SurfaceKind::Cylinder
             && feature_schema_class(ctx, scan, row.feature_id)? == Some(SchemaClass::Round)
         {
@@ -1264,7 +1269,7 @@ pub(in super::super) fn transfer_positional_cylinders(
     }
     let mut summary = PositionalCylinderTransferSummary::default();
     for record in ctx.admit_iter(
-        &scan.surfaces.parameters,
+        &*scan.surfaces.parameters,
         "creo transfer positional cylinders parameters traversal",
     )? {
         let unique_parameter =
@@ -1443,7 +1448,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                 circles.push(circle);
             }
             let generated_cylinder_count = ctx
-                .admit_iter(&scan.surfaces.rows, "creo generated cylinder rows")?
+                .admit_iter(&*scan.surfaces.rows, "creo generated cylinder rows")?
                 .filter(|candidate| {
                     candidate.feature_id == row.feature_id
                         && candidate.kind == crate::surface::SurfaceKind::Cylinder
@@ -1836,7 +1841,7 @@ pub(in super::super) fn transfer_positional_cones(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for record in ctx.admit_iter(
-        &scan.surfaces.parameters,
+        &*scan.surfaces.parameters,
         "creo transfer positional cones parameters traversal",
     )? {
         let Some(frame) = record.positional_cone_frame() else {

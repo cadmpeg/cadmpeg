@@ -1069,7 +1069,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .filter(|row| row.feature_id == feature_id)
     };
     if ctx
-        .admit_iter(&scan.surfaces.rows, "creo rectilinear source row count")?
+        .admit_iter(&*scan.surfaces.rows, "creo rectilinear source row count")?
         .filter(|row| row.feature_id == feature_id)
         .count()
         < 4

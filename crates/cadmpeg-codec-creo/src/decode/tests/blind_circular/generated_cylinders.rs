@@ -364,7 +364,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
 
         let crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
-        ) = &mut scan.surfaces.parameters[0].carrier
+        ) = &mut scan.surfaces.parameters.fields_mut()[0].carrier
         else {
             panic!("cylinder frame");
         };
@@ -424,7 +424,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         .is_none());
         let crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
-        ) = &mut scan.surfaces.parameters[0].carrier
+        ) = &mut scan.surfaces.parameters.fields_mut()[0].carrier
         else {
             panic!("cylinder frame");
         };
@@ -582,7 +582,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
 
         let crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
-        ) = &mut scan.surfaces.parameters[0].carrier
+        ) = &mut scan.surfaces.parameters.fields_mut()[0].carrier
         else {
             panic!("cylinder frame");
         };
@@ -606,7 +606,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         .is_none());
         let crate::surface::SurfaceParameterCarrier::Resolved(
             crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
-        ) = &mut scan.surfaces.parameters[0].carrier
+        ) = &mut scan.surfaces.parameters.fields_mut()[0].carrier
         else {
             panic!("cylinder frame");
         };

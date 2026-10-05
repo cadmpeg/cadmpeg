@@ -307,7 +307,7 @@ pub(super) fn collect_feature_coverage(
                 {
                     Some(feature_id) => ctx
                         .admit_iter(
-                            &scan.surfaces.rows,
+                            &*scan.surfaces.rows,
                             "creo generated fillet surface coverage",
                         )?
                         .any(|row| row.feature_id == feature_id),
@@ -963,7 +963,7 @@ pub(super) fn torus_parameter_coverage(
     let rows = || {
         Ok::<_, CodecError>(
             ctx.admit_iter(
-                &scan.surfaces.parameters,
+                &*scan.surfaces.parameters,
                 "creo torus parameter coverage traversal",
             )?
             .filter_map(|record| {

@@ -325,18 +325,20 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
     ));
     assert_eq!(scan.surfaces.rows.len(), 1);
     assert_eq!(scan.surfaces.parameters.len(), 1);
-    scan.surfaces.parameters[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Torus(
-            crate::surface::PositionalTorusFrame::new(
-                [2.0, 2.0, 4.0],
-                [0.0, 0.0, 1.0],
-                [-1.0, 0.0, 0.0],
-                0.0,
-                2.0,
-            )
-            .expect("valid positional torus frame"),
-        ),
-    );
+    scan.surfaces.parameters.edit(|rows| {
+        rows[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Torus(
+                crate::surface::PositionalTorusFrame::new(
+                    [2.0, 2.0, 4.0],
+                    [0.0, 0.0, 1.0],
+                    [-1.0, 0.0, 0.0],
+                    0.0,
+                    2.0,
+                )
+                .expect("valid positional torus frame"),
+            ),
+        )
+    });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
@@ -368,18 +370,20 @@ fn positional_sphere_is_in_millimeters_at_ir_admission() {
         "inline-sphere",
         &[("ND:0:VisibGeom:0", payload)],
     ));
-    scan.surfaces.parameters[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
-        crate::surface::InlineSurfaceCarrier::Torus(
-            crate::surface::PositionalTorusFrame::new(
-                [1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0],
-                [1.0, 0.0, 0.0],
-                0.0,
-                2.0,
-            )
-            .expect("valid positional sphere frame"),
-        ),
-    );
+    scan.surfaces.parameters.edit(|rows| {
+        rows[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Torus(
+                crate::surface::PositionalTorusFrame::new(
+                    [1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [1.0, 0.0, 0.0],
+                    0.0,
+                    2.0,
+                )
+                .expect("valid positional sphere frame"),
+            ),
+        )
+    });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
@@ -522,7 +526,7 @@ fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'s
         1,
         crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
     ));
-    scan.surfaces.rows[0].offset = 0;
+    scan.surfaces.rows.edit(|rows| rows[0].offset = 0);
     let frame = |offset, values: &[f64]| crate::surface::SurfaceParameterScalarFrame {
         offset,
         slots: values

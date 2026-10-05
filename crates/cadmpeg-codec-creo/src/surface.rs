@@ -7,6 +7,7 @@
 
 pub(crate) mod arrays;
 pub(crate) mod cylinder_frame_readers;
+pub(crate) mod unique_rows;
 
 use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -218,11 +219,12 @@ impl cadmpeg_core::decode::cost::DecodeCost for SurfaceRow {
     }
 }
 
+/// Surface rows of one namespace, indexed by the identifiers that occur once.
+pub(crate) type SurfaceRows = unique_rows::UniqueIdRows<SurfaceRow>;
+
 /// Return the surface row for `id` only when the namespace contains one match.
-pub(crate) fn unique_surface_row(rows: &[SurfaceRow], id: u32) -> Option<&SurfaceRow> {
-    let mut matches = rows.iter().filter(|row| row.id == id);
-    let row = matches.next()?;
-    matches.next().is_none().then_some(row)
+pub(crate) fn unique_surface_row(rows: &SurfaceRows, id: u32) -> Option<&SurfaceRow> {
+    rows.unique(id)
 }
 
 /// Named `srf_prim_ptr(<kind>)` prototype family.
@@ -808,15 +810,15 @@ pub(crate) struct SurfaceContourRecord {
 /// Return the positional parameter record for `surface_id` only when exactly
 /// one exists.
 pub(crate) fn unique_surface_parameter(
-    records: &[SurfaceParameterRecord],
+    records: &SurfaceParameters,
     surface_id: u32,
 ) -> Option<&SurfaceParameterRecord> {
-    let mut matches = records
-        .iter()
-        .filter(|record| record.surface_id == surface_id);
-    let record = matches.next()?;
-    matches.next().is_none().then_some(record)
+    records.unique(surface_id)
 }
+
+/// Positional parameter records of one namespace, indexed by the surface
+/// identifiers that occur once.
+pub(crate) type SurfaceParameters = unique_rows::UniqueIdRows<SurfaceParameterRecord>;
 
 /// Six-slot model-space envelope frame following a tabulated-cylinder marker.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2702,13 +2704,14 @@ fn outline_planes(
 /// owned by uniquely identified plane rows.
 pub(crate) fn positional_frame_planes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    parameters: &[SurfaceParameterRecord],
-    rows: &[SurfaceRow],
+    parameters: &crate::surface::SurfaceParameters,
+    rows: &crate::surface::SurfaceRows,
 ) -> Result<Vec<OutlinePlane>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
-    for record in parameters {
+    for record in ctx.admit_iter(&**parameters, "creo positional frame plane parameters")? {
         if record.boundary != SurfaceBodyBoundary::CompoundClose
-            || unique_surface_parameter(parameters, record.surface_id) != Some(record)
+            || unique_surface_parameter(parameters, record.surface_id)
+                .is_none_or(|unique| !std::ptr::eq(unique, record))
             || unique_surface_row(rows, record.surface_id)
                 .is_none_or(|row| row.kind != SurfaceKind::Plane)
         {
@@ -7546,7 +7549,11 @@ fn plane_local_systems_for_rows(
     }
 
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
-    let parameters = parameter_records_for_rows(ctx, payload, rows)?;
+    let parameters = SurfaceParameters::new(
+        ctx,
+        parameter_records_for_rows(ctx, payload, rows)?,
+        "creo plane local system parameter index",
+    )?;
     let headers = rows
         .iter()
         .enumerate()
