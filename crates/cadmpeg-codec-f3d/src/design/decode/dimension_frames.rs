@@ -2317,6 +2317,17 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
     // Each stream is decoded once, in the order of its first companion.
     let (streams, _streams_storage) = companion_streams(ctx, companions)?;
     for &(stream, _) in ctx.admit_iter(&streams, "scan F3D dimension annotation streams")? {
+        // A frame's tail names an owner of a dimension companion of its stream.
+        if key_range(
+            ctx,
+            &dimension_companions,
+            |(key_stream, _)| key_stream,
+            stream,
+        )?
+        .is_empty()
+        {
+            continue;
+        }
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
         else {
             continue;
