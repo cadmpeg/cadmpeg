@@ -50,7 +50,7 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 const PARAMESH_MODULE: &str = "ParaMesh";
 const COMMON_DATA_MODULE: &str = "CommonData";
@@ -400,10 +400,10 @@ impl MeshBody {
         geometry: MeshGeometry,
     ) -> Result<Self, CodecError> {
         let MeshGeometry {
-            vertices,
+            mut vertices,
             triangles,
             feature_edges,
-            corner_normals,
+            mut corner_normals,
             triangle_groups,
             texture_ids,
             attributes,
@@ -414,35 +414,25 @@ impl MeshBody {
             format_args!(":mesh-body#{body_byte_offset}"),
             "f3d mesh body identifier",
         )?;
-        let mut placed_vertices = ctx.vector_storage(vertices.len(), "f3d placed mesh vertices")?;
-        for point in ctx.admit_iter(&vertices, "place F3D mesh vertices")? {
-            ctx.push_vec(
-                &mut placed_vertices,
-                transform.transform_point(*point)?,
-                "f3d placed mesh vertices",
-            )?;
+        // Placement rewrites the container's vectors in place. A non-finite
+        // result stops the loop and the container fails alone, so each step
+        // is admitted as it runs.
+        for point in &mut vertices {
+            ctx.charge_work(1, "place F3D mesh vertices")?;
+            *point = transform.transform_point(*point)?;
         }
-        let placed_normals = if let Some(normals) = corner_normals {
-            let mut placed = ctx.vector_storage(normals.len(), "f3d placed mesh normals")?;
-            for normal in ctx.admit_iter(&normals, "place F3D mesh corner normals")? {
-                ctx.push_vec(
-                    &mut placed,
-                    transform.transform_normal(*normal)?,
-                    "f3d placed mesh normals",
-                )?;
-            }
-            Some(placed)
-        } else {
-            None
-        };
+        for normal in corner_normals.iter_mut().flatten() {
+            ctx.charge_work(1, "place F3D mesh corner normals")?;
+            *normal = transform.transform_normal(*normal)?;
+        }
         Ok(Self {
             id,
-            vertices: placed_vertices,
+            vertices,
             // Placement does not change indexing. Triangle tuples, feature
             // edges, and corner selectors remain in serialized order.
             triangles,
             feature_edges,
-            corner_normals: placed_normals,
+            corner_normals,
             triangle_groups,
             texture_ids,
             attributes,
@@ -454,8 +444,8 @@ fn validate_mesh_registration(
     ctx: &DecodeContext<'_>,
     frame: TypedPrimaryFrame<'_>,
     expected_version: u32,
-    expected_base_type_guid: &str,
-    expected_module: &str,
+    expected_base_type_guid: &'static str,
+    expected_module: &'static str,
     record_kind: &str,
 ) -> Result<(), CodecError> {
     if frame.design_type.version != expected_version {
@@ -467,12 +457,7 @@ fn validate_mesh_registration(
             "f3d Design unsupported diagnostic",
         )?));
     }
-    if !registered_module_and_base(
-        ctx,
-        frame.design_type,
-        expected_base_type_guid,
-        expected_module,
-    )? {
+    if !registered_module_and_base(frame.design_type, expected_base_type_guid, expected_module) {
         return Err(crate::design::text::malformed_design(
             ctx,
             format_args!(
@@ -485,28 +470,18 @@ fn validate_mesh_registration(
 }
 
 /// Whether a type entry is registered by `module` and derives from
-/// `base_type_guid`, compared without case.
+/// `base_type_guid`, compared without case. Both comparisons test the
+/// lengths first, so each reads at most the length of its literal.
 fn registered_module_and_base(
-    ctx: &DecodeContext<'_>,
     design_type: &SegmentTypeData,
-    base_type_guid: &str,
-    module: &str,
-) -> Result<bool, CodecError> {
-    if !ctx.equal_bytes(
-        design_type.module.as_bytes(),
-        module.as_bytes(),
-        "match F3D mesh type module",
-    )? {
-        return Ok(false);
-    }
-    let Some(base) = design_type.base_type_guid.value() else {
-        return Ok(false);
-    };
-    ctx.eq_ignore_ascii_case(
-        base.as_str(),
-        base_type_guid,
-        "match F3D mesh base type GUID",
-    )
+    base_type_guid: &'static str,
+    module: &'static str,
+) -> bool {
+    design_type.module.as_bytes() == module.as_bytes()
+        && design_type
+            .base_type_guid
+            .value()
+            .is_some_and(|base| base.as_str().eq_ignore_ascii_case(base_type_guid))
 }
 
 fn exact_record_index(
@@ -560,26 +535,22 @@ fn record_identity(
 }
 
 #[derive(Clone, Copy)]
-struct MeshRecordType<'a> {
-    type_guid: &'a str,
-    base_type_guid: &'a str,
+struct MeshRecordType {
+    type_guid: &'static str,
+    base_type_guid: &'static str,
     version: u32,
-    module: &'a str,
+    module: &'static str,
 }
 
-/// Whether a type entry is the registration `expected` names.
-fn registered_type(
-    ctx: &DecodeContext<'_>,
-    design_type: &SegmentTypeData,
-    expected: MeshRecordType<'_>,
-) -> Result<bool, CodecError> {
-    Ok(design_type.version == expected.version
-        && ctx.eq_ignore_ascii_case(
-            design_type.type_guid.as_str(),
-            expected.type_guid,
-            "match F3D mesh type GUID",
-        )?
-        && registered_module_and_base(ctx, design_type, expected.base_type_guid, expected.module)?)
+/// Whether a type entry is the registration `expected` names. Each text
+/// comparison reads at most the length of its literal.
+fn registered_type(design_type: &SegmentTypeData, expected: MeshRecordType) -> bool {
+    design_type.version == expected.version
+        && design_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case(expected.type_guid)
+        && registered_module_and_base(design_type, expected.base_type_guid, expected.module)
 }
 
 #[derive(Clone, Copy)]
@@ -597,7 +568,7 @@ fn nested_record_identity(
     record: &[u8],
     frame: NestedMeshRecordFrame,
     meta: &crate::metastream::MetaStream,
-    expected: MeshRecordType<'_>,
+    expected: MeshRecordType,
 ) -> Result<Option<DesignMeshRecordIdentity>, CodecError> {
     let Some(header) = indexed_record_header_at(record, frame.at) else {
         return Ok(None);
@@ -613,7 +584,7 @@ fn nested_record_identity(
     else {
         return Ok(None);
     };
-    if !registered_type(ctx, design_type, expected)? {
+    if !registered_type(design_type, expected) {
         return Ok(None);
     }
     let (Some(byte_offset), Some(frame_length)) = (
@@ -916,13 +887,13 @@ fn mesh_texture_entries(
     ) else {
         return Ok(None);
     };
+    // A malformed entry ends either map early, so each entry is admitted as
+    // it is read and storage grows with the entries read.
     let mut textures = Vec::new();
-    storage.with_storage(|| {
-        ctx.reserve_capacity(&mut textures, flags_count, "f3d mesh texture entries")
-    })?;
     let mut keys = HashMap::new();
     let mut keys_storage = ctx.reserve_scoped(0, "f3d mesh texture keys")?;
-    for ordinal in ctx.admit_iter(&(0..flags_count), "read F3D mesh texture flags")? {
+    for ordinal in 0..flags_count {
+        ctx.charge_work(1, "read F3D mesh texture flags")?;
         let Some((resource_guid, key, end)) = texture_guid_at(record, at) else {
             return Ok(None);
         };
@@ -945,16 +916,13 @@ fn mesh_texture_entries(
             ctx.copy_retained_text(resource_guid, "retain F3D mesh texture GUID")?,
         )
         .map_err(CodecError::malformed)?;
-        ctx.push_vec(
-            &mut textures,
-            MeshTextureEntry {
-                ordinal,
-                resource_guid,
-                flags,
-                filename: None,
-            },
-            "f3d mesh texture entries",
-        )?;
+        let entry = MeshTextureEntry {
+            ordinal,
+            resource_guid,
+            flags,
+            filename: None,
+        };
+        storage.with_storage(|| ctx.push_vec(&mut textures, entry, "f3d mesh texture entries"))?;
     }
     let Some((filename_count, mut at)) = counted_entries(record, at, TEXTURE_FILENAME_ENTRY_BYTES)
     else {
@@ -965,7 +933,8 @@ fn mesh_texture_entries(
     if filename_count != flags_count {
         return Ok(None);
     }
-    for ordinal in ctx.admit_iter(&(0..filename_count), "read F3D mesh texture filenames")? {
+    for ordinal in 0..filename_count {
+        ctx.charge_work(1, "read F3D mesh texture filenames")?;
         let Some((_, key, end)) = texture_guid_at(record, at) else {
             return Ok(None);
         };
@@ -1169,8 +1138,8 @@ fn parse_typed_identity(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
     expected_version: u32,
-    expected_base_type_guid: &str,
-    expected_module: &str,
+    expected_base_type_guid: &'static str,
+    expected_module: &'static str,
     record_kind: &str,
 ) -> Result<DesignMeshRecordIdentity, CodecError> {
     validate_mesh_registration(
@@ -1409,18 +1378,28 @@ fn diagnostic_targets<'ctx>(
     Ok((targets, reservation))
 }
 
+/// The collections' record indices in ascending order, for bisection. The
+/// storage lives in `storage`.
 fn mesh_collection_indices(
     ctx: &DecodeContext<'_>,
     storage: &mut ScopedReservation<'_>,
     collections: &[MeshCollectionRecord<'_>],
-) -> Result<HashSet<u32>, CodecError> {
-    let mut indices = HashSet::new();
+) -> Result<Vec<u32>, CodecError> {
+    let mut indices = storage
+        .with_storage(|| ctx.vector_storage(collections.len(), "f3d mesh collection indices"))?;
     for collection in ctx.admit_iter(collections, "index F3D mesh collections")? {
-        let index = collection.collection.record().record_index();
-        storage.with_storage(|| {
-            ctx.insert_hash_set(&mut indices, index, "f3d mesh collection indices")
-        })?;
+        ctx.push_vec(
+            &mut indices,
+            collection.collection.record().record_index(),
+            "f3d mesh collection indices",
+        )?;
     }
+    ctx.sort_unstable_by_key(
+        &mut indices,
+        |index| *index,
+        Ord::cmp,
+        "sort F3D mesh collection indices",
+    )?;
     Ok(indices)
 }
 
@@ -1863,7 +1842,7 @@ where
         "mesh-wrapper",
         |frame| parse_mesh_wrapper_record(ctx, bytes, frame).map(Some),
     )?;
-    let records = IndexedRecordOffsets::build(ctx, bytes)?;
+    let (records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
     let scopes = record_map(
         ctx,
         &mut storage,
@@ -1909,11 +1888,12 @@ where
                 return Ok(None);
             };
             Ok(ctx
-                .contains_hash_set(
+                .binary_search(
                     &collection_indices,
                     &owner.collection_record_index,
                     "match F3D mesh collection owners",
                 )?
+                .is_ok()
                 .then_some(owner))
         },
     )?;
@@ -2046,6 +2026,8 @@ fn mesh_feature_id_charged(
 }
 
 /// Whether an unjoined mesh body names the archive entry and Fusion UUID.
+/// The stored UUID is 36 characters and the comparison tests the lengths
+/// first, so it reads at most 36 bytes.
 fn names_container(
     ctx: &DecodeContext<'_>,
     body: &DesignMeshBody,
@@ -2058,11 +2040,7 @@ fn names_container(
             entry_name.as_bytes(),
             "match F3D mesh entry name",
         )?
-        && ctx.eq_ignore_ascii_case(
-            body.guid.value(),
-            fusion_uuid,
-            "match F3D mesh Fusion UUID",
-        )?)
+        && body.guid.value().eq_ignore_ascii_case(fusion_uuid))
 }
 
 /// The feature and body ordinals of the one unjoined mesh body that names
@@ -3875,7 +3853,7 @@ mod tests {
     }
 
     #[test]
-    fn mesh_body_projection_refuses_identifier_and_collection_limits() {
+    fn mesh_body_projection_refuses_identifier_and_placement_limits() {
         let transform = crate::records::mesh::MeshAffineTransform::new([
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
@@ -3886,45 +3864,22 @@ mod tests {
                 "11111111-2222-4333-8444-555555555555".to_owned(),
             )
             .unwrap(),
-            vertices: vec![FinitePoint3::ZERO],
+            vertices: vec![FinitePoint3::ZERO, FinitePoint3::ZERO],
             triangles: Vec::new(),
             feature_edges: Vec::new(),
-            corner_normals: Some(vec![UnitVector3::Z_AXIS]),
+            corner_normals: Some(vec![UnitVector3::Z_AXIS, UnitVector3::Z_AXIS]),
             triangle_groups: Vec::new(),
             texture_ids: None,
             attributes: Vec::new(),
         };
         let geometry = || super::split_container(container()).2;
         let native_scope_bytes = u64_from_index(crate::ids::native_scope("mesh.paramesh").len());
-        for (collection_limit, retained_limit, dimension, operation) in [
-            (
-                0,
-                u64::MAX,
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                "f3d placed mesh vertices",
-            ),
-            (
-                1,
-                u64::MAX,
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                "f3d placed mesh normals",
-            ),
-            (
-                2,
-                0,
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                "f3d native stream key",
-            ),
-            (
-                2,
-                native_scope_bytes,
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                "f3d mesh body identifier",
-            ),
+        for (retained_limit, operation) in [
+            (0, "f3d native stream key"),
+            (native_scope_bytes, "f3d mesh body identifier"),
         ] {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-            policy.limits.max_collection_items = collection_limit;
             policy.limits.max_retained_bytes = retained_limit;
 
             let (ctx, _) =
@@ -3932,7 +3887,24 @@ mod tests {
             assert!(matches!(
                 MeshBody::from_geometry(&ctx, "mesh.paramesh", 100, transform, geometry()),
                 Err(CodecError::ResourceLimit(failure))
-                    if failure.dimension == dimension && failure.operation == operation
+                    if failure.dimension
+                        == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                        && failure.operation == operation
+            ));
+        }
+        // The second vertex and the second normal each pay one step of their
+        // own, so placement admits each step as it runs.
+        for operation in ["place F3D mesh vertices", "place F3D mesh corner normals"] {
+            let refusal = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                1,
+                |ctx| MeshBody::from_geometry(ctx, "mesh.paramesh", 100, transform, geometry()),
+            );
+            assert!(matches!(
+                refusal,
+                CodecError::ResourceLimit(limit)
+                    if limit.operation == operation && limit.additional == 1
             ));
         }
         crate::design::test_support::with_test_decode_context(|ctx| {
@@ -3942,8 +3914,8 @@ mod tests {
                 body.id,
                 crate::ids::native_mesh_body_id("mesh.paramesh", 100)
             );
-            assert_eq!(body.vertices.len(), 1);
-            assert_eq!(body.corner_normals.unwrap().len(), 1);
+            assert_eq!(body.vertices.len(), 2);
+            assert_eq!(body.corner_normals.unwrap().len(), 2);
         });
     }
 
