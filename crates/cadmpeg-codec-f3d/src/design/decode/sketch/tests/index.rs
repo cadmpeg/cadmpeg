@@ -53,18 +53,48 @@ fn indexed_record_offsets_charge_each_key_and_offset() {
     bytes.extend_from_slice(&indexed_header(7));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    // One order slot, one key and two offsets.
-    policy.limits.max_collection_items = 4;
+    // Two offsets in byte order, one order slot, one key and two grouped
+    // offsets.
+    policy.limits.max_collection_items = 6;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let records = IndexedRecordOffsets::build(&ctx, &bytes).unwrap();
     assert_eq!(records.offsets(7), &[0, 11]);
+    assert_eq!(records.headers_in(&ctx, 0, 22).unwrap(), &[0, 11]);
+    assert!(records.headers_in(&ctx, 1, 11).unwrap().is_empty());
+    assert_eq!(records.headers_in(&ctx, 1, 12).unwrap(), &[11]);
 
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = 5;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     assert!(matches!(
         IndexedRecordOffsets::build(&ctx, &bytes),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn scoped_record_offsets_retain_nothing() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&indexed_header(7));
+    bytes.extend_from_slice(&indexed_header(7));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (records, _storage) = IndexedRecordOffsets::build_scoped(&ctx, &bytes).unwrap();
+    assert_eq!(records.offsets(7), &[0, 11]);
+    let mut cache = crate::design::decode::sketch::RecordOffsetCache::new(&ctx).unwrap();
+    assert_eq!(
+        cache.get(&ctx, "stream", &bytes).unwrap().offsets(7),
+        &[0, 11]
+    );
+
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    assert!(matches!(
+        IndexedRecordOffsets::build_scoped(&ctx, &bytes).map(|_| ()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
     ));
 }
 

@@ -84,10 +84,10 @@ fn candidates(
         crate::design::decode::sketch::scope_placement_frames(ctx, bytes, record_index, &records)
             .unwrap()
             .map(|candidate| {
-                crate::design::decode::sketch::scope_placement_from_frame(
+                crate::design::decode::sketch::placement_from_frame(
                     ctx,
                     bytes,
-                    scope_record_index,
+                    Some(scope_record_index),
                     &entity_id,
                     candidate,
                 )
@@ -115,7 +115,7 @@ fn member_run_head_placement(
     else {
         return Ok(None);
     };
-    crate::design::decode::sketch::member_run_placement(ctx, bytes, entity_id, head).map(Some)
+    crate::design::decode::sketch::placement_from_frame(ctx, bytes, None, entity_id, head).map(Some)
 }
 
 #[test]
@@ -140,8 +140,12 @@ fn sketch_placement_entity_id_refuses_retained_limit() {
             let mut frames =
                 crate::design::decode::sketch::scope_placement_frames(ctx, &bytes, 185, &records)?;
             let candidate = frames.next().expect("compact placement frame");
-            crate::design::decode::sketch::scope_placement_from_frame(
-                ctx, &bytes, 177, &entity_id, candidate,
+            crate::design::decode::sketch::placement_from_frame(
+                ctx,
+                &bytes,
+                Some(177),
+                &entity_id,
+                candidate,
             )
         },
     );

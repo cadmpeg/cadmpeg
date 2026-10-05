@@ -88,21 +88,37 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
             companion_record_index: 302,
         })
         .unwrap();
+    let governing =
+        |owners: &[DesignParameterOwner],
+         parameters: &[crate::records::parameters::DesignParameter]| {
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                crate::design::decode::dimension_frames::GoverningCompanions::build(
+                    ctx, owners, parameters,
+                )
+                .and_then(|governing| governing.governing(ctx, &pair.id, pair.paired_byte_offset()))
+                .unwrap()
+            })
+        };
     assert_eq!(
-        crate::design::decode::dimension_frames::following_dimension_companion_record_index(
-            &pair.id,
-            pair.paired_byte_offset(),
+        governing(
             std::slice::from_ref(&owner),
-            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&parameter)
         ),
         Some(302)
     );
     assert_eq!(
-        crate::design::decode::dimension_frames::following_dimension_companion_record_index(
-            &pair.id,
-            pair.paired_byte_offset(),
-            &[owner.clone(), owner],
-            std::slice::from_ref(&parameter),
+        governing(
+            &[owner.clone(), owner.clone()],
+            std::slice::from_ref(&parameter)
+        ),
+        None
+    );
+    // Two parameters of one stream scope and record index leave the owner no
+    // unique parameter, so no companion governs the frame.
+    assert_eq!(
+        governing(
+            std::slice::from_ref(&owner),
+            &[parameter.clone(), parameter]
         ),
         None
     );
@@ -123,6 +139,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
             &[192, 194],
             &crate::design::test_support::indexed_record_offsets_for_test(&nested),
         )
+        .map(|found| found.map(|(pair, _)| pair))
     })
     .expect("nested paired dimension locus frame")
     .expect("valid nested dimension locus frame");
@@ -142,9 +159,9 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
                 &[192, 194],
                 &crate::design::test_support::indexed_record_offsets_for_test(&competing),
             )
+            .map(|found| found.is_none())
         })
         .expect("competing dimension locus frames")
-        .is_none()
     );
 }
 
@@ -217,6 +234,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             &[1109],
             &crate::design::test_support::indexed_record_offsets_for_test(&nested),
         )
+        .map(|found| found.map(|(pair, _)| pair))
     })
     .expect("null-locus frame following another indexed frame")
     .expect("valid nested null-locus frame");
@@ -463,16 +481,10 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d dimension locus group candidates"
     ));
-    let groups = find_dimension_locus_groups(
-        &cadmpeg_test_support::service_decode_context(),
-        &bytes,
-        0,
-        bytes.len(),
-        240,
-        &[175, 217],
-        &[172],
-    )
-    .unwrap();
+    let service = cadmpeg_test_support::service_decode_context();
+    let (groups, _) =
+        find_dimension_locus_groups(&service, &bytes, 0, bytes.len(), 240, &[175, 217], &[172])
+            .unwrap();
     assert_eq!(
         groups
             .iter()

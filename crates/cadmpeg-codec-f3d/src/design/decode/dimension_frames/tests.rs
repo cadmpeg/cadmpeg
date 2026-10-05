@@ -36,6 +36,7 @@ fn annotation_frame(
         ctx,
         bytes,
         start,
+        bytes.len(),
         companion_record_index,
         &super::AnnotationFrameInputs {
             governed_owners: &governed_owners,
@@ -52,7 +53,6 @@ fn presentation_frame(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-    primary_type_guid: &str,
     geometry_indices: &[u32],
 ) -> Result<
     Option<crate::records::dimensions::DesignDimensionPresentationFrame>,
@@ -62,11 +62,9 @@ fn presentation_frame(
         geometry_indices: geometry_indices.to_vec(),
         sketch_entities: vec![270],
         records: crate::design::test_support::indexed_record_offsets_for_test(bytes),
-        dimension_owners: Vec::new(),
+        owners_by_scope: HashMap::new(),
     };
-    parse_dimension_presentation_frame(ctx, bytes, start, primary_type_guid, &tables, |code| {
-        Ok(code == 281)
-    })
+    parse_dimension_presentation_frame(ctx, bytes, start, &tables, |code| Ok(code == 281))
 }
 
 #[test]
@@ -427,13 +425,29 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
         .len(),
         1
     );
-    recipe_reference_limit(&prefix, u64::MAX, 0, "f3d recipe reference token");
+    // The run's storage is scoped while it decodes and retained once it
+    // completes.
+    recipe_reference_limit(&prefix, u64::MAX, 0, "f3d recipe references");
     recipe_reference_limit(&prefix, 0, u64::MAX, "f3d recipe operand references");
-    recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe standard references");
+    let refusal = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "f3d recipe reference token",
+        0,
+        |ctx| {
+            crate::design::decode::dimension_frames::decode_recipe_references_charged(
+                ctx, &prefix, 0,
+            )
+        },
+    );
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.operation == "f3d recipe reference token"
+    ));
 }
 
 #[test]
-fn paired_recipe_references_refuse_operand_and_flattened_runs() {
+fn paired_recipe_references_refuse_operand_run() {
     let mut prefix = vec![0; 10];
     for word in [1u32, 2, 1, 1] {
         prefix.extend_from_slice(&word.to_le_bytes());
@@ -459,7 +473,7 @@ fn paired_recipe_references_refuse_operand_and_flattened_runs() {
         .len(),
         2
     );
-    recipe_reference_limit(&prefix, 2, u64::MAX, "f3d recipe paired references");
+    recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe operand references");
 }
 
 #[test]
@@ -486,7 +500,7 @@ fn grouped_recipe_references_refuse_output_run() {
         .len(),
         4
     );
-    recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe grouped references");
+    recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe operand references");
 }
 
 #[test]
@@ -1303,7 +1317,6 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
-        "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
         &[306, 331],
     )
     .expect("direct dimension presentation frame")
@@ -1324,7 +1337,6 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
-        "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
         &[306]
     )
     .unwrap()
@@ -1361,14 +1373,7 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                         .unwrap();
-                (presentation_frame(
-                    &ctx,
-                    &bytes,
-                    0,
-                    super::DIMENSION_PRESENTATION_TYPE_GUID,
-                    &[306, 331],
-                ))
-                .map(|_| ())
+                (presentation_frame(&ctx, &bytes, 0, &[306, 331])).map(|_| ())
             },
         ) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -1413,14 +1418,7 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
                 let (ctx, _) =
                     cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                         .unwrap();
-                (presentation_frame(
-                    &ctx,
-                    &bytes,
-                    0,
-                    super::DIMENSION_PRESENTATION_TYPE_GUID,
-                    &[306, 331],
-                ))
-                .map(|_| ())
+                (presentation_frame(&ctx, &bytes, 0, &[306, 331])).map(|_| ())
             },
         ) {
             cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -1445,7 +1443,7 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            presentation_frame(&ctx, &bytes, 0, super::DIMENSION_PRESENTATION_TYPE_GUID, &[306, 331]),
+            presentation_frame(&ctx, &bytes, 0, &[306, 331]),
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                 if failure.operation == operation
         ));
@@ -1777,8 +1775,9 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
             companion_record_index: 302,
         })
         .unwrap();
-    let parameter_index = super::dimension_parameter_index(
-        &cadmpeg_test_support::service_decode_context(),
+    let service = cadmpeg_test_support::service_decode_context();
+    let (parameter_index, _parameter_storage) = super::dimension_parameter_index(
+        &service,
         &parameters,
         "f3d dimension locus parameter index",
     )
@@ -1842,4 +1841,5 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
 
 mod companion_limits;
 
+mod intervals;
 mod loci;
