@@ -716,12 +716,18 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
 }
 
 #[test]
-fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
-    use std::collections::{BTreeMap, BTreeSet};
-
-    for input in [
-        include_bytes!("data/tp10_duplicate_outer_first.p21").as_slice(),
-        include_bytes!("data/tp10_duplicate_outer_reordered.p21").as_slice(),
+fn duplicate_face_outer_bound_witnesses_recover_unspecified_loops_in_any_order() {
+    for (input, first_loop, second_loop) in [
+        (
+            include_bytes!("data/tp10_duplicate_outer_first.p21").as_slice(),
+            6,
+            8,
+        ),
+        (
+            include_bytes!("data/tp10_duplicate_outer_reordered.p21").as_slice(),
+            8,
+            6,
+        ),
     ] {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(input), &DecodeOptions::default())
@@ -729,98 +735,43 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
         assert!(decoded.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::FaceMultipleOuterBounds.kind()
                 && loss.message.contains("face #10")
-                && loss
-                    .message
-                    .contains("omitting the containing topology shell")
+                && loss.message.contains("without outer/inner classification")
         }));
-        assert!(decoded.report().losses.iter().any(|loss| {
-            loss.code == StepLossCode::TopologyRootRejected.kind()
-                && loss.message.contains("face with multiple outer bounds")
-        }));
-        assert!(decoded.ir().model.bodies.is_empty());
-        assert!(decoded.ir().model.faces.is_empty());
-        assert!(decoded.ir().model.surfaces.is_empty());
-        let unknowns = decoded
-            .ir()
-            .native_unknowns("step")
-            .expect("STEP native namespace");
-        let ids = unknowns
+        assert!(!decoded
+            .report()
+            .losses
             .iter()
-            .map(|record| record.id.as_str().to_owned())
-            .collect::<BTreeSet<_>>();
+            .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().model.loops.len(), 2);
+        let face = decoded.ir().model.faces.first().expect("one face");
+        let cadmpeg_ir::topology::FaceLoops::Unspecified { loops } = &face.loops else {
+            panic!(
+                "several outer bounds state no classification: {:?}",
+                face.loops
+            );
+        };
         assert_eq!(
-            ids,
-            BTreeSet::from([
-                "step:data:face#10".to_string(),
-                "step:data:face_outer_bound#7".to_string(),
-                "step:data:face_outer_bound#9".to_string(),
-                "step:data:manifold_surface_shape_representation#13".to_string(),
-                "step:data:open_shell#11".to_string(),
-                "step:data:poly_loop#6".to_string(),
-                "step:data:poly_loop#8".to_string(),
-                "step:data:shell_based_surface_model#12".to_string(),
-            ])
-        );
-        let links = unknowns
-            .iter()
-            .map(|record| {
-                (
-                    record.id.as_str().to_owned(),
-                    record
-                        .links
-                        .iter()
-                        .map(|link| link.as_str().to_owned())
-                        .collect::<Vec<_>>(),
+            loops
+                .iter()
+                .map(cadmpeg_ir::ids::LoopId::as_str)
+                .collect::<Vec<_>>(),
+            [
+                ids::data(
+                    kind!("loop"),
+                    cadmpeg_ir::ids::IdentityKey::from(first_loop)
+                        .dash(crate::ids::key_word!("face"))
+                        .dash(10),
                 )
-            })
-            .collect::<BTreeMap<_, _>>();
-        assert_eq!(
-            links,
-            BTreeMap::from([
-                (
-                    "step:data:face#10".to_string(),
-                    vec![
-                        "step:data:face_outer_bound#7".to_string(),
-                        "step:data:face_outer_bound#9".to_string(),
-                    ],
-                ),
-                (
-                    "step:data:face_outer_bound#7".to_string(),
-                    vec!["step:data:poly_loop#6".to_string()],
-                ),
-                (
-                    "step:data:face_outer_bound#9".to_string(),
-                    vec!["step:data:poly_loop#8".to_string()],
-                ),
-                (
-                    "step:data:manifold_surface_shape_representation#13".to_string(),
-                    vec!["step:data:shell_based_surface_model#12".to_string()],
-                ),
-                (
-                    "step:data:open_shell#11".to_string(),
-                    vec!["step:data:face#10".to_string()],
-                ),
-                (
-                    "step:data:poly_loop#6".to_string(),
-                    vec![
-                        "step:data:point#3".to_string(),
-                        "step:data:point#4".to_string(),
-                        "step:data:point#5".to_string(),
-                    ],
-                ),
-                (
-                    "step:data:poly_loop#8".to_string(),
-                    vec![
-                        "step:data:point#3".to_string(),
-                        "step:data:point#4".to_string(),
-                        "step:data:point#5".to_string(),
-                    ],
-                ),
-                (
-                    "step:data:shell_based_surface_model#12".to_string(),
-                    vec!["step:data:open_shell#11".to_string()],
-                ),
-            ])
+                .as_str(),
+                ids::data(
+                    kind!("loop"),
+                    cadmpeg_ir::ids::IdentityKey::from(second_loop)
+                        .dash(crate::ids::key_word!("face"))
+                        .dash(10),
+                )
+                .as_str(),
+            ]
         );
     }
 }

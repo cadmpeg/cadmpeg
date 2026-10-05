@@ -1132,7 +1132,6 @@ enum CarrierKind {
     FaceBoundCarrier,
     FaceCarrier,
     FaceRecord,
-    FaceWithMultipleOuterBounds,
     ImplicitFacePlane,
     LoopRecord,
     OrientedEdgeDefinition,
@@ -1171,7 +1170,6 @@ impl std::fmt::Display for CarrierKind {
             Self::FaceBoundCarrier => "face bound carrier",
             Self::FaceCarrier => "face carrier",
             Self::FaceRecord => "face record",
-            Self::FaceWithMultipleOuterBounds => "face with multiple outer bounds",
             Self::ImplicitFacePlane => "implicit face plane",
             Self::LoopRecord => "loop record",
             Self::OrientedEdgeDefinition => "oriented edge definition",
@@ -3050,7 +3048,7 @@ fn build_one(
                 .count();
             if outer_bound_count > 1 {
                 let note = StepLossCode::FaceMultipleOuterBounds.note(format!(
-                    "face #{face_step} violates the STEP face-bound rule with {outer_bound_count} FACE_OUTER_BOUND loops; omitting the containing topology shell without assigning an outer role or deriving an implicit face carrier and retaining the source face, bounds, loops, and enclosing records as opaque"
+                    "face #{face_step} declares {outer_bound_count} FACE_OUTER_BOUND loops; keeping all bound loops in source order without outer/inner classification"
                 ));
                 ctx.push_vec(
                     losses,
@@ -3063,9 +3061,8 @@ fn build_one(
                     ),
                     "step_topology_losses",
                 )?;
-                note_failure(failure, face_step, CarrierKind::FaceWithMultipleOuterBounds);
-                return Err(BuildError::Absent);
             }
+            let multiple_outer_bounds = outer_bound_count > 1;
             for claim in face_info.typed {
                 ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
             }
@@ -3641,13 +3638,14 @@ fn build_one(
                     ctx.insert_hash_set(&mut typed, claim, "step_brep_typed")?;
                 }
             }
-            // A face with more than one FACE_OUTER_BOUND is refused above, so
-            // at most one bound carries the outer role here. A face with no
-            // outer bound states no classification.
+            // A face with more than one FACE_OUTER_BOUND keeps every bound
+            // loop in source order without outer/inner classification: the
+            // source states no single outer boundary, so the decoder states
+            // none. A face with no outer bound states no classification.
             let mut outer = None;
             let mut inner = Vec::new();
             for (is_outer, id) in loop_ids {
-                if is_outer {
+                if is_outer && !multiple_outer_bounds {
                     if outer.is_none() {
                         outer = Some(id);
                     }
@@ -3657,6 +3655,8 @@ fn build_one(
             }
             let face_loops = match outer {
                 Some(outer) => cadmpeg_ir::topology::FaceLoops::classified(outer, inner),
+                // With several outer bounds every loop is in `inner` in source
+                // order; `unspecified` keeps that order with no outer claim.
                 None => cadmpeg_ir::topology::FaceLoops::unspecified(inner),
             };
             let face_forward = face_same_sense == shell_forward;

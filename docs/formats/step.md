@@ -1509,17 +1509,16 @@ noncanonical Part 21 source; CADIR retains it and reports the source-order
 loss, then applies the same attribute rule. An empty partial that supplies no
 boundary parameters cannot create a loop or an implicit surface.
 
-CADIR decision: when malformed input declares more than one outer bound, the
-decoder rejects the containing topology shell/root. It assigns no outer role,
-derives no implicit face carrier, and creates no neutral `Face`, `Loop`,
-`Surface`, or shell for that root. It retains the source `FACE`, every
-`FACE_OUTER_BOUND` and loop in its bounds graph, and the enclosing shell and
-representation records as source-native opaque records with their source
-links. Point carriers follow the normal point admission path but are not
-assigned to the rejected root. The loss identifies both the malformed face and
-the rejected root. This result is independent of the serialized order of the
-`bounds` SET and does not claim that ISO 10303-42 prescribes a recovery for
-malformed input.
+CADIR decision: when input declares more than one outer bound, the decoder
+keeps every bound loop in serialized source order and creates the neutral
+`Face` with unclassified loops. The source states no single outer boundary,
+so the decoder states none: it assigns no outer role and the face carries
+`FaceLoops::Unspecified`. Loop, edge, coedge, surface, and shell admission
+follow the normal path, and the enclosing root is retained. The
+`topology.face-multiple-outer-bounds` warning identifies the face and the
+count. This result is independent of the serialized order of the `bounds` SET.
+On export the first loop in face order is written as `FACE_OUTER_BOUND` and
+the remaining loops as `FACE_BOUND`.
 
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
 conic. Its positive-v axis is the counterclockwise perpendicular. ISO
