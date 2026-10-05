@@ -211,38 +211,45 @@ impl DecodeContext<'_> {
         })
     }
 
-    /// Returns the first matching position. Each visited slot is admitted before
-    /// the predicate runs. The predicate admits its own input-sized child work.
-    pub fn position_by<T>(
+    /// Returns the first matching position. Each source step, including the
+    /// end probe, is charged before it advances, so an early match pays only
+    /// for the visits it made. Callers supply a fixed-step source or adapters
+    /// over admitted bases. The predicate admits its own input-sized child work.
+    pub fn position_by<I: IntoIterator>(
         &self,
-        values: &[T],
-        mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        values: I,
+        mut predicate: impl FnMut(I::Item) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<Option<usize>, CodecError> {
-        for (index, value) in values.iter().enumerate() {
-            self.charge_work(1, operation)?;
-            if predicate(value)? {
-                return Ok(Some(index));
-            }
-        }
-        Ok(None)
+        let mut index = 0;
+        self.search(
+            values,
+            |value| {
+                if predicate(value)? {
+                    return Ok(Some(index));
+                }
+                index += 1;
+                Ok(None)
+            },
+            operation,
+        )
     }
 
-    /// Tests for a match, charging only slots visited by position search.
-    pub fn any_by<T>(
+    /// Tests for a match, charging only the visited steps.
+    pub fn any_by<I: IntoIterator>(
         &self,
-        values: &[T],
-        predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        values: I,
+        predicate: impl FnMut(I::Item) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         Ok(self.position_by(values, predicate, operation)?.is_some())
     }
 
-    /// Tests every value until a predicate fails.
-    pub fn all_by<T>(
+    /// Tests every value until a predicate fails, charging only the visited steps.
+    pub fn all_by<I: IntoIterator>(
         &self,
-        values: &[T],
-        mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        values: I,
+        mut predicate: impl FnMut(I::Item) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         Ok(self
@@ -254,35 +261,55 @@ impl DecodeContext<'_> {
             .is_none())
     }
 
-    /// Borrows the first matching value without retaining new storage.
-    pub fn find_by<'values, T>(
+    /// Returns the first matching item, charging only the visited steps.
+    pub fn find_by<I: IntoIterator>(
         &self,
-        values: &'values [T],
-        predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        values: I,
+        mut predicate: impl FnMut(&I::Item) -> Result<bool, CodecError>,
         operation: &'static str,
-    ) -> Result<Option<&'values T>, CodecError> {
-        Ok(self
-            .position_by(values, predicate, operation)?
-            .and_then(|index| values.get(index)))
+    ) -> Result<Option<I::Item>, CodecError> {
+        self.search(
+            values,
+            |value| Ok(predicate(&value)?.then_some(value)),
+            operation,
+        )
     }
 
-    /// Maps values until a result is present; callbacks admit child construction.
-    pub fn find_map<T, U>(
+    /// Maps items until a result is present, charging only the visited steps;
+    /// callbacks admit child construction.
+    pub fn find_map<I: IntoIterator, U>(
         &self,
-        values: &[T],
-        mut map: impl FnMut(&T) -> Result<Option<U>, CodecError>,
+        values: I,
+        map: impl FnMut(I::Item) -> Result<Option<U>, CodecError>,
         operation: &'static str,
     ) -> Result<Option<U>, CodecError> {
-        let mut found = None;
-        let _position = self.position_by(
-            values,
-            |value| {
-                found = map(value)?;
-                Ok(found.is_some())
-            },
-            operation,
-        )?;
-        Ok(found)
+        self.search(values, map, operation)
+    }
+
+    /// Steps the source until `visit` returns a result. A source that states
+    /// its exact remaining length ends without a charged end probe; a hint can
+    /// only stop the walk early, never admit a step.
+    fn search<I: IntoIterator, U>(
+        &self,
+        values: I,
+        mut visit: impl FnMut(I::Item) -> Result<Option<U>, CodecError>,
+        operation: &'static str,
+    ) -> Result<Option<U>, CodecError> {
+        let mut input = values.into_iter();
+        let mut remaining = match input.size_hint() {
+            (lower, Some(upper)) if lower == upper => Some(upper),
+            _ => None,
+        };
+        while remaining != Some(0) {
+            let Some(value) = self.next_charged(&mut input, operation)? else {
+                break;
+            };
+            remaining = remaining.map(|count| count - 1);
+            if let Some(found) = visit(value)? {
+                return Ok(Some(found));
+            }
+        }
+        Ok(None)
     }
 
     /// Counts a sealed source after admitting its complete traversal.
@@ -441,16 +468,18 @@ impl DecodeContext<'_> {
         )
     }
 
-    /// Searches from the end; callbacks admit input-sized child work.
+    /// Searches from the end, charging each visited slot before its predicate;
+    /// callbacks admit input-sized child work.
     pub fn rposition_by<T>(
         &self,
         values: &[T],
         mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<Option<usize>, CodecError> {
-        for (reverse_index, value) in self.admit_iter(values, operation)?.rev().enumerate() {
+        for (index, value) in values.iter().enumerate().rev() {
+            self.charge_work(1, operation)?;
             if predicate(value)? {
-                return Ok(Some(values.len() - reverse_index - 1));
+                return Ok(Some(index));
             }
         }
         Ok(None)
@@ -1125,7 +1154,7 @@ mod tests {
             .all_by(&values, |value| Ok(*value == 1), "all")
             .expect("all"));
         assert_eq!(
-            ctx.find_by(&values, |value| Ok(*value == 2), "find")
+            ctx.find_by(&values, |value| Ok(**value == 2), "find")
                 .expect("find"),
             Some(&2)
         );

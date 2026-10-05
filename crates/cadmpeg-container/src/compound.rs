@@ -264,9 +264,11 @@ impl DirectoryName {
             .encode_utf16()
             .count()
             > 31
-            || ctx
-                .admit_iter(name.as_str(), "check CFB directory name characters")?
-                .any(|character| matches!(character, '/' | '\\' | ':' | '!'))
+            || ctx.any_by(
+                name.chars(),
+                |character| Ok(matches!(character, '/' | '\\' | ':' | '!')),
+                "check CFB directory name characters",
+            )?
         {
             return malformed(
                 "CFB directory name contains a forbidden character or exceeds 31 UTF-16 units",
@@ -660,9 +662,11 @@ impl CompoundState {
             return malformed("CFB v3 file exceeds the 2 GiB size ceiling");
         }
         if version == CompoundVersion::V4
-            && ctx
-                .admit_iter(&bytes[512..sector_size], "check CFB header padding")?
-                .any(|byte| *byte != 0)
+            && ctx.any_by(
+                &bytes[512..sector_size],
+                |byte| Ok(*byte != 0),
+                "check CFB header padding",
+            )?
         {
             return malformed("CFB v4 header padding is not zero");
         }
@@ -752,9 +756,11 @@ impl CompoundState {
         if (difat_count == 0 && difat_start != END_OF_CHAIN)
             || (difat_count != 0 && next_difat != END_OF_CHAIN)
             || fat_sectors.len() != fat_count
-            || ctx
-                .admit_iter(&fat_sectors, "check CFB FAT sector bounds")?
-                .any(|id| cadmpeg_core::decode::index_from_u32(*id) >= sector_count)
+            || ctx.any_by(
+                &fat_sectors,
+                |id| Ok(cadmpeg_core::decode::index_from_u32(*id) >= sector_count),
+                "check CFB FAT sector bounds",
+            )?
         {
             return malformed("CFB DIFAT does not match its declared FAT count");
         }
@@ -797,20 +803,22 @@ impl CompoundState {
         if fat.len() < sector_count {
             return malformed("CFB FAT does not address every physical sector");
         }
-        if ctx
-            .admit_iter(&fat, "check CFB trailing FAT entries")?
-            .skip(sector_count)
-            .any(|entry| *entry != FREE_SECTOR)
-        {
+        if ctx.any_by(
+            fat.get(sector_count..).unwrap_or_default(),
+            |entry| Ok(*entry != FREE_SECTOR),
+            "check CFB trailing FAT entries",
+        )? {
             return malformed("CFB FAT entries past end-of-file are not free");
         }
-        if ctx
-            .admit_iter(&fat_sectors, "check CFB FAT role markers")?
-            .any(|id| fat.get(cadmpeg_core::decode::index_from_u32(*id)) != Some(&FAT_SECTOR))
-            || ctx
-                .admit_iter(&seen_difat, "check CFB DIFAT role markers")?
-                .any(|id| fat.get(cadmpeg_core::decode::index_from_u32(*id)) != Some(&DIFAT_SECTOR))
-        {
+        if ctx.any_by(
+            &fat_sectors,
+            |id| Ok(fat.get(cadmpeg_core::decode::index_from_u32(*id)) != Some(&FAT_SECTOR)),
+            "check CFB FAT role markers",
+        )? || ctx.any_by(
+            &seen_difat,
+            |id| Ok(fat.get(cadmpeg_core::decode::index_from_u32(*id)) != Some(&DIFAT_SECTOR)),
+            "check CFB DIFAT role markers",
+        )? {
             return malformed("CFB allocation table sector has the wrong role marker");
         }
         drop(fat_sectors);
@@ -1295,9 +1303,11 @@ impl CompoundPrefixProbe {
                 return Ok(Self::Malformed("invalid CFB header".into()));
             }
             if version == CompoundVersion::V4
-                && ctx
-                    .admit_iter(&prefix[512..sector_size], "check CFB probe header padding")?
-                    .any(|byte| *byte != 0)
+                && ctx.any_by(
+                    &prefix[512..sector_size],
+                    |byte| Ok(*byte != 0),
+                    "check CFB probe header padding",
+                )?
             {
                 return Ok(Self::Malformed("CFB v4 header padding is not zero".into()));
             }
@@ -1438,17 +1448,19 @@ impl CompoundPrefixProbe {
                 }
                 loaded_fat_count += 1;
             }
-            if ctx
-                .admit_iter(&fat_sectors, "check CFB probe FAT roles")?
-                .take(loaded_fat_count)
-                .any(|id| fat.get(cadmpeg_core::decode::index_from_u32(*id)) != Some(&FAT_SECTOR))
-                || ctx
-                    .admit_iter(&seen_difat, "check CFB probe DIFAT roles")?
-                    .any(|id| {
-                        fat.get(cadmpeg_core::decode::index_from_u32(*id))
-                            .is_some_and(|role| role != &DIFAT_SECTOR)
-                    })
-            {
+            if ctx.any_by(
+                &fat_sectors[..loaded_fat_count.min(fat_sectors.len())],
+                |id| Ok(fat.get(cadmpeg_core::decode::index_from_u32(*id)) != Some(&FAT_SECTOR)),
+                "check CFB probe FAT roles",
+            )? || ctx.any_by(
+                &seen_difat,
+                |id| {
+                    Ok(fat
+                        .get(cadmpeg_core::decode::index_from_u32(*id))
+                        .is_some_and(|role| role != &DIFAT_SECTOR))
+                },
+                "check CFB probe DIFAT roles",
+            )? {
                 return Ok(Self::Malformed(
                     "CFB allocation sector has the wrong role marker".into(),
                 ));
@@ -1786,15 +1798,15 @@ fn validate_root(ctx: &DecodeContext<'_>, directory: &[DirectorySlot]) -> Result
     {
         return malformed("invalid CFB root directory entry");
     }
-    if ctx
-        .admit_iter(directory, "scan CFB root entries")?
-        .skip(1)
-        .any(|entry| {
-            entry
+    if ctx.any_by(
+        directory.get(1..).unwrap_or_default(),
+        |entry| {
+            Ok(entry
                 .live()
-                .is_some_and(|entry| entry.kind == DirectoryKind::Root)
-        })
-    {
+                .is_some_and(|entry| entry.kind == DirectoryKind::Root))
+        },
+        "scan CFB root entries",
+    )? {
         return malformed("CFB directory has more than one root entry");
     }
     Ok(())

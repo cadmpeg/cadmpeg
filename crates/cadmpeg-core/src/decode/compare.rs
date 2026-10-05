@@ -31,18 +31,21 @@ impl DecodeContext<'_> {
         self.charge_key(right, 1, operation)?;
         Ok(left.cmp(right))
     }
-    /// Tests slice membership through the single position-search implementation.
+    /// Tests slice membership, charging each visited slot before its charged
+    /// comparison.
     pub fn contains<T: DecodeCost + PartialEq>(
         &self,
         values: &[T],
         value: &T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.any_by(
-            values,
-            |candidate| self.equal(candidate, value, operation),
-            operation,
-        )
+        for candidate in values {
+            self.charge_work(1, operation)?;
+            if self.equal(candidate, value, operation)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
     /// Admits key work before `HashMap::get`.
     pub fn get_hash_map<'values, K, Q, V, S>(
