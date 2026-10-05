@@ -65,8 +65,10 @@ fn legacy_as_built_421_alignment_reference_frame_test_needs_no_work() {
         })
         .unwrap()
     };
-    let owners: [DesignParameterOwner; 6] =
-        std::array::from_fn(|ordinal| owner(100 + ordinal as u32, ordinal as u32));
+    let owners: [DesignParameterOwner; 6] = std::array::from_fn(|ordinal| {
+        let ordinal = u32::try_from(ordinal).unwrap();
+        owner(100 + ordinal, ordinal)
+    });
     let lanes = owners.each_ref();
 
     let arena = DecodeArena::new();

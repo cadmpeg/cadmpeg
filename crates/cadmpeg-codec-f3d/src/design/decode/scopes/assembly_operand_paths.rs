@@ -261,7 +261,7 @@ fn exact_assembly_operand_path_envelope(
     let Some(path_reference_offset) = wrapper_frame(
         bytes,
         wrapper_at,
-        wrapper_class_tag,
+        *wrapper_class_tag,
         wrapper_end,
         variable_reference,
         path_spans.len(),
@@ -353,7 +353,7 @@ fn exact_assembly_operand_path_envelope(
 fn wrapper_frame(
     bytes: &[u8],
     wrapper_at: usize,
-    wrapper_class_tag: &[u8; 3],
+    wrapper_class_tag: [u8; 3],
     wrapper_end: usize,
     variable_reference: bool,
     span_count: usize,
@@ -367,7 +367,7 @@ fn wrapper_frame(
     } else {
         (path_wrapper::LEN, 1)
     };
-    if variable_reference && wrapper_class_tag != b"397"
+    if variable_reference && wrapper_class_tag != *b"397"
         || !zeros_at::<{ path_wrapper::CONSTANT_ONE_BYTE - path_wrapper::ZERO_RUN_10 }>(
             bytes,
             wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?,

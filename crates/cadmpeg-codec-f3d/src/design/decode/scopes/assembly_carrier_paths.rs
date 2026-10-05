@@ -9,6 +9,7 @@ use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_
 use super::legacy_operand_paths::ASSEMBLY_MARKED_REFERENCE_LEN;
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
+use super::shared_frames::find_frame;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::design::decode::byte_fields::bytes_at;
@@ -62,12 +63,13 @@ fn exact_class_363_operand_path(
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+    const CLASS_TAG_OPERATION: &str = "copy F3D carrier operand path class tag";
     let Some((carrier_at, carrier_paired_at)) = exact_class_264_record_frame(
         ctx,
         bytes,
         records,
         frame.reference_record_index,
-        b"363",
+        *b"363",
         class_363_carrier::LEN,
     )?
     else {
@@ -97,7 +99,7 @@ fn exact_class_363_operand_path(
         bytes,
         records,
         terminal_record_index,
-        b"386",
+        *b"386",
         class_363_terminal::LEN,
     )?
     else {
@@ -223,7 +225,6 @@ fn exact_class_363_operand_path(
     else {
         return Ok(None);
     };
-    const CLASS_TAG_OPERATION: &str = "copy F3D carrier operand path class tag";
     let link = DesignAssemblyOperandPathLink {
         locator_reference_offset: frame.reference_offset,
         locator_record_index: frame.reference_record_index,
@@ -271,12 +272,13 @@ fn exact_class_307_joint_origin(
     records: &IndexedRecordOffsets,
     frame: &DesignAssemblyOperandFrame,
 ) -> Result<Option<DesignAssemblyOperandQualifier>, CodecError> {
+    const CLASS_TAG_OPERATION: &str = "copy F3D joint-origin operand class tag";
     let Some((start, paired_at)) = exact_class_264_record_frame(
         ctx,
         bytes,
         records,
         frame.reference_record_index,
-        b"307",
+        *b"307",
         class_307_joint_origin::LEN,
     )?
     else {
@@ -304,7 +306,6 @@ fn exact_class_307_joint_origin(
     {
         return Ok(None);
     }
-    const CLASS_TAG_OPERATION: &str = "copy F3D joint-origin operand class tag";
     Ok(Some(DesignAssemblyOperandQualifier::JointOrigin {
         scope_record_index: frame.reference_record_index,
         class_tag: retain_class_tag(ctx, b"307", CLASS_TAG_OPERATION)?,
@@ -371,7 +372,7 @@ fn exact_class_363_identity_frame(
         ),
     ] {
         if let Some((start, _paired_at)) =
-            exact_class_264_record_frame(ctx, bytes, records, record_index, b"388", frame_length)?
+            exact_class_264_record_frame(ctx, bytes, records, record_index, *b"388", frame_length)?
         {
             return Ok(Some(CarrierFrame {
                 start,
@@ -394,7 +395,7 @@ fn exact_class_363_node_frame(
         bytes,
         records,
         record_index,
-        b"360",
+        *b"360",
         class_363_leading::LEN,
     )? {
         return Ok(Some(CarrierFrame {
@@ -407,7 +408,7 @@ fn exact_class_363_node_frame(
         bytes,
         records,
         record_index,
-        b"360",
+        *b"360",
         class_363_child::LEN,
     )?
     else {
@@ -424,7 +425,7 @@ fn exact_class_363_node_frame(
         bytes,
         records,
         leading_record_index,
-        b"360",
+        *b"360",
         class_363_leading::LEN,
     )?
     .is_none()
@@ -452,23 +453,17 @@ fn exact_class_264_record_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-    class_tag: &[u8; 3],
+    class_tag: [u8; 3],
     frame_length: usize,
 ) -> Result<Option<(usize, usize)>, CodecError> {
-    let offsets = records.offsets(record_index);
-    let starts = offsets
-        .get(..offsets.len().saturating_sub(1))
-        .unwrap_or(&[]);
-    let mut paired = offsets.iter().skip(1).copied();
     let mut candidate = None;
-    let ambiguous = ctx.position_by(
-        starts,
-        |&start| {
-            let Some(paired_at) = paired.next() else {
-                return Ok(false);
-            };
+    let ambiguous = find_frame(
+        ctx,
+        records,
+        record_index,
+        |start, paired_at| {
             if Some(paired_at) != start.checked_add(frame_length)
-                || exact_indexed_header_at(bytes, start, record_index) != Some(class_tag)
+                || exact_indexed_header_at(bytes, start, record_index) != Some(&class_tag)
                 || exact_indexed_header_at(bytes, paired_at, record_index) != Some(b"264")
             {
                 return Ok(false);
@@ -489,19 +484,19 @@ fn class_363_identity_guid_positions(start: usize) -> (usize, usize) {
     )
 }
 
+/// The occurrence and component-identity GUIDs of a class-388 identity record.
+type IdentityGuids = (
+    Located<DesignRelaxedGuidText>,
+    Located<DesignRelaxedGuidText>,
+);
+
 /// The occurrence and component-identity GUIDs of the class-388 identity
 /// record at `start`, with the offsets of their code units.
 fn exact_class_363_identity_guids(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-) -> Result<
-    Option<(
-        Located<DesignRelaxedGuidText>,
-        Located<DesignRelaxedGuidText>,
-    )>,
-    CodecError,
-> {
+) -> Result<Option<IdentityGuids>, CodecError> {
     let (occurrence_at, identity_at) = class_363_identity_guid_positions(start);
     let Some((occurrence_guid, occurrence_end)) =
         fixed_relaxed_guid_text(ctx, bytes, occurrence_at)?
@@ -647,7 +642,7 @@ mod tests {
                 &bytes,
                 &records,
                 record_index,
-                b"307",
+                *b"307",
                 class_307_joint_origin::LEN,
             )
         })

@@ -46,7 +46,7 @@ pub(super) fn exact_work_plane_frame(
         ctx,
         records,
         scope.reference_members(),
-        |start, paired| {
+        |_, start, paired| {
             Ok(work_plane_frame_at(bytes, start, paired)
                 .is_some_and(|frame| candidate.replace(frame).is_some()))
         },
@@ -408,7 +408,7 @@ pub(super) fn exact_joint_origin_frame(
         ctx,
         records,
         scope.reference_members(),
-        |start, paired| {
+        |_, start, paired| {
             Ok(match joint_origin_frame_at(bytes, start, paired) {
                 JointOriginFrame::Placement(frame) => candidate.replace(frame).is_some(),
                 JointOriginFrame::Other => false,

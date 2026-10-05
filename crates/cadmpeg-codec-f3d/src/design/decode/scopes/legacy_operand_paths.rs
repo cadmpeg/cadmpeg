@@ -5,6 +5,7 @@ use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
+use super::shared_frames::find_frame;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
@@ -273,56 +274,59 @@ fn exact_legacy_class_383_operand_path(
         )
     };
     let Some((leading_at, leading_paired_at)) =
-        record_frame(leading_record_index, b"387", class_383_leading::LEN)?
+        record_frame(leading_record_index, *b"387", class_383_leading::LEN)?
     else {
         return Ok(None);
     };
     let Some((leading_identity_at, _)) = record_frame(
         leading_identity_record_index,
-        b"359",
+        *b"359",
         class_383_identity::LEN,
     )?
     else {
         return Ok(None);
     };
     let Some((child_at, child_paired_at)) =
-        record_frame(child_record_index, b"387", class_383_child::LEN)?
+        record_frame(child_record_index, *b"387", class_383_child::LEN)?
     else {
         return Ok(None);
     };
-    let Some((child_identity_at, _)) =
-        record_frame(child_identity_record_index, b"359", class_383_identity::LEN)?
+    let Some((child_identity_at, _)) = record_frame(
+        child_identity_record_index,
+        *b"359",
+        class_383_identity::LEN,
+    )?
     else {
         return Ok(None);
     };
     let Some((first_face_at, _)) =
-        record_frame(first_face_record_index, b"394", class_383_face::LEN)?
+        record_frame(first_face_record_index, *b"394", class_383_face::LEN)?
     else {
         return Ok(None);
     };
     let Some((first_face_identity_at, _)) = record_frame(
         first_face_identity_record_index,
-        b"359",
+        *b"359",
         class_383_identity::LEN,
     )?
     else {
         return Ok(None);
     };
     let Some((second_face_at, _)) =
-        record_frame(second_face_record_index, b"394", class_383_face::LEN)?
+        record_frame(second_face_record_index, *b"394", class_383_face::LEN)?
     else {
         return Ok(None);
     };
     let Some((second_face_identity_at, _)) = record_frame(
         second_face_identity_record_index,
-        b"359",
+        *b"359",
         class_383_identity::LEN,
     )?
     else {
         return Ok(None);
     };
     let Some((carrier_at, carrier_paired_at)) =
-        record_frame(carrier_record_index, b"378", class_383_carrier::LEN)?
+        record_frame(carrier_record_index, *b"378", class_383_carrier::LEN)?
     else {
         return Ok(None);
     };
@@ -481,20 +485,23 @@ fn exact_legacy_class_383_record_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-    class_tag: &[u8; 3],
+    class_tag: [u8; 3],
     frame_length: usize,
 ) -> Result<Option<(usize, usize)>, CodecError> {
     let mut candidate = None;
-    for (start, paired_at) in records.frames(ctx, record_index)? {
-        if Some(paired_at) == start.checked_add(frame_length)
-            && exact_indexed_header_at(bytes, start, record_index) == Some(class_tag)
-            && exact_indexed_header_at(bytes, paired_at, record_index) == Some(b"258")
-            && candidate.replace((start, paired_at)).is_some()
-        {
-            return Ok(None);
-        }
-    }
-    Ok(candidate)
+    let ambiguous = find_frame(
+        ctx,
+        records,
+        record_index,
+        |start, paired_at| {
+            Ok(Some(paired_at) == start.checked_add(frame_length)
+                && exact_indexed_header_at(bytes, start, record_index) == Some(&class_tag)
+                && exact_indexed_header_at(bytes, paired_at, record_index) == Some(b"258")
+                && candidate.replace((start, paired_at)).is_some())
+        },
+        "scan F3D indexed record frames",
+    )?;
+    Ok(candidate.filter(|_| ambiguous.is_none()))
 }
 
 /// The occurrence and identity GUIDs of the class-383 identity record at
@@ -892,10 +899,8 @@ fn legacy_class_388_operand_path(
     };
     let final_path_at = second_path_at.unwrap_or(first_path_at);
     let path_count: u32 = if second_path_at.is_some() { 2 } else { 1 };
-    let mut occurrence_guids = ctx.vector_storage(
-        index_from_u32(path_count),
-        "f3d legacy occurrence GUIDs",
-    )?;
+    let mut occurrence_guids =
+        ctx.vector_storage(index_from_u32(path_count), "f3d legacy occurrence GUIDs")?;
     for path_at in envelope.paths.into_iter().flatten() {
         let occurrence_at = path_at + class_412_path::OCCURRENCE_GUID;
         let Some((value, _)) = fixed_relaxed_guid_text(ctx, bytes, occurrence_at)? else {

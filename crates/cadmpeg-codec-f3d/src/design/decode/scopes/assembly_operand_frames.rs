@@ -115,10 +115,8 @@ fn operand_frames_at(
                 ) || zeros_at::<4>(bytes, start + standard_tail_marker_offset))
         }
         AssemblyOperandFrameVariant::Compact => {
-            matches!(
-                bytes_at::<4>(bytes, start + 20),
-                Some([0, 0, 0, 0] | [0, 1, 0, 0])
-            ) && zeros_at::<7>(bytes, start + 29)
+            matches!(bytes_at::<4>(bytes, start + 20), Some([0, 0 | 1, 0, 0]))
+                && zeros_at::<7>(bytes, start + 29)
                 && zeros_at::<7>(bytes, start + 169)
                 && zeros_at::<4>(bytes, start + 304)
         }

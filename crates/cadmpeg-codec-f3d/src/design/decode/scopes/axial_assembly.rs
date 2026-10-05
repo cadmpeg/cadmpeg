@@ -287,6 +287,7 @@ struct AxialComponentOperand<'bytes> {
     selectors: Box<[DesignAssemblyAxialSelectorIdentity; 2]>,
 }
 
+#[derive(Clone, Copy)]
 struct ExactIndexedRecordPair<'bytes> {
     record_index: u32,
     class_tag: &'bytes [u8; 3],
@@ -668,6 +669,7 @@ fn exact_assembly_axial_selector(
     axis: ExactIndexedRecordPair,
     limit: usize,
 ) -> Result<Option<DesignAssemblyAxialSelectorIdentity>, CodecError> {
+    const CLASS_TAG_OPERATION: &str = "copy F3D axial selector class tag";
     let axis_record_index = axis.record_index;
     let Some(selector_record_index) = axis_record_index.checked_add(3) else {
         return Ok(None);
@@ -744,7 +746,6 @@ fn exact_assembly_axial_selector(
     if after_occurrence_role > limit {
         return Ok(None);
     }
-    const CLASS_TAG_OPERATION: &str = "copy F3D axial selector class tag";
     Ok(Some(DesignAssemblyAxialSelectorIdentity {
         axis_record_index,
         axis_class_tag: retain_class_tag(ctx, axis.class_tag, CLASS_TAG_OPERATION)?,
