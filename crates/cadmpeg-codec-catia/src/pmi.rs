@@ -85,7 +85,15 @@ fn pmi_id(
         format_args!("catia:model:pmi#entity-record-{source_offset:010}"),
         "catia_pmi_dimension_id",
     )?;
-    PmiId::mint(value).map_err(cadmpeg_core::CodecError::malformed)
+    match cadmpeg_ir::ids::Identity::admit_text(value, |work| {
+        ctx.charge_work(work, "catia_pmi_identity_grammar")
+    })? {
+        Ok(identity) => Ok(PmiId::from(identity)),
+        Err(value) => Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
+            format_args!("identity is invalid: {value:?}"),
+            "catia_pmi_identity_error",
+        )?)),
+    }
 }
 
 fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {
@@ -158,6 +166,33 @@ fn finite_length(bits: u64) -> Option<PmiValue> {
 #[cfg(test)]
 mod tests {
     use super::transfer_dimensions;
+
+    #[test]
+    fn pmi_identity_refuses_grammar_work() {
+        for offset in [0, u64::MAX] {
+            let mut observed = false;
+            for work in 0..512 {
+                let (result, original) = crate::test_support::with_work_limit(work, |ctx| {
+                    (super::pmi_id(ctx, offset), ctx.resource_refusal())
+                });
+                match result {
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                        assert_eq!(original, Some(limit));
+                        if limit.operation == "catia_pmi_identity_grammar" {
+                            observed = true;
+                            break;
+                        }
+                    }
+                    Ok(identity) => {
+                        assert_eq!(identity.as_str(), format!("catia:model:pmi#entity-record-{offset:010}"));
+                        assert_eq!(original, None);
+                    }
+                    Err(error) => panic!("unexpected identity error: {error}"),
+                }
+            }
+            assert!(observed, "PMI grammar admission");
+        }
+    }
     use crate::entity_table::{RangeInterval, RangeIntervalPrefix, RangeIntervalSlot};
     use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
     use crate::native::CatiaNative;
@@ -322,9 +357,8 @@ mod tests {
             )
         })
         .expect("first dimension");
-        // The formatted identity charges its length twice (measure, then append); the
-        // scan then charges both ids.
-        let id_work = 2 * u64::try_from("catia:model:pmi#entity-record-0000000000".len())
+        // Identity work counts measurement, append and one grammar visit per ASCII scalar.
+        let id_work = 3 * u64::try_from("catia:model:pmi#entity-record-0000000000".len())
             .expect("identity length fits u64");
         crate::test_support::with_work_limit(id_work, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) = transfer_dimensions(

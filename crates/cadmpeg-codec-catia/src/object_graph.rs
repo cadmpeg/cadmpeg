@@ -1166,6 +1166,7 @@ fn parse_candidate(
         let mut at = pos + 6;
         let mut records = Vec::new();
         while at + 6 <= end && data.get(at..at + 2) == Some(&[0x7c, 0x09]) {
+            admitted!(ctx.charge_work(1, "catia_object_graph_iteration"));
             let record_len = usize::try_from(View::u32_le_at(data, at + 2)?).ok()?;
             let record_end = at.checked_add(record_len)?;
             if record_len < 6 || record_end > end {
@@ -1783,6 +1784,7 @@ fn decode_head(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<HeadToken>, 
     )?;
     let mut at = 1;
     while at < bytes.len() {
+        ctx.charge_work(1, "catia_object_graph_iteration")?;
         let byte = bytes[at];
         if byte == 0x01 {
             ctx.push_vec(
@@ -1866,6 +1868,7 @@ fn decode_payload(
         let mut fields = Vec::new();
         let mut at = 0;
         while at < bytes.len() {
+            admitted!(ctx.charge_work(1, "catia_object_graph_iteration"));
             let offset = at;
             if bytes[at] == 0xe5 {
                 if let Some(end) = blob_end(bytes, at) {
@@ -1907,6 +1910,7 @@ fn decode_payload(
             match bytes[at] {
                 0xfe if is_final_terminator_run(bytes, at) => {
                     while bytes.get(at) == Some(&0xfe) {
+                        admitted!(ctx.charge_work(1, "catia_object_graph_iteration"));
                         admitted!(ctx.push_vec(
                             &mut fields,
                             PayloadField::Terminator,

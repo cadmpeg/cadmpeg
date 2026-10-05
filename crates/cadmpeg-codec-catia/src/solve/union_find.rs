@@ -20,9 +20,8 @@ impl UnionFind<'_> {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let mut parents = ctx.alloc_filled(length, 0usize, operation)?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
-        for (node, parent) in parents.iter_mut().enumerate() {
-            *parent = node;
+        for node in ctx.admit_iter(&(0..length), operation)? {
+            parents[node] = node;
         }
         Ok(Self {
             parents,
@@ -150,6 +149,29 @@ impl Clone for UnionFind<'_> {
 #[cfg(test)]
 mod tests {
     use super::UnionFind;
+
+    #[test]
+    fn union_parent_initialization_admits_each_slot_once() {
+        use cadmpeg_core::CodecError;
+
+        // Two slots are filled, then two parent indices are assigned.
+        let admitted = crate::test_support::with_work_limit(4, |ctx| {
+            UnionFind::charged(ctx, 2, "catia_union_initialization_test")
+        })
+        .expect("the exact initialization work fits");
+        assert_eq!(admitted.parents, [0, 1]);
+        crate::test_support::with_work_limit(3, |ctx| {
+            let Err(CodecError::ResourceLimit(limit)) =
+                UnionFind::charged(ctx, 2, "catia_union_initialization_test")
+            else {
+                panic!("parent traversal must refuse")
+            };
+            assert_eq!(limit.operation, "catia_union_initialization_test");
+            assert_eq!(limit.used, 2);
+            assert_eq!(limit.additional, 2);
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        });
+    }
 
     #[test]
     fn charged_union_parents_refuse_below_node_count() {

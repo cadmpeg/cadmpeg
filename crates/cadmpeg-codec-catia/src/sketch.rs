@@ -1082,11 +1082,11 @@ fn sketch_owner_for_design_object<'a>(
     let mut current = Some(start);
     let mut steps = 0usize;
     while let Some(current_id) = current {
+        ctx.charge_work(1, "catia_sketch_owner_chain")?;
         if steps >= design_objects.len() {
             return Ok(None);
         }
         steps += 1;
-        ctx.charge_work(1, "catia_sketch_owner_chain")?;
         let Some(object) = design_objects.get(current_id).copied() else {
             return Ok(None);
         };

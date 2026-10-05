@@ -141,6 +141,7 @@ fn unresolved_carrier_ids<'a>(
         "catia_resolved_surface_ids",
     )?;
     loop {
+        ctx.charge_work(1, "catia_carrier_resolution_work")?;
         let work = ir
             .model
             .procedural_surfaces
@@ -814,7 +815,11 @@ pub(crate) fn build_metadata_fallback(
         scan.variant.id(),
         Exactness::Unknown,
     )?;
-    unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
+    ctx.push_vec(
+        &mut unknowns,
+        UnknownRecord::retained(id, 0, bytes, Vec::new()),
+        "catia_retained_source_records",
+    )?;
     Ok((ir, annotations.build(), unknowns))
 }
 
@@ -843,7 +848,11 @@ pub(crate) fn preserve_raw_payload(
         scan.variant.id(),
         Exactness::Unknown,
     )?;
-    unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
+    ctx.push_vec(
+        unknowns,
+        UnknownRecord::retained(id, 0, bytes, Vec::new()),
+        "catia_retained_source_records",
+    )?;
     Ok(unknowns.len() - 1)
 }
 
@@ -984,16 +993,14 @@ pub(crate) fn rational_pcurve_arc(
             None => return Ok(None),
         };
     let mut control_points = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_capacity(
         &mut control_points,
         control_count,
         "catia_rational_arc_controls",
     )?;
     let mut weights = Vec::new();
-    ctx.reserve_vec(&mut weights, control_count, "catia_rational_arc_weights")?;
+    ctx.reserve_capacity(&mut weights, control_count, "catia_rational_arc_weights")?;
     let mut knots = Vec::new();
-    ctx.reserve_vec(&mut knots, knot_count, "catia_rational_arc_knots")?;
-    knots.extend([range[0]; 3]);
     for index in 0..segment_count {
         let start = range[0]
             + match f64_from_index(index) {
@@ -1007,21 +1014,23 @@ pub(crate) fn rational_pcurve_arc(
             return Ok(None);
         }
         if index == 0 {
-            control_points.push(Point2::new(
+            ctx.push_vec(&mut control_points, Point2::new(
                 center[0] + radius * start.cos(),
                 center[1] + radius * start.sin(),
-            ));
-            weights.push(1.0);
+            ), "catia_rational_arc_controls")?;
+            ctx.push_vec(&mut weights, 1.0, "catia_rational_arc_weights")?;
+            ctx.reserve_vec(&mut knots, knot_count, "catia_rational_arc_knots")?;
+            knots.extend([range[0]; 3]);
         }
-        control_points.push(Point2::new(
+        ctx.push_vec(&mut control_points, Point2::new(
             center[0] + radius / middle_weight * middle.cos(),
             center[1] + radius / middle_weight * middle.sin(),
-        ));
-        control_points.push(Point2::new(
+        ), "catia_rational_arc_controls")?;
+        ctx.push_vec(&mut control_points, Point2::new(
             center[0] + radius * end.cos(),
             center[1] + radius * end.sin(),
-        ));
-        weights.extend([middle_weight, 1.0]);
+        ), "catia_rational_arc_controls")?;
+        ctx.extend_from_slice(&mut weights, &[middle_weight, 1.0], "catia_rational_arc_weights")?;
         if index + 1 < segment_count {
             knots.extend([end; 2]);
         }

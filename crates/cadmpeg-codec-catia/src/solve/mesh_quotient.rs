@@ -330,6 +330,7 @@ fn enforce_edge_arc_consistency(
         }
     }
     while let Some((edge, side)) = queue.pop_front() {
+        ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
         queued[edge][side] = false;
         if supports[edge].is_empty() {
             continue;
@@ -389,6 +390,7 @@ fn enforce_edge_arc_consistency_from(
         queued[edge] = [true; 2];
     }
     while let Some((edge, side)) = queue.pop_front() {
+        ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
         queued[edge][side] = false;
         let candidates = &edge_candidates[edge];
         if candidates.is_empty() {
@@ -989,6 +991,7 @@ impl MeshCoordinateRootDomains {
         )?;
         let propagate_globally = propagate_all_different;
         loop {
+            ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
             let mut domain_lengths = Vec::new();
             for domain in &domains {
                 ctx.push_vec(
@@ -1071,6 +1074,7 @@ impl MeshCoordinateRootDomains {
                     ctx.push_back(&mut root_queue, root, "catia_quotient_refine_root_queue")?;
                 }
                 while let Some(root) = root_queue.pop_front() {
+                    ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
                     if reached_roots[root] {
                         continue;
                     }
@@ -1876,6 +1880,7 @@ impl<'storage> MeshQuotient<'storage> {
             "catia_quotient_supported_candidate_pairs",
         )?;
         loop {
+            ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
             let mut changed = Vec::new();
             for (edge, candidates) in supported_candidates.iter_mut().enumerate() {
                 if candidates.is_empty() {
@@ -2020,6 +2025,7 @@ impl<'storage> MeshQuotient<'storage> {
             }
         }
         while let Some(edge) = queue.pop_front() {
+            ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
             queued.remove(&edge);
             let candidates = &edge_candidates[edge];
             if budget.is_some_and(|budget| !budget.charge_by(work_units(candidates.len()))) {
@@ -2121,6 +2127,7 @@ impl<'storage> MeshQuotient<'storage> {
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Result<bool, CodecError> {
         loop {
+            ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
             let mut roots_by_point = HashMap::<usize, Vec<usize>>::new();
             for node in 0..self.union.len() {
                 let root = self.union.find(ctx, node)?;
@@ -2349,6 +2356,7 @@ impl<'storage> MeshQuotient<'storage> {
             "catia_assignment_states",
         )?;
         while let Some(mut state) = states.pop() {
+            ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
             loop {
                 ctx.charge_work(1, "catia assignment option search")?;
                 if budget.is_some_and(|budget| !budget.charge()) {
@@ -3363,6 +3371,7 @@ impl<'storage> MeshQuotient<'storage> {
             };
             let mut propagated = Vec::new();
             let branch = loop {
+                ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
                 let mut values = Vec::new();
                 for (root, _) in assigned
                     .iter()
@@ -4532,6 +4541,9 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
             return Some(Err(error));
         }
         loop {
+            if let Err(error) = ctx.charge_work(1, "catia_mesh_quotient_iteration") {
+                return Some(Err(error));
+            }
             let before = match quotient.monotone_measure(ctx) {
                 Ok(measure) => measure?,
                 Err(error) => return Some(Err(error)),
@@ -5247,6 +5259,7 @@ pub(super) fn propagate_common_boundary_components<'storage>(
         let mut ordered_faces = Vec::new();
         let mut selected_edges = HashSet::new();
         while !faces.is_empty() {
+            ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
             ctx.charge_work(
                 u64_from_index(faces.len()),
                 "catia_component_face_order_scan",
@@ -5285,6 +5298,7 @@ pub(super) fn propagate_common_boundary_components<'storage>(
             };
             let mut cursor = 0usize;
             while cursor < ordered_faces.len() {
+                ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
                 let mut states = Vec::new();
                 ctx.push_vec(
                     &mut states,
@@ -5293,6 +5307,7 @@ pub(super) fn propagate_common_boundary_components<'storage>(
                 )?;
                 let mut processed = 0usize;
                 while let Some(&face) = ordered_faces.get(cursor + processed) {
+                    ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
                     let Some(next) = advance_boundary_component_states(
                         ctx,
                         &domains[face],
@@ -7506,6 +7521,7 @@ fn propagate_endpoint_relation_domains(
     }
     let mut first_pass = true;
     loop {
+        ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
         let mut changed = false;
         for (face, choices) in domains.iter_mut().enumerate() {
             if !budget.charge_by(work_units(choices.len())) {
@@ -7563,6 +7579,7 @@ fn propagate_endpoint_relation_domains(
         }
         first_pass = false;
         while let Some((face, arc_index)) = queue.pop_front() {
+            ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
             let arc = &constraints.arcs[face][arc_index];
             let neighbor_active = &active[arc.neighbor];
             let before = domains[face].len();
@@ -9547,6 +9564,7 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
 ) -> Result<bool, CodecError> {
     let budget = WorkBudget::new(limit);
     'fixpoint: loop {
+        ctx.charge_work(1, "catia_mesh_quotient_iteration")?;
         let mut changed = false;
         for face in assignments.iter_mut() {
             let before = face.len();
