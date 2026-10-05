@@ -767,7 +767,12 @@ pub(super) fn bind_coil_extent_from_parameters(
         *slot = Some((owner.local_ordinal(), parameter.source_kind()));
         count += 1;
     }
-    owned.sort_by_key(|slot| slot.map_or((true, 0), |(ordinal, _)| (false, ordinal)));
+    ctx.stable_sort_by_key(
+        &mut owned[..],
+        |slot| slot.map_or((true, 0), |(ordinal, _)| (false, ordinal)),
+        Ord::cmp,
+        "sort F3D Coil owned parameters",
+    )?;
     let kinds = owned.map(|slot| slot.map_or("", |(_, source_kind)| source_kind));
     let extent = match &kinds[..count] {
         ["Diameter", "SectionSize", "TaperAngle", "Revolutions", "Height"]

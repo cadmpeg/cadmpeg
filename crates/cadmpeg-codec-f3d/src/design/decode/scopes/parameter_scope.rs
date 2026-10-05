@@ -91,9 +91,16 @@ pub(crate) fn decode_parameter_scopes(
     ctx.dedup_vec(&mut names, STREAMS_OPERATION)?;
     for name in ctx.admit_iter(&names, STREAMS_OPERATION)? {
         let bytes = scan.entry_bytes(name)?;
-        let stream = native_scope_charged(ctx, name)?;
-        let records = IndexedRecordOffsets::build(ctx, bytes)?;
-        let stream_types = crate::design::decode::meta::stream_types_by_entity(ctx, types, name)?;
+        // The stream scope, record index and type table live for this stream only.
+        let (stream, _stream_storage) = ctx
+            .with_scoped_storage("f3d Design parameter-scope stream", || {
+                native_scope_charged(ctx, name)
+            })?;
+        let (records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
+        let (stream_types, _stream_types_storage) = ctx
+            .with_scoped_storage("f3d Design parameter-scope stream types", || {
+                crate::design::decode::meta::stream_types_by_entity(ctx, types, name)
+            })?;
         let stream_scope_start = out.len();
         // A scope is delimited by two headers carrying its record index; any
         // header can open one, and the last of its index finds no pair.
@@ -681,6 +688,7 @@ pub(crate) fn admit_history_bound_scope_variants(
         )?;
         let mut rest = identities.as_slice();
         while let Some(((stream, record_index, _), following)) = rest.split_first() {
+            ctx.charge_work(1, "group F3D scope admission identities")?;
             let group_length = 1 + ctx
                 .position_by(
                     following,
@@ -1155,8 +1163,11 @@ fn parse_scope_frame(
     let mut named_candidate = None;
     let mut named_ambiguous = false;
     // The window holds at most `KIND_SCAN_SPAN` positions; each decode admits
-    // its own text.
-    for at in scan_start.max(paired_at.saturating_sub(KIND_SCAN_SPAN))..kind_scan_end {
+    // its own text. A frame shorter than the span opens the window at its start.
+    let window_start = paired_at
+        .checked_sub(KIND_SCAN_SPAN)
+        .map_or(scan_start, |span_start| span_start.max(scan_start));
+    for at in window_start..kind_scan_end {
         let Some((kind, kind_end, _kind_storage)) =
             lp_utf16_bounded_scoped(ctx, bytes, at, 1..=256, "f3d Design temporary UTF-16 text")?
         else {
@@ -1471,7 +1482,9 @@ fn utf16_has_control(
     ctx.any_by(
         units,
         |unit| {
-            Ok(char::from_u32(u32::from(u16::from_le_bytes(*unit))).is_some_and(char::is_control))
+            Ok(View::u16_le_at(unit, 0)
+                .and_then(|unit| char::from_u32(u32::from(unit)))
+                .is_some_and(char::is_control))
         },
         "validate F3D scope text characters",
     )
@@ -1512,7 +1525,10 @@ fn reference_table(
     let Some(first_slot_min) = start.checked_add(15) else {
         return Ok(None);
     };
-    let slot_count = table_end.saturating_sub(first_slot_min) / REFERENCE_SLOT_LEN;
+    let Some(slot_span) = table_end.checked_sub(first_slot_min) else {
+        return Ok(None);
+    };
+    let slot_count = slot_span / REFERENCE_SLOT_LEN;
     let slots_start = table_end - slot_count * REFERENCE_SLOT_LEN;
     let Some(lattice) = bytes.get(slots_start..table_end) else {
         return Ok(None);

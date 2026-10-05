@@ -1417,6 +1417,8 @@ fn shifted_reference_aware_tail_fixed(bytes: &[u8], start: usize, tail_form: Tai
 
 /// The shifted reference-aware prologue at `start` up to its body-group
 /// GUID, with the GUID's count offset and the offset its payload must end at.
+/// The layouts fix the reference run at ten to thirteen members, so each
+/// membership test reads at most thirteen values.
 fn shifted_reference_aware_fields(
     bytes: &[u8],
     start: usize,

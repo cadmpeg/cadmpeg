@@ -114,6 +114,18 @@ fn fixture_work_plane_parameter() -> crate::records::parameters::DesignParameter
 
 fn fixture_edge_identity_group(
 ) -> crate::records::topology::construction::DesignConstructionOperandGroup {
+    fixture_group(
+        &[],
+        crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
+    )
+}
+
+/// A construction group of scope 12 in the synthetic Design stream with
+/// `members` and `role`.
+fn fixture_group(
+    members: &[u32],
+    role: crate::records::topology::extrude_selection::DesignOperandRole,
+) -> crate::records::topology::construction::DesignConstructionOperandGroup {
     use crate::records::topology::construction::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
         DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
@@ -126,7 +138,14 @@ fn fixture_edge_identity_group(
         record_index: 100,
         byte_offset: 1000,
         class_tag: crate::records::references::DesignClassTag::try_from("332".to_owned()).unwrap(),
-        members: Vec::new(),
+        members: members
+            .iter()
+            .zip(0_u64..)
+            .map(|(&value, ordinal)| crate::records::identity::Located {
+                value,
+                offset: 1025 + 11 * ordinal,
+            })
+            .collect(),
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame::try_from(
             DesignConstructionOperandGroupFrameDraft {
@@ -145,9 +164,7 @@ fn fixture_edge_identity_group(
             },
         )
         .unwrap(),
-        operand_role: DesignConstructionOperandRole::Other(
-            crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
-        ),
+        operand_role: DesignConstructionOperandRole::Other(role),
         role_offset: 1053,
         paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
             .unwrap(),
@@ -273,20 +290,72 @@ fn edge_operand_header_and_offset_indices_refuse_collection_limits() {
     });
 }
 
+/// A scope of `kind` in the synthetic Design stream that names `references`.
+fn fixture_stream_scope(
+    kind: crate::records::feature::scope::DesignFeatureKind,
+    references: &[u32],
+) -> crate::records::feature::scope::DesignParameterScope {
+    let mut scope = fixture_scope(kind);
+    scope.id = crate::ids::native_scoped_id(
+        "FusionAssetName[Active]/Design1/BulkStream.dat",
+        "scope",
+        12,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+                references.to_vec(),
+                (0_u64..)
+                    .take(references.len())
+                    .map(|ordinal| 1085 + 11 * ordinal)
+                    .collect(),
+                "reference_members",
+            )
+            .unwrap();
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
 #[test]
 fn edge_operand_member_index_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut indices = std::collections::HashSet::new();
-    assert!(matches!(
-        &ctx.insert_hash_set(&mut indices, 7, "f3d edge operand member index").map(|_| ()),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d edge operand member index"
-    ));
+    let archive = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_header_test::synthetic_smbh(),
+    );
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let scope = fixture_stream_scope(
+            crate::records::feature::scope::DesignFeatureKind::Fillet,
+            &[100],
+        );
+        let group = fixture_group(
+            &[101, 102],
+            crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,
+        );
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            "f3d edge operand member index",
+            0,
+            |ctx| {
+                decode_edge_operands(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&group),
+                    &[],
+                    &[],
+                )
+            },
+        );
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(failure)
+                if failure.operation == "f3d edge operand member index"
+        ));
+    });
 }
 
 #[test]
@@ -489,17 +558,41 @@ fn indexed_face_operand_reference_ordinals_refuse_work_limit() {
 }
 
 #[test]
-fn face_operand_seen_key_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut seen = std::collections::HashSet::new();
-    assert!(matches!(
-        &ctx.insert_hash_set(&mut seen, ("stream", 12, 7), "f3d face operand seen key"),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::CollectionItems
-                && failure.operation == "f3d face operand seen key"
-    ));
+fn face_operand_visits_keep_the_first_visit_of_each_key() {
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    let archive = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_header_test::synthetic_smbh(),
+    );
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        // The group visits 101, 102 and 101 again; the scope then visits 100,
+        // 101 and 100 again. Each batch decodes only the keys it visits first.
+        let scope = fixture_stream_scope(
+            crate::records::feature::scope::DesignFeatureKind::Shell,
+            &[100, 101, 100],
+        );
+        let group = fixture_group(&[101, 102, 101], DesignOperandRole::ROLE_0X10);
+        for (skip, visits) in [(0, 2), (1, 1)] {
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                "decode F3D face operand visits",
+                skip,
+                |ctx| {
+                    decode_face_operands(
+                        ctx,
+                        scan,
+                        std::slice::from_ref(&scope),
+                        std::slice::from_ref(&group),
+                        &[],
+                        &[],
+                    )
+                },
+            );
+            assert!(matches!(
+                error,
+                CodecError::ResourceLimit(failure)
+                    if failure.operation == "decode F3D face operand visits"
+                        && failure.additional == visits
+            ));
+        }
+    });
 }

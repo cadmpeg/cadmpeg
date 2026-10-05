@@ -1362,7 +1362,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             };
         let mut ordered_faces = [face_group.clone(), face_group.clone()];
         set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
-        assign_extrude_face_roles(&scope, &mut ordered_faces);
+        assign_extrude_face_roles(
+            &cadmpeg_test_support::service_decode_context(),
+            &scope,
+            &mut ordered_faces,
+        )
+        .expect("Extrude face roles");
         assert_eq!(
             ordered_faces.map(|group| group.extrude_face_role()),
             [

@@ -117,8 +117,8 @@ fn owned_scalar_lanes<const N: usize>(
     Ok(extra.is_none().then_some(lanes))
 }
 
-/// Whether the lanes carry local ordinals zero, one, and so on in order.
-fn ordinals_in_order(lanes: &[(u32, FixedScalarFrame)]) -> bool {
+/// Whether the `N` lanes carry local ordinals zero, one, and so on in order.
+fn ordinals_in_order<const N: usize>(lanes: &[(u32, FixedScalarFrame); N]) -> bool {
     lanes
         .iter()
         .enumerate()
@@ -405,7 +405,7 @@ fn exact_pipe_construction(
             _ => None,
         }
     };
-    let Some(lanes) = lanes.filter(|lanes| ordinals_in_order(lanes)) else {
+    let Some(lanes) = lanes.filter(ordinals_in_order) else {
         return Ok(None);
     };
     let (operation_offset, section_shape_offset, filled_offset) = if legacy_prefix_layout {

@@ -101,10 +101,10 @@ pub(super) fn find_frame(
     operation: &'static str,
 ) -> Result<Option<(usize, usize)>, CodecError> {
     let offsets = records.offsets(record_index);
-    let (Some(paired), Some(starts)) = (
-        offsets.get(1..),
-        offsets.get(..offsets.len().saturating_sub(1)),
-    ) else {
+    let Some(last) = offsets.len().checked_sub(1) else {
+        return Ok(None);
+    };
+    let (Some(paired), Some(starts)) = (offsets.get(1..), offsets.get(..last)) else {
         return Ok(None);
     };
     let mut next_start = starts.iter();
