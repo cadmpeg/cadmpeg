@@ -7088,8 +7088,7 @@ fn parse_recipe_operand(
     };
     let recipe_references =
         decode_recipe_references_charged(ctx, recipe_prefix_bytes, recipe_prefix_offset)?;
-    let Some(recipe_program) =
-        contiguous_i32_program(ctx, bytes, recipe_program_at, next_at).transpose()?
+    let Some(recipe_program) = contiguous_i32_program(ctx, bytes, recipe_program_at, next_at)?
     else {
         return Ok(None);
     };
@@ -8082,7 +8081,7 @@ pub(super) fn parse_face_operand(
     let recipe_references =
         decode_recipe_references_charged(ctx, recipe_prefix_bytes, recipe_prefix_offset)?;
     let Some(recipe_program) =
-        contiguous_i32_program(ctx, bytes, recipe_program_at, immediate_next).transpose()?
+        contiguous_i32_program(ctx, bytes, recipe_program_at, immediate_next)?
     else {
         return Ok(None);
     };

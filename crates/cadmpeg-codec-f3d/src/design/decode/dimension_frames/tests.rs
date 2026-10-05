@@ -157,7 +157,7 @@ fn recipe_program_words_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         contiguous_i32_program(&ctx, &1i32.to_le_bytes(), 0, 4),
-        Some(Err(CodecError::ResourceLimit(failure)))
+        Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d recipe program words"
     ));
@@ -355,17 +355,10 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     );
     assert_eq!(containing(6, 7), None);
     assert_eq!(
-        contiguous_i32_program(&ctx, &[u8::MAX; 8], 0, 8)
-            .transpose()
-            .unwrap(),
+        contiguous_i32_program(&ctx, &[u8::MAX; 8], 0, 8).unwrap(),
         Some(vec![-1, -1])
     );
-    assert_eq!(
-        contiguous_i32_program(&ctx, &[0; 7], 0, 7)
-            .transpose()
-            .unwrap(),
-        None
-    );
+    assert_eq!(contiguous_i32_program(&ctx, &[0; 7], 0, 7).unwrap(), None);
 
     let mut framed = vec![0; 11];
     framed.extend_from_slice(&[7, 8, 9]);
