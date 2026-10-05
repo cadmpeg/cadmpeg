@@ -246,10 +246,7 @@ fn project_column_rows<R, F, T>(
             .ok_or_else(|| ctx.refuse_codec_limit("NX column row block count", 0, 1))?;
         let rows = scan(storage)?;
         let mut ordinal = 0usize;
-        for (_index, row) in ctx
-            .admit_iter(rows, "NX column row rows visits")?
-            .enumerate()
-        {
+        for row in ctx.admit_iter(rows, "NX column row rows visits")? {
             let Some((offset, frame)) = resolve(row, section_ordinal, block_count, source_base)?
             else {
                 continue;

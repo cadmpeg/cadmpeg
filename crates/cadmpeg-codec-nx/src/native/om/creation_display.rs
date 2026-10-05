@@ -159,10 +159,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let source_base = entry_offset + cadmpeg_core::decode::u64_from_index(record_area_offset);
         let index_rows = crate::om::column_row::scan::index_rows(ctx, record_area)?;
-        for (_index, row) in ctx
-            .admit_iter(index_rows, "NX creation display index rows visits")?
-            .enumerate()
-        {
+        for row in ctx.admit_iter(index_rows, "NX creation display index rows visits")? {
             if row.indices()[3].atom.value() != class_ordinal {
                 continue;
             }
@@ -179,10 +176,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
             )?;
         }
         let linked_rows = crate::om::column_row::scan::linked_rows(ctx, record_area)?;
-        for (_index, row) in ctx
-            .admit_iter(linked_rows, "NX creation display linked rows visits")?
-            .enumerate()
-        {
+        for row in ctx.admit_iter(linked_rows, "NX creation display linked rows visits")? {
             if row.indices()[2].atom.value() != class_ordinal {
                 continue;
             }
@@ -204,10 +198,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
             )?;
         }
         let target_rows = crate::om::column_row::scan::target_rows(ctx, record_area)?;
-        for (_index, row) in ctx
-            .admit_iter(target_rows, "NX creation display target rows visits")?
-            .enumerate()
-        {
+        for row in ctx.admit_iter(target_rows, "NX creation display target rows visits")? {
             if row.indices()[2].atom.value() != class_ordinal {
                 continue;
             }
