@@ -117,11 +117,7 @@ fn ordered_fixed_candidates<'a, T, const KINDS: usize>(
         }
     }
     let mut ordered = ctx.vector_storage(candidates.len(), "nx ordered analytic candidates")?;
-    let mut candidates = candidates.into_values();
-    for _ in ctx.admit_iter(&(0..candidates.len()), "nx ordered analytic candidates")? {
-        let Some(candidate) = candidates.next() else {
-            break;
-        };
+    for (_, candidate) in ctx.admit_iter(candidates, "nx ordered analytic candidates")? {
         ctx.push_vec(&mut ordered, candidate, "nx ordered analytic candidates")?;
     }
     Ok(ordered)
@@ -434,11 +430,10 @@ pub(super) fn try_decode_geometry(
         drop(point_candidates);
         let surface_candidates =
             stream_storage.with_storage(|| ordered_surface_candidates(ctx, graph))?;
-        let mut surface_candidates = surface_candidates.into_iter();
-        for fi in ctx.admit_iter(&(0..surface_candidates.len()), "nx geometry surfaces")? {
-            let Some((geometry, node)) = surface_candidates.next() else {
-                break;
-            };
+        for (fi, (geometry, node)) in ctx
+            .admit_iter(surface_candidates, "nx geometry surfaces")?
+            .enumerate()
+        {
             match &geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => counts.planes += 1,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
@@ -486,7 +481,6 @@ pub(super) fn try_decode_geometry(
             };
             ctx.push_vec(&mut ir.model.surfaces, surface, "nx geometry surfaces")?;
         }
-        drop(surface_candidates);
         for (fi, surf) in ctx
             .admit_iter(nurbs_surfaces, "nx geometry NURBS surfaces")?
             .enumerate()
@@ -784,11 +778,10 @@ pub(super) fn try_decode_geometry(
 
         let curve_candidates =
             stream_storage.with_storage(|| ordered_curve_candidates(ctx, graph))?;
-        let mut curve_candidates = curve_candidates.into_iter();
-        for ci in ctx.admit_iter(&(0..curve_candidates.len()), "nx geometry curves")? {
-            let Some((geometry, node)) = curve_candidates.next() else {
-                break;
-            };
+        for (ci, (geometry, node)) in ctx
+            .admit_iter(curve_candidates, "nx geometry curves")?
+            .enumerate()
+        {
             match &geometry {
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => counts.lines += 1,
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => counts.circles += 1,
@@ -828,7 +821,6 @@ pub(super) fn try_decode_geometry(
             };
             ctx.push_vec(&mut ir.model.curves, curve, "nx geometry curves")?;
         }
-        drop(curve_candidates);
         for (ci, crv) in ctx.admit_iter(nurbs_curves, "nx NURBS curves")?.enumerate() {
             counts.nurbs_curves += 1;
             let id: CurveId =

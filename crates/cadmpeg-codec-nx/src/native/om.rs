@@ -4147,13 +4147,8 @@ fn registry_definitions<T>(
             false,
         )?;
     }
-    let count = definitions.len();
-    let mut definitions = definitions.into_values();
-    let mut output = ctx.vector_storage(count, "nx registry definition output")?;
-    for _ in ctx.admit_iter(&(0..count), "nx registry definition output")? {
-        let Some(definition) = definitions.next() else {
-            break;
-        };
+    let mut output = ctx.vector_storage(definitions.len(), "nx registry definition output")?;
+    for (_, definition) in ctx.admit_iter(definitions, "nx registry definition output")? {
         ctx.reserve_vec(&mut output, 1, "nx registry definition output")?;
         output.push(definition);
     }
@@ -5191,11 +5186,9 @@ pub(super) fn data_block_control_references(
             "NX control reference block id",
         )?;
         let references = crate::om::references(ctx, control.bytes, control.offset)?;
-        let references_count = references.len();
-        let mut references = references.into_iter();
+
         for (ordinal, reference) in ctx
-            .admit_iter(&(0..references_count), "NX OM references output visits")?
-            .filter_map(|_| references.next())
+            .admit_iter(references, "NX OM references output visits")?
             .enumerate()
         {
             let ordinal = u32::try_from(ordinal)
@@ -5390,11 +5383,9 @@ pub(super) fn data_block_references(
         for (block_ordinal, block) in std::iter::once(control).chain(records).enumerate() {
             ctx.charge_work(1, "NX data block reference blocks")?;
             let references = crate::om::data_block_object_references(ctx, block.bytes)?;
-            let references_count = references.len();
-            let mut references = references.into_iter();
+
             for (ordinal, reference) in ctx
-                .admit_iter(&(0..references_count), "NX OM references output visits")?
-                .filter_map(|_| references.next())
+                .admit_iter(references, "NX OM references output visits")?
                 .enumerate()
             {
                 let ordinal_u32 = u32::try_from(ordinal)
@@ -6345,12 +6336,9 @@ pub(super) fn expressions(
             continue;
         };
         let numeric_records = section.numeric_expression_records(ctx)?;
-        let numeric_records_count = numeric_records.len();
-        let mut numeric_records = numeric_records.into_iter();
-        for _index in ctx.admit_iter(&(0..numeric_records_count), "NX OM numeric records visits")? {
-            let Some((record_ordinal, expression)) = numeric_records.next() else {
-                break;
-            };
+        for (record_ordinal, expression) in
+            ctx.admit_iter(numeric_records, "NX OM numeric records visits")?
+        {
             let Some(object_id) = expression.object_id else {
                 continue;
             };

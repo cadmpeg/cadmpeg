@@ -1368,11 +1368,9 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
             continue;
         }
         let mut members = Vec::new();
-        let mut positioned = positioned.into_iter();
-        for _ in ctx.admit_iter(&(0..positioned.len()), "copy NX simple-hole group members")? {
-            let Some((_, _, reference, lane)) = positioned.next() else {
-                return Err(ctx.refuse_codec_limit("copy NX simple-hole group members", 0, 1));
-            };
+        for (_, _, reference, lane) in
+            ctx.admit_iter(positioned, "copy NX simple-hole group members")?
+        {
             let operation_label = ctx
                 .copy_retained_text(&reference.operation_label, "NX simple hole group operation")?;
             let scalar_lane =
