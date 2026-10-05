@@ -139,13 +139,13 @@ scoped_storage_case!(
         Ok((values, reservation))
     }
 );
-// A set sized for one or five values admits the storage for twice that length,
-// and the old-table bound stays live while it is allocated.
+// A set sized for one or five values holds the storage for twice that length
+// while it is allocated, then retains its real capacity.
 scoped_storage_case!(
     temporary_set_storage,
     67,
-    175,
-    peak = (67 + 67, 175 + 175),
+    103,
+    peak = (67, 175),
     HashSet<u64>,
     ctx,
     count,
@@ -154,8 +154,8 @@ scoped_storage_case!(
 scoped_storage_case!(
     temporary_set_limit_storage,
     67,
-    175,
-    peak = (67 + 67, 175 + 175),
+    103,
+    peak = (67, 175),
     HashSet<u64>,
     ctx,
     count,
@@ -306,8 +306,8 @@ scoped_storage_case!(collect_scoped_btree_map_storage, 320, 320, BTreeMap<u64, u
 scoped_storage_case!(
     collect_scoped_string_set_storage,
     99,
-    303,
-    peak = (99 + 99, 303 + 303),
+    167,
+    peak = (99, 303),
     HashSet<&'static str>,
     ctx,
     count,
@@ -322,8 +322,8 @@ scoped_storage_case!(
 scoped_storage_case!(
     collect_scoped_string_map_storage,
     131,
-    431,
-    peak = (131 + 131, 431 + 431),
+    231,
+    peak = (131, 431),
     HashMap<&'static str, u64>,
     ctx,
     count,
