@@ -128,11 +128,9 @@ fn geometry_carrier_mapping_pass_refuses_session_work_limit() {
         &bytes,
         |_| {},
         |scan_ctx| {
-            let scan = crate::decode::scan(
-                scan_ctx,
-                cadmpeg_core::decode::View::over_retained(&bytes),
-            )
-            .expect("valid topology container");
+            let scan =
+                crate::decode::scan(scan_ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                    .expect("valid topology container");
             let (dialects, _) = crate::dialect::classify_layers(scan_ctx, &scan)
                 .expect("classified topology input")
                 .into_report_parts();
@@ -140,7 +138,9 @@ fn geometry_carrier_mapping_pass_refuses_session_work_limit() {
                 &bytes,
                 ResourceDimension::WorkUnits,
                 "nx geometry carrier mapping pass",
-                |ctx| super::try_decode_geometry(ctx, &scan, &dialects, &[], &[], &mut 0).map(|_| ()),
+                |ctx| {
+                    super::try_decode_geometry(ctx, &scan, &dialects, &[], &[], &mut 0).map(|_| ())
+                },
             )
         },
     );

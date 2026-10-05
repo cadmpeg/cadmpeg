@@ -641,258 +641,199 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
     same_basis: bool,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-        let support_net =
-            match HomogeneousSurfaceNet::from_homogeneous_surface(support, geometry_budget) {
-                Ok(Some(net)) => net,
-                Ok(None) => return Ok(None),
-                Err(limit) => return Err(limit),
-            };
-        let candidate_net =
-            match HomogeneousSurfaceNet::from_homogeneous_surface(candidate, geometry_budget) {
-                Ok(Some(net)) => net,
-                Ok(None) => return Ok(None),
-                Err(limit) => return Err(limit),
-            };
-        let residual_net = if same_basis {
-            match HomogeneousSurfaceNet::from_homogeneous_residual(
-                support,
-                candidate,
-                geometry_budget,
-            ) {
-                Ok(Some(net)) => Some(net),
-                Ok(None) => return Ok(None),
-                Err(limit) => return Err(limit),
-            }
-        } else {
-            None
+    let support_net =
+        match HomogeneousSurfaceNet::from_homogeneous_surface(support, geometry_budget) {
+            Ok(Some(net)) => net,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
         };
-        let support_derivatives =
-            match RationalSurfaceDerivativeNets::from_net(&support_net, geometry_budget) {
-                Ok(Some(nets)) => nets,
-                Ok(None) => return Ok(None),
-                Err(limit) => return Err(limit),
-            };
-        let candidate_derivatives =
-            match RationalSurfaceDerivativeNets::from_net(&candidate_net, geometry_budget) {
-                Ok(Some(nets)) => nets,
-                Ok(None) => return Ok(None),
-                Err(limit) => return Err(limit),
-            };
-        let residual_derivatives = match residual_net.as_ref() {
-            Some(net) => match RationalSurfaceDerivativeNets::from_net(net, geometry_budget) {
-                Ok(Some(nets)) => Some(nets),
-                Ok(None) => return Ok(None),
-                Err(limit) => return Err(limit),
-            },
-            None => None,
+    let candidate_net =
+        match HomogeneousSurfaceNet::from_homogeneous_surface(candidate, geometry_budget) {
+            Ok(Some(net)) => net,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
         };
+    let residual_net = if same_basis {
+        match HomogeneousSurfaceNet::from_homogeneous_residual(support, candidate, geometry_budget)
+        {
+            Ok(Some(net)) => Some(net),
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        }
+    } else {
+        None
+    };
+    let support_derivatives =
+        match RationalSurfaceDerivativeNets::from_net(&support_net, geometry_budget) {
+            Ok(Some(nets)) => nets,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+    let candidate_derivatives =
+        match RationalSurfaceDerivativeNets::from_net(&candidate_net, geometry_budget) {
+            Ok(Some(nets)) => nets,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+    let residual_derivatives = match residual_net.as_ref() {
+        Some(net) => match RationalSurfaceDerivativeNets::from_net(net, geometry_budget) {
+            Ok(Some(nets)) => Some(nets),
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        },
+        None => None,
+    };
 
-        let (mut u_breaks, mut u_storage) = match geometry_budget.charges.copy_temporary_slice(
-            &support_net.u_knots[support_net.u_degree..=support_net.u_count],
-            "nx offset net knots",
-        ) {
-            Ok(breaks) => breaks,
-            Err(limit) => return Err(limit),
-        };
-        let candidate_u_breaks =
-            &candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count];
-        if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
-            &mut u_storage,
+    let (mut u_breaks, mut u_storage) = geometry_budget.charges.copy_temporary_slice(
+        &support_net.u_knots[support_net.u_degree..=support_net.u_count],
+        "nx offset net knots",
+    )?;
+    let candidate_u_breaks = &candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count];
+    geometry_budget.charges.reserve_scoped_vec_limit(
+        &mut u_storage,
+        &mut u_breaks,
+        candidate_u_breaks.len(),
+        "nx offset u breaks",
+    )?;
+    u_breaks.extend(candidate_u_breaks);
+    if geometry_budget
+        .charges
+        .stable_sort_by(
             &mut u_breaks,
-            candidate_u_breaks.len(),
-            "nx offset u breaks",
-        ) {
-            return Err(limit);
-        }
-        u_breaks.extend(candidate_u_breaks);
-        if geometry_budget
-            .charges
-            .stable_sort_by(
-                &mut u_breaks,
-                |value| value,
-                f64::total_cmp,
-                "nx offset u breaks sort",
-            )
-            .is_err()
-        {
-            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
-        }
-        u_breaks.dedup();
-        let (mut v_breaks, mut v_storage) = match geometry_budget.charges.copy_temporary_slice(
-            &support_net.v_knots[support_net.v_degree..=support_net.v_count],
-            "nx offset net knots",
-        ) {
-            Ok(breaks) => breaks,
-            Err(limit) => return Err(limit),
-        };
-        let candidate_v_breaks =
-            &candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count];
-        if let Err(limit) = geometry_budget.charges.reserve_scoped_vec_limit(
-            &mut v_storage,
+            |value| value,
+            f64::total_cmp,
+            "nx offset u breaks sort",
+        )
+        .is_err()
+    {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    }
+    u_breaks.dedup();
+    let (mut v_breaks, mut v_storage) = geometry_budget.charges.copy_temporary_slice(
+        &support_net.v_knots[support_net.v_degree..=support_net.v_count],
+        "nx offset net knots",
+    )?;
+    let candidate_v_breaks = &candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count];
+    geometry_budget.charges.reserve_scoped_vec_limit(
+        &mut v_storage,
+        &mut v_breaks,
+        candidate_v_breaks.len(),
+        "nx offset v breaks",
+    )?;
+    v_breaks.extend(candidate_v_breaks);
+    if geometry_budget
+        .charges
+        .stable_sort_by(
             &mut v_breaks,
-            candidate_v_breaks.len(),
-            "nx offset v breaks",
-        ) {
-            return Err(limit);
+            |value| value,
+            f64::total_cmp,
+            "nx offset v breaks sort",
+        )
+        .is_err()
+    {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    }
+    v_breaks.dedup();
+    let mut rectangles = Vec::new();
+    for u in u_breaks.windows(2).filter(|span| span[0] < span[1]) {
+        for v in v_breaks.windows(2).filter(|span| span[0] < span[1]) {
+            geometry_budget.charges.reserve_temporary_vec(
+                &mut rectangles,
+                1,
+                "nx offset rectangles",
+            )?;
+            rectangles.push([u[0], u[1], v[0], v[1]]);
         }
-        v_breaks.extend(candidate_v_breaks);
-        if geometry_budget
+    }
+    if rectangles.is_empty() {
+        return Ok(None);
+    }
+    let mut certified_bound = 0.0_f64;
+    loop {
+        geometry_budget
             .charges
-            .stable_sort_by(
-                &mut v_breaks,
-                |value| value,
-                f64::total_cmp,
-                "nx offset v breaks sort",
-            )
-            .is_err()
-        {
+            .charge_work_limit(1, "nx offset rectangle probe")?;
+        let Some([u0, u1, v0, v1]) = rectangles.pop() else {
+            break;
+        };
+        if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
-        v_breaks.dedup();
-        let mut rectangles = Vec::new();
-        for u in u_breaks.windows(2).filter(|span| span[0] < span[1]) {
-            for v in v_breaks.windows(2).filter(|span| span[0] < span[1]) {
-                if let Err(limit) = geometry_budget.charges.reserve_temporary_vec(
-                    &mut rectangles,
-                    1,
-                    "nx offset rectangles",
-                ) {
-                    return Err(limit);
-                }
-                rectangles.push([u[0], u[1], v[0], v[1]]);
-            }
-        }
-        if rectangles.is_empty() {
+        let u = u0 + (u1 - u0) * 0.5;
+        let v = v0 + (v1 - v0) * 0.5;
+        let Some(support_bounds) =
+            rational_surface_derivative_bounds_with_nets(&support_net, &support_derivatives, u, v)
+        else {
             return Ok(None);
-        }
-        let mut certified_bound = 0.0_f64;
-        loop {
-            geometry_budget
-                .charges
-                .charge_work_limit(1, "nx offset rectangle probe")?;
-            let Some([u0, u1, v0, v1]) = rectangles.pop() else {
-                break;
+        };
+        let (residual_u_bound, residual_v_bound) = if let (Some(residual_net), Some(derivatives)) =
+            (&residual_net, &residual_derivatives)
+        {
+            let Some(bounds) =
+                rational_surface_derivative_bounds_with_nets(residual_net, derivatives, u, v)
+            else {
+                return Ok(None);
             };
-            if !geometry_budget.charge() {
-                return geometry_budget.resource_refusal().map_or(Ok(None), Err);
-            }
-            let u = u0 + (u1 - u0) * 0.5;
-            let v = v0 + (v1 - v0) * 0.5;
-            let Some(support_bounds) = rational_surface_derivative_bounds_with_nets(
-                &support_net,
-                &support_derivatives,
+            (bounds.u, bounds.v)
+        } else {
+            let Some(candidate_bounds) = rational_surface_derivative_bounds_with_nets(
+                &candidate_net,
+                &candidate_derivatives,
                 u,
                 v,
             ) else {
                 return Ok(None);
             };
-            let (residual_u_bound, residual_v_bound) =
-                if let (Some(residual_net), Some(derivatives)) =
-                    (&residual_net, &residual_derivatives)
-                {
-                    let Some(bounds) = rational_surface_derivative_bounds_with_nets(
-                        residual_net,
-                        derivatives,
-                        u,
-                        v,
-                    ) else {
-                        return Ok(None);
-                    };
-                    (bounds.u, bounds.v)
-                } else {
-                    let Some(candidate_bounds) = rational_surface_derivative_bounds_with_nets(
-                        &candidate_net,
-                        &candidate_derivatives,
-                        u,
-                        v,
-                    ) else {
-                        return Ok(None);
-                    };
-                    (
-                        support_bounds.u + candidate_bounds.u,
-                        support_bounds.v + candidate_bounds.v,
-                    )
-                };
-            let normal_u_numerator =
-                support_bounds.uu * support_bounds.v + support_bounds.u * support_bounds.uv;
-            let normal_v_numerator =
-                support_bounds.uv * support_bounds.v + support_bounds.u * support_bounds.vv;
-            if !normal_u_numerator.is_finite() || !normal_v_numerator.is_finite() {
-                return Ok(None);
-            }
-            let support_point = match finite_or_refusal(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
-                    .within_work_slice(geometry_budget, |admission| {
-                        cadmpeg_ir::eval::decode::nurbs_surface_point(admission, support, u, v)
-                    }),
-            ) {
-                Ok(Some(point)) => point,
-                Ok(None) => return Ok(None),
-                Err(limit) => return Err(limit),
-            };
-            let candidate_point = match finite_or_refusal(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
-                    .within_work_slice(geometry_budget, |admission| {
-                        cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)
-                    }),
-            ) {
-                Ok(Some(point)) => point,
-                Ok(None) => return Ok(None),
-                Err(limit) => return Err(limit),
-            };
-            let partials = match finite_or_refusal(nurbs_surface_partials(
-                geometry_budget.charges,
-                support,
-                u,
-                v,
-            )) {
-                Ok(Some(partials)) => partials,
-                Ok(None) => return Ok(None),
-                Err(limit) => return Err(limit),
-            };
-            let normal_vector = partials.du.cross(partials.dv.get());
-            let normal_size = normal_vector.norm();
-            let half_u = (u1 - u0) * 0.5;
-            let half_v = (v1 - v0) * 0.5;
-            let minimum_normal =
-                normal_size - normal_u_numerator * half_u - normal_v_numerator * half_v;
-            if !minimum_normal.is_finite() || minimum_normal <= 0.0 {
-                let split_u = normal_u_numerator * (u1 - u0) >= normal_v_numerator * (v1 - v0);
-                match subdivide_offset_rectangle(
-                    &mut rectangles,
-                    [u0, u1, v0, v1],
-                    [u, v],
-                    split_u,
-                    geometry_budget,
-                ) {
-                    Ok(true) => {}
-                    Ok(false) => return Ok(None),
-                    Err(limit) => return Err(limit),
-                }
-                continue;
-            }
-            let Some(normal) = oriented_nurbs_normal(support, normal_vector) else {
-                return Ok(None);
-            };
-            let u_lipschitz =
-                residual_u_bound + distance.abs() * normal_u_numerator / minimum_normal;
-            let v_lipschitz =
-                residual_v_bound + distance.abs() * normal_v_numerator / minimum_normal;
-            let expected = Point3::new(
-                support_point.x + distance * normal.x,
-                support_point.y + distance * normal.y,
-                support_point.z + distance * normal.z,
-            );
-            let midpoint_error = Point3::distance(expected, candidate_point.get());
-            let bound = midpoint_error + u_lipschitz * half_u + v_lipschitz * half_v;
-            if !bound.is_finite() {
-                return Ok(None);
-            }
-            if bound <= tolerance {
-                certified_bound = certified_bound.max(bound);
-                continue;
-            }
-            let split_u = u_lipschitz * (u1 - u0) >= v_lipschitz * (v1 - v0);
+            (
+                support_bounds.u + candidate_bounds.u,
+                support_bounds.v + candidate_bounds.v,
+            )
+        };
+        let normal_u_numerator =
+            support_bounds.uu * support_bounds.v + support_bounds.u * support_bounds.uv;
+        let normal_v_numerator =
+            support_bounds.uv * support_bounds.v + support_bounds.u * support_bounds.vv;
+        if !normal_u_numerator.is_finite() || !normal_v_numerator.is_finite() {
+            return Ok(None);
+        }
+        let support_point = match finite_or_refusal(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    cadmpeg_ir::eval::decode::nurbs_surface_point(admission, support, u, v)
+                }),
+        ) {
+            Ok(Some(point)) => point,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+        let candidate_point = match finite_or_refusal(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(geometry_budget.charges)
+                .within_work_slice(geometry_budget, |admission| {
+                    cadmpeg_ir::eval::decode::nurbs_surface_point(admission, candidate, u, v)
+                }),
+        ) {
+            Ok(Some(point)) => point,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+        let partials = match finite_or_refusal(nurbs_surface_partials(
+            geometry_budget.charges,
+            support,
+            u,
+            v,
+        )) {
+            Ok(Some(partials)) => partials,
+            Ok(None) => return Ok(None),
+            Err(limit) => return Err(limit),
+        };
+        let normal_vector = partials.du.cross(partials.dv.get());
+        let normal_size = normal_vector.norm();
+        let half_u = (u1 - u0) * 0.5;
+        let half_v = (v1 - v0) * 0.5;
+        let minimum_normal =
+            normal_size - normal_u_numerator * half_u - normal_v_numerator * half_v;
+        if !minimum_normal.is_finite() || minimum_normal <= 0.0 {
+            let split_u = normal_u_numerator * (u1 - u0) >= normal_v_numerator * (v1 - v0);
             match subdivide_offset_rectangle(
                 &mut rectangles,
                 [u0, u1, v0, v1],
@@ -904,8 +845,41 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                 Ok(false) => return Ok(None),
                 Err(limit) => return Err(limit),
             }
+            continue;
         }
-        Ok(Some(certified_bound))
+        let Some(normal) = oriented_nurbs_normal(support, normal_vector) else {
+            return Ok(None);
+        };
+        let u_lipschitz = residual_u_bound + distance.abs() * normal_u_numerator / minimum_normal;
+        let v_lipschitz = residual_v_bound + distance.abs() * normal_v_numerator / minimum_normal;
+        let expected = Point3::new(
+            support_point.x + distance * normal.x,
+            support_point.y + distance * normal.y,
+            support_point.z + distance * normal.z,
+        );
+        let midpoint_error = Point3::distance(expected, candidate_point.get());
+        let bound = midpoint_error + u_lipschitz * half_u + v_lipschitz * half_v;
+        if !bound.is_finite() {
+            return Ok(None);
+        }
+        if bound <= tolerance {
+            certified_bound = certified_bound.max(bound);
+            continue;
+        }
+        let split_u = u_lipschitz * (u1 - u0) >= v_lipschitz * (v1 - v0);
+        match subdivide_offset_rectangle(
+            &mut rectangles,
+            [u0, u1, v0, v1],
+            [u, v],
+            split_u,
+            geometry_budget,
+        ) {
+            Ok(true) => {}
+            Ok(false) => return Ok(None),
+            Err(limit) => return Err(limit),
+        }
+    }
+    Ok(Some(certified_bound))
 }
 
 #[derive(Clone, Copy)]
@@ -3652,7 +3626,10 @@ mod tests {
                 )
                 .expect_err("the first omitted-column skip needs work");
                 assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(refusal.operation, "nx intersection null vector cofactor column");
+                assert_eq!(
+                    refusal.operation,
+                    "nx intersection null vector cofactor column"
+                );
             },
         );
     }

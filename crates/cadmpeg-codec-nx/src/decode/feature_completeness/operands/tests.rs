@@ -14,11 +14,11 @@ use super::{
 };
 
 #[test]
-    fn selection_completeness_detects_nonadjacent_duplicate_ids() {
-        assert!(selection_ids_are_incomplete::<u32>(&[]));
-        assert!(!selection_ids_are_incomplete(&[2, 1, 3]));
-        assert!(selection_ids_are_incomplete(&[2, 1, 2]));
-    }
+fn selection_completeness_detects_nonadjacent_duplicate_ids() {
+    assert!(selection_ids_are_incomplete::<u32>(&[]));
+    assert!(!selection_ids_are_incomplete(&[2, 1, 3]));
+    assert!(selection_ids_are_incomplete(&[2, 1, 2]));
+}
 
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {

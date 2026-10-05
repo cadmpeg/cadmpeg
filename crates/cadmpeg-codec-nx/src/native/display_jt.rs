@@ -395,14 +395,13 @@ impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
         if wire.byte_order != 0 {
             return Err("DisplayJtDocument.byte_order must be 0");
         }
-        let version = match JtVersionField::new(
-            wire.version_field,
-            |field| Ok::<_, Infallible>(field),
-            |text, _| Ok(text.parse()),
-        ) {
-            Ok(version) => version?,
-            Err(error) => match error {},
-        };
+        let version =
+            match JtVersionField::new(wire.version_field, Ok::<_, Infallible>, |text, _| {
+                Ok(text.parse())
+            }) {
+                Ok(version) => version?,
+                Err(error) => match error {},
+            };
         if wire.format_major != version.major() || wire.format_minor != version.minor() {
             return Err("DisplayJtDocument.format_major/format_minor disagree with version_field");
         }

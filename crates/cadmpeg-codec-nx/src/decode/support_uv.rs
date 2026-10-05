@@ -2920,8 +2920,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         let Some((_, value)) = coedge_id.as_str().rsplit_once('#') else {
             continue;
         };
-        let Ok(fin_xmt) = ctx.parse_text::<u32>(value, "nx completion coedge XMT")?
-        else {
+        let Ok(fin_xmt) = ctx.parse_text::<u32>(value, "nx completion coedge XMT")? else {
             continue;
         };
         let pcurve_id: PcurveId = source.scope.id_charged(

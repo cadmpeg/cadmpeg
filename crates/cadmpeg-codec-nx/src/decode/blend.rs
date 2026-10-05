@@ -585,7 +585,8 @@ mod tests {
                     controls: vec![1.0, 1.0],
                 };
 
-                let Err(refusal) = super::scalar_bezier_roots_with_budget(span, &geometry_budget) else {
+                let Err(refusal) = super::scalar_bezier_roots_with_budget(span, &geometry_budget)
+                else {
                     panic!("the terminal interval probe needs work");
                 };
                 assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);

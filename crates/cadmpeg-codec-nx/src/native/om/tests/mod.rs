@@ -1724,7 +1724,7 @@ mod record_area_admission;
 
 mod expression_graph;
 
-fn assert_om_work_refusal(error: cadmpeg_core::CodecError, operation: &str) {
+fn assert_om_work_refusal(error: &cadmpeg_core::CodecError, operation: &str) {
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1751,7 +1751,7 @@ fn nx_part_attribute_version_parses_refuse_named_work() {
                     .map(|_| ())
             },
         );
-        assert_om_work_refusal(error, operation);
+        assert_om_work_refusal(&error, operation);
     }
 }
 
@@ -1772,7 +1772,7 @@ fn nx_xml_root_element_lookup_refuses_named_work() {
             Ok(root.has_tag_name("root"))
         },
     );
-    assert_om_work_refusal(error, "NX XML root element traversal");
+    assert_om_work_refusal(&error, "NX XML root element traversal");
 }
 
 #[test]
@@ -1793,7 +1793,7 @@ fn nx_xml_attribute_lookup_refuses_named_work() {
             Ok(value == Some("value"))
         },
     );
-    assert_om_work_refusal(error, "NX XML attribute lookup");
+    assert_om_work_refusal(&error, "NX XML attribute lookup");
 }
 
 #[test]
@@ -1835,7 +1835,7 @@ fn nx_xml_attribute_name_comparison_refuses_named_work() {
             Ok(value == Some("value"))
         },
     );
-    assert_om_work_refusal(error, "NX XML attribute name comparison");
+    assert_om_work_refusal(&error, "NX XML attribute name comparison");
 }
 
 #[test]
@@ -1861,7 +1861,7 @@ fn nx_object_record_graph_stack_probe_refuses_named_work() {
             )
         },
     );
-    assert_om_work_refusal(error, "NX object record graph stack traversal");
+    assert_om_work_refusal(&error, "NX object record graph stack traversal");
 }
 
 #[test]
@@ -1888,7 +1888,7 @@ fn nx_control_handle_pair_work_loops_refuse_named_sites() {
             operation,
             |ctx| super::data_block_control_handle_pairs(ctx, &references),
         );
-        assert_om_work_refusal(error, operation);
+        assert_om_work_refusal(&error, operation);
     }
 }
 
@@ -1918,7 +1918,7 @@ fn nx_object_record_handle_pair_work_loops_refuse_named_sites() {
             operation,
             |ctx| super::object_record_handle_pairs(ctx, &references),
         );
-        assert_om_work_refusal(error, operation);
+        assert_om_work_refusal(&error, operation);
     }
 }
 

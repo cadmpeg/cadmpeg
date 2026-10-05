@@ -319,11 +319,13 @@ fn coincident_pcurve_interval_probe_refuses_session_work_limit() {
         SurfaceId::mint("nx:test:surface#quadratic-second").expect("identity grammar"),
     ];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.extend(surfaces.iter().cloned().map(|id| Surface {
-        id,
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
-        source_object: None,
-    }));
+    ir.model
+        .surfaces
+        .extend(surfaces.iter().cloned().map(|id| Surface {
+            id,
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+            source_object: None,
+        }));
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(0.0, 0.0),

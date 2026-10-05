@@ -249,16 +249,13 @@ struct OmRollForwardStateTableWire {
 }
 
 impl OmRollForwardStateTable {
-    pub(super) fn from_frames<O>(
+    /// Identify the frames that have absolute offsets, in table order.
+    pub(super) fn groups_from_frames<O>(
         ctx: &DecodeContext<'_>,
         section_ordinal: usize,
-        section_link: &str,
-        source_entry: &str,
-        table_footer: GroupTableFooter,
-        table_end_offset: u64,
         frames: crate::om::nonempty::NonEmpty<OperationStateGroup<O>>,
         mut absolute: impl FnMut(OperationStateGroup<O>) -> Option<OperationStateGroup<u64>>,
-    ) -> Result<Self, CodecError> {
+    ) -> Result<Vec<OmRollForwardStateGroup>, CodecError> {
         let mut groups = Vec::new();
         let frame_count = frames.len();
         let mut frames = frames.into_iter();
@@ -281,6 +278,17 @@ impl OmRollForwardStateTable {
                 frame,
             });
         }
+        Ok(groups)
+    }
+
+    pub(super) fn new(
+        ctx: &DecodeContext<'_>,
+        section_link: &str,
+        source_entry: &str,
+        table_footer: GroupTableFooter,
+        table_end_offset: u64,
+        groups: Vec<OmRollForwardStateGroup>,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             section_link: ctx
                 .copy_retained_text(section_link, "retain NX roll-forward table text")?,
@@ -351,13 +359,9 @@ mod tests {
                 policy.limits.max_collection_items = 0;
             },
             |ctx| {
-                let error = super::OmRollForwardStateTable::from_frames(
+                let error = super::OmRollForwardStateTable::groups_from_frames(
                     ctx,
                     0,
-                    "section",
-                    "entry",
-                    super::GroupTableFooter::try_from(&[][..]).unwrap(),
-                    8,
                     crate::om::nonempty::NonEmpty::new([group.frame]).unwrap(),
                     Some,
                 )
@@ -379,13 +383,9 @@ mod tests {
             &[],
             |policy| policy.limits.max_work_units = 0,
             |ctx| {
-                let error = super::OmRollForwardStateTable::from_frames(
+                let error = super::OmRollForwardStateTable::groups_from_frames(
                     ctx,
                     0,
-                    "section",
-                    "entry",
-                    super::GroupTableFooter::try_from(&[][..]).unwrap(),
-                    8,
                     crate::om::nonempty::NonEmpty::new([group.frame]).unwrap(),
                     Some,
                 )
