@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered source-block metadata for reconstructed feature payloads.
 
-use cadmpeg_core::decode::scan::AdmittedIter;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use serde::{
@@ -10,7 +9,6 @@ use serde::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::convert::Infallible;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FeaturePayloadBlock {
@@ -26,16 +24,16 @@ pub(super) struct FeaturePayloadContent<B> {
 }
 
 impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
-    pub(super) fn new<A: FeaturePayloadBlockAdmission>(
+    pub(super) fn new(
         blocks: B,
         sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-        admission: &A,
-    ) -> Result<Result<Self, String>, A::Error> {
-        let total = admission
-            .admit(blocks.as_ref())?
+    ) -> Result<Self, String> {
+        blocks
+            .as_ref()
+            .iter()
             .try_fold(0u64, |total, block| total.checked_add(block.byte_len))
-            .ok_or_else(|| "block_byte_lengths overflow byte_len".to_owned());
-        Ok(total.map(|_| Self { blocks, sha256 }))
+            .ok_or_else(|| "block_byte_lengths overflow byte_len".to_owned())?;
+        Ok(Self { blocks, sha256 })
     }
 
     pub(super) fn byte_len(&self, ctx: &DecodeContext<'_>) -> Result<u64, CodecError> {
@@ -53,56 +51,6 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
 
     pub(super) fn block_ids(&self) -> impl ExactSizeIterator<Item = &String> + Clone {
         self.blocks().iter().map(|block| &block.id)
-    }
-}
-
-pub(super) trait FeaturePayloadBlockAdmission {
-    type Error;
-    type Iter<'a>: Iterator<Item = &'a FeaturePayloadBlock>
-    where
-        Self: 'a;
-
-    fn admit<'a>(
-        &'a self,
-        blocks: &'a [FeaturePayloadBlock],
-    ) -> Result<Self::Iter<'a>, Self::Error>;
-}
-
-struct DecodeFeaturePayloadBlockAdmission<'ctx, 'decode> {
-    ctx: &'ctx DecodeContext<'decode>,
-}
-
-impl FeaturePayloadBlockAdmission for DecodeFeaturePayloadBlockAdmission<'_, '_> {
-    type Error = CodecError;
-    type Iter<'a>
-        = AdmittedIter<std::slice::Iter<'a, FeaturePayloadBlock>>
-    where
-        Self: 'a;
-
-    fn admit<'a>(
-        &'a self,
-        blocks: &'a [FeaturePayloadBlock],
-    ) -> Result<Self::Iter<'a>, Self::Error> {
-        Ok(self
-            .ctx
-            .admit_iter(blocks, "validate NX feature payload block lengths")?)
-    }
-}
-
-pub(super) struct ContextFreeFeaturePayloadBlockAdmission;
-
-impl FeaturePayloadBlockAdmission for ContextFreeFeaturePayloadBlockAdmission {
-    type Error = Infallible;
-    type Iter<'a>
-        = std::slice::Iter<'a, FeaturePayloadBlock>
-    where
-        Self: 'a;
-
-    fn admit<'a>(
-        &'a self,
-        blocks: &'a [FeaturePayloadBlock],
-    ) -> Result<Self::Iter<'a>, Self::Error> {
-        Ok(blocks.iter())
     }
 }
 
@@ -159,12 +107,11 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
             hash.finalize().into(),
             "retain NX feature payload digest",
         )?;
-        let content = match Self::new(blocks, digest, &DecodeFeaturePayloadBlockAdmission { ctx })?
-        {
-            Ok(content) => content,
-            Err(error) => return Err(CodecError::Malformed(error)),
-        };
-        Ok(Some(content))
+        // The block lengths were summed with an overflow check while hashing.
+        Ok(Some(Self {
+            blocks,
+            sha256: digest,
+        }))
     }
 }
 
@@ -244,18 +191,6 @@ pub(super) fn operation_key<'t>(
     operation: &'static str,
 ) -> Result<Option<&'t str>, CodecError> {
     Ok(ctx.rsplit_once(label, "#", operation)?.map(|(_, key)| key))
-}
-
-/// A malformed-input error carrying a copy of a constant reason.
-pub(super) fn malformed_reason(
-    ctx: &DecodeContext<'_>,
-    reason: &str,
-    operation: &'static str,
-) -> CodecError {
-    match ctx.copy_retained_text(reason, operation) {
-        Ok(reason) => CodecError::Malformed(reason),
-        Err(error) => error,
-    }
 }
 
 #[derive(Deserialize)]
@@ -385,13 +320,7 @@ where
         let blocks = B::try_from(rows).map_err(|_| {
             serde::de::Error::custom("data_blocks count does not match the payload lane")
         })?;
-        match Self::new(
-            blocks,
-            wire.sha256,
-            &ContextFreeFeaturePayloadBlockAdmission,
-        )
-        .map_err(|error| match error {})?
-        {
+        match Self::new(blocks, wire.sha256) {
             Ok(content) => Ok(content),
             Err(message) => Err(serde::de::Error::custom(message)),
         }
@@ -488,9 +417,7 @@ mod tests {
         assert!(FeaturePayloadContent::new(
             blocks,
             cadmpeg_ir::hash::digest::Sha256Digest::digest(b"hash"),
-            &super::ContextFreeFeaturePayloadBlockAdmission,
         )
-        .unwrap()
         .is_err());
     }
 

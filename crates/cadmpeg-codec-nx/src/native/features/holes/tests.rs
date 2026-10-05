@@ -781,9 +781,10 @@ fn repeated_scalar_block_reference_route_refusal(
 ) -> cadmpeg_core::CodecError {
     let container = repeated_scalar_block_reference_container();
     let admitted = crate::test_support::with_decode_context(|ctx| {
+        let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
+        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
         crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            ctx, &history, &inputs,
         )
     })
     .expect("admitted repeated scalar block references");
@@ -796,7 +797,7 @@ fn repeated_scalar_block_reference_route_refusal(
         },
         |ctx| {
             crate::native::features::FeatureHistory::new(ctx, &container)
-    .and_then(|history| crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(ctx, &history))
+    .and_then(|history| { let inputs = crate::native::features::feature_input_blocks(ctx, &history)?; crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(ctx, &history, &inputs) })
     .expect_err("repeated scalar block reference resource limit")
         },
     )
@@ -826,12 +827,21 @@ fn repeated_scalar_block_reference_route_refuses_retained_limit() {
 
 #[test]
 fn repeated_scalar_block_reference_route_refuses_scoped_limit() {
-    let error = repeated_scalar_block_reference_route_refusal(|policy| {
-        policy.limits.max_materialized_bytes = 0;
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    let container = repeated_scalar_block_reference_container();
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
+        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
+        crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references(
+            ctx, &history, &inputs,
+        )
+    };
+    // Build the section caches once so every walk step charges the same route.
+    crate::test_support::with_decode_context(route).expect("admitted block references");
+    crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX simple hole data block index",
+        route,
     );
 }
 
@@ -1248,22 +1258,18 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         id: "simple-hole-group".into(),
         first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
         second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
-        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(
-            vec![
-                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                    operation_label: "simple-hole-1".into(),
-                    scalar_lane: "scalar-1".into(),
-                    block_reference: "references-1".into(),
-                },
-                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                    operation_label: "simple-hole-2".into(),
-                    scalar_lane: "scalar-2".into(),
-                    block_reference: "references-2".into(),
-                },
-            ],
-            &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
-        )
-        .unwrap()
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-1".into(),
+                scalar_lane: "scalar-1".into(),
+                block_reference: "references-1".into(),
+            },
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-2".into(),
+                scalar_lane: "scalar-2".into(),
+                block_reference: "references-2".into(),
+            },
+        ])
         .unwrap(),
     };
 
@@ -1313,22 +1319,18 @@ fn package_use_inputs() -> (
         id: "simple-hole-group".to_string(),
         first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
         second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
-        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(
-            vec![
-                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                    operation_label: "simple-hole-1".into(),
-                    scalar_lane: "scalar-1".into(),
-                    block_reference: "references-1".into(),
-                },
-                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                    operation_label: "simple-hole-2".into(),
-                    scalar_lane: "scalar-2".into(),
-                    block_reference: "references-2".into(),
-                },
-            ],
-            &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
-        )
-        .unwrap()
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-1".into(),
+                scalar_lane: "scalar-1".into(),
+                block_reference: "references-1".into(),
+            },
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-2".into(),
+                scalar_lane: "scalar-2".into(),
+                block_reference: "references-2".into(),
+            },
+        ])
         .unwrap(),
     };
     (lane, group)

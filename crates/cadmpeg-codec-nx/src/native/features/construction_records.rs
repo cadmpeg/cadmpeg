@@ -4,8 +4,7 @@ use super::extrude_32::{FeatureExtrude32Construction, FeatureExtrudePayload32Bra
 use super::joined_payload::JoinedPayload;
 use super::object_frame::DataBlockObjectFrame;
 use super::payload_content::{
-    block_store, copy_block_ids, malformed_reason, operation_key, shared_block_store,
-    FeaturePayloadContent,
+    block_store, copy_block_ids, operation_key, shared_block_store, FeaturePayloadContent,
 };
 use super::payload_name::FeaturePayloadName;
 use super::point_scalar_lane::{FeaturePointConstructionScalarLane, PointScalarPositions};
@@ -38,8 +37,8 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-pub(super) struct ResolvedFeaturePayloadReference {
-    pub(super) section_key: String,
+pub(super) struct ResolvedFeaturePayloadReference<'h> {
+    pub(super) section_key: &'h str,
     pub(super) operation_ordinal: usize,
     pub(super) ordinal: usize,
     pub(super) token: PayloadIndexToken,
@@ -47,15 +46,23 @@ pub(super) struct ResolvedFeaturePayloadReference {
     pub(super) source_offset: u64,
 }
 
-pub(super) fn resolved_feature_payload_references(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    history: &FeatureHistory<'_, '_, '_>,
+/// Resolved payload references, held under the returned scoped reservation.
+pub(super) fn resolved_feature_payload_references<'h, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    history: &'h FeatureHistory<'_, '_, '_>,
     decode: impl Fn(
         crate::om::operation_record::OperationPayload<'_>,
         u64,
     ) -> Option<Vec<(PayloadIndexToken, u64)>>,
-) -> Result<Vec<ResolvedFeaturePayloadReference>, cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<ResolvedFeaturePayloadReference<'h>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let indexed = history.container().indexed_om_sections(ctx)?;
+    let mut storage = ctx.reserve_scoped(0, "NX resolved feature payload references")?;
     let mut references = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -71,9 +78,12 @@ pub(super) fn resolved_feature_payload_references(
             };
             for (ordinal, (token, source_offset)) in decoded.into_iter().enumerate() {
                 let data_block = charged_unique_offset_data_block(ctx, &indexed, token.value())?;
-                let section_key =
-                    ctx.copy_retained_text(section_key, "NX resolved feature reference section")?;
-                ctx.reserve_vec(&mut references, 1, "NX resolved feature payload references")?;
+                ctx.reserve_scoped_vec(
+                    &mut storage,
+                    &mut references,
+                    1,
+                    "NX resolved feature payload references",
+                )?;
                 references.push(ResolvedFeaturePayloadReference {
                     section_key,
                     operation_ordinal,
@@ -85,7 +95,7 @@ pub(super) fn resolved_feature_payload_references(
             }
         }
     }
-    Ok(references)
+    Ok((references, storage))
 }
 
 /// Decode and resolve the exact ordered construction-reference field in
@@ -94,20 +104,25 @@ pub(in crate::native) fn feature_projected_curve_references(
     ctx: &DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureProjectedCurveReference>, CodecError> {
-    let references = resolved_feature_payload_references(ctx, history, |record, base| {
-        crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(|field| {
-            field
-                .into_references()
-                .into_iter()
-                .map(|reference| {
-                    Some((
-                        reference.token,
-                        base.checked_add(cadmpeg_core::decode::u64_from_index(reference.offset))?,
-                    ))
-                })
-                .collect()
-        })
-    })?;
+    let (references, _references_storage) =
+        resolved_feature_payload_references(ctx, history, |record, base| {
+            crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(
+                |field| {
+                    field
+                        .into_references()
+                        .into_iter()
+                        .map(|reference| {
+                            Some((
+                                reference.token,
+                                base.checked_add(cadmpeg_core::decode::u64_from_index(
+                                    reference.offset,
+                                ))?,
+                            ))
+                        })
+                        .collect()
+                },
+            )
+        })?;
     let mut output = Vec::new();
     let mut references = references.into_iter();
     for _ in ctx.admit_iter(
@@ -157,15 +172,14 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
     let mut kinds = BTreeMap::new();
     let mut kind_reservation = ctx.reserve_scoped(0, "NX projected curve kinds")?;
     for label in ctx.admit_iter(labels, "index NX projected-curve labels")? {
-        kind_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<(&str, &str)>() * 4,
-        ))?;
-        ctx.insert_btree_map(
-            &mut kinds,
-            label.id.as_str(),
-            label.value.as_str(),
-            "NX projected curve kinds",
-        )?;
+        kind_reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut kinds,
+                label.id.as_str(),
+                label.value.as_str(),
+                "NX projected curve kinds",
+            )
+        })?;
     }
     let (groups, _groups_reservation) = ctx.collect_scoped_btree_groups(
         references
@@ -320,7 +334,7 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             let text =
                 ctx.copy_retained_text(value.value.as_str(), "NX projected curve string value")?;
             let value = crate::printable_string::PrintableString::new(text)
-                .map_err(|error| malformed_reason(ctx, error, "NX projected curve string error"))?;
+                .map_err(CodecError::malformed)?;
             ctx.reserve_vec(&mut strings, 1, "NX projected curve strings")?;
             strings.push(FeatureProjectedCurveConstructionString {
                 id,
@@ -529,16 +543,17 @@ pub(in crate::native) fn feature_surface_construction_references(
     ctx: &DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureSurfaceConstructionReference>, CodecError> {
-    let references = resolved_feature_payload_references(ctx, history, |record, base| {
-        crate::om::surface_envelope::surface_feature_payload_references(record)
-            .and_then(|field| field.relocate(base))
-            .map(|field| field.references().into_iter().collect())
-            .or_else(|| {
-                crate::om::surface_envelope::thru_curve_payload_references(record)
-                    .and_then(|field| field.relocate(base))
-                    .map(|field| field.references().into_iter().collect())
-            })
-    })?;
+    let (references, _references_storage) =
+        resolved_feature_payload_references(ctx, history, |record, base| {
+            crate::om::surface_envelope::surface_feature_payload_references(record)
+                .and_then(|field| field.relocate(base))
+                .map(|field| field.references().into_iter().collect())
+                .or_else(|| {
+                    crate::om::surface_envelope::thru_curve_payload_references(record)
+                        .and_then(|field| field.relocate(base))
+                        .map(|field| field.references().into_iter().collect())
+                })
+        })?;
     let mut output = Vec::new();
     let mut references = references.into_iter();
     for _ in ctx.admit_iter(
@@ -874,8 +889,8 @@ pub(in crate::native) fn feature_surface_construction_strings(
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
             let text =
                 ctx.copy_retained_text(value.value.as_str(), "NX surface payload string text")?;
-            let value = crate::payload_text::PayloadText::new(text)
-                .map_err(|error| malformed_reason(ctx, error, "NX surface payload string error"))?;
+            let value =
+                crate::payload_text::PayloadText::new(text).map_err(CodecError::malformed)?;
             ctx.reserve_vec(&mut strings, 1, "NX surface payload strings")?;
             strings.push(FeatureSurfaceConstructionString {
                 id,
@@ -1764,6 +1779,13 @@ pub(in crate::native) fn feature_extrude_32_constructions(
         items: &crate::om::branch_items::BranchItems<(T, Option<String>)>,
         operation: &'static str,
     ) -> Result<Option<crate::om::branch_items::BranchItems<String>>, CodecError> {
+        if ctx.any_by(
+            items.as_slice(),
+            |(_, binding)| Ok(binding.is_none()),
+            operation,
+        )? {
+            return Ok(None);
+        }
         let mut copied = Vec::new();
         for (_, binding) in ctx.admit_iter(items.as_slice(), operation)? {
             let Some(binding) = binding.as_deref() else {
@@ -1775,7 +1797,7 @@ pub(in crate::native) fn feature_extrude_32_constructions(
         }
         crate::om::branch_items::BranchItems::new(copied)
             .map(Some)
-            .map_err(|error| malformed_reason(ctx, error, "NX branch items error"))
+            .map_err(CodecError::malformed)
     }
 
     let (branch_groups, _branch_reservation) = ctx.collect_scoped_btree_groups(
@@ -2829,10 +2851,8 @@ pub(super) fn data_block_object_frame_id(
         .transpose()?
         .flatten()
     else {
-        return Err(malformed_reason(
-            ctx,
+        return Err(CodecError::malformed(
             "invalid NX data block object frame source",
-            "NX data block object frame source error",
         ));
     };
     let prefix = "nx:om-data-block-object-frames-";

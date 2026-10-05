@@ -131,22 +131,18 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
             id: "group".into(),
             first_data_blocks: ["a".into(), "b".into()],
             second_data_blocks: ["c".into(), "d".into()],
-            members: crate::native::features::holes::SimpleHoleConstructionMembers::new(
-                vec![
-                    crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                        operation_label: "operation#newer".into(),
-                        scalar_lane: "lane-newer".into(),
-                        block_reference: "blocks-newer".into(),
-                    },
-                    crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                        operation_label: "operation#older".into(),
-                        scalar_lane: "lane-older".into(),
-                        block_reference: "blocks-older".into(),
-                    },
-                ],
-                &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
-            )
-            .unwrap()
+            members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "operation#newer".into(),
+                    scalar_lane: "lane-newer".into(),
+                    block_reference: "blocks-newer".into(),
+                },
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: "operation#older".into(),
+                    scalar_lane: "lane-older".into(),
+                    block_reference: "blocks-older".into(),
+                },
+            ])
             .unwrap(),
         };
         assert!(
@@ -177,8 +173,8 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
             blind_hole_operations(ctx, &mixed_templates, &mixed_positions).unwrap(),
             Some(vec!["operation#blind".into()])
         );
-        let duplicate_members = crate::native::features::holes::SimpleHoleConstructionMembers::new(
-            vec![
+        let duplicate_members =
+            crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
                 crate::native::features::holes::FeatureSimpleHoleConstructionMember {
                     operation_label: "operation#older".into(),
                     scalar_lane: "lane-a".into(),
@@ -194,10 +190,7 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
                     scalar_lane: "lane-a".into(),
                     block_reference: "refs-a".into(),
                 },
-            ],
-            &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
-        )
-        .unwrap();
+            ]);
         assert!(duplicate_members.is_err());
     });
 }
@@ -378,22 +371,18 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         id: "group".into(),
         first_data_blocks: ["a".into(), "b".into()],
         second_data_blocks: ["c".into(), "d".into()],
-        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(
-            vec![
-                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                    operation_label: operations[0].clone(),
-                    scalar_lane: "lane-a".into(),
-                    block_reference: "blocks-a".into(),
-                },
-                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                    operation_label: operations[1].clone(),
-                    scalar_lane: "lane-b".into(),
-                    block_reference: "blocks-b".into(),
-                },
-            ],
-            &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
-        )
-        .unwrap()
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: operations[0].clone(),
+                scalar_lane: "lane-a".into(),
+                block_reference: "blocks-a".into(),
+            },
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: operations[1].clone(),
+                scalar_lane: "lane-b".into(),
+                block_reference: "blocks-b".into(),
+            },
+        ])
         .unwrap(),
     };
     let use_ = FeatureHolePackageConstructionGroupUse {
@@ -550,9 +539,7 @@ fn hole_package_result(
                 })
                 .into_iter()
                 .collect(),
-            &crate::native::features::holes::ContextFreeSimpleHoleMemberAdmission,
         )
-        .unwrap()
         .unwrap(),
     };
     let use_ = FeatureHolePackageConstructionGroupUse {

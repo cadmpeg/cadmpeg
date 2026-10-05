@@ -925,7 +925,11 @@ impl NativeModel {
         let feature_simple_hole_repeated_scalar_lanes =
             feature_simple_hole_repeated_scalar_lanes(ctx, &feature_history)?;
         let feature_simple_hole_repeated_scalar_lane_block_references =
-            feature_simple_hole_repeated_scalar_lane_block_references(ctx, &feature_history)?;
+            feature_simple_hole_repeated_scalar_lane_block_references(
+                ctx,
+                &feature_history,
+                &feature_input_blocks,
+            )?;
         let feature_simple_hole_construction_groups = feature_simple_hole_construction_groups(
             ctx,
             &feature_operation_labels,
@@ -1025,7 +1029,7 @@ impl NativeModel {
             tri_strip_shape_nodes: display_jt_tri_strip_shape_nodes,
         } = display_jt_scene_nodes(ctx, container, &display_jt_segments, &display_jt_documents)?;
         let feature_datum_csys_constructions =
-            feature_datum_csys_constructions(ctx, &feature_history)?;
+            feature_datum_csys_constructions(ctx, &feature_history, &feature_input_blocks)?;
         let feature_datum_csys_payloads =
             feature_datum_csys_payloads(ctx, container, &feature_datum_csys_constructions)?;
         let feature_datum_csys_payload_scalar_pairs =
@@ -1036,7 +1040,8 @@ impl NativeModel {
             feature_datum_csys_payload_scalars(ctx, container, &feature_datum_csys_payloads)?;
         let feature_datum_csys_descriptors =
             feature_datum_csys_descriptors(ctx, container, &feature_datum_csys_constructions)?;
-        let feature_datum_plane_headers = feature_datum_plane_headers(ctx, &feature_history)?;
+        let feature_datum_plane_headers =
+            feature_datum_plane_headers(ctx, &feature_history, &feature_input_blocks)?;
         let feature_datum_plane_block_uses = feature_datum_plane_block_uses(
             ctx,
             &feature_datum_plane_headers,

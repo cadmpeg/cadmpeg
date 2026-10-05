@@ -2,9 +2,9 @@
 //! Holes construction records and extraction.
 
 use super::construction_records::{replace_operation_text, OperationInputStores};
-use super::feature_input_blocks;
 use super::format_feature_history_id;
-use super::payload_content::{block_store, malformed_reason, operation_key};
+use super::payload_content::{block_store, operation_key};
+use super::FeatureInputBlock;
 
 use super::operation_record::FeatureOperationRecord;
 
@@ -390,91 +390,25 @@ pub(in crate::native) struct SimpleHoleConstructionMembers(
 );
 
 impl SimpleHoleConstructionMembers {
-    pub(in crate::native) fn new<A: SimpleHoleMemberAdmission>(
+    pub(in crate::native) fn new(
         members: Vec<FeatureSimpleHoleConstructionMember>,
-        admission: &A,
-    ) -> Result<Result<Self, &'static str>, A::Error> {
+    ) -> Result<Self, &'static str> {
         if members.len() < 2 {
-            return Ok(Err("operation_labels must contain at least two members"));
+            return Err("operation_labels must contain at least two members");
         }
-        for (index, member) in admission
-            .admit(&members, "validate NX simple-hole group members")?
-            .enumerate()
-        {
-            for other in admission.admit(
-                &members[..index],
-                "check NX simple-hole member label uniqueness",
-            )? {
-                if admission.same_label(&other.operation_label, &member.operation_label)? {
-                    return Ok(Err("operation_labels must contain distinct members"));
-                }
-            }
+        if members.iter().enumerate().any(|(index, member)| {
+            members[..index]
+                .iter()
+                .any(|other| other.operation_label == member.operation_label)
+        }) {
+            return Err("operation_labels must contain distinct members");
         }
-        Ok(Ok(Self(members)))
-    }
-}
-
-pub(in crate::native) trait SimpleHoleMemberAdmission {
-    type Error;
-    type Iter<'a>: Iterator<Item = &'a FeatureSimpleHoleConstructionMember>
-    where
-        Self: 'a;
-
-    fn admit<'a>(
-        &'a self,
-        members: &'a [FeatureSimpleHoleConstructionMember],
-        operation: &'static str,
-    ) -> Result<Self::Iter<'a>, Self::Error>;
-
-    fn same_label(&self, left: &str, right: &str) -> Result<bool, Self::Error>;
-}
-
-pub(in crate::native) struct ContextFreeSimpleHoleMemberAdmission;
-
-impl SimpleHoleMemberAdmission for ContextFreeSimpleHoleMemberAdmission {
-    type Error = std::convert::Infallible;
-    type Iter<'a>
-        = std::slice::Iter<'a, FeatureSimpleHoleConstructionMember>
-    where
-        Self: 'a;
-
-    fn admit<'a>(
-        &'a self,
-        members: &'a [FeatureSimpleHoleConstructionMember],
-        _operation: &'static str,
-    ) -> Result<Self::Iter<'a>, Self::Error> {
-        Ok(members.iter())
+        Ok(Self(members))
     }
 
-    fn same_label(&self, left: &str, right: &str) -> Result<bool, Self::Error> {
-        Ok(left == right)
-    }
-}
-
-struct DecodeSimpleHoleMemberAdmission<'ctx, 'decode> {
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'decode>,
-}
-
-impl SimpleHoleMemberAdmission for DecodeSimpleHoleMemberAdmission<'_, '_> {
-    type Error = cadmpeg_core::CodecError;
-    type Iter<'a>
-        = cadmpeg_core::decode::scan::AdmittedIter<
-        std::slice::Iter<'a, FeatureSimpleHoleConstructionMember>,
-    >
-    where
-        Self: 'a;
-
-    fn admit<'a>(
-        &'a self,
-        members: &'a [FeatureSimpleHoleConstructionMember],
-        operation: &'static str,
-    ) -> Result<Self::Iter<'a>, Self::Error> {
-        Ok(self.ctx.admit_iter(members, operation)?)
-    }
-
-    fn same_label(&self, left: &str, right: &str) -> Result<bool, Self::Error> {
-        self.ctx
-            .equal(left, right, "compare NX simple-hole member labels")
+    /// Wrap members whose count and label distinctness the decoder has proved.
+    fn from_distinct(members: Vec<FeatureSimpleHoleConstructionMember>) -> Self {
+        Self(members)
     }
 }
 
@@ -530,7 +464,7 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
         {
             return Err("simple-hole operation_labels, scalar_lanes, and block_references must have equal lengths".into());
         }
-        let members = match SimpleHoleConstructionMembers::new(
+        let members = SimpleHoleConstructionMembers::new(
             wire.operation_labels
                 .into_iter()
                 .zip(wire.scalar_lanes)
@@ -543,11 +477,7 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
                     }
                 })
                 .collect(),
-            &ContextFreeSimpleHoleMemberAdmission,
-        ) {
-            Ok(members) => members,
-            Err(error) => match error {},
-        }
+        )
         .map_err(str::to_owned)?;
         Ok(Self {
             id: wire.id,
@@ -787,7 +717,7 @@ fn owned_symbolic_thread(
         let value =
             ctx.copy_retained_text(frame.value.as_str(), "NX symbolic thread text frame value")?;
         let value = crate::payload_text::PayloadText::new(value)
-            .map_err(|error| malformed_reason(ctx, error, "NX symbolic thread text frame error"))?;
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         let source_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))
             .ok_or_else(|| ctx.refuse_codec_limit("NX symbolic thread text frame offset", 0, 1))?;
@@ -1144,8 +1074,8 @@ fn simple_hole_reference_pair(
 pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
+    inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>, cadmpeg_core::CodecError> {
-    let inputs = feature_input_blocks(ctx, history)?;
     let input_stores = OperationInputStores::new(ctx, &inputs)?;
     let blocks = data_blocks(ctx, history.container())?;
     let mut block_index = DataBlockIndex::new();
@@ -1499,11 +1429,8 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
             format_args!("nx:feature-history:simple-hole-construction-group#{id_key}"),
             "NX simple hole group identity",
         )?;
-        let members =
-            SimpleHoleConstructionMembers::new(members, &DecodeSimpleHoleMemberAdmission { ctx })?
-                .map_err(|error| {
-                    malformed_reason(ctx, error, "NX simple hole construction members error")
-                })?;
+        // Two or more positioned members with distinct labels, checked above.
+        let members = SimpleHoleConstructionMembers::from_distinct(members);
         let first_data_blocks = [
             ctx.copy_retained_text(key.0[0], "NX simple hole first block")?,
             ctx.copy_retained_text(key.0[1], "NX simple hole first block")?,
