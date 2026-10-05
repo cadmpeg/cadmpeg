@@ -138,23 +138,57 @@ fn scalar_value_offset(
     )
 }
 
+/// Whether two scalar indexes agree, field by field, with values within four
+/// units in the last place.
 pub(crate) fn scalar_indices_match(
+    ctx: &DecodeContext<'_>,
     actual: &[FeatureInputScalar],
     expected: &[FeatureInputScalar],
-) -> bool {
-    actual.len() == expected.len()
-        && actual.iter().zip(expected).all(|(actual, expected)| {
-            actual.id == expected.id
-                && actual.parent == expected.parent
-                && actual.feature_ref == expected.feature_ref
-                && actual.ordinal == expected.ordinal
-                && actual.offset == expected.offset
-                && actual.object_id == expected.object_id
-                && actual.name == expected.name
-                && ulp_distance(actual.value.get(), expected.value.get()) <= 4
-                && actual.role == expected.role
-                && actual.operands == expected.operands
-        })
+) -> Result<bool, CodecError> {
+    Ok(actual.len() == expected.len()
+        && ctx.all_by(
+            actual.iter().zip(expected),
+            |(actual, expected)| scalar_matches(ctx, actual, expected),
+            SCALAR_MATCH,
+        )?)
+}
+
+const SCALAR_MATCH: &str = "compare SLDPRT scalar indices";
+
+fn scalar_matches(
+    ctx: &DecodeContext<'_>,
+    actual: &FeatureInputScalar,
+    expected: &FeatureInputScalar,
+) -> Result<bool, CodecError> {
+    Ok(actual.ordinal == expected.ordinal
+        && actual.offset == expected.offset
+        && actual.object_id == expected.object_id
+        && ulp_distance(actual.value.get(), expected.value.get()) <= 4
+        && actual.role == expected.role
+        && actual.operands.len() == expected.operands.len()
+        && ctx.equal(actual.id.as_str(), expected.id.as_str(), SCALAR_MATCH)?
+        && ctx.equal(
+            actual.parent.as_str(),
+            expected.parent.as_str(),
+            SCALAR_MATCH,
+        )?
+        && ctx.equal(&actual.feature_ref, &expected.feature_ref, SCALAR_MATCH)?
+        && ctx.equal(actual.name.as_str(), expected.name.as_str(), SCALAR_MATCH)?
+        && ctx.all_by(
+            actual.operands.iter().zip(&expected.operands),
+            |(actual, expected)| {
+                Ok(actual.offset == expected.offset
+                    && actual.kind == expected.kind
+                    && actual.entity_index == expected.entity_index
+                    && ctx.equal(
+                        actual.reference_ref.as_str(),
+                        expected.reference_ref.as_str(),
+                        SCALAR_MATCH,
+                    )?
+                    && ctx.equal(&actual.entity_ref, &expected.entity_ref, SCALAR_MATCH)?)
+            },
+            SCALAR_MATCH,
+        )?)
 }
 
 fn ulp_distance(left: f64, right: f64) -> u64 {
