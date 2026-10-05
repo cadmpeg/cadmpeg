@@ -76,8 +76,6 @@ pub(crate) fn decode_parameter_scopes(
     let types = &native.design_types;
     let mut sketch_entities = None;
     let mut out = Vec::new();
-    let frame_width = std::num::NonZeroUsize::new(2)
-        .ok_or_else(|| CodecError::malformed("F3D parameter-scope frame width is zero"))?;
     // Each Design stream decodes once: a repeated entry name names the same
     // payload and would repeat every scope ID.
     let mut names_storage = ctx.reserve_scoped(0, STREAMS_OPERATION)?;
@@ -97,26 +95,15 @@ pub(crate) fn decode_parameter_scopes(
         let records = IndexedRecordOffsets::build(ctx, bytes)?;
         let stream_types = crate::design::decode::meta::stream_types_by_entity(ctx, types, name)?;
         let stream_scope_start = out.len();
-        // A scope is delimited by two headers carrying its record index, so
-        // each header except the last of its index can open one.
+        // A scope is delimited by two headers carrying its record index; any
+        // header can open one, and the last of its index finds no pair.
         for (record_index, offsets) in records.records(ctx)? {
-            for pair in ctx
-                .admit_iter(offsets, "scan F3D parameter-scope record frames")?
-                .windows(frame_width)
-            {
-                let (start, paired_at) = (pair[0], pair[1]);
+            for &start in ctx.admit_iter(offsets, "scan F3D parameter-scope record frames")? {
                 let Some(header) = indexed_record_header_at(bytes, start) else {
                     continue;
                 };
-                let Some(mut scope) = parse_scope_frame(
-                    ctx,
-                    bytes,
-                    &records,
-                    record_index,
-                    *header.class_tag,
-                    start,
-                    paired_at,
-                )?
+                let Some(mut scope) =
+                    parse_scope_at(ctx, bytes, &records, record_index, *header.class_tag, start)?
                 else {
                     continue;
                 };
@@ -827,43 +814,24 @@ fn admitted_scope_variant(
     })
 }
 
-/// Count serialized JSON bytes without retaining the serialized document.
-#[derive(Default)]
-struct JsonByteCounter {
-    bytes: usize,
-}
-
-impl std::io::Write for JsonByteCounter {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.bytes = self
-            .bytes
-            .checked_add(bytes.len())
-            .ok_or_else(|| std::io::Error::other("scope JSON length overflow"))?;
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-struct ScopeJsonWriter {
+/// Serialized JSON text. Each write admits its bytes as work and storage
+/// before copying them; a refusal stops the serializer and is kept for the
+/// caller.
+struct ChargedJsonWriter<'a, 'ctx> {
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'ctx>,
     bytes: Vec<u8>,
-    limit: usize,
+    refusal: Option<CodecError>,
 }
 
-impl std::io::Write for ScopeJsonWriter {
+impl std::io::Write for ChargedJsonWriter<'_, '_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let length = self
-            .bytes
-            .len()
-            .checked_add(bytes.len())
-            .filter(|length| *length <= self.limit)
-            .ok_or_else(|| std::io::Error::other("scope JSON changed during serialization"))?;
-        if length > self.bytes.capacity() {
-            return Err(std::io::Error::other("scope JSON exceeds admitted storage"));
+        if let Err(error) =
+            self.ctx
+                .extend_retained_bytes(&mut self.bytes, bytes, "f3d scope variant JSON")
+        {
+            self.refusal = Some(error);
+            return Err(std::io::Error::other("scope JSON refused"));
         }
-        self.bytes.extend_from_slice(bytes);
         Ok(bytes.len())
     }
 
@@ -872,7 +840,7 @@ impl std::io::Write for ScopeJsonWriter {
     }
 }
 
-/// Serialize `scope` into admitted temporary storage and parse the text as a
+/// Serialize `scope` into scoped temporary storage and parse the text as a
 /// value tree, returned with the scoped storage of the tree. A scope that does
 /// not serialize compares as different.
 fn scope_variant_json<'ctx>(
@@ -886,16 +854,17 @@ fn scope_variant_json<'ctx>(
     CodecError,
 > {
     const OPERATION: &str = "f3d scope variant JSON";
-    let mut count = JsonByteCounter::default();
-    if serde_json::to_writer(&mut count, scope).is_err() {
-        return Ok(None);
-    }
-    let (bytes, _text_storage) = ctx.temporary_vec(count.bytes, OPERATION)?;
-    let mut writer = ScopeJsonWriter {
-        bytes,
-        limit: count.bytes,
+    let mut text_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut writer = ChargedJsonWriter {
+        ctx,
+        bytes: Vec::new(),
+        refusal: None,
     };
-    if serde_json::to_writer(&mut writer, scope).is_err() {
+    let serialized = text_storage.with_storage(|| {
+        let serialized = serde_json::to_writer(&mut writer, scope).is_ok();
+        writer.refusal.take().map_or(Ok(serialized), Err)
+    })?;
+    if !serialized {
         return Ok(None);
     }
     let Ok(text) = ctx.validate_utf8(&writer.bytes, OPERATION)? else {
@@ -925,9 +894,9 @@ fn is_scope_variant_provenance(key: &str, top_level: bool) -> bool {
             ))
 }
 
-/// Compare two scope value trees without their provenance members. Each
-/// object admits a visit of every member of both sides; arrays admit only the
-/// items visited before the first difference.
+/// Compare two scope value trees without their provenance members. Objects
+/// and arrays admit only the members and items visited before the first
+/// difference.
 fn equivalent_scope_json(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     left: &serde_json::Value,
@@ -960,20 +929,28 @@ fn equivalent_scope_json(
             )
         }
         (Value::Object(left), Value::Object(right)) => {
-            let members = left
-                .len()
-                .checked_add(right.len())
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX, u64::MAX))?;
-            ctx.charge_work(u64_from_index(members), OPERATION)?;
             // Both maps iterate in key order, so equal member sets pair up.
-            let mut left_members = left
-                .iter()
-                .filter(|(key, _)| !is_scope_variant_provenance(key, top_level));
-            let mut right_members = right
-                .iter()
-                .filter(|(key, _)| !is_scope_variant_provenance(key, top_level));
+            // Each member is admitted as the walk reaches it.
+            fn next_member<'value>(
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                members: &mut serde_json::map::Iter<'value>,
+                top_level: bool,
+            ) -> Result<Option<(&'value String, &'value Value)>, CodecError> {
+                for (key, value) in members.by_ref() {
+                    ctx.charge_work(1, OPERATION)?;
+                    if !is_scope_variant_provenance(key, top_level) {
+                        return Ok(Some((key, value)));
+                    }
+                }
+                Ok(None)
+            }
+            let mut left_members = left.iter();
+            let mut right_members = right.iter();
             loop {
-                match (left_members.next(), right_members.next()) {
+                match (
+                    next_member(ctx, &mut left_members, top_level)?,
+                    next_member(ctx, &mut right_members, top_level)?,
+                ) {
                     (None, None) => return Ok(true),
                     (Some((left_key, left_value)), Some((right_key, right_value))) => {
                         if !ctx.equal_bytes(left_key.as_bytes(), right_key.as_bytes(), OPERATION)?
@@ -1103,6 +1080,19 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     let Ok(class_tag) = <&[u8; 3]>::try_from(class_tag.as_str().as_bytes()) else {
         return Ok(None);
     };
+    parse_scope_at(ctx, bytes, records, record_index, *class_tag, start)
+}
+
+/// Parse the parameter scope whose frame opens at `start` and closes at the
+/// first header carrying `record_index` at least one header length later.
+fn parse_scope_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    class_tag: [u8; 3],
+    start: usize,
+) -> Result<Option<DesignParameterScope>, CodecError> {
     let Some(search) = start.checked_add(11) else {
         return Ok(None);
     };
@@ -1114,7 +1104,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         bytes,
         records,
         record_index,
-        *class_tag,
+        class_tag,
         start,
         paired_at,
     )
