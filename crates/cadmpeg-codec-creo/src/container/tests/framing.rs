@@ -205,11 +205,11 @@ fn scan_enumerates_and_classifies_sections() {
 
     assert_eq!(scan.framing.version_line, "#UGC:2 P test");
     assert_eq!(scan.framing.sections.len(), 3);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].name(ctx)).expect("section name admitted"), "VisibGeom");
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].role(ctx)).expect("section role admitted"), SectionRole::PsbGeometry);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[1].name(ctx)).expect("section name admitted"), "AllFeatur");
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[1].role(ctx)).expect("section role admitted"), SectionRole::ModelData);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[2].role(ctx)).expect("section role admitted"), SectionRole::Thumbnail);
+    assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
+    assert_eq!(scan.framing.sections[0].role(), SectionRole::PsbGeometry);
+    assert_eq!(scan.framing.sections[1].name(), "AllFeatur");
+    assert_eq!(scan.framing.sections[1].role(), SectionRole::ModelData);
+    assert_eq!(scan.framing.sections[2].role(), SectionRole::Thumbnail);
     assert!(
         crate::decode::with_test_decode_ctx(|ctx| container::has_thumbnail(ctx, &scan))
             .expect("thumbnail search admitted")
@@ -243,12 +243,12 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
         scan.framing
             .sections
             .iter()
-            .map(|section| crate::decode::with_test_decode_ctx(|ctx| section.name(ctx)).expect("section name admitted"))
+            .map(|section| section.name())
             .collect::<Vec<_>>(),
         ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
     );
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[1].role(ctx)).expect("section role admitted"), SectionRole::PsbGeometry);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[2].role(ctx)).expect("section role admitted"), SectionRole::ModelData);
+    assert_eq!(scan.framing.sections[1].role(), SectionRole::PsbGeometry);
+    assert_eq!(scan.framing.sections[2].role(), SectionRole::ModelData);
 }
 
 #[test]
@@ -281,9 +281,9 @@ fn scan_uses_fixed_width_toc_offsets_for_adjacent_sections() {
     let scan = container::scan_bytes_ok(data);
 
     assert_eq!(scan.framing.sections.len(), 2);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].name(ctx)).expect("section name admitted"), "SolidPrimdata");
+    assert_eq!(scan.framing.sections[0].name(), "SolidPrimdata");
     assert_eq!(scan.framing.sections[0].length, first.len());
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[1].name(ctx)).expect("section name admitted"), "VisibGeom");
+    assert_eq!(scan.framing.sections[1].name(), "VisibGeom");
     assert_eq!(scan.framing.sections[1].offset, header_base + second_offset);
 }
 
@@ -483,8 +483,8 @@ fn nd_decoration_selects_nd_layout() {
     let scan = container::scan_bytes_ok(data);
     assert_eq!(scan.framing.layout, Layout::Nd);
     // The decorated name is normalized for classification and census.
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].name(ctx)).expect("section name admitted"), "VisibGeom");
-    assert_eq!(scan.framing.sections[0].raw_name, "ND:0:VisibGeom:1");
+    assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
+    assert_eq!(scan.framing.sections[0].raw_name(), "ND:0:VisibGeom:1");
     assert_eq!(scan.framing.census.srf_array_count, Some(3));
 }
 
@@ -657,7 +657,7 @@ fn framing_names_are_not_mistaken_for_sections() {
     let scan = container::scan_bytes_ok(data);
     // Only VisibGeom — the header/TOC framing markers are excluded.
     assert_eq!(scan.framing.sections.len(), 1);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| scan.framing.sections[0].name(ctx)).expect("section name admitted"), "VisibGeom");
+    assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
 }
 
 #[test]
@@ -682,20 +682,20 @@ fn a_section_extent_the_file_does_not_hold_is_not_a_section() {
 
     // One byte past the last byte of the file.
     assert!(
-        container::Section::scan("Geomlists".to_string(), 0, data.len() + 1, None, data).is_none()
+        container::Section::scan_for_test("Geomlists".to_string(), 0, data.len() + 1, None, data).is_none()
     );
 
     // An offset and a length that state no address between them: the end is
     // before the offset, which is what an overflowing `offset + length` leaves.
     assert!(
-        container::Section::scan("Geomlists".to_string(), usize::MAX - 3, 12, None, data).is_none()
+        container::Section::scan_for_test("Geomlists".to_string(), usize::MAX - 3, 12, None, data).is_none()
     );
 }
 
 #[test]
 fn a_section_that_ends_on_the_last_byte_is_admitted() {
     let data = b"#Geomlists\n0123";
-    let section = container::Section::scan("Geomlists".to_string(), 0, data.len(), None, data)
+    let section = container::Section::scan_for_test("Geomlists".to_string(), 0, data.len(), None, data)
         .expect("section extent")
         .section;
 
@@ -715,7 +715,7 @@ fn a_section_that_ends_on_the_last_byte_is_admitted() {
 #[test]
 fn an_in_scan_reader_reads_the_region_its_section_was_admitted_against() {
     let data = b"#VisibGeom\nsrf_array\0";
-    let scanned = container::Section::scan("VisibGeom".to_string(), 0, data.len(), None, data)
+    let scanned = container::Section::scan_for_test("VisibGeom".to_string(), 0, data.len(), None, data)
         .expect("section extent");
     assert_eq!(scanned.region, data.as_slice());
 
@@ -724,7 +724,7 @@ fn an_in_scan_reader_reads_the_region_its_section_was_admitted_against() {
     })
     .expect("one model geometry section is admitted");
     assert_eq!(selected.len(), 1);
-    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| selected[0].section.name(ctx)).expect("section name admitted"), "VisibGeom");
+    assert_eq!(selected[0].section.name(), "VisibGeom");
     assert_eq!(selected[0].region, data.as_slice());
 }
 
@@ -735,7 +735,7 @@ fn model_geometry_section_with_limits(
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let data = b"#VisibGeom\nsrf_array\0";
-    let scanned = container::Section::scan("VisibGeom".to_string(), 0, data.len(), None, data)
+    let scanned = container::Section::scan_for_test("VisibGeom".to_string(), 0, data.len(), None, data)
         .expect("section extent");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -808,7 +808,7 @@ fn nonvisible_geometry_section_refuses_before_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let data = b"nonvisible";
-    let scanned = container::Section::scan("NovisGeom".to_string(), 0, data.len(), None, data)
+    let scanned = container::Section::scan_for_test("NovisGeom".to_string(), 0, data.len(), None, data)
         .expect("section extent");
     let run = |limit| {
         let arena = DecodeArena::new();
@@ -838,7 +838,7 @@ fn loop_array_section_sources_refuse_before_vec_growth() {
         ("NovisGeom", b"nonvisible".as_slice(), 1),
         ("Xsections", b"Sld_Xsections\0".as_slice(), 2),
     ] {
-        let scanned = container::Section::scan(name.to_string(), 0, data.len(), None, data)
+        let scanned = container::Section::scan_for_test(name.to_string(), 0, data.len(), None, data)
             .expect("section extent");
         let run = |limit| {
             let arena = DecodeArena::new();
@@ -893,7 +893,7 @@ fn assert_loop_array_aggregate_refusal(limit: u64, operation: &'static str) {
 
     let payload = loop_array_aggregate_fixture();
     let scanned =
-        container::Section::scan("VisibGeom".to_string(), 0, payload.len(), None, &payload)
+        container::Section::scan_for_test("VisibGeom".to_string(), 0, payload.len(), None, &payload)
             .expect("loop array section extent");
     let run = |limit| {
         let arena = DecodeArena::new();
@@ -929,7 +929,7 @@ fn loop_array_aggregate_record_refuses_before_growth() {
 #[test]
 fn a_section_contains_its_own_offset_and_every_byte_before_its_end() {
     let data = b"0123#Geomlists\n0123";
-    let section = container::Section::scan("Geomlists".to_string(), 4, data.len(), None, data)
+    let section = container::Section::scan_for_test("Geomlists".to_string(), 4, data.len(), None, data)
         .expect("section extent")
         .section;
 
@@ -953,7 +953,7 @@ fn a_section_region_is_exactly_the_bytes_between_the_section_offset_and_its_end(
         .framing
         .sections
         .iter()
-        .find(|section| crate::decode::with_test_decode_ctx(|ctx| section.name(ctx)).expect("section name admitted") == "Xsections")
+        .find(|section| section.name() == "Xsections")
         .expect("the scan enumerates the second section");
 
     // The region is read through the scan that proved it, so it is the file's
@@ -986,7 +986,7 @@ fn a_section_region_is_absent_from_a_slice_shorter_than_the_section() {
         .framing
         .sections
         .iter()
-        .find(|section| crate::decode::with_test_decode_ctx(|ctx| section.name(ctx)).expect("section name admitted") == "Xsections")
+        .find(|section| section.name() == "Xsections")
         .expect("the scan enumerates the second section");
 
     let truncated = &data[..section.end() - 1];

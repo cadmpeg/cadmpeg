@@ -292,32 +292,29 @@ pub(super) fn model_sketch_id(
     Ok(SketchId::try_from(text).ok())
 }
 
-pub(super) fn sketch_identity_scope<'sketch>(ctx: &DecodeContext<'_>, sketch: &'sketch SketchId) -> Result<&'sketch str, CodecError> {
-    Ok(ctx.strip_prefix(sketch.as_str(), "creo:model:sketch#", "creo sketch identity scope prefix")?
-        .unwrap_or(sketch.as_str()))
+/// The sketch identity without its constant namespace prefix; the comparison
+/// reads at most the prefix's bytes.
+pub(super) fn sketch_identity_scope(sketch: &SketchId) -> &str {
+    sketch
+        .as_str()
+        .strip_prefix("creo:model:sketch#")
+        .unwrap_or(sketch.as_str())
 }
 
 #[cfg(test)]
-pub(super) fn sketch_identity_key(ctx: &DecodeContext<'_>, sketch: &SketchId) -> Result<Option<IdentityKey>, CodecError> {
-    Ok(IdentityKey::try_new(sketch_identity_scope(ctx, sketch)?.to_owned()).ok())
+pub(super) fn sketch_identity_key(sketch: &SketchId) -> Option<IdentityKey> {
+    IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()
 }
 
 #[cfg(test)]
 pub(super) fn sketch_entity_id(
-    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
-) -> Result<Option<SketchEntityId>, CodecError> {
-    let Some(key) = sketch_identity_key(ctx, sketch)? else {
-        return Ok(None);
-    };
-    let Ok(suffix) = IdentityKey::try_new(suffix.to_string()) else {
-        return Ok(None);
-    };
-    Ok(Some(SketchEntityId::compose(
+) -> Option<SketchEntityId> {
+    Some(SketchEntityId::compose(
         &crate::identity::FEATDEFS_SKETCH_ENTITY,
-        key.colon(suffix),
-    )))
+        sketch_identity_key(sketch)?.colon(IdentityKey::try_new(suffix.to_string()).ok()?),
+    ))
 }
 
 pub(super) fn sketch_entity_id_admitted(
@@ -328,7 +325,7 @@ pub(super) fn sketch_entity_id_admitted(
     let text = ctx.format_retained(
         format_args!(
             "creo:featdefs:sketch_entity#{}:{suffix}",
-            sketch_identity_scope(ctx, sketch)?,
+            sketch_identity_scope(sketch),
         ),
         "creo sketch entity identity",
     )?;
@@ -343,7 +340,7 @@ pub(super) fn sketch_constraint_id_admitted(
     let text = ctx.format_retained(
         format_args!(
             "creo:featdefs:sketch_constraint#{}:{suffix}",
-            sketch_identity_scope(ctx, sketch)?,
+            sketch_identity_scope(sketch),
         ),
         "creo sketch constraint identity",
     )?;
@@ -355,7 +352,7 @@ pub(super) fn sketch_native_ref_admitted(
     sketch: &SketchId,
 ) -> Result<String, CodecError> {
     ctx.format_retained(
-        format_args!("creo:featdefs:sketch#{}", sketch_identity_scope(ctx, sketch)?),
+        format_args!("creo:featdefs:sketch#{}", sketch_identity_scope(sketch)),
         "creo sketch native reference",
     )
 }
@@ -372,7 +369,7 @@ pub(super) fn sketch_section_curve_id_admitted(
             namespace.format(),
             namespace.scope(),
             namespace.kind(),
-            sketch_identity_scope(ctx, sketch)?
+            sketch_identity_scope(sketch)
         ),
         "creo section curve reference",
     )
@@ -390,7 +387,7 @@ pub(super) fn typed_sketch_section_curve_id_admitted(
             namespace.format(),
             namespace.scope(),
             namespace.kind(),
-            sketch_identity_scope(ctx, sketch)?
+            sketch_identity_scope(sketch)
         ),
         "creo section curve identity",
     )?;
@@ -405,7 +402,7 @@ pub(super) fn sketch_point_ref_admitted(
     ctx.format_retained(
         format_args!(
             "creo:featdefs:sketch#{}:point#{point}",
-            sketch_identity_scope(ctx, sketch)?
+            sketch_identity_scope(sketch)
         ),
         "creo sketch point reference",
     )
@@ -422,7 +419,7 @@ pub(super) fn sketch_feature_id_admitted(
             namespace.format(),
             namespace.scope(),
             namespace.kind(),
-            sketch_identity_scope(ctx, sketch)?
+            sketch_identity_scope(sketch)
         ),
         "creo sketch feature identity",
     )?;
@@ -444,7 +441,7 @@ pub(super) fn section_owner_feature_id(
         ctx.format_retained(
             format_args!(
                 "creo:model:sketch_feature#{}",
-                sketch_identity_scope(ctx, sketch)?
+                sketch_identity_scope(sketch)
             ),
             "creo section owner feature identity",
         )?

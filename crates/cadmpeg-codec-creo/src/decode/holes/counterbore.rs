@@ -115,17 +115,19 @@ pub(in crate::decode) fn counterbore_dimensions(
     let [first_source, second_source] = sources.as_slice() else {
         return Ok(None);
     };
-    let source_span = |ids: &Vec<u32>| {
+    let source_span = |ids: &Vec<u32>| -> Result<_, CodecError> {
         let [first_id, second_id] = ids.as_slice() else {
-            return None;
+            return Ok(None);
         };
-        let envelope = |id: &u32| {
-            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *id)?;
-            unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope()
+        let Some(first) = terminal_corner_envelope(ctx, scan, *first_id)? else {
+            return Ok(None);
         };
-        paired_corner_envelope_axis_spans(envelope(first_id)?, envelope(second_id)?)
+        let Some(second) = terminal_corner_envelope(ctx, scan, *second_id)? else {
+            return Ok(None);
+        };
+        Ok(paired_corner_envelope_axis_spans(first, second))
     };
-    let source_spans = [source_span(first_source), source_span(second_source)];
+    let source_spans = [source_span(first_source)?, source_span(second_source)?];
     if source_spans.iter().any(Option::is_some) {
         counterbore_envelope_dimension_values(
             ctx,
@@ -468,6 +470,20 @@ struct SourceCornerEnvelopes {
     second: [[f64; 3]; 2],
 }
 
+/// The type-24 terminal corner envelope of the unique parameter record of the
+/// unique surface row `id`.
+fn terminal_corner_envelope(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    id: u32,
+) -> Result<Option<[[f64; 3]; 2]>, CodecError> {
+    let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, id) else {
+        return Ok(None);
+    };
+    Ok(unique_surface_parameter_record(ctx, scan, row)?
+        .and_then(|record| record.type24_terminal_corner_envelope()))
+}
+
 fn counterbore_source_corner_envelopes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -475,22 +491,16 @@ fn counterbore_source_corner_envelopes(
 ) -> Result<Option<Vec<SourceCornerEnvelopes>>, CodecError> {
     let mut envelopes = Vec::new();
     for ids in sources {
-        let candidate = (|| {
-            let [first_id, second_id] = ids.as_slice() else {
-                return None;
-            };
-            let envelope = |id| {
-                let row = crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
-                unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope()
-            };
-            Some(SourceCornerEnvelopes {
-                first: envelope(*first_id)?,
-                second: envelope(*second_id)?,
-            })
-        })();
-        let Some(candidate) = candidate else {
+        let [first_id, second_id] = ids.as_slice() else {
             return Ok(None);
         };
+        let Some(first) = terminal_corner_envelope(ctx, scan, *first_id)? else {
+            return Ok(None);
+        };
+        let Some(second) = terminal_corner_envelope(ctx, scan, *second_id)? else {
+            return Ok(None);
+        };
+        let candidate = SourceCornerEnvelopes { first, second };
         ctx.reserve_vec(
             &mut envelopes,
             1,
@@ -932,7 +942,7 @@ fn counterbore_source_boundary_circle(
                 let plane = { let Some(value) = crate::surface::unique_surface_row(&scan.surfaces.rows, other) else { return Ok(None); }; value };
                 { let Some(value) = (plane.kind == crate::surface::SurfaceKind::Plane).then_some(()) else { return Ok(None); }; value };
                 let curve = { let Some(value) = ({ let mut numbered_identity_unique = None; for numbered_identity_candidate in ctx.admit_iter(&(ir.model.curves)[..], "creo numbered identity candidate scan")?.map(|numbered_identity_candidate| -> Result<Option<_>, cadmpeg_core::CodecError> { let curve = &numbered_identity_candidate; 
-                    Ok(if crate::identity::matches_numbered_identity(ctx, curve.id.as_str(), "creo:visibgeom:curve#", edge.id)? { Some(numbered_identity_candidate) } else { None })
+                    Ok(if crate::identity::matches_numbered_identity(curve.id.as_str(), "creo:visibgeom:curve#", edge.id) { Some(numbered_identity_candidate) } else { None })
                 }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); } numbered_identity_unique }) else { return Ok(None); }; value };
                 let Some(SolvedCurveGeometry::Circle(circle_curve)) =
                     source_carriers.curve_geometry(curve).solved()

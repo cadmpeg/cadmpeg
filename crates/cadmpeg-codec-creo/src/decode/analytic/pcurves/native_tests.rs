@@ -158,11 +158,19 @@ fn pcurve_path_activity_refuses_prototype_face_node() {
 fn pcurve_path_activity_keeps_service_paths() {
     let activity = path_activity_result(1_000_000).expect("service path activity");
     assert_eq!(
-        activity.selected_paths(7, [std::num::NonZeroU32::new(5), None], false),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            activity
+                .selected_paths(ctx, 7, [std::num::NonZeroU32::new(5), None], false)
+                .expect("service path lookup")
+        }),
         Some([true, false]),
     );
     assert_eq!(
-        activity.selected_paths(8, [std::num::NonZeroU32::new(6), None], true),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            activity
+                .selected_paths(ctx, 8, [std::num::NonZeroU32::new(6), None], true)
+                .expect("service prototype path lookup")
+        }),
         Some([false, false]),
     );
 }
@@ -193,6 +201,25 @@ fn pcurve_domain_solver_refuses_self_loop_point() {
         ),
         "creo pcurve domain points",
     );
+}
+
+#[test]
+fn same_vertex_pcurve_domain_retention_refuses_work_and_preserves_result() {
+    let point = [1.0, 0.0, 0.0];
+    let constraints = [([1, 1], [point, point]), ([1, 1], [point, point])];
+    let solved = crate::test_support::assert_work_boundaries(
+        &["creo same-vertex pcurve domain retention"],
+        |ctx| {
+            super::solve_pcurve_vertex_domains(
+                ctx,
+                &constraints,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+        },
+    );
+    assert_eq!(solved, BTreeMap::from([(1, point)]));
 }
 
 #[test]
@@ -534,6 +561,27 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
         ),
         BTreeMap::from([(1, a), (2, b)])
     );
+}
+
+#[test]
+fn fixed_pcurve_domain_retention_refuses_work_and_preserves_service_result() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    let constraints = [([1, 2], [a, b])];
+    let fixed_points = BTreeMap::from([(1, a)]);
+    let solved = crate::test_support::assert_work_boundaries(
+        &["creo fixed pcurve domain retention"],
+        |ctx| {
+            super::solve_pcurve_vertex_domains(
+                ctx,
+                &constraints,
+                &fixed_points,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+            )
+        },
+    );
+    assert_eq!(solved, BTreeMap::from([(1, a), (2, b)]));
 }
 
 #[test]

@@ -7,6 +7,7 @@ use std::num::NonZeroU32;
 use cadmpeg_core::decode::{bounded_len, index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 
+use crate::decode::uniqueness::exactly_one_by;
 use crate::psb;
 use crate::scalar;
 
@@ -959,27 +960,48 @@ impl FeatureOrderTable {
     }
 
     /// Resolve a generated-entity position to its section entity identifier.
-    pub(crate) fn external_id(&self, ctx: &DecodeContext<'_>, internal_id: u32) -> Result<Option<u32>, CodecError> {
-        if !self.is_complete() { return Ok(None); }
-        let mut matches = self.rows.iter().filter(|row| row.internal_id == internal_id);
-        let Some(row) = matches.next() else { return Ok(None); };
-        if matches.next().is_some() { return Ok(None); }
-        Ok((ctx.admit_iter(&self.rows, "creo order external ID count")?
-            .filter(|candidate| candidate.external_id == row.external_id).count() == 1)
-            .then_some(row.external_id))
+    pub(crate) fn external_id(
+        &self,
+        ctx: &DecodeContext<'_>,
+        internal_id: u32,
+    ) -> Result<Option<u32>, CodecError> {
+        const OPERATION: &str = "creo order external ID lookup";
+        if !self.is_complete() {
+            return Ok(None);
+        }
+        let Some(row) =
+            exactly_one_by(ctx, &self.rows, |row| Ok(row.internal_id == internal_id), OPERATION)?
+        else {
+            return Ok(None);
+        };
+        let external_id = row.external_id;
+        Ok(
+            exactly_one_by(ctx, &self.rows, |row| Ok(row.external_id == external_id), OPERATION)?
+                .map(|_| external_id),
+        )
     }
 
     /// Resolve a section entity identifier to its generated-entity position.
-    pub(crate) fn internal_id(&self, ctx: &DecodeContext<'_>, external_id: u32) -> Result<Option<u32>, CodecError> {
-        if !self.is_complete() { return Ok(None); }
-        let mut matches = self.rows.iter().filter(|row| row.external_id == external_id);
-        let Some(row) = matches.next() else { return Ok(None); };
-        if matches.next().is_some() { return Ok(None); }
-        Ok((ctx.admit_iter(&self.rows, "creo order internal ID count")?
-            .filter(|candidate| candidate.internal_id == row.internal_id).count() == 1)
-            .then_some(row.internal_id))
+    pub(crate) fn internal_id(
+        &self,
+        ctx: &DecodeContext<'_>,
+        external_id: u32,
+    ) -> Result<Option<u32>, CodecError> {
+        const OPERATION: &str = "creo order internal ID lookup";
+        if !self.is_complete() {
+            return Ok(None);
+        }
+        let Some(row) =
+            exactly_one_by(ctx, &self.rows, |row| Ok(row.external_id == external_id), OPERATION)?
+        else {
+            return Ok(None);
+        };
+        let internal_id = row.internal_id;
+        Ok(
+            exactly_one_by(ctx, &self.rows, |row| Ok(row.internal_id == internal_id), OPERATION)?
+                .map(|_| internal_id),
+        )
     }
-
 }
 
 /// Defined value of a one-byte binary section flag.
@@ -2731,7 +2753,14 @@ fn placement_instruction_rows<'a>(
 ) -> Result<impl Iterator<Item = FeaturePlacementInstruction> + use<'a>, CodecError> {
     let table_class =
         named_array_class(ctx, payload, b"place_instruction_ptrs\0", 0, payload.len())?;
-    Ok((0..payload.len()).filter_map(move |marker| {
+    // Without the table class no marker can match, so nothing is visited.
+    let marker_range = if table_class.is_some() {
+        0..payload.len()
+    } else {
+        0..0
+    };
+    let markers = ctx.admit_iter(marker_range, "creo placement instruction byte traversal")?;
+    Ok(markers.filter_map(move |marker| {
         let table_class = table_class?;
         if payload.get(marker..marker + 2) != Some(&[0xf1, psb::token::ENTITY_REF]) {
             return None;

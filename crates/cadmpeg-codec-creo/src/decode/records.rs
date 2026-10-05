@@ -1762,15 +1762,9 @@ pub(super) fn loop_array_frame_records<'a>(
 ) -> Result<Vec<CreoLoopArrayFrameRecord<'a>>, CodecError> {
     let mut counts = BTreeMap::<usize, usize>::new();
     for record in &scan.loop_arrays.records {
-        ctx.admit_btree_entry(
-            &counts,
-            &record.frame_offset,
-            "creo native loop array frame count nodes",
-        )?;
-        let count = match counts.entry(record.frame_offset) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0),
-        };
+        let count = ctx
+            .entry_btree_map(&mut counts, record.frame_offset, "creo native loop array frame count nodes")?
+            .or_default();
         *count = count.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit("creo native loop array frame counts", u64::MAX, u64::MAX)
         })?;
@@ -3385,8 +3379,7 @@ fn curve_id_counts(
 ) -> Result<BTreeMap<u32, usize>, CodecError> {
     let mut counts = BTreeMap::<u32, usize>::new();
     for id in ids {
-        ctx.admit_btree_entry(&counts, &id, operation)?;
-        let count = match counts.entry(id) {
+        let count = match ctx.entry_btree_map(&mut counts, id, operation)? {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0),
         };
@@ -3846,7 +3839,7 @@ pub(super) fn surface_parameter_records<'a>(
                     offset: overrides.offset,
                 }
             }),
-            replayed_torus_minor_radius: replayed_torus_minor_radius(scan, row, record),
+            replayed_torus_minor_radius: replayed_torus_minor_radius(ctx, scan, row, record)?,
             cone_half_angle_override: record.cone_half_angle_override().map(|half_angle| {
                 CreoConeHalfAngleOverride {
                     radians: half_angle.radians.get().get(),

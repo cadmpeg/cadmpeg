@@ -1546,15 +1546,9 @@ pub(crate) fn surface_merge_replay_affected_ids(
         if row.root_schema_class != Some(SchemaClass::SurfaceMerge) {
             continue;
         }
-        ctx.admit_btree_entry(
-            &extents,
-            &row.stream_offset,
-            "creo surface merge extent states",
-        )?;
-        let state = match extents.entry(row.stream_offset) {
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([None; 3]),
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-        };
+        let state = ctx
+            .entry_btree_map(&mut extents, row.stream_offset, "creo surface merge extent states")?
+            .or_insert([None; 3]);
         let named_arrays = [
             agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Geometry),
             agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Edges),

@@ -116,7 +116,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if !feature_allows_additive_linear_extrusion(scan, feature_id)
+        if !feature_allows_additive_linear_extrusion(ctx, scan, feature_id)?
             || !feature_is_first_material_operation(ctx, scan, feature_id)?
         {
             continue;

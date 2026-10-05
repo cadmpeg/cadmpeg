@@ -259,7 +259,7 @@ fn cylinder_frame_agrees_with_model(ctx: &cadmpeg_core::decode::DecodeContext<'_
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut found = None;
     for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
-        if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", surface_id)? {
+        if crate::identity::matches_numbered_identity(surface.id.as_str(), "creo:visibgeom:surface#", surface_id) {
             if found.is_some() {
                 return Ok(false);
             }

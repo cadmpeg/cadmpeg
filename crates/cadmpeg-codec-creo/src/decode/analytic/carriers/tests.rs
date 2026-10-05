@@ -292,6 +292,20 @@ fn topology_bound_plane_refuses_face_point_vector() {
     assert_eq!(points, [[2.0, 3.0, 4.0]]);
 }
 
+#[test]
+fn topology_bound_face_point_lookup_refuses_work() {
+    let solved_vertices = BTreeMap::from([(1, [2.0, 3.0, 4.0])]);
+    let vertex_faces = BTreeMap::from([(
+        std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
+        BTreeSet::from([5]),
+    )]);
+    let points = crate::test_support::assert_work_boundaries(
+        &["creo topology-bound vertex face lookup"],
+        |ctx| topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, 5),
+    );
+    assert_eq!(points, [[2.0, 3.0, 4.0]]);
+}
+
 fn topology_plane() -> PlaneEquation {
     PlaneEquation {
         origin: [0.0, 0.0, 4.0],
@@ -311,7 +325,10 @@ fn existing_plane_carrier_accepts_reversed_normal() {
     ));
 
     assert_eq!(
-        existing_plane_agrees_with_topology(&existing, topology_plane()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            existing_plane_agrees_with_topology(ctx, &existing, topology_plane())
+        })
+        .expect("service plane agreement admitted"),
         Some(true)
     );
 }
@@ -328,7 +345,10 @@ fn existing_plane_carrier_rejects_offset_conflict() {
     ));
 
     assert_eq!(
-        existing_plane_agrees_with_topology(&existing, topology_plane()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            existing_plane_agrees_with_topology(ctx, &existing, topology_plane())
+        })
+        .expect("service plane agreement admitted"),
         Some(false)
     );
 }
@@ -338,7 +358,10 @@ fn existing_unknown_carrier_does_not_compete_with_topology() {
     let existing = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
 
     assert_eq!(
-        existing_plane_agrees_with_topology(&existing, topology_plane()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            existing_plane_agrees_with_topology(ctx, &existing, topology_plane())
+        })
+        .expect("service plane agreement admitted"),
         None
     );
 }
@@ -356,7 +379,10 @@ fn existing_non_plane_carrier_conflicts_with_topology() {
     ));
 
     assert_eq!(
-        existing_plane_agrees_with_topology(&existing, topology_plane()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            existing_plane_agrees_with_topology(ctx, &existing, topology_plane())
+        })
+        .expect("service plane agreement admitted"),
         Some(false)
     );
 }
@@ -796,6 +822,54 @@ fn parameter_loop_classifier_orders_unique_outer() {
     );
 }
 
+fn ordered_parameter_loop_shift_work_refusal(operation: &'static str) {
+    let make_loop = |base: u32| {
+        crate::test_support::closed_loop(
+            std::num::NonZeroU32::new(5),
+            (0_u32..4)
+                .map(|index| crate::topology::HalfEdgeId {
+                    curve_id: base + index,
+                    side: crate::topology::Side::Zero,
+                })
+                .collect(),
+        )
+    };
+    let inner_left = make_loop(10);
+    let outer = make_loop(20);
+    let inner_right = make_loop(30);
+    let polygons = [
+        vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        vec![[-10.0, -10.0], [10.0, -10.0], [10.0, 10.0], [-10.0, 10.0]],
+        vec![[2.0, 2.0], [3.0, 2.0], [3.0, 3.0], [2.0, 3.0]],
+    ];
+    let ordered = crate::test_support::assert_work_boundaries(&[operation], |ctx| {
+        super::ordered_parameter_face_loops(
+            ctx,
+            vec![&inner_left, &outer, &inner_right],
+            &polygons,
+        )
+        .map(|ordered| {
+            ordered.map(|loops| {
+                loops
+                    .into_iter()
+                    .map(|loop_| loop_.half_edges()[0].curve_id)
+                    .collect::<Vec<_>>()
+            })
+        })
+    });
+    assert_eq!(ordered, Some(vec![20, 10, 30]));
+}
+
+#[test]
+fn ordered_parameter_loop_remove_refuses_shift_work() {
+    ordered_parameter_loop_shift_work_refusal("creo ordered face loop removal shift");
+}
+
+#[test]
+fn ordered_parameter_loop_insert_refuses_shift_work() {
+    ordered_parameter_loop_shift_work_refusal("creo ordered face loop insertion shift");
+}
+
 #[test]
 fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
     let mut scan = crate::test_support::empty_container_scan();
@@ -856,7 +930,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
 fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
     let mut scan = crate::test_support::empty_container_scan();
     let section =
-        crate::container::Section::scan("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
+        crate::container::Section::scan_for_test("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
             .expect("section extent")
             .section;
     let end = section.end();
@@ -878,7 +952,7 @@ fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
 fn geometry_section_record_refuses_retained_identity_limit() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.framing.sections.push(
-        crate::container::Section::scan("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
+        crate::container::Section::scan_for_test("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
             .expect("section extent")
             .section,
     );

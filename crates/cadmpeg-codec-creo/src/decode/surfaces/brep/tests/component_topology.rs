@@ -114,3 +114,95 @@ fn brep_component_topology_preserves_service_incidence() {
     assert_eq!(topology.face_vertices[&5], BTreeSet::from([1, 2]));
     assert_eq!(topology.face_vertices[&6], BTreeSet::from([1, 2]));
 }
+
+fn closed_component_lookup_fixture() -> (
+    BTreeSet<u32>,
+    BTreeSet<crate::topology::HalfEdgeId>,
+    BTreeMap<crate::topology::HalfEdgeId, crate::topology::HalfEdge>,
+) {
+    let first = crate::topology::HalfEdgeId {
+        curve_id: 7,
+        side: crate::topology::Side::Zero,
+    };
+    let second = crate::topology::HalfEdgeId {
+        curve_id: 7,
+        side: crate::topology::Side::One,
+    };
+    let edges = BTreeMap::from([
+        (
+            first,
+            crate::topology::HalfEdge {
+                id: first,
+                face_id: std::num::NonZeroU32::new(5),
+                next: None,
+            },
+        ),
+        (
+            second,
+            crate::topology::HalfEdge {
+                id: second,
+                face_id: std::num::NonZeroU32::new(5),
+                next: None,
+            },
+        ),
+    ]);
+    (
+        BTreeSet::from([7]),
+        BTreeSet::from([first, second]),
+        edges,
+    )
+}
+
+#[test]
+fn closed_component_face_membership_refuses_work_and_preserves_service_result() {
+    const FIRST_LOOKUP: &str = "creo closed component first face lookup";
+    const SECOND_LOOKUP: &str = "creo closed component second face lookup";
+    let (component_face_curves, emitted_half_edges, edges) = closed_component_lookup_fixture();
+    let half_edges = edges
+        .iter()
+        .map(|(id, edge)| (*id, edge))
+        .collect::<BTreeMap<_, _>>();
+    let faces = [5];
+    let closed = crate::test_support::assert_work_boundaries(
+        &[FIRST_LOOKUP, SECOND_LOOKUP],
+        |ctx| {
+            super::super::component_is_closed(
+                ctx,
+                &component_face_curves,
+                &emitted_half_edges,
+                &half_edges,
+                &faces,
+            )
+        },
+    );
+    assert!(closed);
+}
+
+#[test]
+fn closed_component_first_face_miss_short_circuits_second_lookup() {
+    const FIRST_LOOKUP: &str = "creo closed component first face lookup";
+    const SECOND_LOOKUP: &str = "creo closed component second face lookup";
+    let (component_face_curves, emitted_half_edges, edges) = closed_component_lookup_fixture();
+    let half_edges = edges
+        .iter()
+        .map(|(id, edge)| (*id, edge))
+        .collect::<BTreeMap<_, _>>();
+    let faces = [6];
+    let closed = crate::test_support::assert_work_boundaries(&[FIRST_LOOKUP], |ctx| {
+        let result = super::super::component_is_closed(
+            ctx,
+            &component_face_curves,
+            &emitted_half_edges,
+            &half_edges,
+            &faces,
+        );
+        if matches!(
+            &result,
+            Err(CodecError::ResourceLimit(resource)) if resource.operation == SECOND_LOOKUP
+        ) {
+            panic!("second face lookup must be skipped after the first face misses");
+        }
+        result
+    });
+    assert!(!closed);
+}

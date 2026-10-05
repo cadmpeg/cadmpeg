@@ -32,6 +32,8 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 
+const EPS_RADIUS_EQUIVALENCE: f64 = 1e-12;
+
 fn service_round_support_radius(
     scan: &crate::container::ContainerScan<'_>,
     ir: &CadIr,
@@ -199,25 +201,29 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     );
     assert!(service_single_cap_circular_sweep_geometry(&scan, 41).is_some());
 
-    assert!(section_entity_is_generated_profile(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(
+        ctx,
         true,
         Some(40),
         4,
         &[crate::surface::SurfaceKind::Cylinder],
         &scan.features.entity_tables,
         &scan.surfaces.rows,
-    ));
+    ))
+    .expect("service profile admits generated profile scan"));
 
     scan.features.entity_tables[0].unmark_surface_id(51);
     assert!(service_single_cap_circular_sweep_geometry(&scan, 40).is_none());
-    assert!(!section_entity_is_generated_profile(
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(
+        ctx,
         true,
         Some(40),
         4,
         &[crate::surface::SurfaceKind::Cylinder],
         &scan.features.entity_tables,
         &scan.surfaces.rows,
-    ));
+    ))
+    .expect("service profile admits generated profile scan"));
 }
 
 #[test]
@@ -481,18 +487,22 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
         selector: 0,
         offset: 0,
     };
-    assert!(outline_has_unique_radius_delta(
-        outline([-192.5, -5.0, -40.0, -167.5, -3.0, 52.5]),
-        2.0
-    ));
-    assert!(!outline_has_unique_radius_delta(
-        outline([-2.0, -2.0, 0.0, 0.0, 0.0, 8.0]),
-        2.0
-    ));
-    assert!(!outline_has_unique_radius_delta(
-        outline([-2.0, 0.0, 0.0, 2.0, 0.0, 8.0]),
-        2.0
-    ));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        outline_has_unique_radius_delta(
+            ctx,
+            outline([-192.5, -5.0, -40.0, -167.5, -3.0, 52.5]),
+            2.0,
+        )
+    })
+    .expect("admitted torus outline comparison"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
+        outline_has_unique_radius_delta(ctx, outline([-2.0, -2.0, 0.0, 0.0, 0.0, 8.0]), 2.0)
+    })
+    .expect("admitted torus outline comparison"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
+        outline_has_unique_radius_delta(ctx, outline([-2.0, 0.0, 0.0, 2.0, 0.0, 8.0]), 2.0)
+    })
+    .expect("admitted torus outline comparison"));
     let five_coordinate =
         |values| crate::surface::Type26FiveCoordinateEnvelope { values, offset: 0 };
     assert!(five_coordinate_envelope_proves_torus_radii(
@@ -517,22 +527,26 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
         0.5
     ));
     assert_eq!(
-        paired_five_coordinate_sphere_center(
+        crate::decode::with_test_decode_ctx(|ctx| paired_five_coordinate_sphere_center(
+            ctx,
             [
                 five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
                 five_coordinate([-2.65, -12.35, -2.65, 2.65, -15.0]),
             ],
             2.65,
-        ),
+        ))
+        .expect("service profile admits paired sphere coordinates"),
         Some([0.0, 0.0, -15.0])
     );
-    assert!(paired_five_coordinate_sphere_center(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| paired_five_coordinate_sphere_center(
+        ctx,
         [
             five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
             five_coordinate([-2.65, -12.0, -2.65, 2.65, -15.0]),
         ],
         2.65,
-    )
+    ))
+    .expect("service profile admits paired sphere coordinates")
     .is_none());
 }
 
@@ -540,38 +554,62 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
 fn unique_parallel_round_supports_define_constant_radius() {
     let plane = |origin, normal| PlaneEquation { origin, normal };
     assert_eq!(
-        unique_positive_length(&[0.5, 0.5 + 1.0e-12]).map(cadmpeg_ir::scalar::PositiveLength::get),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            unique_positive_length(ctx, &[0.5, 0.5 + EPS_RADIUS_EQUIVALENCE])
+        })
+            .expect("service profile admits positive length samples")
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.5)
     );
-    assert_eq!(unique_positive_length(&[0.5, 0.6]), None);
-    assert_eq!(unique_positive_length(&[0.0]), None);
-    assert!(!differing_positive_lengths(&[15.0, 15.0 + 1.0e-12]));
-    assert!(differing_positive_lengths(&[15.0, 7.0, 15.0]));
-    assert!(!differing_positive_lengths(&[0.0, 1.0]));
     assert_eq!(
-        parallel_support_radius(&[
+        crate::decode::with_test_decode_ctx(|ctx| unique_positive_length(ctx, &[0.5, 0.6]))
+            .expect("service profile admits positive length samples"),
+        None
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| unique_positive_length(ctx, &[0.0]))
+            .expect("service profile admits positive length samples"),
+        None
+    );
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
+        differing_positive_lengths(ctx, &[15.0, 15.0 + EPS_RADIUS_EQUIVALENCE])
+    })
+    .expect("service profile admits positive length samples"));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        differing_positive_lengths(ctx, &[15.0, 7.0, 15.0])
+    })
+    .expect("service profile admits positive length samples"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| {
+        differing_positive_lengths(ctx, &[0.0, 1.0])
+    })
+    .expect("service profile admits positive length samples"));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(ctx, &[
             plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
             plane([0.0, 0.0, -6.1], [0.0, 0.0, 1.0]),
             plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
-        ]),
+        ], |plane| Ok(Some(*plane))))
+        .expect("service profile admits round support plane comparisons"),
         Some(0.5)
     );
     assert_eq!(
-        parallel_support_radius(&[
+        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(ctx, &[
             plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
             plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
             plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
             plane([0.0, 0.0, -8.0], [0.0, 0.0, 1.0]),
-        ]),
+        ], |plane| Ok(Some(*plane))))
+        .expect("service profile admits round support plane comparisons"),
         None
     );
     assert_eq!(
-        parallel_support_radius(&[
+        crate::decode::with_test_decode_ctx(|ctx| parallel_support_radius(ctx, &[
             plane([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
             plane([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
             plane([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
             plane([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
-        ]),
+        ], |plane| Ok(Some(*plane))))
+        .expect("service profile admits round support plane comparisons"),
         Some(0.5)
     );
     let cylinder = crate::decode::with_test_decode_ctx(|ctx| {
@@ -691,7 +729,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(
-        crate::container::Section::scan("VisibGeom".to_string(), 0, 1_000, None, &[0u8; 1_000])
+        crate::container::Section::scan_for_test("VisibGeom".to_string(), 0, 1_000, None, &[0u8; 1_000])
             .expect("section extent")
             .section,
     );
@@ -1274,29 +1312,46 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
     };
     let first = circle(367, [0.0, 0.0, 1.0], [3.5, 8.0, -6.0], [5.5, 10.0, -6.0]);
     let second = circle(368, [0.0, 0.0, -1.0], [5.5, 10.0, -4.0], [3.5, 8.0, -4.0]);
-    let frame =
-        reference_cap_bound_round_frame(envelope, &[&first, &second]).expect("opposite Z caps");
+    let frame = crate::decode::with_test_decode_ctx(|ctx| {
+        reference_cap_bound_round_frame(ctx, envelope, &[&first, &second])
+    })
+    .expect("service profile admits reference cap circles")
+    .expect("opposite Z caps");
     assert_eq!(frame.frame().origin(), [4.5, 9.0, -6.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius().get(), 1.0);
     assert_eq!(frame.length().map(PositiveLength::get), Some(2.0));
-    assert!(reference_cap_bound_round_frame(envelope, &[&first]).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        reference_cap_bound_round_frame(ctx, envelope, &[&first])
+    })
+    .expect("service profile admits reference cap circles")
+    .is_none());
 
     let x_first = circle(371, [1.0, 0.0, 0.0], [3.5, 8.0, -6.0], [3.5, 10.0, -4.0]);
     let x_second = circle(372, [-1.0, 0.0, 0.0], [5.5, 10.0, -4.0], [5.5, 8.0, -6.0]);
     assert!(
-        reference_cap_bound_round_frame(envelope, &[&first, &second, &x_first, &x_second])
-            .is_none()
+        crate::decode::with_test_decode_ctx(|ctx| {
+            reference_cap_bound_round_frame(ctx, envelope, &[&first, &second, &x_first, &x_second])
+        })
+        .expect("service profile admits reference cap circles")
+        .is_none()
     );
 
     let crossed_first = circle(369, [0.0, 0.0, -1.0], [5.5, 8.0, -6.0], [3.5, 10.0, -6.0]);
     let crossed_second = circle(370, [0.0, 0.0, 1.0], [3.5, 10.0, -4.0], [5.5, 8.0, -4.0]);
     assert_eq!(
-        reference_cap_bound_round_frame(envelope, &[&crossed_first, &crossed_second]),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            reference_cap_bound_round_frame(ctx, envelope, &[&crossed_first, &crossed_second])
+        })
+        .expect("service profile admits reference cap circles"),
         Some(frame)
     );
-    assert!(reference_cap_bound_round_frame(envelope, &[&first, &crossed_second]).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        reference_cap_bound_round_frame(ctx, envelope, &[&first, &crossed_second])
+    })
+    .expect("service profile admits reference cap circles")
+    .is_none());
 }
 
 #[test]

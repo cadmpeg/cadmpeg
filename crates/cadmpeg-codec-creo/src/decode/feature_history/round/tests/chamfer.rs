@@ -38,7 +38,13 @@ fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
         },
     ];
 
-    assert_eq!(equal_distance_chamfer_setback(&cones, &supports), Some(0.5));
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            equal_distance_chamfer_setback(ctx, &cones, &supports)
+        })
+        .expect("service profile admits chamfer support comparisons"),
+        Some(0.5)
+    );
 
     let mut non_equal = cones;
     let mut origin = non_equal[1].origin();
@@ -52,7 +58,47 @@ fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
         non_equal[1].half_angle(),
     )
     .expect("valid test cone");
-    assert_eq!(equal_distance_chamfer_setback(&non_equal, &supports), None);
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            equal_distance_chamfer_setback(ctx, &non_equal, &supports)
+        })
+        .expect("service profile admits chamfer support comparisons"),
+        None
+    );
+}
+
+#[test]
+fn equal_distance_chamfer_setback_propagates_scan_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let cone = ConeEquation::new(
+        [10.5, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        0.0,
+        1.0,
+        std::f64::consts::FRAC_PI_4,
+    )
+    .expect("valid test cone");
+    let cones = [cone];
+    let supports = [PlaneEquation {
+        origin: [10.0, 0.0, 0.0],
+        normal: [1.0, 0.0, 0.0],
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+
+    let error = equal_distance_chamfer_setback(&ctx, &cones, &supports)
+        .expect_err("cone support scan exceeds the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo chamfer cone support pairs"),
+        "{error:?}"
+    );
 }
 
 fn chamfer_scan() -> crate::container::ContainerScan<'static> {

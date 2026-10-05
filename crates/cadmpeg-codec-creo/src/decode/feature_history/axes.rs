@@ -3,7 +3,7 @@
 
 use super::super::sketch::coordinates::resolved_section_points;
 use super::super::sketch::intersect::section_point_in_model;
-use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
+use super::super::uniqueness::unique_feature_profile_definition;
 use crate::container::ContainerScan;
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
@@ -38,9 +38,15 @@ pub(in super::super) fn resolved_revolution_axis(
         return Ok(None);
     };
     let points = resolved_section_points(ctx, definition)?;
-    let mut candidates = segments
-        .rows
-        .ordinary()
+    let mut candidates = ctx
+        .admit_iter(
+            segments.rows.as_slice(),
+            "creo revolution axis section segment rows",
+        )?
+        .filter_map(|row| match row {
+            crate::feature::segment_rows::SegmentRow::Ordinary(segment) => Some(segment),
+            _ => None,
+        })
         .filter(|segment| {
             matches!(
                 segment.kind,
@@ -91,10 +97,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         return Ok(None);
     }
 
-    let rows = scan
-        .surfaces
-        .rows
-        .iter()
+    let rows = ctx
+        .admit_iter(&scan.surfaces.rows, "creo full-turn revolution surface rows")?
         .filter(|row| row.feature_id == feature_id);
     let mut axes = Vec::new();
     let mut plane_normals = Vec::new();
@@ -105,17 +109,14 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return Ok(None);
         }
-        let mut found = None;
-        for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
-            if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", row.id)? {
-                if found.is_some() {
-                    found = None;
-                    break;
-                }
-                found = Some(surface);
-            }
-        }
-        let Some(surface) = found else {
+        let mut surfaces = ctx.admit_iter(&ir.model.surfaces, "creo full-turn model surfaces")?.filter(|surface| {
+            crate::identity::matches_numbered_identity(
+                surface.id.as_str(),
+                "creo:visibgeom:surface#",
+                row.id,
+            )
+        });
+        let Some(surface) = surfaces.next().filter(|_| surfaces.next().is_none()) else {
             return Ok(None);
         };
         match source_carriers.surface_geometry(surface) {
@@ -171,20 +172,22 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let first_origin = [first_origin.x, first_origin.y, first_origin.z];
     let axial = dot(first_origin, direction);
     let origin: [f64; 3] = std::array::from_fn(|axis| first_origin[axis] - axial * direction[axis]);
-    let scale = first_origin
-        .into_iter()
+    let scale = ctx
+        .admit_iter(&first_origin, "creo full-turn revolution axis scale origin")?
+        .copied()
         .chain(
-            rest.iter()
+            ctx.admit_iter(rest, "creo full-turn revolution axis scale rest")?
                 .flat_map(|(origin, _)| [origin.x, origin.y, origin.z]),
         )
         .chain(
-            sphere_centers
-                .iter()
+            ctx.admit_iter(&sphere_centers, "creo full-turn revolution axis scale sphere centers")?
                 .flat_map(|center| [center.x, center.y, center.z]),
         )
         .map(f64::abs)
         .fold(1.0, f64::max);
-    for (candidate_origin, candidate_direction) in rest {
+    for (candidate_origin, candidate_direction) in
+        ctx.admit_iter(rest, "creo full-turn revolution remaining axes")?
+    {
         let candidate_direction = unit_length(*candidate_direction);
         if !matches!(
             ((dot(direction, candidate_direction).abs() - 1.0).abs())
@@ -206,8 +209,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             return Ok(None);
         }
     }
-    for normal in plane_normals {
-        let normal = unit_length(normal);
+    for normal in ctx.admit_iter(&plane_normals, "creo full-turn revolution plane normals")? {
+        let normal = unit_length(*normal);
         if !matches!(
             ((dot(direction, normal).abs() - 1.0).abs()).partial_cmp(&(EPS_AXIS_ALIGNMENT)),
             Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
@@ -215,7 +218,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             return Ok(None);
         }
     }
-    for center in sphere_centers {
+    for center in ctx.admit_iter(&sphere_centers, "creo full-turn revolution sphere centers")? {
         let displacement = [
             center.x - origin[0],
             center.y - origin[1],
@@ -462,18 +465,30 @@ pub(in super::super) fn section_profile_ref(
     native_ref: String,
 ) -> Result<ProfileRef, CodecError> {
     let native_scope = native_ref.strip_prefix("creo:featdefs:sketch#");
-    let scan_count = u64::try_from(ir.model.sketches.len())
-        .map_err(|_| CodecError::malformed("Creo sketch count exceeds u64"))?;
-    ctx.charge_work(scan_count, "creo section profile sketch lookup")?;
-    let Some(sketch) = exactly_one(
-        ir.model
-            .sketches
-            .iter()
-            .filter(|sketch| match native_scope {
-                Some(scope) => sketch.id.as_str().strip_prefix("creo:model:sketch#") == Some(scope),
-                None => sketch.id.as_str() == native_ref,
-            }),
-    ) else {
+    let mut matching_sketch = None;
+    for sketch in ctx.admit_iter(&ir.model.sketches, "creo section profile sketch lookup")? {
+        let matches = match native_scope {
+            Some(scope) => ctx.equal(
+                &sketch.id.as_str().strip_prefix("creo:model:sketch#"),
+                &Some(scope),
+                "creo section profile sketch identity comparison",
+            )?,
+            None => ctx.equal(
+                sketch.id.as_str(),
+                native_ref.as_str(),
+                "creo section profile sketch identity comparison",
+            )?,
+        };
+        if !matches {
+            continue;
+        }
+        if matching_sketch.is_some() {
+            matching_sketch = None;
+            break;
+        }
+        matching_sketch = Some(sketch);
+    }
+    let Some(sketch) = matching_sketch else {
         return Ok(ProfileRef::Planar(PlanarProfileRef::Native(native_ref)));
     };
     if sketch.profiles.is_empty() {
@@ -511,7 +526,7 @@ pub(in super::super) fn geometry_generator_features(
 ) -> Result<Vec<GeometryGeneratorFeature>, CodecError> {
     let mut lookup_storage = ctx.reserve_scoped(0, "Creo generator exclusion lookup")?;
     let mut operation_feature_ids = BTreeSet::new();
-    for operation in &scan.features.operations {
+    for operation in ctx.admit_iter(&scan.features.operations, "creo generator operation rows")? {
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut operation_feature_ids,
@@ -521,7 +536,7 @@ pub(in super::super) fn geometry_generator_features(
         })?;
     }
     let mut row_feature_ids = BTreeSet::new();
-    for row in &scan.features.rows {
+    for row in ctx.admit_iter(&scan.features.rows, "creo generator feature rows")? {
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut row_feature_ids,
@@ -531,7 +546,7 @@ pub(in super::super) fn geometry_generator_features(
         })?;
     }
     let mut datum_feature_ids = BTreeSet::new();
-    for datum in &scan.planes.datums {
+    for datum in ctx.admit_iter(&scan.planes.datums, "creo generator datum rows")? {
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut datum_feature_ids,
@@ -542,7 +557,7 @@ pub(in super::super) fn geometry_generator_features(
     }
     let mut map_storage = ctx.reserve_scoped(0, "Creo generator map storage")?;
     let mut generators = BTreeMap::<u32, GeometryGeneratorFeature>::new();
-    for row in &scan.surfaces.rows {
+    for row in ctx.admit_iter(&scan.surfaces.rows, "creo generator surface rows")? {
         if row.feature_id == 0 {
             continue;
         }
@@ -568,7 +583,7 @@ pub(in super::super) fn geometry_generator_features(
         ctx.reserve_vec(&mut generator.surface_ids, 1, "creo generator surface IDs")?;
         generator.surface_ids.push(row.id);
     }
-    for row in &scan.curves.topology_rows {
+    for row in ctx.admit_iter(&scan.curves.topology_rows, "creo generator curve rows")? {
         if row.feature_id == 0 {
             continue;
         }
@@ -628,17 +643,21 @@ pub(in super::super) fn model_feature_ids(
     let mut ids = BTreeSet::new();
     let mut numeric_storage = ctx.reserve_scoped(0, "Creo model numeric identity lookup")?;
     let mut numeric_ids = BTreeSet::new();
-    for feature_id in scan
-        .features
-        .operations
-        .iter()
+    let geometry_generators = numeric_storage
+        .with_storage(|| geometry_generator_features(ctx, scan))?;
+    for feature_id in ctx
+        .admit_iter(&scan.features.operations, "creo emitted operation feature IDs")?
         .map(|operation| operation.feature_id)
-        .chain(scan.features.rows.iter().map(|row| row.feature_id))
-        .chain(scan.planes.datums.iter().map(|datum| datum.feature_id))
         .chain(
-            numeric_storage
-                .with_storage(|| geometry_generator_features(ctx, scan))?
-                .into_iter()
+            ctx.admit_iter(&scan.features.rows, "creo emitted feature row IDs")?
+                .map(|row| row.feature_id),
+        )
+        .chain(
+            ctx.admit_iter(&scan.planes.datums, "creo emitted datum feature IDs")?
+                .map(|datum| datum.feature_id),
+        )
+        .chain(
+            ctx.admit_iter(&geometry_generators, "creo emitted generator feature IDs")?
                 .map(|generator| generator.feature_id),
         )
     {
@@ -655,6 +674,10 @@ pub(in super::super) fn model_feature_ids(
         let text = ctx.format_retained(
             format_args!("creo:model:feature#{feature_id}"),
             "creo model feature identity text",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(text.len()),
+            "creo model feature identity validation",
         )?;
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
@@ -840,4 +863,21 @@ mod allocation_tests {
                 && resource.operation == "creo unresolved named profile identity")
         );
     }
+
+    #[test]
+    fn model_feature_identity_validation_refuses_at_work_boundary() {
+        let scan = generator_scan();
+        let ids = crate::test_support::assert_work_boundaries(
+            &["creo model feature identity validation"],
+            |ctx| model_feature_ids(ctx, &scan),
+        );
+        assert_eq!(
+            ids,
+            BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
+                "creo:model:feature#50",
+            )
+            .expect("fixture feature identity")]),
+        );
+    }
+
 }

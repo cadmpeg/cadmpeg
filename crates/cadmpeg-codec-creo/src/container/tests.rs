@@ -220,7 +220,7 @@ fn topology_face_ids_refuse_before_distinct_node_insertion() {
 fn named_datum_plane_refuses_before_aggregate_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let payload = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
-    let section = super::Section::scan("ActDatums".to_string(), 0, payload.len(), None, payload)
+    let section = super::Section::scan_for_test("ActDatums".to_string(), 0, payload.len(), None, payload)
         .expect("bounded datum section");
     let run = |items| {
         let arena = DecodeArena::new();
@@ -495,7 +495,7 @@ fn feature_definition_aggregation_refuses_before_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let payload = b"feat_defs_917\0template\xe3S2D0004\0replay";
-    let section = super::Section::scan("FeatDefs".to_string(), 0, payload.len(), None, payload)
+    let section = super::Section::scan_for_test("FeatDefs".to_string(), 0, payload.len(), None, payload)
         .expect("bounded feature section");
     let run = |items| {
         let arena = DecodeArena::new();
@@ -519,7 +519,7 @@ fn depdb_recipe_rows_with_limits(
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let payload = b"\xe3\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0";
-    let section = super::Section::scan("DEPDB_DATA".to_string(), 0, payload.len(), None, payload)
+    let section = super::Section::scan_for_test("DEPDB_DATA".to_string(), 0, payload.len(), None, payload)
         .expect("bounded recipe section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -570,7 +570,7 @@ fn reference_scan_with_limit(
 ) -> Result<super::ReferenceScan, cadmpeg_core::CodecError> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let section = super::Section::scan("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
+    let section = super::Section::scan_for_test("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
         .expect("bounded reference section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -655,7 +655,7 @@ fn feature_row_aggregation_refuses_before_vec_growth() {
 
     let payload = crate::test_support::allfeatur_row(4, [0xeb, 0x04], 917, &[0xaa]);
     let section =
-        container::Section::scan("AllFeatur".to_string(), 0, payload.len(), None, &payload)
+        container::Section::scan_for_test("AllFeatur".to_string(), 0, payload.len(), None, &payload)
             .expect("bounded AllFeatur section");
     let run = |limit| {
         let arena = DecodeArena::new();
@@ -679,7 +679,7 @@ fn section_result_collector_refuses_before_output_vec_growth() {
 
     let bytes = [0u8];
     let section =
-        super::Section::scan("body".to_string(), 0, 1, None, &bytes).expect("one bounded section");
+        super::Section::scan_for_test("body".to_string(), 0, 1, None, &bytes).expect("one bounded section");
     let sections = [section];
     let run = |limit| {
         let arena = DecodeArena::new();
@@ -1038,7 +1038,7 @@ fn two_chart_pcurve_count_node_refuses_before_insertion() {
     payload.extend_from_slice(&[8, 0, 4, 0xf6, 1]);
     payload.extend_from_slice(&samples);
     payload.extend_from_slice(&[10, 11, 9, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
-    let section = super::Section::scan("body".to_string(), 0, payload.len(), None, &payload)
+    let section = super::Section::scan_for_test("body".to_string(), 0, payload.len(), None, &payload)
         .expect("one bounded section");
     let sections = [section];
     let face_ids = BTreeSet::from([10, 11]);
@@ -1069,7 +1069,7 @@ fn current_feature_operations_with_limit(limit: u64) -> Result<usize, cadmpeg_co
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let payload = b"Round id 4\0";
-    let section = super::Section::scan("MdlStatus".to_string(), 0, payload.len(), None, payload)
+    let section = super::Section::scan_for_test("MdlStatus".to_string(), 0, payload.len(), None, payload)
         .expect("one bounded status section");
     let sections = [section];
     let arena = DecodeArena::new();
@@ -1120,7 +1120,7 @@ fn feature_reference_aggregation_refuses_before_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let payload = b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01";
-    let section = super::Section::scan("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
+    let section = super::Section::scan_for_test("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
         .expect("one bounded reference section");
     let sections = [section];
     let run = |limit| {
@@ -1162,7 +1162,7 @@ fn duplicate_primitive_section_namespace_is_refused() {
 #[test]
 fn expanded_section_local_ceiling_is_a_refusal() {
     let bytes = b"#Body\n\x1f\x9d\x10";
-    let section = super::Section::scan(
+    let section = super::Section::scan_for_test(
         "Body".to_owned(),
         0,
         bytes.len(),
@@ -1302,7 +1302,7 @@ fn cmnm_length_utf8_refuses_before_invalid_hexadecimal_text() {
 #[test]
 fn native_model_name_utf8_refuses_before_invalid_name() {
     let payload = b"model_name\0\xff\0";
-    let section = super::Section::scan("BasicData".to_string(), 0, payload.len(), None, payload)
+    let section = super::Section::scan_for_test("BasicData".to_string(), 0, payload.len(), None, payload)
         .expect("complete synthetic model-name section");
     let error = crate::test_support::last_refusal_at(
         &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo UTF-8 validation",
@@ -1335,7 +1335,7 @@ fn aggregate_pcurve_retain_refuses_work() {
     payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 3]);
     payload.extend_from_slice(&samples);
     payload.extend_from_slice(&[10, 11, 8, 9, 0, 0, 0xe3, 0xe1, 0xe3]);
-    let section = super::Section::scan("VisibGeom".to_string(), 0, payload.len(), None, &payload)
+    let section = super::Section::scan_for_test("VisibGeom".to_string(), 0, payload.len(), None, &payload)
         .expect("complete synthetic pcurve section");
     let error = crate::test_support::last_refusal_at(
         &[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "creo aggregate pcurve retain",

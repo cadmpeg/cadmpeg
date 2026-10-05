@@ -23,6 +23,23 @@ use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
+fn scalar_component_loops_refuse_before_graph_visits() {
+    let first = (VariableType::Result, 10);
+    let second = (VariableType::Result, 11);
+    let adjacency = BTreeMap::from([
+        (first, BTreeSet::from([second])),
+        (second, BTreeSet::from([first])),
+    ]);
+    crate::test_support::assert_work_boundaries(
+        &[
+            "creo scalar equality components",
+            "creo scalar equality graph visits",
+        ],
+        |ctx| super::scalar_equality_components(ctx, &adjacency),
+    );
+}
+
+#[test]
 fn overflowing_midpoint_rhs_is_not_admitted_to_solver() {
     let result = (VariableType::Dimension, 0);
     let constraints = SectionEquationAuxiliaryConstraints {

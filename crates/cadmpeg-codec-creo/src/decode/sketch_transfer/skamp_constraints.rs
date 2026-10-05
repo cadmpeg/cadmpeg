@@ -70,7 +70,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         return Ok(Vec::new());
     };
     let resolved_points =
-        if relations.skamps().iter().any(|skamp| {
+        if ctx.admit_iter(relations.skamps(), "creo SKAMP coordinate requirement search")?.any(|skamp| {
             section_skamp_active(skamp.status) && matches!(skamp.kind, 15 | 17 | 30 | 31)
         }) {
             Some(resolved_section_points(ctx, definition)?)
@@ -82,22 +82,20 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         .as_ref()
         .is_none_or(SolverSubtable::is_complete);
     let mut skamp_id_counts = BTreeMap::<u32, usize>::new();
-    for skamp in relations.skamps() {
+    for skamp in ctx.admit_iter(relations.skamps(), "creo SKAMP constraint row traversal")? {
         ctx.admit_btree_entry(&skamp_id_counts, &skamp.id, "creo skamp ID count nodes")?;
         *skamp_id_counts.entry(skamp.id).or_default() += 1;
     }
     let available_entities = if let Some(geometry) = geometry {
         let mut ids = std::collections::BTreeSet::new();
-        for entity_id in relations
-            .skamps()
-            .iter()
-            .flat_map(|skamp| &skamp.items)
-            .map(|item| item.entity_id)
-        {
-            if sketch_entity_id_admitted(ctx, sketch, entity_id)?
-                .is_some_and(|id| geometry.contains_key(&id))
-            {
-                ctx.insert_btree_set(&mut ids, entity_id, "creo skamp available entity nodes")?;
+        for skamp in ctx.admit_iter(relations.skamps(), "creo SKAMP available entity row traversal")? {
+            for item in ctx.admit_iter(&skamp.items, "creo SKAMP available entity item traversal")? {
+                let entity_id = item.entity_id;
+                if sketch_entity_id_admitted(ctx, sketch, entity_id)?
+                    .is_some_and(|id| geometry.contains_key(&id))
+                {
+                    ctx.insert_btree_set(&mut ids, entity_id, "creo skamp available entity nodes")?;
+                }
             }
         }
         ids
@@ -105,9 +103,9 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         section_entity_external_ids(ctx, definition)?
     };
     let mut constraints = Vec::new();
-    for skamp in relations.skamps() {
+    for skamp in ctx.admit_iter(relations.skamps(), "creo SKAMP constraint row traversal")? {
         let resource_error = Cell::new(None);
-        let candidate = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        let candidate = (|| {
             let unique_skamp_id = complete_skamps && skamp_id_counts.get(&skamp.id) == Some(&1);
             let joined_equation_id = if unique_skamp_id
                 && relations
@@ -130,10 +128,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 let native_ref =
                     defer_resource(sketch_native_ref_admitted(ctx, sketch), resource_error)?;
                 let mut entities = Vec::new();
-                for item in skamp
-                    .items
-                    .iter()
-                    .filter(|item| available_entities.contains(&item.entity_id))
+                for item in defer_resource(
+                    ctx.admit_iter(&skamp.items, "creo SKAMP native entity item traversal").map_err(cadmpeg_core::CodecError::from),
+                    resource_error,
+                )?.filter(|item| available_entities.contains(&item.entity_id))
                 {
                     let Some(id) = defer_resource(
                         sketch_entity_id_admitted(ctx, sketch, item.entity_id),
@@ -149,7 +147,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     entities.push(id);
                 }
                 let mut operands = Vec::new();
-                for item in &skamp.items {
+                for item in defer_resource(
+                    ctx.admit_iter(&skamp.items, "creo SKAMP native operand item traversal").map_err(cadmpeg_core::CodecError::from),
+                    resource_error,
+                )? {
                     defer_resource(
                         ctx.reserve_vec(&mut operands, 1, "creo skamp native operands"),
                         resource_error,
@@ -277,10 +278,17 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 .then(|| admitted_entity(ctx, sketch, item.entity_id, &resource_error))
                 .flatten()
             };
-            let inactive_incidence_locus = |item: &crate::feature::definitions::FeatureSkampItem| -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
-                if let Some(locus) = section_skamp_incidence_locus(ctx, &resource_error, definition, sketch, item, geometry)? { return Ok(Some(locus)); }
-                Ok({
-
+            let inactive_incidence_locus =
+                |item: &crate::feature::definitions::FeatureSkampItem| {
+                    defer_resource(section_skamp_incidence_locus(
+                        ctx,
+                        &resource_error,
+                        definition,
+                        sketch,
+                        item,
+                        geometry,
+                    ), &resource_error)?
+                    .or_else(|| {
                         (!active
                             && item.sense == 4
                             && item_geometry(item).is_some_and(|geometry| {
@@ -299,176 +307,188 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .map(SketchLocus::Center)
                         })
                         .flatten()
-                                    })
-            };
-            let point_entity = |item: &crate::feature::definitions::FeatureSkampItem| -> Result<Option<cadmpeg_ir::sketches::SketchEntityId>, cadmpeg_core::CodecError> {
-                if item.sense != 0 { return Ok(None); }
-                if section_skamp_is_point(ctx, definition, item)? {
-                    return Ok(admitted_entity(ctx, sketch, item.entity_id, &resource_error));
+                    })
+                };
+            let point_entity = |item: &crate::feature::definitions::FeatureSkampItem| {
+                (item.sense == 0).then_some(())?;
+                if defer_resource(section_skamp_is_point(ctx, definition, item), &resource_error)? {
+                    return admitted_entity(ctx, sketch, item.entity_id, &resource_error);
                 }
-                Ok((!active && item_geometry(item).is_some_and(|geometry| {
-                    matches!(geometry.definition(), SketchGeometryDefinition::Point { .. })
-                        || matches!(geometry.definition(), SketchGeometryDefinition::Native { native_kind } if native_kind.as_str() == "point")
-                })).then(|| admitted_entity(ctx, sketch, item.entity_id, &resource_error)).flatten())
+                (!active && item_geometry(item).is_some_and(|geometry| {
+                    matches!(
+                        geometry.definition(),
+                        SketchGeometryDefinition::Point { .. }
+                    ) || matches!((
+                        geometry).definition(),
+                        SketchGeometryDefinition::Native { native_kind } if native_kind.as_str() == "point"
+                    )
+                }))
+                .then(|| admitted_entity(ctx, sketch, item.entity_id, &resource_error))
+                .flatten()
             };
-            let inactive_point_locus = |item: &crate::feature::definitions::FeatureSkampItem| -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
-                if let Some(locus) = section_skamp_point_locus(ctx, &resource_error, definition, sketch, item)? { return Ok(Some(locus)); }
-                if let Some(point) = point_entity(item)? { return Ok(Some(SketchLocus::Entity(point))); }
-                inactive_incidence_locus(item)
+            let inactive_point_locus = |item: &crate::feature::definitions::FeatureSkampItem| {
+                defer_resource(section_skamp_point_locus(ctx, &resource_error, definition, sketch, item), &resource_error)?
+                    .or_else(|| point_entity(item).map(SketchLocus::Entity))
+                    .or_else(|| inactive_incidence_locus(item))
             };
             let mut constraint_definition = if unique_skamp_id {
                 match (skamp.kind, skamp.items.as_slice()) {
                     (0, [first, second])
-                        if section_skamp_center_entity(
+                        if defer_resource(section_skamp_center_entity(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
-                        )?
+                        ), &resource_error)?
                         .is_some()
-                            && section_skamp_center_entity(
+                            && defer_resource(section_skamp_center_entity(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 second,
-                            )?
+                            ), &resource_error)?
                             .is_some() =>
                     {
                         SketchConstraintDefinitionInput::Concentric {
-                            first: (match section_skamp_center_entity(
+                            first: defer_resource(section_skamp_center_entity(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 first,
-                            )? { Some(value) => value, None => return Ok(None) }),
-                            second: (match section_skamp_center_entity(
+                            ), &resource_error)??,
+                            second: defer_resource(section_skamp_center_entity(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 second,
-                            )? { Some(value) => value, None => return Ok(None) }),
+                            ), &resource_error)??,
                         }
                     }
                     (0, [first, second])
-                        if section_skamp_incidence_locus(
+                        if defer_resource(section_skamp_incidence_locus(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
                             geometry,
-                        )?
+                        ), &resource_error)?
                         .is_some()
-                            && section_skamp_incidence_locus(
+                            && defer_resource(section_skamp_incidence_locus(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 second,
                                 geometry,
-                            )?
+                            ), &resource_error)?
                             .is_some() =>
                     {
                         let mut loci = Vec::new();
-                        (match defer_resource(
+                        defer_resource(
                             ctx.reserve_vec(&mut loci, 2, "creo skamp coincident loci"),
                             &resource_error,
-                        ) { Some(value) => value, None => return Ok(None) });
-                        loci.push(match section_skamp_incidence_locus(
+                        )?;
+                        loci.push(defer_resource(section_skamp_incidence_locus(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
                             geometry,
-                        )? { Some(value) => value, None => return Ok(None) });
-                        loci.push(match section_skamp_incidence_locus(
+                        ), &resource_error)??);
+                        loci.push(defer_resource(section_skamp_incidence_locus(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             second,
                             geometry,
-                        )? { Some(value) => value, None => return Ok(None) });
+                        ), &resource_error)??);
                         SketchConstraintDefinitionInput::CoincidentLoci { loci }
                     }
                     (3, [first, second]) => {
                         if let (Some(first), Some(second)) =
-                            (point_entity(first)?, point_entity(second)?)
+                            (point_entity(first), point_entity(second))
                         {
                             let mut loci = Vec::new();
-                            (match defer_resource(
+                            defer_resource(
                                 ctx.reserve_vec(&mut loci, 2, "creo skamp coincident loci"),
                                 &resource_error,
-                            ) { Some(value) => value, None => return Ok(None) });
+                            )?;
                             loci.push(SketchLocus::Entity(first));
                             loci.push(SketchLocus::Entity(second));
                             SketchConstraintDefinitionInput::CoincidentLoci { loci }
                         } else {
                             let directed = [(first, second), (second, first)];
-                            let mut point_on_curve = None;
-                            for (curve, point) in directed {
-                                let entity = match section_skamp_curve_entity(ctx, &resource_error, definition, sketch, curve)? {
-                                    Some(entity) => Some(entity),
-                                    None => inactive_curve_entity(curve),
-                                };
-                                let Some(entity) = entity else { continue; };
-                                let Some(point) = inactive_incidence_locus(point)? else { continue; };
-                                if point_on_curve.is_some() { point_on_curve = None; break; }
-                                point_on_curve = Some((entity, point));
-                            }
+                            let point_on_curve = crate::decode::uniqueness::exactly_one(
+                                directed.into_iter().filter_map(|(curve, point)| {
+                                    Some((
+                                        defer_resource(section_skamp_curve_entity(
+                                            ctx,
+                                            &resource_error,
+                                            definition,
+                                            sketch,
+                                            curve,
+                                        ), &resource_error)?
+                                        .or_else(|| inactive_curve_entity(curve))?,
+                                        inactive_incidence_locus(point)?,
+                                    ))
+                                }),
+                            );
                             if let Some((entity, point)) = point_on_curve {
                                 SketchConstraintDefinitionInput::PointOnObject { point, entity }
                             } else {
-                                let mut point_coincidence = None;
-                                for (point, locus) in directed {
-                                    let Some(point) = point_entity(point)? else { continue; };
-                                    let Some(locus) = inactive_incidence_locus(locus)? else { continue; };
-                                    if point_coincidence.is_some() { point_coincidence = None; break; }
-                                    point_coincidence = Some([SketchLocus::Entity(point), locus]);
-                                }
+                                let point_coincidence = crate::decode::uniqueness::exactly_one(
+                                    directed.into_iter().filter_map(|(point, locus)| {
+                                        Some([
+                                            SketchLocus::Entity(point_entity(point)?),
+                                            inactive_incidence_locus(locus)?,
+                                        ])
+                                    }),
+                                );
                                 if let Some(loci) = point_coincidence {
                                     let mut admitted_loci = Vec::new();
-                                    (match defer_resource(
+                                    defer_resource(
                                         ctx.reserve_vec(
                                             &mut admitted_loci,
                                             2,
                                             "creo skamp coincident loci",
                                         ),
                                         &resource_error,
-                                    ) { Some(value) => value, None => return Ok(None) });
+                                    )?;
                                     admitted_loci.extend(loci);
                                     SketchConstraintDefinitionInput::CoincidentLoci {
                                         loci: admitted_loci,
                                     }
                                 } else {
-                                    match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) }
+                                    native_constraint(&resource_error)?
                                 }
                             }
                         }
                     }
                     (kind @ (1 | 2), [item]) => {
-                        match section_skamp_oriented_line(
+                        match defer_resource(section_skamp_oriented_line(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             item,
                             geometry,
-                        )? {
+                        ), &resource_error)? {
                             Some(entity) if kind == 1 => {
                                 SketchConstraintDefinitionInput::Horizontal { entity }
                             }
                             Some(entity) => SketchConstraintDefinitionInput::Vertical { entity },
-                            None => match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) },
+                            None => native_constraint(&resource_error)?,
                         }
                     }
                     (4, [first, second]) => {
-                        if let Some([first, second]) = section_skamp_tangent_loci(
+                        if let Some([first, second]) = defer_resource(section_skamp_tangent_loci(
                             ctx,
                             &resource_error,
                             definition,
@@ -476,195 +496,195 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             (first, second),
                             active,
                             geometry,
-                        )? {
+                        ), &resource_error)? {
                             SketchConstraintDefinitionInput::TangentLoci { first, second }
-                        } else if section_skamp_curve_entity(
+                        } else if defer_resource(section_skamp_curve_entity(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
-                        )?
+                        ), &resource_error)?
                         .is_some()
-                            && section_skamp_curve_entity(
+                            && defer_resource(section_skamp_curve_entity(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 second,
-                            )?
+                            ), &resource_error)?
                             .is_some()
                         {
                             SketchConstraintDefinitionInput::Tangent {
-                                first: (match section_skamp_curve_entity(
+                                first: defer_resource(section_skamp_curve_entity(
                                     ctx,
                                     &resource_error,
                                     definition,
                                     sketch,
                                     first,
-                                )? { Some(value) => value, None => return Ok(None) }),
-                                second: (match section_skamp_curve_entity(
+                                ), &resource_error)??,
+                                second: defer_resource(section_skamp_curve_entity(
                                     ctx,
                                     &resource_error,
                                     definition,
                                     sketch,
                                     second,
-                                )? { Some(value) => value, None => return Ok(None) }),
+                                ), &resource_error)??,
                             }
                         } else {
-                            match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) }
+                            native_constraint(&resource_error)?
                         }
                     }
                     (5, [first, second]) => {
                         match (
-                            section_skamp_curve_entity(
+                            defer_resource(section_skamp_curve_entity(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 first,
-                            )?,
-                            section_skamp_curve_entity(
+                            ), &resource_error)?,
+                            defer_resource(section_skamp_curve_entity(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 second,
-                            )?,
+                            ), &resource_error)?,
                         ) {
                             (Some(first), Some(second)) => {
                                 SketchConstraintDefinitionInput::Perpendicular { first, second }
                             }
-                            _ => match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) },
+                            _ => native_constraint(&resource_error)?,
                         }
                     }
                     (6, [first, second])
-                        if section_skamp_circular_entity(
+                        if defer_resource(section_skamp_circular_entity(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
-                        )?
+                        ), &resource_error)?
                         .is_some()
-                            && section_skamp_circular_entity(
+                            && defer_resource(section_skamp_circular_entity(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 second,
-                            )?
+                            ), &resource_error)?
                             .is_some() =>
                     {
                         SketchConstraintDefinitionInput::Equal {
-                            first: (match section_skamp_circular_entity(
+                            first: defer_resource(section_skamp_circular_entity(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 first,
-                            )? { Some(value) => value, None => return Ok(None) }),
-                            second: (match section_skamp_circular_entity(
+                            ), &resource_error)??,
+                            second: defer_resource(section_skamp_circular_entity(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 second,
-                            )? { Some(value) => value, None => return Ok(None) }),
+                            ), &resource_error)??,
                         }
                     }
                     (7, [first, second])
-                        if section_skamp_line_pair(
+                        if defer_resource(section_skamp_line_pair(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
                             second,
-                        )?
+                        ), &resource_error)?
                         .is_some() =>
                     {
-                        let [first, second] = match section_skamp_line_pair(
+                        let [first, second] = defer_resource(section_skamp_line_pair(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
                             second,
-                        )? { Some(value) => value, None => return Ok(None) };
+                        ), &resource_error)??;
                         SketchConstraintDefinitionInput::Parallel { first, second }
                     }
                     (8, [first, second])
-                        if section_skamp_line_pair(
+                        if defer_resource(section_skamp_line_pair(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
                             second,
-                        )?
+                        ), &resource_error)?
                         .is_some() =>
                     {
-                        let [first, second] = match section_skamp_line_pair(
+                        let [first, second] = defer_resource(section_skamp_line_pair(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
                             second,
-                        )? { Some(value) => value, None => return Ok(None) };
+                        ), &resource_error)??;
                         SketchConstraintDefinitionInput::Equal { first, second }
                     }
                     (9, [first, second])
-                        if section_skamp_line_pair(
+                        if defer_resource(section_skamp_line_pair(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
                             second,
-                        )?
+                        ), &resource_error)?
                         .is_some() =>
                     {
-                        let [first, second] = match section_skamp_line_pair(
+                        let [first, second] = defer_resource(section_skamp_line_pair(
                             ctx,
                             &resource_error,
                             definition,
                             sketch,
                             first,
                             second,
-                        )? { Some(value) => value, None => return Ok(None) };
+                        ), &resource_error)??;
                         SketchConstraintDefinitionInput::Collinear { first, second }
                     }
                     (9, [first, second])
                         if first.sense == 0
                             && second.sense == 0
-                            && ((section_skamp_is_line(ctx, definition, first)?
-                                && section_skamp_is_point(ctx, definition, second)?)
-                                || (section_skamp_is_point(ctx, definition, first)?
-                                    && section_skamp_is_line(ctx, definition, second)?)) =>
+                            && ((defer_resource(section_skamp_is_line(ctx, definition, first), &resource_error)?
+                                && defer_resource(section_skamp_is_point(ctx, definition, second), &resource_error)?)
+                                || (defer_resource(section_skamp_is_point(ctx, definition, first), &resource_error)?
+                                    && defer_resource(section_skamp_is_line(ctx, definition, second), &resource_error)?)) =>
                     {
-                        let (line, point) = if section_skamp_is_line(ctx, definition, first)? {
+                        let (line, point) = if defer_resource(section_skamp_is_line(ctx, definition, first), &resource_error)? {
                             (first, second)
                         } else {
                             (second, first)
                         };
                         SketchConstraintDefinitionInput::PointOnObject {
-                            point: (match section_skamp_locus(
+                            point: defer_resource(section_skamp_locus(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 point,
-                            )? { Some(value) => value, None => return Ok(None) }),
-                            entity: (match admitted_entity(ctx, sketch, line.entity_id, &resource_error) { Some(value) => value, None => return Ok(None) }),
+                            ), &resource_error)??,
+                            entity: admitted_entity(ctx, sketch, line.entity_id, &resource_error)?,
                         }
                     }
                     (kind @ (10 | 11), [item])
-                        if item.sense == 0 && section_skamp_is_arc(ctx, definition, item)? =>
+                        if item.sense == 0 && defer_resource(section_skamp_is_arc(ctx, definition, item), &resource_error)? =>
                     {
                         SketchConstraintDefinitionInput::ArcAngle {
-                            entity: (match admitted_entity(ctx, sketch, item.entity_id, &resource_error) { Some(value) => value, None => return Ok(None) }),
+                            entity: admitted_entity(ctx, sketch, item.entity_id, &resource_error)?,
                             angle: if kind == 10 {
                                 PositiveAngle::QUARTER_TURN
                             } else {
@@ -673,14 +693,14 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (kind @ (12 | 13), [item])
-                        if item.sense == 0 && section_skamp_is_arc(ctx, definition, item)? =>
+                        if item.sense == 0 && defer_resource(section_skamp_is_arc(ctx, definition, item), &resource_error)? =>
                     {
-                        let entity = match admitted_entity(ctx, sketch, item.entity_id, &resource_error) { Some(value) => value, None => return Ok(None) };
-                        let first = SketchLocus::Start(match defer_resource(
+                        let entity = admitted_entity(ctx, sketch, item.entity_id, &resource_error)?;
+                        let first = SketchLocus::Start(defer_resource(
                             entity
                                 .try_clone_for_decode(ctx, "creo skamp arc endpoint identity copy"),
                             &resource_error,
-                        ) { Some(value) => value, None => return Ok(None) });
+                        )?);
                         let second = SketchLocus::End(entity);
                         let axis = if kind == 12 {
                             SketchCoordinateAxis::V
@@ -688,10 +708,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             SketchCoordinateAxis::U
                         };
                         SketchConstraintDefinitionInput::SameCoordinate {
-                            relation: (match cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                            relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                 first, second, axis,
                             )
-                            .ok() { Some(value) => value, None => return Ok(None) }),
+                            .ok()?,
                         }
                     }
                     (37, [source, result])
@@ -701,27 +721,32 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .entity_id
                                 .checked_add(1)
                                 .is_some_and(|expected| expected == result.entity_id)
-                            && definition
-                                .trim_entities
-                                .iter()
-                                .filter(|table| table.has_unique_external_ids())
-                                .flat_map(|table| &table.rows)
-                                .any(|row| row.external_id == result.entity_id) =>
+                            && match definition.trim_entities.as_ref() {
+                                Some(table) if table.has_unique_external_ids() => defer_resource(
+                                    ctx.admit_iter(&table.rows, "creo SKAMP projected trim row search").map_err(cadmpeg_core::CodecError::from),
+                                    &resource_error,
+                                )?.any(|row| row.external_id == result.entity_id),
+                                _ => false,
+                            } =>
                     {
                         let source =
-                            match admitted_entity(ctx, sketch, source.entity_id, &resource_error) { Some(value) => value, None => return Ok(None) };
+                            admitted_entity(ctx, sketch, source.entity_id, &resource_error)?;
                         let result =
-                            match admitted_entity(ctx, sketch, result.entity_id, &resource_error) { Some(value) => value, None => return Ok(None) };
-                        let geometry_agrees = geometry.is_none_or(|geometry| {
-                            geometry
-                                .get(&source)
-                                .zip(geometry.get(&result))
-                                .is_none_or(|(source, result)| source == result)
-                        });
+                            admitted_entity(ctx, sketch, result.entity_id, &resource_error)?;
+                        let geometry_agrees = match geometry {
+                            Some(geometry) => match geometry.get(&source).zip(geometry.get(&result)) {
+                                Some((source, result)) => defer_resource(
+                                    ctx.equal(source, result, "creo SKAMP projected geometry agreement"),
+                                    &resource_error,
+                                )?,
+                                None => true,
+                            },
+                            None => true,
+                        };
                         if geometry_agrees {
                             SketchConstraintDefinitionInput::ProjectedCopy { source, result }
                         } else {
-                            match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) }
+                            native_constraint(&resource_error)?
                         }
                     }
                     (33, [item])
@@ -731,60 +756,60 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .is_some() =>
                     {
                         SketchConstraintDefinitionInput::Fixed {
-                            entity: (match admitted_entity(ctx, sketch, item.entity_id, &resource_error) { Some(value) => value, None => return Ok(None) }),
+                            entity: admitted_entity(ctx, sketch, item.entity_id, &resource_error)?,
                         }
                     }
                     (14, [axis, first, second])
                         if axis.sense == 0
-                            && section_skamp_is_line(ctx, definition, axis)?
-                            && section_skamp_point_locus(
+                            && defer_resource(section_skamp_is_line(ctx, definition, axis), &resource_error)?
+                            && defer_resource(section_skamp_point_locus(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 first,
-                            )?
+                            ), &resource_error)?
                             .is_some()
-                            && section_skamp_point_locus(
+                            && defer_resource(section_skamp_point_locus(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 second,
-                            )?
+                            ), &resource_error)?
                             .is_some() =>
                     {
                         SketchConstraintDefinitionInput::Symmetric {
-                            first: (match section_skamp_point_locus(
+                            first: defer_resource(section_skamp_point_locus(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 first,
-                            )? { Some(value) => value, None => return Ok(None) }),
-                            second: (match section_skamp_point_locus(
+                            ), &resource_error)??,
+                            second: defer_resource(section_skamp_point_locus(
                                 ctx,
                                 &resource_error,
                                 definition,
                                 sketch,
                                 second,
-                            )? { Some(value) => value, None => return Ok(None) }),
-                            axis: (match admitted_entity(ctx, sketch, axis.entity_id, &resource_error) { Some(value) => value, None => return Ok(None) }),
+                            ), &resource_error)??,
+                            axis: admitted_entity(ctx, sketch, axis.entity_id, &resource_error)?,
                         }
                     }
                     (14, [center, first, second])
-                        if point_entity(center)?.is_some()
-                            && inactive_point_locus(first)?.is_some()
-                            && inactive_point_locus(second)?.is_some() =>
+                        if point_entity(center).is_some()
+                            && inactive_point_locus(first).is_some()
+                            && inactive_point_locus(second).is_some() =>
                     {
                         SketchConstraintDefinitionInput::PointSymmetric {
-                            first: (match inactive_point_locus(first)? { Some(value) => value, None => return Ok(None) }),
-                            second: (match inactive_point_locus(second)? { Some(value) => value, None => return Ok(None) }),
-                            center: SketchLocus::Entity(match point_entity(center)? { Some(value) => value, None => return Ok(None) }),
+                            first: inactive_point_locus(first)?,
+                            second: inactive_point_locus(second)?,
+                            center: SketchLocus::Entity(point_entity(center)?),
                         }
                     }
                     (15 | 17 | 30 | 31, [_, _]) => {
-                        if let Some((first, second, axis)) = section_skamp_same_coordinate(
+                        if let Some((first, second, axis)) = defer_resource(section_skamp_same_coordinate(
                             ctx,
                             &resource_error,
                             definition,
@@ -792,18 +817,18 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             skamp,
                             active,
                             resolved_points.as_ref(),
-                        )? {
+                        ), &resource_error)? {
                             SketchConstraintDefinitionInput::SameCoordinate {
-                                relation: (match cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                     first, second, axis,
                                 )
-                                .ok() { Some(value) => value, None => return Ok(None) }),
+                                .ok()?,
                             }
                         } else if !active {
                             match skamp.items.as_slice() {
                                 [first, second] => match (
-                                    inactive_point_locus(first)?,
-                                    inactive_point_locus(second)?,
+                                    inactive_point_locus(first),
+                                    inactive_point_locus(second),
                                     section_skamp_same_coordinate_axis(skamp),
                                 ) {
                                     (Some(first), Some(second), Some(axis)) => {
@@ -818,19 +843,19 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                                     relation,
                                                 }
                                             }
-                                            Err(_) => match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) },
+                                            Err(_) => native_constraint(&resource_error)?,
                                         }
                                     }
-                                    _ => match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) },
+                                    _ => native_constraint(&resource_error)?,
                                 },
-                                _ => match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) },
+                                _ => native_constraint(&resource_error)?,
                             }
                         } else {
-                            match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) }
+                            native_constraint(&resource_error)?
                         }
                     }
                     (35, [first, second]) => {
-                        if let Some((point, entity)) = section_skamp_midpoint(
+                        if let Some((point, entity)) = defer_resource(section_skamp_midpoint(
                             ctx,
                             &resource_error,
                             definition,
@@ -838,55 +863,61 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             first,
                             second,
                             geometry,
-                        )? {
+                        ), &resource_error)? {
                             SketchConstraintDefinitionInput::Midpoint { point, entity }
                         } else {
-                            match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) }
+                            native_constraint(&resource_error)?
                         }
                     }
-                    _ => match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) },
+                    _ => native_constraint(&resource_error)?,
                 }
             } else {
-                match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) }
+                native_constraint(&resource_error)?
             };
-            if geometry.is_some_and(|geometry| {
-                !sketch_constraint_loci_compatible_with_policy(
-                    &constraint_definition,
-                    geometry,
-                    !active,
-                )
-            }) {
-                constraint_definition = match native_constraint(&resource_error) { Some(value) => value, None => return Ok(None) };
+            let incompatible = match geometry {
+                Some(geometry) => !defer_resource(
+                    sketch_constraint_loci_compatible_with_policy(
+                        ctx,
+                        &constraint_definition,
+                        geometry,
+                        !active,
+                    ),
+                    &resource_error,
+                )?,
+                None => false,
+            };
+            if incompatible {
+                constraint_definition = native_constraint(&resource_error)?;
             }
-            Ok(Some((
+            Some((
                 SketchConstraint {
                     id: if unique_skamp_id {
-                        match match defer_resource(
+                        defer_resource(
                             sketch_constraint_id_admitted(
                                 ctx,
                                 sketch,
                                 format_args!("skamp:{}", skamp.id),
                             ),
                             &resource_error,
-                        ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) }
+                        )??
                     } else {
-                        match match defer_resource(
+                        defer_resource(
                             sketch_constraint_id_admitted(
                                 ctx,
                                 sketch,
                                 format_args!("skamp:offset:{}", skamp.offset),
                             ),
                             &resource_error,
-                        ) { Some(value) => value, None => return Ok(None) } { Some(value) => value, None => return Ok(None) }
+                        )??
                     },
-                    sketch: (match defer_resource(
+                    sketch: defer_resource(
                         sketch.try_clone_for_decode(ctx, "creo skamp constraint sketch identity"),
                         &resource_error,
-                    ) { Some(value) => value, None => return Ok(None) }),
-                    definition: (match cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                    )?,
+                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                         constraint_definition,
                     )
-                    .ok() { Some(value) => value, None => return Ok(None) }),
+                    .ok()?,
                     name: None,
                     driving: None,
                     active: Some(active),
@@ -896,14 +927,14 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     label_distance: None,
                     label_position: None,
                     metadata: None,
-                    native_ref: Some(match defer_resource(
+                    native_ref: Some(defer_resource(
                         sketch_native_ref_admitted(ctx, sketch),
                         &resource_error,
-                    ) { Some(value) => value, None => return Ok(None) }),
+                    )?),
                 },
                 skamp.offset,
-            )))
-        })()?;
+            ))
+        })();
         if let Some(error) = resource_error.into_inner() {
             return Err(error);
         }
@@ -917,17 +948,19 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
 
 #[cfg(test)]
 pub(in super::super) fn sketch_constraint_loci_compatible(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &SketchConstraintDefinitionInput,
     geometry: &BTreeMap<SketchEntityId, SketchGeometry>,
-) -> bool {
-    sketch_constraint_loci_compatible_with_policy(definition, geometry, false)
+) -> Result<bool, cadmpeg_core::CodecError> {
+    sketch_constraint_loci_compatible_with_policy(ctx, definition, geometry, false)
 }
 
 fn sketch_constraint_loci_compatible_with_policy(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &SketchConstraintDefinitionInput,
     geometry: &BTreeMap<SketchEntityId, SketchGeometry>,
     allow_unknown_native_endpoints: bool,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let native_line_center_allowed = matches!(
         definition,
         SketchConstraintDefinitionInput::Midpoint {
@@ -979,7 +1012,7 @@ fn sketch_constraint_loci_compatible_with_policy(
         SketchConstraintDefinitionInput::CoincidentLoci { loci }
         | SketchConstraintDefinitionInput::Group { elements: loci }
         | SketchConstraintDefinitionInput::Text { elements: loci, .. } => {
-            loci.iter().all(locus_compatible)
+            ctx.admit_iter(loci, "creo SKAMP compatible locus traversal")?.all(locus_compatible)
         }
         SketchConstraintDefinitionInput::SameCoordinate { relation } => {
             locus_compatible(relation.first()) && locus_compatible(relation.second())
@@ -1052,14 +1085,14 @@ fn sketch_constraint_loci_compatible_with_policy(
         _ => true,
     };
     // A relation whose entity kind the IR refuses retains its native form.
-    loci_compatible
+    Ok(loci_compatible
         && definition
             .entity_kind_restriction()
             .is_none_or(|(entity, restriction)| {
                 geometry
                     .get(entity)
                     .is_some_and(|geometry| restriction.admits(geometry.definition()))
-            })
+            }))
 }
 
 #[cfg(test)]
@@ -1125,6 +1158,51 @@ mod tests {
             saved_section: None,
             offset: 0,
         }
+    }
+
+    #[test]
+    fn skamp_constraint_scan_refuses_before_coordinate_search() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let definition = make_definition(false);
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1").expect("sketch");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = super::section_skamp_constraints_for_geometry(&ctx, &definition, &sketch, None)
+            .expect_err("row search requires work");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo SKAMP coordinate requirement search"));
+    }
+
+    #[test]
+    fn skamp_locus_compatibility_refuses_before_geometry_lookup() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let entity = SketchEntityId::mint("creo:test:entity#1").expect("entity");
+        let definition = SketchConstraintDefinitionInput::CoincidentLoci {
+            loci: vec![SketchLocus::Entity(entity.clone())],
+        };
+        let geometry = BTreeMap::from([(
+            entity,
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(0.0, 0.0),
+            }).expect("point geometry"),
+        )]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = sketch_constraint_loci_compatible_with_policy(&ctx, &definition, &geometry, false)
+            .expect_err("locus traversal requires work");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo SKAMP compatible locus traversal"));
+        assert!(crate::decode::with_test_decode_ctx(|ctx|
+            sketch_constraint_loci_compatible_with_policy(ctx, &definition, &geometry, false)
+        ).expect("service locus traversal admitted"));
     }
 
     #[test]
@@ -1195,7 +1273,7 @@ mod tests {
             .expect("valid sketch identity");
         let arena = DecodeArena::new();
         let entity =
-            crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch_ids::sketch_entity_id(ctx, &sketch, 7)).expect("test identity scope resources").expect("valid entity identity");
+            crate::decode::sketch_ids::sketch_entity_id(&sketch, 7).expect("valid entity identity");
         let geometry = BTreeMap::from([(
             entity,
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -1317,7 +1395,7 @@ mod tests {
         let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1")
             .expect("valid sketch identity");
         let entity =
-            crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch_ids::sketch_entity_id(ctx, &sketch, 7)).expect("test identity scope resources").expect("valid entity identity");
+            crate::decode::sketch_ids::sketch_entity_id(&sketch, 7).expect("valid entity identity");
         let mut geometry = BTreeMap::from([(
             entity,
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -1408,7 +1486,7 @@ mod tests {
                 sense: 0,
             });
         let second_entity =
-            crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch_ids::sketch_entity_id(ctx, &sketch, 8)).expect("test identity scope resources").expect("valid entity identity");
+            crate::decode::sketch_ids::sketch_entity_id(&sketch, 8).expect("valid entity identity");
         geometry.insert(
             second_entity,
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -1501,7 +1579,7 @@ mod tests {
         };
         let geometry = BTreeMap::from([7, 8].map(|external_id| {
             (
-                crate::decode::with_test_decode_ctx(|ctx| crate::decode::sketch_ids::sketch_entity_id(ctx, &sketch, external_id)).expect("test identity scope resources").expect("entity"),
+                crate::decode::sketch_ids::sketch_entity_id(&sketch, external_id).expect("entity"),
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(f64::from(external_id), 0.0),
                 })
@@ -1574,17 +1652,17 @@ mod tests {
             second: SketchLocus::Entity(second.clone()),
             axis: axis.clone(),
         };
-        assert!(!sketch_constraint_loci_compatible_with_policy(
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible_with_policy(ctx,
             &symmetry, &geometry, false,
-        ));
+        )).expect("service locus compatibility admitted"));
 
         let projected = SketchConstraintDefinitionInput::ProjectedCopy {
             source: first.clone(),
             result: axis.clone(),
         };
-        assert!(!sketch_constraint_loci_compatible_with_policy(
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible_with_policy(ctx,
             &projected, &geometry, false,
-        ));
+        )).expect("service locus compatibility admitted"));
 
         let mut complete = geometry;
         complete.insert(
@@ -1595,12 +1673,12 @@ mod tests {
             })
             .expect("valid test fixture"),
         );
-        assert!(sketch_constraint_loci_compatible_with_policy(
+        assert!(crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible_with_policy(ctx,
             &symmetry, &complete, false,
-        ));
-        assert!(sketch_constraint_loci_compatible_with_policy(
+        )).expect("service locus compatibility admitted"));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible_with_policy(ctx,
             &projected, &complete, false,
-        ));
+        )).expect("service locus compatibility admitted"));
     }
 
     #[test]
@@ -1697,7 +1775,7 @@ mod tests {
                 .zip(admitted)
             {
                 let compatible =
-                    sketch_constraint_loci_compatible_with_policy(relation, geometry, false);
+                    crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible_with_policy(ctx, relation, geometry, false)).expect("service locus compatibility admitted");
                 assert_eq!(compatible, admitted, "{relation:?} on {geometry:?}");
                 let (restricted, restriction) = relation
                     .entity_kind_restriction()

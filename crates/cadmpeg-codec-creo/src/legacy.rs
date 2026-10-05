@@ -21,8 +21,7 @@ pub(crate) fn value_index<'a, K: LegacyCode>(
     for record in records {
         if let Some(parent) = record.parent {
             let key = (parent, record.name.as_str());
-            ctx.admit_btree_entry(index, &key, "creo legacy value index nodes")?;
-            match index.entry(key) {
+            match ctx.entry_btree_map(index, key, "creo legacy value index nodes")? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     let mut values = Vec::new();
                     ctx.reserve_vec(&mut values, 1, "creo legacy value index rows")?;
@@ -1188,12 +1187,7 @@ fn object_records(
                         matches!(declaration.type_code, LegacyTypeCode::Object)
                     })
             {
-                ctx.admit_btree_entry(
-                    &direct_array_elements,
-                    &parent_offset,
-                    "creo legacy object array index nodes",
-                )?;
-                match direct_array_elements.entry(parent_offset) {
+                match ctx.entry_btree_map(&mut direct_array_elements, parent_offset, "creo legacy object array index nodes")? {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         let mut elements = Vec::new();
                         ctx.reserve_vec(&mut elements, 1, "creo legacy object array index rows")?;
@@ -1371,12 +1365,7 @@ fn string_records(
                     .map(|(offset, _)| *offset)
             });
             if let Some(parent_offset) = array_parent {
-                ctx.admit_btree_entry(
-                    &array_children,
-                    &parent_offset,
-                    "creo legacy string array child nodes",
-                )?;
-                match array_children.entry(parent_offset) {
+                match ctx.entry_btree_map(&mut array_children, parent_offset, "creo legacy string array child nodes")? {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         let mut children = Vec::new();
                         ctx.reserve_vec(&mut children, 1, "creo legacy string array child rows")?;

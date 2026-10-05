@@ -71,8 +71,7 @@ impl<'a> Index<'a> {
                 object.offset,
                 "creo legacy feature object index IDs",
             )?;
-            ctx.admit_btree_entry(&objects, &id, "creo legacy feature object index nodes")?;
-            match objects.entry(id) {
+            match ctx.entry_btree_map(&mut objects, id, "creo legacy feature object index nodes")? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(object);
                 }
@@ -80,8 +79,7 @@ impl<'a> Index<'a> {
             }
             if let Some(parent) = object.parent {
                 let key = (parent, object.name.as_str());
-                ctx.admit_btree_entry(&children, &key, "creo legacy feature child index nodes")?;
-                match children.entry(key) {
+                match ctx.entry_btree_map(&mut children, key, "creo legacy feature child index nodes")? {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         let mut rows = Vec::new();
                         ctx.reserve_vec(&mut rows, 1, "creo legacy feature child index rows")?;
@@ -191,8 +189,7 @@ pub(crate) fn scan(
             edge_ids: unique_feature_edge_ids(ctx, topology_rows, feature_id)?,
             offset: feature.offset,
         };
-        ctx.admit_btree_entry(&rounds, &feature_id, "creo legacy round index nodes")?;
-        match rounds.entry(feature_id) {
+        match ctx.entry_btree_map(&mut rounds, feature_id, "creo legacy round index nodes")? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(round);
             }

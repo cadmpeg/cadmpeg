@@ -495,7 +495,6 @@ fn connected_profile_vertices_refuse_each_collection_boundary() {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
         let error = super::connected_sketch_profile_vertices(&ctx, &ir, &carriers, &sketch_id)
-            .map(std::iter::Iterator::collect::<Vec<_>>)
             .expect_err("collection limit refuses profile vertices");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -506,7 +505,6 @@ fn connected_profile_vertices_refuse_each_collection_boundary() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
-                .map(std::iter::Iterator::collect::<Vec<_>>)
         })
         .expect("service profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
@@ -549,8 +547,7 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(
             ctx, &ir, &carriers, &sketch_id
-        )
-        .map(std::iter::Iterator::collect::<Vec<_>>))
+        ))
         .expect("service profile vertices"),
         vec![(0, vec![[3.0, 0.0]])]
     );
@@ -712,8 +709,7 @@ fn profile_joins_reject_duplicate_sketch_ids() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
-        )
-        .map(std::iter::Iterator::collect::<Vec<_>>))
+        ))
         .expect("service profile vertices")
         .is_empty()
     );
@@ -748,8 +744,7 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
-        )
-        .map(std::iter::Iterator::collect::<Vec<_>>))
+        ))
         .expect("service profile vertices")
         .is_empty()
     );

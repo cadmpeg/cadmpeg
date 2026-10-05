@@ -2,6 +2,7 @@
 //! Section geometry conversion from live and saved section entities.
 
 use super::axis::SectionAxis;
+use crate::feature::segment_rows::SegmentRow;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -18,9 +19,10 @@ use super::radii::trim_segment_id;
 use super::skamp::section_line_entity_fixed_coordinate;
 use crate::decode::sketch_transfer::identity::{
     saved_section_internal_id_is_unique, saved_section_ordinary_geometry_allowed,
-    semantic_saved_section_entities,
+    visit_semantic_saved_section_entities,
 };
 use crate::decode::sketch_transfer::loci::section_saved_entity;
+use std::ops::ControlFlow;
 
 const EPS_POINT_NONZERO: f64 = 1.0e-12;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
@@ -72,17 +74,29 @@ pub(in crate::decode) fn section_point_geometry(
 }
 
 pub(in crate::decode) fn section_arc_geometry(
+    ctx: &DecodeContext<'_>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SketchGeometry> {
-    (matches!(
+) -> Result<Option<SketchGeometry>, CodecError> {
+    if !matches!(
         segment.kind,
         crate::feature::definitions::FeatureSegmentKind::Arc(_)
-    ) && segment.arc_orientation == Some(0))
-    .then_some(())?;
-    let center = points.get(&segment.center_id?)?;
-    let first = points.get(&segment.point_ids()[0])?;
-    let second = points.get(&segment.point_ids()[1])?;
+    ) || segment.arc_orientation != Some(0)
+    {
+        return Ok(None);
+    }
+    let Some(center_id) = segment.center_id else {
+        return Ok(None);
+    };
+    let Some(center) = points.get(&center_id) else {
+        return Ok(None);
+    };
+    let Some(first) = points.get(&segment.point_ids()[0]) else {
+        return Ok(None);
+    };
+    let Some(second) = points.get(&segment.point_ids()[1]) else {
+        return Ok(None);
+    };
     let offset = |point: &[f64; 2]| [point[0] - center[0], point[1] - center[1]];
     let first_offset = offset(first);
     let second_offset = offset(second);
@@ -94,20 +108,30 @@ pub(in crate::decode) fn section_arc_geometry(
         || first_radius <= EPS_POINT_NONZERO
         || (first_radius - second_radius).abs() > EPS_RADIUS_AGREEMENT * scale
     {
-        return None;
+        return Ok(None);
     }
     let start = second_offset[1].atan2(second_offset[0]);
     let mut end = first_offset[1].atan2(first_offset[0]);
     while end <= start {
+        ctx.charge_work(1, "creo section arc angle normalization")?;
         end += std::f64::consts::TAU;
     }
-    SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+    let Some(radius) = Length::new(first_radius) else {
+        return Ok(None);
+    };
+    let Some(start_angle) = Angle::new(start) else {
+        return Ok(None);
+    };
+    let Some(end_angle) = Angle::new(end) else {
+        return Ok(None);
+    };
+    Ok(SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(center[0], center[1]),
-        radius: Length::new(first_radius)?,
-        start_angle: Angle::new(start)?,
-        end_angle: Angle::new(end)?,
+        radius,
+        start_angle,
+        end_angle,
     })
-    .ok()
+    .ok())
 }
 
 pub(in crate::decode) fn section_circle_geometry(
@@ -228,95 +252,206 @@ pub(in crate::decode) fn resolved_section_reference_line_geometry(
 }
 
 pub(in crate::decode) fn section_segment_geometry(
+    ctx: &DecodeContext<'_>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SketchGeometry> {
-    section_line_geometry(points, segment)
-        .or_else(|| section_arc_geometry(points, segment))
-        .or_else(|| section_point_geometry(points, segment))
+) -> Result<Option<SketchGeometry>, CodecError> {
+    if let Some(geometry) = section_line_geometry(points, segment) {
+        return Ok(Some(geometry));
+    }
+    if let Some(geometry) = section_arc_geometry(ctx, points, segment)? {
+        return Ok(Some(geometry));
+    }
+    Ok(section_point_geometry(points, segment))
 }
 
 pub(in crate::decode) fn saved_section_line_geometry(
-    ctx: &DecodeContext<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Result<Option<SketchGeometry>, CodecError> {
-    let Some(order_table) = (|| {
-        matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Line(_)).then_some(())?;
-        saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
-        definition.order_table.as_ref()
-    })() else { return Ok(None); };
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+    if !matches!(
+        segment.kind,
+        crate::feature::definitions::FeatureSegmentKind::Line(_)
+    ) || !saved_section_ordinary_geometry_allowed(definition, segment) {
+        return Ok(None);
+    }
+    let Some(order_table) = definition.order_table.as_ref() else {
+        return Ok(None);
+    };
     let mut internal_id = order_table.internal_id(ctx, segment.external_id)?;
     if internal_id.is_none() {
-        let interpolation = (|| {
-            let segment_table = definition.segments.as_ref()?;
-            segment_table.is_complete().then_some(())?;
-            let position = segment_table.rows.ordinary().position(|candidate| candidate.external_id == segment.external_id)?;
-            Some((segment_table, position))
-        })();
-        if let Some((segment_table, position)) = interpolation {
-            let mut previous = None;
-            for candidate in segment_table.rows.ordinary().take(position) {
-                if let Some(id) = order_table.internal_id(ctx, candidate.external_id)? { previous = Some(id); }
+        if let Some(segment_table) = definition
+            .segments
+            .as_ref()
+            .filter(|table| table.is_complete())
+        {
+            let rows = segment_table.rows.as_slice();
+            if let Some(position) = ctx.position_by(
+                rows,
+                |row| {
+                    Ok(matches!(
+                        row,
+                        SegmentRow::Ordinary(candidate)
+                            if candidate.external_id == segment.external_id
+                    ))
+                },
+                "creo saved line segment position rows",
+            )? {
+                let mut previous = None;
+                for row in ctx.admit_iter(&rows[..position], "creo saved line previous segment rows")? {
+                    if let SegmentRow::Ordinary(candidate) = row {
+                        if let Some(id) = order_table.internal_id(ctx, candidate.external_id)? {
+                            previous = Some(id);
+                        }
+                    }
+                }
+                if let Some(previous) = previous {
+                    let next = ctx.find_map(
+                        &rows[position + 1..],
+                        |row| match row {
+                            SegmentRow::Ordinary(candidate) => {
+                                order_table.internal_id(ctx, candidate.external_id)
+                            }
+                            _ => Ok(None),
+                        },
+                        "creo saved line next segment rows",
+                    )?;
+                    if let Some(next) = next {
+                        if let Some(candidate_id) = previous.checked_add(1) {
+                            if candidate_id.checked_add(1) == Some(next) {
+                                let mut matching_line = false;
+                                let outcome = visit_semantic_saved_section_entities::<()>(
+                                    ctx,
+                                    definition,
+                                    |entity| {
+                                        if matches!(entity, crate::feature::definitions::FeatureSavedEntity::Line(line) if line.entity_id == candidate_id) {
+                                            matching_line = true;
+                                            return Ok(ControlFlow::Break(()));
+                                        }
+                                        Ok(ControlFlow::Continue(()))
+                                    },
+                                )?;
+                                if matching_line && matches!(outcome, ControlFlow::Break(())) {
+                                    internal_id = Some(candidate_id);
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            let mut next = None;
-            for candidate in segment_table.rows.ordinary().skip(position + 1) {
-                if let Some(id) = order_table.internal_id(ctx, candidate.external_id)? { next = Some(id); break; }
-            }
-            internal_id = (|| {
-                let internal_id = previous?.checked_add(1)?;
-                (next? == internal_id.checked_add(1)? && semantic_saved_section_entities(definition).any(|entity| {
-                    matches!(entity, crate::feature::definitions::FeatureSavedEntity::Line(line) if line.entity_id == internal_id)
-                })).then_some(internal_id)
-            })();
         }
     }
-    let internal_id = internal_id
-        .or_else(|| {
-            order_table.is_complete().then_some(())?;
-            let trimmed = definition.trim_entities.as_ref()?;
-            (trimmed.has_complete_bucket_frame() && trimmed.has_unique_external_ids())
-                .then_some(())?;
-            let segment_table = definition.segments.as_ref()?;
-            segment_table.is_complete().then_some(())?;
-            let external_id = crate::decode::uniqueness::exactly_one(segment_table.rows.ordinary()
-                .filter(|candidate| {
-                    matches!(candidate.kind, crate::feature::definitions::FeatureSegmentKind::Line(_))
-                        && trimmed.rows.iter().filter_map(|row| trim_segment_id(definition, row))
-                            .any(|id| id == candidate.external_id)
-                        && !order_table.rows.iter().any(|row| row.external_id == candidate.external_id)
-                })
-                .map(|candidate| candidate.external_id))?;
-            let internal_id = crate::decode::uniqueness::exactly_one(semantic_saved_section_entities(definition)
-                .filter_map(|entity| match entity {
-                    crate::feature::definitions::FeatureSavedEntity::Line(line)
-                        if !order_table.rows.iter().any(|row| row.internal_id == line.entity_id) =>
-                    {
-                        Some(line.entity_id)
-                    }
+    if internal_id.is_none() && order_table.is_complete() {
+        if let (Some(trimmed), Some(segment_table)) = (
+            definition
+                .trim_entities
+                .as_ref()
+                .filter(|table| table.has_complete_bucket_frame() && table.has_unique_external_ids()),
+            definition.segments.as_ref().filter(|table| table.is_complete()),
+        ) {
+            let mut matching_external_id = None;
+            let mut multiple_matching_external_ids = false;
+            for candidate in ctx
+                .admit_iter(
+                    segment_table.rows.as_slice(),
+                    "creo saved line candidate segment rows",
+                )?
+                .filter_map(|row| match row {
+                    SegmentRow::Ordinary(segment) => Some(segment),
                     _ => None,
-                }))?;
-            (external_id == segment.external_id).then_some(internal_id)
-        });
-    Ok((|| {
-    let internal_id = internal_id?;
-    saved_section_internal_id_is_unique(definition, internal_id).then_some(())?;
-    let line = semantic_saved_section_entities(definition).find_map(|entity| match entity {
-        crate::feature::definitions::FeatureSavedEntity::Line(line)
-            if line.entity_id == internal_id =>
-        {
-            Some(line)
+                })
+            {
+                if !matches!(
+                    candidate.kind,
+                    crate::feature::definitions::FeatureSegmentKind::Line(_)
+                ) {
+                    continue;
+                }
+                let is_trimmed = ctx.any_by(
+                    &trimmed.rows,
+                    |row| Ok(trim_segment_id(ctx, definition, row)? == Some(candidate.external_id)),
+                    "creo saved line trim rows",
+                )?;
+                if !is_trimmed {
+                    continue;
+                }
+                let already_ordered = ctx
+                    .admit_iter(&order_table.rows, "creo saved line order rows")?
+                    .any(|row| row.external_id == candidate.external_id);
+                if !already_ordered {
+                    if matching_external_id.is_some() {
+                        multiple_matching_external_ids = true;
+                        break;
+                    }
+                    matching_external_id = Some(candidate.external_id);
+                }
+            }
+            let matching_external_id = if multiple_matching_external_ids {
+                None
+            } else {
+                matching_external_id
+            };
+            if let Some(external_id) = matching_external_id {
+                let mut candidate_internal_id = None;
+                let outcome = visit_semantic_saved_section_entities::<()>(
+                    ctx,
+                    definition,
+                    |entity| {
+                        let crate::feature::definitions::FeatureSavedEntity::Line(line) = entity
+                        else {
+                            return Ok(ControlFlow::Continue(()));
+                        };
+                        let already_ordered = ctx
+                            .admit_iter(&order_table.rows, "creo saved line order rows")?
+                            .any(|row| row.internal_id == line.entity_id);
+                        if !already_ordered {
+                            if candidate_internal_id.is_some() {
+                                return Ok(ControlFlow::Break(()));
+                            }
+                            candidate_internal_id = Some(line.entity_id);
+                        }
+                        Ok(ControlFlow::Continue(()))
+                    },
+                )?;
+                if external_id == segment.external_id
+                    && matches!(outcome, ControlFlow::Continue(()))
+                {
+                    internal_id = candidate_internal_id;
+                }
+            }
         }
-        _ => None,
-    })?;
-    let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints else {
-        return None;
+    }
+    let Some(internal_id) = internal_id else {
+        return Ok(None);
     };
-    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+    if !saved_section_internal_id_is_unique(ctx, definition, internal_id)? {
+        return Ok(None);
+    }
+    let mut matching_line = None;
+    let outcome = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+        if let crate::feature::definitions::FeatureSavedEntity::Line(line) = entity {
+            if line.entity_id == internal_id {
+                matching_line = Some(line);
+                return Ok(ControlFlow::Break(()));
+            }
+        }
+        Ok(ControlFlow::Continue(()))
+    })?;
+    let ControlFlow::Break(()) = outcome else {
+        return Ok(None);
+    };
+    let Some(line) = matching_line else {
+        return Ok(None);
+    };
+    let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints else {
+        return Ok(None);
+    };
+    Ok(SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(start_u, start_v),
         end: cadmpeg_ir::math::Point2::new(end_u, end_v),
     })
-    .ok()    })())
+    .ok())
 }
 
 pub(super) fn saved_section_arc_record<'a>(
@@ -324,23 +459,39 @@ pub(super) fn saved_section_arc_record<'a>(
     definition: &'a crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<&'a crate::feature::definitions::FeatureSavedArc>, CodecError> {
-    let Some(order) = (|| {
-        (matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Arc(_)) && segment.arc_orientation == Some(0)).then_some(())?;
-        saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
-        definition.order_table.as_ref()
-    })() else { return Ok(None); };
-    let Some(internal_id) = order.internal_id(ctx, segment.external_id)? else { return Ok(None); };
-    Ok((|| {
-    saved_section_internal_id_is_unique(definition, internal_id).then_some(())?;
-    semantic_saved_section_entities(definition).find_map(|entity| match entity {
-        crate::feature::definitions::FeatureSavedEntity::Arc(arc)
-            if arc.entity_id == internal_id =>
-        {
-            Some(arc)
+    if !matches!(
+        segment.kind,
+        crate::feature::definitions::FeatureSegmentKind::Arc(_)
+    ) || segment.arc_orientation != Some(0)
+    {
+        return Ok(None);
+    }
+    if !saved_section_ordinary_geometry_allowed(definition, segment) {
+        return Ok(None);
+    }
+    let Some(order) = definition.order_table.as_ref() else {
+        return Ok(None);
+    };
+    let Some(internal_id) = order.internal_id(ctx, segment.external_id)? else {
+        return Ok(None);
+    };
+    if !saved_section_internal_id_is_unique(ctx, definition, internal_id)? {
+        return Ok(None);
+    }
+    let outcome = visit_semantic_saved_section_entities(ctx, definition, |entity| {
+        match entity {
+            crate::feature::definitions::FeatureSavedEntity::Arc(arc)
+                if arc.entity_id == internal_id =>
+            {
+                Ok(ControlFlow::Break(arc))
+            }
+            _ => Ok(ControlFlow::Continue(())),
         }
-        _ => None,
+    })?;
+    Ok(match outcome {
+        ControlFlow::Break(arc) => Some(arc),
+        ControlFlow::Continue(()) => None,
     })
-    })())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -368,18 +519,19 @@ pub(in crate::decode) fn saved_section_arc_carrier(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SectionArcCarrier>, CodecError> {
-    let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else { return Ok(None); };
-    Ok((|| {
+    let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else {
+        return Ok(None);
+    };
     let [center_u, center_v, _] = arc.center;
     if let ([Some(center_u), Some(center_v)], Some(radius)) = (
         [center_u, center_v],
         arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
     ) {
-        return SectionArcCarrier::new([center_u, center_v], radius);
+        return Ok(SectionArcCarrier::new([center_u, center_v], radius));
     }
     let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
     else {
-        return None;
+        return Ok(None);
     };
     let scale = [first_u, first_v, second_u, second_v]
         .into_iter()
@@ -390,7 +542,7 @@ pub(in crate::decode) fn saved_section_arc_carrier(
         [Some(u), None] => {
             let denominator = 2.0 * (second_v - first_v);
             if denominator.abs() <= EPS_DENOMINATOR_NONZERO * scale {
-                return None;
+                return Ok(None);
             }
             let v = ((second_u - u).mul_add(
                 second_u - u,
@@ -401,7 +553,7 @@ pub(in crate::decode) fn saved_section_arc_carrier(
         [None, Some(v)] => {
             let denominator = 2.0 * (second_u - first_u);
             if denominator.abs() <= EPS_DENOMINATOR_NONZERO * scale {
-                return None;
+                return Ok(None);
             }
             let u = ((second_v - v).mul_add(
                 second_v - v,
@@ -409,7 +561,7 @@ pub(in crate::decode) fn saved_section_arc_carrier(
             )) / denominator;
             [u, v]
         }
-        [None, None] => return None,
+        [None, None] => return Ok(None),
     };
     let first_radius = (first_u - center_u).hypot(first_v - center_v);
     let second_radius = (second_u - center_u).hypot(second_v - center_v);
@@ -422,11 +574,10 @@ pub(in crate::decode) fn saved_section_arc_carrier(
             (stored - first_radius).abs() > EPS_RADIUS_AGREEMENT * stored.max(first_radius)
         })
     {
-        return None;
+        return Ok(None);
     }
     let radius = arc.radius.unwrap_or(first_radius);
-    SectionArcCarrier::new([center_u, center_v], radius)
-    })())
+    Ok(SectionArcCarrier::new([center_u, center_v], radius))
 }
 
 /// The arc facts recovered from a saved-section row.
@@ -455,13 +606,16 @@ pub(in crate::decode) fn saved_section_arc(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SavedSectionArc>, CodecError> {
-    let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else { return Ok(None); };
-    let Some(carrier) = saved_section_arc_carrier(ctx, definition, segment)? else { return Ok(None); };
-    Ok((|| {
+    let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else {
+        return Ok(None);
+    };
+    let Some(carrier) = saved_section_arc_carrier(ctx, definition, segment)? else {
+        return Ok(None);
+    };
     let ([center_u, center_v], radius) = carrier.raw();
     let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
     else {
-        return None;
+        return Ok(None);
     };
     let first = [first_u - center_u, first_v - center_v];
     let second = [second_u - center_u, second_v - center_v];
@@ -473,31 +627,41 @@ pub(in crate::decode) fn saved_section_arc(
         || (first_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
         || (second_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
     {
-        return None;
+        return Ok(None);
     }
     let start = second[1].atan2(second[0]);
     let mut end = first[1].atan2(first[0]);
     while end <= start {
+        ctx.charge_work(1, "creo saved section arc angle normalization")?;
         end += std::f64::consts::TAU;
     }
-    Some(SavedSectionArc {
+    let Some(start_angle) = Angle::new(start) else {
+        return Ok(None);
+    };
+    let Some(end_angle) = Angle::new(end) else {
+        return Ok(None);
+    };
+    Ok(Some(SavedSectionArc {
         center: carrier.center,
         radius: carrier.radius,
-        start_angle: Angle::new(start)?,
-        end_angle: Angle::new(end)?,
-    })
-    })())
+        start_angle,
+        end_angle,
+    }))
 }
 
 pub(in crate::decode) fn saved_section_segment_point_coordinates(
     ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Result<Option<impl Iterator<Item = (u32, [f64; 2])>>, CodecError> {
+) -> Result<Option<[Option<(u32, [f64; 2])>; 3]>, CodecError> {
     let coordinates = match segment.kind {
         crate::feature::definitions::FeatureSegmentKind::Line(_) => {
-            let Some(geometry) = saved_section_line_geometry(ctx, definition, segment)? else { return Ok(None); };
-            let Some([start, end]) = saved_geometry_endpoints(&geometry) else { return Ok(None); };
+            let Some(geometry) = saved_section_line_geometry(ctx, definition, segment)? else {
+                return Ok(None);
+            };
+            let Some([start, end]) = saved_geometry_endpoints(&geometry) else {
+                return Ok(None);
+            };
             Some([
                 Some((segment.point_ids()[0], start)),
                 Some((segment.point_ids()[1], end)),
@@ -505,46 +669,173 @@ pub(in crate::decode) fn saved_section_segment_point_coordinates(
             ])
         }
         crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
-            let Some(saved_arc) = saved_section_arc(ctx, definition, segment)? else { return Ok(None); };
-            let center = *saved_arc.center.as_raw();
-            let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else { return Ok(None); };
+            let Some(arc) = saved_section_arc(ctx, definition, segment)? else {
+                return Ok(None);
+            };
+            let center = *arc.center.as_raw();
+            let Some(arc) = saved_section_arc_record(ctx, definition, segment)? else {
+                return Ok(None);
+            };
             let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
                 arc.endpoints
             else {
                 return Ok(None);
             };
-            let Some(center_id) = segment.center_id else { return Ok(None); };
             Some([
                 Some((segment.point_ids()[0], [first_u, first_v])),
                 Some((segment.point_ids()[1], [second_u, second_v])),
-                Some((center_id, [center.u, center.v])),
+                Some((match segment.center_id {
+                    Some(center_id) => center_id,
+                    None => return Ok(None),
+                }, [center.u, center.v])),
             ])
         }
         crate::feature::definitions::FeatureSegmentKind::Point(_) => None,
     };
-    Ok(coordinates.map(|points| points.into_iter().flatten()))
+    Ok(coordinates)
 }
 
 pub(in crate::decode) fn saved_section_circle_values(
-    ctx: &DecodeContext<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureCircleSegment,
-) -> Result<Option<([f64; 2], f64)>, CodecError> {
-    if definition.segments.as_ref().and_then(|segments| segments.rows.get(segment.external_id)).is_none() { return Ok(None); }
-    let Some(entity) = section_saved_entity(ctx, definition, segment.external_id)? else { return Ok(None); };
-    Ok((|| {
-    let (_, geometry, _) = saved_section_entity_geometry(entity)?;
-    let SketchGeometryDefinition::Circle { center, radius } = geometry.definition() else {
-        return None;
+) -> Result<Option<([f64; 2], f64)>, cadmpeg_core::CodecError> {
+    let Some(segments) = definition.segments.as_ref() else {
+        return Ok(None);
     };
-    Some(([center.u, center.v], radius.get()))
-    })())
+    let Some(_) = segments.rows.get(segment.external_id) else {
+        return Ok(None);
+    };
+    let Some(entity) = section_saved_entity(ctx, definition, segment.external_id)? else {
+        return Ok(None);
+    };
+    let Some((_, geometry, _)) = saved_section_entity_geometry(ctx, entity)? else {
+        return Ok(None);
+    };
+    let SketchGeometryDefinition::Circle { center, radius } = geometry.definition() else {
+        return Ok(None);
+    };
+    Ok(Some(([center.u, center.v], radius.get())))
 }
 
 pub(in crate::decode) fn saved_section_entity_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &crate::feature::definitions::FeatureSavedEntity,
-) -> Option<(u32, SketchGeometry, usize)> {
-    match entity {
+) -> Result<Option<(u32, SketchGeometry, usize)>, cadmpeg_core::CodecError> {
+    let conic_facts =
+        if let crate::feature::definitions::FeatureSavedEntity::Conic(conic) = entity {
+            let (Some(frame), [Some(first_radius), Some(second_radius)]) =
+                (conic.local_system, conic.coefficients)
+            else {
+                return Ok(None);
+            };
+            let first_axis = [frame[0], frame[1]];
+            let second_axis = [frame[3], frame[4]];
+            let first_length = first_axis[0].hypot(first_axis[1]);
+            let second_length = second_axis[0].hypot(second_axis[1]);
+            let scale = first_length.max(second_length).max(1.0);
+            if first_radius <= EPS_POINT_NONZERO
+                || second_radius <= EPS_POINT_NONZERO
+                || (first_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
+                || (second_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
+                || (first_axis[0] * second_axis[0] + first_axis[1] * second_axis[1]).abs()
+                    > EPS_SECTION_FRAME_ORTHONORMAL
+                || (first_axis[0] * second_axis[1] - first_axis[1] * second_axis[0] - 1.0).abs()
+                    > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[2].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[5].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[6].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[7].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || (frame[8] - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[11].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+            {
+                return Ok(None);
+            }
+            let (major_axis, major_radius, minor_radius, parameter_shift) =
+                if first_radius >= second_radius {
+                    (first_axis, first_radius, second_radius, 0.0)
+                } else {
+                    (
+                        second_axis,
+                        second_radius,
+                        first_radius,
+                        -std::f64::consts::FRAC_PI_2,
+                    )
+                };
+            let mut endpoints_complete = true;
+            for endpoint in ctx.admit_iter(&conic.endpoints, "creo saved conic endpoint rows")? {
+                if !ctx
+                    .admit_iter(endpoint, "creo saved conic endpoint coordinates")?
+                    .all(Option::is_some)
+                {
+                    endpoints_complete = false;
+                    break;
+                }
+            }
+            let coincident_endpoints = endpoints_complete
+                && ctx
+                    .admit_iter(
+                        &conic.endpoints[0],
+                        "creo first saved conic endpoint coordinates",
+                    )?
+                    .zip(ctx.admit_iter(
+                        &conic.endpoints[1],
+                        "creo second saved conic endpoint coordinates",
+                    )?)
+                    .all(|(first, second)| {
+                        let (Some(first), Some(second)) = (*first, *second) else {
+                            return false;
+                        };
+                        let scale = first.abs().max(second.abs()).max(1.0);
+                        (first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale
+                    });
+            Some((
+                frame,
+                major_axis,
+                major_radius,
+                minor_radius,
+                parameter_shift,
+                coincident_endpoints,
+            ))
+        } else {
+            None
+        };
+    let arc_angles = if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = entity {
+        let ([Some(center_u), Some(center_v)], Some(radius)) = (
+            [arc.center[0], arc.center[1]],
+            arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
+        ) else {
+            return Ok(None);
+        };
+        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
+            arc.endpoints
+        else {
+            return Ok(None);
+        };
+        let first = [first_u - center_u, first_v - center_v];
+        let second = [second_u - center_u, second_v - center_v];
+        let scale = radius
+            .max(first[0].hypot(first[1]))
+            .max(second[0].hypot(second[1]));
+        if ![radius, first[0], first[1], second[0], second[1], scale]
+            .into_iter()
+            .all(f64::is_finite)
+            || (first[0].hypot(first[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+            || (second[0].hypot(second[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+        {
+            return Ok(None);
+        }
+        let start_angle = second[1].atan2(second[0]);
+        let mut end_angle = first[1].atan2(first[0]);
+        while end_angle <= start_angle {
+            ctx.charge_work(1, "creo saved entity arc angle normalization")?;
+            end_angle += std::f64::consts::TAU;
+        }
+        Some((center_u, center_v, radius, start_angle, end_angle))
+    } else {
+        None
+    };
+    let result = (|| match entity {
         crate::feature::definitions::FeatureSavedEntity::Line(line) => {
             let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints
             else {
@@ -561,35 +852,9 @@ pub(in crate::decode) fn saved_section_entity_geometry(
             ))
         }
         crate::feature::definitions::FeatureSavedEntity::Arc(arc) => {
-            let ([Some(center_u), Some(center_v)], Some(radius)) = (
-                [arc.center[0], arc.center[1]],
-                arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
-            ) else {
+            let Some((center_u, center_v, radius, start_angle, end_angle)) = arc_angles else {
                 return None;
             };
-            let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
-                arc.endpoints
-            else {
-                return None;
-            };
-            let first = [first_u - center_u, first_v - center_v];
-            let second = [second_u - center_u, second_v - center_v];
-            let scale = radius
-                .max(first[0].hypot(first[1]))
-                .max(second[0].hypot(second[1]));
-            if ![radius, first[0], first[1], second[0], second[1], scale]
-                .into_iter()
-                .all(f64::is_finite)
-                || (first[0].hypot(first[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
-                || (second[0].hypot(second[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
-            {
-                return None;
-            }
-            let start_angle = second[1].atan2(second[0]);
-            let mut end_angle = first[1].atan2(first[0]);
-            while end_angle <= start_angle {
-                end_angle += std::f64::consts::TAU;
-            }
             Some((
                 arc.entity_id,
                 SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -620,55 +885,17 @@ pub(in crate::decode) fn saved_section_entity_geometry(
             ))
         }
         crate::feature::definitions::FeatureSavedEntity::Conic(conic) => {
-            let (Some(frame), [Some(first_radius), Some(second_radius)]) =
-                (conic.local_system, conic.coefficients)
+            let Some((
+                frame,
+                major_axis,
+                major_radius,
+                minor_radius,
+                parameter_shift,
+                coincident_endpoints,
+            )) = conic_facts
             else {
                 return None;
             };
-            let first_axis = [frame[0], frame[1]];
-            let second_axis = [frame[3], frame[4]];
-            let first_length = first_axis[0].hypot(first_axis[1]);
-            let second_length = second_axis[0].hypot(second_axis[1]);
-            let scale = first_length.max(second_length).max(1.0);
-            if first_radius <= EPS_POINT_NONZERO
-                || second_radius <= EPS_POINT_NONZERO
-                || (first_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
-                || (second_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
-                || (first_axis[0] * second_axis[0] + first_axis[1] * second_axis[1]).abs()
-                    > EPS_SECTION_FRAME_ORTHONORMAL
-                || (first_axis[0] * second_axis[1] - first_axis[1] * second_axis[0] - 1.0).abs()
-                    > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[2].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[5].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[6].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[7].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || (frame[8] - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL
-                || frame[11].abs() > EPS_SECTION_FRAME_ORTHONORMAL
-            {
-                return None;
-            }
-            let (major_axis, major_radius, minor_radius, parameter_shift) =
-                if first_radius >= second_radius {
-                    (first_axis, first_radius, second_radius, 0.0)
-                } else {
-                    (
-                        second_axis,
-                        second_radius,
-                        first_radius,
-                        -std::f64::consts::FRAC_PI_2,
-                    )
-                };
-            let coincident_endpoints = conic.endpoints.iter().flatten().all(Option::is_some)
-                && conic.endpoints[0]
-                    .into_iter()
-                    .zip(conic.endpoints[1])
-                    .all(|(first, second)| {
-                        let (Some(first), Some(second)) = (first, second) else {
-                            return false;
-                        };
-                        let scale = first.abs().max(second.abs()).max(1.0);
-                        (first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale
-                    });
             let bounds = match conic.parameters {
                 [Some(start), Some(end)]
                     if start.is_finite()
@@ -708,7 +935,8 @@ pub(in crate::decode) fn saved_section_entity_geometry(
         }
         crate::feature::definitions::FeatureSavedEntity::Spline(_)
         | crate::feature::definitions::FeatureSavedEntity::Dummy(_) => None,
-    }
+    })();
+    Ok(result)
 }
 
 pub(in crate::decode) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
@@ -782,27 +1010,37 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         return Ok(None);
     }
     let mut trimmed_external_ids = BTreeSet::new();
-    for id in trim
-        .rows
-        .iter()
-        .filter_map(|row| trim_segment_id(definition, row))
-    {
-        ctx.insert_btree_set(
-            &mut trimmed_external_ids,
-            id,
-            "creo missing-line trimmed ID nodes",
-        )?;
-    }
-    let mut missing = None;
-    for candidate in segments.rows.ordinary() {
-        if matches!(candidate.kind, crate::feature::definitions::FeatureSegmentKind::Line(_))
-            && order.internal_id(ctx, candidate.external_id)?.is_none()
-            && trimmed_external_ids.contains(&candidate.external_id) {
-            if missing.is_some() { return Ok(None); }
-            missing = Some(candidate);
+    for row in ctx.admit_iter(&trim.rows, "creo missing-line trim rows")? {
+        if let Some(id) = trim_segment_id(ctx, definition, row)? {
+            ctx.insert_btree_set(
+                &mut trimmed_external_ids,
+                id,
+                "creo missing-line trimmed ID nodes",
+            )?;
         }
     }
-    let Some(missing) = missing else { return Ok(None); };
+    let Some(SegmentRow::Ordinary(missing)) = crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        segments.rows.as_slice(),
+        |row| {
+            let SegmentRow::Ordinary(candidate) = row else {
+                return Ok(false);
+            };
+            Ok(matches!(
+                candidate.kind,
+                crate::feature::definitions::FeatureSegmentKind::Line(_)
+            ) && order.internal_id(ctx, candidate.external_id)?.is_none()
+                && ctx.contains_btree_set(
+                    &trimmed_external_ids,
+                    &candidate.external_id,
+                    "creo missing-line trimmed ID lookup",
+                )?)
+        },
+        "creo missing-line segment rows",
+    )?
+    else {
+        return Ok(None);
+    };
     let Some(fixed_coordinate) = missing
         .vertical_horizontal
         .and_then(SectionAxis::from_selector)
@@ -811,17 +1049,22 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     };
 
     let mut geometries = Vec::new();
-    for entity in semantic_saved_section_entities(definition) {
-        let Some(geometry) = saved_section_entity_geometry(entity) else {
-            continue;
+    // discarded-value: The visitor continues through every semantic saved entity.
+    let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+        let Some(geometry) = saved_section_entity_geometry(ctx, entity)? else {
+            return Ok(ControlFlow::Continue(()));
         };
-        if order.rows.iter().any(|row| row.internal_id == geometry.0) {
+        if ctx
+            .admit_iter(&order.rows, "creo missing-line order lookup")?
+            .any(|row| row.internal_id == geometry.0)
+        {
             ctx.reserve_vec(&mut geometries, 1, "creo missing-line saved geometries")?;
             geometries.push(geometry);
         }
-    }
+        Ok(ControlFlow::Continue(()))
+    })?;
     let mut ordered_ids = BTreeSet::new();
-    for row in &order.rows {
+    for row in ctx.admit_iter(&order.rows, "creo missing-line ordered rows")? {
         ctx.insert_btree_set(
             &mut ordered_ids,
             row.internal_id,
@@ -829,7 +1072,7 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         )?;
     }
     let mut geometry_ids = BTreeSet::new();
-    for (internal_id, _, _) in &geometries {
+    for (internal_id, _, _) in ctx.admit_iter(&geometries, "creo missing-line geometry IDs")? {
         ctx.insert_btree_set(
             &mut geometry_ids,
             *internal_id,
@@ -843,7 +1086,7 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         return Ok(None);
     }
     let mut endpoints = Vec::new();
-    for (_, geometry, _) in &geometries {
+    for (_, geometry, _) in ctx.admit_iter(&geometries, "creo missing-line geometries")? {
         if let Some(pair) = saved_geometry_endpoints(geometry) {
             ctx.reserve_vec(&mut endpoints, 2, "creo missing-line endpoints")?;
             endpoints.extend(pair);
@@ -856,27 +1099,37 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
         return Ok(None);
     }
     let mut open = [None, None];
-    let mut open_count = 0;
-    for (index, endpoint) in endpoints.iter().enumerate() {
-        let mut mate_count = 0;
-        for (candidate_index, candidate) in endpoints.iter().enumerate() {
+    for (index, endpoint) in ctx
+        .admit_iter(&endpoints, "creo missing-line endpoints")?
+        .enumerate()
+    {
+        let mut first_mate = None;
+        let mut has_multiple_mates = false;
+        for (candidate_index, candidate) in ctx
+            .admit_iter(&endpoints, "creo missing-line endpoint candidates")?
+            .enumerate()
+        {
             if candidate_index == index {
                 continue;
             }
             ctx.charge_work(1, "creo missing-line endpoint pairs")?;
             if saved_points_coincide(*endpoint, *candidate) {
-                mate_count += 1;
+                if first_mate.replace(candidate_index).is_some() {
+                    has_multiple_mates = true;
+                }
             }
         }
-        if mate_count > 1 {
+        if has_multiple_mates {
             return Ok(None);
         }
-        if mate_count == 0 {
-            if open_count == 2 {
+        if first_mate.is_none() {
+            if open[0].is_none() {
+                open[0] = Some(*endpoint);
+            } else if open[1].is_none() {
+                open[1] = Some(*endpoint);
+            } else {
                 return Ok(None);
             }
-            open[open_count] = Some(*endpoint);
-            open_count += 1;
         }
     }
     let [Some(start), Some(end)] = open else {
@@ -918,7 +1171,7 @@ pub(in crate::decode) fn saved_profile_chains(
     geometries: &[(u32, SketchGeometry)],
 ) -> Result<Vec<Vec<SketchEntityUse>>, cadmpeg_core::CodecError> {
     let mut profiles = Vec::new();
-    for (external_id, geometry) in geometries {
+    for (external_id, geometry) in ctx.admit_iter(geometries, "creo saved profile geometries")? {
         if !is_full_circle_geometry(geometry) {
             continue;
         }
@@ -935,50 +1188,75 @@ pub(in crate::decode) fn saved_profile_chains(
         ctx.reserve_vec(&mut profiles, 1, "creo saved profile rows")?;
         profiles.push(uses);
     }
-    let row_count = geometries
-        .iter()
+    let row_count = ctx
+        .admit_iter(geometries, "creo saved profile endpoint count")?
         .filter(|(_, geometry)| saved_geometry_endpoints(geometry).is_some())
         .count();
     let mut mates = ctx.alloc_filled(row_count, [None; 2], "creo saved profile endpoint mates")?;
     let mut rows = Vec::new();
-    for (external_id, geometry) in geometries {
+    for (external_id, geometry) in ctx.admit_iter(geometries, "creo saved profile endpoint rows")? {
         if let Some(endpoints) = saved_geometry_endpoints(geometry) {
             ctx.reserve_vec(&mut rows, 1, "creo saved profile endpoint rows")?;
             rows.push((*external_id, endpoints));
         }
     }
-    for (row_index, (_, endpoints)) in rows.iter().enumerate() {
+    for (row_index, (_, endpoints)) in ctx
+        .admit_iter(&rows, "creo saved profile endpoint pairs")?
+        .enumerate()
+    {
         for endpoint_index in 0..2 {
-            let mut matches = rows
-                .iter()
+            let mut mate = None;
+            let mut has_second_mate = false;
+            'candidate_rows: for (candidate_row, (_, candidate_endpoints)) in ctx
+                .admit_iter(&rows, "creo saved profile endpoint candidates")?
                 .enumerate()
-                .flat_map(|(candidate_row, (_, candidate_endpoints))| {
-                    (0..2).map(move |candidate_endpoint| {
-                        (candidate_row, candidate_endpoint, candidate_endpoints)
-                    })
-                })
-                .filter(|(candidate_row, candidate_endpoint, candidate_endpoints)| {
-                    (*candidate_row != row_index || *candidate_endpoint != endpoint_index)
+            {
+                for candidate_endpoint in 0..2 {
+                    if (candidate_row != row_index || candidate_endpoint != endpoint_index)
                         && saved_points_coincide(
                             endpoints[endpoint_index],
-                            candidate_endpoints[*candidate_endpoint],
+                            candidate_endpoints[candidate_endpoint],
                         )
-                })
-                .map(|(candidate_row, candidate_endpoint, _)| (candidate_row, candidate_endpoint));
-            if let (Some(mate), None) = (matches.next(), matches.next()) {
+                    {
+                        if mate
+                            .replace((candidate_row, candidate_endpoint))
+                            .is_some()
+                        {
+                            has_second_mate = true;
+                            break 'candidate_rows;
+                        }
+                    }
+                }
+            }
+            if let (Some(mate), false) = (mate, has_second_mate) {
                 mates[row_index][endpoint_index] = Some(mate);
             }
         }
     }
     let mut remaining = BTreeSet::new();
-    for index in 0..rows.len() {
+    for (index, _) in ctx.admit_iter(&rows, "creo saved profile remaining nodes")?.enumerate() {
         ctx.insert_btree_set(&mut remaining, index, "creo saved profile remaining nodes")?;
     }
-    while let Some(seed) = remaining
-        .iter()
-        .min_by_key(|index| rows[**index].0)
-        .copied()
-    {
+    while !remaining.is_empty() {
+        ctx.charge_work(1, "creo saved profile components")?;
+        let mut candidates = ctx.admit_iter(
+            &remaining,
+            "creo saved profile seed candidates",
+        )?;
+        let Some(first_candidate) = candidates.next() else {
+            break;
+        };
+        let mut seed = *first_candidate;
+        for candidate in candidates {
+            if ctx.compare(
+                &rows[*candidate].0,
+                &rows[seed].0,
+                "creo saved profile seed comparisons",
+            )? == std::cmp::Ordering::Less
+            {
+                seed = *candidate;
+            }
+        }
         if mates[seed].iter().any(Option::is_none) {
             remaining.remove(&seed);
             continue;
@@ -988,6 +1266,7 @@ pub(in crate::decode) fn saved_profile_chains(
         let mut row = seed;
         let mut reversed = false;
         loop {
+            ctx.charge_work(1, "creo saved profile chain steps")?;
             if used.contains(&row) {
                 break;
             }
@@ -1033,22 +1312,28 @@ pub(in crate::decode) fn resolved_section_segment_geometry(
 }
 
 pub(in crate::decode) fn resolved_section_segment_geometry_with_missing_line(
-    ctx: &DecodeContext<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
-) -> Result<Option<SketchGeometry>, CodecError> {
-    let stored = section_segment_geometry(points, segment);
-    let saved = match saved_section_line_geometry(ctx, definition, segment)? {
-        Some(geometry) => Some(geometry),
-        None => saved_section_arc(ctx, definition, segment)?.and_then(SavedSectionArc::into_geometry),
-    }
-        .or_else(|| {
-            missing_line
-                .filter(|(offset, _)| *offset == segment.offset)
-                .map(|(_, geometry)| geometry.clone())
-        });
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+    let stored = section_segment_geometry(ctx, points, segment)?;
+    let saved_line = saved_section_line_geometry(ctx, definition, segment)?;
+    let saved = if saved_line.is_some() {
+        saved_line
+    } else {
+        saved_section_arc(ctx, definition, segment)?.and_then(SavedSectionArc::into_geometry)
+    };
+    let saved = match saved {
+        Some(saved) => Some(saved),
+        None => missing_line
+            .filter(|(offset, _)| *offset == segment.offset)
+            .map(|(_, geometry)| {
+                geometry.try_clone_for_decode(ctx, "creo missing line fallback geometry")
+            })
+            .transpose()?,
+    };
     Ok(match (stored, saved) {
         (Some(stored), Some(saved)) => {
             let agree = match (stored.definition(), saved.definition()) {

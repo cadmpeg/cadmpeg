@@ -269,8 +269,7 @@ fn curve_expression_parameter_names(
         if let Some((name, _)) = assignment.parameter_target() {
             let mut key = ctx.copy_retained_text(name, "creo curve-expression name key")?;
             ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-            ctx.admit_btree_entry(&counts, &key, "creo curve-expression unique names")?;
-            match counts.entry(key) {
+            match ctx.entry_btree_map(&mut counts, key, "creo curve-expression unique names")? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(1usize);
                 }
@@ -289,11 +288,9 @@ fn curve_expression_parameter_names(
             if counts[&key] == 1 {
                 Some(ctx.copy_retained_text(name, "creo curve-expression parameter name")?)
             } else {
-                ctx.admit_btree_entry(&occurrences, &key, "creo curve-expression occurrences")?;
-                let occurrence = match occurrences.entry(key) {
-                    std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
-                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                };
+                let occurrence = ctx
+                    .entry_btree_map(&mut occurrences, key, "creo curve-expression occurrences")?
+                    .or_insert(0usize);
                 *occurrence += 1;
                 let mut output =
                     ctx.copy_retained_text(name, "creo curve-expression parameter name")?;
@@ -352,8 +349,7 @@ fn curve_expression_assignment_indices(
         };
         let mut key = ctx.copy_retained_text(name, "creo curve-expression assignment key")?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        ctx.admit_btree_entry(&by_name, &key, "creo curve-expression assignment indices")?;
-        match by_name.entry(key) {
+        match ctx.entry_btree_map(&mut by_name, key, "creo curve-expression assignment indices")? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(Some(ordinal));
             }

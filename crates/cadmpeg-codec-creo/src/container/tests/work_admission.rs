@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 fn parent_feature_zero_ids_refuse_search_and_entry_work() {
     let bytes = b"parent_feats\0\xf8\x03\0\0\0";
     let section =
-        Section::scan("VisibGeom".into(), 0, bytes.len(), None, bytes).expect("bounded section");
+        Section::scan_for_test("VisibGeom".into(), 0, bytes.len(), None, bytes).expect("bounded section");
     let sections = [section];
     let ids = crate::test_support::assert_work_boundaries(
         &[
@@ -72,7 +72,7 @@ fn parent_feature_arrays_reject_truncated_counts_and_entries() {
         b"parent_feats\0\xf8\x01\x81".as_slice(),
     ] {
         let sections =
-            [Section::scan("VisibGeom".into(), 0, bytes.len(), None, bytes).expect("section")];
+            [Section::scan_for_test("VisibGeom".into(), 0, bytes.len(), None, bytes).expect("section")];
         let error = crate::decode::with_test_decode_ctx(|ctx| {
             structural_feature_ids(ctx, &sections, &[], &[])
         })
@@ -217,7 +217,7 @@ fn feature_identity_datum_prefix_refuses_work() {
 #[test]
 fn loop_array_section_deduplication_refuses_work() {
     let data = b"loop_array\0";
-    let sections = [Section::scan("VisibGeom".into(), 0, data.len(), None, data).expect("section")];
+    let sections = [Section::scan_for_test("VisibGeom".into(), 0, data.len(), None, data).expect("section")];
     let error = crate::test_support::last_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,

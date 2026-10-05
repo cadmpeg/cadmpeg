@@ -992,12 +992,12 @@ fn solve_unknown_name_refuses_before_retained_copy() {
 
 #[test]
 fn solve_unknown_duplicate_check_obeys_work_limit() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    let error = with_expression_policy(policy, |ctx| {
-        super::super::curve_expression_solve_unknowns(ctx, "x,y")
-    })
-    .expect_err("second unknown needs one comparison");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo solve unknown duplicate checks",
+        |ctx| super::super::curve_expression_solve_unknowns(ctx, "x,y"),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "creo solve unknown duplicate checks"));

@@ -286,8 +286,11 @@ fn dimension_property_refuses_before_btree_node() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo dimension property nodes")
+        .expect("dimension property lease");
     let mut properties = BTreeMap::new();
-    let error = insert_dimension_property(&ctx, &mut properties, "external_id", 7)
+    let error = insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
         .expect_err("one property needs one BTreeMap node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -303,8 +306,11 @@ fn dimension_property_refuses_before_key_copy() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo dimension property nodes")
+        .expect("dimension property lease");
     let mut properties = BTreeMap::new();
-    let error = insert_dimension_property(&ctx, &mut properties, "external_id", 7)
+    let error = insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
         .expect_err("property key exceeds retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -320,13 +326,98 @@ fn dimension_property_refuses_before_value_copy() {
     policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("external_id".len());
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo dimension property nodes")
+        .expect("dimension property lease");
     let mut properties = BTreeMap::new();
-    let error = insert_dimension_property(&ctx, &mut properties, "external_id", 7)
+    let error = insert_dimension_property(&ctx, &mut node_storage, &mut properties, "external_id", 7)
         .expect_err("property value exceeds retained limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo dimension property value")
+    );
+}
+
+#[test]
+fn dimension_property_staging_node_refuses_materialized_storage() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo dimension property nodes")
+        .expect("dimension property lease");
+    let mut properties = BTreeMap::new();
+    let error = insert_dimension_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "external_id",
+        7,
+    )
+    .expect_err("one staging node exceeds materialized storage");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::MaterializedBytes
+            && resource.operation == "creo dimension property nodes")
+    );
+}
+
+#[test]
+fn dimension_property_named_output_node_remains_retained() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        "external_id".len() + "7".len(),
+    );
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo dimension property nodes")
+        .expect("dimension property lease");
+    let mut properties = BTreeMap::new();
+    insert_dimension_property(
+        &ctx,
+        &mut node_storage,
+        &mut properties,
+        "external_id",
+        7,
+    )
+    .expect("staging node uses scoped storage");
+    let error = cadmpeg_core::text::named_entries_for_decode(&ctx, "dimension", properties)
+        .expect_err("the decoded output node needs retained storage");
+    assert!(
+        matches!(error, cadmpeg_core::text::NamedEntryError::ResourceRefusal(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "named entry map nodes")
+    );
+}
+
+#[test]
+fn dimension_property_named_entry_service_preserves_order() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo dimension property nodes")
+        .expect("dimension property lease");
+    let mut properties = BTreeMap::new();
+    insert_dimension_property(&ctx, &mut node_storage, &mut properties, "z", 1)
+        .expect("first property fits");
+    insert_dimension_property(&ctx, &mut node_storage, &mut properties, "a", 2)
+        .expect("second property fits");
+    let entries = cadmpeg_core::text::named_entries_for_decode(&ctx, "dimension", properties)
+        .expect("valid property keys are admitted");
+    drop(node_storage);
+    assert_eq!(
+        entries
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("a", "2"), ("z", "1")]
     );
 }
 
@@ -352,9 +443,13 @@ fn dimension_hex_token_keeps_lowercase_byte_order() {
     let policy = DecodePolicy::service();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+    let mut node_storage = ctx
+        .reserve_scoped(0, "creo dimension property nodes")
+        .expect("dimension property lease");
     let mut properties = BTreeMap::new();
     insert_dimension_property(
         &ctx,
+        &mut node_storage,
         &mut properties,
         "value_token",
         HexToken(&[0x00, 0xf1, 0x7f]),
@@ -520,16 +615,23 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         });
     }
 
-    let (transferred, _) = crate::decode::with_test_decode_ctx(|ctx| {
-        transfer_feature_dimensions(
-            ctx,
-            &scan,
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-    })
-    .expect("valid test fixture");
+    let (transferred, ir) = crate::test_support::assert_work_boundaries(
+        &[
+            "creo dimension owner feature ID lookup",
+            "creo dimension owner lookup",
+        ],
+        |ctx| {
+            let mut ir = ir.clone();
+            let (transferred, _) = transfer_feature_dimensions(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )?;
+            Ok::<_, cadmpeg_core::CodecError>((transferred, ir))
+        },
+    );
 
     assert_eq!(transferred, 1);
     assert!(ir

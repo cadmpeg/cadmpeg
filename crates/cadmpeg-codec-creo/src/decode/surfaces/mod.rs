@@ -56,21 +56,16 @@ fn apex_cone(
 /// geometry remains the default for the existing and rowless feature-carrier
 /// paths.
 fn native_surface_namespace(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     surface_id: u32,
-) -> (cadmpeg_ir::ids::IdentityNamespace, &'static str) {
-    let visible_present = scan.surfaces.rows.iter().any(|row| row.id == surface_id);
-    let nonvisible_present = scan
-        .surfaces
-        .nonvisible_rows
-        .iter()
+) -> Result<(cadmpeg_ir::ids::IdentityNamespace, &'static str), cadmpeg_core::CodecError> {
+    let visible_present = ctx.admit_iter(&scan.surfaces.rows, "creo visible surface namespace search")?.any(|row| row.id == surface_id);
+    let nonvisible_present = ctx.admit_iter(&scan.surfaces.nonvisible_rows, "creo nonvisible surface namespace search")?
         .any(|row| row.id == surface_id);
-    let active_datum_present = scan
-        .planes
-        .datum_cylinders
-        .iter()
+    let active_datum_present = ctx.admit_iter(&scan.planes.datum_cylinders, "creo datum surface namespace search")?
         .any(|cylinder| cylinder.id == surface_id);
-    if visible_present {
+    Ok(if visible_present {
         (
             crate::identity::VISIBGEOM_SURFACE,
             "creo:visibgeom:surface#",
@@ -87,7 +82,7 @@ fn native_surface_namespace(
             crate::identity::VISIBGEOM_SURFACE,
             "creo:visibgeom:surface#",
         )
-    }
+    })
 }
 
 /// Construct the selected surface identity for a native topology identifier.
@@ -98,19 +93,24 @@ pub(super) fn native_surface_id(
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
     crate::identity::compose_checked(
         ctx,
-        &native_surface_namespace(scan, surface_id).0,
+        &native_surface_namespace(ctx, scan, surface_id)?.0,
         surface_id,
         "creo native surface identity",
     )
 }
 
 /// Compare a selected native surface identity without constructing one.
-pub(super) fn matches_native_surface_id(ctx: &cadmpeg_core::decode::DecodeContext<'_>, 
+pub(super) fn matches_native_surface_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     surface_id: u32,
     candidate: &SurfaceId,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(crate::identity::matches_numbered_identity(ctx, candidate.as_str(), native_surface_namespace(scan, surface_id).1, surface_id)?)
+    Ok(crate::identity::matches_numbered_identity(
+        candidate.as_str(),
+        native_surface_namespace(ctx, scan, surface_id)?.1,
+        surface_id,
+    ))
 }
 
 /// Return a native surface row only when its compact identifier is unique
@@ -269,6 +269,64 @@ mod tests {
     }
 
     #[test]
+    fn part_product_transfer_preserves_typed_product_and_body_ids() {
+        let body_ids = [
+            cadmpeg_ir::ids::BodyId::mint("creo:test:body#1")
+                .expect("valid ASCII body identity"),
+            cadmpeg_ir::ids::BodyId::mint("creo:test:body#support-café")
+                .expect("valid Unicode body identity"),
+        ];
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        for id in &body_ids {
+            ir.model.bodies.push(cadmpeg_ir::topology::Body {
+                id: id.clone(),
+                kind: cadmpeg_ir::topology::BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            });
+        }
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+
+        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+            transfer_part_product(
+                ctx,
+                &named_scan(),
+                &mut ir,
+                &mut annotations,
+                &source_carriers,
+            )
+        })
+        .expect("service part product transfer");
+
+        assert!(transferred);
+        assert_eq!(ir.model.product_definitions.len(), 1);
+        let product = &ir.model.product_definitions[0];
+        assert_eq!(product.id.as_str(), "creo:model:product_definition#root");
+        assert_eq!(
+            product
+                .bodies
+                .iter()
+                .map(cadmpeg_ir::ids::BodyId::as_str)
+                .collect::<Vec<_>>(),
+            ["creo:test:body#1", "creo:test:body#support-café"]
+        );
+        assert_eq!(ir.model.occurrences.len(), 1);
+        assert_eq!(
+            ir.model.occurrences[0].id.as_str(),
+            "creo:model:occurrence#root"
+        );
+        assert!(matches!(
+            &ir.model.occurrences[0].prototype,
+            cadmpeg_ir::products::PrototypeReference::Local { definition }
+                if definition.as_str() == product.id.as_str()
+        ));
+    }
+
+    #[test]
     fn part_product_identity_retention_refuses_before_occurrence_transfer() {
         let product_id_len = cadmpeg_core::decode::u64_from_index(
             cadmpeg_ir::ids::ProductDefinitionId::compose(
@@ -307,20 +365,20 @@ mod tests {
         let native = crate::decode::with_test_decode_ctx(|ctx| native_surface_id(ctx, &scan, 17))
             .expect("service native surface identity admitted");
         assert_eq!(native.as_str(), "creo:novisgeom:surface#17");
-        let prefix = native_surface_namespace(&scan, 17).1;
-        assert!(crate::decode::with_test_decode_ctx(|ctx| crate::identity::matches_numbered_identity(ctx, 
+        let prefix = crate::decode::with_test_decode_ctx(|ctx| native_surface_namespace(ctx, &scan, 17)).expect("surface namespace").1;
+        assert!(crate::identity::matches_numbered_identity(
             native.as_str(),
             prefix,
             17,
-        )).expect("service profile admits scalar parsing"));
-        assert!(crate::decode::with_test_decode_ctx(|ctx| matches_native_surface_id(ctx, &scan, 17, &native)).expect("service profile admits scalar parsing"));
+        ));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| matches_native_surface_id(ctx, &scan, 17, &native)).expect("surface match"));
         let visible = cadmpeg_ir::ids::SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 17);
-        assert!(!crate::decode::with_test_decode_ctx(|ctx| crate::identity::matches_numbered_identity(ctx, 
+        assert!(!crate::identity::matches_numbered_identity(
             visible.as_str(),
             prefix,
             17,
-        )).expect("service profile admits scalar parsing"));
-        assert!(!crate::decode::with_test_decode_ctx(|ctx| matches_native_surface_id(ctx, &scan, 17, &visible)).expect("service profile admits scalar parsing"));
+        ));
+        assert!(!crate::decode::with_test_decode_ctx(|ctx| matches_native_surface_id(ctx, &scan, 17, &visible)).expect("surface match"));
     }
 
     #[test]
@@ -337,6 +395,28 @@ mod tests {
             if resource.dimension == ResourceDimension::RetainedBytes
                 && resource.operation == "creo native surface identity")
         );
+    }
+
+    #[test]
+    fn native_surface_namespace_refuses_before_visible_search() {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.surfaces.rows.push(SurfaceRow {
+            id: 17,
+            kind: SurfaceKind::Plane,
+            feature_id: 1,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 0,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = native_surface_namespace(&ctx, &scan, 17).expect_err("search needs work");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::WorkUnits
+                && resource.operation == "creo visible surface namespace search"));
     }
 }
 
@@ -390,16 +470,11 @@ pub(super) fn transfer_part_product(
         ir.model.bodies.len(),
         "creo product body references",
     )?;
-    for body in &ir.model.bodies {
-        let body_id = ctx.copy_retained_text(body.id.as_str(), "creo product body IDs")?;
-        bodies.push(
-            cadmpeg_ir::ids::BodyId::mint(body_id).map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+    for body in ctx.admit_iter(&ir.model.bodies, "creo transfer part product bodies traversal")? {
+        bodies.push(body.id.try_clone_for_decode(ctx, "creo product body IDs")?);
     }
-    let product_ref = ProductDefinitionId::mint(
-        ctx.copy_retained_text(product_id.as_str(), "creo product definition reference")?,
-    )
-    .map_err(cadmpeg_core::CodecError::malformed)?;
+    let product_ref =
+        product_id.try_clone_for_decode(ctx, "creo product definition reference")?;
     let source_name = ctx.copy_retained_text(model_name, "creo product source name")?;
     let label = ctx.copy_retained_text(model_name, "creo product label")?;
     let part_number = ctx.copy_retained_text(model_name, "creo product part number")?;
@@ -499,25 +574,26 @@ impl Fc05CapPairFrame {
 /// along the cap normal. This is the same bounded witness used by B-rep
 /// transfer and is also available to analytic plane-branch selection.
 pub(super) fn fc05_cap_pair_model_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     pair: &crate::curve::Fc05CylinderCapPair,
-) -> Option<Fc05CapPairFrame> {
-    let mut placed_caps = pair.cap_edges.iter().map(|edge| {
+) -> Result<Option<Fc05CapPairFrame>, cadmpeg_core::CodecError> {
+    let mut placed_caps = ctx.admit_iter(&pair.cap_edges, "creo cap pair placed edge traversal")?.map(|edge| {
         crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
             .map(|plane| (plane, edge.cap_ordinate_row_frame))
     });
-    let (first_cap, first_ordinate) = placed_caps.next()??;
-    let (mut last_cap, mut last_ordinate) = placed_caps.next()??;
-    let axis_index = Axis::ALL
+    let Some(Some((first_cap, first_ordinate))) = placed_caps.next() else { return Ok(None); };
+    let Some(Some((mut last_cap, mut last_ordinate))) = placed_caps.next() else { return Ok(None); };
+    let Some(axis_index) = Axis::ALL
         .into_iter()
-        .find(|axis| first_cap.normal()[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)?;
+        .find(|axis| first_cap.normal()[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME) else { return Ok(None); };
     if last_cap.normal != first_cap.normal {
-        return None;
+        return Ok(None);
     }
     for placed_cap in placed_caps {
-        let (plane, ordinate) = placed_cap?;
+        let Some((plane, ordinate)) = placed_cap else { return Ok(None); };
         if plane.normal != first_cap.normal {
-            return None;
+            return Ok(None);
         }
         last_cap = plane;
         last_ordinate = ordinate;
@@ -530,7 +606,7 @@ pub(super) fn fc05_cap_pair_model_frame(
         || row_span.abs() <= EPS_FC05_CAP_FRAME
         || (row_span.abs() - model_span.abs()).abs() > EPS_FC05_CAP_FRAME * span_scale
     {
-        return None;
+        return Ok(None);
     }
     let axis_sign = if (model_span / row_span).is_sign_negative() {
         Sign::Negative
@@ -538,7 +614,7 @@ pub(super) fn fc05_cap_pair_model_frame(
         Sign::Positive
     };
     let axis_origin = first_cap.origin[axis_index.index()] - axis_sign.scale() * first_ordinate;
-    if pair.cap_edges.iter().any(|edge| {
+    if ctx.admit_iter(&pair.cap_edges, "creo cap pair edge agreement traversal")?.any(|edge| {
         let Some(plane) =
             crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
         else {
@@ -553,7 +629,7 @@ pub(super) fn fc05_cap_pair_model_frame(
         // A cap pair whose row-frame and model-space spans do not agree does
         // not establish a unit parameter-axis transform. Retain the circles
         // for their independent carrier evidence, but do not invent a chart.
-        return None;
+        return Ok(None);
     }
     let (origin, _, ref_direction) = fc05_model_frame(
         axis_index,
@@ -562,12 +638,12 @@ pub(super) fn fc05_cap_pair_model_frame(
         pair.reference_direction_row_frame,
         axis_sign,
     );
-    Some(Fc05CapPairFrame {
+    Ok(Some(Fc05CapPairFrame {
         origin,
         ref_direction,
         axis_index,
         axis_sign,
-    })
+    }))
 }
 
 pub(super) fn transfer_fc05_cap_circles(
@@ -577,7 +653,7 @@ pub(super) fn transfer_fc05_cap_circles(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for circle in &scan.curves.fc05_circles {
+    for circle in ctx.admit_iter(&scan.curves.fc05_circles, "creo transfer fc05 cap circles fc05 circles traversal")? {
         let Some(topology) = crate::decode::uniqueness::exactly_one(
             scan.curves
                 .topology_rows
@@ -610,12 +686,11 @@ pub(super) fn transfer_fc05_cap_circles(
             continue;
         };
         let [first, second] = circle.center_row_frame;
-        let pair_frame = scan
-            .curves
-            .fc05_cylinder_cap_pairs
-            .iter()
-            .find(|pair| pair.surface_id == cylinder_id)
-            .and_then(|pair| fc05_cap_pair_model_frame(scan, pair));
+        let pair_frame = match ctx.admit_iter(&scan.curves.fc05_cylinder_cap_pairs, "creo circle cap pair search")?
+            .find(|pair| pair.surface_id == cylinder_id) {
+            Some(pair) => fc05_cap_pair_model_frame(ctx, scan, pair)?,
+            None => None,
+        };
         let (reference, circle_axis_sign) = match circle.angle_parameter {
             crate::curve::Fc05AngleParameterRelation::Inconsistent => (
                 circle.sample_direction_row_frame.get(),
@@ -656,7 +731,14 @@ pub(super) fn transfer_fc05_cap_circles(
             circle.curve_id,
             "creo FC05 cap circle identity",
         )?;
-        if !ir.model.curves.iter().any(|curve| curve.id == id) {
+        let mut identity_present = false;
+        for curve in ctx.admit_iter(&ir.model.curves, "creo cap circle model curve search")? {
+            if ctx.equal(&curve.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if !identity_present {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::from(center),
                 Vector3::from(axis),
@@ -711,12 +793,14 @@ pub(super) fn transfer_fc05_cap_circles(
             cylinder_id,
             "creo FC05 axis cylinder identity",
         )?;
-        if ir
-            .model
-            .surfaces
-            .iter()
-            .any(|surface| surface.id == surface_id)
-        {
+        let mut identity_present = false;
+        for surface in ctx.admit_iter(&ir.model.surfaces, "creo cap circle model surface search")? {
+            if ctx.equal(&surface.id, &surface_id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

@@ -17,6 +17,24 @@ pub(crate) fn exactly_one<T>(mut iter: impl Iterator<Item = T>) -> Option<T> {
     iter.next().is_none().then_some(first)
 }
 
+/// The only value the predicate accepts. Each value is charged as it is
+/// visited: through the first match, then through the rest for a second one,
+/// so a repeated match stops the search where it is found.
+pub(crate) fn exactly_one_by<'values, T>(
+    ctx: &DecodeContext<'_>,
+    values: &'values [T],
+    mut predicate: impl FnMut(&'values T) -> Result<bool, CodecError>,
+    operation: &'static str,
+) -> Result<Option<&'values T>, CodecError> {
+    let Some(first) = ctx.position_by(values, &mut predicate, operation)? else {
+        return Ok(None);
+    };
+    if ctx.any_by(&values[first + 1..], &mut predicate, operation)? {
+        return Ok(None);
+    }
+    Ok(Some(&values[first]))
+}
+
 pub(super) fn unique_owned_feature_definition<'a>(
     ctx: &DecodeContext<'_>,
     definitions: &'a [crate::feature::definitions::FeatureDefinition],

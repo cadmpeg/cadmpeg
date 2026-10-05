@@ -119,10 +119,21 @@ fn axial_interval_corner_frame_requires_a_unique_tangent_maximum() {
     };
 
     assert_eq!(
-        unique_tangent_axial_interval_corner_frame(&candidates, &[y_support, z_support, cap]),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            unique_tangent_axial_interval_corner_frame(
+                ctx,
+                &candidates,
+                &[y_support, z_support, cap],
+            )
+        })
+        .expect("service corner search admitted"),
         Some(candidates[0])
     );
-    assert!(unique_tangent_axial_interval_corner_frame(&candidates, &[y_support]).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        unique_tangent_axial_interval_corner_frame(ctx, &candidates, &[y_support])
+    })
+    .expect("service incomplete corner search admitted")
+    .is_none());
 }
 
 #[test]
@@ -1372,7 +1383,8 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
 
 #[test]
 fn round_edge_support_frame_selects_one_offset_line() {
-    let frame = super::round_edge_cylinder_frame(
+    let frame = crate::decode::with_test_decode_ctx(|ctx| super::round_edge_cylinder_frame(
+        ctx,
         crate::surface::Type24RoundEdgeEnvelope {
             parameter_interval: [0.25, 5.25],
             vertices: [[1.0, 0.2, 3.0], [1.2, 0.0, 8.0]],
@@ -1389,7 +1401,8 @@ fn round_edge_support_frame_selects_one_offset_line() {
                 normal: [0.0, 1.0, 0.0],
             },
         ],
-    )
+    ))
+    .expect("service round-edge frame search admitted")
     .expect("one offset round-edge cylinder");
 
     assert_eq!(frame.frame().origin(), [1.2, 0.2, 0.0]);
@@ -1401,7 +1414,8 @@ fn round_edge_support_frame_selects_one_offset_line() {
 
 #[test]
 fn perpendicular_round_edge_supports_solve_their_radius() {
-    let frame = super::perpendicular_round_edge_cylinder_frame(
+    let frame = crate::decode::with_test_decode_ctx(|ctx| super::perpendicular_round_edge_cylinder_frame(
+        ctx,
         crate::surface::Type24RoundEdgeEnvelope {
             parameter_interval: [0.25, 5.25],
             vertices: [[1.0, 0.2, 3.0], [1.2, 0.0, 8.0]],
@@ -1417,7 +1431,8 @@ fn perpendicular_round_edge_supports_solve_their_radius() {
                 normal: [0.0, 1.0, 0.0],
             },
         ],
-    )
+    ))
+    .expect("service perpendicular round-edge frame search admitted")
     .expect("one endpoint-solved perpendicular round cylinder");
 
     assert!(frame
@@ -1433,7 +1448,8 @@ fn perpendicular_round_edge_supports_solve_their_radius() {
 
 #[test]
 fn round_edge_support_frame_rejects_parallel_supports() {
-    assert!(super::round_edge_cylinder_frame(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::round_edge_cylinder_frame(
+        ctx,
         crate::surface::Type24RoundEdgeEnvelope {
             parameter_interval: [0.0, 1.0],
             vertices: [[1.0, 0.2, 0.0], [1.0, 0.0, 1.0]],
@@ -1450,7 +1466,8 @@ fn round_edge_support_frame_rejects_parallel_supports() {
                 normal: [1.0, 0.0, 0.0],
             },
         ],
-    )
+    ))
+    .expect("service parallel round-edge frame search admitted")
     .is_none());
 }
 
@@ -1924,7 +1941,7 @@ fn round_envelope_rejects_an_extra_reference_circle() {
     let duplicate_first = circle(369, [0.0, 0.0, 1.0], [3.5, 8.0, -6.0], [5.5, 10.0, -6.0]);
 
     assert!(
-        super::reference_cap_bound_round_frame(envelope, &[&first, &second, &duplicate_first],)
+        crate::decode::with_test_decode_ctx(|ctx| super::reference_cap_bound_round_frame(ctx,envelope, &[&first, &second, &duplicate_first],)).expect("admitted reference cap circles")
             .is_none()
     );
 }

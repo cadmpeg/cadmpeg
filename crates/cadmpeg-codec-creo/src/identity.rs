@@ -122,8 +122,7 @@ pub(crate) fn uniquely_identified_rows_checked<'a, T>(
     for row in rows {
         ctx.charge_work(lookup_work, "creo unique-row identity work")?;
         let key = id(row);
-        ctx.admit_btree_entry(&counts, &key, "creo unique-row count nodes")?;
-        match counts.entry(key) {
+        match ctx.entry_btree_map(&mut counts, key, "creo unique-row count nodes")? {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 *entry.get_mut() = entry.get().checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit("creo unique-row multiplicity", u64::MAX, u64::MAX)
@@ -146,9 +145,12 @@ pub(crate) fn uniquely_identified_rows_checked<'a, T>(
 }
 
 /// Compare a numbered identity without constructing a temporary identity string.
-pub(crate) fn matches_numbered_identity(ctx: &cadmpeg_core::decode::DecodeContext<'_>, actual: &str, prefix: &str, number: u32) -> Result<bool, cadmpeg_core::CodecError> {
-    let Some(suffix) = ctx.strip_prefix(actual, prefix, "creo numbered identity prefix")? else {
-        return Ok(false);
+///
+/// The work is bounded by the caller's constant `prefix` and the ten decimal
+/// digits of a `u32`: the suffix length is checked before it is parsed.
+pub(crate) fn matches_numbered_identity(actual: &str, prefix: &str, number: u32) -> bool {
+    let Some(suffix) = actual.strip_prefix(prefix) else {
+        return false;
     };
     let mut digits = 1;
     let mut remaining = number;
@@ -156,7 +158,7 @@ pub(crate) fn matches_numbered_identity(ctx: &cadmpeg_core::decode::DecodeContex
         remaining /= 10;
         digits += 1;
     }
-    Ok(suffix.len() == digits && ctx.parse_text::<u32>(suffix, "creo scalar text parsing")?.ok() == Some(number))
+    suffix.len() == digits && suffix.parse::<u32>().ok() == Some(number)
 }
 
 pub(crate) const VISIBGEOM_BODY: IdentityNamespace =
@@ -386,53 +388,26 @@ mod tests {
     #[test]
     fn numbered_identity_match_requires_canonical_decimal_bytes() {
         let prefix = "creo:visibgeom:surface#";
-        assert!(crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
-            "creo:visibgeom:surface#0",
+        assert!(matches_numbered_identity("creo:visibgeom:surface#0",
             prefix,
             0
-        )).expect("service profile admits scalar parsing"));
-        assert!(crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
-            "creo:visibgeom:surface#4294967295",
+        ));
+        assert!(matches_numbered_identity("creo:visibgeom:surface#4294967295",
             prefix,
             u32::MAX
-        )).expect("service profile admits scalar parsing"));
-        assert!(!crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
-            "creo:visibgeom:surface#01",
+        ));
+        assert!(!matches_numbered_identity("creo:visibgeom:surface#01",
             prefix,
             1
-        )).expect("service profile admits scalar parsing"));
-        assert!(!crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
-            "creo:visibgeom:surface#+1",
+        ));
+        assert!(!matches_numbered_identity("creo:visibgeom:surface#+1",
             prefix,
             1
-        )).expect("service profile admits scalar parsing"));
-        assert!(!crate::decode::with_test_decode_ctx(|ctx| matches_numbered_identity(ctx, 
-            "creo:visibgeom:face#1",
+        ));
+        assert!(!matches_numbered_identity("creo:visibgeom:face#1",
             prefix,
             1
-        )).expect("service profile admits scalar parsing"));
-    }
-    #[test]
-    fn numbered_identity_parse_refuses_before_false() {
-        let error = crate::test_support::last_refusal_at(
-            &[], ResourceDimension::WorkUnits, "creo scalar text parsing",
-            |ctx| matches_numbered_identity(ctx, "id:x", "id:", 1),
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::WorkUnits
-                && resource.operation == "creo scalar text parsing"));
-    }
-
-    #[test]
-    fn numbered_identity_prefix_refuses_before_mismatch() {
-        let error = crate::test_support::last_refusal_at(
-            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "creo numbered identity prefix",
-            |ctx| matches_numbered_identity(ctx, "other:1", "id:", 1),
-        );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && resource.operation == "creo numbered identity prefix"));
+        ));
     }
 
 }

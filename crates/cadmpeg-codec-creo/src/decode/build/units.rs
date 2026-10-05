@@ -1075,7 +1075,7 @@ fn charge_pattern_scaling_work<C: cadmpeg_ir::features::patterns::CompositeStage
         }
         PatternTransform::Composite { stages } => {
             let _depth = ctx.enter_nested("creo pattern scaling nesting")?;
-            for stage in stages.stages() {
+            for stage in ctx.admit_iter(stages.stages(), "creo pattern scaling stage traversal")? {
                 charge_pattern_scaling_work(ctx, &stage.pattern)?;
             }
         }
@@ -2429,7 +2429,8 @@ mod tests {
             matches!(scale_pattern_kind(&ctx, &mut composite(), positive(2.0)),
             Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo pattern scaling nesting")
         );
-        for cap in [1, 2] {
+        // One parent visit and two admitted stage visits precede child scaling work.
+        for cap in [3, 4] {
             policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");

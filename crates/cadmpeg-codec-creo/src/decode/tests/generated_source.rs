@@ -160,7 +160,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         .expect("valid ConeSurface fixture"),
     ));
     assert_eq!(
-        analytic_surface_id_for_feature(&rows, std::slice::from_ref(&table), 17, 10, &cone,),
+        crate::decode::with_test_decode_ctx(|ctx| analytic_surface_id_for_feature(ctx, &rows, std::slice::from_ref(&table), 17, 10, &cone,)).expect("admitted test lookup"),
         Some(42)
     );
     assert_eq!(
@@ -175,7 +175,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         None
     );
     assert_eq!(
-        analytic_surface_id_for_feature(&rows, std::slice::from_ref(&table), 17, 10, &cylinder,),
+        crate::decode::with_test_decode_ctx(|ctx| analytic_surface_id_for_feature(ctx, &rows, std::slice::from_ref(&table), 17, 10, &cylinder,)).expect("admitted test lookup"),
         None
     );
     assert_eq!(
@@ -207,13 +207,13 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     second_table.entries = vec![table.entries[2].clone()];
     second_table.mark_surface_ids([second_table.entries[0].entity_id]);
     assert_eq!(
-        generated_surface_id_for_feature(&[first_table.clone(), second_table], 17, 9),
+        crate::decode::with_test_decode_ctx(|ctx| generated_surface_id_for_feature(ctx, &[first_table.clone(), second_table], 17, 9)).expect("admitted test lookup"),
         Some(43)
     );
     first_table.entries[0].payload =
         crate::feature::entity::EntryPayload::Source { entity: Some(9) };
     assert_eq!(
-        generated_surface_id_for_feature(&[first_table, table.clone()], 17, 9),
+        crate::decode::with_test_decode_ctx(|ctx| generated_surface_id_for_feature(ctx, &[first_table, table.clone()], 17, 9)).expect("admitted test lookup"),
         None
     );
     let mut wrong_class = table.clone();
@@ -221,7 +221,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         class: crate::feature::entity::PlainClass::new(201).expect("201 is not the source class"),
     };
     assert_eq!(
-        generated_surface_id_for_feature(&[wrong_class], 17, 9),
+        crate::decode::with_test_decode_ctx(|ctx| generated_surface_id_for_feature(ctx, &[wrong_class], 17, 9)).expect("admitted test lookup"),
         None
     );
     let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
@@ -268,21 +268,18 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         ),
         Some(&[crate::surface::SurfaceKind::Cylinder][..])
     );
-    assert!(section_entity_is_generated_profile(
-        true,
+    assert!(crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(ctx, true,
         Some(17),
         8,
         &[crate::surface::SurfaceKind::Cylinder],
         std::slice::from_ref(&table),
-        &rows,
-    ));
+        &rows,)).expect("admitted test lookup"));
     let mut extrusion_rows = rows.clone();
     extrusion_rows[2] = row(
         43,
         crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
     );
-    assert!(section_entity_is_generated_profile(
-        true,
+    assert!(crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(ctx, true,
         Some(17),
         9,
         &[
@@ -290,18 +287,14 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         ],
         std::slice::from_ref(&table),
-        &extrusion_rows,
-    ));
-    assert!(!section_entity_is_generated_profile(
-        true,
+        &extrusion_rows,)).expect("admitted test lookup"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(ctx, true,
         Some(17),
         9,
         &[crate::surface::SurfaceKind::Spline],
         std::slice::from_ref(&table),
-        &extrusion_rows,
-    ));
-    assert!(!section_entity_is_generated_profile(
-        false,
+        &extrusion_rows,)).expect("admitted test lookup"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(ctx, false,
         Some(17),
         9,
         &[
@@ -309,16 +302,13 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
             crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         ],
         std::slice::from_ref(&table),
-        &extrusion_rows,
-    ));
-    assert!(!section_entity_is_generated_profile(
-        true,
+        &extrusion_rows,)).expect("admitted test lookup"));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| section_entity_is_generated_profile(ctx, true,
         Some(17),
         10,
         &[crate::surface::SurfaceKind::Cylinder],
         &[table],
-        &rows,
-    ));
+        &rows,)).expect("admitted test lookup"));
 }
 
 #[test]

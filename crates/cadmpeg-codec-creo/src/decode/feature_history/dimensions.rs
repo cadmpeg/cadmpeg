@@ -22,17 +22,19 @@ use super::super::sketch_ids::{
     feature_sketch_record_id_in_scan, model_sketch_id, section_owner_feature_id,
     sketch_identity_scope,
 };
-use super::super::uniqueness::exactly_one;
 
 fn insert_dimension_property(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    node_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     properties: &mut BTreeMap<String, String>,
     key: &'static str,
     value: impl std::fmt::Display,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.copy_retained_text(key, "creo dimension property key")?;
     let value = ctx.format_retained(format_args!("{value}"), "creo dimension property value")?;
-    ctx.insert_btree_map(properties, key, value, "creo dimension property nodes")?;
+    node_storage.with_storage(|| {
+        ctx.insert_btree_map(properties, key, value, "creo dimension property nodes")
+    })?;
     Ok(())
 }
 
@@ -66,13 +68,18 @@ fn push_feature_source_parameter(
         cadmpeg_core::decode::u64_from_index(content.len()),
         "creo feature source content",
     )?;
-    if content
-        .iter()
-        .any(|entry| matches!(entry, FeatureSourceContent::Parameter(existing) if existing == &id))
-    {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "source_content repeats a parameter or child-feature reference".into(),
-        ));
+    for entry in ctx.admit_iter(&**content, "creo feature source content uniqueness")? {
+        if let FeatureSourceContent::Parameter(existing) = entry {
+            if ctx.equal(
+                existing,
+                &id,
+                "creo feature source parameter identity comparison",
+            )? {
+                return Err(cadmpeg_core::CodecError::Malformed(
+                    "source_content repeats a parameter or child-feature reference".into(),
+                ));
+            }
+        }
     }
     content.reserve_for_decode(ctx, 1, "creo feature source content")?;
     content
@@ -86,38 +93,32 @@ fn push_feature_source_parameter(
 
 #[cfg(test)]
 pub(in super::super) fn feature_dimension_parameter_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     external_id: u32,
-) -> Result<Option<ParameterId>, cadmpeg_core::CodecError> {
-    let Some(key) = sketch_identity_key(ctx, sketch)? else {
-        return Ok(None);
-    };
-    Ok(Some(ParameterId::compose(
+) -> Option<ParameterId> {
+    Some(ParameterId::compose(
         &crate::identity::FEATDEFS_PARAMETER,
-        key.colon(external_id),
-    )))
+        sketch_identity_key(sketch)?.colon(external_id),
+    ))
 }
 
 #[cfg(test)]
 pub(in super::super) fn feature_dimension_parameter_row_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     external_id: u32,
     occurrence: Option<usize>,
-) -> Result<Option<ParameterId>, cadmpeg_core::CodecError> {
-    match occurrence {
-        None => feature_dimension_parameter_id(ctx, sketch, external_id),
-        Some(occurrence) => {
-            let Some(key) = sketch_identity_key(ctx, sketch)? else {
-                return Ok(None);
-            };
-            Ok(Some(ParameterId::compose(
+) -> Option<ParameterId> {
+    occurrence.map_or_else(
+        || feature_dimension_parameter_id(sketch, external_id),
+        |occurrence| {
+            Some(ParameterId::compose(
                 &crate::identity::FEATDEFS_PARAMETER,
-                key.colon(external_id).colon(occurrence + 1),
-            )))
-        }
-    }
+                sketch_identity_key(sketch)?
+                    .colon(external_id)
+                    .colon(occurrence + 1),
+            ))
+        },
+    )
 }
 
 fn feature_dimension_parameter_row_id_admitted(
@@ -133,7 +134,7 @@ fn feature_dimension_parameter_row_id_admitted(
         ctx.format_retained(
             format_args!(
                 "creo:featdefs:parameter#{}:{external_id}:{ordinal}",
-                sketch_identity_scope(ctx, sketch)?,
+                sketch_identity_scope(sketch),
             ),
             "creo dimension parameter identity",
         )?
@@ -141,7 +142,7 @@ fn feature_dimension_parameter_row_id_admitted(
         ctx.format_retained(
             format_args!(
                 "creo:featdefs:parameter#{}:{external_id}",
-                sketch_identity_scope(ctx, sketch)?,
+                sketch_identity_scope(sketch),
             ),
             "creo dimension parameter identity",
         )?
@@ -151,26 +152,26 @@ fn feature_dimension_parameter_row_id_admitted(
 
 #[cfg(test)]
 pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     table: &'a crate::feature::definitions::FeatureDimensionTable,
     ordinal: usize,
-) -> Result<Option<(
+) -> Option<(
     &'a crate::feature::definitions::FeatureDimension,
     ParameterId,
-)>, cadmpeg_core::CodecError> {
-    if !feature_dimension_table_complete(table) { return Ok(None); }
-    let Some(dimension) = table.rows.get(ordinal) else { return Ok(None); };
-    if !(table
+)> {
+    feature_dimension_table_complete(table).then_some(())?;
+    let dimension = table.rows.get(ordinal)?;
+    (table
         .rows
         .iter()
         .filter(|candidate| candidate.external_id == dimension.external_id)
         .count()
-        == 1) { return Ok(None); }
-    let Some(parameter) = feature_dimension_parameter_id(ctx, sketch, dimension.external_id)? else {
-        return Ok(None);
-    };
-    Ok(Some((dimension, parameter)))
+        == 1)
+        .then_some(())?;
+    Some((
+        dimension,
+        feature_dimension_parameter_id(sketch, dimension.external_id)?,
+    ))
 }
 
 pub(in super::super) fn resolved_feature_dimension_parameter_admitted<'a>(
@@ -191,9 +192,8 @@ pub(in super::super) fn resolved_feature_dimension_parameter_admitted<'a>(
     let Some(dimension) = table.rows.get(ordinal) else {
         return Ok(None);
     };
-    let unique = table
-        .rows
-        .iter()
+    let unique = ctx
+        .admit_iter(&table.rows, "creo admitted dimension uniqueness")?
         .filter(|candidate| candidate.external_id == dimension.external_id)
         .count()
         == 1;
@@ -211,7 +211,7 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
     scan: &ContainerScan,
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
-    for definition in &scan.features.definitions {
+    for definition in ctx.admit_iter(&scan.features.definitions, "creo planned dimension definitions")? {
         let Some(table) = &definition.dimensions else {
             continue;
         };
@@ -221,14 +221,9 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
         if !feature_dimension_table_complete(table) {
             continue;
         }
-        for dimension in &table.rows {
-            let rows = u64::try_from(table.rows.len()).map_err(|_| {
-                cadmpeg_core::CodecError::malformed("Creo dimension row count exceeds u64")
-            })?;
-            ctx.charge_work(rows, "creo planned dimension identity uniqueness")?;
-            if table
-                .rows
-                .iter()
+        for dimension in ctx.admit_iter(&table.rows, "creo planned dimension rows")? {
+            if ctx
+                .admit_iter(&table.rows, "creo planned dimension ID uniqueness")?
                 .filter(|candidate| candidate.external_id == dimension.external_id)
                 .count()
                 != 1
@@ -238,7 +233,7 @@ pub(in super::super) fn planned_feature_dimension_parameter_ids(
             let text = ctx.format_retained(
                 format_args!(
                     "creo:featdefs:parameter#{}:{}",
-                    crate::decode::sketch_ids::sketch_identity_scope(ctx, &sketch)?,
+                    crate::decode::sketch_ids::sketch_identity_scope(&sketch),
                     dimension.external_id,
                 ),
                 "creo planned dimension parameter identity",
@@ -314,7 +309,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     cadmpeg_core::CodecError,
 > {
     let mut local_counts = BTreeMap::<(&SketchId, u32), usize>::new();
-    for (sketch, external_id) in keys {
+    for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout keys")? {
         let key = (sketch, *external_id);
         ctx.admit_btree_entry(&local_counts, &key, "creo dimension layout count nodes")?;
         *local_counts.entry(key).or_insert(0) += 1;
@@ -323,7 +318,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     let mut local_occurrences = BTreeMap::<(&SketchId, u32), usize>::new();
     let mut layout = Vec::new();
     ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")?;
-    for (sketch, external_id) in keys {
+    for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout entries")? {
         ctx.admit_btree_entry(
             &next_ordinals,
             &sketch,
@@ -358,7 +353,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
             ctx.format_retained(
                 format_args!(
                     "d{}_{}_{}",
-                    sketch_identity_scope(ctx, sketch)?,
+                    sketch_identity_scope(sketch),
                     external_id,
                     occurrence + 1
                 ),
@@ -366,7 +361,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
             )?
         } else {
             ctx.format_retained(
-                format_args!("d{}_{}", sketch_identity_scope(ctx, sketch)?, external_id),
+                format_args!("d{}_{}", sketch_identity_scope(sketch), external_id),
                 "creo dimension parameter name",
             )?
         };
@@ -383,8 +378,12 @@ pub(in super::super) fn transfer_feature_dimensions(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, BTreeMap<String, ParameterId>), cadmpeg_core::CodecError> {
     let mut feature_ids = BTreeSet::new();
-    for feature in &ir.model.features {
-        if !feature_ids.contains(&feature.id) {
+    for feature in ctx.admit_iter(&ir.model.features, "creo dimension owner features")? {
+        if !ctx.contains_btree_set(
+            &feature_ids,
+            &feature.id,
+            "creo dimension owner feature ID lookup",
+        )? {
             ctx.insert_btree_set(
                 &mut feature_ids,
                 feature
@@ -395,7 +394,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
     }
     let mut candidates = Vec::new();
-    for definition in &scan.features.definitions {
+    for definition in ctx.admit_iter(&scan.features.definitions, "creo dimension source definitions")? {
         let Some(sketch) = model_sketch_id(ctx, scan, definition)? else {
             continue;
         };
@@ -403,13 +402,19 @@ pub(in super::super) fn transfer_feature_dimensions(
         else {
             continue;
         };
-        if !feature_ids.contains(&owner) {
+        if !ctx.contains_btree_set(
+            &feature_ids,
+            &owner,
+            "creo dimension owner lookup",
+        )? {
             continue;
         }
         let Some(table) = &definition.dimensions else {
             continue;
         };
-        for (source_ordinal, dimension) in table.rows.iter().enumerate() {
+        for (source_ordinal, dimension) in
+            ctx.admit_iter(&table.rows, "creo source dimension rows")?.enumerate()
+        {
             ctx.reserve_vec(&mut candidates, 1, "creo dimension candidates")?;
             candidates.push((
                 sketch.try_clone_for_decode(ctx, "creo dimension candidate sketch IDs")?,
@@ -427,7 +432,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     )?;
     let mut keys = Vec::new();
     ctx.reserve_vec(&mut keys, candidates.len(), "creo dimension layout keys")?;
-    for (sketch, _, _, dimension) in &candidates {
+    for (sketch, _, _, dimension) in ctx.admit_iter(&candidates, "creo dimension layout candidates")? {
         keys.push((
             sketch.try_clone_for_decode(ctx, "creo dimension layout sketch IDs")?,
             dimension.external_id,
@@ -437,7 +442,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         return Ok((0, BTreeMap::new()));
     };
     let mut unique_external_ids = BTreeMap::new();
-    for (_, external_id) in &keys {
+    for (_, external_id) in ctx.admit_iter(&keys, "creo unique dimension external IDs")? {
         ctx.admit_btree_entry(
             &unique_external_ids,
             external_id,
@@ -484,32 +489,60 @@ pub(in super::super) fn transfer_feature_dimensions(
             "section_dimension",
             Exactness::Derived,
         )?;
+        let mut property_nodes = ctx.reserve_scoped(0, "creo dimension property nodes")?;
         let mut properties = BTreeMap::new();
         insert_dimension_property(
             ctx,
+            &mut property_nodes,
             &mut properties,
             "definition_id",
             definition.identity.id(),
         )?;
-        insert_dimension_property(ctx, &mut properties, "source_ordinal", source_ordinal)?;
-        insert_dimension_property(ctx, &mut properties, "external_id", dimension.external_id)?;
         insert_dimension_property(
             ctx,
+            &mut property_nodes,
+            &mut properties,
+            "source_ordinal",
+            source_ordinal,
+        )?;
+        insert_dimension_property(
+            ctx,
+            &mut property_nodes,
+            &mut properties,
+            "external_id",
+            dimension.external_id,
+        )?;
+        insert_dimension_property(
+            ctx,
+            &mut property_nodes,
             &mut properties,
             "dimension_type",
             dimension.dimension_type,
         )?;
         insert_dimension_property(
             ctx,
+            &mut property_nodes,
             &mut properties,
             "direction_byte",
             dimension.direction_byte,
         )?;
         if let Some(auxiliary) = dimension.auxiliary_value {
-            insert_dimension_property(ctx, &mut properties, "auxiliary_value", auxiliary)?;
+            insert_dimension_property(
+                ctx,
+                &mut property_nodes,
+                &mut properties,
+                "auxiliary_value",
+                auxiliary,
+            )?;
         }
         if dimension.value.resolved().is_none() {
-            insert_dimension_property(ctx, &mut properties, "value_state", "unresolved")?;
+            insert_dimension_property(
+                ctx,
+                &mut property_nodes,
+                &mut properties,
+                "value_state",
+                "unresolved",
+            )?;
         }
         if let Some(token) = dimension.value.unresolved_token() {
             let encoding = match token {
@@ -518,8 +551,20 @@ pub(in super::super) fn transfer_feature_dimensions(
                 _ => None,
             };
             if let Some(encoding) = encoding {
-                insert_dimension_property(ctx, &mut properties, "value_encoding", encoding)?;
-                insert_dimension_property(ctx, &mut properties, "value_token", HexToken(token))?;
+                insert_dimension_property(
+                    ctx,
+                    &mut property_nodes,
+                    &mut properties,
+                    "value_encoding",
+                    encoding,
+                )?;
+                insert_dimension_property(
+                    ctx,
+                    &mut property_nodes,
+                    &mut properties,
+                    "value_token",
+                    HexToken(token),
+                )?;
             }
         }
         let expression = dimension_expression(ctx, dimension.value.resolved())?;
@@ -552,22 +597,38 @@ pub(in super::super) fn transfer_feature_dimensions(
                 display: feature_dimension_display(dimension.dimension_type),
                 value,
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                properties: cadmpeg_core::text::named_entries_for_decode(
-                    ctx,
-                    id.as_str(),
-                    properties,
-                )?,
+                properties: {
+                    let properties = cadmpeg_core::text::named_entries_for_decode(
+                        ctx,
+                        id.as_str(),
+                        properties,
+                    )?;
+                    drop(property_nodes);
+                    properties
+                },
                 pmi: None,
                 native_ref: Some(feature_sketch_record_id_in_scan(ctx, scan, definition)?),
             },
         )?;
-        if let Some(feature) = exactly_one(
-            ir.model
-                .features
-                .iter_mut()
-                .filter(|feature| feature.id == owner_id),
-        ) {
-            push_feature_source_parameter(ctx, &mut feature.source_content, id)?;
+        let mut owner_index = None;
+        for (index, feature) in
+            ctx.admit_iter(&ir.model.features, "creo dimension owner feature lookup")?.enumerate()
+        {
+            if !ctx.equal(
+                &feature.id,
+                &owner_id,
+                "creo dimension owner feature identity comparison",
+            )? {
+                continue;
+            }
+            if owner_index.is_some() {
+                owner_index = None;
+                break;
+            }
+            owner_index = Some(index);
+        }
+        if let Some(index) = owner_index {
+            push_feature_source_parameter(ctx, &mut ir.model.features[index].source_content, id)?;
         }
     }
     Ok((transferred, relation_parameters))

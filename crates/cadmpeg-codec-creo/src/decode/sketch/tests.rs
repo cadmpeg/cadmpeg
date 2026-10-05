@@ -21,8 +21,11 @@ fn coincident_endpoint_conic_materializes_as_a_full_ellipse() {
     );
 
     let Some((2, SketchGeometryDefinition::Ellipse { bounds, .. }, 40)) =
-        saved_section_entity_geometry(&entity)
-            .map(|(id, geometry, offset)| (id, geometry.into_definition(), offset))
+        crate::decode::with_test_decode_ctx(|ctx| {
+            saved_section_entity_geometry(ctx, &entity)
+                .map(|geometry| geometry.map(|(id, geometry, offset)| (id, geometry.into_definition(), offset)))
+        })
+        .expect("admitted saved-entity geometry")
     else {
         panic!("full ellipse");
     };

@@ -19,6 +19,7 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_core::ContainerEntry;
@@ -165,13 +166,34 @@ impl Layout {
 #[derive(Debug, Clone)]
 pub(crate) struct Section {
     /// Raw name as it appeared in the header, when decorated.
-    pub(crate) raw_name: String,
+    raw_name: String,
+    /// Byte range of the normalized name within `raw_name`.
+    name: std::ops::Range<usize>,
+    /// Payload role of the normalized name.
+    role: SectionRole,
     /// Byte offset of the section header within the file.
     offset: usize,
     /// Payload length in bytes (header to the next section, or EOF).
     length: usize,
     /// Expanded payload length from the TOC, excluding the section header.
     expanded_length: Option<usize>,
+}
+
+impl DecodeCost for Section {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        (
+            &self.raw_name,
+            (self.name.start, self.name.end),
+            self.offset,
+            self.length,
+            self.expanded_length,
+        )
+            .decode_cost(ctx, operation)
+    }
 }
 
 /// One declared section together with the bytes it was admitted against.
@@ -187,25 +209,6 @@ pub(crate) struct ScannedSection<'a> {
     pub(crate) section: Section,
     /// The section's payload bytes in the file the scan read it from.
     region: &'a [u8],
-}
-
-impl cadmpeg_core::decode::cost::DecodeCost for Section {
-    fn decode_cost(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<u64, CodecError> {
-        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
-            &(
-                &self.raw_name,
-                &self.offset,
-                &self.length,
-                &self.expanded_length,
-            ),
-            ctx,
-            operation,
-        )
-    }
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for ScannedSection<'_> {
@@ -228,6 +231,8 @@ impl ScannedSection<'_> {
             section: Section {
                 raw_name: ctx
                     .copy_retained_text(&self.section.raw_name, "creo copied section names")?,
+                name: self.section.name.clone(),
+                role: self.section.role,
                 offset: self.section.offset,
                 length: self.section.length,
                 expanded_length: self.section.expanded_length,
@@ -240,24 +245,52 @@ impl ScannedSection<'_> {
 impl Section {
     /// The section whose payload is `data[offset..end]`, with those bytes, or
     /// `None` when that is not a region of `data`: an end before the offset, or
-    /// past the last byte of the file.
-    pub(crate) fn scan(
+    /// past the last byte of the file. The name is normalized and classified
+    /// here, once, so the accessors do no work.
+    pub(crate) fn scan<'a>(
+        ctx: &DecodeContext<'_>,
+        raw_name: String,
+        offset: usize,
+        end: usize,
+        expanded_length: Option<usize>,
+        data: &'a [u8],
+    ) -> Result<Option<ScannedSection<'a>>, CodecError> {
+        let Some(region) = data.get(offset..end) else {
+            return Ok(None);
+        };
+        let name = normalized_name_range(ctx, &raw_name)?;
+        let role = classify(&raw_name[name.clone()]);
+        Ok(Some(ScannedSection {
+            section: Self {
+                raw_name,
+                name,
+                role,
+                offset,
+                length: region.len(),
+                expanded_length,
+            },
+            region,
+        }))
+    }
+
+    /// [`Section::scan`] under an unlimited test session.
+    #[cfg(test)]
+    pub(crate) fn scan_for_test(
         raw_name: String,
         offset: usize,
         end: usize,
         expanded_length: Option<usize>,
         data: &[u8],
     ) -> Option<ScannedSection<'_>> {
-        let region = data.get(offset..end)?;
-        Some(ScannedSection {
-            section: Self {
-                raw_name,
-                offset,
-                length: region.len(),
-                expanded_length,
-            },
-            region,
+        crate::decode::with_test_decode_ctx(|ctx| {
+            Self::scan(ctx, raw_name, offset, end, expanded_length, data)
         })
+        .expect("test section name is admitted")
+    }
+
+    /// Raw name as it appeared in the header, when decorated.
+    pub(crate) fn raw_name(&self) -> &str {
+        &self.raw_name
     }
 
     /// Byte offset of the section header within the file.
@@ -285,16 +318,13 @@ impl Section {
     }
 
     /// Normalized section name.
-    pub(crate) fn name<'section>(
-        &'section self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<&'section str, CodecError> {
-        normalize_name(ctx, &self.raw_name)
+    pub(crate) fn name(&self) -> &str {
+        &self.raw_name[self.name.clone()]
     }
 
     /// Payload role derived from the section name.
-    pub(crate) fn role(&self, ctx: &DecodeContext<'_>) -> Result<SectionRole, CodecError> {
-        Ok(classify(self.name(ctx)?))
+    pub(crate) fn role(&self) -> SectionRole {
+        self.role
     }
 }
 
@@ -670,15 +700,28 @@ fn line_at(ctx: &DecodeContext<'_>, data: &[u8], start: usize) -> Result<String,
 
 /// Normalize a decorated section name to its base ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)): strip a
 /// `ModelView#N` suffix and an `ND:0:<Name>:N` decoration.
-fn normalize_name<'text>(
+///
+/// Returns the byte range of the normalized name within `raw`. The scans stop
+/// at the first `#` and within that prefix, so one pass over `raw` bounds them.
+fn normalized_name_range(
     ctx: &DecodeContext<'_>,
-    raw: &'text str,
-) -> Result<&'text str, CodecError> {
-    let base = raw.split('#').next().unwrap_or(raw);
-    Ok(ctx
-        .strip_prefix(base, "ND:", "creo section decoration prefix")?
-        .and_then(|rest| rest.split(':').nth(1))
-        .unwrap_or(base))
+    raw: &str,
+) -> Result<std::ops::Range<usize>, CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(raw.len()),
+        "creo section name normalization",
+    )?;
+    let base_end = raw.find('#').unwrap_or(raw.len());
+    let base = &raw[..base_end];
+    let Some(rest) = base.strip_prefix("ND:") else {
+        return Ok(0..base_end);
+    };
+    let Some(first_colon) = rest.find(':') else {
+        return Ok(0..base_end);
+    };
+    let start = "ND:".len() + first_colon + 1;
+    let end = base[start..].find(':').map_or(base_end, |length| start + length);
+    Ok(start..end)
 }
 
 /// Classify a normalized section name by what it carries ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
@@ -783,7 +826,7 @@ fn scan_sections<'a>(
     for (idx, (hdr_off, raw)) in hits.iter().enumerate() {
         let end = hits.get(idx + 1).map_or(data.len(), |(next, _)| *next);
         let name = ctx.copy_retained_text(raw, "creo scanned section names")?;
-        sections.extend(Section::scan(name, *hdr_off, end, None, data));
+        sections.extend(Section::scan(ctx, name, *hdr_off, end, None, data)?);
     }
     Ok(sections)
 }
@@ -924,12 +967,13 @@ fn toc_sections<'a>(
             }
             ctx.reserve_vec(&mut sections, 1, "creo TOC sections")?;
             sections.extend(Section::scan(
+                ctx,
                 raw_name,
                 offset,
                 end,
                 Some(expanded_length),
                 data,
-            ));
+            )?);
         }
     }
     ctx.stable_sort_by_key(
@@ -1130,7 +1174,7 @@ fn legacy_toc_sections<'a>(
         }
         let raw_name = ctx.copy_retained_text(raw_name, "creo legacy TOC section names")?;
         ctx.reserve_vec(&mut sections, 1, "creo legacy TOC sections")?;
-        sections.extend(Section::scan(raw_name, offset, end, None, data));
+        sections.extend(Section::scan(ctx, raw_name, offset, end, None, data)?);
     }
     ctx.stable_sort_by_key(
         sections.as_mut_slice(),
@@ -1180,7 +1224,7 @@ fn expanded_sections(
             continue;
         };
         let name =
-            ctx.copy_retained_text(section.section.name(ctx)?, "creo expanded section names")?;
+            ctx.copy_retained_text(section.section.name(), "creo expanded section names")?;
         ctx.reserve_vec(&mut expanded_sections, 1, "creo expanded sections")?;
         expanded_sections.push(ExpandedSection {
             name,
@@ -1203,9 +1247,13 @@ pub(crate) fn expanded_section_for<'a>(
         |expanded| {
             // An expanded payload begins after its section's `#<name>\n` header, so
             // its source offset is inside the section but never its first byte.
-            Ok(expanded.name == section.name(ctx)?
-                && section.contains(expanded.source_offset)
-                && expanded.source_offset != section.offset())
+            Ok(section.contains(expanded.source_offset)
+                && expanded.source_offset != section.offset()
+                && ctx.equal(
+                    expanded.name.as_str(),
+                    section.name(),
+                    "creo expanded section name comparison",
+                )?)
         },
         "creo expanded section selection",
     )
@@ -1386,7 +1434,7 @@ fn identify_layout(
     let has_depdb_root = ctx.any_by(
         sections,
         |section| {
-            if section.section.name(ctx)? != "DEPDB_DATA" {
+            if section.section.name() != "DEPDB_DATA" {
                 return Ok(false);
             }
             let Some(header_end) = section
@@ -1404,7 +1452,7 @@ fn identify_layout(
     )?;
     let has_depdb_section = ctx.any_by(
         sections,
-        |section| Ok(section.section.name(ctx)? == "DEPDB_DATA"),
+        |section| Ok(section.section.name() == "DEPDB_DATA"),
         "creo DEPDB section selection",
     )?;
     let has_nd_decoration = sections
@@ -1484,13 +1532,13 @@ fn geom_census(
 ) -> Result<GeomCensus, CodecError> {
     let Some(vg) = (match ctx.find_by(
         sections,
-        |section| Ok(section.section.name(ctx)? == VISIBGEOM),
+        |section| Ok(section.section.name() == VISIBGEOM),
         "creo geometry section selection",
     )? {
         Some(section) => Some(section),
         None => ctx.find_by(
             sections,
-            |section| Ok(section.section.name(ctx)? == "DEPDB_DATA"),
+            |section| Ok(section.section.name() == "DEPDB_DATA"),
             "creo geometry section fallback",
         )?,
     }) else {
@@ -1615,7 +1663,7 @@ fn native_model_name(
     const FIELD: &[u8] = b"model_name\0";
 
     for section in sections {
-        if section.section.role(ctx)? == SectionRole::Thumbnail {
+        if section.section.role() == SectionRole::Thumbnail {
             continue;
         }
         let region = section.region;
@@ -1688,7 +1736,7 @@ fn family_table(
 ) -> Result<Option<FamilyTableRecord>, CodecError> {
     let Some(section) = ctx.find_by(
         sections,
-        |section| Ok(section.section.name(ctx)? == "FamilyInf"),
+        |section| Ok(section.section.name() == "FamilyInf"),
         "creo named section selection",
     )?
     else {
@@ -1733,7 +1781,7 @@ fn model_geometry_sections<'a>(
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut visible_namespace_present = false;
     for candidate in sections {
-        if !(candidate.section.name(ctx)? == VISIBGEOM) {
+        if !(candidate.section.name() == VISIBGEOM) {
             continue;
         }
         let payload = candidate.region;
@@ -1751,8 +1799,8 @@ fn model_geometry_sections<'a>(
     let mut selected = Vec::new();
     for section in sections {
         let keep = if visible_namespace_present {
-            section.section.name(ctx)? == VISIBGEOM
-        } else if section.section.name(ctx)? == "DEPDB_DATA" {
+            section.section.name() == VISIBGEOM
+        } else if section.section.name() == "DEPDB_DATA" {
             let payload = section.region;
             ctx.find_bytes_from(payload, b"srf_array\0", 0, "find Creo container marker")?
                 .is_some()
@@ -1776,7 +1824,7 @@ fn nonvisible_geometry_sections<'a>(
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut selected = Vec::new();
     for section in sections {
-        if !(section.section.name(ctx)? == "NovisGeom") {
+        if !(section.section.name() == "NovisGeom") {
             continue;
         }
         ctx.reserve_vec(&mut selected, 1, "creo nonvisible geometry sections")?;
@@ -1797,7 +1845,7 @@ fn loop_array_sections<'a>(
         selected.push(section.copy_retained(ctx)?);
     }
     for section in sections {
-        if !(section.section.name(ctx)? == "Xsections") {
+        if !(section.section.name() == "Xsections") {
             continue;
         }
         if ctx
@@ -2153,11 +2201,9 @@ fn two_chart_pcurves(
     )?;
     let mut counts = BTreeMap::new();
     for record in &records {
-        ctx.admit_btree_entry(&counts, &record.curve_id, "creo two-chart pcurve counts")?;
-        let count = match counts.entry(record.curve_id) {
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-        };
+        let count = ctx
+            .entry_btree_map(&mut counts, record.curve_id, "creo two-chart pcurve counts")?
+            .or_insert(0usize);
         *count += 1;
     }
     ctx.retain_vec(
@@ -2242,13 +2288,8 @@ fn datum_planes(
         ctx,
         sections
             .iter()
-            .map(|section| {
-                section
-                    .section
-                    .name(ctx)
-                    .map(|name| (name == "ActDatums").then_some(section))
-            })
-            .filter_map(Result::transpose),
+            .filter(|section| section.section.name() == "ActDatums")
+            .map(Ok),
         |bytes| {
             let mut planes = datum::planes(ctx, bytes)?;
             if let Some(plane) = datum::named_plane(ctx, bytes)? {
@@ -2270,13 +2311,8 @@ fn datum_cylinders(
         ctx,
         sections
             .iter()
-            .map(|section| {
-                section
-                    .section
-                    .name(ctx)
-                    .map(|name| (name == "ActDatums").then_some(section))
-            })
-            .filter_map(Result::transpose),
+            .filter(|section| section.section.name() == "ActDatums")
+            .map(Ok),
         |bytes| datum::cylinders(ctx, bytes),
         |cylinder, base| cylinder.offset_in_payload += base,
         |cylinder| cylinder.offset_in_payload,
@@ -2317,7 +2353,7 @@ fn structural_feature_ids(
         ctx.insert_btree_set(&mut ids, id, "creo structural feature ids")?;
     }
     for section in sections {
-        if !(section.section.role(ctx)? == SectionRole::PsbGeometry) {
+        if !(section.section.role() == SectionRole::PsbGeometry) {
             continue;
         }
         let payload = section.region;
@@ -2531,13 +2567,8 @@ fn feature_entity_tables(
         ctx,
         sections
             .iter()
-            .map(|section| {
-                section
-                    .section
-                    .name(ctx)
-                    .map(|name| (name == "AllFeatur").then_some(section))
-            })
-            .filter_map(Result::transpose),
+            .filter(|section| section.section.name() == "AllFeatur")
+            .map(Ok),
         |bytes| feature::entity::entity_tables(ctx, bytes, &feature_ids_set, &surface_ids),
         |table, base| {
             table.offset += base;
@@ -2557,7 +2588,7 @@ fn feature_rows(
 ) -> Result<Vec<FeatureRow>, CodecError> {
     let mut rows = Vec::new();
     for section in sections {
-        if !(section.section.name(ctx)? == "AllFeatur") {
+        if !(section.section.name() == "AllFeatur") {
             continue;
         }
         let section_bytes = section.region;
@@ -2581,7 +2612,7 @@ fn feature_entity_graph(
 ) -> Result<(Vec<FeatureEntity>, Vec<FeatureEntityReference>), CodecError> {
     let Some(section) = ctx.find_by(
         sections,
-        |section| Ok(section.section.name(ctx)? == "AllFeatur"),
+        |section| Ok(section.section.name() == "AllFeatur"),
         "creo named section selection",
     )?
     else {
@@ -2699,12 +2730,12 @@ fn feature_definitions(
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
     for section in sections {
-        if !(section.section.name(ctx)? == "FeatDefs" || section.section.name(ctx)? == "DEPDB_DATA")
+        if !(section.section.name() == "FeatDefs" || section.section.name() == "DEPDB_DATA")
         {
             continue;
         }
         let payload = section.region;
-        let decoded = if section.section.name(ctx)? == "DEPDB_DATA" {
+        let decoded = if section.section.name() == "DEPDB_DATA" {
             feature::definitions::depdb_definitions(ctx, payload)?
         } else {
             feature::definitions::definitions(ctx, payload)?
@@ -2714,7 +2745,7 @@ fn feature_definitions(
             offset_feature_definition(&mut definition, section.section.offset());
             definition
         }));
-        if section.section.name(ctx)? == "DEPDB_DATA" {
+        if section.section.name() == "DEPDB_DATA" {
             let mut recipe_operations = feature::operations::operations(ctx, payload)?
                 .into_iter()
                 .filter(|operation| operation.recipe.resolved().is_some());
@@ -2875,7 +2906,7 @@ fn section_owner_ranges(
     let count = ctx
         .admit_iter(sections, "creo section owner count")?
         .try_fold(0usize, |count, section| -> Result<usize, CodecError> {
-            if section.section.name(ctx)? == "DEPDB_DATA" {
+            if section.section.name() == "DEPDB_DATA" {
                 count.checked_add(1).ok_or_else(|| {
                     ctx.refuse_codec_limit("creo section owner count", u64::MAX, u64::MAX)
                 })
@@ -2888,7 +2919,7 @@ fn section_owner_ranges(
     let mut ranges = Vec::new();
     ctx.reserve_vec(&mut ranges, count, "creo section owner ranges")?;
     for section in sections {
-        if section.section.name(ctx)? == "DEPDB_DATA" {
+        if section.section.name() == "DEPDB_DATA" {
             ranges.push((section.section.offset(), section.section.end()));
         }
     }
@@ -2910,13 +2941,8 @@ fn positional_replay_definitions(
         ctx,
         sections
             .iter()
-            .map(|section| {
-                section
-                    .section
-                    .name(ctx)
-                    .map(|name| (name == "FeatDefs").then_some(section))
-            })
-            .filter_map(Result::transpose),
+            .filter(|section| section.section.name() == "FeatDefs")
+            .map(Ok),
         |bytes| feature::definitions::positional_replay_definitions(ctx, bytes),
         offset_feature_definition,
         |definition| definition.offset,
@@ -2931,15 +2957,8 @@ fn feature_operations(
         ctx,
         sections
             .iter()
-            .map(|section| {
-                section.section.name(ctx).and_then(|name| {
-                    Ok(
-                        (name == "MdlStatus" || section.section.name(ctx)? == "DEPDB_DATA")
-                            .then_some(section),
-                    )
-                })
-            })
-            .filter_map(Result::transpose),
+            .filter(|section| matches!(section.section.name(), "MdlStatus" | "DEPDB_DATA"))
+            .map(Ok),
         |bytes| feature::operations::operations(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -2978,7 +2997,7 @@ fn feature_reference_names(
 ) -> Result<Vec<FeatureReferenceName>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        if !(section.section.name(ctx)? == "MdlRefInfo") {
+        if !(section.section.name() == "MdlRefInfo") {
             continue;
         }
         let section_bytes = section.region;
@@ -3000,15 +3019,8 @@ fn feature_operation_states(
         ctx,
         sections
             .iter()
-            .map(|section| {
-                section.section.name(ctx).and_then(|name| {
-                    Ok(
-                        (name == "MdlStatus" || section.section.name(ctx)? == "DEPDB_DATA")
-                            .then_some(section),
-                    )
-                })
-            })
-            .filter_map(Result::transpose),
+            .filter(|section| matches!(section.section.name(), "MdlStatus" | "DEPDB_DATA"))
+            .map(Ok),
         |bytes| feature::operations::operation_states(ctx, bytes),
         |record, base| {
             record.offset += base;
@@ -3024,7 +3036,7 @@ fn depdb_recipe_rows(
 ) -> Result<Vec<FeatureRow>, CodecError> {
     let mut rows = Vec::new();
     for section in sections {
-        if !(section.section.name(ctx)? == "DEPDB_DATA") {
+        if !(section.section.name() == "DEPDB_DATA") {
             continue;
         }
         let payload = section.region;
@@ -3090,7 +3102,7 @@ fn geomlists_value(
 ) -> Result<Option<u32>, CodecError> {
     let Some(section) = ctx.find_by(
         sections,
-        |section| Ok(section.section.name(ctx)? == "Geomlists"),
+        |section| Ok(section.section.name() == "Geomlists"),
         "creo named section selection",
     )?
     else {
@@ -3141,7 +3153,7 @@ fn reference_scan(
     let mut circles = Vec::new();
     let mut conics = Vec::new();
     for section in sections {
-        if !(section.section.name(ctx)? == "MdlRefInfo") {
+        if !(section.section.name() == "MdlRefInfo") {
             continue;
         }
         let payload = section.region;
@@ -3838,10 +3850,8 @@ fn cross_sections<'a, 'data, 'ctx>(
     sections: &'a [ScannedSection<'data>],
 ) -> impl Iterator<Item = Result<&'a ScannedSection<'data>, CodecError>> + use<'a, 'data, 'ctx> {
     sections.iter().filter_map(move |section| {
-        match section.section.name(ctx) {
-            Ok("Xsections") => {}
-            Ok(_) => return None,
-            Err(error) => return Some(Err(error)),
+        if section.section.name() != "Xsections" {
+            return None;
         }
         match ctx.find_bytes_from(
             section.region,
@@ -3910,7 +3920,7 @@ pub(crate) fn has_thumbnail(
     scan: &ContainerScan,
 ) -> Result<bool, CodecError> {
     for section in &scan.framing.sections {
-        if section.role(ctx)? != SectionRole::Thumbnail {
+        if section.role() != SectionRole::Thumbnail {
             continue;
         }
         let Some(raw) = section_region(&scan.framing.data, section) else {
@@ -3961,7 +3971,7 @@ pub(crate) fn summarize(
             ctx.format_retained(format_args!("{}", s.offset()), "creo summary offset")?,
             "creo summary attribute nodes",
         )?;
-        if s.raw_name != s.name(ctx)? {
+        if s.raw_name != s.name() {
             ctx.insert_btree_map(
                 &mut attributes,
                 ctx.copy_retained_text("raw_name", "creo summary attribute key")?,
@@ -3981,11 +3991,11 @@ pub(crate) fn summarize(
                 "creo summary attribute nodes",
             )?;
         }
-        let name = ctx.copy_retained_text(s.name(ctx)?, "creo summary entry name")?;
+        let name = ctx.copy_retained_text(s.name(), "creo summary entry name")?;
         ctx.reserve_vec(&mut entries, 1, "creo summary entries")?;
         entries.push(ContainerEntry {
             name,
-            role: s.role(ctx)?.into(),
+            role: s.role().into(),
             storage: expanded.map_or_else(
                 || {
                     EntryStorage::verbatim(

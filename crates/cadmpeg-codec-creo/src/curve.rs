@@ -978,12 +978,7 @@ pub(crate) fn prototype_topology_rows(
 ) -> Result<Vec<CurveTopologyRow>, cadmpeg_core::CodecError> {
     let mut prototype_counts = BTreeMap::<u32, usize>::new();
     for prototype in prototypes {
-        ctx.admit_btree_entry(
-            &prototype_counts,
-            &prototype.id,
-            "creo prototype ID count nodes",
-        )?;
-        match prototype_counts.entry(prototype.id) {
+        match ctx.entry_btree_map(&mut prototype_counts, prototype.id, "creo prototype ID count nodes")? {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
@@ -992,12 +987,7 @@ pub(crate) fn prototype_topology_rows(
     }
     let mut topology_counts = BTreeMap::<u32, usize>::new();
     for topology in prototype_topology {
-        ctx.admit_btree_entry(
-            &topology_counts,
-            &topology.curve_id,
-            "creo prototype topology count nodes",
-        )?;
-        match topology_counts.entry(topology.curve_id) {
+        match ctx.entry_btree_map(&mut topology_counts, topology.curve_id, "creo prototype topology count nodes")? {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
@@ -1375,8 +1365,7 @@ impl ExternalRelationSymbols {
         use std::collections::btree_map::Entry;
 
         ctx.make_ascii_lowercase(&mut name, "creo relation identifier case fold")?;
-        ctx.admit_btree_entry(&self.values, &name, "creo external relation symbol nodes")?;
-        match self.values.entry(name) {
+        match ctx.entry_btree_map(&mut self.values, name, "creo external relation symbol nodes")? {
             Entry::Vacant(entry) => {
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(entry.key().len()),
@@ -5723,6 +5712,12 @@ struct ExpressionParser<'a, V> {
 
 const MAX_EXPRESSION_NESTING: usize = 128;
 
+/// A parse step's value, or the refusal that stopped it. The refusal is boxed
+/// so each recursive frame holds a pointer rather than the whole error: the
+/// recursion is bounded by `MAX_EXPRESSION_NESTING`, and its stack use by the
+/// size of these frames.
+type Parsed<V> = Result<Option<V>, Box<cadmpeg_core::CodecError>>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComparisonOperator {
     Equal,
@@ -5751,6 +5746,11 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         value.finite().then_some(value)
     }
 
+    /// The finite value of a checked operation.
+    fn finite_result(result: Result<Option<V>, cadmpeg_core::CodecError>) -> Parsed<V> {
+        Ok(result?.and_then(Self::finite_value))
+    }
+
     fn whitespace(&mut self) {
         while self
             .source
@@ -5761,38 +5761,53 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         }
     }
 
-    fn logical_or(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
-        let mut value = { let Some(value) = self.logical_and()? else { return Ok(None); }; value };
+    fn logical_or(&mut self) -> Parsed<V> {
+        let Some(mut value) = self.logical_and()? else {
+            return Ok(None);
+        };
         loop {
             self.whitespace();
             if self.source.get(self.cursor) != Some(&b'|') {
                 return Ok(Some(value));
             }
             self.cursor += 1;
-            let right = { let Some(value) = self.logical_and()? else { return Ok(None); }; value };
+            let Some(right) = self.logical_and()? else {
+                return Ok(None);
+            };
             self.ctx.charge_work(1, "creo relation operator work")?;
-            let result = value.logical_or_checked(right, self.ctx);
-            value = { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value };
+            let Some(next) = Self::finite_result(value.logical_or_checked(right, self.ctx))? else {
+                return Ok(None);
+            };
+            value = next;
         }
     }
 
-    fn logical_and(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
-        let mut value = { let Some(value) = self.comparison()? else { return Ok(None); }; value };
+    fn logical_and(&mut self) -> Parsed<V> {
+        let Some(mut value) = self.comparison()? else {
+            return Ok(None);
+        };
         loop {
             self.whitespace();
             if self.source.get(self.cursor) != Some(&b'&') {
                 return Ok(Some(value));
             }
             self.cursor += 1;
-            let right = { let Some(value) = self.comparison()? else { return Ok(None); }; value };
+            let Some(right) = self.comparison()? else {
+                return Ok(None);
+            };
             self.ctx.charge_work(1, "creo relation operator work")?;
-            let result = value.logical_and_checked(right, self.ctx);
-            value = { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value };
+            let Some(next) = Self::finite_result(value.logical_and_checked(right, self.ctx))?
+            else {
+                return Ok(None);
+            };
+            value = next;
         }
     }
 
-    fn comparison(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
-        let value = { let Some(value) = self.expression()? else { return Ok(None); }; value };
+    fn comparison(&mut self) -> Parsed<V> {
+        let Some(value) = self.expression()? else {
+            return Ok(None);
+        };
         self.whitespace();
         let (operator, width) = match self.source.get(self.cursor..) {
             Some([b'=', b'=', ..]) => (ComparisonOperator::Equal, 2),
@@ -5804,160 +5819,191 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             _ => return Ok(Some(value)),
         };
         self.cursor += width;
-        let right = { let Some(value) = self.expression()? else { return Ok(None); }; value };
+        let Some(right) = self.expression()? else {
+            return Ok(None);
+        };
         self.ctx.charge_work(1, "creo relation operator work")?;
-        let result = value.compare_checked(right, operator, self.ctx);
-        Ok(Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }))
+        Self::finite_result(value.compare_checked(right, operator, self.ctx))
     }
 
-    fn expression(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
-        let mut value = { let Some(value) = self.term()? else { return Ok(None); }; value };
+    fn expression(&mut self) -> Parsed<V> {
+        let Some(mut value) = self.term()? else {
+            return Ok(None);
+        };
         loop {
             self.whitespace();
-            match self.source.get(self.cursor) {
-                Some(b'+') => {
-                    self.cursor += 1;
-                    let right = { let Some(value) = self.term()? else { return Ok(None); }; value };
-                    self.ctx.charge_work(1, "creo relation operator work")?;
-                    let result = value.add_checked(right, self.ctx);
-                    value = { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value };
-                }
-                Some(b'-') => {
-                    self.cursor += 1;
-                    let right = { let Some(value) = self.term()? else { return Ok(None); }; value };
-                    self.ctx.charge_work(1, "creo relation operator work")?;
-                    let result = value.subtract_checked(right, self.ctx);
-                    value = { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value };
-                }
+            let subtract = match self.source.get(self.cursor) {
+                Some(b'+') => false,
+                Some(b'-') => true,
                 _ => return Ok(Some(value)),
-            }
+            };
+            self.cursor += 1;
+            let Some(right) = self.term()? else {
+                return Ok(None);
+            };
+            self.ctx.charge_work(1, "creo relation operator work")?;
+            let result = if subtract {
+                value.subtract_checked(right, self.ctx)
+            } else {
+                value.add_checked(right, self.ctx)
+            };
+            let Some(next) = Self::finite_result(result)? else {
+                return Ok(None);
+            };
+            value = next;
         }
     }
 
-    fn term(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
-        let mut value = { let Some(value) = self.unary()? else { return Ok(None); }; value };
+    fn term(&mut self) -> Parsed<V> {
+        let Some(mut value) = self.unary()? else {
+            return Ok(None);
+        };
         loop {
             self.whitespace();
-            match self.source.get(self.cursor) {
-                Some(b'*') => {
-                    self.cursor += 1;
-                    let right = { let Some(value) = self.unary()? else { return Ok(None); }; value };
-                    self.ctx.charge_work(1, "creo relation operator work")?;
-                    let result = value.multiply_checked(right, self.ctx);
-                    value = { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value };
-                }
-                Some(b'/') => {
-                    self.cursor += 1;
-                    let right = { let Some(value) = self.unary()? else { return Ok(None); }; value };
-                    self.ctx.charge_work(1, "creo relation operator work")?;
-                    let result = value.divide_checked(right, self.ctx);
-                    value = { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value };
-                }
+            let divide = match self.source.get(self.cursor) {
+                Some(b'*') => false,
+                Some(b'/') => true,
                 _ => return Ok(Some(value)),
-            }
+            };
+            self.cursor += 1;
+            let Some(right) = self.unary()? else {
+                return Ok(None);
+            };
+            self.ctx.charge_work(1, "creo relation operator work")?;
+            let result = if divide {
+                value.divide_checked(right, self.ctx)
+            } else {
+                value.multiply_checked(right, self.ctx)
+            };
+            let Some(next) = Self::finite_result(result)? else {
+                return Ok(None);
+            };
+            value = next;
         }
     }
 
-    fn unary(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
+    fn unary(&mut self) -> Parsed<V> {
         self.whitespace();
         let start = self.cursor;
-        loop {
-            match self.source.get(self.cursor) {
-                Some(b'+') => self.cursor += 1,
-                Some(b'-' | b'!' | b'~') => self.cursor += 1,
-                _ => break,
-            }
+        while let Some(b'+' | b'-' | b'!' | b'~') = self.source.get(self.cursor) {
+            self.cursor += 1;
             self.whitespace();
         }
         let end = self.cursor;
-        let mut value = { let Some(value) = self.power()? else { return Ok(None); }; value };
+        let Some(mut value) = self.power()? else {
+            return Ok(None);
+        };
         for index in (start..end).rev() {
-            let operator = self.source[index];
-            value = match operator {
-                b'-' => {
-                    let result = value.negate_checked(self.ctx);
-                    { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value }
-                }
-                b'!' | b'~' => {
-                    let result = value.logical_not_checked(self.ctx);
-                    { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value }
-                }
-                _ => value,
+            let result = match self.source[index] {
+                b'-' => value.negate_checked(self.ctx),
+                b'!' | b'~' => value.logical_not_checked(self.ctx),
+                _ => continue,
             };
+            let Some(next) = Self::finite_result(result)? else {
+                return Ok(None);
+            };
+            value = next;
         }
         Ok(Some(value))
     }
 
-    fn power(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
-        let value = { let Some(value) = self.primary()? else { return Ok(None); }; value };
+    /// Refuses one more level of nesting past the parser's ceiling.
+    fn nesting_ceiling(&self) -> Result<(), Box<cadmpeg_core::CodecError>> {
+        if self.nesting < MAX_EXPRESSION_NESTING {
+            return Ok(());
+        }
+        Err(Box::new(self.ctx.refuse_codec_limit(
+            "creo relation nesting ceiling",
+            cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
+            cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
+        )))
+    }
+
+    fn power(&mut self) -> Parsed<V> {
+        let Some(value) = self.primary()? else {
+            return Ok(None);
+        };
         self.whitespace();
         if self.source.get(self.cursor) != Some(&b'^') {
             return Ok(Some(value));
         }
-        if self.nesting >= MAX_EXPRESSION_NESTING {
-            let error = self.ctx.refuse_codec_limit(
-                "creo relation nesting ceiling",
-                cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
-                cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
-            );
-            return Err(error);
-        }
+        self.nesting_ceiling()?;
         let _depth = self.ctx.enter_nested("creo relation exponent depth")?;
         self.ctx.charge_work(1, "creo relation exponent work")?;
         self.cursor += 1;
         self.nesting += 1;
-        let exponent = { let Some(value) = self.unary()? else { return Ok(None); }; value };
+        let Some(exponent) = self.unary()? else {
+            return Ok(None);
+        };
         self.nesting -= 1;
-        let result = value.power_checked(exponent, self.ctx);
-        Ok(Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }))
+        Self::finite_result(value.power_checked(exponent, self.ctx))
     }
 
-    fn primary(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
+    fn primary(&mut self) -> Parsed<V> {
         self.whitespace();
-        let mut value = { let Some(value) = (match { let Some(value) = self.source.get(self.cursor) else { return Ok(None); }; value } {
-            b'(' => {
-                if self.nesting >= MAX_EXPRESSION_NESTING {
-                    let error = self.ctx.refuse_codec_limit(
-                        "creo relation nesting ceiling",
-                        cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
-                        cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
-                    );
-                    return Err(error);
-                }
-                let _depth = self.ctx.enter_nested("creo relation group depth")?;
-                self.ctx.charge_work(1, "creo relation group work")?;
-                self.cursor += 1;
-                self.nesting += 1;
-                let value = { let Some(value) = self.logical_or()? else { return Ok(None); }; value };
-                self.nesting -= 1;
-                self.whitespace();
-                (self.source.get(self.cursor) == Some(&b')')).then(|| {
-                    self.cursor += 1;
-                    value
-                })
-            }
-            byte if byte.is_ascii_digit() || *byte == b'.' => self.number()?,
+        let Some(&first) = self.source.get(self.cursor) else {
+            return Ok(None);
+        };
+        let value = match first {
+            b'(' => self.group()?,
+            byte if byte.is_ascii_digit() || byte == b'.' => self.number()?,
             b'\'' | b'"' => self.string()?,
-            byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier_or_function()?,
+            byte if byte.is_ascii_alphabetic() || byte == b'_' => self.identifier_or_function()?,
             _ => None,
-        }) else { return Ok(None); }; value };
+        };
+        let Some(mut value) = value else {
+            return Ok(None);
+        };
         self.whitespace();
         if self.source.get(self.cursor) == Some(&b'[') {
             let unit_start = self.cursor + 1;
-            let unit_length = { let Some(value) = self.source[unit_start..]
-                .iter()
-                .position(|byte| *byte == b']') else { return Ok(None); }; value };
+            let Some(unit_length) = self.ctx.position_by(
+                &self.source[unit_start..],
+                |byte| Ok(*byte == b']'),
+                "creo relation unit bracket scan",
+            )?
+            else {
+                return Ok(None);
+            };
             let unit_end = unit_start + unit_length;
-            let unit = { let Some(value) = self.ctx.validate_utf8(&self.source[unit_start..unit_end], "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
-            let unit = { let Some(value) = relation_unit(self.ctx, unit)? else { return Ok(None); }; value };
-            let result = value.with_unit_checked(unit, self.ctx);
-            value = { let Some(value) = Self::finite_value({ let Some(value) = result? else { return Ok(None); }; value }) else { return Ok(None); }; value };
+            let Ok(unit) = self
+                .ctx
+                .validate_utf8(&self.source[unit_start..unit_end], "creo UTF-8 validation")?
+            else {
+                return Ok(None);
+            };
+            let Some(unit) = relation_unit(self.ctx, unit)? else {
+                return Ok(None);
+            };
+            let Some(next) = Self::finite_result(value.with_unit_checked(unit, self.ctx))? else {
+                return Ok(None);
+            };
+            value = next;
             self.cursor = unit_end + 1;
         }
         Ok(Self::finite_value(value))
     }
 
-    fn string(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
+    /// A parenthesized expression, one nesting level deeper.
+    fn group(&mut self) -> Parsed<V> {
+        self.nesting_ceiling()?;
+        let _depth = self.ctx.enter_nested("creo relation group depth")?;
+        self.ctx.charge_work(1, "creo relation group work")?;
+        self.cursor += 1;
+        self.nesting += 1;
+        let Some(value) = self.logical_or()? else {
+            return Ok(None);
+        };
+        self.nesting -= 1;
+        self.whitespace();
+        if self.source.get(self.cursor) != Some(&b')') {
+            return Ok(None);
+        }
+        self.cursor += 1;
+        Ok(Some(value))
+    }
+
+    fn string(&mut self) -> Parsed<V> {
         let Some(delimiter) = self.source.get(self.cursor).copied() else {
             return Ok(None);
         };
@@ -5981,7 +6027,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         Ok(V::string(value))
     }
 
-    fn number(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
+    fn number(&mut self) -> Parsed<V> {
         let start = self.cursor;
         while self
             .source
@@ -6016,43 +6062,54 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         Ok(V::number(value))
     }
 
-    fn identifier_or_function(&mut self) -> Result<Option<V>, cadmpeg_core::CodecError> {
+    fn identifier_or_function(&mut self) -> Parsed<V> {
         let start = self.cursor;
-        self.cursor = { let Some(value) = expression_identifier_end(self.source, start) else { return Ok(None); }; value };
-        let name = { let Some(value) = self.ctx.validate_utf8(&self.source[start..self.cursor], "creo UTF-8 validation")?.ok() else { return Ok(None); }; value };
+        let Some(end) = expression_identifier_end(self.source, start) else {
+            return Ok(None);
+        };
+        self.cursor = end;
+        let Ok(name) = self
+            .ctx
+            .validate_utf8(&self.source[start..end], "creo UTF-8 validation")?
+        else {
+            return Ok(None);
+        };
         self.whitespace();
         if self.source.get(self.cursor) != Some(&b'(') {
             if let Some(value) = V::reserved(self.ctx, name)? {
                 return Ok(Some(value));
             }
-            let (mut key, _reservation) = self.ctx
-                    .format_scoped(format_args!("{name}"), "creo relation lookup key")?;
-            self.ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-            let copied = { let Some(value) = self.values.get(&key) else { return Ok(None); }; value }.clone_admitted(self.ctx);
-            return Ok(Some(copied?));
+            let (mut key, _reservation) = self
+                .ctx
+                .format_scoped(format_args!("{name}"), "creo relation lookup key")?;
+            self.ctx
+                .make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
+            let Some(value) =
+                self.ctx
+                    .get_btree_map(self.values, key.as_str(), "creo relation symbol lookup")?
+            else {
+                return Ok(None);
+            };
+            return Ok(Some(value.clone_admitted(self.ctx)?));
         }
-        if self.nesting >= MAX_EXPRESSION_NESTING {
-            let error = self.ctx.refuse_codec_limit(
-                "creo relation nesting ceiling",
-                cadmpeg_core::decode::u64_from_index(MAX_EXPRESSION_NESTING),
-                cadmpeg_core::decode::u64_from_index(self.nesting) + 1,
-            );
-            return Err(error);
-        }
-        let (function, scope) = { let Some(value) = creo_relation_function(self.ctx, name)? else { return Ok(None); }; value };
+        self.nesting_ceiling()?;
+        let Some((function, scope)) = creo_relation_function(self.ctx, name)? else {
+            return Ok(None);
+        };
         let _depth = self.ctx.enter_nested("creo relation function depth")?;
         self.ctx.charge_work(1, "creo relation function work")?;
         self.cursor += 1;
         self.nesting += 1;
         self.whitespace();
-        let mut argument_storage =
-            self.ctx.reserve_scoped(0, "Creo relation argument storage")?;
+        let mut argument_storage = self
+            .ctx
+            .reserve_scoped(0, "Creo relation argument storage")?;
         let mut arguments = Vec::new();
         if self.source.get(self.cursor) != Some(&b')') {
             loop {
-                let parsed = argument_storage
-                    .with_storage(|| self.logical_or());
-                let argument = { let Some(value) = parsed? else { return Ok(None); }; value };
+                let Some(argument) = argument_storage.with_storage(|| self.logical_or())? else {
+                    return Ok(None);
+                };
                 argument_storage.with_storage(|| {
                     self.ctx
                         .reserve_vec(&mut arguments, 1, "creo relation function arguments")
@@ -6066,11 +6123,12 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             }
         }
         self.whitespace();
-        { let Some(value) = (self.source.get(self.cursor) == Some(&b')')).then_some(()) else { return Ok(None); }; value };
+        if self.source.get(self.cursor) != Some(&b')') {
+            return Ok(None);
+        }
         self.cursor += 1;
         self.nesting -= 1;
-        let result = V::function_checked(function, scope, &arguments, self.context, self.ctx);
-        Ok(result?)
+        Ok(V::function_checked(function, scope, &arguments, self.context, self.ctx)?)
     }
 }
 
@@ -6613,7 +6671,7 @@ fn parse_relation_expression<V: ExpressionValue>(
         ctx,
         nesting: 0,
     };
-    let value = parser.logical_or()?;
+    let value = parser.logical_or().map_err(|error| *error)?;
     parser.whitespace();
     Ok(value.filter(|value| parser.cursor == parser.source.len() && value.finite()))
 }
@@ -6657,11 +6715,11 @@ fn infer_solve_variable_dimensions(
         ctx.reserve_vec(&mut variable_keys, 1, "creo dimension variable keys")?;
         let mut key = ctx.copy_retained_text(&unknown.name, "creo dimension variable key text")?;
         ctx.make_ascii_lowercase(&mut key, "creo relation identifier case fold")?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(variable_keys.len()),
+        if ctx.any_by(
+            variable_keys.iter(),
+            |known: &String| ctx.equal(known.as_str(), key.as_str(), "creo dimension duplicate checks"),
             "creo dimension duplicate checks",
-        )?;
-        if variable_keys.contains(&key) {
+        )? {
             return Ok(None);
         }
         variable_keys.push(key);
@@ -8614,15 +8672,9 @@ pub(crate) fn two_chart_pcurve_samples(
             && complete_two_chart_samples(ctx, body, start, count, &cache)?.is_some()
         {
             let group_key = (row.namespace_start, prefix.feature_id, prefix.type_byte);
-            ctx.admit_btree_entry(
-                &canonical_counts,
-                &group_key,
-                "creo two-chart canonical group nodes",
-            )?;
-            let counts = match canonical_counts.entry(group_key) {
-                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
-            };
+            let counts = ctx
+                .entry_btree_map(&mut canonical_counts, group_key, "creo two-chart canonical group nodes")?
+                .or_default();
             ctx.insert_btree_set(counts, count, "creo two-chart canonical count nodes")?;
         }
     }
@@ -8686,15 +8738,9 @@ pub(crate) fn two_chart_pcurve_samples(
     )?;
     let mut counts = BTreeMap::new();
     for record in &result {
-        ctx.admit_btree_entry(
-            &counts,
-            &record.curve_id,
-            "creo two-chart result count nodes",
-        )?;
-        let count = match counts.entry(record.curve_id) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
-        };
+        let count = ctx
+            .entry_btree_map(&mut counts, record.curve_id, "creo two-chart result count nodes")?
+            .or_insert(0usize);
         *count += 1;
     }
     ctx.retain_vec(&mut result, |record| Ok(counts.get(&record.curve_id) == Some(&1)), "creo sampled pcurve retain")?;
@@ -9073,12 +9119,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
     }
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {
-        ctx.admit_btree_entry(
-            &circle_counts,
-            &circle.curve_id,
-            "creo fc05 circle-count nodes",
-        )?;
-        match circle_counts.entry(circle.curve_id) {
+        match ctx.entry_btree_map(&mut circle_counts, circle.curve_id, "creo fc05 circle-count nodes")? {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
@@ -9118,11 +9159,9 @@ pub(crate) fn fc05_cylinder_cap_pairs(
         ) else {
             continue;
         };
-        ctx.admit_btree_entry(&groups, &cylinder, "creo fc05 cylinder group nodes")?;
-        let group = match groups.entry(cylinder) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
-        };
+        let group = ctx
+            .entry_btree_map(&mut groups, cylinder, "creo fc05 cylinder group nodes")?
+            .or_default();
         ctx.reserve_vec(group, 1, "creo fc05 cylinder group members")?;
         group.push((circle, plane, ordinate));
     }
@@ -9366,28 +9405,16 @@ pub(crate) fn bind_prototype_pcurves(
 ) -> Result<Vec<BoundPrototypePcurve>, cadmpeg_core::CodecError> {
     let mut pcurve_counts = BTreeMap::new();
     for pcurve in pcurves {
-        ctx.admit_btree_entry(
-            &pcurve_counts,
-            &pcurve.curve_id,
-            "creo prototype pcurve count nodes",
-        )?;
-        let count = match pcurve_counts.entry(pcurve.curve_id) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
-        };
+        let count = ctx
+            .entry_btree_map(&mut pcurve_counts, pcurve.curve_id, "creo prototype pcurve count nodes")?
+            .or_insert(0usize);
         *count += 1;
     }
     let mut topology_counts = BTreeMap::new();
     for row in topology {
-        ctx.admit_btree_entry(
-            &topology_counts,
-            &row.curve_id,
-            "creo prototype topology count nodes",
-        )?;
-        let count = match topology_counts.entry(row.curve_id) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
-        };
+        let count = ctx
+            .entry_btree_map(&mut topology_counts, row.curve_id, "creo prototype topology count nodes")?
+            .or_insert(0usize);
         *count += 1;
     }
     let mut result = Vec::new();

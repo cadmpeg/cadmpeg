@@ -47,12 +47,12 @@ pub(crate) struct PrimitiveScalarArray {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct PrimitiveShadedVertex {
-    position: FiniteVector<3>,
-    normal: FiniteVector<3>,
+pub(crate) struct PrimitiveShadedVertex {
+    pub(crate) position: FiniteVector<3>,
+    pub(crate) normal: FiniteVector<3>,
 }
 #[derive(Debug, Clone, PartialEq)]
-enum PrimitiveVertices {
+pub(crate) enum PrimitiveVertices {
     Unshaded(Vec<FiniteVector<3>>),
     Shaded(Vec<PrimitiveShadedVertex>),
 }
@@ -116,6 +116,7 @@ impl PrimitiveTriangleStrip {
             strip_lengths,
         }))
     }
+    #[cfg(test)]
     pub(crate) fn positions(&self) -> impl ExactSizeIterator<Item = &FiniteVector<3>> {
         let count = match &self.vertices {
             PrimitiveVertices::Unshaded(rows) => rows.len(),
@@ -126,11 +127,16 @@ impl PrimitiveTriangleStrip {
             PrimitiveVertices::Shaded(rows) => &rows[index].position,
         })
     }
+    #[cfg(test)]
     pub(crate) fn normals(&self) -> Option<impl ExactSizeIterator<Item = &FiniteVector<3>>> {
         match &self.vertices {
             PrimitiveVertices::Unshaded(_) => None,
             PrimitiveVertices::Shaded(rows) => Some(rows.iter().map(|row| &row.normal)),
         }
+    }
+    /// Returns the complete stored vertex lane without copying its rows.
+    pub(crate) fn vertices(&self) -> &PrimitiveVertices {
+        &self.vertices
     }
     pub(crate) fn strip_lengths(&self) -> &[u32] {
         &self.strip_lengths
