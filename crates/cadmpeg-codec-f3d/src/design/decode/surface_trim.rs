@@ -66,8 +66,7 @@ fn exact_surface_trim_operation(
         selection_record_index,
         selection_byte_offset_u64,
         selection_class_tag,
-    )
-    .transpose()?
+    )?
     else {
         return Ok(None);
     };

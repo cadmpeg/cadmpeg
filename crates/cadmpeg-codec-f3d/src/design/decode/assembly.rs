@@ -538,14 +538,11 @@ fn exact_legacy_as_built_selection_at(
             header: &header,
         },
         recipes,
-    )
-    .transpose()?
+    )?
     else {
         return Ok(None);
     };
-    let Some(prefix) =
-        parse_entity_selection_prefix(ctx, bytes, byte_offset, record_index).transpose()?
-    else {
+    let Some(prefix) = parse_entity_selection_prefix(ctx, bytes, byte_offset, record_index)? else {
         return Ok(None);
     };
     let (Ok(asset_id), Ok(context_id)) = (prefix.asset_id.try_into(), prefix.context_id.try_into())

@@ -528,7 +528,7 @@ fn fixed_fillet_parameter_owner_search_refuses_work_limit() {
     let owners = [localized_fillet_owner(10, 11, 0)];
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "find F3D fixed Fillet parameter owners",
+        "index F3D fixed Fillet parameter owners",
         0,
         |ctx| {
             let mut scope = localized_fillet_scope();
@@ -543,7 +543,7 @@ fn fixed_fillet_parameter_owner_search_refuses_work_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(failure)
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && failure.operation == "find F3D fixed Fillet parameter owners"
+                && failure.operation == "index F3D fixed Fillet parameter owners"
                 && failure.additional == 1
     ));
 }
