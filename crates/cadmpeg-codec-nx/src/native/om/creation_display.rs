@@ -144,7 +144,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
         let record_area_offset = record_area.offset;
         let record_area = record_area.bytes;
         let Some(class_ordinal) = ctx.position_by(
-            &section.types,
+            &*section.types,
             |definition| Ok(definition.name == CLASS_NAME),
             "find NX creation display class",
         )?
