@@ -1347,16 +1347,16 @@ pub(crate) fn project(
     }
     let (ordinal_counts, _ordinal_counts_storage) =
         ctx.with_scoped_storage("count Inventor feature ordinals", || {
-            let mut counts = HashMap::<u64, usize>::new();
+            let mut counts = BTreeMap::<u64, usize>::new();
             for (feature, _) in ctx.admit_iter(&projected, "count Inventor feature ordinals")? {
-                if let Some(count) = ctx.get_mut_hash_map(
+                if let Some(count) = ctx.get_mut_btree_map(
                     &mut counts,
                     &feature.ordinal,
                     "count Inventor feature ordinals",
                 )? {
                     *count = 2;
                 } else {
-                    ctx.insert_hash_map(
+                    ctx.insert_btree_map(
                         &mut counts,
                         feature.ordinal,
                         1,

@@ -6,6 +6,70 @@ use rustc_span::Span;
 use types::Shape;
 
 impl<'tcx> Analysis<'_, 'tcx> {
+    fn borrowed_cow_conversion(
+        &self,
+        expression: &'tcx Expr<'tcx>,
+        definition: rustc_span::def_id::DefId,
+        operands: &[&'tcx Expr<'tcx>],
+    ) -> bool {
+        let result = self.expr_ty(expression);
+        let rustc_middle::ty::Adt(owner, result_args) = result.kind() else {
+            return false;
+        };
+        if !types::standard(self.tcx, owner.did())
+            || self.tcx.item_name(owner.did()).as_str() != "Cow"
+            || !matches!(
+                self.tcx.def_kind(definition),
+                rustc_hir::def::DefKind::AssocFn
+            )
+            || !matches!(self.tcx.item_name(definition).as_str(), "from" | "into")
+            || !self
+                .implementation(expression, definition)
+                .is_some_and(|id| types::standard(self.tcx, id))
+        {
+            return false;
+        }
+        let Some(target) = result_args.types().next() else {
+            return false;
+        };
+        let Some(source) = operands.first().map(|operand| self.expr_ty(operand)) else {
+            return false;
+        };
+        if source == result {
+            return true;
+        }
+        matches!(target.kind(), rustc_middle::ty::Str)
+            && (matches!(source.kind(), rustc_middle::ty::Ref(_, inner, _) if matches!(inner.kind(), rustc_middle::ty::Str))
+                || matches!(source.kind(), rustc_middle::ty::Adt(source_owner, _) if types::standard(self.tcx, source_owner.did()) && self.tcx.item_name(source_owner.did()).as_str() == "String"))
+    }
+
+    fn forwarded_into_body_is_checked(
+        &self,
+        expression: &'tcx Expr<'tcx>,
+        definition: rustc_span::def_id::DefId,
+        operands: &[&'tcx Expr<'tcx>],
+    ) -> bool {
+        let Some(source) = operands.first() else {
+            return false;
+        };
+        crate::conversion::core_conversion_trait(self.tcx, definition, "Into")
+            && self
+                .resolved_instance(expression, definition)
+                .and_then(|instance| {
+                    crate::conversion::forwarded_from(
+                        self.tcx,
+                        self.typing_env(),
+                        instance,
+                        self.expr_ty(source),
+                        self.expr_ty(expression),
+                    )
+                })
+                .is_some_and(|target| {
+                    !types::standard(self.tcx, target.def_id())
+                        && self.checked_body(target.def_id())
+                })
+    }
+
     fn work_report(
         &mut self,
         expression: &'tcx Expr<'tcx>,
@@ -25,7 +89,25 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
     }
 
+    fn hash_table_traversal(&mut self, expression: &'tcx Expr<'tcx>, operation: &str) {
+        self.report(
+            expression.span,
+            "uncharged_decode_work",
+            &format!(
+                "hash table {operation}: decode code does not iterate, compare, clone, retain or drain a HashMap or HashSet, whose order is unspecified and whose allocated extent is unbounded; replacement: {}",
+                crate::hash_tables::TRAVERSAL_REPLACEMENT
+            ),
+        );
+    }
+
     pub(crate) fn work(&mut self, expression: &'tcx Expr<'tcx>) {
+        if self
+            .findings
+            .handled_work_operations
+            .contains(&expression.hir_id)
+        {
+            return;
+        }
         if self
             .findings
             .admitted_operations
@@ -36,6 +118,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if let ExprKind::Binary(operator, left, right) = expression.kind {
             if matches!(
                 operator.node,
+                BinOpKind::BitOr | BinOpKind::BitAnd | BinOpKind::BitXor | BinOpKind::Sub
+            ) && (crate::hash_tables::whole_table(self.tcx, self.expr_ty(left))
+                || crate::hash_tables::whole_table(self.tcx, self.expr_ty(right)))
+            {
+                self.hash_table_traversal(expression, "set operator");
+                return;
+            }
+            if matches!(
+                operator.node,
                 BinOpKind::Eq
                     | BinOpKind::Ne
                     | BinOpKind::Lt
@@ -43,6 +134,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     | BinOpKind::Gt
                     | BinOpKind::Ge
             ) {
+                if crate::hash_tables::whole_table(self.tcx, self.expr_ty(left))
+                    || crate::hash_tables::whole_table(self.tcx, self.expr_ty(right))
+                {
+                    self.hash_table_traversal(expression, "comparison");
+                    return;
+                }
                 if self.key_work_paid(&[left, right], "comparison") {
                     self.record_key_work_proof(expression);
                     return;
@@ -94,9 +191,55 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
         }
+        if let ExprKind::Index(base, _, _) = expression.kind {
+            if let Some(replacement) =
+                crate::hash_tables::keyed_index_replacement(self.tcx, self.expr_ty(base))
+            {
+                self.report(
+                    expression.span,
+                    "uncharged_decode_work",
+                    &format!(
+                        "keyed index hashes or compares its key without charging it; replacement: {replacement}"
+                    ),
+                );
+                return;
+            }
+        }
         let Some((definition, operands)) = self.call(expression) else {
             return;
         };
+        if let Some(traversal) = crate::hash_tables::traversal(
+            self.tcx,
+            definition,
+            operands.first().map(|receiver| self.expr_ty(receiver)),
+        ) {
+            self.hash_table_traversal(expression, traversal);
+            return;
+        }
+        match self.shared_identity_grammar_paid(expression, definition) {
+            Some(Some(true)) => return,
+            Some(Some(false)) => {
+                self.work_report(
+                    expression,
+                    expression.span,
+                    Shape::Dynamic,
+                    Some(false),
+                    "shared identity grammar",
+                );
+                return;
+            }
+            Some(None) => {
+                self.work_report(
+                    expression,
+                    expression.span,
+                    Shape::Dynamic,
+                    None,
+                    "shared identity grammar",
+                );
+                return;
+            }
+            None => (),
+        }
         let name = self.tcx.item_name(definition);
         if matches!(
             self.tcx.def_kind(definition),
@@ -104,7 +247,12 @@ impl<'tcx> Analysis<'_, 'tcx> {
         ) {
             return;
         }
-        if self.checked_call(expression, definition) {
+        if self.forwarded_into_body_is_checked(expression, definition, &operands) {
+            return;
+        }
+        if self.checked_call(expression, definition)
+            || crate::scope::codec_backend_delegation(self.tcx, definition)
+        {
             return;
         }
         let name = name.as_str();
@@ -117,10 +265,60 @@ impl<'tcx> Analysis<'_, 'tcx> {
             self.work_report(expression, expression.span, shape, paid, name);
             return;
         }
-        if self.key_work_paid(&operands, name)
-            || self.move_work_paid(definition, &operands, name)
-            || self.core_iterator_next(expression)
+        let key_work_paid = self.key_work_paid(&operands, name);
+        if key_work_paid {
+            self.record_key_work_proof(expression);
+        }
+        // Core's generic keyed operations are proven at each concrete instance
+        // its callers import.
+        let core_body = self
+            .tcx
+            .crate_name(rustc_span::def_id::LOCAL_CRATE)
+            .as_str()
+            == "cadmpeg_core";
+        if let Some((receiver, query)) =
+            operands.first().zip(operands.get(1)).filter(|_| !core_body)
         {
+            if crate::hash_tables::generic_raw_lookup(
+                self.tcx,
+                definition,
+                self.expr_ty(receiver),
+                self.expr_ty(query),
+            ) {
+                // Each concrete instance proves its own key callbacks and builder.
+                self.report(
+                    expression.span,
+                    "unproven_decode_charge",
+                    "hash lookup with a generic key, query or builder: each concrete instance must use standard or derived key callbacks and the random hasher",
+                );
+                return;
+            }
+        }
+        if operands
+            .first()
+            .zip(operands.get(1))
+            .is_some_and(|(receiver, query)| {
+                crate::hash_tables::bounded_raw_lookup(
+                    self.tcx,
+                    definition,
+                    self.expr_ty(receiver),
+                    self.expr_ty(query),
+                ) == Some(false)
+            })
+        {
+            self.work_report(
+                expression,
+                expression.span,
+                Shape::Unknown,
+                Some(false),
+                "hash lookup callback",
+            );
+            return;
+        }
+        if key_work_paid {
+            return;
+        }
+        if self.move_work_paid(definition, &operands, name) || self.core_iterator_next(expression) {
             self.record_key_work_proof(expression);
             return;
         }
@@ -289,7 +487,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
             let result = self.expr_ty(expression);
             if matches!(result.kind(), rustc_middle::ty::Adt(definition, _) if types::standard(self.tcx, definition.did()) && self.tcx.item_name(definition.did()).as_str() == "Cow")
             {
-                return;
+                if self.borrowed_cow_conversion(expression, definition, &operands) {
+                    return;
+                }
             }
             if match result.kind() {
                 rustc_middle::ty::RawPtr(_, _) => true,
@@ -299,13 +499,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
                 _ => false,
             } {
-                return;
-            }
-            if result
-                == operands
-                    .first()
-                    .map_or(self.expr_ty(expression), |operand| self.expr_ty(operand))
-            {
                 return;
             }
             if let Some(receiver) = operands.first() {
@@ -463,7 +656,35 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 }
             }
         }
-        if consumers && types::admitted_iterator(self.tcx, value) {
+        if consumers && self.prepaid_iterator(value) {
+            if let Some(search) = early_exit_search(name) {
+                // Admission charged every visit, but the search may stop at
+                // the first; the core search charges only the visits it makes.
+                self.report(
+                    expression.span,
+                    "unproven_decode_charge",
+                    &format!(
+                        "{name} stops early over an admission that charged every visit; replacement: DecodeContext::{search}"
+                    ),
+                );
+                return;
+            }
+            // Admission charged every base visit before the first step; the
+            // consumer's own callbacks must be checked bodies.
+            let callbacks: Vec<_> = operands
+                .iter()
+                .skip(1)
+                .map(|operand| self.expr_ty(operand))
+                .collect();
+            if !self.consumer_callbacks_checked(&callbacks) {
+                self.work_report(
+                    expression,
+                    expression.span,
+                    Shape::Unknown,
+                    None,
+                    "prepaid iterator consumer callback",
+                );
+            }
             return;
         }
         if name == "count" {
@@ -506,7 +727,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let shape = if name == "count" {
             Shape::Unknown
         } else if consumers {
-            self.iteration(receiver, &mut Vec::new())
+            match self.iteration(receiver, &mut Vec::new()) {
+                Shape::Unknown => self.bounded_iterator_shape(value).unwrap_or(Shape::Unknown),
+                shape => shape,
+            }
         } else {
             if self.constant(extent, &mut Vec::new()) || self.bounded_work(extent) {
                 Shape::Fixed
@@ -563,7 +787,9 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     | "resize"
                     | "append"
                     | "extend"
-            ) || self.deep_work(checked_value) && !fixed_copy
+            ) || self.deep_work(checked_value)
+                && !fixed_copy
+                && !matches!(name, "retain" | "retain_mut")
                 || consumers && self.capacity_iteration(receiver))
         {
             paid = None;
@@ -669,11 +895,15 @@ impl<'tcx> Analysis<'_, 'tcx> {
                     return Some(false);
                 }
                 let name = self.tcx.item_name(definition);
-                if name.as_str() == "next_charged" && self.trusted_context_callee(call) {
+                if types::decode_context_method(self.tcx, definition, "next_charged") {
                     return Some(true);
                 }
                 if matches!(name.as_str(), "charge_work" | "charge_work_limit") {
-                    if !self.trusted_context_callee(call) {
+                    if !(types::decode_context_method(self.tcx, definition, "charge_work")
+                        || types::decode_context_method(self.tcx, definition, "charge_work_limit")
+                        || std::env::var_os("CADMPEG_POLICY_FIXTURE").is_some()
+                            && self.trusted_context_callee(call))
+                    {
                         return None;
                     }
                     let Some(amount) = operands.get(1) else {
@@ -882,7 +1112,14 @@ impl<'tcx> Analysis<'_, 'tcx> {
                 if let Some((_, args)) = self.call(source) {
                     if let Some(input) = args.first() {
                         self.visit_expr(input);
-                        let shape = self.iteration(input, &mut Vec::new());
+                        // A one-step iterator whose source expression has no
+                        // inferred extent still needs one charge per step.
+                        let shape = match self.iteration(input, &mut Vec::new()) {
+                            Shape::Unknown => self
+                                .bounded_iterator_shape(self.expr_ty(input))
+                                .unwrap_or(Shape::Unknown),
+                            shape => shape,
+                        };
                         let paid = self.take_credit(&[input]);
                         let user_body =
                             block
@@ -1096,4 +1333,17 @@ impl<'tcx> Visitor<'tcx> for ShrinkGuard<'_, '_, 'tcx> {
         }
         walk_expr(self, expression);
     }
+}
+
+/// The core search that charges only the visits an early-exit consumer makes.
+pub(crate) fn early_exit_search(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "any" => "any_by",
+        "all" => "all_by",
+        "find" => "find_by",
+        "position" => "position_by",
+        "find_map" => "find_map",
+        "rposition" => "rposition_by",
+        _ => return None,
+    })
 }

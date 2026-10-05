@@ -173,6 +173,24 @@ impl<'tcx> Analysis<'_, 'tcx> {
         if !types::standard(self.tcx, definition) {
             return false;
         }
+        // `Vec::insert` shifts the suffix from its index by one slot; a move
+        // receipt for exactly that suffix pays for it.
+        if name == "insert" {
+            let (Some(receiver), Some(index)) = (operands.first(), operands.get(1)) else {
+                return false;
+            };
+            if !types::standard_vector(self.tcx, self.expr_ty(receiver)) {
+                return false;
+            }
+            let Some(base) = self.key_work_operand(receiver) else {
+                return false;
+            };
+            let factor = format!(
+                "movebytes:{base}[RangeFrom(start:{})]",
+                self.key_index_operand(index)
+            );
+            return self.take_move_receipt(&factor, 1);
+        }
         let (index, moves): (usize, u64) = match name {
             "reverse" | "rotate_left" | "rotate_right" => (0, 3),
             "fill" => {
@@ -203,6 +221,10 @@ impl<'tcx> Analysis<'_, 'tcx> {
         else {
             return false;
         };
+        self.take_move_receipt(&factor, moves)
+    }
+
+    fn take_move_receipt(&mut self, factor: &str, moves: u64) -> bool {
         let Some(required) = moves.checked_mul(self.flow.iterations) else {
             return false;
         };
@@ -212,7 +234,7 @@ impl<'tcx> Analysis<'_, 'tcx> {
             .iter_mut()
             .filter(|credit| !credit.opaque)
             .flat_map(|credit| &mut credit.extents)
-            .find(|term| term.coefficient >= required && term.factors == [factor.as_str()])
+            .find(|term| term.coefficient >= required && term.factors == [factor])
         else {
             return false;
         };

@@ -40,6 +40,28 @@ fn check_fixture(name: &str) {
     let output_dir = root.join("target/fixtures").join(name);
     std::fs::create_dir_all(&output_dir).expect("fixture directory");
     let mut command = Command::new(std::env::current_exe().expect("test binary"));
+    if name == "generic_limits" {
+        let dependency = output_dir.join("libcadmpeg_core.rmeta");
+        let status = Command::new("rustc")
+            .args([
+                "+nightly-2026-09-08",
+                "--crate-name=cadmpeg_core",
+                "--crate-type=lib",
+                "--edition=2021",
+                "--emit=metadata",
+                "-Zalways-encode-mir",
+            ])
+            .arg(root.join("fixtures/generic_limits_dependency.rs"))
+            .arg("-o")
+            .arg(&dependency)
+            .status()
+            .expect("generic limit dependency compiler");
+        assert!(status.success());
+        command.env(
+            "CADMPEG_POLICY_DEPENDENCY",
+            format!("cadmpeg_core={}", dependency.display()),
+        );
+    }
     if name == "imported" {
         let dependency = output_dir.join("libcadmpeg_core.rmeta");
         let status = Command::new("rustc")
@@ -106,6 +128,22 @@ fn check_fixture(name: &str) {
             | "parser_json"
             | "parser_zip"
             | "parser_zstd"
+            | "replacement_forms"
+            | "encoding"
+            | "borrowed_identities"
+            | "iteration_sources"
+            | "model_index"
+            | "core_operations"
+            | "admitted_text"
+            | "const_grammar"
+            | "xml_routes"
+            | "adapter_receipts"
+            | "matrix_iteration"
+            | "hash_tables"
+            | "member_keys"
+            | "serde_storage"
+            | "collection_sources"
+            | "archive_probe"
     ) {
         let executable = std::env::current_exe().expect("test executable");
         let target = executable
@@ -141,6 +179,10 @@ fn check_fixture(name: &str) {
             "zip",
             "memchr",
             "zstd_safe",
+            "encoding_rs",
+            "cadmpeg_core",
+            "cadmpeg_container",
+            "cadmpeg_ir",
         ] {
             let expected = fingerprint["deps"]
                 .as_array()
@@ -190,6 +232,7 @@ fn check_fixture(name: &str) {
             | "work_scalar"
             | "work_iterators"
             | "serde"
+            | "serde_storage"
             | "boxing"
             | "text_sources"
             | "btree_storage"
@@ -199,6 +242,7 @@ fn check_fixture(name: &str) {
             | "reader_callbacks"
             | "unicode_case"
             | "work_integer_ranges"
+            | "work_admitted"
             | "bounded_slices"
     ) {
         command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_core");
@@ -208,6 +252,10 @@ fn check_fixture(name: &str) {
     }
     if name == "external" {
         command.env("CADMPEG_POLICY_EXTERNALS", "1");
+    }
+
+    if name == "borrowed_identities" {
+        command.env("CADMPEG_POLICY_CRATE_NAME", "cadmpeg_ir");
     }
     let output = command
         .args([
@@ -260,7 +308,10 @@ fn check_fixture(name: &str) {
         for (index, line) in source.lines().enumerate() {
             if let Some(method) = line.trim().strip_prefix("// replacement: ") {
                 let line_number = (index + 2).to_string();
-                let replacement = if method.starts_with("DecodeContext::") {
+                let replacement = if method.starts_with("DecodeContext::")
+                    || method.starts_with("cadmpeg_container::")
+                    || method.contains(' ')
+                {
                     method.to_owned()
                 } else {
                     format!("DecodeContext::{method}")
@@ -342,6 +393,20 @@ fn check_fixture(name: &str) {
                     | "derived"
                     | "serde"
                     | "fixed_text"
+                    | "encoding"
+                    | "borrowed_identities"
+                    | "iteration_sources"
+                    | "model_index"
+                    | "core_operations"
+                    | "admitted_text"
+                    | "const_grammar"
+                    | "xml_routes"
+                    | "adapter_receipts"
+                    | "matrix_iteration"
+                    | "hash_tables"
+                    | "serde_storage"
+                    | "collection_sources"
+                    | "archive_probe"
             ) {
                 true
             } else if name.starts_with("work") {
@@ -1031,4 +1096,89 @@ fn unicode_case_receipts_require_the_admitted_input_and_live_workspace() {
 #[test]
 fn replacements_select_the_concrete_collection_and_text_operation() {
     check_fixture("replacement_forms");
+}
+
+#[test]
+fn encoding_string_decoder_uses_exact_source_admission() {
+    check_fixture("encoding");
+}
+
+#[test]
+fn borrowed_identity_callbacks_preserve_charged_emitter_proof() {
+    check_fixture("borrowed_identities");
+}
+
+#[test]
+fn admitted_sources_bound_steps_and_preserve_refusals() {
+    check_fixture("iteration_sources");
+}
+
+#[test]
+fn model_index_constructors_enumerate_finite_generic_dependencies() {
+    check_fixture("model_index");
+}
+
+#[test]
+fn core_operations_accept_concrete_charged_shapes() {
+    check_fixture("core_operations");
+}
+
+#[test]
+fn admitted_text_keeps_raw_character_scans_visible() {
+    check_fixture("admitted_text");
+}
+
+#[test]
+fn shared_const_grammar_consumes_exact_runtime_source_credit() {
+    check_fixture("const_grammar");
+}
+
+#[test]
+fn xml_queries_keep_source_and_name_admissions() {
+    check_fixture("xml_routes");
+}
+
+#[test]
+fn dialect_layers_are_an_exact_admitted_source() {
+    check_fixture("adapter_receipts");
+}
+
+#[test]
+fn concrete_matrix_and_map_sources_preserve_admission() {
+    check_fixture("matrix_iteration");
+}
+
+#[test]
+fn generic_instance_limits_reject_depth_and_distinct_state_overflow() {
+    check_fixture("generic_limits");
+}
+
+#[test]
+fn codec_backend_calls_delegate_to_checked_implementations() {
+    check_fixture("codec_backend");
+}
+
+#[test]
+fn member_key_callbacks_run_inside_hash_insertion() {
+    check_fixture("member_keys");
+}
+
+#[test]
+fn hash_tables_admit_keyed_operations_and_report_traversal() {
+    check_fixture("hash_tables");
+}
+
+#[test]
+fn typed_json_targets_require_bounded_storage_and_consuming_recursion() {
+    check_fixture("serde_storage");
+}
+
+#[test]
+fn owned_and_mutable_collection_sources_preserve_admission() {
+    check_fixture("collection_sources");
+}
+
+#[test]
+fn archive_name_probe_keeps_concrete_callback_obligations() {
+    check_fixture("archive_probe");
 }
