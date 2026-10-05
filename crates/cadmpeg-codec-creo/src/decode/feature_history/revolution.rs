@@ -357,7 +357,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             // discarded-value: this visitor continues after each saved entity.
             let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
                 let Some((internal_id, section_geometry, offset)) =
-                    saved_section_entity_geometry(ctx, entity)?
+                    saved_section_entity_geometry(entity)
                 else {
                     return Ok(std::ops::ControlFlow::Continue(()));
                 };

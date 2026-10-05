@@ -1221,10 +1221,15 @@ fn section_line_requires_two_solved_points() {
         offset: 40,
     };
     let mut points = BTreeMap::from([(7, [2.0, 3.0])]);
-    assert!(section_line_geometry(&points, &segment).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_line_geometry(ctx, &points, &segment))
+            .expect("admitted test lookup")
+            .is_none()
+    );
     points.insert(9, [5.0, 8.0]);
     assert_eq!(
-        section_line_geometry(&points, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| section_line_geometry(ctx, &points, &segment))
+            .expect("admitted test lookup"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
@@ -1234,11 +1239,23 @@ fn section_line_requires_two_solved_points() {
         )
     );
     points.insert(9, [2.0, 3.0]);
-    assert!(section_line_geometry(&points, &segment).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_line_geometry(ctx, &points, &segment))
+            .expect("admitted test lookup")
+            .is_none()
+    );
     points.insert(9, [2.0 + 1e-13, 3.0]);
-    assert!(section_line_geometry(&points, &segment).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_line_geometry(ctx, &points, &segment))
+            .expect("admitted test lookup")
+            .is_none()
+    );
     points.insert(9, [2.0 + 1.0e-10, 3.0]);
-    assert!(section_line_geometry(&points, &segment).is_some());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| section_line_geometry(ctx, &points, &segment))
+            .expect("admitted test lookup")
+            .is_some()
+    );
 }
 
 #[test]
@@ -1357,7 +1374,8 @@ fn section_point_uses_its_single_solved_position() {
     let points = BTreeMap::from([(7, [2.0, 3.0])]);
 
     assert_eq!(
-        section_point_geometry(&points, &segment),
+        crate::decode::with_test_decode_ctx(|ctx| section_point_geometry(ctx, &points, &segment))
+            .expect("admitted test lookup"),
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: cadmpeg_ir::math::Point2::new(2.0, 3.0),

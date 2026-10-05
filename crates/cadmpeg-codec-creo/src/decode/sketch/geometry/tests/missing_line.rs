@@ -208,7 +208,7 @@ fn missing_line_refuses_endpoint_pair_work() {
     // All identity-tree shifts and key reads are admitted before the endpoint-pair comparison.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "creo missing-line endpoint pairs",
+        "creo missing-line endpoint candidates",
         |cap| {
             policy.limits.max_work_units = cap;
             run(&policy)
@@ -216,7 +216,7 @@ fn missing_line_refuses_endpoint_pair_work() {
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo missing-line endpoint pairs"));
+            && resource.operation == "creo missing-line endpoint candidates"));
 }
 
 #[test]
@@ -225,7 +225,7 @@ fn missing_line_admits_remaining_endpoint_pairs_after_ambiguous_mates() {
     let mut policy = DecodePolicy::service();
     let first_pair_refusal = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "creo missing-line endpoint pairs",
+        "creo missing-line endpoint candidates",
         |cap| {
             policy.limits.max_work_units = cap;
             run_definition(&definition, &policy)
@@ -234,18 +234,15 @@ fn missing_line_admits_remaining_endpoint_pairs_after_ambiguous_mates() {
     let CodecError::ResourceLimit(first_pair_refusal) = first_pair_refusal else {
         panic!("endpoint-pair admission refused with the named resource limit")
     };
-    let after_four_pairs = first_pair_refusal
+    // The candidate scan is admitted whole, so once it fits the ambiguous
+    // endpoint is resolved as no geometry rather than a refusal.
+    policy.limits.max_work_units = first_pair_refusal
         .used
-        .checked_add(4)
-        .expect("four endpoint-pair work units fit");
-    policy.limits.max_work_units = after_four_pairs;
-    let error = run_definition(&definition, &policy)
-        .expect_err("the scan admits four pairs then refuses the next pair");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo missing-line endpoint pairs"
-            && resource.used == after_four_pairs
-            && resource.additional == 1));
+        .checked_add(first_pair_refusal.additional)
+        .expect("one endpoint's candidates fit");
+    assert!(run_definition(&definition, &policy)
+        .expect("the ambiguous endpoint scan is admitted")
+        .is_none());
 }
 
 #[test]
