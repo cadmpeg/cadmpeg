@@ -138,11 +138,11 @@ pub(super) fn exact_coil_placement(
     Ok(Some(DesignCoilPlacement {
         selection_record_index,
         selection_record_byte_offset: u64_from_index(selection_start),
-        selection_class_tag: retain_class_tag(ctx, selection_class_tag, "copy F3D class tag")?,
+        selection_class_tag: retain_class_tag(ctx, *selection_class_tag, "copy F3D class tag")?,
         selection,
         transform_record_index,
         transform_record_byte_offset: u64_from_index(transform_start),
-        transform_class_tag: retain_class_tag(ctx, transform_class_tag, "copy F3D class tag")?,
+        transform_class_tag: retain_class_tag(ctx, *transform_class_tag, "copy F3D class tag")?,
         explicit_transform,
     }))
 }

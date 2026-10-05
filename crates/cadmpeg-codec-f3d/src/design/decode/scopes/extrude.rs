@@ -58,16 +58,30 @@ fn extrude_start_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeStart> {
     }
 }
 
+/// The enclosing parameter-scope frame an Extrude prologue reads: its primary
+/// and paired header offsets and class tags, and the reference-count offset.
+#[derive(Clone, Copy)]
+pub(super) struct ExtrudeScopeFrame<'tag> {
+    pub(super) start: usize,
+    pub(super) paired_at: usize,
+    pub(super) class_tag: &'tag str,
+    pub(super) paired_class_tag: &'tag str,
+    pub(super) reference_count_at: usize,
+}
+
 pub(super) fn exact_extrude_prologue(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-    start: usize,
-    paired_at: usize,
-    class_tag: &str,
-    paired_class_tag: &str,
-    reference_count_at: usize,
+    frame: ExtrudeScopeFrame<'_>,
     reference_members: &[u32],
 ) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+    let ExtrudeScopeFrame {
+        start,
+        paired_at,
+        class_tag,
+        paired_class_tag,
+        reference_count_at,
+    } = frame;
     if class_tag == "415" && paired_class_tag == "265" {
         let symmetric_distance = paired_at
             .checked_sub(start)
@@ -121,28 +135,14 @@ pub(super) fn exact_extrude_prologue(
     )? {
         return Ok(Some(prologue));
     }
-    if let Some(prologue) = legacy_class_397::exact_symmetric_extrude_prologue(
-        ctx,
-        bytes,
-        start,
-        paired_at,
-        class_tag,
-        paired_class_tag,
-        reference_count_at,
-        reference_members,
-    )? {
+    if let Some(prologue) =
+        legacy_class_397::exact_symmetric_extrude_prologue(ctx, bytes, frame, reference_members)?
+    {
         return Ok(Some(prologue));
     }
-    if let Some(prologue) = exact_class_338_two_sided_distance_extrude_prologue(
-        ctx,
-        bytes,
-        start,
-        paired_at,
-        class_tag,
-        paired_class_tag,
-        reference_count_at,
-        reference_members,
-    )? {
+    if let Some(prologue) =
+        exact_class_338_two_sided_distance_extrude_prologue(ctx, bytes, frame, reference_members)?
+    {
         return Ok(Some(prologue));
     }
     if let Some(prologue) = exact_legacy_shifted_extrude_prologue(
@@ -2049,13 +2049,16 @@ fn class_338_two_sided_distance_fields(
 fn exact_class_338_two_sided_distance_extrude_prologue(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-    start: usize,
-    paired_at: usize,
-    class_tag: &str,
-    paired_class_tag: &str,
-    reference_count_at: usize,
+    frame: ExtrudeScopeFrame<'_>,
     reference_members: &[u32],
 ) -> Result<Option<DesignExtrudePrologue>, cadmpeg_core::CodecError> {
+    let ExtrudeScopeFrame {
+        start,
+        paired_at,
+        class_tag,
+        paired_class_tag,
+        reference_count_at,
+    } = frame;
     let Some(prologue) = class_338_two_sided_distance_fields(
         bytes,
         start,

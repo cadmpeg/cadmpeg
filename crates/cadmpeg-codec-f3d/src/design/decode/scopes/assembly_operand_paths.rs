@@ -292,7 +292,7 @@ fn exact_assembly_operand_path_envelope(
         locator_record_index,
         locator_class_tag: retain_class_tag(
             ctx,
-            locator.class_tag,
+            *locator.class_tag,
             "copy F3D assembly operand path class tag",
         )?,
         locator_byte_offset: u64_from_index(locator_at),
@@ -301,7 +301,7 @@ fn exact_assembly_operand_path_envelope(
         wrapper_reference_offset: locator.wrapper_reference_offset,
         wrapper_class_tag: retain_class_tag(
             ctx,
-            wrapper_class_tag,
+            *wrapper_class_tag,
             "copy F3D assembly operand path class tag",
         )?,
         wrapper_byte_offset: u64_from_index(wrapper_at),

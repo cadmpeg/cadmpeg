@@ -173,7 +173,7 @@ fn exact_surface_trim_operation(
             cell_table_frame_length: u64_from_index(paired - cell_table_byte_offset),
             cell_table_paired_class_tag: crate::design::decode::text::retain_class_tag(
                 ctx,
-                cell_table_paired_class_tag,
+                *cell_table_paired_class_tag,
                 "copy F3D surface-trim paired class tag",
             )?,
             cell_table_paired_byte_offset: u64_from_index(paired),

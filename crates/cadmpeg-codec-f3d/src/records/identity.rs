@@ -62,6 +62,7 @@ impl TryFrom<String> for DesignEntityId {
 }
 
 impl DesignEntityId {
+    #[cfg(test)]
     pub(crate) fn from_parts(prefix: &str, suffix: u64) -> Self {
         Self {
             text: format!("{prefix}_{suffix}"),

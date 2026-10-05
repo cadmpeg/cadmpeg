@@ -23,6 +23,7 @@ use super::direct_face::exact_move_operation;
 use super::direct_face::exact_scale_operation;
 use super::draft::exact_draft_operation_with_owners;
 use super::extrude::exact_extrude_prologue;
+use super::extrude::ExtrudeScopeFrame;
 use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
@@ -1336,11 +1337,13 @@ fn parse_scope_frame(
         exact_extrude_prologue(
             ctx,
             bytes,
-            start,
-            paired_at,
-            class_tag_text,
-            paired_class_tag,
-            reference_count_at,
+            ExtrudeScopeFrame {
+                start,
+                paired_at,
+                class_tag: class_tag_text,
+                paired_class_tag,
+                reference_count_at,
+            },
             reference_members,
         )?
     } else {
@@ -1401,7 +1404,7 @@ fn parse_scope_frame(
     )?;
     let class_tag = crate::design::decode::text::retain_class_tag(
         ctx,
-        &class_tag,
+        class_tag,
         "f3d Design scope class tag",
     )?;
     let paired_class_tag = paired_header.retain_class_tag(ctx, "f3d Design scope class tag")?;

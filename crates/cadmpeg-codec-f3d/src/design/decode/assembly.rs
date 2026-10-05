@@ -258,7 +258,7 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
     let Some(frame_class_tag) = expected_class_tag.as_bytes().first_chunk::<3>() else {
         return Ok(None);
     };
-    let class_tag = retain_class_tag(ctx, frame_class_tag, "copy F3D As-built frame class tag")?;
+    let class_tag = retain_class_tag(ctx, *frame_class_tag, "copy F3D As-built frame class tag")?;
     Ok(Some(DesignAssemblySolvedFrame {
         reference_record_index: frame_record_index,
         reference_offset: frame_reference.offset,
@@ -384,8 +384,8 @@ pub(super) fn exact_legacy_as_built_421_operands(
     ) else {
         return Ok(None);
     };
-    let point_class_tag = retain_class_tag(ctx, point_class_tag, "copy F3D indexed class tag")?;
-    let hole_class_tag = retain_class_tag(ctx, hole_class_tag, "copy F3D indexed class tag")?;
+    let point_class_tag = retain_class_tag(ctx, *point_class_tag, "copy F3D indexed class tag")?;
+    let hole_class_tag = retain_class_tag(ctx, *hole_class_tag, "copy F3D indexed class tag")?;
     Ok(Some(DesignAssemblyLegacyOperands::new(
         DesignAssemblyLegacyOperand {
             construction_class_tag: point_class_tag,
@@ -517,7 +517,7 @@ fn exact_legacy_as_built_selection_at(
     let id = ctx.copy_retained_text(&scope.id, "f3d legacy AsBuilt selection header ID")?;
     let class_tag = retain_class_tag(
         ctx,
-        expected_class_tag,
+        *expected_class_tag,
         "copy F3D As-built selection class tag",
     )?;
     let header = DesignRecordHeader {

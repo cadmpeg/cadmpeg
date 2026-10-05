@@ -670,10 +670,11 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     bytes.extend_from_slice(&[0; 5]);
     indexed_header(&mut bytes, *b"301", 900);
 
-    for (limit, operation) in [(0, "f3d construction identity wrappers")] {
+    {
+        let operation = "f3d construction identity wrappers";
         let limited_arena = cadmpeg_core::decode::DecodeArena::new();
         let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
-        limited_policy.limits.max_collection_items = limit;
+        limited_policy.limits.max_collection_items = 0;
         let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &[],
             &limited_arena,

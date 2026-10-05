@@ -88,7 +88,6 @@ fn lost_edge_class_tag_copies_refuse_retained_limit() {
                     &bytes,
                     &mut references,
                 )
-                .map(|_| ())
             },
         );
         assert!(matches!(

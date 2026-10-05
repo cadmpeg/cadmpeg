@@ -107,7 +107,7 @@ fn face_source_carriers_use_generation_keyed_prefixes() {
         (*b"394", 2, 58, 109, b"311"),
         (*b"356", 2, 58, 109, b"309"),
     ] {
-        let layout = face_source_carrier_layout(&class_tag).unwrap();
+        let layout = face_source_carrier_layout(class_tag).unwrap();
         assert_eq!(layout.source_count, source_count);
         assert_eq!(layout.scalar_offset, scalar_offset);
         assert_eq!(layout.scalar_discriminator, discriminator);
@@ -137,7 +137,7 @@ fn face_source_carriers_use_generation_keyed_prefixes() {
 
 #[test]
 fn face_source_carrier_prefix_rejects_wrong_count_and_discriminator() {
-    let layout = face_source_carrier_layout(b"398").unwrap();
+    let layout = face_source_carrier_layout(*b"398").unwrap();
     let mut bytes = source_carrier(b"398", 100, 12, 4, 80, 100);
 
     bytes[32..36].copy_from_slice(&3u32.to_le_bytes());

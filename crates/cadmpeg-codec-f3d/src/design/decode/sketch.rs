@@ -2135,7 +2135,7 @@ pub(crate) fn decode_sketch_relations(
             stream.name,
             record,
             payload,
-            parsed,
+            &parsed,
             definition,
         )?;
     }
@@ -2148,7 +2148,7 @@ fn admit_sketch_relation(
     stream: &str,
     record: &DesignRecordHeader,
     payload: &[u8],
-    parsed: ParsedSketchRelation,
+    parsed: &ParsedSketchRelation,
     definition: crate::records::sketch_relations::SketchRelationDefinition,
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(out, 1, "f3d sketch relation output")?;
@@ -3197,8 +3197,8 @@ fn decode_sketch_text_tail<'ctx>(
         return Ok(None);
     };
     Ok(
-        close_sketch_text_tail(payload, body.cursor).and_then(|(placement, owner_reference)| {
-            Some(SketchTextTail {
+        close_sketch_text_tail(payload, body.cursor).map(|(placement, owner_reference)| {
+            SketchTextTail {
                 layout: SketchTextLayout::TextexTag {
                     width_factor,
                     alignment: Some(SketchTextAlignment {
@@ -3212,7 +3212,7 @@ fn decode_sketch_text_tail<'ctx>(
                 text: body.text,
                 font_weight: body.font_weight,
                 owner_reference,
-            })
+            }
         }),
     )
 }
@@ -4972,7 +4972,7 @@ fn nurbs_subtype_class_tag(
         return Ok(None);
     };
     Ok(Some(crate::design::decode::text::retain_class_tag(
-        ctx, tag, operation,
+        ctx, *tag, operation,
     )?))
 }
 
@@ -5972,7 +5972,7 @@ impl IndexedRecordHeader<'_> {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<crate::records::references::DesignClassTag, CodecError> {
-        crate::design::decode::text::retain_class_tag(ctx, self.class_tag, operation)
+        crate::design::decode::text::retain_class_tag(ctx, *self.class_tag, operation)
     }
 }
 
@@ -6055,6 +6055,7 @@ pub(super) fn indexed_record_offsets<'input>(
         .filter_map(move |(at, _)| indexed_record_header_at(bytes, at)))
 }
 
+#[cfg(test)]
 pub(super) fn next_indexed_record_offset_with_index(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],

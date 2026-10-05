@@ -51,6 +51,34 @@ pub(super) fn surface_patch_boundaries(
     Ok(boundaries)
 }
 
+/// One boundary-settings record read at the indexed header offset `at`.
+///
+/// The class level is two zero bytes, `u8 IsSeedSel`, `u32 PatchContinuity`,
+/// `u32 PatchFlip`, `f64 PatchScale`, and the `rPatchModelRef` reference. The
+/// base level's reference run closes the record and carries no settings.
+fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurfacePatchBoundary> {
+    let payload = at.checked_add(PAYLOAD)?;
+    if View::u32_le_at(bytes, at.checked_add(15)?)? != 0 || !zeros_at::<2>(bytes, payload) {
+        return None;
+    }
+    let is_seed_selection = match bytes.get(payload + 2)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let scale = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, payload + 11)?)?;
+    let model_reference = marked_record_reference(bytes, payload + 19)?;
+    Some(DesignSurfacePatchBoundary {
+        scope_reference_ordinal: 0,
+        record_index: 0,
+        is_seed_selection,
+        continuity: DesignPatchContinuity::from_code(View::u32_le_at(bytes, payload + 3)?),
+        flip: View::u32_le_at(bytes, payload + 7)?,
+        scale,
+        model_reference,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::surface_patch_boundaries;
@@ -81,32 +109,4 @@ mod tests {
         .unwrap()
         .is_empty());
     }
-}
-
-/// One boundary-settings record read at the indexed header offset `at`.
-///
-/// The class level is two zero bytes, `u8 IsSeedSel`, `u32 PatchContinuity`,
-/// `u32 PatchFlip`, `f64 PatchScale`, and the `rPatchModelRef` reference. The
-/// base level's reference run closes the record and carries no settings.
-fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurfacePatchBoundary> {
-    let payload = at.checked_add(PAYLOAD)?;
-    if View::u32_le_at(bytes, at.checked_add(15)?)? != 0 || !zeros_at::<2>(bytes, payload) {
-        return None;
-    }
-    let is_seed_selection = match bytes.get(payload + 2)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
-    let scale = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, payload + 11)?)?;
-    let model_reference = marked_record_reference(bytes, payload + 19)?;
-    Some(DesignSurfacePatchBoundary {
-        scope_reference_ordinal: 0,
-        record_index: 0,
-        is_seed_selection,
-        continuity: DesignPatchContinuity::from_code(View::u32_le_at(bytes, payload + 3)?),
-        flip: View::u32_le_at(bytes, payload + 7)?,
-        scale,
-        model_reference,
-    })
 }
