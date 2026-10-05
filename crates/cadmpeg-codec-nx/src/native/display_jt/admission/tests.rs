@@ -435,7 +435,7 @@ fn compressed_element_wire_rejects_invalid_lengths_and_tail_hash() {
     }
 }
 
-fn graph_wire_with_tail(tail_sha256: String) -> Value {
+fn graph_wire_with_tail(tail_sha256: &str) -> Value {
     let mut wire = graph_wire();
     wire["display_jt_compressed_element_sequences"][0]["tail"] = json!([6, 5]);
     wire["display_jt_compressed_element_sequences"][0]["tail_sha256"] = json!(tail_sha256);
@@ -445,7 +445,7 @@ fn graph_wire_with_tail(tail_sha256: String) -> Value {
 #[test]
 fn stored_sequence_tail_digest_is_charged_before_hashing() {
     let namespace: NativeNamespace =
-        serde_json::from_value(graph_wire_with_tail(cadmpeg_ir::hash::sha256_hex(&[6, 5])))
+        serde_json::from_value(graph_wire_with_tail(&cadmpeg_ir::hash::sha256_hex(&[6, 5])))
             .unwrap();
     let operation = "check DisplayJT sequence tail digest";
     let error = crate::test_support::resource_refusal_at(
@@ -462,7 +462,7 @@ fn stored_sequence_tail_digest_is_charged_before_hashing() {
 
 #[test]
 fn stored_sequence_tail_digest_mismatch_reads_as_the_serialized_rejection() {
-    let wire = graph_wire_with_tail(cadmpeg_ir::hash::sha256_hex(&[]));
+    let wire = graph_wire_with_tail(&cadmpeg_ir::hash::sha256_hex(&[]));
     let namespace: NativeNamespace = serde_json::from_value(wire.clone()).unwrap();
     let expected = serde_json::from_value::<DisplayJtGraph>(wire)
         .unwrap_err()

@@ -161,15 +161,16 @@ use super::parasolid::{
     parasolid_deltas_events_with_censuses, parasolid_entity_51_numeric_uses,
     parasolid_entity_51_records, parasolid_entity_51_string_uses,
     parasolid_entity_51_structured_uses, parasolid_entity_value_records,
-    parasolid_field_names_records, parasolid_group_members, parasolid_group_records,
-    parasolid_intersection_records, parasolid_offset_surface_records, parasolid_support_uv_records,
+    parasolid_field_names_records, parasolid_groups, parasolid_intersection_records,
+    parasolid_offset_surface_records, parasolid_support_uv_records,
     parasolid_surface_curve_records, parasolid_term_use_records,
     parasolid_topology_attribute_class_uses,
     parasolid_topology_attribute_fields_have_untransferred_values,
     parasolid_topology_attribute_list_references, parasolid_trimmed_curve_records,
-    ParasolidAttributeClassUse, ParasolidAttributeDefinition, ParasolidAttributeFieldNames,
-    ParasolidAttributeFieldUse, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
-    ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
+    resolve_parasolid_group_member_targets, ParasolidAttributeClassUse,
+    ParasolidAttributeDefinition, ParasolidAttributeFieldNames, ParasolidAttributeFieldUse,
+    ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord, ParasolidChartRecord,
+    ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
     ParasolidDeltasInlineSchemaDeclaration, ParasolidDeltasRecord,
     ParasolidDeltasReferenceMarkerPacket, ParasolidDeltasReferenceStatePacket,
     ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
@@ -180,7 +181,7 @@ use super::parasolid::{
     ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
     ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
     ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidFieldNamesRecord,
-    ParasolidGroupMember, ParasolidGroupRecord, ParasolidIntersectionRecord,
+    ParasolidGroupMember, ParasolidGroupRecord, ParasolidGroups, ParasolidIntersectionRecord,
     ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord,
     ParasolidTermUseRecord, ParasolidTopologyAttributeClassUse,
     ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
@@ -766,9 +767,11 @@ impl NativeModel {
         )?;
         let deltas_events =
             parasolid_deltas_events_with_censuses(ctx, streams, parsed.take_delta_censuses(ctx)?)?;
-        let parasolid_group_records =
-            parasolid_group_records(ctx, streams, &delta_pairs, &deltas_events.records)?;
-        let parasolid_group_members = parasolid_group_members(ctx, streams, &delta_pairs, parsed)?;
+        let ParasolidGroups {
+            records: parasolid_group_records,
+            members: mut parasolid_group_members,
+        } = parasolid_groups(ctx, streams, &delta_pairs, &deltas_events)?;
+        resolve_parasolid_group_member_targets(ctx, &mut parasolid_group_members, parsed)?;
         let parasolid_blend_surface_records = parasolid_blend_surface_records(ctx, parsed)?;
         let parasolid_blend_bound_records = parasolid_blend_bound_records(ctx, streams)?;
         let parasolid_offset_surface_records = parasolid_offset_surface_records(ctx, parsed)?;
