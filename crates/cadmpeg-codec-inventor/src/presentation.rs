@@ -2363,9 +2363,12 @@ mod tests {
         let face_keys = BTreeMap::from([(face_id, 42)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two face-key traversals and an eight-byte hash key precede the scan.
+        // Two face-key traversals, an eight-byte hash key and the key-count table's growth
+        // bound (four buckets, their control bytes, alignment and trailing controls) precede
+        // the scan.
+        let key_count_table = 4 * std::mem::size_of::<(&u64, usize)>() + 15 + 4 + 16;
         policy.limits.max_work_units =
-            cadmpeg_core::decode::u64_from_index(2 * face_keys.len() + 8);
+            cadmpeg_core::decode::u64_from_index(2 * face_keys.len() + 8 + key_count_table);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         assert!(matches!(
