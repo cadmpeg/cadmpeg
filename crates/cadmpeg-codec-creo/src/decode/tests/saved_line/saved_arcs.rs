@@ -89,7 +89,7 @@ fn saved_arc_joins_through_order_table() {
     );
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| saved_section_segment_point_coordinates(ctx, &definition, &segment)).expect("admitted saved section geometry")
-            .map(std::iter::Iterator::collect::<Vec<_>>),
+            .map(|points| points.into_iter().flatten().collect::<Vec<_>>()),
         Some(vec![(7, [0.0, -2.0]), (9, [-2.0, 0.0]), (8, [0.0, 0.0]),])
     );
     let mut witness_definition = definition.clone();
@@ -235,7 +235,9 @@ fn saved_arc_joins_through_order_table() {
         .insert(0, prototype);
     assert!(crate::decode::with_test_decode_ctx(|ctx| saved_section_arc(ctx, &elided_prototype, &segment)).expect("admitted saved section geometry").is_some());
     assert_eq!(
-        semantic_saved_section_entities(&elided_prototype).count(),
+        crate::decode::with_test_decode_ctx(|ctx| semantic_saved_section_entities(ctx, &elided_prototype)
+            .map(|(entities, _storage)| entities.len()))
+        .expect("admitted semantic entities"),
         1
     );
 
@@ -261,7 +263,9 @@ fn saved_arc_joins_through_order_table() {
         arc.offset = 18;
     }
     assert_eq!(
-        semantic_saved_section_entities(&complete_elided_prototype).count(),
+        crate::decode::with_test_decode_ctx(|ctx| semantic_saved_section_entities(ctx, &complete_elided_prototype)
+            .map(|(entities, _storage)| entities.len()))
+        .expect("admitted semantic entities"),
         1
     );
 

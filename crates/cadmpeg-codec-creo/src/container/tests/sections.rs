@@ -112,7 +112,7 @@ fn scanned_section_succeeds_under_service_policy() {
         .expect("section input is admitted");
     let sections = super::super::scan_sections(&ctx, data, 0).expect("section is admitted");
     assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].section.raw_name, "Body");
+    assert_eq!(sections[0].section.raw_name(), "Body");
 }
 
 fn one_toc_section(marker_name: &str, entry_name: &str) -> Vec<u8> {
@@ -194,7 +194,7 @@ fn toc_section_succeeds_under_service_policy() {
         .expect("TOC input is admitted");
     let sections = super::super::toc_sections(&ctx, &data, 0).expect("TOC section is admitted");
     assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].section.raw_name, "ModelView#1");
+    assert_eq!(sections[0].section.raw_name(), "ModelView#1");
 }
 
 fn one_legacy_toc_section() -> Vec<u8> {
@@ -255,7 +255,7 @@ fn legacy_toc_section_succeeds_under_service_policy() {
     let sections =
         super::super::legacy_toc_sections(&ctx, &data, 0).expect("legacy TOC section is admitted");
     assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].section.raw_name, "BasicData");
+    assert_eq!(sections[0].section.raw_name(), "BasicData");
 }
 
 #[test]
@@ -323,7 +323,7 @@ fn expanded_section_name_refuses_before_retained_copy() {
 
     let data = one_compressed_section();
     let section =
-        super::super::Section::scan("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
+        super::super::Section::scan_for_test("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
             .expect("bounded compressed section");
     let error = crate::test_support::last_refusal_at(
         &data,
@@ -346,7 +346,7 @@ fn expanded_section_record_refuses_before_vec_growth() {
 
     let data = one_compressed_section();
     let section =
-        super::super::Section::scan("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
+        super::super::Section::scan_for_test("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
             .expect("bounded compressed section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -364,7 +364,7 @@ fn expanded_section_record_refuses_before_vec_growth() {
 fn expanded_section_record_succeeds_under_service_policy() {
     let data = one_compressed_section();
     let section =
-        super::super::Section::scan("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
+        super::super::Section::scan_for_test("SolidPrimdata".to_string(), 0, data.len(), Some(3), &data)
             .expect("bounded compressed section");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -403,7 +403,7 @@ fn native_model_name_refuses_before_retained_copy() {
     use cadmpeg_core::CodecError;
 
     let data = b"#BasicData\nmodel_name\0widget\0";
-    let section = super::super::Section::scan("BasicData".to_string(), 0, data.len(), None, data)
+    let section = super::super::Section::scan_for_test("BasicData".to_string(), 0, data.len(), None, data)
         .expect("bounded native name section");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -420,7 +420,7 @@ fn native_model_name_refuses_before_retained_copy() {
 #[test]
 fn native_model_name_succeeds_under_service_policy() {
     let data = b"#BasicData\nmodel_name\0widget\0";
-    let section = super::super::Section::scan("BasicData".to_string(), 0, data.len(), None, data)
+    let section = super::super::Section::scan_for_test("BasicData".to_string(), 0, data.len(), None, data)
         .expect("bounded native name section");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -507,31 +507,34 @@ fn complete_legacy_directory_admits_more_than_4096_entries() {
 }
 
 #[test]
-fn section_name_prefix_refuses_before_unknown_decoration() {
-    let section = super::super::Section::scan("Unknown".to_string(), 0, 0, None, &[])
-        .expect("empty section extent").section;
+fn section_scan_refuses_name_normalization_before_classifying() {
     let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo section decoration prefix",
-        |ctx| section.name(ctx),
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo section name normalization",
+        |ctx| super::super::Section::scan(ctx, "ND:0:VisibGeom:1".to_string(), 0, 0, None, &[]),
     );
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo section decoration prefix"));
+            && resource.operation == "creo section name normalization"));
 }
 
 #[test]
-fn section_role_prefix_refuses_before_unknown_decoration() {
-    let section = super::super::Section::scan("Unknown".to_string(), 0, 0, None, &[])
-        .expect("empty section extent").section;
-    let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo section decoration prefix",
-        |ctx| section.role(ctx),
-    );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo section decoration prefix"));
+fn section_scan_normalizes_decorated_names_once() {
+    for (raw, name, role) in [
+        ("ND:0:VisibGeom:1", "VisibGeom", super::super::SectionRole::PsbGeometry),
+        ("ND:0:AllFeatur", "AllFeatur", super::super::SectionRole::ModelData),
+        ("ModelView#3", "ModelView", super::super::SectionRole::Opaque),
+        ("ND:Body", "ND:Body", super::super::SectionRole::Opaque),
+        ("BasicData", "BasicData", super::super::SectionRole::ModelData),
+    ] {
+        let section = super::super::Section::scan_for_test(raw.to_string(), 0, 0, None, &[])
+            .expect("empty section extent")
+            .section;
+        assert_eq!(section.raw_name(), raw);
+        assert_eq!(section.name(), name);
+        assert_eq!(section.role(), role);
+    }
 }
 
 #[test]

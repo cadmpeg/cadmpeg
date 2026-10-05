@@ -654,7 +654,7 @@ pub(super) fn emit_geometry_arenas(
     // Bespoke annotation: the arena payload drops the per-record source offset the
     // annotation needs, so the offset travels alongside each record in a tuple.
     let pcurve_endpoints = pcurve_endpoint_records(ctx, scan)?;
-    for (record, offset) in &pcurve_endpoints {
+    for (record, offset) in ctx.admit_iter(&pcurve_endpoints, "creo pcurve endpoint annotation traversal")? {
         annotate(
             ctx,
             annotations,
@@ -936,7 +936,7 @@ pub(super) fn emit_geometry_arenas(
     // Bespoke annotation: the source offset comes from the parallel scan rows, not
     // the record, so annotation zips the two before the arena is stored.
     let curve_expressions = curve_expression_records(ctx, scan)?;
-    for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
+    for (expression, source) in ctx.admit_iter(&curve_expressions, "creo curve expression annotation traversal")?.zip(ctx.admit_iter(&scan.curves.expressions, "creo curve expression source annotation traversal")?) {
         let source_section = source_section_ref(ctx, scan, source.expression_offset)?;
         annotate(
             ctx,
@@ -957,10 +957,9 @@ pub(super) fn emit_geometry_arenas(
         CreoArena::FeatureOperationStates,
         &feature_operation_states,
         |annotations, state| {
-            let section = match scan.framing.sections.iter().find(|section| section.contains(state.state_offset)) {
-                Some(section) => section.name(ctx)?,
-                None => "MdlStatus",
-            };
+            let section = ctx.admit_iter(&scan.framing.sections, "creo operation state source section search")?
+                .find(|section| section.contains(state.state_offset))
+                .map_or("MdlStatus", |section| section.name());
             annotate(
                 ctx,
                 annotations,

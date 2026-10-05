@@ -57,6 +57,10 @@ fn compose_feature_id<'a>(
         ),
         "creo model feature identity",
     )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(text.len()),
+        "creo model feature identity grammar",
+    )?;
     let id = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
     Ok((id, reservation))
 }
@@ -79,9 +83,9 @@ fn commit_regeneration_edges(
     ir: &mut CadIr,
     edges: Vec<(IrFeatureId, IrFeatureId)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for (child, parent) in edges {
+    for (child, parent) in ctx.admit_iter(&edges, "creo regeneration edge traversal")? {
         ir.model
-            .set_feature_regeneration_parent(ctx, &child, &parent)?;
+            .set_feature_regeneration_parent(ctx, child, parent)?;
     }
     Ok(())
 }
@@ -93,7 +97,7 @@ fn refresh_feature_outputs(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut update_storage = ctx.reserve_scoped(0, "Creo feature output update storage")?;
     let mut output_updates = Vec::new();
-    for (index, feature) in ir.model.features.iter().enumerate() {
+    for (index, feature) in ctx.admit_iter(&ir.model.features, "creo feature output refresh traversal")?.enumerate() {
         let Some(feature_id) = feature
             .id
             .as_str()
@@ -125,7 +129,7 @@ fn ordered_row_feature_ids(
     let mut seen_storage = ctx.reserve_scoped(0, "Creo row feature identity lookup")?;
     let mut seen = BTreeSet::new();
     let mut ids = Vec::new();
-    for row in rows {
+    for row in ctx.admit_iter(rows, "creo ordered feature row traversal")? {
         if seen_storage.with_storage(|| {
             ctx.insert_btree_set(&mut seen, row.feature_id, "creo feature row identity nodes")
         })? {
@@ -170,7 +174,7 @@ pub(super) fn emit_model_features(
     let prototype_feature_dependencies =
         lookup_storage.with_storage(|| surface_prototype_feature_dependencies(ctx, scan))?;
     let mut operation_feature_ids = BTreeSet::new();
-    for operation in &scan.features.operations {
+    for operation in ctx.admit_iter(&scan.features.operations, "creo operation feature ID traversal")? {
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut operation_feature_ids,
@@ -179,12 +183,19 @@ pub(super) fn emit_model_features(
             )
         })?;
     }
-    for datum in &scan.planes.datums {
+    for datum in ctx.admit_iter(&scan.planes.datums, "creo datum feature traversal")? {
         if operation_feature_ids.contains(&datum.feature_id) {
             continue;
         }
         let (id, id_bytes) = compose_feature_id(ctx, datum.feature_id)?;
-        if ir.model.features.iter().any(|feature| feature.id == id) {
+        let mut identity_present = false;
+        for feature in ctx.admit_iter(&ir.model.features, "creo existing model feature search")? {
+            if ctx.equal(&feature.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         annotate(
@@ -226,10 +237,18 @@ pub(super) fn emit_model_features(
     let row_feature_ids =
         lookup_storage.with_storage(|| ordered_row_feature_ids(ctx, &scan.features.rows))?;
     let mut geometry_generator_feature_count = 0;
-    for generator in lookup_storage.with_storage(|| geometry_generator_features(ctx, scan))? {
+    let generators = lookup_storage.with_storage(|| geometry_generator_features(ctx, scan))?;
+    for generator in ctx.admit_iter(&generators, "creo geometry generator feature traversal")? {
         let feature_id = generator.feature_id;
         let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
-        if ir.model.features.iter().any(|feature| feature.id == id) {
+        let mut identity_present = false;
+        for feature in ctx.admit_iter(&ir.model.features, "creo existing model feature search")? {
+            if ctx.equal(&feature.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
         annotate(
@@ -255,10 +274,7 @@ pub(super) fn emit_model_features(
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                if scan
-                    .features
-                    .legacy_rounds
-                    .iter()
+                if ctx.admit_iter(&scan.features.legacy_rounds, "creo legacy_rounds feature traversal")?
                     .any(|round| round.feature_id == feature_id)
                 {
                     schema_feature_definition(
@@ -286,28 +302,40 @@ pub(super) fn emit_model_features(
         geometry_generator_feature_count += 1;
     }
     let operation_ordinal_base = ir.model.features.len();
-    for (operation_index, operation) in scan.features.operations.iter().enumerate() {
-        if !ctx.any_by(&(ir.model.features)[..], |feature| -> Result<bool, cadmpeg_core::CodecError> {
-            Ok(crate::identity::matches_numbered_identity(ctx, feature.id.as_str(), "creo:model:feature#", operation.feature_id)?)
-        }, "creo numbered identity candidate scan")? {
+    for (operation_index, operation) in ctx.admit_iter(&scan.features.operations, "creo model operation feature traversal")?.enumerate() {
+        if !ctx.admit_iter(&ir.model.features, "creo existing model feature search")?.any(|feature| {
+            crate::identity::matches_numbered_identity(
+                feature.id.as_str(),
+                "creo:model:feature#",
+                operation.feature_id,
+            )
+        }) {
             ctx.charge_entities(1, "admit Creo model features")?;
         }
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(ctx, scan, ir, operation.feature_id)?;
-        let mut source_properties = feature_source_properties(ctx, scan, operation.feature_id)?;
+        let (source_property_nodes, source_properties) =
+            feature_source_properties(ctx, scan, operation.feature_id)?;
+        let mut source_property_nodes = source_property_nodes;
+        let mut source_properties = source_properties;
         if let Some(prefix) = current_operation
             .and_then(crate::feature::operations::FeatureOperation::stored_name_prefix)
         {
             insert_feature_source_property(
                 ctx,
+                &mut source_property_nodes,
                 &mut source_properties,
                 "mdl_stored_name_prefix",
                 char::from(prefix),
             )?;
         }
-        let mut parameters = feature_parameters(ctx, scan, operation.feature_id)?;
-        let schema_class = feature_schema_class(scan, operation.feature_id);
+        let (parameter_text_storage, parameter_node_storage, parameters) =
+            feature_parameters(ctx, scan, operation.feature_id)?;
+        let mut parameter_text_storage = Some(parameter_text_storage);
+        let mut parameter_node_storage = Some(parameter_node_storage);
+        let mut parameters = parameters;
+        let schema_class = feature_schema_class(ctx, scan, operation.feature_id)?;
         let definition = schema_class.map_or_else(
             || {
                 current_feature_recipe(&scan.features.operations, operation.feature_id)
@@ -349,20 +377,26 @@ pub(super) fn emit_model_features(
                         }
                     })
                     .unwrap_or_else(|| {
+                        let kind: cadmpeg_ir::features::NativeFeatureKind = ctx
+                            .copy_retained_text(
+                                current_operation.map_or("Native Feature", |operation| {
+                                    operation.kind.as_str()
+                                }),
+                                "creo native Feature kind",
+                            )?
+                            .into();
+                        if let Some(text_storage) = parameter_text_storage.take() {
+                            text_storage.commit()?;
+                        }
+                        let parameters = cadmpeg_core::text::named_entries_for_decode(
+                            ctx,
+                            format_args!("creo:model:feature#{}", operation.feature_id),
+                            std::mem::take(&mut parameters),
+                        )?;
+                        drop(parameter_node_storage.take());
                         Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                            kind: ctx
-                                .copy_retained_text(
-                                    current_operation.map_or("Native Feature", |operation| {
-                                        operation.kind.as_str()
-                                    }),
-                                    "creo native Feature kind",
-                                )?
-                                .into(),
-                            parameters: cadmpeg_core::text::named_entries_for_decode(
-                                ctx,
-                                format_args!("creo:model:feature#{}", operation.feature_id),
-                                std::mem::take(&mut parameters),
-                            )?,
+                            kind,
+                            parameters,
                         }))
                     })
             },
@@ -378,7 +412,16 @@ pub(super) fn emit_model_features(
                 )
             },
         )?;
-        retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
+        retain_native_feature_parameters(
+            ctx,
+            &mut source_property_nodes,
+            &mut source_properties,
+            &definition,
+            &parameters,
+        )?;
+        drop(parameters);
+        drop(parameter_node_storage.take());
+        drop(parameter_text_storage.take());
         let dependencies = feature_dependencies(
             ctx,
             scan,
@@ -386,10 +429,9 @@ pub(super) fn emit_model_features(
             operation.feature_id,
             &prototype_feature_dependencies,
         )?;
-        let operation_section = match scan.framing.sections.iter().find(|section| section.contains(operation.offset)) {
-            Some(section) => section.name(ctx)?,
-            None => "MdlStatus",
-        };
+        let operation_section = ctx.admit_iter(&scan.framing.sections, "creo sections feature traversal")?
+            .find(|section| section.contains(operation.offset))
+            .map_or("MdlStatus", |section| section.name());
         let name = current_operation
             .filter(|operation| operation.display_name_stored())
             .and_then(|operation| {
@@ -415,27 +457,31 @@ pub(super) fn emit_model_features(
             .transpose()?;
         let native_ref = owning_feature_definition_ref(ctx, scan, operation.feature_id)?;
         let (id, id_bytes) = compose_feature_id(ctx, operation.feature_id)?;
-        let parent = (current_feature_recipe_parent(&scan.features.operations, operation.feature_id)).map(|parent_feature_id| -> Result<Option<_>, cadmpeg_core::CodecError> {
-                Ok(ctx.find_by(&(ir.model.features)[..], |feature| -> Result<bool, cadmpeg_core::CodecError> {
-                    Ok(crate::identity::matches_numbered_identity(ctx, feature.id.as_str(), "creo:model:feature#", parent_feature_id)?)
-                }, "creo numbered identity candidate scan")?)
-            }).transpose()?.flatten()
-            .map(|feature| &feature.id);
+        let parent = match current_feature_recipe_parent(&scan.features.operations, operation.feature_id) {
+            Some(parent_feature_id) => ctx.admit_iter(&ir.model.features, "creo regeneration parent feature search")?.find(|feature| {
+                crate::identity::matches_numbered_identity(
+                    feature.id.as_str(),
+                    "creo:model:feature#",
+                    parent_feature_id,
+                )
+            }).map(|feature| &feature.id),
+            None => None,
+        };
         if let Some(parent) = parent {
             lookup_storage.with_storage(|| {
                 append_regeneration_edge(ctx, &mut regeneration_edges, &id, parent)
             })?;
         }
-        if let Some(existing) = ir
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| feature.id == id)
-        {
-            let upgrade_legacy_round = scan
-                .features
-                .legacy_rounds
-                .iter()
+        let mut existing_index = None;
+        for (index, feature) in ctx.admit_iter(&ir.model.features, "creo existing feature update search")?.enumerate() {
+            if ctx.equal(&feature.id, &id, "creo existing feature identity comparison")? {
+                existing_index = Some(index);
+                break;
+            }
+        }
+        if let Some(existing_index) = existing_index {
+            let existing = &mut ir.model.features[existing_index];
+            let upgrade_legacy_round = ctx.admit_iter(&scan.features.legacy_rounds, "creo legacy_rounds feature traversal")?
                 .any(|round| round.feature_id == operation.feature_id)
                 && matches!(
                     &definition,
@@ -452,15 +498,18 @@ pub(super) fn emit_model_features(
                 existing.name = name;
             }
             merge_feature_dependencies(ctx, &mut existing.dependencies, dependencies)?;
-            merge_feature_source_properties(
-                ctx,
-                &mut existing.source_properties,
+            let mut incoming_nodes = ctx.reserve_scoped(0, "named entry map nodes")?;
+            let incoming = incoming_nodes.with_storage(|| {
                 cadmpeg_core::text::named_entries_for_decode(
                     ctx,
                     format_args!("creo:model:feature#{}", operation.feature_id),
                     source_properties,
-                )?,
-            )?;
+                )
+                .map_err(cadmpeg_core::CodecError::from)
+            })?;
+            drop(source_property_nodes);
+            merge_feature_source_properties(ctx, &mut existing.source_properties, incoming)?;
+            drop(incoming_nodes);
             if source_tag.is_some() {
                 existing.source_tag = source_tag;
             }
@@ -468,13 +517,13 @@ pub(super) fn emit_model_features(
                 existing.native_ref = native_ref;
             }
             let mut combined_outputs = Vec::new();
-            for body in existing.evaluation.outputs() {
+            for body in ctx.admit_iter(existing.evaluation.outputs(), "creo existing feature output traversal")? {
                 let copy = copy_body_id(ctx, body)?;
                 ctx.reserve_vec(&mut combined_outputs, 1, "creo combined feature outputs")?;
                 combined_outputs.push(copy);
             }
             for output in outputs {
-                if !combined_outputs.contains(&output) {
+                if !ctx.contains(&combined_outputs, &output, "creo combined feature output lookup")? {
                     ctx.reserve_vec(&mut combined_outputs, 1, "creo combined feature outputs")?;
                     combined_outputs.push(output);
                 }
@@ -510,11 +559,15 @@ pub(super) fn emit_model_features(
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)
                 .map_err(cadmpeg_core::CodecError::from)?,
-            source_properties: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                format_args!("creo:model:feature#{}", operation.feature_id),
-                source_properties,
-            )?,
+            source_properties: {
+                let source_properties = cadmpeg_core::text::named_entries_for_decode(
+                    ctx,
+                    format_args!("creo:model:feature#{}", operation.feature_id),
+                    source_properties,
+                )?;
+                drop(source_property_nodes);
+                source_properties
+            },
             source_tag,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -529,16 +582,20 @@ pub(super) fn emit_model_features(
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
     }
-    for feature_id in row_feature_ids {
+    for feature_id in ctx.admit_iter(&row_feature_ids, "creo row model feature traversal")?.copied() {
         let (id, id_bytes) = compose_feature_id(ctx, feature_id)?;
-        if ir.model.features.iter().any(|feature| feature.id == id) {
+        let mut identity_present = false;
+        for feature in ctx.admit_iter(&ir.model.features, "creo existing model feature search")? {
+            if ctx.equal(&feature.id, &id, "creo model identity comparison")? {
+                identity_present = true;
+                break;
+            }
+        }
+        if identity_present {
             continue;
         }
-        let schema_class = feature_schema_class(scan, feature_id);
-        let Some(offset) = scan
-            .features
-            .rows
-            .iter()
+        let schema_class = feature_schema_class(ctx, scan, feature_id)?;
+        let Some(offset) = ctx.admit_iter(&scan.features.rows, "creo rows feature traversal")?
             .filter(|row| row.feature_id == feature_id)
             .map(|row| row.offset)
             .min()
@@ -546,7 +603,7 @@ pub(super) fn emit_model_features(
             continue;
         };
         ctx.charge_entities(1, "admit Creo model features")?;
-        let reference_name = feature_reference_name(scan, feature_id)
+        let reference_name = feature_reference_name(ctx, scan, feature_id)?
             .map(|bytes| decoded_feature_reference_name(ctx, bytes))
             .transpose()?;
         let reference_name = reference_name.as_deref();
@@ -564,8 +621,15 @@ pub(super) fn emit_model_features(
             "schema_feature_operation",
             Exactness::ByteExact,
         )?;
-        let mut parameters = feature_parameters(ctx, scan, feature_id)?;
-        let mut source_properties = feature_source_properties(ctx, scan, feature_id)?;
+        let (parameter_text_storage, parameter_node_storage, parameters) =
+            feature_parameters(ctx, scan, feature_id)?;
+        let mut parameter_text_storage = Some(parameter_text_storage);
+        let mut parameter_node_storage = Some(parameter_node_storage);
+        let mut parameters = parameters;
+        let (source_property_nodes, source_properties) =
+            feature_source_properties(ctx, scan, feature_id)?;
+        let mut source_property_nodes = source_property_nodes;
+        let mut source_properties = source_properties;
         let definition = schema_class.map_or_else(
             || match match named_feature_definition(
                 ctx,
@@ -581,16 +645,24 @@ pub(super) fn emit_model_features(
                 }
             } {
                 Some(definition) => Ok(definition),
-                None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                    kind: ctx
+                None => {
+                    let kind: cadmpeg_ir::features::NativeFeatureKind = ctx
                         .copy_retained_text(kind, "creo native row Feature kind")?
-                        .into(),
-                    parameters: cadmpeg_core::text::named_entries_for_decode(
+                        .into();
+                    if let Some(text_storage) = parameter_text_storage.take() {
+                        text_storage.commit()?;
+                    }
+                    let parameters = cadmpeg_core::text::named_entries_for_decode(
                         ctx,
                         format_args!("creo:model:feature#{feature_id}"),
                         std::mem::take(&mut parameters),
-                    )?,
-                })),
+                    )?;
+                    drop(parameter_node_storage.take());
+                    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                        kind,
+                        parameters,
+                    }))
+                }
             },
             |schema_class| {
                 schema_feature_definition(
@@ -608,6 +680,7 @@ pub(super) fn emit_model_features(
         if schema_class.is_none() {
             insert_feature_source_property(
                 ctx,
+                &mut source_property_nodes,
                 &mut source_properties,
                 "featdefs_schema_state",
                 if row_schema_classes.is_empty() {
@@ -620,12 +693,22 @@ pub(super) fn emit_model_features(
         if !row_schema_classes.is_empty() {
             insert_feature_source_property(
                 ctx,
+                &mut source_property_nodes,
                 &mut source_properties,
                 "featdefs_row_schema_classes",
                 SchemaClassList(&row_schema_classes),
             )?;
         }
-        retain_native_feature_parameters(ctx, &mut source_properties, &definition, &parameters)?;
+        retain_native_feature_parameters(
+            ctx,
+            &mut source_property_nodes,
+            &mut source_properties,
+            &definition,
+            &parameters,
+        )?;
+        drop(parameters);
+        drop(parameter_node_storage.take());
+        drop(parameter_text_storage.take());
         id_bytes.commit()?;
         let feature = Feature {
             id,
@@ -643,11 +726,15 @@ pub(super) fn emit_model_features(
                 ctx,
             )
             .map_err(cadmpeg_core::CodecError::from)?,
-            source_properties: cadmpeg_core::text::named_entries_for_decode(
-                ctx,
-                format_args!("creo:model:feature#{feature_id}"),
-                source_properties,
-            )?,
+            source_properties: {
+                let source_properties = cadmpeg_core::text::named_entries_for_decode(
+                    ctx,
+                    format_args!("creo:model:feature#{feature_id}"),
+                    source_properties,
+                )?;
+                drop(source_property_nodes);
+                source_properties
+            },
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -683,10 +770,7 @@ pub(super) fn finish_feature_transfers(
     link_feature_sketch_history(ctx, scan, ir)?;
     reconcile_feature_links(ctx, scan, ir, &prototype_feature_dependencies)?;
     let feature_result_topology_count = emit_feature_result_topologies(ctx, scan, ir)?;
-    let feature_result_edge_count = ir
-        .model
-        .feature_result_topologies
-        .iter()
+    let feature_result_edge_count = ctx.admit_iter(&ir.model.feature_result_topologies, "creo feature_result_topologies feature traversal")?
         .map(|state| state.edges().len())
         .sum::<usize>();
     let (transferred_feature_dimension_count, dimension_parameters) =
@@ -700,113 +784,66 @@ pub(super) fn finish_feature_transfers(
         source_carriers,
     )?;
     {
-        let active_expressions = scan
-            .curves
-            .expressions
-            .iter()
-            .filter(|record| !record.backup);
-        let decoded_curve_expression_assignment_count = active_expressions
-            .clone()
-            .map(|record| record.assignments.len())
-            .sum::<usize>();
-        let decoded_curve_expression_table_cell_assignment_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.assignments)
-            .filter(|assignment| {
-                matches!(
-                    &assignment.target,
-                    crate::curve::CurveExpressionTarget::TableCell { .. }
-                )
+        let active_expressions = || {
+            Ok::<_, cadmpeg_core::CodecError>(ctx.admit_iter(
+                &scan.curves.expressions,
+                "creo active curve expression traversal",
+            )?.filter(|record| !record.backup))
+        };
+        let decoded_curve_expression_assignment_count = active_expressions()?.map(|record| record.assignments.len()).sum::<usize>();
+        let decoded_curve_expression_table_cell_assignment_count = active_expressions()?.try_fold(0usize, |total, record| {
+            let count = ctx.admit_iter(&record.assignments, "creo expression assignment coverage traversal")?.filter(|assignment| matches!(&assignment.target, crate::curve::CurveExpressionTarget::TableCell { .. })).count();
+            total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
+        })?;
+        let decoded_curve_expression_scoped_symbol_assignment_count = active_expressions()?.try_fold(0usize, |total, record| {
+            let count = ctx.admit_iter(&record.assignments, "creo expression assignment coverage traversal")?.filter(|assignment| matches!(&assignment.target, crate::curve::CurveExpressionTarget::ScopedSymbol { .. })).count();
+            total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
+        })?;
+        let decoded_curve_expression_system_symbol_assignment_count = active_expressions()?.try_fold(0usize, |total, record| {
+            let count = ctx.admit_iter(&record.assignments, "creo expression assignment coverage traversal")?.filter(|assignment| matches!(&assignment.target, crate::curve::CurveExpressionTarget::SystemSymbol { .. })).count();
+            total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
+        })?;
+        let decoded_curve_expression_function_write_assignment_count = active_expressions()?.try_fold(0usize, |total, record| {
+            let count = ctx.admit_iter(&record.assignments, "creo expression assignment coverage traversal")?.filter(|assignment| matches!(&assignment.target, crate::curve::CurveExpressionTarget::FunctionWrite { .. })).count();
+            total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
+        })?;
+        let evaluated_curve_expression_assignment_count = active_expressions()?.try_fold(0usize, |total, record| {
+            let count = ctx.admit_iter(&record.assignments, "creo expression assignment coverage traversal")?.filter(|assignment| assignment.value.is_some()).count();
+            total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
+        })?;
+        let decoded_curve_expression_solve_block_count = active_expressions()?.map(|record| record.solve_blocks.len()).sum::<usize>();
+        let decoded_curve_expression_simultaneous_equation_count = active_expressions()?.try_fold(0usize, |total, record| {
+            let count = ctx.admit_iter(&record.solve_blocks, "creo expression solve block coverage traversal")?.map(|block| block.equations.len()).sum::<usize>();
+            total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
+        })?;
+        let decoded_curve_expression_solve_assignment_count = active_expressions()?.try_fold(0usize, |total, record| {
+            let count = ctx.admit_iter(&record.solve_blocks, "creo expression solve block coverage traversal")?.map(|block| block.assignments.len()).sum::<usize>();
+            total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
+        })?;
+        let decoded_curve_expression_solve_variable_count = active_expressions()?.try_fold(0usize, |total, record| {
+            let count = ctx.admit_iter(&record.solve_blocks, "creo expression solve block coverage traversal")?.map(|block| block.unknowns.len()).sum::<usize>();
+            total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
+        })?;
+        let evaluated_curve_expression_solve_block_count = active_expressions()?.try_fold(0usize, |total, record| {
+            ctx.admit_iter(&record.solve_blocks, "creo evaluated solve block coverage traversal")?.try_fold(total, |total, block| {
+                let resolved = ctx.admit_iter(&block.unknowns, "creo solved unknown coverage traversal")?.all(|unknown| unknown.solution.is_some());
+                total.checked_add(usize::from(resolved)).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
             })
-            .count();
-        let decoded_curve_expression_scoped_symbol_assignment_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.assignments)
-            .filter(|assignment| {
-                matches!(
-                    &assignment.target,
-                    crate::curve::CurveExpressionTarget::ScopedSymbol { .. }
-                )
+        })?;
+        let evaluated_curve_expression_solve_variable_count = active_expressions()?.try_fold(0usize, |total, record| {
+            ctx.admit_iter(&record.solve_blocks, "creo evaluated solve variable coverage traversal")?.try_fold(total, |total, block| {
+                let count = ctx.admit_iter(&block.unknowns, "creo evaluated unknown coverage traversal")?.filter(|unknown| unknown.solution.is_some()).count();
+                total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
             })
-            .count();
-        let decoded_curve_expression_system_symbol_assignment_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.assignments)
-            .filter(|assignment| {
-                matches!(
-                    &assignment.target,
-                    crate::curve::CurveExpressionTarget::SystemSymbol { .. }
-                )
-            })
-            .count();
-        let decoded_curve_expression_function_write_assignment_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.assignments)
-            .filter(|assignment| {
-                matches!(
-                    &assignment.target,
-                    crate::curve::CurveExpressionTarget::FunctionWrite { .. }
-                )
-            })
-            .count();
-        let evaluated_curve_expression_assignment_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.assignments)
-            .filter(|assignment| assignment.value.is_some())
-            .count();
-        let decoded_curve_expression_solve_block_count = active_expressions
-            .clone()
-            .map(|record| record.solve_blocks.len())
-            .sum::<usize>();
-        let decoded_curve_expression_simultaneous_equation_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.solve_blocks)
-            .map(|block| block.equations.len())
-            .sum::<usize>();
-        let decoded_curve_expression_solve_assignment_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.solve_blocks)
-            .map(|block| block.assignments.len())
-            .sum::<usize>();
-        let decoded_curve_expression_solve_variable_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.solve_blocks)
-            .map(|block| block.unknowns.len())
-            .sum::<usize>();
-        let evaluated_curve_expression_solve_block_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.solve_blocks)
-            .filter(|block| {
-                block
-                    .unknowns
-                    .iter()
-                    .all(|unknown| unknown.solution.is_some())
-            })
-            .count();
-        let evaluated_curve_expression_solve_variable_count = active_expressions
-            .clone()
-            .flat_map(|record| &record.solve_blocks)
-            .flat_map(|block| &block.unknowns)
-            .filter(|unknown| unknown.solution.is_some())
-            .count();
-        let unresolved_curve_expression_solve_control_count = active_expressions
-            .clone()
-            .filter(|record| record.unresolved_solve_control)
-            .count();
-        let prohibited_curve_expression_record_count = active_expressions
-            .clone()
-            .filter(|record| !record.prohibited_constructs.is_empty())
-            .count();
-        let prohibited_curve_expression_kind_count = active_expressions
-            .clone()
-            .map(|record| record.prohibited_constructs.len())
-            .sum::<usize>();
+        })?;
+        let unresolved_curve_expression_solve_control_count = active_expressions()?.filter(|record| record.unresolved_solve_control).count();
+        let prohibited_curve_expression_record_count = active_expressions()?.filter(|record| !record.prohibited_constructs.is_empty()).count();
+        let prohibited_curve_expression_kind_count = active_expressions()?.map(|record| record.prohibited_constructs.len()).sum::<usize>();
         let activation_count = |activation| {
-            active_expressions
-                .clone()
-                .flat_map(|record| &record.assignments)
-                .filter(|assignment| assignment.activation == activation)
-                .count()
+            active_expressions()?.try_fold(0usize, |total, record| {
+                let count = ctx.admit_iter(&record.assignments, "creo expression activation coverage traversal")?.filter(|assignment| assignment.activation == activation).count();
+                total.checked_add(count).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo expression coverage count", u64::MAX, u64::MAX))
+            })
         };
         coverage.record(
             ctx,
@@ -902,20 +939,20 @@ pub(super) fn finish_feature_transfers(
                 crate::curve::CurveExpressionActivation::Conditional,
             ),
         ] {
-            coverage.record(ctx, key, activation_count(activation))?;
+            coverage.record(ctx, key, activation_count(activation)?)?;
         }
-        let (decoded_dimension_count, resolved_dimension_count) = scan
-            .features
-            .definitions
-            .iter()
+        let (decoded_dimension_count, resolved_dimension_count) = ctx
+            .admit_iter(&scan.features.definitions, "creo feature dimension coverage traversal")?
             .filter_map(|definition| definition.dimensions.as_ref())
-            .flat_map(|table| &table.rows)
-            .fold((0usize, 0usize), |(decoded, resolved), dimension| {
-                (
-                    decoded + 1,
-                    resolved + usize::from(dimension.value.resolved().is_some()),
-                )
-            });
+            .try_fold((0usize, 0usize), |total, table| {
+                ctx.admit_iter(&table.rows, "creo feature dimension row coverage traversal")?
+                    .try_fold(total, |(decoded, resolved), dimension| {
+                        Ok::<_, cadmpeg_core::CodecError>((
+                            decoded.checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo dimension coverage count", u64::MAX, u64::MAX))?,
+                            resolved.checked_add(usize::from(dimension.value.resolved().is_some())).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("creo dimension coverage count", u64::MAX, u64::MAX))?,
+                        ))
+                    })
+            })?;
         coverage.record(
             ctx,
             crate::coverage::DECODED_FEATURE_DIMENSION_COUNT,

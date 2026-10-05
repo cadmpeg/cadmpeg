@@ -71,7 +71,7 @@ fn legacy_carrier_count_node_refuses_before_first_insert() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let error =
-        super::legacy_carrier_counts(&ctx, [42, 42]).expect_err("first count node exceeds limit");
+        super::legacy_carrier_counts(&ctx, &[42, 42], |id| *id).expect_err("first count node exceeds limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo legacy carrier count nodes"));
@@ -79,9 +79,23 @@ fn legacy_carrier_count_node_refuses_before_first_insert() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let counts = super::legacy_carrier_counts(&ctx, [42, 42]).expect("service counts");
+    let counts = super::legacy_carrier_counts(&ctx, &[42, 42], |id| *id).expect("service counts");
     assert_eq!(counts.get(&42), Some(&2));
     assert_eq!(counts.len(), 1);
+}
+
+#[test]
+fn legacy_carrier_count_refuses_before_source_traversal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = super::legacy_carrier_counts(&ctx, &[42, 42], |id| *id)
+        .expect_err("carrier traversal needs work");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo legacy carrier count traversal"));
 }
 
 #[test]
@@ -90,7 +104,7 @@ fn positional_replay_section_rows_refuse_before_vec_growth() {
     use cadmpeg_core::CodecError;
 
     let data = [0u8];
-    let section = crate::container::Section::scan("VisibGeom".to_string(), 0, 1, None, &data)
+    let section = crate::container::Section::scan_for_test("VisibGeom".to_string(), 0, 1, None, &data)
         .expect("bounded section");
     let row = crate::surface::SurfaceRow {
         id: 7,
@@ -836,7 +850,7 @@ ${}
 #[test]
 fn in_range_section_extent_states_its_declared_end() {
     let section =
-        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
+        crate::container::Section::scan_for_test("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
             .expect("section extent")
             .section;
 
@@ -855,7 +869,7 @@ fn in_range_section_extent_states_its_declared_end() {
 fn surface_prototype_frame_address_error_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let section =
-        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
+        crate::container::Section::scan_for_test("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
             .expect("section extent")
             .section;
     let arena = DecodeArena::new();
@@ -876,7 +890,7 @@ fn surface_prototype_frame_address_error_refuses_retained_limit() {
 fn surface_prototype_frame_bounds_error_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let section =
-        crate::container::Section::scan("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
+        crate::container::Section::scan_for_test("ND:0:VisibGeom:0".to_owned(), 32, 48, None, &[0u8; 48])
             .expect("section extent")
             .section;
     let mut scan = crate::test_support::empty_container_scan();

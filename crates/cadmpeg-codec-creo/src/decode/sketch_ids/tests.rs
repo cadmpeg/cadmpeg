@@ -417,29 +417,3 @@ fn sketch_headers_keep_source_offset_order_and_bucket_values() {
         assert_eq!(buckets[0].offset, 17);
     }
 }
-
-#[test]
-fn sketch_scope_prefix_refuses_work() {
-    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
-    let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo sketch identity scope prefix",
-        |ctx| super::sketch_identity_scope(ctx, &sketch),
-    );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo sketch identity scope prefix"));
-}
-
-#[test]
-fn sketch_native_reference_propagates_scope_prefix_refusal() {
-    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
-    let error = crate::test_support::last_refusal_at(
-        &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "creo sketch identity scope prefix",
-        |ctx| super::sketch_native_ref_admitted(ctx, &sketch),
-    );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-            && resource.operation == "creo sketch identity scope prefix"));
-}

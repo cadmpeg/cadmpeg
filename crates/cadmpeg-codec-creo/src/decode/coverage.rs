@@ -21,8 +21,7 @@ fn charged_map_entry<'a, K: Ord + cadmpeg_core::decode::cost::DecodeCost, V: Def
     key: K,
     operation: &'static str,
 ) -> Result<&'a mut V, CodecError> {
-    ctx.admit_btree_entry(map, &key, operation)?;
-    match map.entry(key) {
+    match ctx.entry_btree_map(map, key, operation)? {
         std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
         std::collections::btree_map::Entry::Vacant(entry) => Ok(entry.insert(V::default())),
     }
@@ -40,8 +39,12 @@ pub(super) fn source_section(
 }
 
 pub(super) fn source_section_ref<'a>(ctx: &DecodeContext<'_>, scan: &'a ContainerScan<'_>, offset: usize) -> Result<&'a str, CodecError> {
-    match scan.framing.sections.iter().find(|section| section.contains(offset)) {
-        Some(section) => section.name(ctx),
+    match ctx.find_by(
+        &scan.framing.sections,
+        |section| Ok(section.contains(offset)),
+        "creo source section search",
+    )? {
+        Some(section) => Ok(section.name()),
         None => Ok(if matches!(scan.framing.layout, crate::container::Layout::LegacyAscii(_)) {
             "legacy_ascii"
         } else {

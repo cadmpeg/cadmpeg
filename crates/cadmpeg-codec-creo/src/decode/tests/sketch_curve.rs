@@ -319,11 +319,11 @@ fn dimension_identity_includes_its_feature_definition() {
     let sketch_1200 =
         SketchId::mint("creo:model:sketch#1200".to_string()).expect("valid test fixture");
     assert_ne!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_id(ctx, &sketch_917, 3)).expect("test identity scope resources"),
-        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_id(ctx, &sketch_1104, 3)).expect("test identity scope resources")
+        feature_dimension_parameter_id(&sketch_917, 3),
+        feature_dimension_parameter_id(&sketch_1104, 3)
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_id(ctx, &sketch_917, 3)).expect("test identity scope resources")
+        feature_dimension_parameter_id(&sketch_917, 3)
             .expect("valid test identity")
             .as_str(),
         "creo:featdefs:parameter#917:3"
@@ -360,8 +360,8 @@ fn dimension_identity_includes_its_feature_definition() {
         ])
     );
     assert_ne!(
-        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_row_id(ctx, &sketch_917, 3, Some(0))).expect("test identity scope resources"),
-        crate::decode::with_test_decode_ctx(|ctx| feature_dimension_parameter_row_id(ctx, &sketch_917, 3, Some(1))).expect("test identity scope resources")
+        feature_dimension_parameter_row_id(&sketch_917, 3, Some(0)),
+        feature_dimension_parameter_row_id(&sketch_917, 3, Some(1))
     );
     let dimension = crate::feature::definitions::FeatureDimension {
         dimension_type: 2,
@@ -400,11 +400,9 @@ fn dimension_identity_includes_its_feature_definition() {
         offset: 8,
     };
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_feature_dimension_parameter(ctx, 
-            &sketch_917,
+        resolved_feature_dimension_parameter(&sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
-            0,
-        )).expect("test identity scope resources"),
+            0,),
         Some((
             &dimension,
             ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
@@ -730,7 +728,7 @@ fn dimension_identity_includes_its_feature_definition() {
         ..table.clone()
     };
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_feature_dimension_parameter(ctx, &sketch_917, &unresolved_table, 0)).expect("test identity scope resources"),
+        resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0),
         Some((
             &unresolved_dimension,
             ParameterId::mint("creo:featdefs:parameter#917:4".to_string())
@@ -742,25 +740,21 @@ fn dimension_identity_includes_its_feature_definition() {
         ..unresolved_table
     };
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_feature_dimension_parameter(ctx, &sketch_917, &incomplete_table, 0)).expect("test identity scope resources"),
+        resolved_feature_dimension_parameter(&sketch_917, &incomplete_table, 0),
         None
     );
     table.rows.push(dimension);
     definition.dimensions = Some(table);
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_feature_dimension_parameter(ctx, 
-            &sketch_917,
+        resolved_feature_dimension_parameter(&sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
-            0,
-        )).expect("test identity scope resources"),
+            0,),
         None
     );
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_feature_dimension_parameter(ctx, 
-            &sketch_917,
+        resolved_feature_dimension_parameter(&sketch_917,
             definition.dimensions.as_ref().expect("dimension table"),
-            1,
-        )).expect("test identity scope resources"),
+            1,),
         None
     );
 }

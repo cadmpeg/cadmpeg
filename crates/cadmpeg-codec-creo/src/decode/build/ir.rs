@@ -112,10 +112,11 @@ pub(super) fn surface_boundary_has_unresolved_operands(boundary: &SurfaceBoundar
 
 pub(super) fn pattern_kind_has_unresolved_operands<
     C: cadmpeg_ir::features::patterns::CompositeStages,
->(
+> (
+    ctx: &DecodeContext<'_>,
     pattern: &PatternKind<C>,
-) -> bool {
-    match pattern.definition() {
+) -> Result<bool, CodecError> {
+    Ok(match pattern.definition() {
         PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear { direction, .. }
         | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
@@ -128,15 +129,19 @@ pub(super) fn pattern_kind_has_unresolved_operands<
                 cadmpeg_ir::features::patterns::PatternScaleCenter::Native(_)
             )
         }
-        PatternTransform::Composite { stages } => stages
-            .stages()
-            .iter()
-            .any(|stage| pattern_kind_has_unresolved_operands(&stage.pattern)),
+        PatternTransform::Composite { stages } => {
+            for stage in ctx.admit_iter(stages.stages(), "creo pattern composite stage traversal")? {
+                if pattern_kind_has_unresolved_operands(ctx, &stage.pattern)? {
+                    return Ok(true);
+                }
+            }
+            false
+        },
         PatternTransform::Circular { .. }
         | PatternTransform::CircularAngles { .. }
         | PatternTransform::Mirror { .. } => false,
         PatternTransform::MirrorReference { .. } => true,
-    }
+    })
 }
 
 pub(super) fn linear_termination_has_unresolved_operands(termination: &LinearTermination) -> bool {
@@ -193,7 +198,7 @@ fn transfer_reference_lines(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     let mut line3d_id_counts = BTreeMap::<u32, usize>::new();
-    for line in &scan.references.lines {
+    for line in ctx.admit_iter(&scan.references.lines, "creo reference line traversal")? {
         if let crate::reference::ReferenceLineKind::Line3d { entity_id, .. } = line.kind() {
             ctx.admit_btree_entry(
                 &line3d_id_counts,
@@ -203,7 +208,7 @@ fn transfer_reference_lines(
             *line3d_id_counts.entry(*entity_id).or_default() += 1;
         }
     }
-    for line in &scan.references.lines {
+    for line in ctx.admit_iter(&scan.references.lines, "creo reference line traversal")? {
         let start: [f64; 3] = line.start().get().into();
         let end: [f64; 3] = line.end().get().into();
         let direction = std::array::from_fn(|axis| end[axis] - start[axis]);
@@ -297,7 +302,7 @@ fn transfer_reference_circles(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     let mut circle_id_counts = BTreeMap::<u32, usize>::new();
-    for circle in &scan.references.circles {
+    for circle in ctx.admit_iter(&scan.references.circles, "creo reference circle traversal")? {
         ctx.admit_btree_entry(
             &circle_id_counts,
             &circle.entity_id,
@@ -305,7 +310,7 @@ fn transfer_reference_circles(
         )?;
         *circle_id_counts.entry(circle.entity_id).or_default() += 1;
     }
-    for circle in &scan.references.circles {
+    for circle in ctx.admit_iter(&scan.references.circles, "creo reference circle traversal")? {
         let start: [f64; 3] = circle.start().get().into();
         let center: [f64; 3] = circle.center().get().into();
         let radial = std::array::from_fn(|axis| start[axis] - center[axis]);
@@ -392,7 +397,7 @@ fn transfer_reference_ellipses(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     let mut ellipse_id_counts = BTreeMap::<u32, usize>::new();
-    for ellipse in &scan.references.ellipses {
+    for ellipse in ctx.admit_iter(&scan.references.ellipses, "creo reference ellipse traversal")? {
         ctx.admit_btree_entry(
             &ellipse_id_counts,
             &ellipse.source_entity_id,
@@ -402,7 +407,7 @@ fn transfer_reference_ellipses(
             .entry(ellipse.source_entity_id)
             .or_default() += 1;
     }
-    for ellipse in &scan.references.ellipses {
+    for ellipse in ctx.admit_iter(&scan.references.ellipses, "creo reference ellipse traversal")? {
         let (id, object_id) = if ellipse_id_counts.get(&ellipse.source_entity_id) == Some(&1) {
             (
                 crate::identity::compose_checked::<CurveId>(
@@ -505,7 +510,7 @@ fn admitted_display_strips<V>(
         spans.len(),
         "creo display tessellation strip rows",
     )?;
-    for span in spans {
+    for span in ctx.admit_iter(spans, "creo display strip span traversal")? {
         let Ok(count) = usize::try_from(*span) else {
             return Ok(None);
         };
@@ -515,7 +520,10 @@ fn admitted_display_strips<V>(
             count.min(remaining.len()),
             "creo display tessellation strip vertices",
         )?;
-        for _ in 0..count {
+        for _ in ctx.admit_iter(
+            &(0..count),
+            "creo display strip vertex traversal",
+        )? {
             let Some(vertex) = remaining.next() else {
                 return Ok(None);
             };
@@ -542,7 +550,7 @@ fn transfer_display_tessellations(
         .framing
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
-    for strip in &scan.primitives.triangle_strips {
+    for strip in ctx.admit_iter(&scan.primitives.triangle_strips, "creo display triangle strip traversal")? {
         let id: TessellationId = crate::identity::compose_checked(
             ctx,
             &cadmpeg_ir::identity_namespace!("creo", "solid_primdata", "tessellation"),
@@ -559,13 +567,23 @@ fn transfer_display_tessellations(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo model tessellations")?;
+        let (unshaded, shaded, vertex_count) = match strip.vertices() {
+            crate::primdata::PrimitiveVertices::Unshaded(rows) => (rows.as_slice(), &[][..], rows.len()),
+            crate::primdata::PrimitiveVertices::Shaded(rows) => (&[][..], rows.as_slice(), rows.len()),
+        };
         let mut positions = Vec::new();
         ctx.reserve_vec(
             &mut positions,
-            strip.positions().len(),
+            vertex_count,
             "creo display tessellation positions",
         )?;
-        for position in strip.positions() {
+        for position in ctx
+            .admit_iter(unshaded, "creo display tessellation position rows")?
+            .chain(
+                ctx.admit_iter(shaded, "creo display tessellation shaded position rows")?
+                    .map(|row| &row.position),
+            )
+        {
             let mut point = Point3::from(position.get());
             if let Some(scale) = length_scale {
                 point = Point3::new(
@@ -589,14 +607,21 @@ fn transfer_display_tessellations(
             };
             positions.push(point);
         }
-        let mesh = if let Some(normals) = strip.normals() {
+        let mesh = if matches!(strip.vertices(), crate::primdata::PrimitiveVertices::Shaded(_)) {
+            let normals = ctx
+                .admit_iter(shaded, "creo display tessellation normal rows")?
+                .map(|row| &row.normal);
             let mut rows = Vec::new();
             ctx.reserve_vec(
                 &mut rows,
                 positions.len(),
                 "creo display tessellation shaded rows",
             )?;
-            for (position, normal) in positions.into_iter().zip(normals) {
+            for (position, normal) in ctx
+                .admit_iter(&positions, "creo display shaded position assembly")?
+                .copied()
+                .zip(normals)
+            {
                 let Some(normal) = FiniteVector3::new(Vector3::from(normal.get())) else {
                     return Err(display_strip_error(
                         ctx,
@@ -647,7 +672,7 @@ fn transfer_datum_plane_surfaces(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
-    for plane in &scan.planes.datums {
+    for plane in ctx.admit_iter(&scan.planes.datums, "creo datum plane traversal")? {
         let normal = plane.plane().normal();
         let id = crate::identity::compose_checked::<SurfaceId>(
             ctx,
@@ -708,7 +733,7 @@ fn transfer_placed_plane_surfaces_into_ir(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
-    for frame in &scan.planes.local_systems {
+    for frame in ctx.admit_iter(&scan.planes.local_systems, "creo plane local frame traversal")? {
         if frame.frame().cross_overflow {
             return Err(CodecError::NotImplemented(ctx.format_retained(
                 format_args!("Creo plane local system at byte {} has a cross product outside the representable range", frame.offset),
@@ -716,35 +741,32 @@ fn transfer_placed_plane_surfaces_into_ir(
             )?));
         }
     }
-    for (
-        surface_id,
-        crate::decode::analytic::planes::PlacedPlaneSurface {
-            plane,
-            u_axis,
-            offset,
-        },
-    ) in placed_plane_surfaces(ctx, scan)?
-    {
+    let placed = placed_plane_surfaces(ctx, scan)?;
+    for (&surface_id, surface) in ctx.admit_iter(&placed, "creo placed plane surface traversal")? {
+        let crate::decode::analytic::planes::PlacedPlaneSurface { plane, u_axis, offset } = surface;
+        let u_axis = *u_axis;
+        let offset = *offset;
         let id = crate::identity::compose_checked::<SurfaceId>(
             ctx,
             &crate::identity::VISIBGEOM_SURFACE,
             surface_id,
             "creo placed plane surface identity",
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        let mut already_transferred = false;
+        for surface in ctx.admit_iter(&ir.model.surfaces, "creo placed plane surface search")? {
+            if ctx.equal(&surface.id, &id, "creo placed plane surface identity comparison")? {
+                already_transferred = true;
+                break;
+            }
+        }
+        if already_transferred {
             continue;
         }
-        let tag = if scan
-            .planes
-            .positional_frames
-            .iter()
+        let tag = if ctx.admit_iter(&scan.planes.positional_frames, "creo positional plane tag search")?
             .any(|plane| plane.surface_id == surface_id && plane.offset == offset)
         {
             "plane_positional_corner_frame"
-        } else if scan
-            .planes
-            .outlines
-            .iter()
+        } else if ctx.admit_iter(&scan.planes.outlines, "creo outline plane tag search")?
             .any(|outline| outline.surface_id == surface_id && outline.offset == offset)
         {
             "plane_outline_held_coordinate"

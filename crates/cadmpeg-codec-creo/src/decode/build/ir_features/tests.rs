@@ -250,6 +250,99 @@ fn existing_feature_property_merge_keeps_order_and_replacement() {
 }
 
 #[test]
+fn existing_feature_property_staging_nodes_are_scoped_before_retained_destination() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("recipe".len() + "Extrude".len());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut source_nodes = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property lease");
+    let mut source = BTreeMap::new();
+    crate::decode::feature_history::outputs::insert_feature_source_property(
+        &ctx,
+        &mut source_nodes,
+        &mut source,
+        "recipe",
+        "Extrude",
+    )
+    .expect("source text is retained and its map node is scoped");
+    let mut incoming_nodes = ctx
+        .reserve_scoped(0, "named entry map nodes")
+        .expect("intermediate output lease");
+    let incoming = incoming_nodes
+        .with_storage(|| {
+            cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", source)
+                .map_err(cadmpeg_core::CodecError::from)
+        })
+        .expect("intermediate named map node is scoped");
+    drop(source_nodes);
+    let mut target = BTreeMap::new();
+    let error = merge_feature_source_properties(&ctx, &mut target, incoming)
+        .expect_err("the persistent destination node needs retained storage");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo IR Feature source property nodes")
+    );
+    assert!(target.is_empty());
+    drop(incoming_nodes);
+}
+
+#[test]
+fn existing_feature_property_scoped_named_merge_keeps_order_and_replacement() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut source_nodes = ctx
+        .reserve_scoped(0, "creo feature source property nodes")
+        .expect("source property lease");
+    let mut source = BTreeMap::new();
+    crate::decode::feature_history::outputs::insert_feature_source_property(
+        &ctx,
+        &mut source_nodes,
+        &mut source,
+        "featdefs_schema_state",
+        "absent",
+    )
+    .expect("first source property fits");
+    crate::decode::feature_history::outputs::insert_feature_source_property(
+        &ctx,
+        &mut source_nodes,
+        &mut source,
+        "recipe",
+        "Extrude",
+    )
+    .expect("second source property fits");
+    let mut incoming_nodes = ctx
+        .reserve_scoped(0, "named entry map nodes")
+        .expect("intermediate output lease");
+    let incoming = incoming_nodes
+        .with_storage(|| {
+            cadmpeg_core::text::named_entries_for_decode(&ctx, "feature", source)
+                .map_err(cadmpeg_core::CodecError::from)
+        })
+        .expect("intermediate named map nodes are scoped");
+    drop(source_nodes);
+    let mut target = BTreeMap::from([(property_key("recipe"), "Native".to_string())]);
+    merge_feature_source_properties(&ctx, &mut target, incoming)
+        .expect("persistent destination inserts and replaces under service policy");
+    drop(incoming_nodes);
+    assert_eq!(target["recipe"], "Extrude");
+    assert_eq!(target["featdefs_schema_state"], "absent");
+    assert_eq!(
+        target
+            .keys()
+            .next()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("featdefs_schema_state")
+    );
+}
+
+#[test]
 fn existing_feature_dependency_refuses_before_member_growth() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -740,4 +833,82 @@ fn operation_feature_identity_refuses_before_btree_node() {
             && resource.operation == "creo operation feature identity nodes")
     );
     assert!(ids.is_empty());
+}
+
+#[test]
+fn model_feature_identity_grammar_refuses_after_formatting() {
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        compose_feature_id(&ctx, 40).map(|(id, _reservation)| id)
+    };
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::WorkUnits,
+        Some("creo model feature identity grammar"),
+        run,
+    );
+    assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo model feature identity grammar"));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx|
+        compose_feature_id(ctx, 40).map(|(id, _reservation)| id)
+    ).expect("service identity grammar").as_str(), "creo:model:feature#40");
+}
+
+#[test]
+fn combined_feature_output_membership_refuses_work_and_preserves_service_outputs() {
+    let output = cadmpeg_ir::ids::BodyId::mint("creo:feature:extrusion#40:body")
+        .expect("identity grammar");
+    let mut initial = cadmpeg_ir::document::CadIr::empty();
+    initial.model.bodies.push(cadmpeg_ir::topology::Body {
+        id: output.clone(),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    let mut existing = feature_for_output_refresh();
+    existing.evaluation.set_outputs(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![output.clone()], ctx)
+                .map_err(cadmpeg_core::CodecError::from)
+        })
+        .expect("one existing output body"),
+    );
+    initial.model.features.push(existing);
+
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features
+        .operations
+        .push(crate::feature::operations::FeatureOperation {
+            feature_id: 40,
+            kind: crate::feature::operations::OperationKind::Native,
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::operations::RecipeResolution::None,
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        });
+
+    let (feature_count, outputs) = crate::test_support::assert_work_boundaries(
+        &["creo combined feature output lookup"],
+        |ctx| {
+            let mut ir = initial.clone();
+            let feature_count = emit_model_features(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )?;
+            Ok((feature_count, ir.model.features[0].evaluation.outputs().to_vec()))
+        },
+    );
+    assert_eq!(feature_count, 0);
+    assert_eq!(outputs, vec![output]);
 }

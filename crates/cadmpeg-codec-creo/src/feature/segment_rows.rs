@@ -106,8 +106,7 @@ impl SegmentRows {
         let mut identities = BTreeMap::new();
         for (ordinal, row) in rows.iter().enumerate() {
             let external_id = row.external_id();
-            ctx.admit_btree_entry(&identities, &external_id, "creo segment identity nodes")?;
-            match identities.entry(external_id) {
+            match ctx.entry_btree_map(&mut identities, external_id, "creo segment identity nodes")? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(Some(ordinal));
                 }
@@ -138,6 +137,16 @@ impl SegmentRows {
         self.rows.len()
     }
 
+    /// Returns the stored rows in source order for admitted borrowed traversal.
+    pub(crate) fn as_slice(&self) -> &[SegmentRow] {
+        self.rows.as_slice()
+    }
+
+    /// Returns the existing identity index for admitted borrowed traversal.
+    pub(crate) fn identity_entries(&self) -> &BTreeMap<u32, Option<usize>> {
+        &self.identities
+    }
+
     pub(crate) fn get(&self, id: u32) -> Option<&SegmentRow> {
         self.rows.get((*self.identities.get(&id)?)?)
     }
@@ -146,16 +155,14 @@ impl SegmentRows {
         self.identities.contains_key(&id)
     }
 
-    pub(crate) fn ids(&self) -> impl Iterator<Item = u32> + '_ {
-        self.identities.keys().copied()
-    }
-
+    #[cfg(test)]
     pub(crate) fn unique_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.identities
             .iter()
             .filter_map(|(&id, ordinal)| ordinal.map(|_| id))
     }
 
+    #[cfg(test)]
     pub(crate) fn conflicting_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.identities
             .iter()

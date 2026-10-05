@@ -165,6 +165,23 @@ pub(crate) enum OperationKind {
     Native,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for OperationKind {
+    fn decode_cost(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        use cadmpeg_core::decode::cost::DecodeCost;
+
+        match self {
+            Self::Stored(value) => DecodeCost::decode_cost(&(0_u8, value.as_str()), ctx, operation),
+            Self::Extrude => DecodeCost::decode_cost(&(1_u8,), ctx, operation),
+            Self::Revolve => DecodeCost::decode_cost(&(2_u8,), ctx, operation),
+            Self::Native => DecodeCost::decode_cost(&(3_u8,), ctx, operation),
+        }
+    }
+}
+
 impl OperationKind {
     pub(crate) fn as_str(&self) -> &str {
         match self {
@@ -734,12 +751,7 @@ pub(crate) fn operation_states(
         .iter()
         .filter(|operation| operation.display_name_stored())
     {
-        ctx.admit_btree_entry(
-            &display_counts,
-            &operation.feature_id,
-            "creo operation display counts",
-        )?;
-        match display_counts.entry(operation.feature_id) {
+        match ctx.entry_btree_map(&mut display_counts, operation.feature_id, "creo operation display counts")? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
             }
@@ -772,12 +784,7 @@ pub(crate) fn operations(
     let conflicting_features = conflicting_recipe_features(ctx, &bindings)?;
     let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();
     for operation in operation_states(ctx, payload)? {
-        ctx.admit_btree_entry(
-            &by_feature,
-            &operation.feature_id,
-            "creo operation feature nodes",
-        )?;
-        match by_feature.entry(operation.feature_id) {
+        match ctx.entry_btree_map(&mut by_feature, operation.feature_id, "creo operation feature nodes")? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let mut states = Vec::new();
                 ctx.reserve_vec(&mut states, 1, "creo operation feature states")?;
@@ -895,6 +902,7 @@ pub(crate) fn operations(
 #[cfg(test)]
 mod tests {
     mod resource_limits;
+    mod decode_cost;
 
     use super::reference_names;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

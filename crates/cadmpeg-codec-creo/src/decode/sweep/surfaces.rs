@@ -284,8 +284,10 @@ pub(in super::super) fn transfer_saved_spline_curves(
         else {
             continue;
         };
-        for spline in
-            semantic_saved_section_entities(definition).filter_map(|entity| match entity {
+        let (entities, _entity_storage) = semantic_saved_section_entities(ctx, definition)?;
+        for spline in ctx
+            .admit_iter(&entities, "creo saved section spline traversal")?
+            .filter_map(|entity| match entity {
                 crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
             })
@@ -604,7 +606,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if !feature_allows_linear_extrusion(scan, feature_id) {
+        if !feature_allows_linear_extrusion(ctx, scan, feature_id)? {
             continue;
         }
         let Some(order_table) = &definition.order_table else {
@@ -625,12 +627,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             let Some(surface_id) = analytic_surface_id_for_feature(
+                ctx,
                 &scan.surfaces.rows,
                 &scan.features.entity_tables,
                 feature_id,
                 segment.external_id,
                 &geometry,
-            ) else {
+            )? else {
                 continue;
             };
             let id = crate::identity::compose_checked::<SurfaceId>(
@@ -676,17 +679,23 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        for (internal_id, section_geometry, offset) in
-            semantic_saved_section_entities(definition).filter_map(saved_section_entity_geometry)
-        {
+        let (entities, _entity_storage) = semantic_saved_section_entities(ctx, definition)?;
+        for entity in ctx.admit_iter(&entities, "creo saved section geometry traversal")? {
+            let Some((internal_id, section_geometry, offset)) =
+                saved_section_entity_geometry(ctx, entity)?
+            else {
+                continue;
+            };
             let Some(external_id) = order_table.external_id(ctx, internal_id)? else {
                 continue;
             };
             let Some(native_surface_id) = generated_surface_id_for_feature(
+                ctx,
                 &scan.features.entity_tables,
                 feature_id,
                 external_id,
-            ) else {
+            )?
+            else {
                 continue;
             };
             let Some(geometry) = extruded_geometry_surface(transform, &section_geometry) else {
@@ -746,12 +755,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        let splines = semantic_saved_section_entities(definition)
+        let (entities, _entity_storage) = semantic_saved_section_entities(ctx, definition)?;
+        let splines = ctx
+            .admit_iter(&entities, "creo saved section spline traversal")?
             .filter_map(|entity| match entity {
                 crate::feature::definitions::FeatureSavedEntity::Spline(spline) => Some(spline),
                 _ => None,
-            })
-;
+            });
         let Some(span) =
             resolved_feature_extrusion_span(ctx, scan, ir, source_carriers, definition, transform)?
         else {
@@ -764,7 +774,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         for spline in splines {
             let Some(internal_id) = spline.entity_id else { continue; };
             let Some(external_id) = order_table.external_id(ctx, internal_id)? else { continue; };
-            let Some(native_surface_id) = generated_surface_id_for_feature(&scan.features.entity_tables, feature_id, external_id) else { continue; };
+            let Some(native_surface_id) = generated_surface_id_for_feature(ctx, &scan.features.entity_tables, feature_id, external_id)? else { continue; };
             if !unique_feature_surface_row(&scan.surfaces.rows, native_surface_id, feature_id,
                 crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear)) { continue; }
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -961,13 +971,13 @@ fn extrusion_solved_segment_ids(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
     let mut solved = BTreeSet::new();
-    for id in definition
-        .trim_entities
-        .iter()
-        .flat_map(|trim_entities| &trim_entities.rows)
-        .filter_map(|row| trim_segment_id(definition, row))
-    {
-        ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
+    let Some(trim_entities) = definition.trim_entities.as_ref() else {
+        return Ok(solved);
+    };
+    for row in ctx.admit_iter(&trim_entities.rows, "creo extrusion solved trim rows")? {
+        if let Some(id) = trim_segment_id(ctx, definition, row)? {
+            ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
+        }
     }
     Ok(solved)
 }

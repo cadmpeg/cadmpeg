@@ -221,13 +221,11 @@ fn saved_line_joins_through_order_table() {
         panic!("saved line");
     };
     incomplete_line.endpoints[1][1] = None;
-    assert!(saved_section_entity_geometry(
-        &incomplete
+    assert!(crate::decode::with_test_decode_ctx(|ctx| saved_section_entity_geometry(ctx, &incomplete
             .saved_section
             .as_ref()
             .expect("saved section")
-            .entities[0]
-    )
+            .entities[0])).expect("admitted test lookup")
     .is_none());
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &incomplete))
@@ -1132,14 +1130,12 @@ fn saved_line_joins_through_order_table() {
         .rows[0]
         .external_id = 99;
     assert_eq!(
-        trim_segment_id(
-            &replay_mismatched,
+        crate::decode::with_test_decode_ctx(|ctx| trim_segment_id(ctx, &replay_mismatched,
             &replay_mismatched
                 .trim_entities
                 .as_ref()
                 .expect("trim table")
-                .rows[0],
-        ),
+                .rows[0],)).expect("admitted test lookup"),
         Some(42)
     );
     assert_eq!(
@@ -1173,7 +1169,7 @@ fn saved_line_joins_through_order_table() {
         None
     );
     let trim = completed.trim_entities.as_ref().expect("trim table").rows[0].clone();
-    assert_eq!(trim_segment_id(&completed, &trim), Some(42));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| trim_segment_id(ctx, &completed, &trim)).expect("admitted test lookup"), Some(42));
 
     let mut missing_line = completed.clone();
     missing_line
@@ -1290,7 +1286,7 @@ fn saved_line_joins_through_order_table() {
         .expect("segment table")
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::Ordinary(segment));
-    assert_eq!(trim_segment_id(&duplicate_segment, &trim), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| trim_segment_id(ctx, &duplicate_segment, &trim)).expect("admitted test lookup"), None);
     let mut duplicate_trim = completed;
     duplicate_trim
         .trim_entities
@@ -1298,7 +1294,7 @@ fn saved_line_joins_through_order_table() {
         .expect("trim table")
         .rows
         .push(trim.clone());
-    assert_eq!(trim_segment_id(&duplicate_trim, &trim), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| trim_segment_id(ctx, &duplicate_trim, &trim)).expect("admitted test lookup"), None);
 }
 
 #[test]
@@ -1314,7 +1310,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     );
 
     assert_eq!(
-        saved_section_entity_geometry(&entity),
+        crate::decode::with_test_decode_ctx(|ctx| saved_section_entity_geometry(ctx, &entity)).expect("admitted test lookup"),
         Some((
             7,
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
@@ -1325,7 +1321,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
             19,
         ))
     );
-    let (_, geometry, _) = saved_section_entity_geometry(&entity).expect("complete saved circle");
+    let (_, geometry, _) = crate::decode::with_test_decode_ctx(|ctx| saved_section_entity_geometry(ctx, &entity)).expect("admitted test lookup").expect("complete saved circle");
     assert!(is_full_circle_geometry(&geometry));
 
     let circle = crate::feature::definitions::FeatureCircleSegment {

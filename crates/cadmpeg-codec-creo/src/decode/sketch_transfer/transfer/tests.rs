@@ -267,6 +267,52 @@ fn available_parameter_ids_refuse_planned_tree_node() {
     assert_eq!(ids, BTreeSet::from([id]));
 }
 
+#[test]
+fn available_parameter_ids_refuse_membership_work() {
+    let first = ParameterId::mint("creo:featdefs:parameter#first").expect("parameter ID");
+    let second = ParameterId::mint("creo:featdefs:parameter#second").expect("parameter ID");
+    let ids = crate::test_support::assert_work_boundaries(
+        &["creo available parameter ID membership"],
+        |ctx| available_parameter_ids(ctx, [&first, &second], BTreeSet::new()),
+    );
+    assert_eq!(ids, BTreeSet::from([first, second]));
+}
+
+#[test]
+fn constraint_entity_membership_refuses_work() {
+    let entity = SketchEntityId::mint("creo:model:sketch_entity#1").expect("entity ID");
+    let emitted = BTreeSet::from([entity.clone()]);
+    let mut definition = SketchConstraintDefinitionInput::Horizontal { entity };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::reconcile_constraint_entity_references(&ctx, &mut definition, &emitted)
+        .expect_err("entity membership exceeds zero work units");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo constraint emitted entity membership"));
+}
+
+#[test]
+fn constraint_parameter_membership_refuses_work() {
+    let parameter = ParameterId::mint("creo:featdefs:parameter#1").expect("parameter ID");
+    let emitted = BTreeSet::from([parameter.clone()]);
+    let mut definition = SketchConstraintDefinitionInput::Radius {
+        entity: SketchEntityId::mint("creo:model:sketch_entity#1").expect("entity ID"),
+        parameter,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::reconcile_constraint_parameter_reference(&ctx, &mut definition, &emitted)
+        .expect_err("parameter membership exceeds zero work units");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo constraint parameter membership"));
+}
+
 macro_rules! map_node_test {
     ($name:ident, $operation:literal) => {
         #[test]
@@ -380,6 +426,148 @@ fn equation_scan() -> (crate::container::ContainerScan<'static>, usize) {
     (scan, row_start)
 }
 
+fn scalar_equality_equation_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = empty_section_scan();
+    let definition = &mut scan.features.definitions[0];
+    definition.offset = 1000;
+    definition.saved_section = None;
+    definition.body = vec![0; 20];
+    definition.body.extend_from_slice(
+        b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\0\xf1\xf7\x80\x9f\xe2\
+            \x01\x05\xf8\x03\x00\x01\x02\xf6\xe2",
+    );
+    let row = |variable_type, key, value: Option<f64>| {
+        let value = value.map_or(
+            crate::feature::definitions::ScalarLane::DimensionDriven,
+            crate::feature::definitions::ScalarLane::Value,
+        );
+        crate::feature::definitions::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            offset: 0,
+        }
+    };
+    definition.variables = Some(crate::feature::definitions::FeatureVariableTable {
+        declared_count: 3,
+        entity_ref: None,
+        rows: vec![
+            row(6, 10, Some(2.5)),
+            row(6, 11, Some(2.5)),
+            row(5, 20, Some(0.0)),
+        ],
+        offset: 0,
+    });
+    scan
+}
+
+fn scalar_equality_candidates(
+    scan: &crate::container::ContainerScan<'_>,
+) -> Vec<(SketchConstraint, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let sketch = SketchId::mint("creo:model:sketch#source-admission")
+            .expect("valid source-admission sketch ID");
+        super::section_equation_function_five_scalar_equality_constraints(
+            ctx,
+            &scan.features.definitions[0],
+            &sketch,
+        )
+    })
+    .expect("function-five scalar-equality fixture is typed")
+}
+
+fn scalar_equality_transfer_result(
+    ctx: &DecodeContext<'_>,
+    scan: &crate::container::ContainerScan<'_>,
+) -> Result<(Vec<(u32, u32)>, Vec<u64>), CodecError> {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    super::transfer_sketches(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut Vec::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )?;
+    let scalar_equalities = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| match constraint.definition.kind() {
+            SketchConstraintDefinitionInput::ScalarEquality { first, second } => {
+                Some((*first, *second))
+            }
+            _ => None,
+        })
+        .collect();
+    let equation_annotation_offsets = annotations
+        .build()
+        .provenance
+        .values()
+        .filter(|note| note.tag.as_deref() == Some("section_equation_constraint"))
+        .map(|note| note.offset)
+        .collect();
+    Ok((scalar_equalities, equation_annotation_offsets))
+}
+
+#[test]
+fn equation_offset_source_admission_refuses_work_and_emits_typed_scalar_equality() {
+    let scan = scalar_equality_equation_scan();
+    let typed_rows = scalar_equality_candidates(&scan);
+    assert_eq!(typed_rows.len(), 1, "fixture produces one typed row");
+    let source_offsets = typed_rows
+        .iter()
+        .map(|(_, offset)| *offset)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(source_offsets.len(), 1, "typed source set is nonempty");
+    let expected_offset = cadmpeg_core::decode::u64_from_index(
+        1000 + *source_offsets
+            .iter()
+            .next()
+            .expect("one typed source offset"),
+    );
+    let (scalar_equalities, equation_annotation_offsets) =
+        crate::test_support::assert_work_boundaries(
+            &["creo equation offset source"],
+            |ctx| scalar_equality_transfer_result(ctx, &scan),
+        );
+    assert_eq!(scalar_equalities, vec![(10, 11)]);
+    assert_eq!(equation_annotation_offsets, vec![expected_offset]);
+}
+
+#[test]
+fn typed_equation_offset_source_admission_refuses_work_and_emits_typed_scalar_equality() {
+    let scan = scalar_equality_equation_scan();
+    let typed_rows = scalar_equality_candidates(&scan);
+    assert_eq!(typed_rows.len(), 1, "fixture produces one typed row");
+    let source_offsets = typed_rows
+        .iter()
+        .map(|(_, offset)| *offset)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(source_offsets.len(), 1, "typed source set is nonempty");
+    let expected_offset = cadmpeg_core::decode::u64_from_index(
+        1000 + *source_offsets
+            .iter()
+            .next()
+            .expect("one typed source offset"),
+    );
+    let (scalar_equalities, equation_annotation_offsets) =
+        crate::test_support::assert_work_boundaries(
+            &["creo typed equation offset source"],
+            |ctx| scalar_equality_transfer_result(ctx, &scan),
+        );
+    assert_eq!(scalar_equalities, vec![(10, 11)]);
+    assert_eq!(equation_annotation_offsets, vec![expected_offset]);
+}
+
 #[test]
 fn equation_header_uses_definition_source_base() {
     let (scan, _) = equation_scan();
@@ -444,4 +632,100 @@ fn definition_body_position_refuses_out_of_bounds_and_source_overflow() {
         definition.body_position(1).expect("body position").source(),
         Err(CodecError::Malformed(_))
     ));
+}
+
+
+
+#[test]
+fn sketch_profile_entity_membership_refuses_work_and_preserves_resolved_chain() {
+    let mut scan = empty_section_scan();
+    let definition = &mut scan.features.definitions[0];
+    let variable = |variable_type: crate::feature::definitions::VariableType,
+                    key: u32,
+                    value: f64| crate::feature::definitions::FeatureVariableRow {
+        variable_type,
+        key,
+        value: crate::feature::definitions::ScalarLane::Value(value),
+        value_body: Vec::new(),
+        guess: crate::feature::definitions::ScalarLane::Undefined,
+        guess_body: Vec::new(),
+        known: None,
+        homogeneity: None,
+        uvar_id: None,
+        offset: usize::try_from(key).expect("fixture index fits usize"),
+    };
+    definition.variables = Some(crate::feature::definitions::FeatureVariableTable {
+        declared_count: 6,
+        entity_ref: None,
+        rows: vec![
+            variable(crate::feature::definitions::VariableType::U, 1, 0.0),
+            variable(crate::feature::definitions::VariableType::V, 1, 0.0),
+            variable(crate::feature::definitions::VariableType::U, 2, 1.0),
+            variable(crate::feature::definitions::VariableType::V, 2, 0.0),
+            variable(crate::feature::definitions::VariableType::U, 3, 0.0),
+            variable(crate::feature::definitions::VariableType::V, 3, 1.0),
+        ],
+        offset: 0,
+    });
+    let segment = |external_id: u32, point_ids: [u32; 2]| {
+        crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line(point_ids),
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
+        }
+    };
+    definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
+        declared_count: 3,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: [segment(10, [1, 2]), segment(11, [2, 3]), segment(12, [3, 1])]
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
+        offset: 0,
+    });
+
+    let service = crate::test_support::assert_work_boundaries(
+        &["creo sketch profile entity membership"],
+        |ctx| {
+            let mut output = cadmpeg_ir::document::CadIr::empty();
+            super::transfer_sketches(
+                ctx,
+                &scan,
+                &mut output,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )?;
+            Ok(output)
+        },
+    );
+    assert_eq!(service.model.sketches.len(), 1);
+    assert_eq!(service.model.sketch_entities.len(), 3);
+    let sketch = &service.model.sketches[0];
+    assert_eq!(sketch.profiles.len(), 1);
+    assert_eq!(sketch.profiles[0].len(), 3);
+    assert_eq!(
+        sketch.profiles[0]
+            .iter()
+            .map(|entity_use| (entity_use.entity.as_str(), entity_use.reversed))
+            .collect::<Vec<_>>(),
+        vec![
+            ("creo:featdefs:sketch_entity#7:10", false),
+            ("creo:featdefs:sketch_entity#7:11", false),
+            ("creo:featdefs:sketch_entity#7:12", false),
+        ]
+    );
+    assert!(service
+        .model
+        .sketch_entities
+        .iter()
+        .all(|entity| !entity.construction));
 }

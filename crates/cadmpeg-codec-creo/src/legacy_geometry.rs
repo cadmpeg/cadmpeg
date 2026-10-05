@@ -793,8 +793,7 @@ fn child_index<'a>(
     let mut index = BTreeMap::new();
     for object in objects {
         if let Some(parent) = object.parent {
-            ctx.admit_btree_entry(&index, &parent, "creo legacy child index nodes")?;
-            match index.entry(parent) {
+            match ctx.entry_btree_map(&mut index, parent, "creo legacy child index nodes")? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     let mut children = Vec::new();
                     ctx.reserve_vec(&mut children, 1, "creo legacy child index rows")?;

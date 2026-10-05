@@ -3262,8 +3262,7 @@ fn rows_with_boundaries(
     ctx.dedup_by_key(&mut result, |row| Ok(row.offset), "creo rows with boundaries result deduplication")?;
     let mut id_counts = std::collections::BTreeMap::<u32, usize>::new();
     for row in &result {
-        ctx.admit_btree_entry(&id_counts, &row.id, "creo surface row ID nodes")?;
-        match id_counts.entry(row.id) {
+        match ctx.entry_btree_map(&mut id_counts, row.id, "creo surface row ID nodes")? {
             std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
@@ -6622,8 +6621,7 @@ fn add_counted_parameter_state(
     slots_used: usize,
     candidate: CountedParameterParse,
 ) -> Result<(), CodecError> {
-    ctx.admit_btree_entry(states, &slots_used, "creo counted parameter state entries")?;
-    match states.entry(slots_used) {
+    match ctx.entry_btree_map(states, slots_used, "creo counted parameter state entries")? {
         std::collections::btree_map::Entry::Vacant(entry) => {
             entry.insert(candidate);
         }

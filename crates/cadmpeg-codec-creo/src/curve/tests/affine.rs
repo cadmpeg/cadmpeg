@@ -257,18 +257,20 @@ fn dimension_inference_refuses_duplicate_comparison_work() {
         offset: 0,
         for_offset: 1,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let error = crate::curve::infer_solve_variable_dimensions(
-        &ctx,
-        &block,
-        &BTreeMap::new(),
-        &[None, None],
-        RelationEvaluationContext::default(),
-    )
-    .expect_err("second variable comparison needs work");
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo dimension duplicate checks",
+        |ctx| {
+            crate::curve::infer_solve_variable_dimensions(
+                ctx,
+                &block,
+                &BTreeMap::new(),
+                &[None, None],
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
             && resource.operation == "creo dimension duplicate checks"));

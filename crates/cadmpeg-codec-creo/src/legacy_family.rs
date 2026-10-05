@@ -211,8 +211,7 @@ impl<'a> Index<'a> {
                 object.offset,
                 "creo legacy family object index IDs",
             )?;
-            ctx.admit_btree_entry(&object_by_id, &id, "creo legacy family object index nodes")?;
-            match object_by_id.entry(id) {
+            match ctx.entry_btree_map(&mut object_by_id, id, "creo legacy family object index nodes")? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(object);
                 }
@@ -303,8 +302,7 @@ fn add_typed_field_names<'a, K: legacy::LegacyCode>(
             continue;
         }
         if let Some(parent) = record.parent {
-            ctx.admit_btree_entry(index, &parent, "creo legacy family typed-name nodes")?;
-            match index.entry(parent) {
+            match ctx.entry_btree_map(index, parent, "creo legacy family typed-name nodes")? {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     let mut names = Vec::new();
                     ctx.reserve_vec(&mut names, 1, "creo legacy family typed names")?;

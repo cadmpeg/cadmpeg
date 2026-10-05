@@ -578,3 +578,57 @@ fn positional_cone_identity_preserves_service_geometry() {
         "VisibGeom:7"
     );
 }
+
+#[test]
+fn hole_cylinder_transfer_refuses_simple_rows_traversal() {
+    let scan = hole_scan();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo simple hole cylinder rows traversal",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            super::super::transfer_hole_cylinders(
+                &ctx,
+                &scan,
+                &mut cadmpeg_ir::document::CadIr::empty(),
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo simple hole cylinder rows traversal"));
+}
+
+#[test]
+fn hole_cylinder_transfer_refuses_counterbore_patch_rows_traversal() {
+    let scan = super::counterbore_dimension_gate_scan(60.0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "creo counterbore patch cylinder rows traversal",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            ir.model
+                .surfaces
+                .extend([super::model_cylinder(1, 60.0), super::model_cylinder(2, 60.0)]);
+            super::super::transfer_hole_cylinders(
+                &ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && resource.operation == "creo counterbore patch cylinder rows traversal"));
+}

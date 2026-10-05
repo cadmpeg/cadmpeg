@@ -457,16 +457,26 @@ fn selected_plane_branch_node_refuses_collection_limit() {
 #[test]
 fn plane_branch_constraint_work_refuses_work_limit() {
     let scan = stored_frame_branch_scan(true);
-    // The allowance includes complete identifier costs and index insertions before the constraint visit.
+    // The work boundary includes the complete constraint-source traversal admission.
     let error = crate::test_support::last_refusal_at(
         &[],
         ResourceDimension::WorkUnits,
-        "creo plane branch constraint steps",
+        "creo plane branch constraints",
         |ctx| plane_candidates(ctx, &scan),
     );
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo plane branch constraint steps"));
+            && resource.operation == "creo plane branch constraints"));
+}
+
+#[test]
+fn plane_branch_propagation_round_refuses_work_limit() {
+    let scan = stored_frame_branch_scan(true);
+    let candidates = crate::test_support::assert_work_boundaries(
+        &["creo plane branch propagation rounds"],
+        |ctx| plane_candidates(ctx, &scan),
+    );
+    assert!(candidates.contains_key(&1));
 }
 
 fn carrier_pcurve_branch_scan() -> crate::container::ContainerScan<'static> {
@@ -617,7 +627,11 @@ fn filtered_second_plane_candidate_refuses_collection_limit() {
 fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
     let scan = stored_frame_branch_scan(false);
     let frame = &scan.planes.local_systems[0];
-    let (candidates, count) = stored_parameter_normal_candidates(frame).expect("ambiguous frame");
+    let (candidates, count) = crate::decode::with_test_decode_ctx(|ctx| {
+        stored_parameter_normal_candidates(ctx, frame)
+    })
+    .expect("service stored plane branch scan admitted")
+    .expect("ambiguous frame");
     assert_eq!(count, 2);
     assert!(candidates[..count].iter().any(|candidate| {
         candidate.equation.normal == [0.8, 0.0, 0.6]
@@ -630,8 +644,11 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
 
     let mut nonzero_origin = frame.clone();
     nonzero_origin.slots[11] = Some(2.0);
-    let (candidates, count) =
-        stored_parameter_normal_candidates(&nonzero_origin).expect("ambiguous frame");
+    let (candidates, count) = crate::decode::with_test_decode_ctx(|ctx| {
+        stored_parameter_normal_candidates(ctx, &nonzero_origin)
+    })
+    .expect("service stored plane branch scan admitted")
+    .expect("ambiguous frame");
     assert_eq!(count, 2);
     assert!(candidates[..count]
         .iter()
@@ -639,11 +656,19 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
 
     let mut invalid = frame.clone();
     invalid.slots[4] = Some(1.0);
-    assert!(stored_parameter_normal_candidates(&invalid).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        stored_parameter_normal_candidates(ctx, &invalid)
+    })
+    .expect("service stored plane branch scan admitted")
+    .is_none());
 
     let mut compact = frame.clone();
     compact.classification = LocalSystemClassification::Simple;
-    assert!(stored_parameter_normal_candidates(&compact).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        stored_parameter_normal_candidates(ctx, &compact)
+    })
+    .expect("service stored plane branch scan admitted")
+    .is_none());
 }
 
 #[test]
@@ -772,13 +797,20 @@ fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
     };
 
     assert_eq!(
-        unique_round_edge_origin_candidate(&[positive, negative], &[envelope])
+        crate::decode::with_test_decode_ctx(|ctx| {
+            unique_round_edge_origin_candidate(ctx, &[positive, negative], &[envelope])
+        })
+            .expect("service round-edge origin scan admitted")
             .expect("incident plane candidate")
             .equation
             .origin,
         [0.0, -5.5, 0.0]
     );
-    assert!(unique_round_edge_origin_candidate(&[positive, negative], &[]).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        unique_round_edge_origin_candidate(ctx, &[positive, negative], &[])
+    })
+    .expect("service round-edge origin scan admitted")
+    .is_none());
 }
 
 fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
@@ -970,4 +1002,105 @@ fn numerical_followup_fc05_tangency_is_relative_to_radius() {
             );
         }
     }
+}
+
+
+#[test]
+fn fc05_tangent_plane_score_refuses_bounded_face_scan() {
+    let scan = fc05_witness_scan();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "creo FC05 tangent bounded faces",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            fc05_cylinder_model_witness(
+                &ctx,
+                &scan,
+                2,
+                CylinderEquation {
+                    origin: [0.0, 0.0, 0.0],
+                    axis: [0.0, 1.0, 0.0],
+                    ref_direction: [1.0, 0.0, 0.0],
+                    radius: 1.0,
+                },
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo FC05 tangent bounded faces"));
+}
+
+#[test]
+fn round_edge_envelope_refuses_bounded_face_scan() {
+    let scan = round_edge_envelope_scan();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "creo round-edge bounded topology faces",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            round_edge_envelopes_for_plane(&ctx, &scan, 1)
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo round-edge bounded topology faces"));
+}
+
+#[test]
+fn plane_candidates_refuse_surface_identity_child_scan() {
+    let scan = stored_frame_branch_scan(true);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "creo plane candidate surface identity count",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            plane_candidates(&ctx, &scan)
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo plane candidate surface identity count"));
+}
+
+#[test]
+fn stored_plane_origin_sign_mask_traversal_refuses_work_and_preserves_candidates() {
+    let base = PlaneCandidate {
+        equation: PlaneEquation {
+            origin: [1.0, 2.0, 0.0],
+            normal: [1.0, 1.0, 0.0],
+        },
+        chart: None,
+        offset: 0,
+    };
+    let (candidates, count) = crate::test_support::assert_work_boundaries(
+        &["creo stored plane origin sign mask traversal"],
+        |ctx| super::super::stored_parameter_origin_sign_candidates(ctx, base),
+    );
+    assert_eq!(count, 4);
+    let origins = candidates[..count]
+        .iter()
+        .map(|candidate| candidate.equation.origin)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        origins,
+        vec![
+            [1.0, 2.0, 0.0],
+            [-1.0, 2.0, 0.0],
+            [1.0, -2.0, 0.0],
+            [-1.0, -2.0, 0.0],
+        ]
+    );
 }

@@ -3,8 +3,10 @@
 
 use super::axis::SectionAxis;
 
+use crate::feature::segment_rows::SegmentRow;
 use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::ControlFlow;
 
 use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_ir::math::Point2;
@@ -32,8 +34,7 @@ use super::skamp::{
 use crate::decode::sketch_transfer::constraints::section_solver_relation_is_disabled;
 use crate::decode::sketch_transfer::identity::saved_section_entity_fallback_allowed;
 use crate::decode::sketch_transfer::loci::{
-    active_complete_section_skamps, section_degenerate_axis_line, section_saved_entity,
-    unique_circle_segment,
+    section_degenerate_axis_line, section_saved_entity, unique_circle_segment, visit_section_skamps,
 };
 
 const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
@@ -71,28 +72,33 @@ pub(in crate::decode) fn resolved_section_radii(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeMap<u32, f64>, cadmpeg_core::CodecError> {
     let mut candidates = BTreeMap::<u32, Vec<f64>>::new();
-    for segment in definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.circles())
-    {
-        if let Some((_, radius)) = saved_section_circle_values(ctx, definition, segment)? {
-            append_radius_candidate(ctx, &mut candidates, segment.radius_ref, radius)?;
+    if let Some(table) = definition.segments.as_ref() {
+        for segment in ctx
+            .admit_iter(table.rows.as_slice(), "creo resolved radius circle rows")?
+            .filter_map(|row| match row {
+                SegmentRow::Circle(segment) => Some(segment),
+                _ => None,
+            })
+        {
+            if let Some((_, radius)) = saved_section_circle_values(ctx, definition, segment)? {
+                append_radius_candidate(ctx, &mut candidates, segment.radius_ref, radius)?;
+            }
         }
     }
-    for row in definition
+    if let Some(variables) = definition
         .variables
-        .iter()
+        .as_ref()
         .filter(|table| table.is_complete())
-        .flat_map(|table| &table.rows)
     {
-        if row.variable_type == VariableType::Radius {
-            if let Some(value) = row
-                .value
-                .value()
-                .filter(|value| value.is_finite() && *value > 0.0)
-            {
-                append_radius_candidate(ctx, &mut candidates, row.key, value)?;
+        for row in ctx.admit_iter(&variables.rows, "creo radius variable rows")? {
+            if row.variable_type == VariableType::Radius {
+                if let Some(value) = row
+                    .value
+                    .value()
+                    .filter(|value| value.is_finite() && *value > 0.0)
+                {
+                    append_radius_candidate(ctx, &mut candidates, row.key, value)?;
+                }
             }
         }
     }
@@ -107,30 +113,40 @@ pub(in crate::decode) fn resolved_section_radii(
         })
         .transpose()?
         .unwrap_or_default();
-    for constraint in section_equation_radial_constraints(
+    let radial_constraints = section_equation_radial_constraints(
         ctx,
         definition,
         &radial_coordinates,
         &ambiguous_point_ids,
-    )? {
+    )?;
+    for constraint in ctx
+        .admit_iter(&radial_constraints, "creo radial equation constraints")?
+        .copied()
+    {
         if constraint.radius.0 == VariableType::Radius {
             if let Some(value) = constraint.radius_value.filter(|value| value.get() > 0.0) {
                 append_radius_candidate(ctx, &mut candidates, constraint.radius.1, value.get())?;
             }
         }
     }
-    for (variable, value) in section_equation_function_six_distance_values(
+    let distance_values = section_equation_function_six_distance_values(
         ctx,
         definition,
         &radial_coordinates,
         &ambiguous_point_ids,
-    )? {
+    )?;
+    for (variable, value) in ctx
+        .admit_iter(&distance_values, "creo radial distance values")?
+        .copied()
+    {
         if variable.0 == VariableType::Radius && value.is_finite() && value > 0.0 {
             append_radius_candidate(ctx, &mut candidates, variable.1, value)?;
         }
     }
-    for constraint in section_equation_radius_dimensions(ctx, definition)?
-        .into_iter()
+    let radius_dimensions = section_equation_radius_dimensions(ctx, definition)?;
+    for constraint in ctx
+        .admit_iter(&radius_dimensions, "creo radius dimensions")?
+        .copied()
         .filter(|constraint| constraint.active)
     {
         append_radius_candidate(
@@ -140,40 +156,45 @@ pub(in crate::decode) fn resolved_section_radii(
             constraint.value.get(),
         )?;
     }
-    for relation in definition
+    if let Some(relations) = definition
         .relations
-        .iter()
+        .as_ref()
         .filter(|table| feature_relation_table_complete(table))
-        .flat_map(|table| &table.rows)
     {
-        if section_solver_relation_is_disabled(definition, relation.relation_id) {
-            continue;
-        }
-        if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
-            let Some(_) = section_radius_relation_arc(definition, relation) else {
+        for relation in ctx.admit_iter(&relations.rows, "creo radius relation rows")? {
+            if section_solver_relation_is_disabled(ctx, definition, relation.relation_id)? {
                 continue;
-            };
-            let Some(dimension) = section_relation_length_dimension(definition, relation) else {
-                continue;
-            };
-            let Some(value) = dimension
-                .value
-                .resolved()
-                .filter(|value| value.is_finite() && *value > 0.0)
-            else {
-                continue;
-            };
-            let radius = match dimension.dimension_type {
-                4 => value / 2.0,
-                _ => value,
-            };
-            let Some(radius) = PositiveLength::new(radius) else {
-                continue;
-            };
-            append_radius_candidate(ctx, &mut candidates, relation.dimension_id, radius.get())?;
+            }
+            if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
+                let Some(_) = section_radius_relation_arc(definition, relation) else {
+                    continue;
+                };
+                let Some(dimension) = section_relation_length_dimension(definition, relation) else {
+                    continue;
+                };
+                let Some(value) = dimension
+                    .value
+                    .resolved()
+                    .filter(|value| value.is_finite() && *value > 0.0)
+                else {
+                    continue;
+                };
+                let radius = match dimension.dimension_type {
+                    4 => value / 2.0,
+                    _ => value,
+                };
+                let Some(radius) = PositiveLength::new(radius) else {
+                    continue;
+                };
+                append_radius_candidate(ctx, &mut candidates, relation.dimension_id, radius.get())?;
+            }
         }
     }
-    for ((_, radius_id), value) in section_relation_radius_scalar_values(ctx, definition)? {
+    let relation_radius_values = section_relation_radius_scalar_values(ctx, definition)?;
+    for ((_, radius_id), value) in ctx
+        .admit_iter(&relation_radius_values, "creo scalar radius values")?
+        .copied()
+    {
         append_radius_candidate(ctx, &mut candidates, radius_id, value)?;
     }
     if let Some(dimensions) = definition
@@ -181,73 +202,85 @@ pub(in crate::decode) fn resolved_section_radii(
         .as_ref()
         .filter(|dimensions| feature_dimension_table_complete(dimensions))
     {
-        for circle in definition
-            .segments
-            .iter()
-            .flat_map(|segments| segments.rows.circles())
-            .filter(|segment| {
-                unique_circle_segment(definition, segment.external_id)
-                    .is_some_and(|candidate| candidate == *segment)
-            })
-        {
-            let radius_id = circle.radius_ref;
-            let Some(dimension) = dimensions.rows.get(index_from_u32(radius_id)) else {
-                continue;
-            };
-            let Some(value) = dimension
-                .value
-                .resolved()
-                .filter(|value| value.is_finite() && *value > 0.0)
-            else {
-                continue;
-            };
-            let radius = match dimension.dimension_type {
-                3 => value,
-                4 => value / 2.0,
-                _ => continue,
-            };
-            if let Some(radius) = PositiveLength::new(radius) {
-                append_radius_candidate(ctx, &mut candidates, radius_id, radius.get())?;
+        if let Some(table) = definition.segments.as_ref() {
+            for circle in ctx
+                .admit_iter(table.rows.as_slice(), "creo dimension circle rows")?
+                .filter_map(|row| match row {
+                    SegmentRow::Circle(segment) => Some(segment),
+                    _ => None,
+                })
+                .filter(|segment| {
+                    unique_circle_segment(definition, segment.external_id)
+                        .is_some_and(|candidate| candidate == *segment)
+                })
+            {
+                let radius_id = circle.radius_ref;
+                let Some(dimension) = dimensions.rows.get(index_from_u32(radius_id)) else {
+                    continue;
+                };
+                let Some(value) = dimension
+                    .value
+                    .resolved()
+                    .filter(|value| value.is_finite() && *value > 0.0)
+                else {
+                    continue;
+                };
+                let radius = match dimension.dimension_type {
+                    3 => value,
+                    4 => value / 2.0,
+                    _ => continue,
+                };
+                if let Some(radius) = PositiveLength::new(radius) {
+                    append_radius_candidate(ctx, &mut candidates, radius_id, radius.get())?;
+                }
             }
         }
     }
     let points = resolved_section_points(ctx, definition)?;
-    for segment in definition
-        .segments
-        .iter()
-        .flat_map(|table| table.rows.ordinary())
-        .filter(|segment| {
-            matches!(
-                segment.kind,
-                crate::feature::definitions::FeatureSegmentKind::Arc(_)
-            )
-        })
-    {
-        if unique_decoded_section_segment(definition, segment.external_id) != Some(segment) {
-            continue;
-        }
-        let Some(radius_id) = segment.radius_ref else {
-            continue;
-        };
-        let Some(center) = segment.center_id.and_then(|id| points.get(&id)) else {
-            continue;
-        };
-        let endpoint_radii = || {
-            segment
-                .point_ids()
-                .into_iter()
-                .filter_map(|id| points.get(&id))
-                .map(|point| (point[0] - center[0]).hypot(point[1] - center[1]))
-                .filter(|radius| radius.is_finite() && *radius > EPS_RADIUS_NONZERO)
-        };
-        let Some(radius) = endpoint_radii().next() else {
-            continue;
-        };
-        let scale = endpoint_radii().fold(radius, f64::max);
-        if endpoint_radii()
-            .all(|candidate| (candidate - radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
+    if let Some(table) = definition.segments.as_ref() {
+        for segment in ctx
+            .admit_iter(table.rows.as_slice(), "creo radius arc rows")?
+            .filter_map(|row| match row {
+                SegmentRow::Ordinary(segment) => Some(segment),
+                _ => None,
+            })
+            .filter(|segment| {
+                matches!(
+                    segment.kind,
+                    crate::feature::definitions::FeatureSegmentKind::Arc(_)
+                )
+            })
         {
-            append_radius_candidate(ctx, &mut candidates, radius_id, radius)?;
+            if !ctx.equal(
+                &unique_decoded_section_segment(definition, segment.external_id),
+                &Some(segment),
+                "creo unique decoded section segment comparison",
+            )? {
+                continue;
+            }
+            let Some(radius_id) = segment.radius_ref else {
+                continue;
+            };
+            let Some(center) = segment.center_id.and_then(|id| points.get(&id)) else {
+                continue;
+            };
+            let endpoint_radii = || {
+                segment
+                    .point_ids()
+                    .into_iter()
+                    .filter_map(|id| points.get(&id))
+                    .map(|point| (point[0] - center[0]).hypot(point[1] - center[1]))
+                    .filter(|radius| radius.is_finite() && *radius > EPS_RADIUS_NONZERO)
+            };
+            let Some(radius) = endpoint_radii().next() else {
+                continue;
+            };
+            let scale = endpoint_radii().fold(radius, f64::max);
+            if endpoint_radii()
+                .all(|candidate| (candidate - radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
+            {
+                append_radius_candidate(ctx, &mut candidates, radius_id, radius)?;
+            }
         }
     }
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
@@ -257,25 +290,35 @@ pub(in crate::decode) fn resolved_section_radii(
         .as_ref()
         .filter(|table| table.is_complete())
     {
-        for component in section_equation_scalar_equality_components(ctx, definition)? {
-            if component
-                .iter()
+        let components = section_equation_scalar_equality_components(ctx, definition)?;
+        for component in ctx.admit_iter(&components, "creo scalar equality components")? {
+            if ctx
+                .admit_iter(component, "creo scalar component variables")?
                 .any(|&(variable_type, _)| variable_type != VariableType::Radius)
             {
                 continue;
             }
-            let invalid = component.iter().any(|&(variable_type, radius_id)| {
-                variables.rows.iter().any(|row| {
-                    row.variable_type == variable_type
+            let mut invalid = false;
+            'component_variables: for &(variable_type, radius_id) in
+                ctx.admit_iter(component, "creo scalar radius validation")?
+            {
+                for row in ctx.admit_iter(&variables.rows, "creo scalar radius variable rows")? {
+                    if row.variable_type == variable_type
                         && row.key == radius_id
                         && row
                             .value
                             .value()
                             .is_some_and(|value| !value.is_finite() || value <= 0.0)
-                })
-            });
+                    {
+                        invalid = true;
+                        break 'component_variables;
+                    }
+                }
+            }
             if invalid {
-                for &(_, radius_id) in &component {
+                for &(_, radius_id) in
+                    ctx.admit_iter(component, "creo invalid scalar radius IDs")?
+                {
                     ctx.insert_btree_set(
                         &mut invalid_scalar_radius_ids,
                         radius_id,
@@ -285,7 +328,9 @@ pub(in crate::decode) fn resolved_section_radii(
                 continue;
             }
             let mut previous = None;
-            for &(_, radius_id) in &component {
+            for &(_, radius_id) in
+                ctx.admit_iter(component, "creo scalar radius links")?
+            {
                 if let Some(first) = previous {
                     link_radii(ctx, &mut adjacency, first, radius_id)?;
                 }
@@ -293,18 +338,19 @@ pub(in crate::decode) fn resolved_section_radii(
             }
         }
     }
-    for skamp in active_complete_section_skamps(definition) {
+    // discarded-value: The visitor runs through every active SKAMP row.
+    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
         let [first, second] = skamp.items.as_slice() else {
-            continue;
+            return Ok(ControlFlow::Continue(()));
         };
         if skamp.kind != 6 || first.sense != 0 || second.sense != 0 {
-            continue;
+            return Ok(ControlFlow::Continue(()));
         }
         let Some(first_radius) = section_skamp_radius_source(ctx, definition, first)? else {
-            continue;
+            return Ok(ControlFlow::Continue(()));
         };
         let Some(second_radius) = section_skamp_radius_source(ctx, definition, second)? else {
-            continue;
+            return Ok(ControlFlow::Continue(()));
         };
         match (first_radius, second_radius) {
             (SectionRadiusSource::Reference(first), SectionRadiusSource::Reference(second)) => {
@@ -316,45 +362,76 @@ pub(in crate::decode) fn resolved_section_radii(
             }
             (SectionRadiusSource::Value(_), SectionRadiusSource::Value(_)) => {}
         }
-    }
+        Ok(ControlFlow::Continue(()))
+    })?;
     let mut remaining = BTreeSet::new();
-    for radius_id in candidates.keys().chain(adjacency.keys()) {
+    for radius_id in ctx.admit_iter(&candidates, "creo radius candidate keys")?.map(|(id, _)| id) {
+        ctx.insert_btree_set(&mut remaining, *radius_id, "creo remaining radius nodes")?;
+    }
+    for radius_id in ctx.admit_iter(&adjacency, "creo radius adjacency keys")?.map(|(id, _)| id) {
         ctx.insert_btree_set(&mut remaining, *radius_id, "creo remaining radius nodes")?;
     }
     let mut radii = BTreeMap::new();
     while let Some(seed) = remaining.first().copied() {
+        ctx.charge_work(1, "creo radius components")?;
         let mut component = BTreeSet::new();
         ctx.insert_btree_set(&mut component, seed, "creo radius component nodes")?;
         let mut pending = std::collections::VecDeque::new();
         ctx.push_back(&mut pending, seed, "creo pending radius nodes")?;
         while let Some(radius_id) = pending.pop_front() {
-            for neighbor in adjacency.get(&radius_id).into_iter().flatten() {
-                if ctx.insert_btree_set(&mut component, *neighbor, "creo radius component nodes")? {
-                    ctx.push_back(&mut pending, *neighbor, "creo pending radius nodes")?;
+            ctx.charge_work(1, "creo radius graph visits")?;
+            if let Some(neighbors) = adjacency.get(&radius_id) {
+                for neighbor in ctx.admit_iter(neighbors, "creo radius neighbors")? {
+                    if ctx.insert_btree_set(&mut component, *neighbor, "creo radius component nodes")? {
+                        ctx.push_back(&mut pending, *neighbor, "creo pending radius nodes")?;
+                    }
                 }
             }
         }
-        if component
-            .iter()
+        if ctx
+            .admit_iter(&component, "creo radius component invalidity")?
             .any(|radius_id| invalid_scalar_radius_ids.contains(radius_id))
         {
             remaining.retain(|radius_id| !component.contains(radius_id));
             continue;
         }
-        let values = || {
-            component
-                .iter()
-                .flat_map(|radius_id| candidates.get(radius_id).into_iter().flatten())
-                .copied()
-        };
-        if let Some(value) = values().next() {
-            let scale = values().fold(value, f64::max);
-            if !values().all(|candidate| (candidate - value).abs() <= EPS_RADIUS_AGREEMENT * scale)
-            {
+        let mut first_value = None;
+        'first_value: for radius_id in ctx.admit_iter(&component, "creo radius component values")? {
+            if let Some(values) = candidates.get(radius_id) {
+                if let Some(candidate) = ctx
+                    .admit_iter(values, "creo radius candidates")?
+                    .next()
+                {
+                    first_value = Some(*candidate);
+                    break 'first_value;
+                }
+            }
+        }
+        if let Some(value) = first_value {
+            let mut scale = value;
+            for radius_id in ctx.admit_iter(&component, "creo radius agreement scale")? {
+                if let Some(values) = candidates.get(radius_id) {
+                    for candidate in ctx.admit_iter(values, "creo radius scale candidates")? {
+                        scale = scale.max(*candidate);
+                    }
+                }
+            }
+            let mut agrees = true;
+            'agreement: for radius_id in ctx.admit_iter(&component, "creo radius agreement")? {
+                if let Some(values) = candidates.get(radius_id) {
+                    for candidate in ctx.admit_iter(values, "creo radius agreement candidates")? {
+                        if !((*candidate - value).abs() <= EPS_RADIUS_AGREEMENT * scale) {
+                            agrees = false;
+                            break 'agreement;
+                        }
+                    }
+                }
+            }
+            if !agrees {
                 remaining.retain(|radius_id| !component.contains(radius_id));
                 continue;
             }
-            for radius_id in &component {
+            for radius_id in ctx.admit_iter(&component, "creo resolved radius IDs")? {
                 ctx.insert_btree_map(&mut radii, *radius_id, value, "creo resolved radius nodes")?;
             }
         }
@@ -485,12 +562,15 @@ fn section_skamp_radius_source(
     if !saved_section_entity_fallback_allowed(definition, item.entity_id) {
         return Ok(None);
     }
-    let radius = match match match section_saved_entity(ctx, definition, item.entity_id)? { Some(value) => value, None => return Ok(None) } {
+    let Some(saved) = section_saved_entity(ctx, definition, item.entity_id)? else {
+        return Ok(None);
+    };
+    let radius = match saved {
         crate::feature::definitions::FeatureSavedEntity::Arc(arc) => arc.radius,
         crate::feature::definitions::FeatureSavedEntity::Circle(circle) => circle.radius,
         _ => None,
-    } { Some(value) => value, None => return Ok(None) };
-    Ok(PositiveLength::new(radius).map(SectionRadiusSource::Value))
+    };
+    Ok(radius.and_then(PositiveLength::new).map(SectionRadiusSource::Value))
 }
 
 pub(super) fn section_arc_carrier(
@@ -597,38 +677,60 @@ pub(in crate::decode) fn section_axis_reference_line_geometry(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-    if !section_degenerate_axis_line(definition, segment) {
+    if !section_degenerate_axis_line(ctx, definition, segment)? {
         return section_proven_axis_line_carrier(ctx, definition, variable_points, segment);
     }
-    Ok((|| {
-        let fixed_coordinate = SectionAxis::from_selector(segment.vertical_horizontal?)?;
-        let values = || {
-            segment.point_ids().into_iter().filter_map(|point| {
-                variable_points
-                    .get(&point)?
-                    .get(fixed_coordinate.index())
-                    .copied()
-                    .flatten()
-            })
-        };
-        let expected_value_count = if segment.point_ids()[0] == segment.point_ids()[1] {
-            1
-        } else {
-            2
-        };
-        (values().count() == expected_value_count).then_some(())?;
-        let value = values().next()?;
-        let scale = values().map(f64::abs).fold(value.abs().max(1.0), f64::max);
-        values()
-            .all(|candidate| (candidate - value).abs() <= EPS_RADIUS_AGREEMENT * scale)
-            .then_some(())?;
-        let (origin, direction) = if fixed_coordinate == SectionAxis::U {
-            (Point2::new(value, 0.0), Point2::new(0.0, 1.0))
-        } else {
-            (Point2::new(0.0, value), Point2::new(1.0, 0.0))
-        };
-        SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine { origin, direction }).ok()
-    })())
+    let Some(fixed_coordinate) =
+        segment.vertical_horizontal.and_then(SectionAxis::from_selector)
+    else {
+        return Ok(None);
+    };
+    let point_ids = segment.point_ids();
+    let expected_value_count = if point_ids[0] == point_ids[1] { 1 } else { 2 };
+    let fixed_value = |point| {
+        variable_points
+            .get(point)?
+            .get(fixed_coordinate.index())
+            .copied()
+            .flatten()
+    };
+    if ctx
+        .admit_iter(&point_ids, "creo axis line point coordinate IDs")?
+        .filter_map(fixed_value)
+        .count()
+        != expected_value_count
+    {
+        return Ok(None);
+    }
+    let Some(value) = ctx
+        .admit_iter(&point_ids, "creo axis line point coordinate IDs")?
+        .filter_map(fixed_value)
+        .next()
+    else {
+        return Ok(None);
+    };
+    let scale = ctx
+        .admit_iter(&point_ids, "creo axis line point coordinate IDs")?
+        .filter_map(fixed_value)
+        .map(f64::abs)
+        .fold(value.abs().max(1.0), f64::max);
+    if !ctx
+        .admit_iter(&point_ids, "creo axis line point coordinate IDs")?
+        .filter_map(fixed_value)
+        .all(|candidate| (candidate - value).abs() <= EPS_RADIUS_AGREEMENT * scale)
+    {
+        return Ok(None);
+    }
+    let (origin, direction) = if fixed_coordinate == SectionAxis::U {
+        (Point2::new(value, 0.0), Point2::new(0.0, 1.0))
+    } else {
+        (Point2::new(0.0, value), Point2::new(1.0, 0.0))
+    };
+    Ok(SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+        origin,
+        direction,
+    })
+    .ok())
 }
 
 pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
@@ -640,7 +742,8 @@ pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
     missing_line: Option<&(usize, SketchGeometry)>,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-    if let Some(geometry) = resolved_section_segment_geometry_with_missing_line(ctx,
+    if let Some(geometry) = resolved_section_segment_geometry_with_missing_line(
+        ctx,
         definition,
         points,
         segment,
@@ -670,47 +773,76 @@ pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
 }
 
 pub(in crate::decode) fn trim_segment_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     row: &crate::feature::definitions::FeatureTrimEntity,
-) -> Option<u32> {
-    let trim_table = definition.trim_entities.as_ref()?;
-    (trim_table.has_complete_bucket_frame() && trim_table.has_unique_external_ids())
-        .then_some(())?;
+) -> Result<Option<u32>, cadmpeg_core::CodecError> {
+    let Some(trim_table) = definition.trim_entities.as_ref() else {
+        return Ok(None);
+    };
+    if !trim_table.has_complete_bucket_frame() || !trim_table.has_unique_external_ids() {
+        return Ok(None);
+    }
     let Some(segment_table) = &definition.segments else {
-        return Some(row.external_id);
+        return Ok(Some(row.external_id));
     };
     let trim_rows = &trim_table.rows;
-    let matching_trim_count = trim_rows
-        .iter()
+    let matching_trim_count = ctx
+        .admit_iter(trim_rows, "creo trim segment ID rows")?
         .filter(|trim| trim.external_id == row.external_id)
         .count();
     if segment_table.unique_segment(row.external_id).is_some() && matching_trim_count == 1 {
-        return Some(row.external_id);
+        return Ok(Some(row.external_id));
     }
-    segment_table.is_complete().then_some(())?;
+    if !segment_table.is_complete() {
+        return Ok(None);
+    }
     if segment_table.rows.contains_id(row.external_id) || matching_trim_count != 1 {
-        return None;
+        return Ok(None);
     }
-    let unmatched_segment = crate::decode::uniqueness::exactly_one(
-        segment_table
-            .rows
-            .ordinary()
-            .filter(|segment| {
-                !trim_rows
-                    .iter()
-                    .any(|trim| trim.external_id == segment.external_id)
+    let mut unmatched_segment = None;
+    let mut multiple_unmatched_segments = false;
+    for segment in ctx
+        .admit_iter(segment_table.rows.as_slice(), "creo unmatched segment rows")?
+        .filter_map(|row| match row {
+            SegmentRow::Ordinary(segment) => Some(segment),
+            _ => None,
+        })
+    {
+        let matched = ctx
+            .admit_iter(trim_rows, "creo trim segment matches")?
+            .any(|trim| trim.external_id == segment.external_id);
+        if !matched {
+            if unmatched_segment.replace(segment.external_id).is_some() {
+                multiple_unmatched_segments = true;
+                break;
+            }
+        }
+    }
+    if multiple_unmatched_segments {
+        unmatched_segment = None;
+    }
+    let mut unmatched_row = None;
+    for trim in ctx.admit_iter(trim_rows, "creo unmatched trim rows")? {
+        let found_segment = ctx
+            .admit_iter(
+                segment_table.rows.as_slice(),
+                "creo unmatched trim segment rows",
+            )?
+            .filter_map(|row| match row {
+                SegmentRow::Ordinary(segment) => Some(segment),
+                _ => None,
             })
-            .map(|segment| segment.external_id),
-    );
-    let unmatched_row = crate::decode::uniqueness::exactly_one(trim_rows.iter().filter(|trim| {
-        !segment_table
-            .rows
-            .ordinary()
-            .any(|segment| segment.external_id == trim.external_id)
-    }));
+            .any(|segment| segment.external_id == trim.external_id);
+        if !found_segment && unmatched_row.replace(trim).is_some() {
+            return Ok(None);
+        }
+    }
     match (unmatched_segment, unmatched_row) {
-        (Some(segment_id), Some(unmatched)) if std::ptr::eq(unmatched, row) => Some(segment_id),
-        _ => None,
+        (Some(segment_id), Some(unmatched)) if std::ptr::eq(unmatched, row) => {
+            Ok(Some(segment_id))
+        }
+        _ => Ok(None),
     }
 }
 
@@ -762,6 +894,16 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("test input admitted");
         run(&ctx)
+    }
+
+    #[test]
+    fn radius_component_scans_refuse_before_component_and_frontier_visits() {
+        let definition = arc_radius_definition([3.0, 3.0]);
+        let radii = crate::test_support::assert_work_boundaries(
+            &["creo radius components", "creo radius graph visits"],
+            |ctx| resolved_section_radii(ctx, &definition),
+        );
+        assert_eq!(radii.get(&42), Some(&3.0));
     }
 
     #[test]
@@ -1034,14 +1176,18 @@ mod tests {
             )
         );
         assert_eq!(
-            trim_segment_id(
-                &definition,
-                &definition
-                    .trim_entities
-                    .as_ref()
-                    .expect("trim entities")
-                    .rows[0],
-            ),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                trim_segment_id(
+                    ctx,
+                    &definition,
+                    &definition
+                        .trim_entities
+                        .as_ref()
+                        .expect("trim entities")
+                        .rows[0],
+                )
+            })
+            .expect("test trim-segment resources"),
             Some(10)
         );
 
@@ -1065,14 +1211,18 @@ mod tests {
         )
         .is_none());
         assert_eq!(
-            trim_segment_id(
-                &duplicate,
-                &duplicate
-                    .trim_entities
-                    .as_ref()
-                    .expect("trim entities")
-                    .rows[0],
-            ),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                trim_segment_id(
+                    ctx,
+                    &duplicate,
+                    &duplicate
+                        .trim_entities
+                        .as_ref()
+                        .expect("trim entities")
+                        .rows[0],
+                )
+            })
+            .expect("test trim-segment resources"),
             None
         );
     }
@@ -1157,13 +1307,17 @@ mod tests {
             std::collections::BTreeMap::from([(42, 3.0)])
         );
         assert!(matches!(
-            crate::decode::with_test_decode_ctx(|ctx| section_skamp_radius_source(ctx, 
-                &definition,
-                &crate::feature::definitions::FeatureSkampItem {
-                    entity_id: 10,
-                    sense: 0,
-                },
-            )).expect("admitted section lookup"),
+            crate::decode::with_test_decode_ctx(|ctx| {
+                section_skamp_radius_source(
+                    ctx,
+                    &definition,
+                    &crate::feature::definitions::FeatureSkampItem {
+                        entity_id: 10,
+                        sense: 0,
+                    },
+                )
+            })
+            .expect("test radius source"),
             Some(SectionRadiusSource::Reference(42))
         ));
     }

@@ -41,7 +41,7 @@ fn unique_source_surface_geometry<'a>(ctx: &cadmpeg_core::decode::DecodeContext<
 ) -> Result<Option<SourceSurfaceGeometry<'a>>, cadmpeg_core::CodecError> {
     let mut found = None;
     for surface in ctx.admit_iter(&ir.model.surfaces, "creo numbered identity candidate scan")? {
-        if crate::identity::matches_numbered_identity(ctx, surface.id.as_str(), "creo:visibgeom:surface#", surface_id)? {
+        if crate::identity::matches_numbered_identity(surface.id.as_str(), "creo:visibgeom:surface#", surface_id) {
             if found.is_some() {
                 return Ok(None);
             }

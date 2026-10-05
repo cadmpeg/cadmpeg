@@ -171,7 +171,8 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
         radius,
         start_angle,
         end_angle,
-    }) = section_arc_geometry(&points, &segment)
+    }) = crate::decode::with_test_decode_ctx(|ctx| section_arc_geometry(ctx, &points, &segment))
+        .expect("zero-orientation arc fits service limits")
         .map(cadmpeg_ir::sketches::SketchGeometry::into_definition)
     else {
         panic!("complete arc");
@@ -257,10 +258,14 @@ fn profile_chain_follows_trim_vertex_incidence() {
     )
     .is_empty());
     assert_eq!(
-        trim_segment_id(
-            &incomplete,
-            &incomplete.trim_entities.as_ref().expect("trim table").rows[0],
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            trim_segment_id(
+                ctx,
+                &incomplete,
+                &incomplete.trim_entities.as_ref().expect("trim table").rows[0],
+            )
+        })
+        .expect("test trim-segment resources"),
         None
     );
 
@@ -425,7 +430,7 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
         line([-1.0, -1.0], [1.0, 1.0]),
     ];
     assert_eq!(
-        intersect_incident_section_carriers(&concurrent),
+        crate::decode::with_test_decode_ctx(|ctx| intersect_incident_section_carriers(ctx, &concurrent)).expect("concurrent carrier scan admitted"),
         Some([0.0, 0.0])
     );
 
@@ -434,7 +439,7 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
         line([0.0, -1.0], [0.0, 1.0]),
         line([-1.0, 2.0], [2.0, -1.0]),
     ];
-    assert_eq!(intersect_incident_section_carriers(&inconsistent), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| intersect_incident_section_carriers(ctx, &inconsistent)).expect("inconsistent carrier scan admitted"), None);
 }
 
 #[test]
@@ -1435,7 +1440,7 @@ fn nonplanar_saved_spline_places_as_model_curve() {
 #[test]
 fn transferred_geometry_is_derived_from_ir_arenas() {
     let mut ir = CadIr::empty();
-    assert!(!has_transferred_geometry(&ir));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir)).expect("geometry signal resources"));
 
     ir.model.points.push(Point::new(
         PointId::mint("test:model:entity#point".to_string()).expect("identity grammar"),
@@ -1443,7 +1448,7 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
             .expect("a finite position is a point"),
         None,
     ));
-    assert!(has_transferred_geometry(&ir));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| has_transferred_geometry(ctx, &ir)).expect("geometry signal resources"));
 }
 
 #[test]
@@ -1759,10 +1764,16 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         major_radius: 3.0,
         minor_radius: 2.0,
     });
-    let candidates = coaxial_cone_torus_circle_candidates(cone, secant_torus);
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| {
+        coaxial_cone_torus_circle_candidates(ctx, cone, secant_torus)
+    })
+    .expect("admitted cone torus candidates");
     assert_eq!(candidates.len(), 2);
     assert!(resolve_curve_candidates(
-        coaxial_cone_torus_circle_candidates(cone, secant_torus),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            coaxial_cone_torus_circle_candidates(ctx, cone, secant_torus)
+        })
+        .expect("admitted cone torus candidates"),
         None,
     )
     .is_none());
@@ -1801,7 +1812,10 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         major_radius: 5.0,
         minor_radius: 3.0 / 2.0_f64.sqrt(),
     });
-    let tangent_candidates = coaxial_cone_torus_circle_candidates(cone, tangent_torus);
+    let tangent_candidates = crate::decode::with_test_decode_ctx(|ctx| {
+        coaxial_cone_torus_circle_candidates(ctx, cone, tangent_torus)
+    })
+    .expect("admitted cone torus candidates");
     assert!(
         matches!(tangent_candidates.as_slice(), [(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle")]
                 if {
@@ -1819,7 +1833,10 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
                 })
     );
     assert!(resolve_curve_candidates(
-        coaxial_cone_torus_circle_candidates(cone, tangent_torus),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            coaxial_cone_torus_circle_candidates(ctx, cone, tangent_torus)
+        })
+        .expect("admitted cone torus candidates"),
         Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
     )
     .is_none());
@@ -1830,7 +1847,13 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
         major_radius: 3.0,
         minor_radius: 2.0,
     });
-    assert!(coaxial_cone_torus_circle_candidates(cone, shifted_torus).is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            coaxial_cone_torus_circle_candidates(ctx, cone, shifted_torus)
+        })
+        .expect("admitted cone torus candidates")
+        .is_empty()
+    );
 }
 
 #[test]

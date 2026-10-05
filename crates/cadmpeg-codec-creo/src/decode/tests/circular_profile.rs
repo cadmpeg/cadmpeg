@@ -141,7 +141,7 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
                 .expect("nonempty source identity"),
         ),
     )]);
-    assert!(!sketch_constraint_loci_compatible(&definition, &unresolved));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(ctx, &definition, &unresolved)).expect("service locus compatibility admitted"));
 
     let native_arc = BTreeMap::from([(
         entity.clone(),
@@ -149,7 +149,7 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
             cadmpeg_core::text::NonBlankString::try_from("arc").expect("nonempty source identity"),
         ),
     )]);
-    assert!(sketch_constraint_loci_compatible(&definition, &native_arc));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(ctx, &definition, &native_arc)).expect("service locus compatibility admitted"));
 
     let native_line = BTreeMap::from([(
         entity.clone(),
@@ -157,10 +157,10 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
             cadmpeg_core::text::NonBlankString::try_from("line").expect("nonempty source identity"),
         ),
     )]);
-    assert!(!sketch_constraint_loci_compatible(
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(ctx,
         &definition,
         &native_line
-    ));
+    )).expect("service locus compatibility admitted"));
 
     let resolved = BTreeMap::from([(
         entity,
@@ -170,7 +170,7 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
         })
         .expect("valid test fixture"),
     )]);
-    assert!(sketch_constraint_loci_compatible(&definition, &resolved));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| sketch_constraint_loci_compatible(ctx, &definition, &resolved)).expect("service locus compatibility admitted"));
 }
 
 #[test]
@@ -349,8 +349,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
-        )
-        .map(std::iter::Iterator::collect::<Vec<_>>))
+        ))
         .expect("service profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
@@ -375,8 +374,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
-        )
-        .map(std::iter::Iterator::collect::<Vec<_>>))
+        ))
         .expect("service profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
@@ -401,8 +399,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id
-        )
-        .map(std::iter::Iterator::collect::<Vec<_>>))
+        ))
         .expect("service profile vertices")
         .is_empty()
     );
