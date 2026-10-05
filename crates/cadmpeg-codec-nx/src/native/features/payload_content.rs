@@ -132,7 +132,8 @@ pub(super) fn block_store<'t>(
 /// Copies block ids into scoped storage; `None` when any block id is absent.
 ///
 /// The returned reservation keeps the id vector's storage accounted until the
-/// caller drops it. `blocks` must be an admitted iteration.
+/// caller drops it. Every caller passes a fixed-size reference group, so the
+/// visit itself is constant work; each copied id is charged.
 pub(super) fn copy_block_ids<'ctx, 'b>(
     ctx: &'ctx DecodeContext<'_>,
     blocks: impl Iterator<Item = Option<&'b str>>,
