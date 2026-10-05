@@ -9,6 +9,7 @@ use crate::design::body::{
     SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID, SNAPSHOT_BODY_MAP_CARRIER_TYPE_VERSIONS,
 };
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
+use crate::design::decode::meta::{guid_matches, has_base_type};
 use crate::design::decode::presentation::BrowserNodeRecord;
 use crate::design::decode::record_streams::{record_stream, StreamOffsets};
 use crate::design::decode::reference_runs::{admit_reference_values, reference_position};
@@ -90,7 +91,6 @@ pub(crate) fn decode_body_members(
         )? {
             continue;
         }
-        ctx.reserve_vec(&mut out, members.len(), "f3d body members")?;
         for (ordinal, member) in ctx
             .admit_iter(members, "decode F3D body members")?
             .enumerate()
@@ -107,15 +107,14 @@ pub(crate) fn decode_body_members(
                 byte_offset,
                 "f3d body member identifier",
             )?;
-            out.push(
-                DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
-                    id,
-                    byte_offset,
-                    entity_suffix,
-                    flags,
-                })
-                .map_err(CodecError::Malformed)?,
-            );
+            let member = DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
+                id,
+                byte_offset,
+                entity_suffix,
+                flags,
+            })
+            .map_err(CodecError::Malformed)?;
+            ctx.push_vec(&mut out, member, "f3d body members")?;
         }
     }
     Ok(out)
@@ -184,8 +183,9 @@ pub(crate) fn decode_body_bounds(
             continue;
         };
         // A header that opens at `end` still ends inside this window.
-        let header_window = bytes
-            .get(..end.saturating_add(indexed_design_record_header::LEN))
+        let header_window = end
+            .checked_add(indexed_design_record_header::LEN)
+            .and_then(|window_end| bytes.get(..window_end))
             .unwrap_or(bytes);
         let third_end = next_indexed_record_offset(ctx, header_window, search_at)?
             .filter(|offset| *offset <= end)
@@ -516,7 +516,9 @@ pub(super) fn decode_stream(
             )? {
                 Some(counter) => {
                     let recipe_index = *counter;
-                    *counter += 1;
+                    *counter = recipe_index.checked_add(1).ok_or_else(|| {
+                        CodecError::malformed("F3D construction recipe index exceeds u32")
+                    })?;
                     recipe_index
                 }
                 None => {
@@ -661,17 +663,17 @@ fn body_map_record<'ctx>(
     operation: &'static str,
 ) -> Result<BodyMapRecord<'ctx>, CodecError> {
     let mut bindings = Vec::new();
-    ctx.reserve_scoped_vec(&mut storage, &mut bindings, pairs.len(), operation)?;
     for (ordinal, pair) in ctx
         .admit_iter(pairs, "decode F3D body-map pairs")?
         .enumerate()
     {
         let mut fields = View::over_retained(pair);
-        bindings.push(BodyBinding {
+        let binding = BodyBinding {
             asm_key: fields.req_u64_le()?,
             asm_key_offset: pairs_start + ordinal * BODY_MAP_PAIR_LEN,
             entity_suffix: fields.req_u64_le()?,
-        });
+        };
+        ctx.push_scoped_vec(&mut storage, &mut bindings, binding, operation)?;
     }
     Ok(BodyMapRecord {
         blob_name,
@@ -739,11 +741,7 @@ fn entity_has_type(
     ctx.any_by(
         &meta.types,
         |design_type| {
-            if !design_type
-                .type_guid
-                .as_str()
-                .eq_ignore_ascii_case(type_guid)
-            {
+            if !guid_matches(&design_type.type_guid, type_guid) {
                 return Ok(false);
             }
             Ok(reference_position(
@@ -767,11 +765,7 @@ fn registered_entities<'ctx>(
     let mut storage = ctx.reserve_scoped(0, "f3d registered Design entities")?;
     let mut entities = Vec::new();
     for design_type in ctx.admit_iter(&meta.types, "scan F3D Design type registrations")? {
-        if !design_type
-            .type_guid
-            .as_str()
-            .eq_ignore_ascii_case(type_guid)
-        {
+        if !guid_matches(&design_type.type_guid, type_guid) {
             continue;
         }
         for entity in admit_reference_values(
@@ -860,7 +854,8 @@ fn local_reference_candidates(
 }
 
 /// Whether a local reference names an entity of the expected type, and its
-/// inline type GUID, when present, is that type.
+/// inline type GUID, when present, is that type. An inline GUID holds 36
+/// bytes, so its comparison with the literal is constant.
 fn reference_has_type(
     ctx: &DecodeContext<'_>,
     meta: &MetaStream,
@@ -888,10 +883,7 @@ fn carrier_class_tag(type_ordinal: usize) -> Option<[u8; 3]> {
 /// body-map base type. Each comparison with a literal reads at most its bytes.
 fn carrier_registration_matches(design_type: &SegmentTypeData) -> bool {
     design_type.module == DESIGN_MODULE_BODY
-        && design_type.base_type_guid.value().is_some_and(|base| {
-            base.as_str()
-                .eq_ignore_ascii_case(BODY_MAP_CARRIER_BASE_TYPE_GUID)
-        })
+        && has_base_type(design_type, BODY_MAP_CARRIER_BASE_TYPE_GUID)
 }
 
 /// Parse every exactly framed sibling body-map record that binds an `.smb`
@@ -909,11 +901,7 @@ fn snapshot_body_map_records<'ctx>(
         .admit_iter(&meta.types, "scan F3D snapshot body-map types")?
         .enumerate()
     {
-        if !design_type
-            .type_guid
-            .as_str()
-            .eq_ignore_ascii_case(SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID)
-        {
+        if !guid_matches(&design_type.type_guid, SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID) {
             continue;
         }
         if !SNAPSHOT_BODY_MAP_CARRIER_TYPE_VERSIONS.contains(&design_type.version) {
@@ -1131,11 +1119,7 @@ fn body_map_records<'ctx>(
         .admit_iter(&meta.types, "scan F3D body-map carrier types")?
         .enumerate()
     {
-        if !design_type
-            .type_guid
-            .as_str()
-            .eq_ignore_ascii_case(BODY_MAP_CARRIER_TYPE_GUID)
-        {
+        if !guid_matches(&design_type.type_guid, BODY_MAP_CARRIER_TYPE_GUID) {
             continue;
         }
         if design_type.version != BODY_MAP_CARRIER_TYPE_VERSION {
@@ -1683,14 +1667,13 @@ pub(crate) fn bind_body_bounds(
     // Pairs ordered by entity suffix and then by key offset.
     let mut storage = ctx.reserve_scoped(0, "f3d body bounds binding index")?;
     let mut by_suffix = Vec::new();
-    ctx.reserve_scoped_vec(
-        &mut storage,
-        &mut by_suffix,
-        bindings.len(),
-        "f3d body bounds binding index",
-    )?;
     for binding in ctx.admit_iter(bindings, "index F3D body bounds bindings")? {
-        by_suffix.push(binding);
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut by_suffix,
+            binding,
+            "f3d body bounds binding index",
+        )?;
     }
     ctx.stable_sort_by_key(
         &mut by_suffix,
@@ -1698,11 +1681,8 @@ pub(crate) fn bind_body_bounds(
         Ord::cmp,
         "sort f3d design body 6",
     )?;
-    let bounds_len = bounds.len();
-    for (bounds, _) in bounds
-        .iter_mut()
-        .zip(ctx.admit_iter(&(0..bounds_len), "scan F3D body bounds")?)
-    {
+    for bounds in bounds.iter_mut() {
+        ctx.charge_work(1, "scan F3D body bounds")?;
         let suffix = bounds.entity_suffix();
         let first = ctx.partition_point(
             &by_suffix,

@@ -9,7 +9,9 @@ use crate::bytes::{lp_ascii_strict, lp_utf16_bounded_charged};
 use crate::container::ContainerScan;
 use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::image::neutral_asset_id_charged;
-use crate::design::decode::meta::{metadata_for_bulk_stream, TypedFrameSource, TypedPrimaryFrame};
+use crate::design::decode::meta::{
+    guid_matches, has_base_type, metadata_for_bulk_stream, TypedFrameSource, TypedPrimaryFrame,
+};
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::sketch::{
     indexed_record_header_at, native_scope_charged, native_scope_scoped, IndexedRecordOffsets,
@@ -406,15 +408,10 @@ impl MeshBody {
             texture_ids,
             attributes,
         } = geometry;
-        let mut id = native_scope_charged(ctx, entry_name)?;
-        ctx.append_formatted_retained(
-            &mut id,
-            format_args!(":mesh-body#{body_byte_offset}"),
-            "f3d mesh body identifier",
-        )?;
         // Placement rewrites the container's vectors in place. A non-finite
         // result stops the loop and the container fails alone, so each step
-        // is admitted as it runs.
+        // is admitted as it runs, and the identifier is retained only after
+        // placement succeeds.
         for point in &mut vertices {
             ctx.charge_work(1, "place F3D mesh vertices")?;
             *point = transform.transform_point(*point)?;
@@ -423,6 +420,12 @@ impl MeshBody {
             ctx.charge_work(1, "place F3D mesh corner normals")?;
             *normal = transform.transform_normal(*normal)?;
         }
+        let mut id = native_scope_charged(ctx, entry_name)?;
+        ctx.append_formatted_retained(
+            &mut id,
+            format_args!(":mesh-body#{body_byte_offset}"),
+            "f3d mesh body identifier",
+        )?;
         Ok(Self {
             id,
             vertices,
@@ -475,11 +478,7 @@ fn registered_module_and_base(
     base_type_guid: &'static str,
     module: &'static str,
 ) -> bool {
-    design_type.module.as_bytes() == module.as_bytes()
-        && design_type
-            .base_type_guid
-            .value()
-            .is_some_and(|base| base.as_str().eq_ignore_ascii_case(base_type_guid))
+    design_type.module.as_bytes() == module.as_bytes() && has_base_type(design_type, base_type_guid)
 }
 
 fn exact_record_index(
@@ -544,10 +543,7 @@ struct MeshRecordType {
 /// comparison reads at most the length of its literal.
 fn registered_type(design_type: &SegmentTypeData, expected: MeshRecordType) -> bool {
     design_type.version == expected.version
-        && design_type
-            .type_guid
-            .as_str()
-            .eq_ignore_ascii_case(expected.type_guid)
+        && guid_matches(&design_type.type_guid, expected.type_guid)
         && registered_module_and_base(design_type, expected.base_type_guid, expected.module)
 }
 

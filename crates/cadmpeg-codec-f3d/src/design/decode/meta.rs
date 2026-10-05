@@ -134,8 +134,8 @@ pub(crate) fn decode_types(
         }
         let meta = scan.parsed_metastream(ctx, &entry.name)?;
         for design_type in ctx.admit_iter(&meta.types, "copy F3D Design type table")? {
-            ctx.reserve_vec(&mut out, 1, "f3d design type table")?;
-            out.push(copy_design_type(ctx, design_type, &entry.name)?);
+            let copied = copy_design_type(ctx, design_type, &entry.name)?;
+            ctx.push_vec(&mut out, copied, "f3d design type table")?;
         }
     }
     Ok(out)
