@@ -1277,10 +1277,14 @@ fn reflected_pcurve_knots(
     upper: FiniteReal,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut reversed = ctx.collection_vec(knots.len(), "nx reversed pcurve knots")?;
-    for (_, knot) in ctx
-        .admit_iter(knots.as_slice(), "nx reversed pcurve knots")?
-        .zip(knots.finite_knots().rev())
+    for index in ctx
+        .admit_iter(&(0..knots.len()), "nx reversed pcurve knots")?
+        .rev()
     {
+        // Admitted knots are finite.
+        let Some(knot) = FiniteReal::new(knots[index]) else {
+            return Ok(None);
+        };
         let Some(reflected) = cadmpeg_ir::math::reflect_parameter(knot, lower, upper) else {
             return Ok(None);
         };
@@ -4876,12 +4880,15 @@ pub(super) fn surface_parameters_for_fit_with_index_and_budget<'a>(
     }
 }
 
+/// Least and greatest control-point coordinates along each axis.
+type ControlBounds = ([f64; 3], [f64; 3]);
+
 /// The axis-aligned bounds of a NURBS surface's control points, read in
 /// place. A pole whose weight is not positive leaves the bounds unstated.
 fn nurbs_surface_control_bounds(
     ctx: &DecodeContext<'_>,
     surface: &NurbsSurface,
-) -> Result<Option<([f64; 3], [f64; 3])>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<ControlBounds>, cadmpeg_core::decode::ResourceLimit> {
     let mut minimum = [f64::INFINITY; 3];
     let mut maximum = [f64::NEG_INFINITY; 3];
     for u in ctx.admit_iter(&(0..surface.u_count()), "nx NURBS control bound rows")? {
