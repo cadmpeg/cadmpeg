@@ -1647,3 +1647,30 @@ mod dynamic_angles;
 mod repeated_circle_dimensions;
 
 mod physical_loci;
+
+#[test]
+fn physical_locus_truncation_propagates_work_refusal() {
+    let first = SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-locus").unwrap());
+    let second = SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second-locus").unwrap());
+    let input = vec![first.clone(), second];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut loci = input.clone();
+    super::deduplicate_physical_loci(&ctx, &mut loci, |_| Ok(Some(Point2::new(0.0, 0.0))))
+        .unwrap();
+    assert_eq!(loci, vec![first]);
+}
+
+#[test]
+fn qualified_point_suffix_propagates_work_refusal() {
+    let loci = std::collections::HashMap::from([("marker:qualified-point".to_owned(), Vec::new())]);
+    crate::test_support::work_refusal_at("strip SLDPRT qualified point suffix", |ctx| {
+        super::qualified_point_loci(ctx, "marker", &loci)
+    });
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(super::qualified_point_loci(&ctx, "marker", &loci).unwrap(), Some(&[][..]));
+    assert_eq!(super::qualified_point_loci(&ctx, "other", &loci).unwrap(), None);
+}
+
+mod deduplication;
+
+mod approximate_deduplication;

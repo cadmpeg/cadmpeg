@@ -6,3 +6,5 @@ mod delete_body;
 mod generated_surfaces;
 mod surfaces;
 mod writer;
+
+mod collection_operations;

@@ -81,7 +81,10 @@ fn feature_input_lane(
     family: &str,
     annotations: &mut Annotations,
 ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
-    let parent = format!("sldprt:feature-input:{family}#{}", source.ordinal());
+    let parent = ctx.format_retained(
+        format_args!("sldprt:feature-input:{family}#{}", source.ordinal()),
+        "format SLDPRT supplemental feature-input identity",
+    )?;
     let payload = source.payload();
     let classes = class_declarations(ctx, payload, &parent)?;
     let names = object_names(ctx, payload, &parent)?;

@@ -13,7 +13,7 @@ fn retained_text(
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut retained = String::new();
     ctx.try_reserve_retained_text(&mut retained, text.len(), operation)?;
-    retained.push_str(text);
+    ctx.append_retained(&mut retained, text, operation)?;
     Ok(retained)
 }
 
@@ -77,7 +77,7 @@ pub(crate) fn object_names(
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<FeatureInputName>, cadmpeg_core::CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut names = Vec::new();
     ctx.charge_work(
         u64_from_index(payload.len()),
@@ -129,18 +129,31 @@ pub(crate) fn object_names(
     Ok(names)
 }
 
-fn decimal_matches(text: &str, value: usize) -> bool {
-    !text.is_empty()
+fn decimal_matches(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    value: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    Ok(!text.is_empty()
         && (text == "0" || !text.starts_with('0'))
         && text.bytes().all(|byte| byte.is_ascii_digit())
-        && text.parse::<usize>() == Ok(value)
+        && ctx.parse_text::<usize>(text, "parse SLDPRT feature-input identity offset")? == Ok(value))
 }
 
-fn native_id_matches(id: &str, family: &str, lane_key: &str, offset: usize) -> bool {
-    id.strip_prefix(family)
+fn native_id_matches(
+    ctx: &DecodeContext<'_>,
+    id: &str,
+    family: &str,
+    lane_key: &str,
+    offset: usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    match id.strip_prefix(family)
         .and_then(|tail| tail.strip_prefix(lane_key))
         .and_then(|tail| tail.strip_prefix(':'))
-        .is_some_and(|tail| decimal_matches(tail, offset))
+    {
+        Some(tail) => decimal_matches(ctx, tail, offset),
+        None => Ok(false),
+    }
 }
 
 pub(crate) fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
@@ -204,45 +217,53 @@ fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
 }
 
 pub(crate) fn class_declarations_match(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     parent: &str,
     classes: &[FeatureInputClass],
-) -> bool {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut expected = payload_classes(payload).enumerate();
-    let matches = classes.iter().enumerate().all(|(ordinal, actual)| {
-        expected.next().is_some_and(|(index, (offset, name))| {
-            index == ordinal
-                && native_id_matches(&actual.id, "sldprt:feature-input:class#", lane_key, offset)
-                && actual.parent == parent
-                && u32::try_from(ordinal) == Ok(actual.ordinal)
-                && u64::try_from(offset) == Ok(actual.offset)
-                && actual.name == name
-        })
-    });
-    matches && expected.next().is_none()
+    for (ordinal, actual) in classes.iter().enumerate() {
+        let Some((index, (offset, name))) = expected.next() else {
+            return Ok(false);
+        };
+        if !(index == ordinal
+            && native_id_matches(ctx, &actual.id, "sldprt:feature-input:class#", lane_key, offset)?
+            && actual.parent == parent
+            && u32::try_from(ordinal) == Ok(actual.ordinal)
+            && u64::try_from(offset) == Ok(actual.offset)
+            && actual.name == name)
+        {
+            return Ok(false);
+        }
+    }
+    Ok(expected.next().is_none())
 }
 
 pub(crate) fn object_names_structure_match(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     parent: &str,
     names: &[FeatureInputName],
-) -> bool {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut expected = payload_names(payload).enumerate();
-    let matches = names.iter().enumerate().all(|(ordinal, actual)| {
-        expected
-            .next()
-            .is_some_and(|(index, (offset, object_id, _))| {
-                index == ordinal
-                    && native_id_matches(&actual.id, "sldprt:feature-input:name#", lane_key, offset)
-                    && actual.parent == parent
-                    && u32::try_from(ordinal) == Ok(actual.ordinal)
-                    && u64::try_from(offset) == Ok(actual.offset)
-                    && actual.object_id == object_id
-            })
-    });
-    matches && expected.next().is_none()
+    for (ordinal, actual) in names.iter().enumerate() {
+        let Some((index, (offset, object_id, _))) = expected.next() else {
+            return Ok(false);
+        };
+        if !(index == ordinal
+            && native_id_matches(ctx, &actual.id, "sldprt:feature-input:name#", lane_key, offset)?
+            && actual.parent == parent
+            && u32::try_from(ordinal) == Ok(actual.ordinal)
+            && u64::try_from(offset) == Ok(actual.offset)
+            && actual.object_id == object_id)
+        {
+            return Ok(false);
+        }
+    }
+    Ok(expected.next().is_none())
 }
 
 pub(crate) fn first_object_name_value_mismatch<'a>(
@@ -300,7 +321,7 @@ pub(crate) fn class_declarations(
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<FeatureInputClass>, cadmpeg_core::CodecError> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let lane_key = ctx.rsplit_once(parent, "#", "split SLDPRT feature-input lane key")?.map_or(parent, |(_, key)| key);
     let mut classes = Vec::new();
     for (ordinal, (offset, name)) in payload_classes(payload).enumerate() {
         let id = record_id(ctx, "class", lane_key, offset)?;
@@ -329,15 +350,21 @@ pub(super) fn configuration(
     ctx: &DecodeContext<'_>,
     section: &str,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let Some(start) = section.find("Config-") else {
+    let Some(start) = ctx.find_text(section, "Config-", "find SLDPRT configuration prefix")? else {
         return Ok(None);
     };
     let start = start + "Config-".len();
     let tail = &section[start..];
-    let end = tail
-        .find("-ResolvedFeatures")
-        .or_else(|| tail.find('/'))
-        .unwrap_or(tail.len());
+    let end = match ctx.find_text(
+        tail,
+        "-ResolvedFeatures",
+        "find SLDPRT configuration suffix",
+    )? {
+        Some(end) => end,
+        None => ctx
+            .find_text(tail, "/", "find SLDPRT configuration path separator")?
+            .unwrap_or(tail.len()),
+    };
     if tail[..end].is_empty() {
         return Ok(None);
     }

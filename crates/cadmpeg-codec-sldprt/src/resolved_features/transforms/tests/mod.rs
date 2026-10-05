@@ -77,3 +77,5 @@ fn a_sketch_entity_without_marker_loci_has_no_marker_kind() {
     assert_eq!(markers.kind(), SketchInputKind::Point);
     assert_eq!(markers.loci().len(), 1);
 }
+
+mod deduplication;

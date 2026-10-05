@@ -107,7 +107,8 @@ fn object_names_scan_refuses_work_budget() {
     payload.extend_from_slice(&[1, 0, 8]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
+    // The lane-key split admits (4 + 1) * (1 + 1) work units.
+    policy.limits.max_work_units = 10;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
     assert!(
@@ -122,11 +123,120 @@ fn object_names_class_search_refuses_work_budget() {
     payload.extend_from_slice(&[1, 0, 8]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(payload.len());
+    // The total admits the lane-key split and the first payload scan.
+    policy.limits.max_work_units = 10 + cadmpeg_core::decode::u64_from_index(payload.len());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
     assert!(
         matches!(object_names(&ctx, &payload, "lane"), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "find SLDPRT feature input name class")
     );
+}
+
+#[test]
+fn class_declaration_match_propagates_lane_key_work_refusal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        super::class_declarations_match(&ctx, &[], "lane#key", &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "split SLDPRT feature-input lane key"
+    ));
+}
+
+#[test]
+fn object_name_structure_propagates_lane_key_work_refusal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        super::object_names_structure_match(&ctx, &[], "lane#key", &[]),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "split SLDPRT feature-input lane key"
+    ));
+}
+
+#[test]
+fn retained_name_text_propagates_copy_work_refusal() {
+    const OPERATION: &str = "retain SLDPRT test name";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        super::retained_text(&ctx, "name", OPERATION),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.additional == 4
+                && limit.operation == OPERATION
+    ));
+    assert_eq!(
+        super::retained_text(&cadmpeg_test_support::service_decode_context(), "name", OPERATION)
+            .unwrap(),
+        "name",
+    );
+}
+
+#[test]
+fn configuration_searches_propagate_work_refusal() {
+    let section = "Config-name/path";
+    let tail = "name/path";
+    // Search work counts candidate byte positions times pattern comparison width.
+    let prefix_work = (cadmpeg_core::decode::u64_from_index(section.len()) + 1)
+        * (cadmpeg_core::decode::u64_from_index("Config-".len()) + 1);
+    let suffix_work = (cadmpeg_core::decode::u64_from_index(tail.len()) + 1)
+        * (cadmpeg_core::decode::u64_from_index("-ResolvedFeatures".len()) + 1);
+    for (budget, operation) in [
+        (0, "find SLDPRT configuration prefix"),
+        (prefix_work, "find SLDPRT configuration suffix"),
+        (
+            prefix_work + suffix_work,
+            "find SLDPRT configuration path separator",
+        ),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = budget;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        assert!(matches!(
+            super::configuration(&ctx, section),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == operation
+                    && ctx.resource_refusal() == Some(limit)
+        ));
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(super::configuration(&ctx, section).unwrap().as_deref(), Some("name"));
+    assert_eq!(
+        super::configuration(&ctx, "Config-name-ResolvedFeatures").unwrap().as_deref(),
+        Some("name"),
+    );
+    assert_eq!(super::configuration(&ctx, "Other").unwrap(), None);
+}
+
+#[test]
+fn native_identity_decimal_parse_propagates_work_refusal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        super::decimal_matches(&ctx, "12", 12),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(super::decimal_matches(&ctx, "12", 12).unwrap());
+    assert!(!super::decimal_matches(&ctx, "012", 12).unwrap());
 }

@@ -1274,7 +1274,7 @@ pub(super) fn sort_marker_entity_ids(
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.sort_unstable_by(entities, |value| value, Ord::cmp, operation)?;
-    entities.dedup();
+    ctx.dedup_vec(entities, "deduplicate SLDPRT marker entity identities")?;
     Ok(())
 }
 

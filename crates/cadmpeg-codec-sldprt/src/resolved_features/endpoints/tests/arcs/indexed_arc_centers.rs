@@ -69,6 +69,9 @@ fn indexed_arcs_use_one_equidistant_center_marker() {
         .iter()
         .chain(std::iter::once(&curve))
         .collect::<Vec<_>>();
+    crate::test_support::work_refusal_at("deduplicate SLDPRT endpoint centers", |ctx| {
+        coordinate_roster_arc_center(ctx, &payload, &curve, &markers, [&coordinates[8], &coordinates[10]])
+    });
     assert_eq!(
         coordinate_roster_arc_center(
             &cadmpeg_test_support::service_decode_context(),
@@ -231,6 +234,9 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
     let off_axis = marker("handle", 4, SketchInputKind::Point, Some([0.0, 2.0]));
     let markers = [&start, &center, &end, &off_axis];
 
+    crate::test_support::work_refusal_at("deduplicate SLDPRT endpoint centers", |ctx| {
+        legacy_compact_diameter_arc_center(ctx, &payload, &curve, &markers, [&start, &end])
+    });
     assert_eq!(
         legacy_compact_diameter_arc_center(
             &cadmpeg_test_support::service_decode_context(),
@@ -242,4 +248,17 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
         .unwrap(),
         Some([0.0, 0.0])
     );
+}
+
+#[test]
+fn unique_arc_center_cell_deduplication_preserves_center_and_refusal() {
+    const EPS_CENTER_CELL: f64 = 1.0e-8;
+    let center = Point2::new(0.0, 0.0);
+    let candidates = [center, center];
+    let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        unique_arc_center_marker(ctx, Point2::new(1.0, 0.0), Point2::new(0.0, 1.0),
+            &candidates, EPS_CENTER_CELL)
+    };
+    assert_eq!(solve(&cadmpeg_test_support::service_decode_context()).unwrap(), Some(center));
+    crate::test_support::work_refusal_at("deduplicate SLDPRT unique arc center cells", solve);
 }

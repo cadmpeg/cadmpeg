@@ -374,7 +374,7 @@ pub(crate) fn bind_pattern_inputs(
                             Ord::cmp,
                             "sort SLDPRT pattern input seeds",
                         )?;
-                        seeds.dedup();
+                        ctx.dedup_vec(&mut seeds, "deduplicate SLDPRT pattern input seeds")?;
                         if let [seed] = seeds.as_slice() {
                             let seed = copy_feature_binding_id(ctx, seed)?;
                             push_feature_binding_candidate(
@@ -409,14 +409,15 @@ pub(crate) fn bind_pattern_inputs(
                     }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
                 ) {
                     if let Some((spacing, count)) =
-                        object_start.filter(|start| *start < end).and_then(|start| {
+                        object_start.filter(|start| *start < end).map(|start| {
                             typed_linear_pattern_dimensions(
+                                ctx,
                                 feature,
                                 lane,
                                 start,
                                 pattern_object_end(),
                             )
-                        })
+                        }).transpose()?.flatten()
                     {
                         let admitted = PatternKind::new(PatternTransform::Linear {
                             direction: None,
@@ -424,7 +425,15 @@ pub(crate) fn bind_pattern_inputs(
                             count,
                             second: None,
                         })
-                        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+                        .map_err(|message| {
+                            match ctx.copy_retained_text(
+                                message,
+                                "retain SLDPRT pattern admission error",
+                            ) {
+                                Ok(text) => cadmpeg_core::CodecError::Malformed(text),
+                                Err(error) => error,
+                            }
+                        })?;
                         model_features[model_index]
                             .evaluation
                             .edit(|definition, _| {
@@ -508,12 +517,7 @@ pub(crate) fn bind_pattern_inputs(
                         class.offset,
                         end,
                     )?;
-                    ctx.reserve_capacity(
-                        &mut directions,
-                        declared.len(),
-                        "merge SLDPRT declared line directions",
-                    )?;
-                    directions.extend(declared);
+                    ctx.extend_vec(&mut directions, declared, "merge SLDPRT declared line directions")?;
                 }
                 if let Some(start) = object_start {
                     let mut excluded_handles = Vec::new();
@@ -534,12 +538,7 @@ pub(crate) fn bind_pattern_inputs(
                         end,
                         &excluded_handles,
                     )?;
-                    ctx.reserve_capacity(
-                        &mut directions,
-                        compact.len(),
-                        "merge SLDPRT compact line directions",
-                    )?;
-                    directions.extend(compact);
+                    ctx.extend_vec(&mut directions, compact, "merge SLDPRT compact line directions")?;
                     if directions.is_empty() {
                         let first_spacing_m = feature
                             .parameters
@@ -562,12 +561,7 @@ pub(crate) fn bind_pattern_inputs(
                             &lane.names,
                             [first_spacing_m, second_spacing_m],
                         );
-                        ctx.reserve_vec(
-                            &mut directions,
-                            display.len(),
-                            "collect SLDPRT pattern display directions",
-                        )?;
-                        directions.extend(display);
+                        ctx.extend_vec(&mut directions, display, "collect SLDPRT pattern display directions")?;
                     }
                 }
                 let mut unique_directions = Vec::new();
@@ -661,12 +655,7 @@ pub(crate) fn bind_pattern_inputs(
             )?;
         }
     }
-    ctx.reserve_capacity(
-        &mut pattern_seed_assignments,
-        curve_seed_assignments.len(),
-        "merge SLDPRT pattern seed assignments",
-    )?;
-    pattern_seed_assignments.extend(curve_seed_assignments);
+    ctx.extend_vec(&mut pattern_seed_assignments, curve_seed_assignments, "merge SLDPRT pattern seed assignments")?;
     let mut seeds_by_pattern = HashMap::<usize, Vec<cadmpeg_ir::features::FeatureId>>::new();
     for (index, seed) in pattern_seed_assignments {
         reserve_feature_binding_map(ctx, &mut seeds_by_pattern, "index SLDPRT pattern inputs")?;
@@ -761,14 +750,24 @@ pub(crate) fn bind_pattern_inputs(
             .native_ref
             .as_deref()
             .and_then(|native| history_features.iter().find(|feature| feature.id == native));
-        let parameters = native.and_then(|feature| {
-            Some((
-                feature.parameters.get("D4").and_then(|value| {
+        let parameters = match native {
+            Some(feature) => {
+                let spacing = feature.parameters.get("D4").and_then(|value| {
                     crate::history::literals::parse_positive_dimension_length_mm(value)
-                })?,
-                feature.parameters.get("D2")?.parse::<u32>().ok()?,
-            ))
-        });
+                });
+                match spacing {
+                    Some(spacing) => match feature.parameters.get("D2") {
+                        Some(value) => ctx
+                            .parse_text::<u32>(value, "parse SLDPRT second linear pattern count")?
+                            .ok()
+                            .map(|count| (spacing, count)),
+                        None => None,
+                    },
+                    None => None,
+                }
+            }
+            None => None,
+        };
         let mut edit_result = Ok(());
         model_features[index].evaluation.edit(|definition, _| {
             edit_result = (|| {
@@ -809,7 +808,15 @@ pub(crate) fn bind_pattern_inputs(
                         count: *count,
                         second,
                     })
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+                    .map_err(|message| {
+                        match ctx.copy_retained_text(
+                            message,
+                            "retain SLDPRT pattern admission error",
+                        ) {
+                            Ok(text) => cadmpeg_core::CodecError::Malformed(text),
+                            Err(error) => error,
+                        }
+                    })?;
                 }
                 Ok::<_, cadmpeg_core::CodecError>(())
             })();
@@ -838,7 +845,15 @@ pub(crate) fn bind_pattern_inputs(
                 plane_origin: admitted_point(*origin)?,
                 plane_normal: admitted_direction(*normal)?,
             })
-            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+            .map_err(|message| {
+                match ctx.copy_retained_text(
+                    message,
+                    "retain SLDPRT pattern admission error",
+                ) {
+                    Ok(text) => cadmpeg_core::CodecError::Malformed(text),
+                    Err(error) => error,
+                }
+            })?;
             model_features[index].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
                     definition
@@ -948,7 +963,15 @@ pub(crate) fn bind_pattern_inputs(
             angle,
             count,
         })
-        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?;
+        .map_err(|message| {
+            match ctx.copy_retained_text(
+                message,
+                "retain SLDPRT pattern admission error",
+            ) {
+                Ok(text) => cadmpeg_core::CodecError::Malformed(text),
+                Err(error) => error,
+            }
+        })?;
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
                 definition
@@ -1039,13 +1062,7 @@ pub(crate) fn bind_mirror_surface_planes(
     }
     let mut faces_by_identity = HashMap::<(FeatureSourceId, u32), Vec<&str>>::new();
     for (face, identity) in face_identities {
-        reserve_feature_binding_map(
-            ctx,
-            &mut faces_by_identity,
-            "index SLDPRT mirror surface planes",
-        )?;
-        let candidates = faces_by_identity
-            .entry((identity.feature_source_id, identity.local_id))
+        let candidates = ctx.entry_hash_map(&mut faces_by_identity, (identity.feature_source_id, identity.local_id), "index SLDPRT mirror surface planes")?
             .or_default();
         if !candidates.contains(&face.as_str()) {
             ctx.reserve_vec(candidates, 1, "collect SLDPRT mirror face identities")?;
@@ -1450,7 +1467,7 @@ pub(crate) fn bind_scalar_operands(
             {
                 continue;
             }
-            if !is_dissected_profile_feature(child) {
+            if !is_dissected_profile_feature(ctx, child)? {
                 continue;
             }
             let child_end = starts
@@ -1483,7 +1500,7 @@ pub(crate) fn finalize_lane_bindings(
                 ctx.reserve_map(&mut marker_ids, 1, SCALAR_BINDING_INDEX)?;
                 marker_ids.insert(copy_binding_text(ctx, feature)?, HashMap::new());
             }
-            if let Some(by_local) = marker_ids.get_mut(feature.as_str()) {
+            if let Some(by_local) = ctx.get_mut_hash_map(&mut marker_ids, feature.as_str(), "lookup SLDPRT scalar marker group")? {
                 ctx.reserve_map(by_local, 1, SCALAR_BINDING_INDEX)?;
                 let candidates = by_local.entry(local_id).or_default();
                 ctx.reserve_vec(candidates, 1, "collect SLDPRT scalar marker candidates")?;
@@ -1541,8 +1558,7 @@ pub(crate) fn finalize_lane_bindings(
     let mut entities_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
     for entity in &lane.sketch_entities {
         if let Some(feature) = entity.feature_ref.as_deref() {
-            ctx.reserve_map(&mut entities_by_feature, 1, SCALAR_BINDING_INDEX)?;
-            let entities = entities_by_feature.entry(feature).or_default();
+            let entities = ctx.entry_hash_map(&mut entities_by_feature, feature, SCALAR_BINDING_INDEX)?.or_default();
             ctx.reserve_vec(entities, 1, "collect SLDPRT scalar owner entities")?;
             entities.push(entity);
         }
@@ -1809,7 +1825,7 @@ pub(super) fn spatial_relation_manager_ranges_charged(
         Ord::cmp,
         "sort SLDPRT spatial relation ranges",
     )?;
-    ranges.dedup();
+    ctx.dedup_vec(&mut ranges, "deduplicate SLDPRT spatial relation ranges")?;
     Ok(ranges)
 }
 
@@ -2055,7 +2071,7 @@ pub(super) fn normalize_indexed_curve_entities(
             ctx.reserve_map(&mut endpoints, 1, SCALAR_BINDING_INDEX)?;
             endpoints.insert(copy_binding_text(ctx, feature)?, HashSet::new());
         }
-        if let Some(by_index) = endpoints.get_mut(feature) {
+        if let Some(by_index) = ctx.get_mut_hash_map(&mut endpoints, feature, "lookup SLDPRT scalar endpoint group")? {
             for index in indices {
                 ctx.reserve_set(by_index, 1, SCALAR_BINDING_INDEX)?;
                 by_index.insert(index);

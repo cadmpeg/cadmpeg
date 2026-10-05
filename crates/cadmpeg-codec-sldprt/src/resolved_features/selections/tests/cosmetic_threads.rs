@@ -248,6 +248,10 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("test context");
+    crate::test_support::work_refusal_at("deduplicate SLDPRT cosmetic thread cylinder markers", |ctx| {
+        cosmetic_thread_cylinder_marker_reference(ctx, &feature, &lane, 0,
+            lane.native_payload.len(), &HashSet::from([0x802f]))
+    });
     assert_eq!(
         cosmetic_thread_cylinder_marker_reference(
             &ctx,
@@ -347,6 +351,9 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         cosmetic_thread_diameter_child_tail(&references_ctx, &feature, &lane).unwrap(),
         Some(158..400)
     );
+    crate::test_support::work_refusal_at("deduplicate SLDPRT cosmetic thread cylinder offsets", |ctx| {
+        cosmetic_thread_cylinder_references(ctx, &feature, &lane, 20, 100, &HashSet::from([0x802f]))
+    });
     let references = cosmetic_thread_cylinder_references(
         &references_ctx,
         &feature,
