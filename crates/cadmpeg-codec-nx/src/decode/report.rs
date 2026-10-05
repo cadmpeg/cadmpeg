@@ -6,7 +6,7 @@ use super::feature_completeness::operands::{
     pattern_feature_is_incomplete,
 };
 use super::feature_completeness::{
-    active_configuration_state_is_incomplete_for_decode, chamfer_definition_is_incomplete,
+    active_configuration_state_is_incomplete, chamfer_definition_is_incomplete,
     combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
     delete_body_definition_is_incomplete, draft_definition_is_incomplete,
     extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
@@ -34,7 +34,7 @@ use crate::parasolid::StreamKind;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, FeatureOperation,
+    BodySelection, BooleanOp, DatumPlaneReference, FeatureDefinition, FeatureOperation,
     UnresolvedFamily,
 };
 use cadmpeg_ir::report::loss::LossNote;
@@ -248,29 +248,24 @@ pub(super) fn build_geometry_report(
         ))?;
     }
 
-    let unresolved_intersection_lanes = ir
-        .model
-        .procedural_curves
-        .iter()
-        .filter_map(|procedural| {
-            let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-                procedural.definition()
-            else {
-                return None;
-            };
-            Some(
-                context
-                    .sides()
-                    .iter()
-                    .filter(|side| {
-                        pcurve_requires_completion(
-                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
-                        )
-                    })
-                    .count(),
-            )
-        })
-        .sum::<usize>();
+    let mut unresolved_intersection_lanes = 0usize;
+    for procedural in ctx.admit_iter(
+        &ir.model.procedural_curves,
+        "nx report unresolved intersection lanes",
+    )? {
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+            procedural.definition()
+        else {
+            continue;
+        };
+        unresolved_intersection_lanes += context
+            .sides()
+            .iter()
+            .filter(|side| {
+                pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
+            })
+            .count();
+    }
     if unresolved_intersection_lanes > 0
         && (completion_budget.pcurves.exact_boundary_exhausted
             || completion_budget.pcurves.transfer_exhausted
@@ -347,7 +342,8 @@ pub(super) fn build_geometry_report(
         ))?;
     }
 
-    if scan.count(ctx, StreamKind::Deltas)? > 0 {
+    let deltas_streams = scan.count(ctx, StreamKind::Deltas)?;
+    if deltas_streams > 0 {
         let unmatched_tombstones = unmatched_delta_tombstone_counts.values().sum::<usize>();
         let unmatched_tombstone_detail = JoinedCounts {
             counts: unmatched_delta_tombstone_counts,
@@ -377,7 +373,7 @@ pub(super) fn build_geometry_report(
                  digests. Semantic intersection and NURBS records were retained in the semantic \
                  lane. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
-                scan.count(ctx, StreamKind::Deltas)?
+                deltas_streams
             ))?;
         } else {
             push_report_loss(ctx, &mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
@@ -385,7 +381,7 @@ pub(super) fn build_geometry_report(
                     Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
-                scan.count(ctx, StreamKind::Deltas)?
+                deltas_streams
             ))?;
         }
     }
@@ -419,14 +415,14 @@ pub(super) fn build_geometry_report(
         )?;
     }
 
-    for loss in dialect_losses {
-        ctx.reserve_vec(&mut losses, 1, "nx geometry report losses")?;
-        losses.push(loss.try_clone_for_decode(ctx, "nx geometry report dialect loss")?);
+    for loss in ctx.admit_iter(dialect_losses, "nx geometry report dialect losses")? {
+        let loss = loss.try_clone_for_decode(ctx, "nx geometry report dialect loss")?;
+        ctx.push_vec(&mut losses, loss, "nx geometry report losses")?;
     }
-    let mut copied_notes = ctx.collection_vec(notes.len(), "nx geometry report notes")?;
-    for note in notes {
-        let bytes = ctx.copy_retained(note.as_bytes(), "nx geometry report note text")?;
-        copied_notes.push(String::from_utf8(bytes).map_err(cadmpeg_core::CodecError::malformed)?);
+    let mut copied_notes = ctx.vector_storage(notes.len(), "nx geometry report notes")?;
+    for note in ctx.admit_iter(notes, "nx geometry report notes")? {
+        let note = ctx.copy_retained_text(note, "nx geometry report note text")?;
+        ctx.push_vec(&mut copied_notes, note, "nx geometry report notes")?;
     }
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -437,52 +433,94 @@ pub(super) fn build_geometry_report(
     })
 }
 
+/// Increment the count stored for `key` in a scoped tally.
+fn tally<'k>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    counts: &mut BTreeMap<&'k str, usize>,
+    key: &'k str,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(count) = ctx.get_mut_btree_map(counts, key, operation)? {
+        *count = count
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+        return Ok(());
+    }
+    storage.with_storage(|| ctx.insert_btree_map(counts, key, 1, operation))?;
+    Ok(())
+}
+
+/// Index the first entity carrying each identity, in arena order.
+fn first_by_id<'ir, K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    values: &'ir [V],
+    id: impl Fn(&'ir V) -> &'ir K,
+    operation: &'static str,
+) -> Result<BTreeMap<&'ir K, &'ir V>, cadmpeg_core::CodecError> {
+    let mut index = BTreeMap::new();
+    for value in ctx.admit_iter(values, operation)? {
+        let key = id(value);
+        if !ctx.contains_key_btree_map(&index, key, operation)? {
+            storage.with_storage(|| ctx.insert_btree_map(&mut index, key, value, operation))?;
+        }
+    }
+    Ok(index)
+}
+
 pub(crate) fn append_design_intent_losses(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const SCOPE: &str = "nx report active feature scope";
     let mut body_storage = ctx.reserve_scoped(0, "NX report body lookup storage")?;
-    let mut current_body_ids = body_storage.with_storage(|| {
-        ctx.collection_vec(ir.model.bodies.len(), "nx report current body identities")
-    })?;
-    for body in &ir.model.bodies {
-        current_body_ids.push(body_storage.with_storage(|| {
-            body.id
-                .try_clone_for_decode(ctx, "nx report current body identity")
-        })?);
+    let mut current_body_ids = Vec::new();
+    for body in ctx.admit_iter(&ir.model.bodies, "nx report current body identities")? {
+        body_storage.with_storage(|| {
+            let id = body
+                .id
+                .try_clone_for_decode(ctx, "nx report current body identity")?;
+            ctx.push_vec(
+                &mut current_body_ids,
+                id,
+                "nx report current body identities",
+            )
+        })?;
     }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
     let (active_features, closure_rejection) = match body_storage.with_storage(|| {
-        crate::native::history::active_feature_closure_for_decode(ctx, ir, &current_body_ids)
+        crate::native::history::active_feature_closure(ctx, ir, &current_body_ids)
     })? {
         Ok(active) => (Some(active), None),
         Err(rejection) => (None, Some(rejection.code())),
     };
-    let active_features = active_features.filter(|active| {
-        active.values().any(|&index| {
-            !matches!(
-                ir.model.features[index].evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-            )
-        })
-    });
-    let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
-    let feature_in_active_scope = |feature: &Feature| {
-        active_features
-            .as_ref()
-            .is_none_or(|active| active.contains_key(&feature.id))
+    let active_features = match active_features {
+        Some(active) if has_neutral_body_writer(ctx, ir, &active)? => Some(active),
+        _ => None,
     };
-    let unresolved_suppression_count = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| {
-            feature.suppressed.is_none()
-                && active_features
-                    .as_ref()
-                    .is_none_or(|active| active.contains_key(&feature.id))
+    let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
+    let mut scope_storage = ctx.reserve_scoped(0, SCOPE)?;
+    let mut in_scope = Vec::new();
+    for feature in ctx.admit_iter(&ir.model.features, SCOPE)? {
+        let active = match &active_features {
+            Some(active) => ctx.contains_key_btree_map(active, &feature.id, SCOPE)?,
+            None => true,
+        };
+        ctx.reserve_scoped_vec(&mut scope_storage, &mut in_scope, 1, SCOPE)?;
+        in_scope.push(active);
+    }
+    let scoped_features = || {
+        ctx.admit_iter(&ir.model.features, SCOPE).map(|features| {
+            features
+                .zip(&in_scope)
+                .filter(|(_, active)| **active)
+                .map(|(feature, _)| feature)
         })
+    };
+    let unresolved_suppression_count = scoped_features()?
+        .filter(|feature| feature.suppressed.is_none())
         .count();
     if unresolved_suppression_count != 0 {
         let closure_detail = ClosureDetail(closure_rejection);
@@ -500,27 +538,38 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
-    let active_configuration_count = ir
-        .model
-        .configurations
-        .iter()
+    let active_configuration_count = ctx
+        .admit_iter(&ir.model.configurations, "nx report active configurations")?
         .filter(|configuration| configuration.active)
         .count();
     let mut current_bodies = BTreeSet::new();
-    for body in &ir.model.bodies {
-        ctx.insert_btree_set(&mut current_bodies, &body.id, "nx report current body set")?;
+    for body in ctx.admit_iter(&ir.model.bodies, "nx report current body set")? {
+        body_storage.with_storage(|| {
+            ctx.insert_btree_set(&mut current_bodies, &body.id, "nx report current body set")
+        })?;
     }
     let mut incomplete_configuration_count = 0usize;
-    for configuration in &ir.model.configurations {
-        let incomplete = configuration.bodies.is_none()
-            || active_configuration_count != 1
-            || (configuration.active
-                && configuration.bodies.as_deref().is_none_or(|bodies| {
-                    bodies.len() != current_bodies.len()
-                        || current_bodies.iter().any(|body| !bodies.contains(body))
-                }))
-            || (configuration.active
-                && active_configuration_state_is_incomplete_for_decode(ctx, ir, configuration)?);
+    for configuration in ctx.admit_iter(&ir.model.configurations, "nx report configurations")? {
+        let incomplete = match configuration.bodies.as_deref() {
+            None => true,
+            Some(_) if active_configuration_count != 1 => true,
+            Some(_) if !configuration.active => false,
+            Some(bodies) => {
+                bodies.len() != current_bodies.len()
+                    || !ctx.all_by(
+                        bodies,
+                        |body| {
+                            ctx.contains_btree_set(
+                                &current_bodies,
+                                body,
+                                "nx report configuration bodies",
+                            )
+                        },
+                        "nx report configuration bodies",
+                    )?
+                    || active_configuration_state_is_incomplete(ctx, ir, configuration)?
+            }
+        };
         if incomplete {
             incomplete_configuration_count += 1;
         }
@@ -538,7 +587,9 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
-    let incomplete_expression_count = incomplete_expression_parameters(ctx, ir)?.len();
+    let incomplete_expression_count = body_storage
+        .with_storage(|| incomplete_expression_parameters(ctx, ir))?
+        .len();
     if incomplete_expression_count != 0 {
         push_report_loss(
             ctx,
@@ -551,25 +602,30 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
+    let mut lookup_storage = ctx.reserve_scoped(0, "NX report feature lookup")?;
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
-    for feature in &ir.model.features {
-        if !feature_in_active_scope(feature) {
-            continue;
-        }
-        if let FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) =
-            feature.evaluation.definition()
-        {
-            ctx.admit_btree_entry(
-                &native_feature_kinds,
-                &kind.as_str(),
+    let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
+    for feature in scoped_features()? {
+        match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => tally(
+                ctx,
+                &mut lookup_storage,
+                &mut native_feature_kinds,
+                kind.as_str(),
                 "nx report native feature kinds",
-            )?;
-            match native_feature_kinds.entry(kind.as_str()) {
-                std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(1);
+            )?,
+            FeatureDefinition::Operation(FeatureOperation::Unresolved { family }) => {
+                if let Some(family) = unresolved_family_label(*family) {
+                    tally(
+                        ctx,
+                        &mut lookup_storage,
+                        &mut unresolved_feature_families,
+                        family,
+                        "nx report unresolved feature families",
+                    )?;
                 }
             }
+            _ => {}
         }
     }
     if !native_feature_kinds.is_empty() {
@@ -586,58 +642,6 @@ pub(crate) fn append_design_intent_losses(
         ),
         )?;
     }
-
-    let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
-    for feature in &ir.model.features {
-        if !feature_in_active_scope(feature) {
-            continue;
-        }
-        let family = match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Unresolved { family }) => match family {
-                UnresolvedFamily::Brep => "brep",
-                UnresolvedFamily::DatumPlane => "datum plane",
-                UnresolvedFamily::DatumAxis => "datum axis",
-                UnresolvedFamily::DatumPoint => "datum point",
-                UnresolvedFamily::DatumCoordinateSystem => "datum coordinate system",
-                UnresolvedFamily::BridgeCurve => "bridge curve",
-                UnresolvedFamily::Loft => "loft",
-                UnresolvedFamily::ThroughCurveMesh => "through curve mesh",
-                UnresolvedFamily::FreeformSurface => "freeform surface",
-                UnresolvedFamily::ExtractFace => "extract face",
-                UnresolvedFamily::CopyFace => "copy face",
-                UnresolvedFamily::LinkedFace => "linked face",
-                UnresolvedFamily::FillHole => "fill hole",
-                UnresolvedFamily::MoveFace => "move face",
-                UnresolvedFamily::MoveObject => "move object",
-                UnresolvedFamily::Cylinder => "cylinder",
-                UnresolvedFamily::Cone => "cone",
-                UnresolvedFamily::Sphere => "sphere",
-                UnresolvedFamily::Thread => "thread",
-                UnresolvedFamily::DetailedThread => "detailed thread",
-                UnresolvedFamily::Draft => "draft",
-                UnresolvedFamily::DeleteFace => "delete face",
-                UnresolvedFamily::MirrorFace => "mirror face",
-                UnresolvedFamily::SubdivisionBody => "subdivision body",
-                UnresolvedFamily::TopologyOptimization => "topology optimization",
-                UnresolvedFamily::Extrude
-                | UnresolvedFamily::Revolve
-                | UnresolvedFamily::Fillet
-                | UnresolvedFamily::BoundarySurface => continue,
-            },
-            _ => continue,
-        };
-        ctx.admit_btree_entry(
-            &unresolved_feature_families,
-            &family,
-            "nx report unresolved feature families",
-        )?;
-        match unresolved_feature_families.entry(family) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(1);
-            }
-        }
-    }
     if !unresolved_feature_families.is_empty() {
         let families = JoinedCountLabels {
             counts: &unresolved_feature_families,
@@ -653,11 +657,13 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
-    let mut lookup_storage = ctx.reserve_scoped(0, "NX report feature lookup")?;
     let mut incomplete_feature_output_families = BTreeMap::<&str, usize>::new();
     let mut incomplete_feature_construction_families = BTreeMap::<&str, usize>::new();
     let mut generated_body_outputs = BTreeSet::new();
-    for state in &ir.model.feature_result_topologies {
+    for state in ctx.admit_iter(
+        &ir.model.feature_result_topologies,
+        "nx report generated body outputs",
+    )? {
         if !state.bodies().is_empty() {
             lookup_storage.with_storage(|| {
                 ctx.insert_btree_set(
@@ -668,61 +674,63 @@ pub(crate) fn append_design_intent_losses(
             })?;
         }
     }
-    for feature in &ir.model.features {
-        if !feature_in_active_scope(feature) {
-            continue;
-        }
-        let is_exact_empty_base = matches!(
-            feature.evaluation.definition(),
+    let mut features_by_id = None;
+    let mut sketches_by_id = None;
+    for feature in scoped_features()? {
+        let is_exact_empty_base = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, native },
-            }) if bodies.is_empty() && !native.trim().is_empty() && feature.evaluation.outputs().is_empty()
-        );
+            }) if bodies.is_empty() && feature.evaluation.outputs().is_empty() => !ctx
+                .trim_text(native, "nx report base feature selection")?
+                .is_empty(),
+            _ => false,
+        };
+        let snapshot = output_free_native_snapshot(ctx, feature)?;
         if feature.suppressed != Some(true)
             && !is_exact_empty_base
-            && !output_free_native_snapshot(feature)
-            && !output_free_local_body_construction(feature)
-            && !output_free_pattern_construction(feature)
-            && !output_free_trim_surface_construction(feature)
+            && !snapshot
+            && !output_free_local_body_construction(ctx, feature)?
+            && !output_free_pattern_construction(ctx, feature)?
+            && !output_free_trim_surface_construction(ctx, feature)?
         {
-            if let Some(family) =
-                feature
-                    .evaluation
-                    .definition()
-                    .body_output_family()
-                    .filter(|_| {
-                        let current_outputs_are_valid = !feature.evaluation.outputs().is_empty()
-                            && feature.evaluation.outputs().iter().all(|output| {
-                                ir.model.bodies.iter().any(|body| body.id == *output)
-                            });
-                        !(current_outputs_are_valid
-                            || feature.evaluation.outputs().is_empty()
-                                && generated_body_outputs.contains(&feature.id))
-                    })
-            {
-                lookup_storage.with_storage(|| {
-                    ctx.admit_btree_entry(
-                        &incomplete_feature_output_families,
-                        &family,
+            if let Some(family) = feature.evaluation.definition().body_output_family() {
+                let outputs = feature.evaluation.outputs();
+                let lineage_is_complete = if outputs.is_empty() {
+                    ctx.contains_btree_set(
+                        &generated_body_outputs,
+                        &feature.id,
+                        "nx report generated body outputs",
+                    )?
+                } else {
+                    ctx.all_by(
+                        outputs,
+                        |output| {
+                            ctx.contains_btree_set(
+                                &current_bodies,
+                                output,
+                                "nx report feature outputs",
+                            )
+                        },
+                        "nx report feature outputs",
+                    )?
+                };
+                if !lineage_is_complete {
+                    tally(
+                        ctx,
+                        &mut lookup_storage,
+                        &mut incomplete_feature_output_families,
+                        family,
                         "nx report incomplete output families",
-                    )
-                })?;
-                match incomplete_feature_output_families.entry(family) {
-                    std::collections::btree_map::Entry::Occupied(mut entry) => {
-                        *entry.get_mut() += 1;
-                    }
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(1);
-                    }
+                    )?;
+                    continue;
                 }
-                continue;
             }
         }
         let family = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies })
                 if !is_exact_empty_base
-                    && !output_free_native_snapshot(feature)
-                    && body_selection_is_incomplete(bodies) =>
+                    && !snapshot
+                    && body_selection_is_incomplete(ctx, bodies)? =>
             {
                 "base feature"
             }
@@ -743,18 +751,36 @@ pub(crate) fn append_design_intent_losses(
             }
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference, ..
-            }) if reference.as_ref().is_none_or(|reference| match reference {
-                DatumPlaneReference::Feature { feature: reference } => {
-                    ir.model
-                        .features
-                        .iter()
-                        .find(|candidate| candidate.id == *reference)
-                        .is_none_or(|source| source.ordinal >= feature.ordinal)
-                        || !feature.dependencies.contains(reference)
+            }) if match reference {
+                None => true,
+                Some(DatumPlaneReference::Feature { feature: reference }) => {
+                    if features_by_id.is_none() {
+                        features_by_id = Some(first_by_id(
+                            ctx,
+                            &mut lookup_storage,
+                            &ir.model.features,
+                            |candidate| &candidate.id,
+                            "nx report feature identities",
+                        )?);
+                    }
+                    let source = match &features_by_id {
+                        Some(index) => {
+                            ctx.get_btree_map(index, reference, "nx report feature identities")?
+                        }
+                        None => None,
+                    };
+                    source.is_none_or(|source| source.ordinal >= feature.ordinal)
+                        || !ctx.contains(
+                            &feature.dependencies,
+                            reference,
+                            "nx report datum plane dependencies",
+                        )?
                 }
-                DatumPlaneReference::Face { face } => face_selection_is_incomplete(face),
-                DatumPlaneReference::ResolvedPlane { .. } => false,
-            }) =>
+                Some(DatumPlaneReference::Face { face }) => {
+                    face_selection_is_incomplete(ctx, face)?
+                }
+                Some(DatumPlaneReference::ResolvedPlane { .. }) => false,
+            } =>
             {
                 "datum plane"
             }
@@ -768,28 +794,42 @@ pub(crate) fn append_design_intent_losses(
                 "datum coordinate system"
             }
             FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
-                if body_selection_is_incomplete(source) =>
+                if body_selection_is_incomplete(ctx, source)? =>
             {
                 "extract body"
             }
             FeatureDefinition::Operation(FeatureOperation::Sketch { sketch })
-                if sketch.id().is_none_or(|sketch| {
-                    ir.model
-                        .sketches
-                        .iter()
-                        .find(|candidate| candidate.id == *sketch)
-                        .is_none_or(|sketch| {
+                if match sketch.id() {
+                    None => true,
+                    Some(sketch) => {
+                        if sketches_by_id.is_none() {
+                            sketches_by_id = Some(first_by_id(
+                                ctx,
+                                &mut lookup_storage,
+                                &ir.model.sketches,
+                                |candidate| &candidate.id,
+                                "nx report sketch identities",
+                            )?);
+                        }
+                        let placed = match &sketches_by_id {
+                            Some(index) => {
+                                ctx.get_btree_map(index, sketch, "nx report sketch identities")?
+                            }
+                            None => None,
+                        };
+                        placed.is_none_or(|sketch| {
                             matches!(
                                 sketch.placement,
                                 cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
                             )
                         })
-                }) =>
+                    }
+                } =>
             {
                 "sketch"
             }
             FeatureDefinition::Operation(FeatureOperation::Loft { .. })
-                if loft_definition_is_incomplete(feature) =>
+                if loft_definition_is_incomplete(ctx, feature)? =>
             {
                 "loft"
             }
@@ -798,20 +838,20 @@ pub(crate) fn append_design_intent_losses(
                 target_faces,
                 direction,
                 bidirectional,
-            }) if path_ref_is_incomplete(source)
-                || face_selection_is_incomplete(target_faces)
+            }) if path_ref_is_incomplete(ctx, source)?
+                || face_selection_is_incomplete(ctx, target_faces)?
                 || projected_curve_direction_is_incomplete(*direction)
                 || bidirectional.is_none() =>
             {
                 "projected curve"
             }
             FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. })
-                if trim_surface_definition_is_incomplete(feature) =>
+                if trim_surface_definition_is_incomplete(ctx, feature)? =>
             {
                 "trim surface"
             }
             FeatureDefinition::Operation(FeatureOperation::ExtendSurface { .. })
-                if extend_surface_definition_is_incomplete(feature) =>
+                if extend_surface_definition_is_incomplete(ctx, feature)? =>
             {
                 "extend surface"
             }
@@ -819,123 +859,120 @@ pub(crate) fn append_design_intent_losses(
                 face,
                 diameter,
                 extent,
-            }) if face_selection_is_incomplete(face) || diameter.is_none() || extent.is_none() => {
+            }) if face_selection_is_incomplete(ctx, face)?
+                || diameter.is_none()
+                || extent.is_none() =>
+            {
                 "cosmetic thread"
             }
             FeatureDefinition::Operation(FeatureOperation::Hole { .. })
-                if hole_definition_is_incomplete(feature) =>
+                if hole_definition_is_incomplete(ctx, feature)? =>
             {
                 "hole"
             }
             FeatureDefinition::Operation(FeatureOperation::Rib { .. })
-                if rib_definition_is_incomplete(feature) =>
+                if rib_definition_is_incomplete(ctx, feature)? =>
             {
                 "rib"
             }
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
-                if chamfer_definition_is_incomplete(feature) =>
+                if chamfer_definition_is_incomplete(ctx, feature)? =>
             {
                 "chamfer"
             }
             FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
-                if fillet_definition_is_incomplete(feature) =>
+                if fillet_definition_is_incomplete(ctx, feature)? =>
             {
                 "fillet"
             }
             FeatureDefinition::Operation(FeatureOperation::FaceBlend { .. })
-                if face_blend_definition_is_incomplete(feature) =>
+                if face_blend_definition_is_incomplete(ctx, feature)? =>
             {
                 "face blend"
             }
             FeatureDefinition::Operation(FeatureOperation::Shell { .. })
-                if shell_definition_is_incomplete(feature.evaluation.definition()) =>
+                if shell_definition_is_incomplete(ctx, feature.evaluation.definition())? =>
             {
                 "shell"
             }
             FeatureDefinition::Operation(FeatureOperation::SewBodies { .. })
-                if sew_bodies_definition_is_incomplete(feature) =>
+                if sew_bodies_definition_is_incomplete(ctx, feature)? =>
             {
                 "sew bodies"
             }
             FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. })
-                if trim_bodies_definition_is_incomplete(feature) =>
+                if trim_bodies_definition_is_incomplete(ctx, feature)? =>
             {
                 "trim bodies"
             }
             FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
-                if extrude_definition_is_incomplete(feature) =>
+                if extrude_definition_is_incomplete(ctx, feature)? =>
             {
                 "extrude"
             }
             FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
-                if revolve_definition_is_incomplete(feature) =>
+                if revolve_definition_is_incomplete(ctx, feature)? =>
             {
                 "revolve"
             }
             FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
-                if sweep_definition_is_incomplete(feature) =>
+                if sweep_definition_is_incomplete(ctx, feature)? =>
             {
                 "sweep"
             }
             FeatureDefinition::Operation(FeatureOperation::OffsetSurface { .. })
-                if offset_surface_definition_is_incomplete(feature) =>
+                if offset_surface_definition_is_incomplete(ctx, feature)? =>
             {
                 "offset surface"
             }
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
-                if thicken_definition_is_incomplete(feature) =>
+                if thicken_definition_is_incomplete(ctx, feature)? =>
             {
                 "thicken"
             }
             FeatureDefinition::Operation(FeatureOperation::Draft { .. })
-                if draft_definition_is_incomplete(feature) =>
+                if draft_definition_is_incomplete(ctx, feature)? =>
             {
                 "draft"
             }
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern })
-                if pattern_feature_is_incomplete(seeds, pattern, &feature.dependencies) =>
+                if pattern_feature_is_incomplete(ctx, seeds, pattern, &feature.dependencies)? =>
             {
                 "pattern"
             }
             FeatureDefinition::Operation(FeatureOperation::SectionShape {
                 operands,
                 approximate,
-            }) if body_selection_is_incomplete(operands.first())
-                || body_selection_is_incomplete(operands.second())
+            }) if body_selection_is_incomplete(ctx, operands.first())?
+                || body_selection_is_incomplete(ctx, operands.second())?
                 || approximate.is_none() =>
             {
                 "section"
             }
             FeatureDefinition::Operation(FeatureOperation::Combine { .. })
-                if combine_definition_is_incomplete(feature) =>
+                if combine_definition_is_incomplete(ctx, feature)? =>
             {
                 "body combine"
             }
             FeatureDefinition::Operation(FeatureOperation::DeleteBody { .. })
-                if delete_body_definition_is_incomplete(feature) =>
+                if delete_body_definition_is_incomplete(ctx, feature)? =>
             {
                 "delete body"
             }
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { .. })
-                if replace_face_definition_is_incomplete(feature) =>
+                if replace_face_definition_is_incomplete(ctx, feature)? =>
             {
                 "replace face"
             }
             _ => continue,
         };
-        lookup_storage.with_storage(|| {
-            ctx.admit_btree_entry(
-                &incomplete_feature_construction_families,
-                &family,
-                "nx report incomplete construction families",
-            )
-        })?;
-        match incomplete_feature_construction_families.entry(family) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(1);
-            }
-        }
+        tally(
+            ctx,
+            &mut lookup_storage,
+            &mut incomplete_feature_construction_families,
+            family,
+            "nx report incomplete construction families",
+        )?;
     }
     if !incomplete_feature_output_families.is_empty() {
         let families = JoinedCountLabels {
@@ -966,34 +1003,32 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
-    let sketch_feature_count = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| feature_in_active_scope(feature))
-        .filter(|feature| {
-            matches!(
-                feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-            )
-        })
-        .count();
-    let unresolved_sketch_feature_count = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| feature_in_active_scope(feature))
-        .filter(|feature| {
-            matches!(
-                feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
-                        | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                    ..
-                })
-            )
-        })
-        .count();
+    let mut sketch_feature_count = 0usize;
+    let mut unresolved_sketch_feature_count = 0usize;
+    let mut active_sketch_ids = BTreeSet::new();
+    for feature in scoped_features()? {
+        let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        sketch_feature_count += 1;
+        match sketch {
+            cadmpeg_ir::features::SketchFeatureBinding::Unresolved
+            | cadmpeg_ir::features::SketchFeatureBinding::Planar(None) => {
+                unresolved_sketch_feature_count += 1;
+            }
+            cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)) => {
+                lookup_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut active_sketch_ids,
+                        sketch,
+                        "nx report active sketch identities",
+                    )
+                })?;
+            }
+        }
+    }
     if unresolved_sketch_feature_count != 0 {
         push_report_loss(
             ctx,
@@ -1007,54 +1042,42 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
 
-    let mut active_sketch_ids = BTreeSet::<cadmpeg_ir::sketches::SketchId>::new();
-    for feature in ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| feature_in_active_scope(feature))
-    {
-        if let FeatureDefinition::Operation(FeatureOperation::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            ..
-        }) = feature.evaluation.definition()
-        {
-            lookup_storage.with_storage(|| {
-                ctx.insert_btree_set(
-                    &mut active_sketch_ids,
-                    sketch.try_clone_for_decode(ctx, "nx report active sketch identity")?,
+    let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
+        Ok::<_, cadmpeg_core::CodecError>(
+            active_features.is_none()
+                || ctx.contains_btree_set(
+                    &active_sketch_ids,
+                    sketch,
                     "nx report active sketch identities",
-                )
-            })?;
+                )?,
+        )
+    };
+    let mut native_sketch_entity_count = 0usize;
+    for entity in ctx.admit_iter(
+        &ir.model.sketch_entities,
+        "nx report native sketch entities",
+    )? {
+        if matches!(
+            *entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
+        ) && sketch_in_active_scope(&entity.sketch)?
+        {
+            native_sketch_entity_count += 1;
         }
     }
-    let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
-        active_features.is_none() || active_sketch_ids.contains(sketch)
-    };
-    let native_sketch_entity_count = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter(|entity| sketch_in_active_scope(&entity.sketch))
-        .filter(|entity| {
-            matches!(
-                *entity.geometry.definition(),
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
-            )
-        })
-        .count();
-    let native_sketch_constraint_count = ir
-        .model
-        .sketch_constraints
-        .iter()
-        .filter(|constraint| sketch_in_active_scope(&constraint.sketch))
-        .filter(|constraint| {
-            matches!(
-                constraint.definition.kind(),
-                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
-            )
-        })
-        .count();
+    let mut native_sketch_constraint_count = 0usize;
+    for constraint in ctx.admit_iter(
+        &ir.model.sketch_constraints,
+        "nx report native sketch constraints",
+    )? {
+        if matches!(
+            constraint.definition.kind(),
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { .. }
+        ) && sketch_in_active_scope(&constraint.sketch)?
+        {
+            native_sketch_constraint_count += 1;
+        }
+    }
     if native_sketch_entity_count != 0 || native_sketch_constraint_count != 0 {
         push_report_loss(
             ctx,
@@ -1068,6 +1091,62 @@ pub(crate) fn append_design_intent_losses(
         )?;
     }
     Ok(())
+}
+
+/// Whether the active closure holds a feature other than a retained base
+/// feature.
+fn has_neutral_body_writer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    active: &BTreeMap<cadmpeg_ir::features::FeatureId, usize>,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    for &index in active.values() {
+        ctx.charge_work(1, "nx report active feature writers")?;
+        let Some(feature) = ir.model.features.get(index) else {
+            continue;
+        };
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
+        ) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn unresolved_family_label(family: UnresolvedFamily) -> Option<&'static str> {
+    Some(match family {
+        UnresolvedFamily::Brep => "brep",
+        UnresolvedFamily::DatumPlane => "datum plane",
+        UnresolvedFamily::DatumAxis => "datum axis",
+        UnresolvedFamily::DatumPoint => "datum point",
+        UnresolvedFamily::DatumCoordinateSystem => "datum coordinate system",
+        UnresolvedFamily::BridgeCurve => "bridge curve",
+        UnresolvedFamily::Loft => "loft",
+        UnresolvedFamily::ThroughCurveMesh => "through curve mesh",
+        UnresolvedFamily::FreeformSurface => "freeform surface",
+        UnresolvedFamily::ExtractFace => "extract face",
+        UnresolvedFamily::CopyFace => "copy face",
+        UnresolvedFamily::LinkedFace => "linked face",
+        UnresolvedFamily::FillHole => "fill hole",
+        UnresolvedFamily::MoveFace => "move face",
+        UnresolvedFamily::MoveObject => "move object",
+        UnresolvedFamily::Cylinder => "cylinder",
+        UnresolvedFamily::Cone => "cone",
+        UnresolvedFamily::Sphere => "sphere",
+        UnresolvedFamily::Thread => "thread",
+        UnresolvedFamily::DetailedThread => "detailed thread",
+        UnresolvedFamily::Draft => "draft",
+        UnresolvedFamily::DeleteFace => "delete face",
+        UnresolvedFamily::MirrorFace => "mirror face",
+        UnresolvedFamily::SubdivisionBody => "subdivision body",
+        UnresolvedFamily::TopologyOptimization => "topology optimization",
+        UnresolvedFamily::Extrude
+        | UnresolvedFamily::Revolve
+        | UnresolvedFamily::Fillet
+        | UnresolvedFamily::BoundarySurface => return None,
+    })
 }
 
 #[cfg(test)]
