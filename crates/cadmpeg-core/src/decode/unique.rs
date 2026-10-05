@@ -10,10 +10,9 @@ use std::hash::Hash;
 impl DecodeContext<'_> {
     /// Builds a scoped table for keyed lookup. A key that occurred once maps
     /// to `Some`; a repeated key keeps a `None` tombstone, so a third
-    /// occurrence cannot restore it. Test uniqueness with `get` and
-    /// `Option::as_ref`, not `contains_key`. Nothing is removed, because a
-    /// removal leaves a deleted slot that hash growth accounting cannot see,
-    /// and the table is not scanned.
+    /// occurrence cannot restore it without a second table of removed keys.
+    /// Test uniqueness with `get` and `Option::as_ref`, not `contains_key`.
+    /// The table is not scanned.
     pub fn unique_index<K: Eq + Hash + DecodeCost, V>(
         &self,
         entries: impl IntoIterator<Item = (K, V)>,
@@ -100,8 +99,13 @@ mod tests {
     fn unique_index_charges_shared_lookup_and_insertion() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Two source steps and three three-byte key operations.
-        policy.limits.max_work_units = 11;
+        // Two source steps, three three-byte key operations and the movement
+        // bound of the first growth, storage for four buckets.
+        let need = 11
+            + crate::decode::u64_from_index(
+                4 * std::mem::size_of::<(String, Option<u8>)>() + 15 + 4 + 16,
+            );
+        policy.limits.max_work_units = need;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (values, _scope) = ctx
             .unique_index([(String::from("key"), 7_u8)], "index")
@@ -112,8 +116,8 @@ mod tests {
         else {
             panic!("refusal")
         };
-        assert_eq!(limit.used, 11);
-        policy.limits.max_work_units = 10;
+        assert_eq!(limit.used, need);
+        policy.limits.max_work_units = need - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let CodecError::ResourceLimit(first) = ctx
             .unique_index([(String::from("key"), 7_u8)], "index")
