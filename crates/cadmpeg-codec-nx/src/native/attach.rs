@@ -102,7 +102,7 @@ use crate::container::EntryContent;
 use crate::decode::ids::{extended_id, native_entity_key, IdScope};
 use crate::decode::Scan;
 use crate::native::history::{
-    active_feature_closure_for_decode, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
+    active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
     NATIVE_PRIMARY_BODY_OBJECT_INDEX,
 };
 use crate::native::om::display_color::{
@@ -1735,7 +1735,7 @@ fn attach_current_feature_states(
                 .try_clone_for_decode(ctx, "NX current body identity")
         })?);
     }
-    let Ok(active_features) = active_feature_closure_for_decode(ctx, ir, &current_bodies)? else {
+    let Ok(active_features) = active_feature_closure(ctx, ir, &current_bodies)? else {
         return Ok(());
     };
     for index in active_features.into_values() {
@@ -1769,8 +1769,7 @@ fn attach_active_configuration_feature_states(
     {
         return Ok(());
     }
-    let Ok(active_features) = active_feature_closure_for_decode(ctx, ir, configuration_bodies)?
-    else {
+    let Ok(active_features) = active_feature_closure(ctx, ir, configuration_bodies)? else {
         return Ok(());
     };
     let mut states = BTreeMap::new();

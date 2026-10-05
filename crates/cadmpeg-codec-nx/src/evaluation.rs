@@ -15,7 +15,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::BodyId;
 
 use crate::decode::feature_completeness::{
-    output_free_local_body_construction, output_free_native_snapshot,
+    output_free_local_body_construction, output_free_native_snapshot, standard,
+    StandardCompleteness,
 };
 use serde::{Deserialize, Serialize};
 
@@ -257,7 +258,7 @@ pub(crate) fn evaluate_saved_body_census(
         });
     }
 
-    if !active_configuration_is_admitted(ir, &saved) {
+    if !active_configuration_is_admitted(ctx, ir, &saved)? {
         return Ok(BodyCensusEvaluation::ConfigurationEvaluation);
     }
     Ok(BodyCensusEvaluation::Verified {
@@ -287,11 +288,15 @@ pub fn saved_body_census_evidence(
     evaluate_saved_body_census(&ctx, ir)
 }
 
-fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> bool {
+fn active_configuration_is_admitted(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    saved: &BTreeSet<BodyId>,
+) -> Result<bool, CodecError> {
     if ir.model.configurations.is_empty()
         || (saved.is_empty() && ir.model.features.iter().all(is_body_neutral_feature))
     {
-        return true;
+        return Ok(true);
     }
     let mut active = ir
         .model
@@ -299,17 +304,21 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
         .iter()
         .filter(|configuration| configuration.active);
     let Some(configuration) = active.next() else {
-        return false;
+        return Ok(false);
     };
     let Some(configuration_bodies) = configuration.bodies.as_deref() else {
-        return false;
+        return Ok(false);
     };
-    active.next().is_none()
+    Ok(active.next().is_none()
         && configuration_bodies.len() == saved.len()
         && configuration_bodies.iter().collect::<BTreeSet<_>>()
             == saved.iter().collect::<BTreeSet<_>>()
         && (ir.model.features.iter().all(is_body_neutral_feature)
-            || !feature_completeness::active_configuration_state_is_incomplete(ir, configuration))
+            || !feature_completeness::active_configuration_state_is_incomplete(
+                ctx,
+                ir,
+                configuration,
+            )?))
 }
 
 fn rederived_body_census(
@@ -492,7 +501,10 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    feature_completeness::loft_definition_is_incomplete(feature),
+                    standard(feature_completeness::loft_definition_is_incomplete(
+                        &StandardCompleteness,
+                        feature,
+                    )),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -503,37 +515,58 @@ fn rederived_body_census(
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
-                if output_free_local_body_construction(feature) => {}
+                if standard(output_free_local_body_construction(
+                    &StandardCompleteness,
+                    feature,
+                )) => {}
             FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) => {
                 apply_complete_boolean_outputs(
                     feature,
                     &mut bodies,
                     *op,
-                    feature_completeness::extrude_definition_is_incomplete(feature),
+                    standard(feature_completeness::extrude_definition_is_incomplete(
+                        &StandardCompleteness,
+                        feature,
+                    )),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
-                if output_free_local_body_construction(feature) => {}
+                if standard(output_free_local_body_construction(
+                    &StandardCompleteness,
+                    feature,
+                )) => {}
             FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) => {
                 apply_complete_boolean_outputs(
                     feature,
                     &mut bodies,
                     *op,
-                    feature_completeness::revolve_definition_is_incomplete(feature),
+                    standard(feature_completeness::revolve_definition_is_incomplete(
+                        &StandardCompleteness,
+                        feature,
+                    )),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Rib { .. })
-                if output_free_local_body_construction(feature) => {}
+                if standard(output_free_local_body_construction(
+                    &StandardCompleteness,
+                    feature,
+                )) => {}
             FeatureDefinition::Operation(FeatureOperation::Rib { op, .. }) => {
                 apply_complete_boolean_outputs(
                     feature,
                     &mut bodies,
                     *op,
-                    feature_completeness::rib_definition_is_incomplete(feature),
+                    standard(feature_completeness::rib_definition_is_incomplete(
+                        &StandardCompleteness,
+                        feature,
+                    )),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
-                if output_free_local_body_construction(feature) => {}
+                if standard(output_free_local_body_construction(
+                    &StandardCompleteness,
+                    feature,
+                )) => {}
             FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
                 let mode = shape.mode();
                 let op = match mode {
@@ -545,11 +578,14 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     op,
-                    feature_completeness::sweep_definition_is_incomplete(feature),
+                    standard(feature_completeness::sweep_definition_is_incomplete(
+                        &StandardCompleteness,
+                        feature,
+                    )),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-                if output_free_native_snapshot(feature) => {}
+                if standard(output_free_native_snapshot(&StandardCompleteness, feature)) => {}
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, .. },
             }) if bodies.is_empty() && feature.evaluation.outputs().is_empty() => {}
@@ -651,7 +687,10 @@ fn rederived_body_census(
             }
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Draft,
-            }) if output_free_local_body_construction(feature) => {}
+            }) if standard(output_free_local_body_construction(
+                &StandardCompleteness,
+                feature,
+            )) => {}
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { .. }) => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
@@ -684,7 +723,10 @@ fn rederived_body_census(
                     } else {
                         ToolRetention::Delete
                     },
-                    feature_completeness::combine_definition_is_incomplete(feature),
+                    standard(feature_completeness::combine_definition_is_incomplete(
+                        &StandardCompleteness,
+                        feature,
+                    )),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::SewBodies {
@@ -697,7 +739,10 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     selection,
-                    feature_completeness::sew_bodies_definition_is_incomplete(feature),
+                    standard(feature_completeness::sew_bodies_definition_is_incomplete(
+                        &StandardCompleteness,
+                        feature,
+                    )),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::TrimBodies { operands, .. }) => {
@@ -711,7 +756,10 @@ fn rederived_body_census(
                     &bodies,
                     targets,
                     tools,
-                    feature_completeness::trim_bodies_definition_is_incomplete(feature),
+                    standard(feature_completeness::trim_bodies_definition_is_incomplete(
+                        &StandardCompleteness,
+                        feature,
+                    )),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
@@ -724,7 +772,12 @@ fn rederived_body_census(
                     selection,
                     ResolvedBodyRetentionMode::try_from(*mode)
                         .map_err(|reason| (feature_boundary(feature), reason))?,
-                    feature_completeness::operands::body_selection_is_incomplete(selection),
+                    standard(
+                        feature_completeness::operands::body_selection_is_incomplete(
+                            &StandardCompleteness,
+                            selection,
+                        ),
+                    ),
                 )?;
             }
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {
@@ -735,11 +788,17 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     seeds,
-                    feature_completeness::operands::pattern_occurrence_count(pattern),
-                    feature_completeness::operands::pattern_feature_is_incomplete(
-                        seeds,
+                    standard(feature_completeness::operands::pattern_occurrence_count(
+                        &StandardCompleteness,
                         pattern,
-                        &feature.dependencies,
+                    )),
+                    standard(
+                        feature_completeness::operands::pattern_feature_is_incomplete(
+                            &StandardCompleteness,
+                            seeds,
+                            pattern,
+                            &feature.dependencies,
+                        ),
                     ),
                 )?;
             }
@@ -816,28 +875,32 @@ fn suppression_is_body_census_invariant(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. })
         );
-    let output_free_pattern =
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
-        ) && (feature_completeness::output_free_pattern_construction(feature)
-            || feature_completeness::output_free_local_body_construction(feature));
+    let output_free_pattern = matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
+    ) && (standard(
+        feature_completeness::output_free_pattern_construction(&StandardCompleteness, feature),
+    ) || standard(
+        feature_completeness::output_free_local_body_construction(&StandardCompleteness, feature),
+    ));
     let output_free_combine = feature.evaluation.outputs().is_empty()
         && matches!(
             feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine { operands,  .. }) if matches!((operands.target(), operands.tools(),), (target, tools,) if complete_local_or_native_body_selection(target)
                     && complete_local_or_native_body_selection(tools)));
     let local_tool_combine = matches!(
         feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine { operands,  .. }) if matches!((operands.target(), operands.tools(),), (target, tools,) if local_tool_combine_is_census_invariant(feature, target, tools, bodies)));
-    let output_free_boolean_construction = output_free_local_body_construction(feature)
-        && matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(
-                FeatureOperation::Extrude { .. }
-                    | FeatureOperation::Revolve { .. }
-                    | FeatureOperation::Rib { .. }
-                    | FeatureOperation::Sweep { .. }
-            )
-        );
+    let output_free_boolean_construction = standard(output_free_local_body_construction(
+        &StandardCompleteness,
+        feature,
+    )) && matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(
+            FeatureOperation::Extrude { .. }
+                | FeatureOperation::Revolve { .. }
+                | FeatureOperation::Rib { .. }
+                | FeatureOperation::Sweep { .. }
+        )
+    );
     let in_place_unresolved_extrude = feature.evaluation.outputs().len() == 1
         && bodies.contains(&feature.evaluation.outputs()[0])
         && matches!(
@@ -847,14 +910,17 @@ fn suppression_is_body_census_invariant(
                 ..
             })
         );
-    let output_free_local_in_place = output_free_local_body_construction(feature)
-        && matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family: UnresolvedFamily::Draft
-            })
-        );
-    let output_free_snapshot = output_free_native_snapshot(feature);
+    let output_free_local_in_place = standard(output_free_local_body_construction(
+        &StandardCompleteness,
+        feature,
+    )) && matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::Draft
+        })
+    );
+    let output_free_snapshot =
+        standard(output_free_native_snapshot(&StandardCompleteness, feature));
     let output_free_brep = feature.evaluation.outputs().is_empty()
         && matches!(
             feature.evaluation.definition(),

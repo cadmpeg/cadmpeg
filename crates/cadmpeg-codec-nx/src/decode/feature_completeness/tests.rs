@@ -379,11 +379,9 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         fuse_order: None,
         allow_multi_profile_faces: None,
     };
-    assert!(!revolve_feature_is_incomplete(
-        &complete,
-        BooleanOp::NewBody,
-        &[],
-    ));
+    assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &complete, BooleanOp::NewBody, &[])
+    }));
     assert_eq!(
         FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction: complete.clone(),
@@ -395,26 +393,20 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
 
     let mut incomplete = complete.clone();
     incomplete.set_profile(None);
-    assert!(revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &incomplete, BooleanOp::NewBody, &[])
+    }));
     incomplete = complete.clone();
     incomplete.set_axis(None);
-    assert!(revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &incomplete, BooleanOp::NewBody, &[])
+    }));
     let mut non_unit_axis = complete.clone();
     non_unit_axis.axis_mut().unwrap().direction =
         cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 2.0)).unwrap();
-    assert!(!revolve_feature_is_incomplete(
-        &non_unit_axis,
-        BooleanOp::NewBody,
-        &[],
-    ));
+    assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &non_unit_axis, BooleanOp::NewBody, &[])
+    }));
     incomplete = complete.clone();
     let RevolveConstruction::Resolved {
         profile,
@@ -437,28 +429,22 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
             fuse_order,
             allow_multi_profile_faces,
         });
-    assert!(revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &incomplete, BooleanOp::NewBody, &[])
+    }));
     incomplete = complete.clone();
     incomplete.axis_mut().unwrap().reference = Some(PathRef::Native("test:axis".into()));
-    assert!(revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &incomplete, BooleanOp::NewBody, &[])
+    }));
     incomplete = complete.clone();
     let RevolveConstruction::Resolved { solid, .. } = &mut incomplete else {
         panic!("resolved fixture")
     };
     *solid = None;
-    assert!(revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &incomplete, BooleanOp::NewBody, &[])
+    }));
     let source = FeatureId::mint("test:test:feature#vertex-source").expect("identity grammar");
     incomplete = complete.clone();
     *incomplete.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
@@ -478,21 +464,15 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
             .unwrap(),
         },
     };
-    assert!(revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    assert!(!revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[source],
-    ));
-    assert!(revolve_feature_is_incomplete(
-        &complete,
-        BooleanOp::Unresolved,
-        &[],
-    ));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &incomplete, BooleanOp::NewBody, &[])
+    }));
+    assert!(!crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &incomplete, BooleanOp::NewBody, &[source])
+    }));
+    assert!(crate::decode::feature_completeness::decode_check(|ctx| {
+        revolve_feature_is_incomplete(ctx, &complete, BooleanOp::Unresolved, &[])
+    }));
 
     ir.model.features.push(Feature {
         id: FeatureId::mint("test:test:feature#revolve").expect("identity grammar"),

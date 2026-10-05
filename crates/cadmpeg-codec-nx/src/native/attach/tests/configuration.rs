@@ -1021,27 +1021,39 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     assert_eq!(ir.model.features[2].suppressed, None);
 
     ir.model.features[0].ordinal = 2;
-    assert!(active_feature_closure(
-        &ir,
-        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
-    )
-    .is_err());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| active_feature_closure(
+            ctx,
+            &ir,
+            &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+        ))
+        .expect("the closure stays within the service budget")
+        .is_err()
+    );
     ir.model.features[0].ordinal = 1;
     ir.model.features[2].id =
         FeatureId::mint("synthetic:test:id#writer").expect("identity grammar");
-    assert!(active_feature_closure(
-        &ir,
-        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
-    )
-    .is_err());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| active_feature_closure(
+            ctx,
+            &ir,
+            &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+        ))
+        .expect("the closure stays within the service budget")
+        .is_err()
+    );
     ir.model.features[2].id =
         FeatureId::mint("synthetic:test:id#unrelated").expect("identity grammar");
     ir.model.features[1].suppressed = Some(true);
-    assert!(active_feature_closure(
-        &ir,
-        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
-    )
-    .is_err());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| active_feature_closure(
+            ctx,
+            &ir,
+            &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+        ))
+        .expect("the closure stays within the service budget")
+        .is_err()
+    );
 }
 
 #[test]
