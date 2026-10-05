@@ -7,6 +7,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::record_streams::in_stream;
 use crate::design::decode::sketch::{
     append_percent_encoded, native_scope_charged, native_scope_scoped, percent_encoded_len,
+    IndexedRecordOffsets,
 };
 use crate::design::decode::text::rsplit_once_ascii;
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
@@ -105,8 +106,10 @@ fn image_media_type(
 }
 
 /// Decode image scopes in their owning streams, ordered by native identity.
-/// Each parsed image is held under its own scoped reservation until the
-/// duplicates of its identity are dropped; the kept images become retained.
+/// A stream with an owner scope is indexed once, under a scoped reservation,
+/// and every scope of the stream is parsed against that index. Each parsed
+/// image is held under its own scoped reservation until the duplicates of its
+/// identity are dropped; the kept images become retained.
 pub(super) fn decode_scoped_images<T>(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -115,6 +118,7 @@ pub(super) fn decode_scoped_images<T>(
     mut parse: impl FnMut(
         &DecodeContext<'_>,
         &[u8],
+        &IndexedRecordOffsets,
         &str,
         &crate::records::feature::scope::DesignParameterScope,
     ) -> Result<Option<T>, CodecError>,
@@ -128,13 +132,18 @@ pub(super) fn decode_scoped_images<T>(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let (_stream_storage, stream) = native_scope_scoped(ctx, &entry.name)?;
+        let mut stream_records = None;
         for scope in ctx.admit_iter(scopes, "scan F3D image owner scopes")? {
             // The kind is a literal name, so the comparison is constant.
             if scope.kind_name() != kind.as_str() || !in_stream(ctx, &scope.id, &stream)? {
                 continue;
             }
+            let (records, _records_storage) = match &mut stream_records {
+                Some(records) => records,
+                slot @ None => slot.insert(IndexedRecordOffsets::build_scoped(ctx, bytes)?),
+            };
             let (image, storage) = ctx.with_scoped_storage("f3d scoped image records", || {
-                parse(ctx, bytes, &entry.name, scope)
+                parse(ctx, bytes, records, &entry.name, scope)
             })?;
             if let Some(image) = image {
                 ctx.push_scoped_vec(
@@ -302,7 +311,7 @@ mod tests {
                             scan,
                             std::slice::from_ref(&scope),
                             &kind,
-                            |_, _, _, _| Ok(Some(17_u32)),
+                            |_, _, _, _, _| Ok(Some(17_u32)),
                             |_| "image",
                         )
                     });
@@ -318,7 +327,7 @@ mod tests {
                     scan,
                     std::slice::from_ref(&scope),
                     &kind,
-                    |_, _, _, _| Ok(Some(17_u32)),
+                    |_, _, _, _, _| Ok(Some(17_u32)),
                     |_| "image",
                 )
                 .unwrap();

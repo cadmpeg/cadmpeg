@@ -7,7 +7,7 @@ use crate::design::decode::byte_fields::{bytes_at, zeros_at};
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::record_streams::{has_stream, record_stream};
 use crate::design::decode::scopes::shared_frames::{exact_indexed_header_at, marked_reference};
-use crate::design::decode::sketch::{next_indexed_record_header, IndexedRecordHeader};
+use crate::design::decode::sketch::{indexed_record_header_at, IndexedRecordOffsets};
 use crate::design::decode::text::retain_class_tag;
 
 use crate::ids;
@@ -246,9 +246,13 @@ fn canvas_geometry_frame(
     })
 }
 
+/// The Canvas image of `scope`. Its geometry record is the first header that
+/// carries the geometry record index, and the paired geometry header is the
+/// first one with that index at least eleven bytes later.
 fn parse_canvas_image(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     stream: &str,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignCanvasImage>, CodecError> {
@@ -261,9 +265,11 @@ fn parse_canvas_image(
     let Some(geometry_record_index) = marked_reference(bytes, geometry_reference_at) else {
         return Ok(None);
     };
-    let carries_geometry =
-        |header: &IndexedRecordHeader<'_>| header.record_index == geometry_record_index;
-    let Some(geometry) = next_indexed_record_header(ctx, bytes, 0, carries_geometry)? else {
+    let geometry_offsets = records.offsets(geometry_record_index);
+    let Some(geometry) = geometry_offsets
+        .first()
+        .and_then(|&at| indexed_record_header_at(bytes, at))
+    else {
         return Ok(None);
     };
     let geometry_at = geometry.offset;
@@ -272,7 +278,14 @@ fn parse_canvas_image(
     else {
         return Ok(None);
     };
-    let Some(paired) = next_indexed_record_header(ctx, bytes, geometry_at + 11, carries_geometry)?
+    let paired_position = ctx.partition_point(
+        geometry_offsets,
+        |offset| Ok(*offset < geometry_at + 11),
+        "find F3D Canvas paired geometry header",
+    )?;
+    let Some(paired) = geometry_offsets
+        .get(paired_position)
+        .and_then(|&at| indexed_record_header_at(bytes, at))
     else {
         return Ok(None);
     };
@@ -361,8 +374,22 @@ fn parse_canvas_image(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_canvas_image;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    use crate::records::canvas::DesignCanvasImage;
+    use crate::records::feature::scope::DesignParameterScope;
+
+    /// Parse `scope` against a stream index built outside `ctx`.
+    fn parse_canvas_image(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        stream: &str,
+        scope: &DesignParameterScope,
+    ) -> Result<Option<DesignCanvasImage>, CodecError> {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        super::parse_canvas_image(ctx, bytes, &records, stream, scope)
+    }
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -497,11 +524,12 @@ mod tests {
     }
 
     #[test]
-    fn canvas_indexed_scanner_refuses_work_limit_through_optional_parse() {
+    fn canvas_paired_header_search_refuses_work_limit_through_optional_parse() {
         let (bytes, scope) = fixture();
+        let operation = "find F3D Canvas paired geometry header";
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::WorkUnits,
-            "find F3D indexed record header",
+            operation,
             0,
             |ctx| parse_canvas_image(ctx, &bytes, "Design/BulkStream.dat", &scope).map(|_| ()),
         );
@@ -509,7 +537,7 @@ mod tests {
             error,
             cadmpeg_core::CodecError::ResourceLimit(refusal)
                 if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "find F3D indexed record header"
+                    && refusal.operation == operation
         ));
     }
 

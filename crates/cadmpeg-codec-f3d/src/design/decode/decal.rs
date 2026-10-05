@@ -8,8 +8,7 @@ use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::record_streams::{has_stream, record_stream};
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::{
-    indexed_record_header_at, next_indexed_record_header, next_indexed_record_offset,
-    IndexedRecordHeader,
+    indexed_record_header_at, next_indexed_record_offset, IndexedRecordHeader, IndexedRecordOffsets,
 };
 
 use crate::ids;
@@ -196,13 +195,14 @@ pub(crate) fn project_decal_images(
 fn parse_decal_image(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     stream: &str,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
     let Ok(scope_at) = usize::try_from(scope.byte_offset()) else {
         return Ok(None);
     };
-    parse_decal_image_frame(ctx, bytes, stream, scope.record_index, scope_at)
+    parse_decal_image_frame(ctx, bytes, records, stream, scope.record_index, scope_at)
 }
 
 /// The fixed members of a Decal scope prefix at `scope_at`: the asset record
@@ -223,10 +223,11 @@ fn decal_scope_prefix(bytes: &[u8], scope_at: usize) -> Option<(u32, u8, u32)> {
 
 /// The Decal image of the scope prefix at `scope_at`. The asset record index
 /// it names must carry exactly one complete asset record in the stream, so
-/// the whole stream is searched for that index.
+/// every header of that index is tested.
 fn parse_decal_image_frame(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     stream: &str,
     scope_record_index: u32,
     scope_at: usize,
@@ -240,13 +241,12 @@ fn parse_decal_image_frame(
         return Ok(None);
     };
 
-    let mut position = 0;
     let mut asset_record = None;
-    while let Some(asset) = next_indexed_record_header(ctx, bytes, position, |header| {
-        header.record_index == asset_record_index
-    })? {
-        // A header offset indexes `bytes`, so the successor stays in range.
-        position = asset.offset + 1;
+    for &asset_at in records.offsets(asset_record_index) {
+        ctx.charge_work(1, "scan F3D Decal asset records")?;
+        let Some(asset) = indexed_record_header_at(bytes, asset_at) else {
+            continue;
+        };
         let Some(candidate) = parse_decal_asset_record(ctx, bytes, &asset)? else {
             continue;
         };
@@ -313,11 +313,18 @@ fn parse_decal_asset_record(
     else {
         return Ok(None);
     };
-    let Some(next_at) = next_indexed_record_offset(ctx, bytes, name_at + decal_name::ZERO_RUN_10)?
+    // The first header after the name prefix must open where the name ends.
+    // A header at that offset ends eleven bytes later, so the search reads
+    // only the name bytes the decode already paid for and that header.
+    let Some(window) = after_asset_name
+        .checked_add(11)
+        .and_then(|window_end| bytes.get(..window_end))
     else {
         return Ok(None);
     };
-    if after_asset_name != next_at {
+    if next_indexed_record_offset(ctx, window, name_at + decal_name::ZERO_RUN_10)?
+        != Some(after_asset_name)
+    {
         return Ok(None);
     }
     let asset_class_tag = asset.retain_class_tag(ctx, "f3d Decal asset class tag")?;
@@ -335,10 +342,22 @@ fn parse_decal_asset_record(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_decal_image_frame;
-    use crate::records::decal::DesignDecalMappingMode;
+    use crate::records::decal::{DesignDecalImage, DesignDecalMappingMode};
     use crate::test_support::write_marked_reference;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    /// Parse the scope prefix at `scope_at` against a stream index built
+    /// outside `ctx`.
+    fn parse_decal_image_frame(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        stream: &str,
+        scope_record_index: u32,
+        scope_at: usize,
+    ) -> Result<Option<DesignDecalImage>, cadmpeg_core::CodecError> {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        super::parse_decal_image_frame(ctx, bytes, &records, stream, scope_record_index, scope_at)
+    }
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -457,23 +476,30 @@ mod tests {
     }
 
     #[test]
-    fn decal_indexed_scanner_refuses_work_limit_through_optional_parse() {
+    fn decal_asset_and_name_searches_refuse_work_limits_through_optional_parse() {
         let (bytes, scope_at) = fixture();
-        let error = crate::test_support::resource_refusal_at(
-            ResourceDimension::WorkUnits,
-            "find F3D indexed record header",
-            0,
-            |ctx| {
-                parse_decal_image_frame(ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
-                    .map(|_| ())
-            },
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::WorkUnits
-                    && refusal.operation == "find F3D indexed record header"
-        ));
+        // Both asset-index headers are tested; the name search reads from the
+        // name prefix to the header that ends the name.
+        for (operation, skip) in [
+            ("scan F3D Decal asset records", 1),
+            ("find F3D indexed record header", 0),
+        ] {
+            let error = crate::test_support::resource_refusal_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                skip,
+                |ctx| {
+                    parse_decal_image_frame(ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
+                        .map(|_| ())
+                },
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(refusal)
+                    if refusal.dimension == ResourceDimension::WorkUnits
+                        && refusal.operation == operation
+            ));
+        }
     }
 
     #[test]
