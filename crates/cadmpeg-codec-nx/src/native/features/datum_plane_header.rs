@@ -4,8 +4,8 @@
 use super::construction_records::OperationInputStores;
 use super::payload_content::block_store;
 use super::{
-    charged_unique_offset_data_block, feature_input_blocks, format_feature_history_id,
-    DatumPlaneBlockLane, FeatureHistory,
+    charged_unique_offset_data_block, format_feature_history_id, DatumPlaneBlockLane,
+    FeatureHistory, FeatureInputBlock,
 };
 use crate::om::compact::CompactIndexAtom;
 use crate::om::datum_plane_header::{
@@ -65,9 +65,9 @@ impl FeatureDatumPlaneHeader {
 pub(in crate::native) fn feature_datum_plane_headers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
+    inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureDatumPlaneHeader>, cadmpeg_core::CodecError> {
     let indexed = history.container().indexed_om_sections(ctx)?;
-    let inputs = feature_input_blocks(ctx, history)?;
     let input_stores = OperationInputStores::new(ctx, &inputs)?;
     let mut headers = Vec::new();
     for history_section in
@@ -545,10 +545,9 @@ mod tests {
         })
         .expect("composed datum plane container");
         let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::feature_datum_plane_headers(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, &container)?,
-            )
+            let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
+            let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
+            super::feature_datum_plane_headers(ctx, &history, &inputs)
         };
         let headers = crate::test_support::with_decode_context(|ctx| decode(ctx))
             .expect("admitted datum plane headers");
@@ -627,10 +626,9 @@ mod tests {
     fn datum_plane_header_route_preserves_header_only_record() {
         let container = datum_plane_container();
         let headers = crate::test_support::with_decode_context(|ctx| {
-            super::feature_datum_plane_headers(
-                ctx,
-                &crate::native::features::FeatureHistory::new(ctx, &container)?,
-            )
+            let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
+            let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
+            super::feature_datum_plane_headers(ctx, &history, &inputs)
         })
         .unwrap();
         assert_eq!(headers.len(), 1);
@@ -650,7 +648,10 @@ mod tests {
             },
             |ctx| {
                 let error = crate::native::features::FeatureHistory::new(ctx, &container)
-                    .and_then(|history| super::feature_datum_plane_headers(ctx, &history))
+                    .and_then(|history| {
+                        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
+                        super::feature_datum_plane_headers(ctx, &history, &inputs)
+                    })
                     .unwrap_err();
                 assert!(
                     matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -671,7 +672,10 @@ mod tests {
             },
             |ctx| {
                 let error = crate::native::features::FeatureHistory::new(ctx, &container)
-                    .and_then(|history| super::feature_datum_plane_headers(ctx, &history))
+                    .and_then(|history| {
+                        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
+                        super::feature_datum_plane_headers(ctx, &history, &inputs)
+                    })
                     .unwrap_err();
                 assert!(
                     matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

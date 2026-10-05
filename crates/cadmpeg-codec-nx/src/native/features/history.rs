@@ -1,7 +1,5 @@
 //! Feature-history sections and their operation records, decoded once.
 
-use std::cell::OnceCell;
-
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
@@ -36,7 +34,6 @@ pub(in crate::native) struct FeatureHistorySection<'c> {
     pub(in crate::native) entry_offset: u64,
     /// Labelled operation records with their header ordinals.
     pub(in crate::native) records: Vec<(usize, OperationRecord<'c>)>,
-    unlabeled: OnceCell<Vec<(usize, UnlabeledOperationRecord<'c>)>>,
 }
 
 impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
@@ -49,7 +46,10 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
         ctx: &'s DecodeContext<'_>,
         container: &'c Container<'a>,
     ) -> Result<Self, CodecError> {
-        let links = super::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?;
+        let mut storage = ctx.reserve_scoped(0, "NX feature history")?;
+        let links = storage.with_storage(|| {
+            super::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)
+        })?;
         let framed = container.om_sections(ctx)?;
         let mut index_storage = ctx.reserve_scoped(0, "NX feature history section index")?;
         let mut starts = Vec::new();
@@ -81,7 +81,6 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
             Ord::cmp,
             "sort NX feature history sections",
         )?;
-        let mut storage = ctx.reserve_scoped(0, "NX feature history")?;
         let mut sections = Vec::new();
         let mut links = links.into_iter();
         for ordinal in ctx.admit_iter(&(0..links.len()), "visit NX feature history links")? {
@@ -109,7 +108,8 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
                 format_args!("{ordinal:010}"),
                 "NX feature history section key",
             )?;
-            let records = section.operation_records_with_label_ordinals(ctx)?;
+            let records =
+                storage.with_storage(|| section.operation_records_with_label_ordinals(ctx))?;
             ctx.push_scoped_vec(
                 &mut storage,
                 &mut sections,
@@ -121,7 +121,6 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
                     section,
                     entry_offset,
                     records,
-                    unlabeled: OnceCell::new(),
                 },
                 "NX feature history sections",
             )?;
@@ -143,20 +142,21 @@ impl<'c, 'a, 's> FeatureHistory<'c, 'a, 's> {
 }
 
 impl<'c> FeatureHistorySection<'c> {
-    /// Operation records without a complete label frame, decoded on first use.
-    pub(in crate::native) fn unlabeled_records(
+    /// Operation records without a complete label frame, held under the
+    /// returned scoped reservation.
+    pub(in crate::native) fn unlabeled_records<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<&[(usize, UnlabeledOperationRecord<'c>)], CodecError> {
-        if self.unlabeled.get().is_none() {
-            let records = self
-                .section
-                .unlabeled_operation_records_with_ordinals(ctx)?;
-            drop(self.unlabeled.set(records));
-        }
-        self.unlabeled
-            .get()
-            .map(Vec::as_slice)
-            .ok_or_else(|| ctx.refuse_codec_limit("NX unlabeled operation records", 0, 1))
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<
+        (
+            Vec<(usize, UnlabeledOperationRecord<'c>)>,
+            ScopedReservation<'ctx>,
+        ),
+        CodecError,
+    > {
+        let mut storage = ctx.reserve_scoped(0, "NX unlabeled operation records")?;
+        let records =
+            storage.with_storage(|| self.section.unlabeled_operation_records_with_ordinals(ctx))?;
+        Ok((records, storage))
     }
 }

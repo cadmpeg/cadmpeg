@@ -1781,7 +1781,21 @@ fn draft_index_route_refuses_retained_limit() {
 
 #[test]
 fn draft_index_route_refuses_scoped_limit() {
-    let error = draft_index_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    let container = draft_index_container();
+    // The history is built under its own context, so the refusal comes from
+    // the route's own scoped storage rather than from building the history.
+    let error = crate::test_support::with_decode_context(|history_ctx| {
+        let history = crate::native::features::FeatureHistory::new(history_ctx, &container)?;
+        Ok::<_, cadmpeg_core::CodecError>(crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_materialized_bytes = 0,
+            |ctx| {
+                feature_draft_construction_index_lanes(ctx, &history)
+                    .expect_err("draft index lane scoped limit")
+            },
+        ))
+    })
+    .expect("draft index history");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)

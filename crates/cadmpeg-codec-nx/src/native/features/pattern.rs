@@ -11,7 +11,7 @@ use crate::container::Container;
 
 use super::joined_payload::JoinedPayload;
 use super::payload_content::{
-    copy_block_ids, malformed_reason, operation_key, shared_block_store, FeaturePayloadContent,
+    copy_block_ids, operation_key, shared_block_store, FeaturePayloadContent,
 };
 use super::FeatureConstructionOwner;
 use super::FeatureConstructionPayload;
@@ -1207,9 +1207,7 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             let id = format_feature_child_id(ctx, &payload.id, "-string-", ordinal)?;
             let value = ctx
                 .copy_retained_text(value.value.as_str(), "NX pattern construction string value")?;
-            let value = PrintableString::new(value).map_err(|error| {
-                malformed_reason(ctx, error, "NX pattern construction string error")
-            })?;
+            let value = PrintableString::new(value).map_err(cadmpeg_core::CodecError::malformed)?;
             let operation_label = ctx.copy_retained_text(
                 &payload.operation_label,
                 "NX pattern construction string label",

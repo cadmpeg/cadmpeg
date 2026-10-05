@@ -118,9 +118,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
                 },
             ],
             cadmpeg_ir::hash::digest::Sha256Digest::digest(b"00"),
-            &crate::native::features::payload_content::ContextFreeFeaturePayloadBlockAdmission,
         )
-        .unwrap()
         .unwrap(),
     };
     let name = |id: &str, ordinal, offset| FeaturePayloadName {

@@ -4,8 +4,7 @@
 use super::joined_payload::JoinedPayload;
 use super::payload_content::FeaturePayloadBlock;
 use super::payload_content::{
-    block_store, blocks_in_store, copy_block_ids, malformed_reason, operation_key,
-    FeaturePayloadContent,
+    block_store, blocks_in_store, copy_block_ids, operation_key, FeaturePayloadContent,
 };
 use super::FeatureConstructionOwner;
 use super::FeatureConstructionPayload;
@@ -671,11 +670,12 @@ pub(in crate::native) fn feature_draft_construction_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureDraftConstructionReference>, cadmpeg_core::CodecError> {
-    let references = resolved_feature_payload_references(ctx, history, |record, base| {
-        crate::om::draft_references::draft_feature_payload_references(record)
-            .and_then(|field| field.relocate(base))
-            .map(|field| field.references().into_iter().collect())
-    })?;
+    let (references, _references_storage) =
+        resolved_feature_payload_references(ctx, history, |record, base| {
+            crate::om::draft_references::draft_feature_payload_references(record)
+                .and_then(|field| field.relocate(base))
+                .map(|field| field.references().into_iter().collect())
+        })?;
     let mut output = Vec::new();
     let mut references = references.into_iter();
     for _ in ctx.admit_iter(
@@ -1111,9 +1111,7 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             let value = PrintableString::new(
                 ctx.copy_retained_text(value.value.as_str(), "NX draft construction string")?,
             )
-            .map_err(|reason| {
-                malformed_reason(ctx, reason, "NX draft construction string error")
-            })?;
+            .map_err(cadmpeg_core::CodecError::malformed)?;
             ctx.reserve_vec(&mut strings, 1, "NX draft construction graph strings")?;
             strings.push(FeatureDraftConstructionGraphString {
                 id,

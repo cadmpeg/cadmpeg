@@ -4090,10 +4090,10 @@ pub(super) fn feature_unlabeled_operation_records(
     {
         let section_key = history_section.key.as_str();
         let entry_offset = history_section.entry_offset;
-        for &(operation_ordinal, record) in ctx.admit_iter(
-            history_section.unlabeled_records(ctx)?,
-            "visit NX unlabeled operation records",
-        )? {
+        let (unlabeled, _unlabeled_storage) = history_section.unlabeled_records(ctx)?;
+        for &(operation_ordinal, record) in
+            ctx.admit_iter(&unlabeled, "visit NX unlabeled operation records")?
+        {
             let id = format_feature_history_id(
                 ctx,
                 "unlabeled-operation-record",
@@ -4131,10 +4131,10 @@ pub(super) fn feature_unlabeled_operation_body_writes(
     {
         let section_key = history_section.key.as_str();
         let entry_offset = history_section.entry_offset;
-        for &(operation_ordinal, record) in ctx.admit_iter(
-            history_section.unlabeled_records(ctx)?,
-            "visit NX unlabeled operation records",
-        )? {
+        let (unlabeled, _unlabeled_storage) = history_section.unlabeled_records(ctx)?;
+        for &(operation_ordinal, record) in
+            ctx.admit_iter(&unlabeled, "visit NX unlabeled operation records")?
+        {
             let decoded = crate::om::unlabeled_operation_body_write_frames(ctx, record)?;
             let mut decoded = decoded.into_iter();
             for ordinal in ctx.admit_iter(
@@ -5706,7 +5706,7 @@ pub(super) fn feature_input_blocks(
     {
         let section_key = history_section.key.as_str();
         let entry_offset = history_section.entry_offset;
-        'records: for &(operation_ordinal, record) in ctx.admit_iter(
+        for &(operation_ordinal, record) in ctx.admit_iter(
             &history_section.records,
             "visit NX feature operation records",
         )? {
@@ -5718,14 +5718,14 @@ pub(super) fn feature_input_blocks(
                 let Some(data_block) =
                     charged_unique_offset_data_block(ctx, &indexed, object.value())?
                 else {
-                    continue 'records;
+                    continue;
                 };
                 let Some(source_offset) =
                     u64::try_from(label.header.object_offsets()[input_slot.index()])
                         .ok()
                         .and_then(|offset| entry_offset.checked_add(offset))
                 else {
-                    continue 'records;
+                    continue;
                 };
                 ctx.reserve_vec(&mut inputs, 1, "NX feature input blocks")?;
                 inputs.push(FeatureInputBlock {
@@ -6290,9 +6290,9 @@ pub(super) fn feature_input_column_targets(
 pub(super) fn feature_datum_csys_constructions(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
+    inputs: &[FeatureInputBlock],
 ) -> Result<Vec<FeatureDatumCsysConstruction>, cadmpeg_core::CodecError> {
     let indexed = history.container().indexed_om_sections(ctx)?;
-    let inputs = feature_input_blocks(ctx, history)?;
     let (inputs_by_operation, _inputs_storage) = inputs_by_operation_label(ctx, &inputs)?;
     let mut constructions = Vec::new();
     for history_section in
