@@ -95,7 +95,7 @@ fn parameter_limit_error(
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
             .expect("empty lane fits root input limit");
-    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
+    enrich_history_parameters(&ctx, &mut histories, std::slice::from_ref(&lane), true)
         .expect_err("parameter projection must refuse the selected limit")
 }
 
@@ -404,7 +404,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("parameter lane fits service policy");
-    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
+    enrich_history_parameters(&ctx, &mut histories, std::slice::from_ref(&lane), true)
         .expect("parameter enrichment succeeds");
     assert_eq!(
         histories[0].features[0].parameters["D1"],
