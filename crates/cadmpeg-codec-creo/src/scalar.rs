@@ -2429,7 +2429,8 @@ mod tests {
     fn duplicate_scalar_image_hashing_refuses_after_the_first_image() {
         let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
         // Discovery and first-image hashing precede the first image's hash growth, both
-        // hash-key passes and one four-pass tail node insertion. The growth charge is
+        // hash-key passes and the first tail insertion, which shifts its node once and
+        // pays two passes for the node it adds to the tree's node bound. The growth charge is
         // the four-bucket table bound: buckets, 15 bytes of group padding, one control
         // byte per bucket and the 16-byte trailer.
         let hash_growth =
@@ -2437,7 +2438,7 @@ mod tests {
         let node_bytes = 11 * (std::mem::size_of::<[u8; 6]>() + std::mem::size_of::<Option<u8>>())
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<usize>();
-        let used = 32 + hash_growth + 2 * 8 + 4 * cadmpeg_core::decode::u64_from_index(node_bytes);
+        let used = 32 + hash_growth + 2 * 8 + 3 * cadmpeg_core::decode::u64_from_index(node_bytes);
         let error = with_recursive_limits(&images, 128, used + 16 - 1, |ctx| {
             ScalarCache::from_section_checked(ctx, &images)
         })
