@@ -18,8 +18,9 @@ fn identity_cache_node_work() -> u64 {
         (std::mem::size_of::<String>() + std::mem::size_of::<crate::ids::Identity>()) * 11
             + 16 * std::mem::size_of::<usize>()
             + 2 * map_alignment;
-    // First-node mutation work is four passes over each B-tree node byte bound.
-    cadmpeg_core::decode::u64_from_index(4 * (set_node_bytes + map_node_bytes))
+    // A first insertion shifts its node once and pays two passes for the node
+    // it adds to the tree's node bound: three passes over each node byte bound.
+    cadmpeg_core::decode::u64_from_index(3 * (set_node_bytes + map_node_bytes))
 }
 
 #[test]

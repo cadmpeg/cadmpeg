@@ -206,7 +206,7 @@ impl DecodeContext<'_> {
         Q: DecodeCost + Ord + ?Sized,
     {
         self.charge_key(key, Self::tree_comparisons(values.len()), operation)?;
-        self.admit_tree_mutation::<K, V>(values.len(), operation)?;
+        self.admit_tree_removal_work::<K, V>(values.len(), operation)?;
         Ok(values.remove(key))
     }
     /// Admits key work before `BTreeSet::contains`.
@@ -261,7 +261,7 @@ impl DecodeContext<'_> {
         Q: DecodeCost + Ord + ?Sized,
     {
         self.charge_key(key, Self::tree_comparisons(values.len()), operation)?;
-        self.admit_tree_mutation::<K, ()>(values.len(), operation)?;
+        self.admit_tree_removal_work::<K, ()>(values.len(), operation)?;
         Ok(values.remove(key))
     }
     /// Admits the query key before borrowing the stored key and value.
@@ -320,7 +320,7 @@ impl DecodeContext<'_> {
         Q: DecodeCost + Ord + ?Sized,
     {
         self.charge_key(key, Self::tree_comparisons(values.len()), operation)?;
-        self.admit_tree_mutation::<K, V>(values.len(), operation)?;
+        self.admit_tree_removal_work::<K, V>(values.len(), operation)?;
         Ok(values.remove_entry(key))
     }
     /// Tests set separation through admitted traversal and complete-key lookup.
