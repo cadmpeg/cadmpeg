@@ -442,12 +442,11 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         if radius <= EPS_RADIUS_NONZERO * scale {
             continue;
         }
-        let duplicate = ctx
-            .admit_iter(
-                &*parameters,
-                "creo coaxial cone section parameter candidates",
-            )?
-            .any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
+        let duplicate = ctx.any_by(
+            &*parameters,
+            |known| Ok((parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale),
+            "creo coaxial cone section parameter candidates",
+        )?;
         if !duplicate {
             parameters.push(parameter);
         }
@@ -758,9 +757,11 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
             if radius <= EPS_RADIUS_NONZERO * scale {
                 continue;
             }
-            let duplicate = ctx
-                .admit_iter(&*parameters, "creo coaxial cone torus parameter candidates")?
-                .any(|known| (parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale);
+            let duplicate = ctx.any_by(
+                &*parameters,
+                |known| Ok((parameter - *known).abs() <= EPS_PARAMETER_DEDUP * scale),
+                "creo coaxial cone torus parameter candidates",
+            )?;
             if !duplicate {
                 parameters.push(parameter);
             }

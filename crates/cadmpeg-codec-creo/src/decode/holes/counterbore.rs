@@ -452,12 +452,13 @@ pub(in crate::decode) fn counterbore_cylinder_sources(
             continue;
         };
         if row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder {
-            ctx.admit_btree_entry(
-                &cylinders_by_source,
-                &source_id,
-                "creo counterbore source nodes",
-            )?;
-            let ids = cylinders_by_source.entry(source_id).or_default();
+            let ids = ctx
+                .entry_btree_map(
+                    &mut cylinders_by_source,
+                    source_id,
+                    "creo counterbore source nodes",
+                )?
+                .or_default();
             ctx.reserve_vec(ids, 1, "creo counterbore source cylinder IDs")?;
             ids.push(entry.entity_id);
         }

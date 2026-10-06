@@ -60,24 +60,21 @@ fn native_surface_namespace(
     scan: &ContainerScan,
     surface_id: u32,
 ) -> Result<(cadmpeg_ir::ids::IdentityNamespace, &'static str), cadmpeg_core::CodecError> {
-    let visible_present = ctx
-        .admit_iter(
-            &*scan.surfaces.rows,
-            "creo visible surface namespace search",
-        )?
-        .any(|row| row.id == surface_id);
-    let nonvisible_present = ctx
-        .admit_iter(
-            &*scan.surfaces.nonvisible_rows,
-            "creo nonvisible surface namespace search",
-        )?
-        .any(|row| row.id == surface_id);
-    let active_datum_present = ctx
-        .admit_iter(
-            &scan.planes.datum_cylinders,
-            "creo datum surface namespace search",
-        )?
-        .any(|cylinder| cylinder.id == surface_id);
+    let visible_present = ctx.any_by(
+        &*scan.surfaces.rows,
+        |row| Ok(row.id == surface_id),
+        "creo visible surface namespace search",
+    )?;
+    let nonvisible_present = ctx.any_by(
+        &*scan.surfaces.nonvisible_rows,
+        |row| Ok(row.id == surface_id),
+        "creo nonvisible surface namespace search",
+    )?;
+    let active_datum_present = ctx.any_by(
+        &scan.planes.datum_cylinders,
+        |cylinder| Ok(cylinder.id == surface_id),
+        "creo datum surface namespace search",
+    )?;
     Ok(if visible_present {
         (
             crate::identity::VISIBGEOM_SURFACE,
@@ -656,21 +653,22 @@ pub(super) fn fc05_cap_pair_model_frame(
         Sign::Positive
     };
     let axis_origin = first_cap.origin[axis_index.index()] - axis_sign.scale() * first_ordinate;
-    if ctx
-        .admit_iter(&pair.cap_edges, "creo cap pair edge agreement traversal")?
-        .any(|edge| {
+    if ctx.any_by(
+        &pair.cap_edges,
+        |edge| {
             let Some(plane) =
                 crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
             else {
-                return true;
+                return Ok(true);
             };
-            (plane.origin[axis_index.index()]
+            Ok((plane.origin[axis_index.index()]
                 - axis_sign.scale() * edge.cap_ordinate_row_frame
                 - axis_origin)
                 .abs()
-                > EPS_FC05_CAP_FRAME
-        })
-    {
+                > EPS_FC05_CAP_FRAME)
+        },
+        "creo cap pair edge agreement traversal",
+    )? {
         // A cap pair whose row-frame and model-space spans do not agree does
         // not establish a unit parameter-axis transform. Retain the circles
         // for their independent carrier evidence, but do not invent a chart.
@@ -734,13 +732,11 @@ pub(super) fn transfer_fc05_cap_circles(
             continue;
         };
         let [first, second] = circle.center_row_frame;
-        let pair_frame = match ctx
-            .admit_iter(
-                &scan.curves.fc05_cylinder_cap_pairs,
-                "creo circle cap pair search",
-            )?
-            .find(|pair| pair.surface_id == cylinder_id)
-        {
+        let pair_frame = match ctx.find_by(
+            &scan.curves.fc05_cylinder_cap_pairs,
+            |pair| Ok(pair.surface_id == cylinder_id),
+            "creo circle cap pair search",
+        )? {
             Some(pair) => fc05_cap_pair_model_frame(ctx, scan, pair)?,
             None => None,
         };

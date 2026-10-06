@@ -202,12 +202,12 @@ fn transfer_reference_lines(
     let mut line3d_id_counts = BTreeMap::<u32, usize>::new();
     for line in ctx.admit_iter(&scan.references.lines, "creo reference line traversal")? {
         if let crate::reference::ReferenceLineKind::Line3d { entity_id, .. } = line.kind() {
-            ctx.admit_btree_entry(
-                &line3d_id_counts,
-                entity_id,
+            *ctx.entry_btree_map(
+                &mut line3d_id_counts,
+                *entity_id,
                 "creo reference line3d count nodes",
-            )?;
-            *line3d_id_counts.entry(*entity_id).or_default() += 1;
+            )?
+            .or_default() += 1;
         }
     }
     for line in ctx.admit_iter(&scan.references.lines, "creo reference line traversal")? {
@@ -305,12 +305,12 @@ fn transfer_reference_circles(
 ) -> Result<(), CodecError> {
     let mut circle_id_counts = BTreeMap::<u32, usize>::new();
     for circle in ctx.admit_iter(&scan.references.circles, "creo reference circle traversal")? {
-        ctx.admit_btree_entry(
-            &circle_id_counts,
-            &circle.entity_id,
+        *ctx.entry_btree_map(
+            &mut circle_id_counts,
+            circle.entity_id,
             "creo reference circle count nodes",
-        )?;
-        *circle_id_counts.entry(circle.entity_id).or_default() += 1;
+        )?
+        .or_default() += 1;
     }
     for circle in ctx.admit_iter(&scan.references.circles, "creo reference circle traversal")? {
         let start: [f64; 3] = circle.start().get().into();
@@ -788,18 +788,17 @@ fn transfer_placed_plane_surfaces_into_ir(
         if already_transferred {
             continue;
         }
-        let tag = if ctx
-            .admit_iter(
-                &scan.planes.positional_frames,
-                "creo positional plane tag search",
-            )?
-            .any(|plane| plane.surface_id == surface_id && plane.offset == offset)
-        {
+        let tag = if ctx.any_by(
+            &scan.planes.positional_frames,
+            |plane| Ok(plane.surface_id == surface_id && plane.offset == offset),
+            "creo positional plane tag search",
+        )? {
             "plane_positional_corner_frame"
-        } else if ctx
-            .admit_iter(&scan.planes.outlines, "creo outline plane tag search")?
-            .any(|outline| outline.surface_id == surface_id && outline.offset == offset)
-        {
+        } else if ctx.any_by(
+            &scan.planes.outlines,
+            |outline| Ok(outline.surface_id == surface_id && outline.offset == offset),
+            "creo outline plane tag search",
+        )? {
             "plane_outline_held_coordinate"
         } else {
             "plane_local_system"

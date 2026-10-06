@@ -754,10 +754,11 @@ fn admitted_face_components<'a>(
         &scan.topology.face_components,
         "creo admitted face components face components traversal",
     )? {
-        if ctx
-            .admit_iter(component.face_ids(), "creo B-rep component face search")?
-            .any(|face_id| eligible_face_ids.contains(face_id))
-        {
+        if ctx.any_by(
+            component.face_ids(),
+            |face_id| Ok(eligible_face_ids.contains(face_id)),
+            "creo B-rep component face search",
+        )? {
             ctx.reserve_vec(&mut admitted, 1, "creo B-rep admitted component refs")?;
             admitted.push(component);
         }
@@ -781,12 +782,11 @@ fn is_neutral_face_reference(
     Ok(!matches!(
         scan.framing.layout,
         crate::container::Layout::LegacyAscii(_)
-    ) || ctx
-        .admit_iter(
-            &*scan.surfaces.rows,
-            "creo neutral face reference surface search",
-        )?
-        .any(|row| row.id == face_id))
+    ) || ctx.any_by(
+        &*scan.surfaces.rows,
+        |row| Ok(row.id == face_id),
+        "creo neutral face reference surface search",
+    )?)
 }
 
 fn merge_body_components(
@@ -906,14 +906,15 @@ fn split_neutral_component_shells(
             .admit_iter(&shell_specs, "creo B-rep wire shell search")?
             .enumerate()
         {
-            if ctx
-                .admit_iter(&shell.faces, "creo B-rep wire shell face search")?
-                .any(|face_id| {
-                    curve_vertices
+            if ctx.any_by(
+                &shell.faces,
+                |face_id| {
+                    Ok(curve_vertices
                         .iter()
-                        .any(|vertex_id| face_vertices[face_id].contains(vertex_id))
-                })
-            {
+                        .any(|vertex_id| face_vertices[face_id].contains(vertex_id)))
+                },
+                "creo B-rep wire shell face search",
+            )? {
                 if matching_shell.is_some() {
                     matching_shell = None;
                     break;
@@ -1157,24 +1158,27 @@ fn ordered_two_edge_circle_loops<'a>(
         return Ok(None);
     }
     let reference = circle_loops[0];
-    if ctx
-        .admit_iter(&circle_loops, "creo B-rep circle loop agreement")?
-        .any(|circle| {
-            let center = circle.center.get();
-            let center_scale = reference
-                .radius
-                .max(circle.radius)
-                .max(1.0)
-                .max(center.x.abs())
-                .max(center.y.abs())
-                .max(center.z.abs());
-            let distance_from_surface = center.vector_from(origin).dot(*normal).abs();
-            !points_are_geometrically_coincident(circle.center, reference.center)
-                || !vectors_are_parallel(circle.axis, reference.axis)
-                || !vectors_are_parallel(circle.axis, *normal)
-                || distance_from_surface > EPS_GEOMETRY_AGREE * normal_length * center_scale
-        })
-    {
+    if ctx.any_by(
+        &circle_loops,
+        |circle| {
+            Ok({
+                let center = circle.center.get();
+                let center_scale = reference
+                    .radius
+                    .max(circle.radius)
+                    .max(1.0)
+                    .max(center.x.abs())
+                    .max(center.y.abs())
+                    .max(center.z.abs());
+                let distance_from_surface = center.vector_from(origin).dot(*normal).abs();
+                !points_are_geometrically_coincident(circle.center, reference.center)
+                    || !vectors_are_parallel(circle.axis, reference.axis)
+                    || !vectors_are_parallel(circle.axis, *normal)
+                    || distance_from_surface > EPS_GEOMETRY_AGREE * normal_length * center_scale
+            })
+        },
+        "creo B-rep circle loop agreement",
+    )? {
         return Ok(None);
     }
     let Some(center_uv) =
@@ -1216,13 +1220,11 @@ fn ordered_two_edge_circle_loops<'a>(
         .admit_iter(&circle_loops, "creo B-rep circle radius traversal")?
         .enumerate()
     {
-        if ctx
-            .admit_iter(
-                &circle_loops[index + 1..],
-                "creo B-rep circle radius duplicate search",
-            )?
-            .any(|second| scalar_values_agree(first.radius, second.radius))
-        {
+        if ctx.any_by(
+            &circle_loops[index + 1..],
+            |second| Ok(scalar_values_agree(first.radius, second.radius)),
+            "creo B-rep circle radius duplicate search",
+        )? {
             return Ok(None);
         }
     }
@@ -1294,12 +1296,16 @@ fn native_parameter_loop_polygon(
     if segments.len() < 3
         && (segments.len() != 2
             || lp.half_edges()[0].curve_id == lp.half_edges()[1].curve_id
-            || ctx
-                .admit_iter(lp.half_edges(), "creo B-rep nonlinear half edge search")?
-                .any(|half_edge| !typed_nonlinear_curve_ids.contains(&half_edge.curve_id))
-            || ctx
-                .admit_iter(&segments, "creo B-rep parameter segment search")?
-                .any(|segment| parameter_points_agree(segment[0], segment[1])))
+            || ctx.any_by(
+                lp.half_edges(),
+                |half_edge| Ok(!typed_nonlinear_curve_ids.contains(&half_edge.curve_id)),
+                "creo B-rep nonlinear half edge search",
+            )?
+            || ctx.any_by(
+                &segments,
+                |segment| Ok(parameter_points_agree(segment[0], segment[1])),
+                "creo B-rep parameter segment search",
+            )?)
         || 'coordinates: {
             for segment in ctx.admit_iter(&segments, "creo B-rep parameter coordinate search")? {
                 for point in ctx.admit_iter(segment, "creo B-rep parameter point search")? {
@@ -1744,10 +1750,11 @@ impl BrepEligibleFaceIndexes {
             let mut found = false;
             let mut all_single_edge = true;
             for lp in ctx.admit_iter(&eligible_loops, "creo B-rep single edge loop traversal")? {
-                if ctx
-                    .admit_iter(lp.half_edges(), "creo B-rep single edge curve search")?
-                    .any(|half_edge| half_edge.curve_id == *curve_id)
-                {
+                if ctx.any_by(
+                    lp.half_edges(),
+                    |half_edge| Ok(half_edge.curve_id == *curve_id),
+                    "creo B-rep single edge curve search",
+                )? {
                     found = true;
                     if lp.half_edges().len() != 1 {
                         all_single_edge = false;
@@ -1842,10 +1849,11 @@ impl BrepBodyIndexes {
                     let Some(faces) = curve_faces.get(&curve_id) else {
                         continue;
                     };
-                    if !ctx
-                        .admit_iter(faces, "creo B-rep neutral curve face search")?
-                        .any(|face| eligible_face_ids.contains(face))
-                    {
+                    if !ctx.any_by(
+                        faces,
+                        |face| Ok(eligible_face_ids.contains(face)),
+                        "creo B-rep neutral curve face search",
+                    )? {
                         continue;
                     }
                 }
@@ -2483,13 +2491,11 @@ pub(in super::super) fn transfer_native_brep(
         };
         let mut has_unresolved_boundary_vertices = false;
         for lp in ctx.admit_iter(loops, "creo B-rep unresolved boundary loop traversal")? {
-            if ctx
-                .admit_iter(
-                    lp.half_edges(),
-                    "creo B-rep unresolved boundary edge search",
-                )?
-                .any(|half_edge| !edge_vertices.contains_key(&half_edge.curve_id))
-            {
+            if ctx.any_by(
+                lp.half_edges(),
+                |half_edge| Ok(!edge_vertices.contains_key(&half_edge.curve_id)),
+                "creo B-rep unresolved boundary edge search",
+            )? {
                 has_unresolved_boundary_vertices = true;
                 break;
             }
@@ -2510,14 +2516,15 @@ pub(in super::super) fn transfer_native_brep(
         }
         let mut has_ambiguous_boundary_curve = false;
         for lp in ctx.admit_iter(loops, "creo B-rep ambiguous boundary loop traversal")? {
-            if ctx
-                .admit_iter(lp.half_edges(), "creo B-rep ambiguous boundary edge search")?
-                .any(|half_edge| {
-                    model_curve_counts
+            if ctx.any_by(
+                lp.half_edges(),
+                |half_edge| {
+                    Ok(model_curve_counts
                         .get(&half_edge.curve_id)
-                        .is_some_and(|count| *count > 1)
-                })
-            {
+                        .is_some_and(|count| *count > 1))
+                },
+                "creo B-rep ambiguous boundary edge search",
+            )? {
                 has_ambiguous_boundary_curve = true;
                 break;
             }
@@ -2643,16 +2650,17 @@ pub(in super::super) fn transfer_native_brep(
     for (vertex_id, position) in
         ctx.admit_iter(solved_vertices, "creo B-rep solved vertex traversal")?
     {
-        if ctx
-            .admit_iter(&ir.model.points, "creo B-rep model point search")?
-            .any(|item| {
-                crate::identity::matches_numbered_identity(
+        if ctx.any_by(
+            &ir.model.points,
+            |item| {
+                Ok(crate::identity::matches_numbered_identity(
                     item.id.as_str(),
                     "creo:visibgeom:point#",
                     *vertex_id,
-                )
-            })
-        {
+                ))
+            },
+            "creo B-rep model point search",
+        )? {
             continue;
         }
         let point_id = crate::identity::compose_checked::<PointId>(
@@ -2726,16 +2734,17 @@ pub(in super::super) fn transfer_native_brep(
         .admit_iter(&used_vertices, "creo B-rep used vertex traversal")?
         .copied()
     {
-        if ctx
-            .admit_iter(&ir.model.vertices, "creo B-rep model vertex search")?
-            .any(|item| {
-                crate::identity::matches_numbered_identity(
+        if ctx.any_by(
+            &ir.model.vertices,
+            |item| {
+                Ok(crate::identity::matches_numbered_identity(
                     item.id.as_str(),
                     "creo:visibgeom:vertex#",
                     vertex_id,
-                )
-            })
-        {
+                ))
+            },
+            "creo B-rep model vertex search",
+        )? {
             continue;
         }
         let vertex = crate::identity::compose_checked::<VertexId>(
@@ -3141,12 +3150,11 @@ pub(in super::super) fn transfer_native_brep(
                 native_loops.len(),
             )?;
             let visible_row = crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id);
-            let active_datum = ctx
-                .admit_iter(
-                    &scan.planes.datum_cylinders,
-                    "creo B-rep active datum search",
-                )?
-                .find(|datum| datum.id == *face_id);
+            let active_datum = ctx.find_by(
+                &scan.planes.datum_cylinders,
+                |datum| Ok(datum.id == *face_id),
+                "creo B-rep active datum search",
+            )?;
             let face_offset = visible_row
                 .map(|row| row.offset)
                 .or_else(|| active_datum.map(|datum| datum.offset_in_payload))
@@ -3680,9 +3688,12 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 &id,
                 "VisibGeom",
                 cadmpeg_core::decode::u64_from_index(
-                    ctx.admit_iter(&scan.curves.fc05_circles, "creo B-rep cap circle search")?
-                        .find(|circle| circle.curve_id == *curve_id)
-                        .map_or(pair.offset, |circle| circle.offset),
+                    ctx.find_by(
+                        &scan.curves.fc05_circles,
+                        |circle| Ok(circle.curve_id == *curve_id),
+                        "creo B-rep cap circle search",
+                    )?
+                    .map_or(pair.offset, |circle| circle.offset),
                 ),
                 "fc05_cap_circle",
                 Exactness::Derived,

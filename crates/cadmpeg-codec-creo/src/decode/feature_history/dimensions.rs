@@ -314,20 +314,21 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     let mut local_counts = BTreeMap::<(&SketchId, u32), usize>::new();
     for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout keys")? {
         let key = (sketch, *external_id);
-        ctx.admit_btree_entry(&local_counts, &key, "creo dimension layout count nodes")?;
-        *local_counts.entry(key).or_insert(0) += 1;
+        *ctx.entry_btree_map(&mut local_counts, key, "creo dimension layout count nodes")?
+            .or_insert(0) += 1;
     }
     let mut next_ordinals = BTreeMap::<&SketchId, u32>::new();
     let mut local_occurrences = BTreeMap::<(&SketchId, u32), usize>::new();
     let mut layout = Vec::new();
     ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")?;
     for (sketch, external_id) in ctx.admit_iter(keys, "creo dimension layout entries")? {
-        ctx.admit_btree_entry(
-            &next_ordinals,
-            &sketch,
-            "creo dimension layout ordinal nodes",
-        )?;
-        let ordinal = next_ordinals.entry(sketch).or_default();
+        let ordinal = ctx
+            .entry_btree_map(
+                &mut next_ordinals,
+                sketch,
+                "creo dimension layout ordinal nodes",
+            )?
+            .or_default();
         let assigned = *ordinal;
         let Some(next) = ordinal.checked_add(1) else {
             return Ok(None);
@@ -335,12 +336,13 @@ pub(in super::super) fn feature_dimension_parameter_layout(
         *ordinal = next;
         let key = (sketch, *external_id);
         let occurrence = if local_counts[&key] > 1 {
-            ctx.admit_btree_entry(
-                &local_occurrences,
-                &key,
-                "creo dimension layout occurrence nodes",
-            )?;
-            let next = local_occurrences.entry(key).or_insert(0);
+            let next = ctx
+                .entry_btree_map(
+                    &mut local_occurrences,
+                    key,
+                    "creo dimension layout occurrence nodes",
+                )?
+                .or_insert(0);
             let assigned = *next;
             *next += 1;
             Some(assigned)
@@ -448,12 +450,12 @@ pub(in super::super) fn transfer_feature_dimensions(
     };
     let mut unique_external_ids = BTreeMap::new();
     for (_, external_id) in ctx.admit_iter(&keys, "creo unique dimension external IDs")? {
-        ctx.admit_btree_entry(
-            &unique_external_ids,
-            external_id,
+        *ctx.entry_btree_map(
+            &mut unique_external_ids,
+            *external_id,
             "creo unique dimension external ID nodes",
-        )?;
-        *unique_external_ids.entry(*external_id).or_insert(0usize) += 1;
+        )?
+        .or_insert(0usize) += 1;
     }
     let transferred = layout.len();
     let mut relation_parameters = BTreeMap::new();

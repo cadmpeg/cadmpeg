@@ -545,15 +545,17 @@ pub(in super::super) fn thicken_plane_offset(
         return Ok(None);
     };
     let tolerance = EPS_OFFSET_AGREEMENT * magnitude.max(1.0);
-    let side = if ctx
-        .admit_iter(&offsets, "creo thicken plane offsets")?
-        .all(|offset| (*offset - magnitude).abs() <= tolerance)
-    {
+    let side = if ctx.all_by(
+        &offsets,
+        |offset| Ok((*offset - magnitude).abs() <= tolerance),
+        "creo thicken plane offsets",
+    )? {
         ThickenSide::Forward
-    } else if ctx
-        .admit_iter(&offsets, "creo thicken plane offsets")?
-        .all(|offset| (*offset + magnitude).abs() <= tolerance)
-    {
+    } else if ctx.all_by(
+        &offsets,
+        |offset| Ok((*offset + magnitude).abs() <= tolerance),
+        "creo thicken plane offsets",
+    )? {
         ThickenSide::Reverse
     } else {
         return Ok(None);

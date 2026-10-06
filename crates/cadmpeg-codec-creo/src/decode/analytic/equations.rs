@@ -553,10 +553,11 @@ fn polynomial_is_exactly_zero(
     coefficients: &[BoundedCoefficient],
     parameter: f64,
 ) -> Result<bool, CodecError> {
-    if ctx
-        .admit_iter(coefficients, "creo exact polynomial coefficient bounds")?
-        .any(|coefficient| coefficient.bound != 0.0)
-    {
+    if ctx.any_by(
+        coefficients,
+        |coefficient| Ok(coefficient.bound != 0.0),
+        "creo exact polynomial coefficient bounds",
+    )? {
         return Ok(false);
     }
     let mut value = 0.0;
@@ -1437,14 +1438,16 @@ pub(super) fn common_plane_conic_parameters(
                 <= plane_conic_residual_bound(first, refined)
                 && plane_conic_value(second, candidate[0], candidate[1]).abs()
                     <= plane_conic_residual_bound(second, refined)
-                && !ctx
-                    .admit_iter(&parameters, "creo unique conic intersection parameters")?
-                    .any(|known| {
-                        (known[0] - candidate[0])
+                && !ctx.any_by(
+                    &parameters,
+                    |known| {
+                        Ok((known[0] - candidate[0])
                             .abs()
                             .max((known[1] - candidate[1]).abs())
-                            <= EPS_PARAM_UNIQUE * scale
-                    })
+                            <= EPS_PARAM_UNIQUE * scale)
+                    },
+                    "creo unique conic intersection parameters",
+                )?
             {
                 ctx.reserve_vec(&mut parameters, 1, "creo conic intersection parameters")?;
                 parameters.push(candidate);

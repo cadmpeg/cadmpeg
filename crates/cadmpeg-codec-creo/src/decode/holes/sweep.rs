@@ -123,10 +123,11 @@ fn has_exact_materialized_surface_roster(
             table.unique_surface_ids(),
             id,
             "creo surface roster membership",
-        )? || ctx
-            .admit_iter(&expected_ids[..index], "creo surface roster duplicate scan")?
-            .any(|previous| previous == id)
-        {
+        )? || ctx.any_by(
+            &expected_ids[..index],
+            |previous| Ok(previous == id),
+            "creo surface roster duplicate scan",
+        )? {
             return Ok(false);
         }
     }

@@ -77,10 +77,11 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
             continue;
         }
         let point_ids = segment.point_ids();
-        if !ctx
-            .admit_iter(&point_ids, "creo saved segment point IDs")?
-            .all(|point_id| !ambiguous_point_ids.contains(point_id))
-        {
+        if !ctx.all_by(
+            &point_ids,
+            |point_id| Ok(!ambiguous_point_ids.contains(point_id)),
+            "creo saved segment point IDs",
+        )? {
             continue;
         }
         let Some(points) = saved_section_segment_point_coordinates(ctx, definition, segment)?
@@ -229,18 +230,16 @@ fn append_unique_auxiliary_coordinate_constraints(
     let mut index = previous_len;
     while index < equations.len() {
         ctx.charge_work(1, "creo auxiliary coordinate dedup passes")?;
-        if ctx
-            .admit_iter(
-                &equations[..index],
-                "creo prior auxiliary coordinate equations",
-            )?
-            .any(|candidate| {
-                candidate.terms == equations[index].terms
+        if ctx.any_by(
+            &equations[..index],
+            |candidate| {
+                Ok(candidate.terms == equations[index].terms
                     && (FiniteReal::new(candidate.rhs))
                         .zip(FiniteReal::new(equations[index].rhs))
-                        .is_some_and(|(first, second)| approximately_equal(first, second))
-            })
-        {
+                        .is_some_and(|(first, second)| approximately_equal(first, second)))
+            },
+            "creo prior auxiliary coordinate equations",
+        )? {
             let shifted = index
                 .checked_add(1)
                 .and_then(|next| equations.len().checked_sub(next))
@@ -394,12 +393,12 @@ pub(in crate::decode) fn resolved_section_coordinates(
                 _ => None,
             })
         {
-            ctx.admit_btree_entry(
-                &segment_counts,
-                &segment.external_id,
+            *ctx.entry_btree_map(
+                &mut segment_counts,
+                segment.external_id,
                 "creo section segment count nodes",
-            )?;
-            *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
+            )?
+            .or_insert(0usize) += 1;
         }
     }
     let saved_segment_points =

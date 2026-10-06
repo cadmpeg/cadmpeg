@@ -1382,12 +1382,11 @@ pub(crate) fn replay_affected_ids(
                 && matches!(window[ANCHOR_PREFIX.len()], 0xc8 | 0xd8)
                 && window.ends_with(ANCHOR_SUFFIX)
         });
-        ctx.admit_btree_entry(
-            &extents,
-            &(row.stream_offset, schema_class),
+        let state = match ctx.entry_btree_map(
+            &mut extents,
+            (row.stream_offset, schema_class),
             "creo replay extent states",
-        )?;
-        let state = match extents.entry((row.stream_offset, schema_class)) {
+        )? {
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert([None; 2]),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };

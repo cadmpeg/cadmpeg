@@ -135,8 +135,11 @@ fn legacy_source_stream<'a>(
     offset: usize,
 ) -> Result<&'a str, CodecError> {
     Ok(ctx
-        .admit_iter(&scan.framing.sections, "creo legacy source stream sections")?
-        .find(|section| section.contains(offset))
+        .find_by(
+            &scan.framing.sections,
+            |section| Ok(section.contains(offset)),
+            "creo legacy source stream sections",
+        )?
         .map_or("legacy_ascii", |section| section.name()))
 }
 

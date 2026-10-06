@@ -918,10 +918,11 @@ pub(in super::super) fn schema_feature_definition(
         if let Some(datum) = unique_feature_datum_plane(ctx, &scan.planes.datums, feature_id)? {
             return Ok(datum_plane_feature_definition(&datum.plane()));
         }
-        if ctx
-            .admit_iter(&scan.planes.datums, "creo datum plane feature records")?
-            .any(|datum| datum.feature_id == feature_id)
-        {
+        if ctx.any_by(
+            &scan.planes.datums,
+            |datum| Ok(datum.feature_id == feature_id),
+            "creo datum plane feature records",
+        )? {
             return Ok(IrFeatureDefinition::Operation(
                 IrFeatureOperation::Unresolved {
                     family: UnresolvedFamily::DatumPlane,
@@ -1271,10 +1272,10 @@ pub(in super::super) fn preceding_features_establish_body(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(ctx
-        .admit_iter(&ir.model.features, "creo prior feature body lookup")?
-        .any(|feature| {
-            feature.suppressed != Some(true)
+    Ok(ctx.any_by(
+        &ir.model.features,
+        |feature| {
+            Ok(feature.suppressed != Some(true)
                 && (!feature.evaluation.outputs().is_empty()
                     || matches!(
                         feature.evaluation.definition(),
@@ -1287,8 +1288,10 @@ pub(in super::super) fn preceding_features_establish_body(
                                 ..
                             }
                         )
-                    ))
-        }))
+                    )))
+        },
+        "creo prior feature body lookup",
+    )?)
 }
 
 pub(in super::super) fn section_sweep_boolean_operation(

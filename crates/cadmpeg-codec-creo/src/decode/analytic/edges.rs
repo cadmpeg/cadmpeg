@@ -159,12 +159,12 @@ pub(super) fn nurbs_weights_positive(
     nurbs: &NurbsCurve,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     match nurbs.pole_rows() {
-        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => Ok(ctx
-            .admit_iter(points, "creo NURBS pole weights")?
-            .all(|_| true)),
-        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => Ok(ctx
-            .admit_iter(points, "creo NURBS pole weights")?
-            .all(|pole| pole.weight.get() > 0.0)),
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => Ok(true),
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => Ok(ctx.all_by(
+            points,
+            |pole| Ok(pole.weight.get() > 0.0),
+            "creo NURBS pole weights",
+        )?),
     }
 }
 

@@ -204,10 +204,11 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
-    let function_ten_points = if ctx
-        .admit_iter(&equations.rows, "creo function ten point scan")?
-        .any(|row| row.function_id == 10)
-    {
+    let function_ten_points = if ctx.any_by(
+        &equations.rows,
+        |row| Ok(row.function_id == 10),
+        "creo function ten point scan",
+    )? {
         Some(variables.reconciled_points(ctx)?.points)
     } else {
         None
@@ -1268,8 +1269,9 @@ fn insert_scalar_adjacency(
     first: SectionScalarVariable,
     second: SectionScalarVariable,
 ) -> Result<(), CodecError> {
-    ctx.admit_btree_entry(adjacency, &first, "creo section scalar adjacency nodes")?;
-    let neighbors = adjacency.entry(first).or_default();
+    let neighbors = ctx
+        .entry_btree_map(adjacency, first, "creo section scalar adjacency nodes")?
+        .or_default();
     ctx.insert_btree_set(neighbors, second, "creo section scalar adjacency edges")?;
     Ok(())
 }
@@ -1328,8 +1330,9 @@ fn scalar_equality_values_for_components(
         let variable = (row.variable_type, row.key);
         match row.value.value() {
             Some(value) if value.is_finite() => {
-                ctx.admit_btree_entry(&values, &variable, "creo section scalar sample nodes")?;
-                let samples = values.entry(variable).or_default();
+                let samples = ctx
+                    .entry_btree_map(&mut values, variable, "creo section scalar sample nodes")?
+                    .or_default();
                 ctx.reserve_vec(samples, 1, "creo section scalar samples")?;
                 samples.push(value);
             }
@@ -1342,10 +1345,11 @@ fn scalar_equality_values_for_components(
 
     let mut resolved = BTreeMap::new();
     for component in ctx.admit_iter(components, "creo scalar equality value components")? {
-        let value = if ctx
-            .admit_iter(component, "creo scalar invalid component members")?
-            .any(|variable| invalid.contains(variable))
-        {
+        let value = if ctx.any_by(
+            component,
+            |variable| Ok(invalid.contains(variable)),
+            "creo scalar invalid component members",
+        )? {
             Err(())
         } else {
             let mut first = None;

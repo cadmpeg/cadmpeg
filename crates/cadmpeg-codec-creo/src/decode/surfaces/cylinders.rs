@@ -268,18 +268,17 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             if row.feature_id != *feature_id || row.kind != crate::surface::SurfaceKind::Cylinder {
                 continue;
             }
-            let already_present = ctx
-                .admit_iter(
-                    &ir.model.surfaces,
-                    "creo constrained slot existing model surfaces",
-                )?
-                .any(|surface| {
-                    crate::identity::matches_numbered_identity(
+            let already_present = ctx.any_by(
+                &ir.model.surfaces,
+                |surface| {
+                    Ok(crate::identity::matches_numbered_identity(
                         surface.id.as_str(),
                         "creo:visibgeom:surface#",
                         row.id,
-                    )
-                });
+                    ))
+                },
+                "creo constrained slot existing model surfaces",
+            )?;
             if already_present {
                 continue;
             }
@@ -1011,15 +1010,16 @@ fn unique_support_tangent_cylinder_frame(
             for coordinate in candidates() {
                 let mut candidate = *origin;
                 candidate[axis_index] = coordinate;
-                if !ctx
-                    .admit_iter(&next, "creo support tangent next origin search")?
-                    .any(|known: &[f64; 3]| {
-                        known.iter().zip(candidate).all(|(left, right)| {
+                if !ctx.any_by(
+                    &next,
+                    |known: &[f64; 3]| {
+                        Ok(known.iter().zip(candidate).all(|(left, right)| {
                             (left - right).abs()
                                 <= EPS_CYLINDER_POSITION * left.abs().max(right.abs()).max(1.0)
-                        })
-                    })
-                {
+                        }))
+                    },
+                    "creo support tangent next origin search",
+                )? {
                     ctx.reserve_vec(&mut next, 1, "creo support tangent next origins")?;
                     next.push(candidate);
                 }
@@ -1032,14 +1032,18 @@ fn unique_support_tangent_cylinder_frame(
     }
     let mut frame = None;
     for origin in ctx.admit_iter(&origins, "creo support tangent resolved origins")? {
-        let tangent_to_all = ctx
-            .admit_iter(&witnessed_planes, "creo support tangent witnessed planes")?
-            .all(|plane| {
-                let normal = plane.normal;
-                let distance = (dot(normal, *origin) - dot(normal, plane.origin)).abs();
-                let scale = distance.max(stored.radius().get()).max(1.0);
-                (distance - stored.radius().get()).abs() <= EPS_CYLINDER_POSITION * scale
-            });
+        let tangent_to_all = ctx.all_by(
+            &witnessed_planes,
+            |plane| {
+                Ok({
+                    let normal = plane.normal;
+                    let distance = (dot(normal, *origin) - dot(normal, plane.origin)).abs();
+                    let scale = distance.max(stored.radius().get()).max(1.0);
+                    (distance - stored.radius().get()).abs() <= EPS_CYLINDER_POSITION * scale
+                })
+            },
+            "creo support tangent witnessed planes",
+        )?;
         if !tangent_to_all {
             continue;
         }

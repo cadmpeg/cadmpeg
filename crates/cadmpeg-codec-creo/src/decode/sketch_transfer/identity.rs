@@ -299,8 +299,12 @@ pub(in super::super) fn unique_saved_section_internal_ids(
         let Some(internal_id) = saved_section_entity_identity(entity).0 else {
             return Ok(ControlFlow::Continue(()));
         };
-        ctx.admit_btree_entry(&counts, &internal_id, "creo saved section ID count nodes")?;
-        *counts.entry(internal_id).or_insert(0usize) += 1;
+        *ctx.entry_btree_map(
+            &mut counts,
+            internal_id,
+            "creo saved section ID count nodes",
+        )?
+        .or_insert(0usize) += 1;
         Ok(ControlFlow::Continue(()))
     })?;
     let mut ids = BTreeSet::new();
@@ -356,12 +360,16 @@ fn saved_section_entity_is_elided_prototype(
     else {
         return Ok(false);
     };
-    Ok(ctx
-        .admit_iter(&saved.entities, "creo saved section prototype rows")?
-        .any(|candidate| {
-            crate::feature::definitions::saved_entity_offset(candidate) > saved.offset
-                && saved_section_entity_identity(candidate).0 == Some(internal_id)
-        }))
+    Ok(ctx.any_by(
+        &saved.entities,
+        |candidate| {
+            Ok(
+                crate::feature::definitions::saved_entity_offset(candidate) > saved.offset
+                    && saved_section_entity_identity(candidate).0 == Some(internal_id),
+            )
+        },
+        "creo saved section prototype rows",
+    )?)
 }
 
 pub(in super::super) fn visit_semantic_saved_section_entities<'definition, B>(

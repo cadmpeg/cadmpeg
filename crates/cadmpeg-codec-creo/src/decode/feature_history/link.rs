@@ -156,12 +156,11 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
             return Ok(false);
         };
         return Ok(row.feature_id == feature_id
-            && ctx
-                .admit_iter(
-                    expected_kinds,
-                    "creo generated profile expected surface kinds",
-                )?
-                .any(|kind| kind.same_family(row.kind)));
+            && ctx.any_by(
+                expected_kinds,
+                |kind| Ok(kind.same_family(row.kind)),
+                "creo generated profile expected surface kinds",
+            )?);
     }
     if !table.contains_non_surface_entity_id(entry.entity_id)
         || !generated_profile_table_shape(ctx, table)?
@@ -179,12 +178,11 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
             continue;
         };
         if row.feature_id == feature_id
-            && ctx
-                .admit_iter(
-                    expected_kinds,
-                    "creo generated profile expected surface kinds",
-                )?
-                .any(|kind| kind.same_family(row.kind))
+            && ctx.any_by(
+                expected_kinds,
+                |kind| Ok(kind.same_family(row.kind)),
+                "creo generated profile expected surface kinds",
+            )?
         {
             return Ok(true);
         }
@@ -212,12 +210,11 @@ pub(in super::super) fn section_entity_is_generated_profile(
         Some(surface_id) => match crate::surface::unique_surface_row(rows, surface_id) {
             Some(row) => {
                 row.feature_id == feature_id
-                    && ctx
-                        .admit_iter(
-                            expected_kinds,
-                            "creo direct generated profile surface kinds",
-                        )?
-                        .any(|kind| kind.same_family(row.kind))
+                    && ctx.any_by(
+                        expected_kinds,
+                        |kind| Ok(kind.same_family(row.kind)),
+                        "creo direct generated profile surface kinds",
+                    )?
             }
             None => false,
         },
@@ -308,9 +305,11 @@ fn generated_profile_table_shape(
         || first.class_id() != 204
         || second.class_id() != 203
         || rest.is_empty()
-        || !ctx
-            .admit_iter(rest, "creo generated profile remaining entries")?
-            .all(|entry| entry.source_entity_id().is_some())
+        || !ctx.all_by(
+            rest,
+            |entry| Ok(entry.source_entity_id().is_some()),
+            "creo generated profile remaining entries",
+        )?
     {
         return Ok(false);
     }
@@ -318,13 +317,11 @@ fn generated_profile_table_shape(
         .admit_iter(&table.entries, "creo generated profile unique entry IDs")?
         .enumerate()
     {
-        if ctx
-            .admit_iter(
-                &table.entries[..index],
-                "creo generated profile prior entry IDs",
-            )?
-            .any(|prior| prior.entity_id == entry.entity_id)
-        {
+        if ctx.any_by(
+            &table.entries[..index],
+            |prior| Ok(prior.entity_id == entry.entity_id),
+            "creo generated profile prior entry IDs",
+        )? {
             return Ok(false);
         }
     }

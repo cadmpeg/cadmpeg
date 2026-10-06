@@ -418,24 +418,27 @@ pub(super) fn solve_carriers_with_diagnostics(
     ctx.retain_vec(
         &mut candidates,
         |point| {
-            Ok(ctx
-                .admit_iter(carriers, "creo carrier candidate equations")?
-                .all(|carrier| point_on_carrier(*point, *carrier)))
+            Ok(ctx.all_by(
+                carriers,
+                |carrier| Ok(point_on_carrier(*point, *carrier)),
+                "creo carrier candidate equations",
+            )?)
         },
         "creo carrier candidate retention",
     )?;
     diagnostics.valid_candidates = candidates.len();
     let mut unique = Vec::<[f64; 3]>::new();
     for candidate in ctx.admit_iter(&candidates, "creo unique carrier candidates")? {
-        if !ctx
-            .admit_iter(&unique, "creo unique carrier solution search")?
-            .any(|known| {
-                known
+        if !ctx.any_by(
+            &unique,
+            |known| {
+                Ok(known
                     .iter()
                     .zip(candidate)
-                    .all(|(left, right)| (left - right).abs() <= EPS_POINT_UNIQUE)
-            })
-        {
+                    .all(|(left, right)| (left - right).abs() <= EPS_POINT_UNIQUE))
+            },
+            "creo unique carrier solution search",
+        )? {
             ctx.reserve_vec(&mut unique, 1, "creo carrier unique candidates")?;
             unique.push(*candidate);
         }
@@ -914,12 +917,17 @@ fn stored_frame_branch_constraints(
         };
         let mut compatible = false;
         for first_candidate in ctx.admit_iter(first, "creo first plane branch candidates")? {
-            if ctx
-                .admit_iter(second, "creo second plane branch candidates")?
-                .any(|second_candidate| {
-                    pcurve_candidates_agree(*first_candidate, *second_candidate, endpoint_sets)
-                })
-            {
+            if ctx.any_by(
+                second,
+                |second_candidate| {
+                    Ok(pcurve_candidates_agree(
+                        *first_candidate,
+                        *second_candidate,
+                        endpoint_sets,
+                    ))
+                },
+                "creo second plane branch candidates",
+            )? {
                 compatible = true;
                 break;
             }
@@ -1013,12 +1021,11 @@ fn fc05_cylinder_branch_witnesses(
         &scan.curves.fc05_circles,
         "creo fc05 cylinder branch witnesses fc05 circles traversal",
     )? {
-        let Some(topology) = ctx
-            .admit_iter(
-                &scan.curves.topology_rows,
-                "creo FC05 circle topology search",
-            )?
-            .find(|row| row.id == circle.curve_id)
+        let Some(topology) = ctx.find_by(
+            &scan.curves.topology_rows,
+            |row| Ok(row.id == circle.curve_id),
+            "creo FC05 circle topology search",
+        )?
         else {
             continue;
         };
@@ -2402,11 +2409,16 @@ pub(super) fn topology_bound_plane(
         normal = normal.map(|coordinate| -coordinate);
     }
     Ok(ctx
-        .admit_iter(&points, "creo topology plane point agreement")?
-        .all(|point| {
-            let displacement = std::array::from_fn(|axis| point[axis] - origin[axis]);
-            dot(displacement, normal).abs() <= EPS_AGREE * scale
-        })
+        .all_by(
+            &points,
+            |point| {
+                Ok({
+                    let displacement = std::array::from_fn(|axis| point[axis] - origin[axis]);
+                    dot(displacement, normal).abs() <= EPS_AGREE * scale
+                })
+            },
+            "creo topology plane point agreement",
+        )?
         .then_some(PlaneEquation { origin, normal }))
 }
 
@@ -2508,12 +2520,16 @@ pub(super) fn analytic_boundary_line(
                 dot(residual, residual).sqrt() <= EPS_AGREE * scale
             };
             let aligned = match nurbs.pole_rows() {
-                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx
-                    .admit_iter(points, "creo NURBS polynomial poles")?
-                    .all(|point| aligned_point(*point)),
-                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx
-                    .admit_iter(points, "creo NURBS rational poles")?
-                    .all(|pole| aligned_point(pole.point)),
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx.all_by(
+                    points,
+                    |point| Ok(aligned_point(*point)),
+                    "creo NURBS polynomial poles",
+                )?,
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx.all_by(
+                    points,
+                    |pole| Ok(aligned_point(pole.point)),
+                    "creo NURBS rational poles",
+                )?,
             };
             if !aligned {
                 return Ok(None);
@@ -2567,12 +2583,16 @@ fn topology_bound_line_plane(
     let Some(canonical) = agreed_plane(ctx, &[candidate])? else {
         return Ok(None);
     };
-    let agrees = ctx
-        .admit_iter(lines, "creo topology boundary line agreement")?
-        .all(|line| {
-            point_on_carrier(line.origin, CarrierEquation::Plane(canonical))
-                && dot(line.direction, canonical.normal).abs() <= EPS_AGREE
-        });
+    let agrees = ctx.all_by(
+        lines,
+        |line| {
+            Ok(
+                point_on_carrier(line.origin, CarrierEquation::Plane(canonical))
+                    && dot(line.direction, canonical.normal).abs() <= EPS_AGREE,
+            )
+        },
+        "creo topology boundary line agreement",
+    )?;
     Ok(agrees.then_some(canonical))
 }
 
@@ -2613,15 +2633,19 @@ pub(super) fn agreed_topology_bound_plane(
     let Some(plane) = agreed_plane(ctx, &candidates)? else {
         return Ok(None);
     };
-    let points_agree = ctx
-        .admit_iter(&admitted_points, "creo plane boundary point agreement")?
-        .all(|point| point_on_carrier(*point, CarrierEquation::Plane(plane)));
-    let lines_agree = ctx
-        .admit_iter(&admitted_lines, "creo plane boundary line agreement")?
-        .all(|line| {
-            point_on_carrier(line.origin, CarrierEquation::Plane(plane))
-                && dot(line.direction, plane.normal).abs() <= EPS_AGREE
-        });
+    let points_agree = ctx.all_by(
+        &admitted_points,
+        |point| Ok(point_on_carrier(*point, CarrierEquation::Plane(plane))),
+        "creo plane boundary point agreement",
+    )?;
+    let lines_agree = ctx.all_by(
+        &admitted_lines,
+        |line| {
+            Ok(point_on_carrier(line.origin, CarrierEquation::Plane(plane))
+                && dot(line.direction, plane.normal).abs() <= EPS_AGREE)
+        },
+        "creo plane boundary line agreement",
+    )?;
     Ok((points_agree && lines_agree).then_some(plane))
 }
 

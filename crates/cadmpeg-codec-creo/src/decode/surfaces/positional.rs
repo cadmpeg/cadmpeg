@@ -264,9 +264,11 @@ pub(in super::super) fn transfer_positional_tori(
         if identity_present {
             continue;
         }
-        let Some(section) = ctx
-            .admit_iter(&scan.framing.sections, "creo positional section search")?
-            .find(|section| section.contains(row.offset))
+        let Some(section) = ctx.find_by(
+            &scan.framing.sections,
+            |section| Ok(section.contains(row.offset)),
+            "creo positional section search",
+        )?
         else {
             continue;
         };
@@ -570,12 +572,12 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         &scan.curves.tabulated_cylinder_replays,
         "creo transfer positional line extrusion planes tabulated cylinder replays traversal",
     )? {
-        ctx.admit_btree_entry(
-            &replay_counts,
-            &replay.surface_id,
+        *ctx.entry_btree_map(
+            &mut replay_counts,
+            replay.surface_id,
             "creo tabulated-cylinder replay counts",
-        )?;
-        *replay_counts.entry(replay.surface_id).or_default() += 1;
+        )?
+        .or_default() += 1;
     }
     let mut transferred = 0;
     for replay in ctx.admit_iter(

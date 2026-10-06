@@ -1161,12 +1161,13 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         })
     {
         if let Some(radius) = segment.radius_ref {
-            ctx.admit_btree_entry(
-                &entities_by_radius,
-                &radius,
-                "creo equation radius group nodes",
-            )?;
-            let entities = entities_by_radius.entry(radius).or_default();
+            let entities = ctx
+                .entry_btree_map(
+                    &mut entities_by_radius,
+                    radius,
+                    "creo equation radius group nodes",
+                )?
+                .or_default();
             ctx.reserve_vec(entities, 1, "creo equation radius group entities")?;
             entities.push(segment.external_id);
         }
@@ -1179,12 +1180,13 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         })
         .filter(|segment| unique_segment_ids.contains(&segment.external_id))
     {
-        ctx.admit_btree_entry(
-            &entities_by_radius,
-            &segment.radius_ref,
-            "creo equation radius group nodes",
-        )?;
-        let entities = entities_by_radius.entry(segment.radius_ref).or_default();
+        let entities = ctx
+            .entry_btree_map(
+                &mut entities_by_radius,
+                segment.radius_ref,
+                "creo equation radius group nodes",
+            )?
+            .or_default();
         ctx.reserve_vec(entities, 1, "creo equation radius group entities")?;
         entities.push(segment.external_id);
     }
