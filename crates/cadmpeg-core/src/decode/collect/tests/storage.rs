@@ -174,20 +174,20 @@ storage_case!(
 // u64 set buckets use 8 bytes each, one control byte each, sixteen trailing
 // controls and at most fifteen alignment bytes: 67, 103 and 175 bytes for 4, 8
 // and 16 buckets. Map buckets have two lanes: 99, 167 and 303 bytes. Growth
-// admits the storage for twice the new length, and the old table, bounded the
-// same way, stays live while the new one is filled.
+// holds the storage for twice the new length while the table grows, then
+// retains the storage of the table's real capacity.
 storage_case!(
     reserve_set_storage,
     67,
-    175,
-    peak = (67 + 67, 175 + 175),
+    103,
+    peak = (67, 67 + 175),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::<u64>::new();
         for value in 0..count {
-            let capacity = values.capacity();
+            let len = values.len();
             let result = ctx.reserve_set(&mut values, 1, "set storage");
             if result.is_err() {
-                assert_eq!(values.capacity(), capacity);
+                assert_eq!(values.len(), len);
             }
             result?;
             values.insert(u64::try_from(value).expect("small test index"));
@@ -198,15 +198,15 @@ storage_case!(
 storage_case!(
     reserve_map_storage,
     99,
-    303,
-    peak = (99 + 99, 303 + 303),
+    167,
+    peak = (99, 99 + 303),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::<u64, u64>::new();
         for value in 0..count {
-            let capacity = values.capacity();
+            let len = values.len();
             let result = ctx.reserve_map(&mut values, 1, "map storage");
             if result.is_err() {
-                assert_eq!(values.capacity(), capacity);
+                assert_eq!(values.len(), len);
             }
             result?;
             values.insert(u64::try_from(value).expect("small test index"), 0);
@@ -217,8 +217,8 @@ storage_case!(
 storage_case!(
     insert_hash_set_storage,
     67,
-    175,
-    peak = (67 + 67, 175 + 175),
+    103,
+    peak = (67, 67 + 175),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::new();
         for value in 0..count {
@@ -234,8 +234,8 @@ storage_case!(
 storage_case!(
     insert_hash_map_storage,
     99,
-    303,
-    peak = (99 + 99, 303 + 303),
+    167,
+    peak = (99, 99 + 303),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::new();
         for value in 0..count {
@@ -252,8 +252,8 @@ storage_case!(
 storage_case!(
     admit_hash_map_entry_storage,
     99,
-    303,
-    peak = (99 + 99, 303 + 303),
+    167,
+    peak = (99, 99 + 303),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashMap::new();
         for value in 0..count {
@@ -398,8 +398,8 @@ storage_case!(
 storage_case!(
     collect_hash_set_storage,
     67,
-    175,
-    peak = (67 + 67, 175 + 175),
+    103,
+    peak = (67, 67 + 175),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_hash_set(
             (0..count).map(|value| u64::try_from(value).expect("small test index")),
@@ -410,8 +410,8 @@ storage_case!(
 storage_case!(
     extend_hash_set_storage,
     67,
-    175,
-    peak = (67 + 67, 175 + 175),
+    103,
+    peak = (67, 67 + 175),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::new();
         ctx.extend_hash_set(
