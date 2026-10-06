@@ -42,7 +42,9 @@ fn plane() -> SubdPlaneFrame {
 #[test]
 fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
     // Core's BTreeSet<u32> node bound is 11 u32 key lanes + 16 pointer widths + two max-alignment pads.
-    // On 64-bit targets: 752 first-node + 1,504 second-insert + 8 key-comparison + 25 prior work = 2,289 before two final vertex visits, for 2,291 total.
+    // The first insertion shifts its node once and pays two passes for the node it adds to the
+    // node bound; the second only shifts. On 64-bit targets: 564 first-node + 188 second-insert
+    // + 8 key-comparison + 25 prior work = 785 before two final vertex visits, for 787 total.
     // The second insertion compares its four-byte key once with the one stored key, in its lookup and its insertion.
     const NODE_ALIGNMENT: usize = if std::mem::align_of::<u32>() > std::mem::align_of::<usize>() {
         std::mem::align_of::<u32>()
@@ -52,8 +54,8 @@ fn cage_validation_admits_each_topology_and_grip_walk_before_visiting() {
     const NODE_BYTES: u64 = cadmpeg_core::decode::u64_from_index(
         11 * std::mem::size_of::<u32>() + 16 * std::mem::size_of::<usize>() + 2 * NODE_ALIGNMENT,
     );
-    let first_node_work = 4 * NODE_BYTES;
-    let second_insert_work = 8 * NODE_BYTES;
+    let first_node_work = 3 * NODE_BYTES;
+    let second_insert_work = NODE_BYTES;
     let after_first_node = 24 + first_node_work;
     let before_final_vertices = 25 + first_node_work + second_insert_work + 2 * 4;
     let full_work = before_final_vertices + 2;

@@ -561,14 +561,15 @@ mod tests {
         let scratch = 21 * 2 * index_bytes;
         // The result growth keeps sixteen old records live; stable ordering holds two index vectors.
         let peak = (16 * record_bytes).max(scratch);
-        // Five scans, three result reallocations, two projected sorts and permutation visits own the work.
+        // Five scans and three result reallocations, then the stable ordering: index
+        // setup, one sort of the index array by (offset, index) keys, two record moves
+        // per value along the permutation, and the permutation visits.
         let work = 5 * u64::try_from(bytes.len()).expect("scan work")
             + (4 + 8 + 16) * record_bytes
             + 2 * 21
-            + 21 * (record_bytes + 2 * index_bytes) * 6 * 8
-            + 2 * 21
             + 2 * 21
             + 21 * (index_bytes + 4 * index_bytes) * 6 * 8
+            + 2 * record_bytes * 21
             + 2 * 21;
         let run = |materialized, work_limit| {
             let arena = DecodeArena::new();
