@@ -76,9 +76,11 @@ pub(in super::super) fn feature_edge_selection(
                 edge_selection_native(ctx, "creo:allfeatur:replay_edgs_affected", feature_id, ids)?;
             (ids, native)
         } else {
-            let Some(round) = ctx
-                .admit_iter(&scan.features.legacy_rounds, "creo legacy round records")?
-                .find(|round| round.feature_id == feature_id)
+            let Some(round) = ctx.find_by(
+                &scan.features.legacy_rounds,
+                |round| Ok(round.feature_id == feature_id),
+                "creo legacy round records",
+            )?
             else {
                 return Ok(None);
             };

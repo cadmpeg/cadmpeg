@@ -96,13 +96,15 @@ fn pcurve_endpoint_is_ambiguous(
     let Some(first) = candidates.first() else {
         return Ok(false);
     };
-    Ok(ctx
-        .admit_iter(&candidates[1..], "creo pcurve endpoint ambiguity search")?
-        .any(|candidate| {
-            !finite_model_point(*first)
+    Ok(ctx.any_by(
+        &candidates[1..],
+        |candidate| {
+            Ok(!finite_model_point(*first)
                 .zip(finite_model_point(*candidate))
-                .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
-        }))
+                .is_some_and(|(first, candidate)| model_points_agree(first, candidate)))
+        },
+        "creo pcurve endpoint ambiguity search",
+    )?)
 }
 
 fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
@@ -467,9 +469,11 @@ fn incident_analytic_vertex_domain(
     ctx.retain_vec(
         &mut candidates,
         |point| {
-            Ok(ctx
-                .admit_iter(curves, "creo incident analytic curve containment")?
-                .all(|curve| curve_contains_points(curve, [*point, *point])))
+            Ok(ctx.all_by(
+                curves,
+                |curve| Ok(curve_contains_points(curve, [*point, *point])),
+                "creo incident analytic curve containment",
+            )?)
         },
         "creo retained incident analytic candidates",
     )?;
@@ -477,14 +481,15 @@ fn incident_analytic_vertex_domain(
     for point in ctx.admit_iter(&candidates, "creo incident analytic candidates")? {
         // A candidate outside the finite range agrees with no other
         // candidate.
-        if !ctx
-            .admit_iter(&unique, "creo unique analytic candidate search")?
-            .any(|candidate| {
-                finite_model_point(*candidate)
+        if !ctx.any_by(
+            &unique,
+            |candidate| {
+                Ok(finite_model_point(*candidate)
                     .zip(finite_model_point(*point))
-                    .is_some_and(|(candidate, point)| model_points_agree(candidate, point))
-            })
-        {
+                    .is_some_and(|(candidate, point)| model_points_agree(candidate, point)))
+            },
+            "creo unique analytic candidate search",
+        )? {
             ctx.reserve_vec(&mut unique, 1, "creo unique analytic candidates")?;
             unique.push(*point);
         }
@@ -744,15 +749,15 @@ pub(in crate::decode) fn solve_topological_vertices(
             }
             for (vertex, point) in vertices.into_iter().zip(ordered) {
                 diagnostics.directed_endpoint_assignments += 1;
-                ctx.admit_btree_entry(&fixed_points, vertex, "creo fixed vertex point nodes")?;
-                fixed_points.entry(*vertex).or_insert(*point);
+                ctx.entry_btree_map(&mut fixed_points, *vertex, "creo fixed vertex point nodes")?
+                    .or_insert(*point);
                 if *authoritative && !ambiguous {
-                    ctx.admit_btree_entry(
-                        &authoritative_points,
-                        vertex,
+                    ctx.entry_btree_map(
+                        &mut authoritative_points,
+                        *vertex,
                         "creo authoritative vertex point nodes",
-                    )?;
-                    authoritative_points.entry(*vertex).or_insert(*point);
+                    )?
+                    .or_insert(*point);
                 }
             }
         } else {

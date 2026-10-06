@@ -201,12 +201,11 @@ pub(in super::super) fn feature_schema_class(
             Ok(())
         },
         || {
-            Ok(ctx
-                .admit_iter(
-                    &scan.features.legacy_rounds,
-                    "creo legacy round schema rows",
-                )?
-                .any(|round| round.feature_id == feature_id))
+            Ok(ctx.any_by(
+                &scan.features.legacy_rounds,
+                |round| Ok(round.feature_id == feature_id),
+                "creo legacy round schema rows",
+            )?)
         },
     )
 }
@@ -304,9 +303,11 @@ pub(in super::super) fn unique_feature_revolution_extent<'records>(
     feature_id: u32,
 ) -> Result<Option<&'records crate::feature::rows::FeatureRevolutionExtent>, cadmpeg_core::CodecError>
 {
-    Ok(ctx
-        .admit_iter(records, "creo feature revolution extent rows")?
-        .find(|record| record.feature_id == feature_id))
+    Ok(ctx.find_by(
+        records,
+        |record| Ok(record.feature_id == feature_id),
+        "creo feature revolution extent rows",
+    )?)
 }
 
 #[cfg(test)]

@@ -672,11 +672,13 @@ pub(super) fn section_skamp_oriented_line(
     }
     let line_role_evidence = matches!(
         visit_section_skamps(ctx, definition, false, |skamp| {
-            let endpoint_role = ctx
-                .admit_iter(&skamp.items, "creo type-35 line-role SKAMP items")?
-                .any(|candidate| {
-                    candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3)
-                });
+            let endpoint_role = ctx.any_by(
+                &skamp.items,
+                |candidate| {
+                    Ok(candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3))
+                },
+                "creo type-35 line-role SKAMP items",
+            )?;
             let skamp_evidence = endpoint_role
                 || match (skamp.kind, skamp.items.as_slice()) {
                     (35, [first, second]) => {

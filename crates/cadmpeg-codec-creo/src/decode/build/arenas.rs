@@ -970,11 +970,11 @@ pub(super) fn emit_geometry_arenas(
         &feature_operation_states,
         |annotations, state| {
             let section = ctx
-                .admit_iter(
+                .find_by(
                     &scan.framing.sections,
+                    |section| Ok(section.contains(state.state_offset)),
                     "creo operation state source section search",
                 )?
-                .find(|section| section.contains(state.state_offset))
                 .map_or("MdlStatus", |section| section.name());
             annotate(
                 ctx,

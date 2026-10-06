@@ -549,8 +549,7 @@ fn conflicting_recipe_features(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut by_feature = BTreeMap::<u32, Vec<FeatureRecipeBinding>>::new();
     for (feature_id, binding) in bindings {
-        ctx.admit_btree_entry(&by_feature, feature_id, "creo recipe feature nodes")?;
-        match by_feature.entry(*feature_id) {
+        match ctx.entry_btree_map(&mut by_feature, *feature_id, "creo recipe feature nodes")? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let mut values = Vec::new();
                 ctx.reserve_vec(&mut values, 1, "creo recipe feature bindings")?;
@@ -598,12 +597,11 @@ pub(crate) fn operation_states(
     let conflicting_features = conflicting_recipe_features(ctx, &bound_recipes)?;
     let mut recipe_binding_counts = BTreeMap::<u32, usize>::new();
     for (feature_id, _) in &bound_recipes {
-        ctx.admit_btree_entry(
-            &recipe_binding_counts,
-            feature_id,
+        match ctx.entry_btree_map(
+            &mut recipe_binding_counts,
+            *feature_id,
             "creo recipe binding counts",
-        )?;
-        match recipe_binding_counts.entry(*feature_id) {
+        )? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(1);
             }

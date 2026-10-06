@@ -46,8 +46,9 @@ fn append_radius_candidate(
     radius_id: u32,
     value: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.admit_btree_entry(candidates, &radius_id, "creo radius candidate nodes")?;
-    let values = candidates.entry(radius_id).or_default();
+    let values = ctx
+        .entry_btree_map(candidates, radius_id, "creo radius candidate nodes")?
+        .or_default();
     ctx.reserve_vec(values, 1, "creo radius candidate values")?;
     values.push(value);
     Ok(())
@@ -60,8 +61,9 @@ fn link_radii(
     second: u32,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (radius_id, neighbor) in [(first, second), (second, first)] {
-        ctx.admit_btree_entry(adjacency, &radius_id, "creo radius adjacency nodes")?;
-        let neighbors = adjacency.entry(radius_id).or_default();
+        let neighbors = ctx
+            .entry_btree_map(adjacency, radius_id, "creo radius adjacency nodes")?
+            .or_default();
         ctx.insert_btree_set(neighbors, neighbor, "creo radius adjacency links")?;
     }
     Ok(())
@@ -293,10 +295,11 @@ pub(in crate::decode) fn resolved_section_radii(
     {
         let components = section_equation_scalar_equality_components(ctx, definition)?;
         for component in ctx.admit_iter(&components, "creo scalar equality components")? {
-            if ctx
-                .admit_iter(component, "creo scalar component variables")?
-                .any(|&(variable_type, _)| variable_type != VariableType::Radius)
-            {
+            if ctx.any_by(
+                component,
+                |&(variable_type, _)| Ok(variable_type != VariableType::Radius),
+                "creo scalar component variables",
+            )? {
                 continue;
             }
             let mut invalid = false;
@@ -397,10 +400,11 @@ pub(in crate::decode) fn resolved_section_radii(
                 }
             }
         }
-        if ctx
-            .admit_iter(&component, "creo radius component invalidity")?
-            .any(|radius_id| invalid_scalar_radius_ids.contains(radius_id))
-        {
+        if ctx.any_by(
+            &component,
+            |radius_id| Ok(invalid_scalar_radius_ids.contains(radius_id)),
+            "creo radius component invalidity",
+        )? {
             remaining.retain(|radius_id| !component.contains(radius_id));
             continue;
         }
@@ -817,9 +821,11 @@ pub(in crate::decode) fn trim_segment_id(
             _ => None,
         })
     {
-        let matched = ctx
-            .admit_iter(trim_rows, "creo trim segment matches")?
-            .any(|trim| trim.external_id == segment.external_id);
+        let matched = ctx.any_by(
+            trim_rows,
+            |trim| Ok(trim.external_id == segment.external_id),
+            "creo trim segment matches",
+        )?;
         if !matched {
             if unmatched_segment.replace(segment.external_id).is_some() {
                 multiple_unmatched_segments = true;

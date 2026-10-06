@@ -38,57 +38,58 @@ pub(in super::super) fn has_transferred_geometry(
         || !model.shells.is_empty()
         || !model.regions.is_empty()
         || !model.bodies.is_empty()
-        || ctx
-            .admit_iter(&model.surfaces, "creo transferred surfaces search")?
-            .any(|surface| {
-                !matches!(
+        || ctx.any_by(
+            &model.surfaces,
+            |surface| {
+                Ok(!matches!(
                     surface.geometry.solved(),
                     Some(SolvedSurfaceGeometry::Unknown { .. })
-                )
-            })
-        || ctx
-            .admit_iter(&model.curves, "creo transferred curves search")?
-            .any(|curve| {
-                !matches!(
+                ))
+            },
+            "creo transferred surfaces search",
+        )?
+        || ctx.any_by(
+            &model.curves,
+            |curve| {
+                Ok(!matches!(
                     curve.geometry.solved(),
                     Some(SolvedCurveGeometry::Unknown { .. })
-                )
-            })
+                ))
+            },
+            "creo transferred curves search",
+        )?
         || !model.subds.is_empty()
         || !model.pcurves.is_empty()
-        || ctx
-            .admit_iter(
-                &model.procedural_surfaces,
-                "creo transferred procedural_surfaces search",
-            )?
-            .any(|surface| {
-                !matches!(
+        || ctx.any_by(
+            &model.procedural_surfaces,
+            |surface| {
+                Ok(!matches!(
                     surface.definition(),
                     ProceduralSurfaceDefinition::Unknown { .. }
-                )
-            })
-        || ctx
-            .admit_iter(
-                &model.procedural_curves,
-                "creo transferred procedural_curves search",
-            )?
-            .any(|curve| {
-                !matches!(
+                ))
+            },
+            "creo transferred procedural_surfaces search",
+        )?
+        || ctx.any_by(
+            &model.procedural_curves,
+            |curve| {
+                Ok(!matches!(
                     curve.definition(),
                     ProceduralCurveDefinition::Unknown { .. }
-                )
-            })
-        || ctx
-            .admit_iter(
-                &model.sketch_entities,
-                "creo transferred sketch_entities search",
-            )?
-            .any(|entity| {
-                !matches!(
+                ))
+            },
+            "creo transferred procedural_curves search",
+        )?
+        || ctx.any_by(
+            &model.sketch_entities,
+            |entity| {
+                Ok(!matches!(
                     entity.geometry.definition(),
                     SketchGeometryDefinition::Native { .. }
-                )
-            })
+                ))
+            },
+            "creo transferred sketch_entities search",
+        )?
         || !model.tessellations.is_empty())
 }
 

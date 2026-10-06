@@ -46,8 +46,9 @@ pub(in super::super) fn resolved_profile_chains(
         .enumerate()
     {
         for vertex in row.0.vertices {
-            ctx.admit_btree_entry(&incident, &vertex, "creo trim profile incidence nodes")?;
-            let indices = incident.entry(vertex).or_default();
+            let indices = ctx
+                .entry_btree_map(&mut incident, vertex, "creo trim profile incidence nodes")?
+                .or_default();
             ctx.reserve_vec(indices, 1, "creo trim profile incidence rows")?;
             indices.push(index);
         }
@@ -100,10 +101,11 @@ pub(in super::super) fn resolved_profile_chains(
         if component_degree_too_high {
             continue;
         }
-        if ctx
-            .admit_iter(&component, "creo trim profile emitted entities")?
-            .any(|index| !emitted.contains(&rows[*index].1))
-        {
+        if ctx.any_by(
+            &component,
+            |index| Ok(!emitted.contains(&rows[*index].1)),
+            "creo trim profile emitted entities",
+        )? {
             continue;
         }
         let mut endpoints = [0u32; 2];
@@ -147,10 +149,11 @@ pub(in super::super) fn resolved_profile_chains(
             let first_candidate = candidates.next();
             let second_candidate = candidates.next();
             let index = if profile.is_empty() && endpoint_count == 0 {
-                if ctx
-                    .admit_iter(&incident[&vertex], "creo trim profile cycle start")?
-                    .any(|candidate| *candidate == first_row && unused.contains(candidate))
-                {
+                if ctx.any_by(
+                    &incident[&vertex],
+                    |candidate| Ok(*candidate == first_row && unused.contains(candidate)),
+                    "creo trim profile cycle start",
+                )? {
                     first_row
                 } else {
                     break;
@@ -241,8 +244,9 @@ fn resolved_segment_profile_chains(
         .enumerate()
     {
         for point in segment.point_ids() {
-            ctx.admit_btree_entry(&incident, &point, "creo segment profile incidence nodes")?;
-            let indices = incident.entry(point).or_default();
+            let indices = ctx
+                .entry_btree_map(&mut incident, point, "creo segment profile incidence nodes")?
+                .or_default();
             ctx.reserve_vec(indices, 1, "creo segment profile incidence rows")?;
             indices.push(index);
         }
@@ -320,10 +324,11 @@ fn resolved_segment_profile_chains(
             let first_candidate = candidates.next();
             let second_candidate = candidates.next();
             let index = if profile.is_empty()
-                && ctx
-                    .admit_iter(&incident[&point], "creo segment profile cycle start")?
-                    .any(|candidate| *candidate == first && unused.contains(candidate))
-            {
+                && ctx.any_by(
+                    &incident[&point],
+                    |candidate| Ok(*candidate == first && unused.contains(candidate)),
+                    "creo segment profile cycle start",
+                )? {
                 first
             } else if let (Some(index), None) = (first_candidate, second_candidate) {
                 index
@@ -372,11 +377,11 @@ pub(in super::super) fn solver_only_section_entities(
         for item in ctx.admit_iter(&skamp.items, "creo solver-only SKAMP items")? {
             let id = item.entity_id;
             let segment_id_exists = if let Some(table) = definition.segments.as_ref() {
-                ctx.admit_iter(
+                ctx.any_by(
                     table.rows.identity_entries(),
+                    |(&segment_id, _)| Ok(segment_id == id),
                     "creo solver-only segment identity rows",
                 )?
-                .any(|(&segment_id, _)| segment_id == id)
             } else {
                 false
             };
@@ -405,11 +410,11 @@ pub(in super::super) fn solver_only_section_entity_offset(
     entity_id: u32,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
     let segment_id_exists = if let Some(table) = definition.segments.as_ref() {
-        ctx.admit_iter(
+        ctx.any_by(
             table.rows.identity_entries(),
+            |(&segment_id, _)| Ok(segment_id == entity_id),
             "creo solver-only entity identity rows",
         )?
-        .any(|(&segment_id, _)| segment_id == entity_id)
     } else {
         false
     };
@@ -419,10 +424,11 @@ pub(in super::super) fn solver_only_section_entity_offset(
     let mut first_offset = None;
     // discarded-value: The visitor finds the minimum offset across matching rows.
     let _ = visit_all_section_skamps::<()>(ctx, definition, |skamp| {
-        if ctx
-            .admit_iter(&skamp.items, "creo solver-only entity SKAMP items")?
-            .any(|item| item.entity_id == entity_id)
-        {
+        if ctx.any_by(
+            &skamp.items,
+            |item| Ok(item.entity_id == entity_id),
+            "creo solver-only entity SKAMP items",
+        )? {
             first_offset =
                 Some(first_offset.map_or(skamp.offset, |offset: usize| offset.min(skamp.offset)));
         }
@@ -795,9 +801,11 @@ pub(in super::super) fn solver_only_section_entity_family(
     let mut evidence = section_incidence_curve_family_evidence(ctx, definition, entity_id)?;
     if !evidence.contains(SectionEntityIncidenceFamily::Arc) {
         let outcome = visit_section_skamps(ctx, definition, false, |skamp| {
-            let has_circular_sense = ctx
-                .admit_iter(&skamp.items, "creo solver-only circular SKAMP items")?
-                .any(|item| item.entity_id == entity_id && item.sense == 4);
+            let has_circular_sense = ctx.any_by(
+                &skamp.items,
+                |item| Ok(item.entity_id == entity_id && item.sense == 4),
+                "creo solver-only circular SKAMP items",
+            )?;
             Ok(if has_circular_sense {
                 ControlFlow::Break(())
             } else {
@@ -817,13 +825,16 @@ pub(in super::super) fn solver_only_section_entity_family(
                 (skamp.kind, skamp.items.as_slice())
             {
                 let roles = [(first, second), (second, first)];
-                ctx.admit_iter(&roles, "creo centered-line target roles")?
-                    .any(|(point, target)| {
-                        point.entity_id == entity_id
+                ctx.any_by(
+                    &roles,
+                    |(point, target)| {
+                        Ok(point.entity_id == entity_id
                             && point.sense == 0
                             && target.sense == 4
-                            && unique_centered_line_segment(definition, target.entity_id).is_some()
-                    })
+                            && unique_centered_line_segment(definition, target.entity_id).is_some())
+                    },
+                    "creo centered-line target roles",
+                )?
             } else {
                 false
             };

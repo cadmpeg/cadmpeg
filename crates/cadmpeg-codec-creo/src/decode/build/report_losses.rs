@@ -315,15 +315,19 @@ fn legacy_type_count(
     suffix: &str,
 ) -> Result<usize, CodecError> {
     Ok(ctx
-        .admit_iter(&**coverage, "creo legacy type coverage search")?
-        .find_map(|(key, count)| {
-            let stored_type = key
-                .strip_prefix(prefix)?
-                .strip_suffix(suffix)?
-                .parse::<u8>()
-                .ok()?;
-            (stored_type == type_code).then_some(*count)
-        })
+        .find_map(
+            &**coverage,
+            |(key, count)| {
+                // The prefix and suffix are code constants and the type code
+                // fits in a byte, so the comparison and parse are bounded.
+                let stored_type = key
+                    .strip_prefix(prefix)
+                    .and_then(|rest| rest.strip_suffix(suffix))
+                    .and_then(|digits| digits.parse::<u8>().ok());
+                Ok((stored_type == Some(type_code)).then_some(*count))
+            },
+            "creo legacy type coverage search",
+        )?
         .unwrap_or(0))
 }
 
@@ -1024,13 +1028,11 @@ pub(super) fn push_structural_layer_notes(
                     &record.solve_blocks,
                     "creo unresolved solve block loss traversal",
                 )? {
-                    if ctx
-                        .admit_iter(
-                            &block.unknowns,
-                            "creo unresolved solve unknown loss traversal",
-                        )?
-                        .any(|unknown| unknown.solution.is_none())
-                    {
+                    if ctx.any_by(
+                        &block.unknowns,
+                        |unknown| Ok(unknown.solution.is_none()),
+                        "creo unresolved solve unknown loss traversal",
+                    )? {
                         unresolved_solve = true;
                         break;
                     }

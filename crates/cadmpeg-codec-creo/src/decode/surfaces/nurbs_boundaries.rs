@@ -360,16 +360,15 @@ pub(in super::super) fn nurbs_plane_boundary_curve(
     let mut selected = None;
     for (ordinal, boundary) in boundaries.iter().enumerate() {
         if boundary.transverse_periodic
-            || !ctx
-                .admit_iter(
-                    &boundary.control_indices,
-                    "creo NURBS boundary control index search",
-                )?
-                .all(|index| {
-                    nurbs
+            || !ctx.all_by(
+                &boundary.control_indices,
+                |index| {
+                    Ok(nurbs
                         .pole(*index / v_count, *index % v_count)
-                        .is_some_and(|point| signed_distance(&point).abs() <= tolerance)
-                })
+                        .is_some_and(|point| signed_distance(&point).abs() <= tolerance))
+                },
+                "creo NURBS boundary control index search",
+            )?
         {
             continue;
         }

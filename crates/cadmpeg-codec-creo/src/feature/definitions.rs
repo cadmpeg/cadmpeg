@@ -9770,12 +9770,12 @@ pub(crate) fn bind_trimmed_definition_owners(
     }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
-        ctx.admit_btree_entry(
-            &owner_candidate_counts,
-            owner,
+        *ctx.entry_btree_map(
+            &mut owner_candidate_counts,
+            *owner,
             "creo trimmed owner count nodes",
-        )?;
-        *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
+        )?
+        .or_insert(0usize) += 1;
     }
     for (definition, owners) in definitions.iter_mut().zip(candidates) {
         let Some(owner) = owners
@@ -9859,12 +9859,12 @@ pub(crate) fn bind_replay_definition_owners(
     }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
-        ctx.admit_btree_entry(
-            &owner_candidate_counts,
-            owner,
+        *ctx.entry_btree_map(
+            &mut owner_candidate_counts,
+            *owner,
             "creo replay owner count nodes",
-        )?;
-        *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
+        )?
+        .or_insert(0usize) += 1;
     }
     for (definition, owners) in definitions.iter_mut().zip(candidates) {
         let Some(owner) = owners
@@ -9923,12 +9923,12 @@ pub(crate) fn bind_section_owners(
         (definition.identity.owner_feature_id().is_none() && in_section_range(definition.offset))
             .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
     }) {
-        ctx.admit_btree_entry(
-            &definitions_per_plane,
-            &plane_id,
+        *ctx.entry_btree_map(
+            &mut definitions_per_plane,
+            plane_id,
             "creo section plane count nodes",
-        )?;
-        *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
+        )?
+        .or_insert(0usize) += 1;
     }
     let mut ordered_operations =
         ctx.collect_vec(operations.iter(), "creo section ordered operations")?;

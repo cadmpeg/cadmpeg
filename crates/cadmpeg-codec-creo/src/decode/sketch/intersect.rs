@@ -326,8 +326,9 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 continue;
             };
             for vertex in entity.vertices {
-                ctx.admit_btree_entry(&incident, &vertex, "creo sketch incident vertex nodes")?;
-                let entities = incident.entry(vertex).or_default();
+                let entities = ctx
+                    .entry_btree_map(&mut incident, vertex, "creo sketch incident vertex nodes")?
+                    .or_default();
                 ctx.reserve_vec(entities, 1, "creo sketch incident vertex entities")?;
                 entities.push(external_id);
             }
@@ -377,12 +378,13 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                     "creo sketch explicit incident entities sort",
                 )?;
                 if resolved.len() == vertex.entities.len() {
-                    ctx.admit_btree_entry(
-                        &result,
-                        &vertex.vertex_id,
-                        "creo sketch explicit incident nodes",
-                    )?;
-                    let entities = result.entry(vertex.vertex_id).or_default();
+                    let entities = ctx
+                        .entry_btree_map(
+                            &mut result,
+                            vertex.vertex_id,
+                            "creo sketch explicit incident nodes",
+                        )?
+                        .or_default();
                     ctx.reserve_vec(
                         entities,
                         resolved.len(),
@@ -495,10 +497,11 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         // complete carrier cannot be evaluated from the remaining points.
         let mut common_point = None;
         let mut multiple_common_points = false;
-        if let Some(first) = ctx
-            .admit_iter(&entities, "creo incident first segment IDs")?
-            .find_map(|id| segments.unique_segment(*id))
-        {
+        if let Some(first) = ctx.find_map(
+            &entities,
+            |id| Ok(segments.unique_segment(*id)),
+            "creo incident first segment IDs",
+        )? {
             for point_id in first.point_ids() {
                 if ctx
                     .admit_iter(&entities, "creo incident shared point segment IDs")?
@@ -659,8 +662,13 @@ fn reconciled_section_coordinates(
 ) -> Result<crate::feature::definitions::ReconciledPoints<[f64; 2]>, cadmpeg_core::CodecError> {
     let mut grouped = BTreeMap::<u32, Vec<[f64; 2]>>::new();
     for &(vertex, coordinate) in ctx.admit_iter(candidates, "creo sketch coordinate candidates")? {
-        ctx.admit_btree_entry(&grouped, &vertex, "creo sketch reconciliation group nodes")?;
-        let group = grouped.entry(vertex).or_default();
+        let group = ctx
+            .entry_btree_map(
+                &mut grouped,
+                vertex,
+                "creo sketch reconciliation group nodes",
+            )?
+            .or_default();
         ctx.reserve_vec(group, 1, "creo sketch reconciliation group values")?;
         group.push(coordinate);
     }
@@ -674,13 +682,14 @@ fn reconciled_section_coordinates(
                 scale = scale.max(value.abs());
             }
         }
-        if ctx
-            .admit_iter(values, "creo sketch coordinate group agreement")?
-            .all(|candidate| {
-                (candidate[0] - first[0]).hypot(candidate[1] - first[1])
-                    <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
-            })
-        {
+        if ctx.all_by(
+            values,
+            |candidate| {
+                Ok((candidate[0] - first[0]).hypot(candidate[1] - first[1])
+                    <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale)
+            },
+            "creo sketch coordinate group agreement",
+        )? {
             ctx.insert_btree_map(
                 &mut coordinates,
                 vertex,

@@ -344,9 +344,11 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             ),
             _ => continue,
         };
-        let Some(section) = ctx
-            .admit_iter(&scan.framing.sections, "creo prototype section search")?
-            .find(|section| section.contains(record.offset))
+        let Some(section) = ctx.find_by(
+            &scan.framing.sections,
+            |section| Ok(section.contains(record.offset)),
+            "creo prototype section search",
+        )?
         else {
             continue;
         };

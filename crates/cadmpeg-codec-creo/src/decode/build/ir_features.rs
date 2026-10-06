@@ -280,13 +280,11 @@ pub(super) fn emit_model_features(
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                if ctx
-                    .admit_iter(
-                        &scan.features.legacy_rounds,
-                        "creo legacy_rounds feature traversal",
-                    )?
-                    .any(|round| round.feature_id == feature_id)
-                {
+                if ctx.any_by(
+                    &scan.features.legacy_rounds,
+                    |round| Ok(round.feature_id == feature_id),
+                    "creo legacy_rounds feature traversal",
+                )? {
                     schema_feature_definition(
                         ctx,
                         scan,
@@ -319,16 +317,17 @@ pub(super) fn emit_model_features(
         )?
         .enumerate()
     {
-        if !ctx
-            .admit_iter(&ir.model.features, "creo existing model feature search")?
-            .any(|feature| {
-                crate::identity::matches_numbered_identity(
+        if !ctx.any_by(
+            &ir.model.features,
+            |feature| {
+                Ok(crate::identity::matches_numbered_identity(
                     feature.id.as_str(),
                     "creo:model:feature#",
                     operation.feature_id,
-                )
-            })
-        {
+                ))
+            },
+            "creo existing model feature search",
+        )? {
             ctx.charge_entities(1, "admit Creo model features")?;
         }
         let current_operation =
@@ -448,8 +447,11 @@ pub(super) fn emit_model_features(
             &prototype_feature_dependencies,
         )?;
         let operation_section = ctx
-            .admit_iter(&scan.framing.sections, "creo sections feature traversal")?
-            .find(|section| section.contains(operation.offset))
+            .find_by(
+                &scan.framing.sections,
+                |section| Ok(section.contains(operation.offset)),
+                "creo sections feature traversal",
+            )?
             .map_or("MdlStatus", |section| section.name());
         let name = current_operation
             .filter(|operation| operation.display_name_stored())
@@ -479,17 +481,17 @@ pub(super) fn emit_model_features(
         let parent =
             match current_feature_recipe_parent(&scan.features.operations, operation.feature_id) {
                 Some(parent_feature_id) => ctx
-                    .admit_iter(
+                    .find_by(
                         &ir.model.features,
+                        |feature| {
+                            Ok(crate::identity::matches_numbered_identity(
+                                feature.id.as_str(),
+                                "creo:model:feature#",
+                                parent_feature_id,
+                            ))
+                        },
                         "creo regeneration parent feature search",
                     )?
-                    .find(|feature| {
-                        crate::identity::matches_numbered_identity(
-                            feature.id.as_str(),
-                            "creo:model:feature#",
-                            parent_feature_id,
-                        )
-                    })
                     .map(|feature| &feature.id),
                 None => None,
             };
@@ -514,20 +516,17 @@ pub(super) fn emit_model_features(
         }
         if let Some(existing_index) = existing_index {
             let existing = &mut ir.model.features[existing_index];
-            let upgrade_legacy_round = ctx
-                .admit_iter(
-                    &scan.features.legacy_rounds,
-                    "creo legacy_rounds feature traversal",
-                )?
-                .any(|round| round.feature_id == operation.feature_id)
-                && matches!(
-                    &definition,
-                    IrFeatureDefinition::Operation(IrFeatureOperation::Fillet { .. })
-                )
-                && matches!(
-                    existing.evaluation.definition(),
-                    IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
-                );
+            let upgrade_legacy_round = ctx.any_by(
+                &scan.features.legacy_rounds,
+                |round| Ok(round.feature_id == operation.feature_id),
+                "creo legacy_rounds feature traversal",
+            )? && matches!(
+                &definition,
+                IrFeatureDefinition::Operation(IrFeatureOperation::Fillet { .. })
+            ) && matches!(
+                existing.evaluation.definition(),
+                IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
+            );
             if upgrade_legacy_round {
                 source_carriers.replace_feature_definition(ctx, existing, definition)?;
             }
@@ -1014,9 +1013,11 @@ pub(super) fn finish_feature_transfers(
                     "creo evaluated solve block coverage traversal",
                 )?
                 .try_fold(total, |total, block| {
-                    let resolved = ctx
-                        .admit_iter(&block.unknowns, "creo solved unknown coverage traversal")?
-                        .all(|unknown| unknown.solution.is_some());
+                    let resolved = ctx.all_by(
+                        &block.unknowns,
+                        |unknown| Ok(unknown.solution.is_some()),
+                        "creo solved unknown coverage traversal",
+                    )?;
                     total.checked_add(usize::from(resolved)).ok_or_else(|| {
                         cadmpeg_core::decode::refuse_local_limit(
                             "creo expression coverage count",

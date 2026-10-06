@@ -524,12 +524,11 @@ pub(in super::super) fn new_sheet_output_surface_id(
     if owner.source_entity_id() != Some(feature_id)
         || output.entity_id != owner.entity_id
         || !generated.contains_surface_id(output.class_id())
-        || !ctx
-            .admit_iter(
-                &generated.entries,
-                "creo new sheet generated entity entries",
-            )?
-            .any(|entry| entry.entity_id == output.class_id() && entry.class_id() == 200)
+        || !ctx.any_by(
+            &generated.entries,
+            |entry| Ok(entry.entity_id == output.class_id() && entry.class_id() == 200),
+            "creo new sheet generated entity entries",
+        )?
     {
         return Ok(None);
     }

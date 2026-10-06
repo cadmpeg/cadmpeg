@@ -915,17 +915,20 @@ fn pcurve_endpoint_evidence_from_mapped(
     // path that reaches one forms no evidence.
     let admitted = first.map(finite_model_point);
     Ok(ctx
-        .admit_iter(mapped, "creo mapped pcurve endpoint agreement")?
-        .all(|candidate| {
-            admitted
-                .into_iter()
-                .zip(candidate.endpoints)
-                .all(|(first, candidate)| {
-                    first
-                        .zip(finite_model_point(candidate))
-                        .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
-                })
-        })
+        .all_by(
+            mapped,
+            |candidate| {
+                Ok(admitted
+                    .into_iter()
+                    .zip(candidate.endpoints)
+                    .all(|(first, candidate)| {
+                        first
+                            .zip(finite_model_point(candidate))
+                            .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
+                    }))
+            },
+            "creo mapped pcurve endpoint agreement",
+        )?
         .then_some(PcurveEndpointEvidence {
             points: first,
             complete: mapped.len() == 2,
@@ -1320,30 +1323,35 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         };
         // An endpoint outside the finite range agrees with no endpoint.
         let admitted = first.points.map(finite_model_point);
-        if ctx
-            .admit_iter(candidates, "creo pcurve endpoint candidate agreement")?
-            .all(|candidate| {
-                admitted
+        if ctx.all_by(
+            candidates,
+            |candidate| {
+                Ok(admitted
                     .into_iter()
                     .zip(candidate.points)
                     .all(|(first, candidate)| {
                         first
                             .zip(finite_model_point(candidate))
                             .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
-                    })
-            })
-        {
+                    }))
+            },
+            "creo pcurve endpoint candidate agreement",
+        )? {
             ctx.insert_btree_map(
                 &mut evidence,
                 *curve_id,
                 PcurveEndpointEvidence {
                     points: first.points,
-                    complete: ctx
-                        .admit_iter(candidates, "creo complete pcurve endpoint evidence")?
-                        .any(|candidate| candidate.complete),
-                    authoritative: ctx
-                        .admit_iter(candidates, "creo authoritative pcurve endpoint evidence")?
-                        .all(|candidate| candidate.authoritative),
+                    complete: ctx.any_by(
+                        candidates,
+                        |candidate| Ok(candidate.complete),
+                        "creo complete pcurve endpoint evidence",
+                    )?,
+                    authoritative: ctx.all_by(
+                        candidates,
+                        |candidate| Ok(candidate.authoritative),
+                        "creo authoritative pcurve endpoint evidence",
+                    )?,
                 },
                 "creo pcurve endpoint evidence nodes",
             )?;
@@ -2002,22 +2010,24 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
             continue;
         }
         for vertex in vertices {
-            ctx.admit_btree_entry(&domains, vertex, "creo pcurve domain nodes")?;
-            let domain = match domains.entry(*vertex) {
-                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    let mut domain = Vec::new();
-                    ctx.reserve_vec(&mut domain, points.len(), "creo pcurve domain points")?;
-                    domain.extend_from_slice(points);
-                    entry.insert(domain)
-                }
-            };
+            let domain =
+                match ctx.entry_btree_map(&mut domains, *vertex, "creo pcurve domain nodes")? {
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        let mut domain = Vec::new();
+                        ctx.reserve_vec(&mut domain, points.len(), "creo pcurve domain points")?;
+                        domain.extend_from_slice(points);
+                        entry.insert(domain)
+                    }
+                };
             ctx.retain_vec(
                 domain,
                 |candidate| {
-                    Ok(ctx
-                        .admit_iter(points, "creo pcurve vertex point agreement")?
-                        .any(|point| agree(*candidate, *point)))
+                    Ok(ctx.any_by(
+                        points,
+                        |point| Ok(agree(*candidate, *point)),
+                        "creo pcurve vertex point agreement",
+                    )?)
                 },
                 "creo pcurve vertex domain retention",
             )?;
@@ -2027,8 +2037,7 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
         if authoritative_points.contains_key(vertex) {
             continue;
         }
-        ctx.admit_btree_entry(&domains, vertex, "creo pcurve domain nodes")?;
-        match domains.entry(*vertex) {
+        match ctx.entry_btree_map(&mut domains, *vertex, "creo pcurve domain nodes")? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let mut domain = Vec::new();
                 ctx.reserve_vec(&mut domain, candidates.len(), "creo analytic domain points")?;
@@ -2039,9 +2048,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
                 ctx.retain_vec(
                     entry.get_mut(),
                     |point| {
-                        Ok(ctx
-                            .admit_iter(candidates, "creo analytic vertex candidate agreement")?
-                            .any(|candidate| agree(*point, *candidate)))
+                        Ok(ctx.any_by(
+                            candidates,
+                            |candidate| Ok(agree(*point, *candidate)),
+                            "creo analytic vertex candidate agreement",
+                        )?)
                     },
                     "creo analytic domain retention",
                 )?;
@@ -2049,8 +2060,7 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
         }
     }
     for (vertex, point) in ctx.admit_iter(fixed_points, "creo fixed vertex points")? {
-        ctx.admit_btree_entry(&domains, vertex, "creo pcurve domain nodes")?;
-        match domains.entry(*vertex) {
+        match ctx.entry_btree_map(&mut domains, *vertex, "creo pcurve domain nodes")? {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let mut domain = Vec::new();
                 ctx.reserve_vec(&mut domain, 1, "creo fixed domain points")?;
@@ -2074,9 +2084,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
             ctx.retain_vec(
                 domain,
                 |candidate| {
-                    Ok(ctx
-                        .admit_iter(curves, "creo incident curve vertex checks")?
-                        .all(|curve| curve_contains_points(curve, [*candidate, *candidate])))
+                    Ok(ctx.all_by(
+                        curves,
+                        |curve| Ok(curve_contains_points(curve, [*candidate, *candidate])),
+                        "creo incident curve vertex checks",
+                    )?)
                 },
                 "creo incident analytic domain retention",
             )?;
@@ -2098,10 +2110,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
                 let second = domains.get(&vertices[1]).map_or(&[][..], Vec::as_slice);
                 let mut retained_first = Vec::new();
                 for candidate in ctx.admit_iter(first, "creo first pcurve domain candidates")? {
-                    if ctx
-                        .admit_iter(second, "creo second pcurve domain compatibility")?
-                        .any(|other| compatible(*candidate, *other, *points))
-                    {
+                    if ctx.any_by(
+                        second,
+                        |other| Ok(compatible(*candidate, *other, *points)),
+                        "creo second pcurve domain compatibility",
+                    )? {
                         ctx.reserve_vec(
                             &mut retained_first,
                             1,
@@ -2112,10 +2125,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
                 }
                 let mut retained_second = Vec::new();
                 for candidate in ctx.admit_iter(second, "creo second pcurve domain candidates")? {
-                    if ctx
-                        .admit_iter(first, "creo first pcurve domain compatibility")?
-                        .any(|other| compatible(*other, *candidate, *points))
-                    {
+                    if ctx.any_by(
+                        first,
+                        |other| Ok(compatible(*other, *candidate, *points)),
+                        "creo first pcurve domain compatibility",
+                    )? {
                         ctx.reserve_vec(
                             &mut retained_second,
                             1,

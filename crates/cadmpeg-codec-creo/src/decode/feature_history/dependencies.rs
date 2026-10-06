@@ -223,10 +223,11 @@ fn unique_feature_entity_producer(
 ) -> Result<Option<u32>, CodecError> {
     let mut producer = None;
     for table in ctx.admit_iter(tables, "creo unique feature producer tables")? {
-        if ctx
-            .admit_iter(&table.entries, "creo unique feature producer entries")?
-            .any(|entry| entry.class_id() == 200 && entry.entity_id == entity_id)
-        {
+        if ctx.any_by(
+            &table.entries,
+            |entry| Ok(entry.class_id() == 200 && entry.entity_id == entity_id),
+            "creo unique feature producer entries",
+        )? {
             match producer {
                 Some(owner) if owner != table.feature_id => return Ok(None),
                 None => producer = Some(table.feature_id),
@@ -404,9 +405,11 @@ pub(in super::super) fn has_feature_affected_ids(
     feature_id: u32,
     kind: crate::feature::rows::AffectedIdKind,
 ) -> Result<bool, CodecError> {
-    Ok(ctx
-        .admit_iter(records, "creo feature affected ID records")?
-        .any(|record| record.feature_id == feature_id && record.kind == kind))
+    Ok(ctx.any_by(
+        records,
+        |record| Ok(record.feature_id == feature_id && record.kind == kind),
+        "creo feature affected ID records",
+    )?)
 }
 
 fn agreed_feature_parent_ids(

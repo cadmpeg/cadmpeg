@@ -69,13 +69,11 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     let Some(relations) = &definition.relations else {
         return Ok(Vec::new());
     };
-    let resolved_points = if ctx
-        .admit_iter(
-            relations.skamps(),
-            "creo SKAMP coordinate requirement search",
-        )?
-        .any(|skamp| section_skamp_active(skamp.status) && matches!(skamp.kind, 15 | 17 | 30 | 31))
-    {
+    let resolved_points = if ctx.any_by(
+        relations.skamps(),
+        |skamp| Ok(section_skamp_active(skamp.status) && matches!(skamp.kind, 15 | 17 | 30 | 31)),
+        "creo SKAMP coordinate requirement search",
+    )? {
         Some(resolved_section_points(ctx, definition)?)
     } else {
         None
@@ -86,8 +84,8 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         .is_none_or(SolverSubtable::is_complete);
     let mut skamp_id_counts = BTreeMap::<u32, usize>::new();
     for skamp in ctx.admit_iter(relations.skamps(), "creo SKAMP constraint row traversal")? {
-        ctx.admit_btree_entry(&skamp_id_counts, &skamp.id, "creo skamp ID count nodes")?;
-        *skamp_id_counts.entry(skamp.id).or_default() += 1;
+        *ctx.entry_btree_map(&mut skamp_id_counts, skamp.id, "creo skamp ID count nodes")?
+            .or_default() += 1;
     }
     let available_entities = if let Some(geometry) = geometry {
         let mut ids = std::collections::BTreeSet::new();

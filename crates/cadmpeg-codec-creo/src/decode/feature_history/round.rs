@@ -180,19 +180,21 @@ pub(in super::super) fn slot_fillet_cylinder(
             let Some(origin) = solve_planes(ctx, &[cap_planes[0], first.0, second.0])? else {
                 continue;
             };
-            let tangent_to_all = ctx
-                .admit_iter(support_planes, "creo slot fillet support planes")?
-                .all(|plane| {
+            let tangent_to_all = ctx.all_by(
+                support_planes,
+                |plane| {
                     let Some(normal) = normalize(plane.normal) else {
-                        return false;
+                        return Ok(false);
                     };
                     let distance = dot(
                         normal,
                         std::array::from_fn(|index| origin[index] - plane.origin[index]),
                     )
                     .abs();
-                    (distance - radius).abs() <= EPS_CYLINDER_FIT * scale
-                });
+                    Ok((distance - radius).abs() <= EPS_CYLINDER_FIT * scale)
+                },
+                "creo slot fillet support planes",
+            )?;
             if tangent_to_all {
                 let candidate = CylinderEquation {
                     origin,
@@ -323,13 +325,11 @@ pub(in super::super) fn paired_five_coordinate_sphere_center(
     let other_axial = [second_axial[0], second_axial[1]];
     let mut center_z = None;
     for candidate in ctx.admit_iter(&candidates, "creo paired sphere center candidates")? {
-        if ctx
-            .admit_iter(
-                &other_axial,
-                "creo paired sphere matching axial coordinates",
-            )?
-            .any(|other| close(*candidate, *other))
-        {
+        if ctx.any_by(
+            &other_axial,
+            |other| Ok(close(*candidate, *other)),
+            "creo paired sphere matching axial coordinates",
+        )? {
             if center_z.replace(*candidate).is_some() {
                 return Ok(None);
             }
@@ -378,9 +378,11 @@ fn unique_section_torus_minor_radius(
     scan: &ContainerScan,
     row: &crate::surface::SurfaceRow,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-    let Some(section) = ctx
-        .admit_iter(&scan.framing.sections, "creo torus section lookup")?
-        .find(|section| section.contains(row.offset))
+    let Some(section) = ctx.find_by(
+        &scan.framing.sections,
+        |section| Ok(section.contains(row.offset)),
+        "creo torus section lookup",
+    )?
     else {
         return Ok(None);
     };
@@ -513,8 +515,11 @@ pub(in super::super) fn round_constant_radius(
     feature_id: u32,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
     let legacy_radius = ctx
-        .admit_iter(&scan.features.legacy_rounds, "creo legacy round records")?
-        .find(|round| round.feature_id == feature_id)
+        .find_by(
+            &scan.features.legacy_rounds,
+            |round| Ok(round.feature_id == feature_id),
+            "creo legacy round records",
+        )?
         .map(|round| round.radius);
     match legacy_radius {
         Some(LegacyRoundRadius::Constant(radius)) => {
@@ -570,24 +575,27 @@ pub(in super::super) fn round_constant_radius(
         .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         .count();
     if cylinder_count == 0 {
-        if ctx
-            .admit_iter(&generated_rows, "creo generated round surface rows")?
-            .any(|row| row.kind != crate::surface::SurfaceKind::TorusOrSphere)
-        {
+        if ctx.any_by(
+            &generated_rows,
+            |row| Ok(row.kind != crate::surface::SurfaceKind::TorusOrSphere),
+            "creo generated round surface rows",
+        )? {
             return Ok(None);
         }
         return prototype_round_radius(ctx, scan, &generated_rows);
     }
     if cylinder_count != generated_rows.len()
-        && ctx
-            .admit_iter(&generated_rows, "creo generated round surface rows")?
-            .all(|row| {
-                matches!(
+        && ctx.all_by(
+            &generated_rows,
+            |row| {
+                Ok(matches!(
                     row.kind,
                     crate::surface::SurfaceKind::Cylinder
                         | crate::surface::SurfaceKind::TorusOrSphere
-                )
-            })
+                ))
+            },
+            "creo generated round surface rows",
+        )?
     {
         if let Some(radii) =
             mixed_round_radius_samples(ctx, scan, ir, source_carriers, &generated_rows)?
@@ -606,14 +614,16 @@ pub(in super::super) fn round_constant_radius(
     // radius witness when the remaining generated rows are cap or support
     // planes. A toroidal or other rolling carrier still needs its own family
     // proof, so it must not be hidden by the cylinder subset.
-    let non_radius_rows_are_planes = ctx
-        .admit_iter(&generated_rows, "creo generated round surface rows")?
-        .all(|row| {
-            matches!(
+    let non_radius_rows_are_planes = ctx.all_by(
+        &generated_rows,
+        |row| {
+            Ok(matches!(
                 row.kind,
                 crate::surface::SurfaceKind::Cylinder | crate::surface::SurfaceKind::Plane
-            )
-        });
+            ))
+        },
+        "creo generated round surface rows",
+    )?;
     if cylinder_radii.len() == cylinder_count && non_radius_rows_are_planes {
         return Ok(unique_positive_length(ctx, &cylinder_radii)?.map(PositiveLength::get));
     }
@@ -662,10 +672,11 @@ fn legacy_round_radius_agrees(
     let placed = round_placed_cylinder_radii(ctx, scan, ir, source_carriers, feature_id)?;
     ctx.reserve_vec(&mut samples, placed.len(), "creo legacy round samples")?;
     samples.extend(placed);
-    if ctx
-        .admit_iter(&samples, "creo legacy round radius samples")?
-        .any(|sample| !sample.is_finite() || *sample <= 0.0)
-    {
+    if ctx.any_by(
+        &samples,
+        |sample| Ok(!sample.is_finite() || *sample <= 0.0),
+        "creo legacy round radius samples",
+    )? {
         return Ok(false);
     }
     let scale = ctx
@@ -674,9 +685,11 @@ fn legacy_round_radius_agrees(
         .map(f64::abs)
         .chain(std::iter::once(radius.abs()))
         .fold(1.0, f64::max);
-    Ok(ctx
-        .admit_iter(&samples, "creo legacy round radius samples")?
-        .all(|sample| (sample - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale))
+    Ok(ctx.all_by(
+        &samples,
+        |sample| Ok((sample - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale),
+        "creo legacy round radius samples",
+    )?)
 }
 
 fn complete_direct_placed_cylinder_radius_agreement(
@@ -1228,10 +1241,11 @@ pub(in super::super) fn differing_positive_lengths(
     let Some(&first) = values.first() else {
         return Ok(false);
     };
-    if ctx
-        .admit_iter(values, "creo positive length validation")?
-        .any(|value| !value.is_finite() || *value <= 0.0)
-    {
+    if ctx.any_by(
+        values,
+        |value| Ok(!value.is_finite() || *value <= 0.0),
+        "creo positive length validation",
+    )? {
         return Ok(false);
     }
     let scale = ctx
@@ -1239,9 +1253,11 @@ pub(in super::super) fn differing_positive_lengths(
         .copied()
         .map(f64::abs)
         .fold(first.abs().max(1.0), f64::max);
-    Ok(ctx
-        .admit_iter(values, "creo positive length agreement")?
-        .any(|value| (*value - first).abs() > EPS_GEOMETRY_AGREEMENT * scale))
+    Ok(ctx.any_by(
+        values,
+        |value| Ok((*value - first).abs() > EPS_GEOMETRY_AGREEMENT * scale),
+        "creo positive length agreement",
+    )?)
 }
 
 pub(in super::super) fn unique_positive_length(
@@ -1261,12 +1277,15 @@ pub(in super::super) fn unique_positive_length(
         .map(f64::abs)
         .fold(value_raw.abs().max(1.0), f64::max);
     Ok(ctx
-        .admit_iter(values, "creo positive length agreement")?
-        .all(|candidate| {
-            candidate.is_finite()
-                && *candidate > 0.0
-                && (*candidate - value_raw).abs() <= EPS_GEOMETRY_AGREEMENT * scale
-        })
+        .all_by(
+            values,
+            |candidate| {
+                Ok(candidate.is_finite()
+                    && *candidate > 0.0
+                    && (*candidate - value_raw).abs() <= EPS_GEOMETRY_AGREEMENT * scale)
+            },
+            "creo positive length agreement",
+        )?
         .then_some(value))
 }
 
