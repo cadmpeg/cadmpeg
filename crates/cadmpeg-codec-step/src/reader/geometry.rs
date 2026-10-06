@@ -1526,7 +1526,10 @@ pub(super) fn decode(
             "step_deferred_curve_queue",
         )?;
     }
-    for (id, _) in exchange.entities("CURVE_REPLICA") {
+    for (id, _) in exchange
+        .entities("CURVE_REPLICA")
+        .filter(|(id, _)| !pcurve_geometry_records.contains(id))
+    {
         if !carrier_index.curves.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,

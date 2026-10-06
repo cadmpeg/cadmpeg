@@ -103,15 +103,28 @@ pub(crate) struct TopLevelManifest {
     /// keeps whatever version the field declared, so this is the reading rather
     /// than a constant. It is the evidence the dialect match records, kept
     /// beside the parse instead of re-derived at the report boundary.
-    version: String,
+    version: Option<String>,
     asset_folder_bases: Vec<String>,
+    pub(crate) diagnostics: Vec<MetadataDiagnostic>,
 }
 
 impl TopLevelManifest {
     /// The version field the top-level manifest declared, verbatim.
-    pub(crate) fn declared_version(&self) -> &str {
-        &self.version
+    pub(crate) fn declared_version(&self) -> Option<&str> {
+        self.version.as_deref()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MetadataDiagnostic {
+    pub(crate) field: &'static str,
+    pub(crate) offset: usize,
+}
+
+#[derive(Clone, Copy)]
+enum MetadataString {
+    Text,
+    Guid,
 }
 
 /// Prefix fields that identify one asset manifest.
@@ -192,13 +205,7 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
     }
 
     fn ascii(&mut self, field: &str) -> Result<&'a str, ManifestFailure<'ctx>> {
-        let count = self.count(field, MAX_MANIFEST_STRING_UNITS)?;
-        let raw = self
-            .view
-            .take(count)
-            .ok_or_else(|| truncated(self.ctx, field))?;
-        self.ctx
-            .charge_work(u64_from_index(raw.len()) * 4, "decode F3D manifest ASCII")?;
+        let raw = self.ascii_bytes(field)?;
         if !raw.iter().all(|byte| matches!(byte, 0x20..=0x7e)) {
             return Err(probe_malformed(
                 self.ctx,
@@ -208,6 +215,17 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
         }
         std::str::from_utf8(raw)
             .map_err(|_| probe_malformed(self.ctx, field, "contains a non-printable ASCII byte"))
+    }
+
+    fn ascii_bytes(&mut self, field: &str) -> Result<&'a [u8], ManifestFailure<'ctx>> {
+        let count = self.count(field, MAX_MANIFEST_STRING_UNITS)?;
+        let raw = self
+            .view
+            .take(count)
+            .ok_or_else(|| truncated(self.ctx, field))?;
+        self.ctx
+            .charge_work(u64_from_index(raw.len()) * 4, "decode F3D manifest ASCII")?;
+        Ok(raw)
     }
 
     fn expect_ascii(&mut self, field: &str, expected: &str) -> Result<(), ManifestFailure<'ctx>> {
@@ -232,6 +250,16 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
         count: usize,
         field: &str,
     ) -> Result<Utf16View<'a>, ManifestFailure<'ctx>> {
+        let raw = self.utf16_bytes_with_count(count, field)?;
+        Utf16View::new(raw)
+            .ok_or_else(|| probe_malformed(self.ctx, field, "contains invalid UTF-16LE"))
+    }
+
+    fn utf16_bytes_with_count(
+        &mut self,
+        count: usize,
+        field: &str,
+    ) -> Result<&'a [u8], ManifestFailure<'ctx>> {
         let needed = count
             .checked_mul(2)
             .ok_or_else(|| truncated(self.ctx, field))?;
@@ -241,8 +269,30 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
             .ok_or_else(|| truncated(self.ctx, field))?;
         self.ctx
             .charge_work(u64_from_index(needed) * 8, "decode F3D manifest UTF-16")?;
-        Utf16View::new(raw)
-            .ok_or_else(|| probe_malformed(self.ctx, field, "contains invalid UTF-16LE"))
+        Ok(raw)
+    }
+
+    fn metadata_utf16(
+        &mut self,
+        field: &'static str,
+        kind: MetadataString,
+        diagnostics: &mut Vec<MetadataDiagnostic>,
+    ) -> Result<(), ManifestFailure<'ctx>> {
+        let offset = self.position();
+        let count = self.count(field, MAX_MANIFEST_STRING_UNITS)?;
+        let raw = self.utf16_bytes_with_count(count, field)?;
+        let valid = Utf16View::new(raw).is_some_and(|value| match kind {
+            MetadataString::Text => true,
+            MetadataString::Guid => value.is_guid_hyphenated(),
+        });
+        if !valid {
+            self.ctx.push_vec(
+                diagnostics,
+                MetadataDiagnostic { field, offset },
+                "F3D manifest metadata diagnostics",
+            )?;
+        }
+        Ok(())
     }
 
     fn expect_utf16(&mut self, field: &str, expected: &str) -> Result<(), ManifestFailure<'ctx>> {
@@ -297,12 +347,12 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
 /// Parse the top-level `Manifest.dat` header, capability registry, and exact
 /// asset-folder tail.
 ///
-/// The version field selects no layout. Every readable version is parsed with
-/// the `3-2-0-0` layout, and the anchors inside that layout are the backstop:
-/// `FusionDocType`, `.f3d`, and two hyphenated GUIDs must all match, so a
-/// generation that moved the layout fails within the first few fields. A
+/// The version field selects no layout. Every version is parsed with
+/// the `3-2-0-0` layout. `FusionDocType`, `.f3d`, the registry grammar and the
+/// exact asset-folder tail establish the layout. Descriptive string payloads
+/// do not control folder ownership. A
 /// failed attempt remains a structural error and names the declared version
-/// as the probable cause.
+/// alongside the failed layout diagnosis.
 pub(crate) fn parse_top_level(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -319,23 +369,41 @@ pub(crate) fn parse_top_level(
             ));
         }
         let mut cursor = Cursor::new(ctx, bytes);
-        // An unreadable version field is corrupt bytes: nothing names a generation,
-        // so there is no recognized document to refuse.
-        let version = cursor.ascii("top-level manifest version")?;
+        let raw_version = cursor.ascii_bytes("top-level manifest version")?;
+        let version = std::str::from_utf8(raw_version)
+            .ok()
+            .filter(|value| value.bytes().all(|byte| matches!(byte, 0x20..=0x7e)));
+        let mut diagnostics = Vec::new();
         let mut asset_storage = ctx.reserve_scoped(0, "F3D manifest asset views")?;
-        let asset_folder_bases = asset_storage.with_storage(|| parse_top_level_body(ctx, bytes, cursor)).map_err(|error| {
-        if error.is_resource() {
-            error
-        } else {
-            probe_malformed(ctx,
-                "top-level manifest",
-                format_args!(
-                    "the {TOP_LEVEL_MANIFEST_VERSION} grammar does not fit; declared version {version} is the probable cause: {error}"
-                ),
-            )
+        let parsed_body = asset_storage
+            .with_storage(|| parse_top_level_body(ctx, bytes, cursor, &mut diagnostics));
+        let asset_folder_bases = parsed_body.map_err(|error| {
+            if error.is_resource() {
+                error
+            } else {
+                probe_malformed(ctx, "top-level manifest", format_args!(
+                    "the {TOP_LEVEL_MANIFEST_VERSION} grammar does not fit; declared version {}: {error}",
+                    version.unwrap_or("unreadable")
+                ))
+            }
+        })?;
+        let version = version
+            .map(|version| ctx.copy_retained_text(version, "retain F3D manifest ASCII"))
+            .transpose()?;
+        let mut diagnostics = ctx.try_collect_vec(
+            diagnostics.into_iter().map(Ok::<_, CodecError>),
+            "retain F3D manifest metadata diagnostics",
+        )?;
+        if version.is_none() {
+            ctx.push_vec(
+                &mut diagnostics,
+                MetadataDiagnostic {
+                    field: "top-level manifest version",
+                    offset: 0,
+                },
+                "F3D manifest metadata diagnostics",
+            )?;
         }
-    })?;
-        let version = ctx.copy_retained_text(version, "retain F3D manifest ASCII")?;
         let asset_folder_bases = ctx.try_collect_vec(
             asset_folder_bases
                 .into_iter()
@@ -345,6 +413,7 @@ pub(crate) fn parse_top_level(
         Ok(TopLevelManifest {
             version,
             asset_folder_bases,
+            diagnostics,
         })
     })();
     parsed.map_err(ManifestFailure::into_codec)
@@ -355,13 +424,30 @@ fn parse_top_level_body<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &'a [u8],
     mut cursor: Cursor<'a, 'ctx, '_>,
+    diagnostics: &mut Vec<MetadataDiagnostic>,
 ) -> Result<Vec<Utf16View<'a>>, ManifestFailure<'ctx>> {
     cursor.expect_ascii("top-level manifest kind", "FusionDocType")?;
     cursor.expect_utf16("top-level manifest extension", ".f3d")?;
-    let _display_name = cursor.utf16("top-level manifest display name")?;
-    let _description = cursor.utf16("top-level manifest description")?;
-    let _document_guid = cursor.guid("top-level manifest document GUID")?;
-    let _document_asset_guid = cursor.guid("top-level manifest document-asset GUID")?;
+    cursor.metadata_utf16(
+        "top-level manifest display name",
+        MetadataString::Text,
+        diagnostics,
+    )?;
+    cursor.metadata_utf16(
+        "top-level manifest description",
+        MetadataString::Text,
+        diagnostics,
+    )?;
+    cursor.metadata_utf16(
+        "top-level manifest document GUID",
+        MetadataString::Guid,
+        diagnostics,
+    )?;
+    cursor.metadata_utf16(
+        "top-level manifest document-asset GUID",
+        MetadataString::Guid,
+        diagnostics,
+    )?;
 
     let generation = cursor.u32("top-level manifest generation")?;
     let registry_count = if generation == 1234 {

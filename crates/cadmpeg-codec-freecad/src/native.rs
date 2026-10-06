@@ -530,7 +530,15 @@ mod tests {
     fn string_tables_admit_numeric_positions_from_canonical_native_order() {
         let records = (0..12)
             .map(|index| {
-                super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new()).unwrap()
+                super::StringTableRecord::try_new(
+                    index,
+                    None,
+                    Some(false),
+                    Some(0),
+                    None,
+                    Some(Vec::new()),
+                )
+                .unwrap()
             })
             .collect::<Vec<_>>();
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
@@ -588,8 +596,15 @@ mod tests {
             let records = indices
                 .into_iter()
                 .map(|index| {
-                    super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new())
-                        .unwrap()
+                    super::StringTableRecord::try_new(
+                        index,
+                        None,
+                        Some(false),
+                        Some(0),
+                        None,
+                        Some(Vec::new()),
+                    )
+                    .unwrap()
                 })
                 .collect::<Vec<_>>();
             assert!(super::StringTables::try_from(records.clone()).is_err());
@@ -3843,27 +3858,27 @@ pub(crate) struct StringTableRecord {
     pub(crate) index: usize,
     /// Owning property when the table is serialized beside its first use.
     pub(crate) owner_property: Option<String>,
-    /// Whether all strings, rather than only marked strings, were persisted.
-    save_all: bool,
-    /// Native hashing threshold.
-    threshold: i64,
+    /// Whether all strings were persisted; `None` for unreadable metadata.
+    save_all: Option<bool>,
+    /// Native hashing threshold; `None` for unreadable metadata.
+    threshold: Option<i64>,
     /// Referenced side entry, or `None` for inline data.
     pub(crate) source_entry: Option<String>,
-    /// Parsed records in serialized order.
-    entries: Vec<StringTableEntry>,
+    /// Parsed records in serialized order; `None` when the payload is source-only.
+    entries: Option<Vec<StringTableEntry>>,
 }
 
 impl StringTableRecord {
     pub(crate) fn try_new(
         index: usize,
         owner_property: Option<String>,
-        save_all: bool,
-        threshold: i64,
+        save_all: Option<bool>,
+        threshold: Option<i64>,
         source_entry: Option<String>,
-        entries: Vec<StringTableEntry>,
+        entries: Option<Vec<StringTableEntry>>,
     ) -> Result<Self, String> {
         let mut seen = std::collections::HashSet::new();
-        for entry in &entries {
+        for entry in entries.as_deref().unwrap_or_default() {
             if entry.components.iter().any(|id| !seen.contains(id)) {
                 return Err("entries.components must reference earlier string_id values".to_owned());
             }
@@ -3886,13 +3901,13 @@ impl StringTableRecord {
         native_id("string-table", self.index.to_string())
     }
 
-    pub(crate) fn entries(&self) -> &[StringTableEntry] {
-        &self.entries
+    pub(crate) fn entries(&self) -> Option<&[StringTableEntry]> {
+        self.entries.as_deref()
     }
 
-    /// Declared number of serialized entries, equal to `entries.len()`.
-    fn declared_count(&self) -> usize {
-        self.entries().len()
+    /// Admitted serialized count; absent exactly when the table is unreadable.
+    fn declared_count(&self) -> Option<usize> {
+        self.entries().map(<[StringTableEntry]>::len)
     }
 }
 
@@ -3901,11 +3916,11 @@ struct StringTableRecordWire {
     id: String,
     index: usize,
     owner_property: Option<String>,
-    save_all: bool,
-    threshold: i64,
-    declared_count: usize,
+    save_all: Option<bool>,
+    threshold: Option<i64>,
+    declared_count: Option<usize>,
     source_entry: Option<String>,
-    entries: Vec<StringTableEntry>,
+    entries: Option<Vec<StringTableEntry>>,
 }
 
 #[derive(Serialize)]
@@ -3913,11 +3928,11 @@ struct StringTableRecordOut<'a> {
     id: String,
     index: usize,
     owner_property: Option<&'a str>,
-    save_all: bool,
-    threshold: i64,
-    declared_count: usize,
+    save_all: Option<bool>,
+    threshold: Option<i64>,
+    declared_count: Option<usize>,
     source_entry: Option<&'a str>,
-    entries: &'a [StringTableEntry],
+    entries: Option<&'a [StringTableEntry]>,
 }
 
 impl Serialize for StringTableRecord {
@@ -3948,7 +3963,7 @@ impl TryFrom<StringTableRecordWire> for StringTableRecord {
                 wire.index
             ));
         }
-        if wire.declared_count != wire.entries.len() {
+        if wire.declared_count != wire.entries.as_ref().map(Vec::len) {
             return Err("string table declared_count must equal entries.len()".to_owned());
         }
         Self::try_new(

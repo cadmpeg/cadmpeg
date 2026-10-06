@@ -131,6 +131,7 @@ struct RawGlobal {
     record_delimiter: u8,
     values: Vec<Value>,
     field_count: usize,
+    unreadable_suffix: Option<(usize, CodecError)>,
 }
 
 /// The effective specification family selected by Global field 23.
@@ -745,16 +746,28 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
         Value::String(ctx.copy_retained(&[record_delimiter], "iges_global_value")?)
     };
     let mut field_count = 2_usize;
+    let mut unreadable_suffix = None;
     loop {
         let retain = field_count < values.len();
-        let (value, next, ended) = delimited_value(
+        let framed = delimited_value(
             &bytes,
             cursor,
             parameter_delimiter,
             Some(record_delimiter),
             retain,
             ctx,
-        )?;
+        );
+        let (value, next, ended) = match framed {
+            Ok(value) => value,
+            // Every field after the version declaration is descriptive. The
+            // Global cards bound their suffix independently of Directory and
+            // Parameter cards; no later field boundary needs to be guessed.
+            Err(error @ CodecError::Malformed(_)) if field_count > FIELD_VERSION_FLAG => {
+                unreadable_suffix = Some((cursor, error));
+                break;
+            }
+            Err(error) => return Err(error),
+        };
         if retain {
             values[field_count] = value;
         }
@@ -771,6 +784,7 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
         record_delimiter,
         values,
         field_count,
+        unreadable_suffix,
     })
 }
 
@@ -1437,12 +1451,21 @@ fn resolve(
         record_delimiter,
         values,
         field_count,
+        unreadable_suffix,
     } = raw;
     let mut resolution = Resolution {
         ctx,
         values,
         losses: Vec::new(),
     };
+    if let Some((offset, error)) = unreadable_suffix {
+        let message = ctx.format_retained(
+            format_args!("IGES Global field {} ({}) at Global byte {offset} has an unreadable suffix: {error}; preceding interpretation fields retained, remaining metadata left source-only", field_count + 1, field_name(field_count)),
+            "iges global framing loss message",
+        )?;
+        let note = admitted_global_loss(ctx, IgesLossCode::GlobalNoncanonicalFraming, message)?;
+        ctx.push_vec(&mut resolution.losses, note, "iges global loss notes")?;
+    }
 
     let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG) {
         Supplied::Absent => VersionDeclaration::Exact(VersionFlag::V2_0),

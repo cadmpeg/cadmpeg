@@ -343,8 +343,11 @@ pub(crate) fn prepare(
     }
 
     let validation_arena = DecodeArena::new();
-    let (validation_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &validation_arena, &source.options.policy)?;
+    let validation_ctx = DecodeContext::for_loaded_input(
+        &validation_arena,
+        &source.options.policy,
+        loaded.input_bytes,
+    )?;
     let validation = validate_ir(
         &validation_ctx,
         inputs,

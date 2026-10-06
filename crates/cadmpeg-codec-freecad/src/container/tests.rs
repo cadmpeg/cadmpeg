@@ -926,3 +926,46 @@ fn invalid_file_version_preserves_independent_brep_geometry_and_declaration() {
         crate::test_support::test_archive::assert_valid_document(recovered.ir());
     }
 }
+
+#[test]
+fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() {
+    use crate::test_support::test_archive::{
+        assert_valid_document, rewrite_entry, rewrite_schema_version, GEOMETRY,
+    };
+    let schema_two = rewrite_entry(GEOMETRY, "Document.xml", |data| {
+        let text = std::str::from_utf8(data).unwrap();
+        // Schema 2 has no Dependencies attribute and uses the Feature vocabulary.
+        let text = text
+            .replace("SchemaVersion=\"4\"", "SchemaVersion=\"2\"")
+            .replace("ObjectData", "FeatureData")
+            .replace("Objects", "Features")
+            .replace("<Object ", "<Feature ")
+            .replace("</Object>", "</Feature>")
+            .replace(" Dependencies=\"1\"", "");
+        let xml = roxmltree::Document::parse(&text).unwrap();
+        let mut ranges = xml
+            .descendants()
+            .filter(|node| node.has_tag_name("ObjectDeps"))
+            .map(|node| node.range())
+            .collect::<Vec<_>>();
+        ranges.sort_by_key(|range| range.start);
+        let mut text = text;
+        for range in ranges.into_iter().rev() {
+            text.replace_range(range, "");
+        }
+        text.into_bytes()
+    });
+    let expected = FcstdCodec
+        .decode(&mut Cursor::new(&schema_two), &DecodeOptions::default())
+        .unwrap();
+    assert!(!expected.ir().model.faces.is_empty());
+    for spelling in ["02", "+2", "0002"] {
+        let source = rewrite_schema_version(&schema_two, spelling);
+        let recovered = FcstdCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert_valid_document(recovered.ir());
+        assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
+    }
+}

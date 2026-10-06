@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use crate::dialect::FcstdDialect;
 use crate::native::{
     DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire, ObjectRecord, PropertyFamily,
     PropertyRecord, ValueRecord,
@@ -14,6 +13,33 @@ use crate::native::{
 
 const MAX_OBJECTS: usize = 1_000_000;
 const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
+
+/// Persistence vocabulary follows the numeric schema value, independently of
+/// whether its source spelling matches a catalog discriminant.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Vocabulary {
+    Features,
+    Objects,
+}
+
+impl Vocabulary {
+    pub(crate) fn from_declaration(declared: &str) -> Result<Self, CodecError> {
+        match declared.parse::<u32>() {
+            Ok(2) => Ok(Self::Features),
+            Ok(_) => Ok(Self::Objects),
+            Err(_) => Err(CodecError::Malformed(
+                "Document.xml SchemaVersion is invalid".into(),
+            )),
+        }
+    }
+
+    pub(crate) const fn tags(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Features => ("Features", "FeatureData", "Feature"),
+            Self::Objects => ("Objects", "ObjectData", "Object"),
+        }
+    }
+}
 
 struct DependencyInfo {
     dependencies: Vec<String>,
@@ -29,6 +55,84 @@ pub(crate) struct Graph {
     pub(crate) extensions: Vec<ExtensionRecord>,
     /// Document and object properties.
     pub(crate) properties: Vec<PropertyRecord>,
+}
+
+/// Required property payload references must resolve. Missing naming sidecars
+/// stay in exact value XML, but cannot enter the admitted reference graph.
+pub(crate) fn resolve_side_entries(
+    ctx: &DecodeContext<'_>,
+    properties: &mut [PropertyRecord],
+    entries: &std::collections::BTreeMap<String, cadmpeg_core::decode::View<'_>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    for property in properties {
+        let crate::native::PropertyBody::Persisted {
+            values,
+            side_entries,
+            ..
+        } = &mut property.body
+        else {
+            continue;
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(side_entries.len()),
+            "FreeCAD property side-entry resolution",
+        )?;
+        if side_entries.iter().all(|name| entries.contains_key(name)) {
+            continue;
+        }
+        let mut reference_storage = ctx.reserve_scoped(0, "FreeCAD optional naming references")?;
+        let mut naming_files = HashSet::new();
+        let mut required_files = HashSet::new();
+        for value in values {
+            for (key, name) in &value.attributes {
+                ctx.charge_work(1, "FreeCAD property side-entry resolution")?;
+                if !matches!(key.as_str(), "file" | "File") || name.is_empty() {
+                    continue;
+                }
+                if matches!(
+                    value.tag.as_str(),
+                    "StringHasher" | "StringHasher2" | "ElementMap" | "ElementMap2"
+                ) {
+                    reference_storage.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut naming_files,
+                            name.as_str(),
+                            "FreeCAD optional naming references",
+                        )
+                    })?;
+                } else {
+                    reference_storage.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut required_files,
+                            name.as_str(),
+                            "FreeCAD required side-entry references",
+                        )
+                    })?;
+                }
+            }
+        }
+        for name in side_entries
+            .iter()
+            .filter(|name| !entries.contains_key(*name))
+        {
+            ctx.charge_work(1, "FreeCAD property side-entry resolution")?;
+            if !naming_files.contains(name.as_str()) || required_files.contains(name.as_str()) {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!(
+                        "property {} references missing side entry {name}",
+                        property.id
+                    ),
+                    "FCStd missing side entry diagnostic",
+                )?));
+            }
+            ctx.push_vec(losses, crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.note(
+                ctx.format_retained(format_args!("property {} references unavailable naming side entry {name}; reference remains in source XML", property.id), "FreeCAD naming metadata diagnostic")?
+            ), "FreeCAD naming metadata losses")?;
+        }
+        side_entries.retain(|name| entries.contains_key(name));
+    }
+    Ok(())
 }
 
 /// Recover the persistence graph, charging retained property XML against the session.
@@ -57,7 +161,7 @@ pub(crate) fn parse_with_context(
     parse_document(
         text,
         xml,
-        FcstdDialect::from_schema_version(schema_version),
+        Vocabulary::from_declaration(schema_version)?,
         ctx,
     )
 }
@@ -65,7 +169,7 @@ pub(crate) fn parse_with_context(
 fn parse_document(
     text: &str,
     xml: &roxmltree::Document<'_>,
-    schema: FcstdDialect,
+    schema: Vocabulary,
     ctx: &DecodeContext<'_>,
 ) -> Result<Graph, CodecError> {
     let root = xml.root_element();
@@ -76,7 +180,7 @@ fn parse_document(
     // because an element vocabulary that does not fit fails below exactly as a
     // corrupt schema-4 document does. `crate::dialect` charges the
     // dialect-unverified loss for the undeclared case.
-    let (declarations_tag, data_tag, record_tag) = schema.persistence_tags();
+    let (declarations_tag, data_tag, record_tag) = schema.tags();
     let objects_node = unique_section(root, declarations_tag, ctx)?;
     let data_node = unique_section(root, data_tag, ctx)?;
 
@@ -122,14 +226,14 @@ fn parse_document(
         cadmpeg_core::decode::u64_from_index(declared_count),
         "FCStd object declarations",
     )?;
-    if schema == FcstdDialect::Schema2 && objects_node.attribute("Dependencies").is_some() {
+    if schema == Vocabulary::Features && objects_node.attribute("Dependencies").is_some() {
         return Err(CodecError::Malformed(
             "schema 2 Features cannot carry object dependencies".into(),
         ));
     }
 
     let dependencies_enabled =
-        schema != FcstdDialect::Schema2 && objects_node.attribute("Dependencies").is_some();
+        schema != Vocabulary::Features && objects_node.attribute("Dependencies").is_some();
     let mut saw_object_declaration = false;
     for child in objects_node.children().filter(roxmltree::Node::is_element) {
         if child.has_tag_name(record_tag) {

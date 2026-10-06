@@ -11,6 +11,8 @@ pub(crate) struct LoadedDocument {
     pub(crate) ir: CadIr,
     /// Whether the document came from neutral JSON or a native decoder.
     pub(crate) origin: LoadOrigin,
+    /// Physical byte length measured while loading the input artifact.
+    pub(crate) input_bytes: u64,
 }
 
 /// Source information attached to a loaded document.
@@ -38,15 +40,16 @@ pub(crate) enum LoadOrigin {
 
 impl LoadedDocument {
     /// Creates a document from a neutral CADIR payload.
-    pub(crate) const fn neutral(ir: CadIr) -> Self {
+    pub(crate) const fn neutral(ir: CadIr, input_bytes: u64) -> Self {
         Self {
             ir,
             origin: LoadOrigin::Neutral,
+            input_bytes,
         }
     }
 
     /// Creates a document from a native decode result.
-    pub(crate) fn decoded(result: DecodeResult, selection: Selection) -> Self {
+    pub(crate) fn decoded(result: DecodeResult, selection: Selection, input_bytes: u64) -> Self {
         let (ir, report, fidelity) = result.into_parts();
         Self {
             ir,
@@ -55,17 +58,24 @@ impl LoadedDocument {
                 fidelity: Box::new(fidelity),
                 selection,
             },
+            input_bytes,
         }
     }
 
     /// Creates a neutral load whose matching sidecar restores decode origin.
-    pub(crate) fn restored(ir: CadIr, report: DecodeReport, fidelity: SourceFidelity) -> Self {
+    pub(crate) fn restored(
+        ir: CadIr,
+        report: DecodeReport,
+        fidelity: SourceFidelity,
+        input_bytes: u64,
+    ) -> Self {
         Self {
             ir,
             origin: LoadOrigin::Restored {
                 report,
                 fidelity: Box::new(fidelity),
             },
+            input_bytes,
         }
     }
 

@@ -24,6 +24,9 @@ fn header_metadata_defects_preserve_data_and_source_records() {
         format!("{description}{name}{schema}SECTION_LANGUAGE();"),
         format!("{description}{name}{schema}SECTION_CONTEXT();"),
         format!("{description}{name}{schema}VENDOR_METADATA('retained');"),
+        format!("{description}FILE_NAME(999999999999999999999999999999999);{schema}"),
+        format!("{description}FILE_NAME(1.E999);{schema}"),
+        format!("FILE_DESCRIPTION((1.E999),'2;1');{name}{schema}"),
     ];
     for header in cases {
         let source = format!("ISO-10303-21;HEADER;{header}ENDSEC;DATA;#1=CARTESIAN_POINT('point',(1.,2.,3.));ENDSEC;END-ISO-10303-21;");
@@ -64,6 +67,7 @@ fn header_recovery_does_not_hide_lost_framing_or_ambiguous_schema() {
         "FILE_SCHEMA(('AP242'));FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));",
         "FILE_SCHEMA(('AP242'));FILE_NAME('unterminated);",
         "FILE_SCHEMA($);",
+        "FILE_SCHEMA((1.E999));",
     ] {
         let source =
             format!("ISO-10303-21;HEADER;{header}ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;");
@@ -72,6 +76,55 @@ fn header_recovery_does_not_hide_lost_framing_or_ambiguous_schema() {
             "{header}"
         );
     }
+}
+
+#[test]
+fn header_numeric_overflow_recovery_preserves_geometry_and_exact_source() {
+    let original = include_str!("../../writer/tests/data/periodic_two_rims.p21");
+    let codec = crate::StepCodec::default();
+    let expected = codec
+        .decode(&mut Cursor::new(original), &DecodeOptions::default())
+        .unwrap();
+    assert!(!expected.ir().model.faces.is_empty());
+    let name_start = original.find("FILE_NAME").unwrap();
+    let name_end = name_start + original[name_start..].find('\n').unwrap();
+    for literal in ["999999999999999999999999999999999", "1.E999", "-1.E999"] {
+        let record = format!("FILE_NAME({literal});");
+        let source = format!(
+            "{}{}{}",
+            &original[..name_start],
+            record,
+            &original[name_end..]
+        );
+        let recovered = EditableDecodeResult::from(
+            codec
+                .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+                .unwrap(),
+        );
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert!(recovered
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::StepLossCode::HeaderMetadataNoncanonical.kind()));
+        let id = crate::ids::header(name_start);
+        assert_eq!(
+            recovered
+                .source_fidelity()
+                .retained_record(id.as_str())
+                .unwrap()
+                .data(),
+            Some(record.as_bytes())
+        );
+        assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+    }
+    let source = original.replace("(0.,0.,10.)", "(0.,0.,1.E999)");
+    assert_ne!(source, original, "control changes a DATA coordinate");
+    assert!(codec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .is_err());
 }
 
 #[test]

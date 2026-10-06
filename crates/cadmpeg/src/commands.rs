@@ -389,8 +389,11 @@ pub(crate) fn check_cmd(
         print_decode_report(&mut io::stderr(), report)?;
     }
     let validation_arena = DecodeArena::new();
-    let (validation_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &validation_arena, &args.options().policy)?;
+    let validation_ctx = DecodeContext::for_loaded_input(
+        &validation_arena,
+        &args.options().policy,
+        loaded.input_bytes,
+    )?;
     let report = validate_ir(
         &validation_ctx,
         inputs,

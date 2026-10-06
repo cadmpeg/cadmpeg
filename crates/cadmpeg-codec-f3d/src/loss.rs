@@ -178,6 +178,10 @@ pub(crate) enum F3dLossCode {
     TextHeaderNoncanonical,
     /// An optional kernel tolerance cannot enter the canonical document units.
     KernelHeaderToleranceUnresolved,
+    /// An independently framed binary kernel product string is unreadable.
+    KernelHeaderMetadataUnresolved,
+    /// A bounded descriptive manifest payload is unreadable.
+    ManifestMetadataUnresolved,
 }
 
 impl F3dLossCode {
@@ -261,6 +265,8 @@ impl F3dLossCode {
         Self::DialectLayerCollision,
         Self::TextHeaderNoncanonical,
         Self::KernelHeaderToleranceUnresolved,
+        Self::KernelHeaderMetadataUnresolved,
+        Self::ManifestMetadataUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -350,6 +356,8 @@ impl F3dLossCode {
             Self::DialectLayerCollision => "source.dialect-layer-collision",
             Self::TextHeaderNoncanonical => "brep.text-header-noncanonical",
             Self::KernelHeaderToleranceUnresolved => "brep.header-tolerance-unresolved",
+            Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
+            Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
         }
     }
 
@@ -433,7 +441,9 @@ impl F3dLossCode {
             | Self::KernelCarrierUnparseable
             | Self::DialectLayerCollision
             | Self::TextHeaderNoncanonical
-            | Self::KernelHeaderToleranceUnresolved => Severity::Warning,
+            | Self::KernelHeaderToleranceUnresolved
+            | Self::KernelHeaderMetadataUnresolved
+            | Self::ManifestMetadataUnresolved => Severity::Warning,
         }
     }
 
@@ -521,6 +531,8 @@ impl F3dLossCode {
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TextHeaderNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
+            Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::ManifestMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
         }
     }
 
@@ -633,6 +645,8 @@ mod tests {
                 "source.dialect-layer-collision",
                 "brep.text-header-noncanonical",
                 "brep.header-tolerance-unresolved",
+                "brep.header-metadata-unresolved",
+                "source.manifest-metadata-unresolved",
             ]
         );
     }

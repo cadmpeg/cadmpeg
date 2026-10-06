@@ -18,6 +18,24 @@ fn element_map_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'
     crate::resource::malformed_charged(ctx, message, "FreeCAD element map diagnostic")
 }
 
+fn recover_metadata<T>(
+    ctx: &DecodeContext<'_>,
+    result: Result<T, CodecError>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    field: &str,
+) -> Result<Option<T>, CodecError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
+            ctx.push_vec(losses, crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.note(
+                ctx.format_retained(format_args!("{field} remains source-only: {error}; independent shape geometry is retained"), "FreeCAD naming metadata diagnostic")?
+            ), "FreeCAD naming metadata losses")?;
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
 const MAX_MAP_NODES: usize = 1_000_000;
 const MAX_GROUPS: usize = 1_000_000;
@@ -31,8 +49,16 @@ struct LegacyElementRecord {
 
 struct MapPayload {
     source_entry: Option<String>,
-    declared_count: usize,
+    declared_count: Option<usize>,
     parsed: ParsedMap,
+}
+
+/// The two property ranges with the greatest ends at or before `start`.
+/// A point query can prove both ownership and ambiguity without scanning ranges.
+struct OwnershipPrefix<'a> {
+    start: u64,
+    furthest: &'a PropertyRecord,
+    second_furthest: Option<&'a PropertyRecord>,
 }
 
 enum ElementMapCarrier<'a, 'input> {
@@ -62,7 +88,15 @@ pub(crate) fn parse(
         element_map_malformed(ctx, format_args!("invalid Document.xml: {error}"))
     })?;
     let xml = admitted_xml.document();
-    validate_string_hasher_framing(xml.root_element())?;
+    // Orphan carriers are diagnosed once; each marker still proves its own
+    // framing so a damaged table cannot erase independently framed peers.
+    // discarded-value: framing errors become diagnostics; node admission below is authoritative
+    let _ = recover_metadata(
+        ctx,
+        validate_string_hasher_framing(xml.root_element()),
+        losses,
+        "StringHasher carrier framing",
+    )?;
     let mut entry_data = HashMap::new();
     for entry in entries {
         if !entry_data.contains_key(entry.name()) {
@@ -71,59 +105,146 @@ pub(crate) fn parse(
         entry_data.insert(entry.name(), entry.data());
     }
 
-    let mut tables = Vec::new();
-    for node in xml
+    let hasher_nodes = xml
         .descendants()
-        .filter(|node| node.has_tag_name("StringHasher"))
-    {
-        let index = tables.len();
-        let save_all = require_bool(ctx, node.attribute("saveall").unwrap_or("0"))?;
-        let threshold =
-            parse_decimal(ctx, node.attribute("threshold").unwrap_or("0"), "threshold")?;
-        let owner_property = owning_property(ctx, node, properties)?;
-        let new_layout = node.attribute("new").is_some_and(|value| value != "0");
-        let data_node = if new_layout {
-            string_hasher_successor(node)?
-        } else {
-            node
-        };
-        let source_entry = data_node.attribute("file").filter(|name| !name.is_empty());
-        let inline_bytes = source_entry
-            .is_none()
-            .then(|| node_text_bytes(ctx, data_node))
-            .transpose()?;
-        let bytes = if let Some(name) = source_entry {
-            *entry_data.get(name).ok_or_else(|| {
-                element_map_malformed(
-                    ctx,
-                    format_args!("StringHasher references missing entry {name}"),
-                )
-            })?
-        } else {
-            inline_bytes
-                .as_ref()
-                .map_or(&[][..], |(bytes, _)| bytes.as_slice())
-        };
-        let declared_count = if source_entry.is_some() {
-            let header_count = string_table_header_count(ctx, bytes)?;
-            if !new_layout {
-                let xml_count = parse_count(ctx, data_node, "StringHasher")?;
-                if xml_count != header_count {
-                    return Err(CodecError::Malformed(
-                        "string-table XML and side-entry counts disagree".into(),
-                    ));
+        .filter(|node| node.has_tag_name("StringHasher"));
+    let owner_count = if hasher_nodes.clone().next().is_some() {
+        properties.len()
+    } else {
+        0
+    };
+    let (mut ownership, _ownership_storage) =
+        ctx.scoped_vector_storage(owner_count, "FreeCAD string table property ownership")?;
+    ownership.extend(
+        properties
+            .iter()
+            .take(owner_count)
+            .map(|property| OwnershipPrefix {
+                start: property.xml.start(),
+                furthest: property,
+                second_furthest: None,
+            }),
+    );
+    ctx.sort_unstable_by(
+        &mut ownership,
+        |left, right| left.start.cmp(&right.start),
+        |_| 0,
+        "FreeCAD string table property ownership",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(ownership.len()),
+        "FreeCAD string table property ownership",
+    )?;
+    let mut furthest: Option<&PropertyRecord> = None;
+    let mut second_furthest: Option<&PropertyRecord> = None;
+    for prefix in &mut ownership {
+        match furthest {
+            Some(previous) if previous.xml.end() >= prefix.furthest.xml.end() => {
+                if second_furthest.is_none_or(|second| second.xml.end() < prefix.furthest.xml.end())
+                {
+                    second_furthest = Some(prefix.furthest);
                 }
+                prefix.furthest = previous;
             }
-            header_count
+            _ => {
+                second_furthest = furthest;
+                furthest = Some(prefix.furthest);
+            }
+        }
+        prefix.second_furthest = second_furthest;
+    }
+
+    let mut tables = Vec::new();
+    let mut framing_storage = ctx.reserve_scoped(0, "FreeCAD string table carrier lookup")?;
+    let mut framing_by_parent = HashMap::new();
+    for node in hasher_nodes {
+        let index = tables.len();
+        let save_all = recover_metadata(
+            ctx,
+            require_bool(ctx, node.attribute("saveall").unwrap_or("0")),
+            losses,
+            "StringHasher saveall",
+        )?;
+        let threshold = recover_metadata(
+            ctx,
+            parse_decimal(ctx, node.attribute("threshold").unwrap_or("0"), "threshold"),
+            losses,
+            "StringHasher threshold",
+        )?;
+        let owner_property = owning_property(ctx, node, &ownership)?;
+        let parent = node.parent();
+        let parent_id = parent.map(|parent| parent.id());
+        let framed = if let Some(framed) = framing_by_parent.get(&parent_id) {
+            *framed
         } else {
-            parse_count(ctx, data_node, "StringHasher")?
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(
+                    parent.map_or(0, |parent| parent.children().count()),
+                ),
+                "FreeCAD string table carrier framing",
+            )?;
+            let framed = recover_metadata(
+                ctx,
+                validate_string_hasher_node(xml.root_element(), node),
+                losses,
+                "StringHasher carrier framing",
+            )?
+            .is_some();
+            framing_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut framing_by_parent,
+                    parent_id,
+                    framed,
+                    "FreeCAD string table carrier lookup",
+                )
+            })?;
+            framed
         };
-        let entries = parse_string_table(ctx, bytes, declared_count, source_entry.is_some())?;
-        ctx.reserve_vec(&mut tables, 1, "FreeCAD string table records")?;
-        tables.push(
+        let parsed = (|| {
+            if !framed {
+                return Ok(None);
+            }
+            let new_layout = node.attribute("new").is_some_and(|value| value != "0");
+            let data_node = if new_layout {
+                string_hasher_successor(node)?
+            } else {
+                node
+            };
+            let source_entry = data_node.attribute("file").filter(|name| !name.is_empty());
+            let inline_bytes = source_entry
+                .is_none()
+                .then(|| node_text_bytes(ctx, data_node))
+                .transpose()?;
+            let bytes = if let Some(name) = source_entry {
+                *entry_data.get(name).ok_or_else(|| {
+                    element_map_malformed(
+                        ctx,
+                        format_args!("StringHasher references missing entry {name}"),
+                    )
+                })?
+            } else {
+                inline_bytes
+                    .as_ref()
+                    .map_or(&[][..], |(bytes, _)| bytes.as_slice())
+            };
+            let declared_count = if source_entry.is_some() {
+                let header_count = string_table_header_count(ctx, bytes)?;
+                if !new_layout {
+                    let xml_count = parse_count(ctx, data_node, "StringHasher")?;
+                    if xml_count != header_count {
+                        return Err(CodecError::Malformed(
+                            "string-table XML and side-entry counts disagree".into(),
+                        ));
+                    }
+                }
+                header_count
+            } else {
+                parse_count(ctx, data_node, "StringHasher")?
+            };
+            let entries = parse_string_table(ctx, bytes, declared_count, source_entry.is_some())?;
             StringTableRecord::try_new(
                 index,
-                owner_property,
+                None,
                 save_all,
                 threshold,
                 source_entry
@@ -131,114 +252,208 @@ pub(crate) fn parse(
                         ctx.copy_retained_text(name, "FreeCAD string table side-entry name")
                     })
                     .transpose()?,
-                entries,
+                Some(entries),
             )
-            .map_err(CodecError::Malformed)?,
-        );
+            .map(Some)
+            .map_err(CodecError::Malformed)
+        })();
+        let payload = recover_metadata(ctx, parsed, losses, "StringHasher payload")?.flatten();
+        let mut record = match payload {
+            Some(record) => record,
+            None => StringTableRecord::try_new(index, None, save_all, threshold, None, None)
+                .map_err(CodecError::Malformed)?,
+        };
+        record.owner_property = owner_property;
+        ctx.push_vec(&mut tables, record, "FreeCAD string table records")?;
     }
 
     let mut maps = Vec::new();
+    let mut id_storage = ctx.reserve_scoped(0, "FreeCAD map string ID lookup")?;
+    let mut ids_by_table = HashMap::<usize, std::collections::HashSet<i64>>::new();
     for property in properties
         .iter()
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
-        let admitted_property_xml = ctx
-            .parse_xml(property.xml.text(), "FreeCAD XML tree")
-            .map_err(|error| {
-                let CodecError::Malformed(error) = error else {
-                    return error;
-                };
-                element_map_malformed(
-                    ctx,
-                    format_args!("invalid shape property XML {}: {error}", property.id),
-                )
-            })?;
-        let property_xml = admitted_property_xml.document();
-        let Some((part, carrier)) = direct_element_map(ctx, property_xml.root_element())? else {
-            continue;
-        };
-        let version = ctx.copy_retained_text(
-            part.attribute("ElementMap").unwrap_or(""),
-            "FreeCAD element map version",
-        )?;
-        let hasher_index = part
-            .attribute("HasherIndex")
-            .map(|value| parse_usize(ctx, value, "HasherIndex"))
-            .transpose()?;
-        let payload = match carrier {
-            ElementMapCarrier::New(map_node) => {
-                let declared_count = map_node
-                    .attribute("count")
-                    .map(|count| parse_usize(ctx, count, "ElementMap2 count"))
-                    .transpose()?;
-                let source_entry = map_node
-                    .attribute("file")
-                    .filter(|name| !name.is_empty())
-                    .map(|name| ctx.copy_retained_text(name, "FreeCAD element map side-entry name"))
-                    .transpose()?;
-                let inline_bytes = source_entry
-                    .is_none()
-                    .then(|| node_text_bytes(ctx, map_node))
-                    .transpose()?;
-                let bytes = if let Some(name) = source_entry.as_deref() {
-                    *entry_data.get(name).ok_or_else(|| {
-                        element_map_malformed(
-                            ctx,
-                            format_args!("ElementMap2 references missing entry {name}"),
-                        )
-                    })?
-                } else {
-                    inline_bytes
-                        .as_ref()
-                        .map_or(&[][..], |(bytes, _)| bytes.as_slice())
-                };
-                let parsed = parse_element_map(ctx, bytes, source_entry.is_some())?;
-                let declared_count = match declared_count {
-                    Some(count) => count,
-                    None => mapped_name_count(&parsed),
-                };
-                Some(MapPayload {
-                    source_entry,
-                    declared_count,
-                    parsed,
+        let parsed = (|| {
+            let admitted_property_xml = ctx
+                .parse_xml(property.xml.text(), "FreeCAD XML tree")
+                .map_err(|error| {
+                    let CodecError::Malformed(error) = error else {
+                        return error;
+                    };
+                    element_map_malformed(
+                        ctx,
+                        format_args!("invalid shape property XML {}: {error}", property.id),
+                    )
+                })?;
+            let property_xml = admitted_property_xml.document();
+            let Some((part, carrier)) = direct_element_map(ctx, property_xml.root_element())?
+            else {
+                return Ok(None);
+            };
+            let version = ctx.copy_retained_text(
+                part.attribute("ElementMap").unwrap_or(""),
+                "FreeCAD element map version",
+            )?;
+            let mut hasher_index = part
+                .attribute("HasherIndex")
+                .map(|value| {
+                    recover_metadata(
+                        ctx,
+                        parse_usize(ctx, value, "HasherIndex"),
+                        losses,
+                        "Part HasherIndex",
+                    )
                 })
+                .transpose()?
+                .flatten();
+            if hasher_index.is_some_and(|index| tables.get(index).is_none()) {
+                recover_metadata::<()>(
+                    ctx,
+                    Err(CodecError::Malformed(
+                        "HasherIndex references an unavailable string table".into(),
+                    )),
+                    losses,
+                    "Part HasherIndex",
+                )?;
+                hasher_index = None;
             }
-            ElementMapCarrier::Legacy(marker) => parse_legacy_element_map(
-                ctx,
-                marker,
-                file_version,
-                &entry_data,
-                &property.id,
-                losses,
-            )?,
-        };
-        let Some(payload) = payload else {
-            continue;
-        };
-        let MapPayload {
-            source_entry,
-            declared_count,
-            parsed,
-        } = payload;
-        ctx.reserve_vec(&mut maps, 1, "FreeCAD element map records")?;
-        maps.push(ElementMapRecord {
-            id: crate::native::native_child_id_charged(ctx, "element-map", &property.id, "map")?,
-            property: ctx.copy_retained_text(&property.id, "FreeCAD element map property")?,
-            version,
-            hasher_index,
-            source_entry,
-            map_id: parsed.map_id,
-            declared_count,
-            postfixes: parsed.postfixes,
-            maps: parsed.maps,
-        });
+            let payload = match carrier {
+                ElementMapCarrier::New(map_node) => {
+                    let declared_count = map_node
+                        .attribute("count")
+                        .map(|count| {
+                            recover_metadata(
+                                ctx,
+                                parse_usize(ctx, count, "ElementMap2 count"),
+                                losses,
+                                "ElementMap2 count",
+                            )
+                        })
+                        .transpose()?;
+                    let source_entry = map_node
+                        .attribute("file")
+                        .filter(|name| !name.is_empty())
+                        .map(|name| {
+                            ctx.copy_retained_text(name, "FreeCAD element map side-entry name")
+                        })
+                        .transpose()?;
+                    let inline_bytes = source_entry
+                        .is_none()
+                        .then(|| node_text_bytes(ctx, map_node))
+                        .transpose()?;
+                    let bytes = if let Some(name) = source_entry.as_deref() {
+                        *entry_data.get(name).ok_or_else(|| {
+                            element_map_malformed(
+                                ctx,
+                                format_args!("ElementMap2 references missing entry {name}"),
+                            )
+                        })?
+                    } else {
+                        inline_bytes
+                            .as_ref()
+                            .map_or(&[][..], |(bytes, _)| bytes.as_slice())
+                    };
+                    let parsed = parse_element_map(ctx, bytes, source_entry.is_some())?;
+                    let declared_count =
+                        declared_count.unwrap_or_else(|| Some(mapped_name_count(&parsed)));
+                    Some(MapPayload {
+                        source_entry,
+                        declared_count,
+                        parsed,
+                    })
+                }
+                ElementMapCarrier::Legacy(marker) => parse_legacy_element_map(
+                    ctx,
+                    marker,
+                    file_version,
+                    &entry_data,
+                    &property.id,
+                    losses,
+                )?,
+            };
+            let Some(payload) = payload else {
+                return Ok(None);
+            };
+            let MapPayload {
+                source_entry,
+                declared_count,
+                parsed,
+            } = payload;
+            if let Some((index, entries)) = hasher_index.and_then(|index| {
+                tables
+                    .get(index)
+                    .and_then(StringTableRecord::entries)
+                    .map(|entries| (index, entries))
+            }) {
+                if !ids_by_table.contains_key(&index) {
+                    let mut known_ids = std::collections::HashSet::new();
+                    for entry in entries {
+                        id_storage.with_storage(|| {
+                            ctx.insert_hash_set(
+                                &mut known_ids,
+                                entry.string_id,
+                                "FreeCAD map string ID lookup",
+                            )
+                        })?;
+                    }
+                    id_storage.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut ids_by_table,
+                            index,
+                            known_ids,
+                            "FreeCAD map string ID lookup",
+                        )
+                    })?;
+                }
+                if let Some(known_ids) = ids_by_table.get(&index) {
+                    let mut missing = false;
+                    for id in parsed
+                        .maps
+                        .root()
+                        .groups
+                        .iter()
+                        .flat_map(|group| &group.names)
+                        .flatten()
+                        .flat_map(|name| &name.string_ids)
+                    {
+                        ctx.charge_work(1, "FreeCAD map string ID references")?;
+                        missing |= !known_ids.contains(id);
+                    }
+                    if missing {
+                        recover_metadata::<()>(
+                            ctx,
+                            Err(CodecError::Malformed(
+                                "mapped names reference unavailable persistent string IDs".into(),
+                            )),
+                            losses,
+                            "Part HasherIndex",
+                        )?;
+                        hasher_index = None;
+                    }
+                }
+            }
+            Ok(Some(ElementMapRecord {
+                id: crate::native::native_child_id_charged(
+                    ctx,
+                    "element-map",
+                    &property.id,
+                    "map",
+                )?,
+                property: ctx.copy_retained_text(&property.id, "FreeCAD element map property")?,
+                version,
+                hasher_index,
+                source_entry,
+                map_id: parsed.map_id,
+                declared_count,
+                postfixes: parsed.postfixes,
+                maps: parsed.maps,
+            }))
+        })();
+        if let Some(map) = recover_metadata(ctx, parsed, losses, &property.id)?.flatten() {
+            ctx.push_vec(&mut maps, map, "FreeCAD element map records")?;
+        }
     }
-    ctx.stable_sort_by(
-        &mut tables,
-        |left, right| left.index.cmp(&right.index),
-        |_| 0,
-        "FreeCAD string tables sort",
-    )?;
     Ok((StringTables::try_from(tables)?, maps))
 }
 
@@ -256,9 +471,10 @@ fn string_table_header_count(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<us
         .ok_or_else(|| CodecError::Malformed("string-table side entry has no count".into()))?;
     let count = parse_usize(ctx, count, "string-table header count")?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(element_map_malformed(
-            ctx,
-            format_args!("string-table entry count exceeds {MAX_TABLE_ENTRIES}"),
+        return Err(ctx.refuse_codec_limit(
+            "FreeCAD string table entry count",
+            cadmpeg_core::decode::u64_from_index(MAX_TABLE_ENTRIES),
+            cadmpeg_core::decode::u64_from_index(count),
         ));
     }
     Ok(count)
@@ -289,22 +505,30 @@ pub(crate) fn bind_topology(
 fn owning_property(
     ctx: &DecodeContext<'_>,
     node: roxmltree::Node<'_, '_>,
-    properties: &[PropertyRecord],
+    ownership: &[OwnershipPrefix<'_>],
 ) -> Result<Option<String>, CodecError> {
     let start = cadmpeg_core::decode::u64_from_index(node.range().start);
-    let mut owners = properties
-        .iter()
-        .filter(|property| property.xml.start() <= start && start < property.xml.end());
-    let Some(owner) = owners.next() else {
+    ctx.charge_work(
+        u64::from(ownership.len().max(1).ilog2()) + 1,
+        "FreeCAD string table property ownership",
+    )?;
+    let upper = ownership.partition_point(|prefix| prefix.start <= start);
+    let Some(prefix) = upper.checked_sub(1).and_then(|index| ownership.get(index)) else {
         return Ok(None);
     };
-    if owners.next().is_some() {
+    if prefix.furthest.xml.end() <= start {
+        return Ok(None);
+    }
+    if prefix
+        .second_furthest
+        .is_some_and(|property| property.xml.end() > start)
+    {
         return Err(CodecError::Malformed(
             "StringHasher has multiple enclosing properties".into(),
         ));
     }
     Ok(Some(ctx.copy_retained_text(
-        &owner.id,
+        &prefix.furthest.id,
         "FreeCAD string table owner",
     )?))
 }
@@ -316,65 +540,7 @@ fn validate_string_hasher_framing(
         .descendants()
         .filter(|node| node.has_tag_name("StringHasher"))
     {
-        let Some(parent) = node.parent() else {
-            return Err(CodecError::Malformed(
-                "StringHasher has no enclosing root".into(),
-            ));
-        };
-        let parent_is_document = parent == document_root;
-        let parent_is_shape_property = is_shape_property(parent);
-        if !parent_is_document && !parent_is_shape_property {
-            return Err(CodecError::Malformed(
-                "StringHasher is not a direct document or shape-property carrier".into(),
-            ));
-        }
-
-        let mut marker_index = None;
-        let mut marker_count = 0;
-        let mut part_index = None;
-        let mut part_count = 0;
-        let mut successor_index = None;
-        let mut successor_count = 0;
-        for (index, child) in parent
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .enumerate()
-        {
-            if child.has_tag_name("StringHasher") {
-                marker_index = Some(index);
-                marker_count += 1;
-            }
-            if child.has_tag_name("Part") {
-                part_index = Some(index);
-                part_count += 1;
-            }
-            if child.has_tag_name("StringHasher2") {
-                successor_index = Some(index);
-                successor_count += 1;
-            }
-        }
-        if marker_count != 1 {
-            return Err(CodecError::Malformed(
-                "StringHasher has duplicate direct carriers".into(),
-            ));
-        }
-        if parent_is_shape_property && (part_count != 1 || marker_index <= part_index) {
-            return Err(CodecError::Malformed(
-                "StringHasher is not owned by a direct Part carrier".into(),
-            ));
-        }
-        let new_layout = node.attribute("new").is_some_and(|value| value != "0");
-        if new_layout {
-            if successor_count != 1 || successor_index != marker_index.map(|index| index + 1) {
-                return Err(CodecError::Malformed(
-                    "StringHasher new=1 is not followed by one direct StringHasher2".into(),
-                ));
-            }
-        } else if successor_count != 0 {
-            return Err(CodecError::Malformed(
-                "legacy StringHasher has a direct StringHasher2 successor".into(),
-            ));
-        }
+        validate_string_hasher_node(document_root, node)?;
     }
 
     for node in document_root
@@ -402,6 +568,72 @@ fn validate_string_hasher_framing(
         }
     }
 
+    Ok(())
+}
+
+fn validate_string_hasher_node(
+    document_root: roxmltree::Node<'_, '_>,
+    node: roxmltree::Node<'_, '_>,
+) -> Result<(), CodecError> {
+    let Some(parent) = node.parent() else {
+        return Err(CodecError::Malformed(
+            "StringHasher has no enclosing root".into(),
+        ));
+    };
+    let parent_is_document = parent == document_root;
+    let parent_is_shape_property = is_shape_property(parent);
+    if !parent_is_document && !parent_is_shape_property {
+        return Err(CodecError::Malformed(
+            "StringHasher is not a direct document or shape-property carrier".into(),
+        ));
+    }
+
+    let mut marker_index = None;
+    let mut marker_count = 0;
+    let mut part_index = None;
+    let mut part_count = 0;
+    let mut successor_index = None;
+    let mut successor_count = 0;
+    for (index, child) in parent
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .enumerate()
+    {
+        if child.has_tag_name("StringHasher") {
+            marker_index = Some(index);
+            marker_count += 1;
+        }
+        if child.has_tag_name("Part") {
+            part_index = Some(index);
+            part_count += 1;
+        }
+        if child.has_tag_name("StringHasher2") {
+            successor_index = Some(index);
+            successor_count += 1;
+        }
+    }
+    if marker_count != 1 {
+        return Err(CodecError::Malformed(
+            "StringHasher has duplicate direct carriers".into(),
+        ));
+    }
+    if parent_is_shape_property && (part_count != 1 || marker_index <= part_index) {
+        return Err(CodecError::Malformed(
+            "StringHasher is not owned by a direct Part carrier".into(),
+        ));
+    }
+    let new_layout = node.attribute("new").is_some_and(|value| value != "0");
+    if new_layout {
+        if successor_count != 1 || successor_index != marker_index.map(|index| index + 1) {
+            return Err(CodecError::Malformed(
+                "StringHasher new=1 is not followed by one direct StringHasher2".into(),
+            ));
+        }
+    } else if successor_count != 0 {
+        return Err(CodecError::Malformed(
+            "legacy StringHasher has a direct StringHasher2 successor".into(),
+        ));
+    }
     Ok(())
 }
 
@@ -563,7 +795,7 @@ fn parse_legacy_element_map(
             };
             return Ok(Some(MapPayload {
                 source_entry,
-                declared_count,
+                declared_count: Some(declared_count),
                 parsed,
             }));
         }
@@ -636,8 +868,10 @@ fn parse_legacy_records<'a>(
     count: usize,
 ) -> Result<Vec<LegacyElementRecord>, CodecError> {
     if count > MAX_NAMES {
-        return Err(CodecError::Malformed(
-            "legacy element-map record count exceeds limit".into(),
+        return Err(ctx.refuse_codec_limit(
+            "FreeCAD legacy element record count",
+            cadmpeg_core::decode::u64_from_index(MAX_NAMES),
+            cadmpeg_core::decode::u64_from_index(count),
         ));
     }
     let mut records = ctx.collection_vec(count, "FreeCAD legacy element records")?;
@@ -656,8 +890,10 @@ fn parse_legacy_records<'a>(
             "legacy string-id count",
         )?;
         if sid_count > MAX_NAMES {
-            return Err(CodecError::Malformed(
-                "legacy string-id count exceeds limit".into(),
+            return Err(ctx.refuse_codec_limit(
+                "FreeCAD legacy string ID count",
+                cadmpeg_core::decode::u64_from_index(MAX_NAMES),
+                cadmpeg_core::decode::u64_from_index(sid_count),
             ));
         }
         let mut string_ids = ctx.collection_vec(sid_count, "FreeCAD legacy string IDs")?;
@@ -772,7 +1008,7 @@ fn legacy_map_payload(
     };
     Ok(MapPayload {
         source_entry,
-        declared_count,
+        declared_count: Some(declared_count),
         parsed,
     })
 }
@@ -802,8 +1038,10 @@ fn split_indexed_name(ctx: &DecodeContext<'_>, value: &str) -> Result<(String, u
             .map_err(|_| CodecError::Malformed("invalid legacy indexed-name index".into()))?
     };
     if index > MAX_NAMES {
-        return Err(CodecError::Malformed(
-            "legacy indexed-name index exceeds limit".into(),
+        return Err(ctx.refuse_codec_limit(
+            "FreeCAD legacy indexed name",
+            cadmpeg_core::decode::u64_from_index(MAX_NAMES),
+            cadmpeg_core::decode::u64_from_index(index),
         ));
     }
     Ok((
@@ -862,9 +1100,10 @@ fn parse_count(
     let count = node.attribute("count").unwrap_or("0");
     let count = parse_usize(ctx, count, &format!("{kind} count"))?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(element_map_malformed(
-            ctx,
-            format_args!("{kind} count exceeds limit"),
+        return Err(ctx.refuse_codec_limit(
+            "FreeCAD naming record count",
+            cadmpeg_core::decode::u64_from_index(MAX_TABLE_ENTRIES),
+            cadmpeg_core::decode::u64_from_index(count),
         ));
     }
     Ok(count)
@@ -1348,9 +1587,10 @@ fn next_count<'a>(
 ) -> Result<usize, CodecError> {
     let value = parse_usize(ctx, next_token(ctx, tokens, field)?, field)?;
     if value > limit {
-        return Err(element_map_malformed(
-            ctx,
-            format_args!("{field} exceeds limit"),
+        return Err(ctx.refuse_codec_limit(
+            "FreeCAD element map count",
+            cadmpeg_core::decode::u64_from_index(limit),
+            cadmpeg_core::decode::u64_from_index(value),
         ));
     }
     Ok(value)

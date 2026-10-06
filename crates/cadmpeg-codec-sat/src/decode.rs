@@ -96,7 +96,7 @@ fn decode_asm_binary(
         stream: Some(stream),
     };
     let (matched, kernel) = layers(&evidence);
-    build_result(
+    let mut result = build_result(
         ctx,
         payload,
         attributes,
@@ -104,7 +104,11 @@ fn decode_asm_binary(
         None,
         matched,
         &kernel,
-    )
+    )?;
+    if header.metadata.unreadable_product_fields().next().is_some() {
+        retain_header(ctx, &mut result, bytes, 0..stream.offset())?;
+    }
+    Ok(result)
 }
 
 fn decode_acis_binary(
@@ -172,7 +176,7 @@ fn decode_acis_binary(
         stream: Some(stream),
     };
     let (matched, kernel) = layers(&evidence);
-    build_result(
+    let mut result = build_result(
         ctx,
         payload,
         attributes,
@@ -180,7 +184,11 @@ fn decode_acis_binary(
         None,
         matched,
         &kernel,
-    )
+    )?;
+    if header.metadata.unreadable_product_fields().next().is_some() {
+        retain_header(ctx, &mut result, bytes, 0..stream.offset())?;
+    }
+    Ok(result)
 }
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
@@ -245,27 +253,30 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     )?;
     crate::loss::text_header_losses(ctx, &text_header, &mut result.body.losses)?;
     if !text_header.diagnostics.is_empty() {
-        let mut retained = ctx.collection_vec(1, "SAT recovered header records")?;
-        retained.push(cadmpeg_ir::UnknownRecord::retained(
-            cadmpeg_ir::ids::UnknownId::mint(
-                ctx.copy_retained_text("sat:source:header#0", "SAT header identity")?,
-            )
-            .map_err(CodecError::malformed)?,
-            cadmpeg_core::decode::u64_from_index(text_header.source_span.start),
-            ctx.copy_retained(
-                &bytes[text_header.source_span],
-                "SAT recovered header bytes",
-            )?,
-            Vec::new(),
-        ));
-        result.source_fidelity.attach_native_unknown_records(
-            &mut result.ir,
-            FORMAT,
-            retained,
-            ctx,
-        )?;
+        retain_header(ctx, &mut result, bytes, text_header.source_span)?;
     }
     Ok(result)
+}
+
+fn retain_header(
+    ctx: &DecodeContext<'_>,
+    result: &mut Decoded,
+    bytes: &[u8],
+    span: std::ops::Range<usize>,
+) -> Result<(), CodecError> {
+    let mut retained = ctx.collection_vec(1, "SAT recovered header records")?;
+    retained.push(cadmpeg_ir::UnknownRecord::retained(
+        cadmpeg_ir::ids::UnknownId::mint(
+            ctx.copy_retained_text("sat:source:header#0", "SAT header identity")?,
+        )
+        .map_err(CodecError::malformed)?,
+        cadmpeg_core::decode::u64_from_index(span.start),
+        ctx.copy_retained(&bytes[span], "SAT recovered header bytes")?,
+        Vec::new(),
+    ));
+    result
+        .source_fidelity
+        .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)
 }
 
 /// Refusal for bytes whose SAT discriminant matched but whose stream did not
@@ -314,6 +325,9 @@ fn build_result(
         cadmpeg_core::text::named_entries_for_decode(ctx, "the acis header", attributes)?,
     ));
     let mut losses = Vec::new();
+    if text_dialect.is_none() {
+        crate::loss::binary_header_losses(ctx, header, &mut losses)?;
+    }
     let mut unresolved_tolerance = |name: &str, value: f64| {
         losses.push(SatLossCode::HeaderToleranceUnresolved.note(format!(
             "header {name} tolerance {value} does not yield a positive finite IR value; keeping the default"

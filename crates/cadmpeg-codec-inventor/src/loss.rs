@@ -96,6 +96,10 @@ pub(crate) enum InventorLossCode {
     KernelDialectUnverified,
     /// The selected kernel carrier did not expose a parseable kernel header.
     KernelCarrierUnparseable,
+    /// An independently framed kernel product string is unreadable.
+    KernelHeaderMetadataUnresolved,
+    /// An optional kernel tolerance cannot enter document units.
+    KernelHeaderToleranceUnresolved,
 }
 
 impl InventorLossCode {
@@ -135,6 +139,8 @@ impl InventorLossCode {
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
+        Self::KernelHeaderMetadataUnresolved,
+        Self::KernelHeaderToleranceUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -176,6 +182,8 @@ impl InventorLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
+            Self::KernelHeaderMetadataUnresolved => "source.kernel-header-metadata-unresolved",
+            Self::KernelHeaderToleranceUnresolved => "source.kernel-header-tolerance-unresolved",
         }
     }
 
@@ -208,6 +216,8 @@ impl InventorLossCode {
             | Self::ProteinStreamMalformed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
+            Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
             | Self::FeatureStateUnresolved
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
@@ -300,6 +310,8 @@ mod tests {
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
+                "source.kernel-header-metadata-unresolved",
+                "source.kernel-header-tolerance-unresolved",
             ]
         );
     }

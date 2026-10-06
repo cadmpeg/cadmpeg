@@ -587,6 +587,16 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 Some(map.id.clone()),
             ));
         }
+        let known_string_ids = map
+            .hasher_index
+            .and_then(|index| string_tables.get(index))
+            .and_then(native::StringTableRecord::entries)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|entry| entry.string_id)
+                    .collect::<HashSet<_>>()
+            });
         for name in map
             .maps
             .root()
@@ -595,12 +605,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             .flat_map(|group| &group.names)
             .flatten()
         {
-            if let Some(table) = map.hasher_index.and_then(|index| string_tables.get(index)) {
-                let known_ids = table
-                    .entries()
-                    .iter()
-                    .map(|entry| entry.string_id)
-                    .collect::<HashSet<_>>();
+            if let Some(known_ids) = &known_string_ids {
                 if name.string_ids.iter().any(|id| !known_ids.contains(id)) {
                     findings.push(finding(
                         Check::ReferentialIntegrity,
@@ -929,20 +934,14 @@ impl CodecBackend for FcstdCodec {
                 .ok_or_else(|| {
                     CodecError::Malformed("Document.xml disappeared after scan".into())
                 })?;
-            let graph = persistence::parse_with_context(document_bytes, &scan.schema_version, ctx)?;
-            for property in &graph.properties {
-                for side_entry in property.side_entries() {
-                    if !scan.data.contains_key(side_entry) {
-                        return Err(CodecError::Malformed(ctx.format_retained(
-                            format_args!(
-                                "property {} references missing side entry {side_entry}",
-                                property.id
-                            ),
-                            "FCStd missing side entry diagnostic",
-                        )?));
-                    }
-                }
-            }
+            let mut graph =
+                persistence::parse_with_context(document_bytes, &scan.schema_version, ctx)?;
+            persistence::resolve_side_entries(
+                ctx,
+                &mut graph.properties,
+                &scan.data,
+                &mut scan.losses,
+            )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
             let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(

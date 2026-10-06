@@ -107,6 +107,26 @@ fn header_losses(
     scan: &ContainerScan<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    for diagnostic in &scan.manifest_diagnostics {
+        let message = ctx.format_retained(
+            format_args!(
+                "{} is unreadable; manifest selectors retained",
+                diagnostic.field
+            ),
+            "F3D manifest metadata loss text",
+        )?;
+        ctx.push_vec(
+            losses,
+            crate::loss::F3dLossCode::ManifestMetadataUnresolved
+                .note(message)
+                .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
+                    "f3d",
+                    cadmpeg_ir::stream_name!("Manifest.dat"),
+                    cadmpeg_core::decode::u64_from_index(diagnostic.offset),
+                )),
+            "F3D manifest metadata losses",
+        )?;
+    }
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(scan.breps.len()),
         "F3D header tolerance losses",
@@ -120,6 +140,20 @@ fn header_losses(
             continue;
         };
         kernel_tolerance_losses(ctx, &brep.name, header.linear, header.angular, losses)?;
+        for field in header.unreadable_product_fields() {
+            let message = ctx.format_retained(
+                format_args!(
+                    "BREP {} header {field} is unreadable; independent records retained",
+                    brep.name
+                ),
+                "F3D kernel metadata loss text",
+            )?;
+            ctx.push_vec(
+                losses,
+                crate::loss::F3dLossCode::KernelHeaderMetadataUnresolved.note(message),
+                "F3D kernel metadata losses",
+            )?;
+        }
     }
     for name in crate::container::text_brep_names(scan) {
         let Some(crate::container::TextBrepFraming::Parsed(stream)) = scan.text_breps.get(name)

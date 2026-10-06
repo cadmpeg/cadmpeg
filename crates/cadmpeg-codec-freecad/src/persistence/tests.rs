@@ -1273,7 +1273,7 @@ fn object_declaration_framing_precedes_collection_admission() {
         )
         .expect("root");
         assert!(matches!(
-            super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx),
+            super::parse_document(document, &xml, super::Vocabulary::Objects, &ctx),
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
@@ -1292,7 +1292,7 @@ fn duplicate_object_name_comparisons_admit_prefix_bytes() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
             .expect("root");
-    let error = super::parse_document(&document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
+    let error = super::parse_document(&document, &xml, super::Vocabulary::Objects, &ctx)
         .err()
         .expect("prefix comparisons exceed allowance");
     assert!(
@@ -1338,7 +1338,7 @@ fn object_ceiling_is_resource_refusal() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
             .expect("root");
-    let error = super::parse_document(document, &xml, crate::dialect::FcstdDialect::Schema4, &ctx)
+    let error = super::parse_document(document, &xml, super::Vocabulary::Objects, &ctx)
         .err()
         .expect("object ceiling");
     assert!(
@@ -1365,4 +1365,17 @@ fn retained_property_xml_ceiling_is_resource_refusal() {
                 && limit.limit == 16 * 1024 * 1024 && Some(limit) == ctx.resource_refusal())
         );
     });
+}
+
+#[test]
+fn external_file_links_do_not_become_archive_side_entry_requirements() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="1"><Property name="Source" type="App::PropertyXLink"><XLink file="external.FCStd" name="Remote"/></Property></Properties></Object></ObjectData></Document>"#;
+    let bytes = crate::test_support::test_archive::archive(document);
+    let recovered = crate::FcstdCodec
+        .decode(
+            &mut std::io::Cursor::new(bytes),
+            &cadmpeg_ir::DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }

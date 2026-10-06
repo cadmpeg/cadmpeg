@@ -580,17 +580,14 @@ pub(crate) fn parse_document(
         losses,
     )?
     .unwrap_or_else(|| "0".into());
-    schema_version
-        .parse::<u32>()
-        .map_err(|_| CodecError::Malformed("Document.xml SchemaVersion is invalid".into()))?;
+    let vocabulary = crate::persistence::Vocabulary::from_declaration(&schema_version)?;
     let file_version = crate::native::FileVersion::from(file_version);
     if file_version.value().is_none() {
         ctx.push_vec(losses, crate::loss::FreecadLossCode::FileVersionUnverified.note(
             ctx.format_retained(format_args!("Document FileVersion {:?} is not an unsigned integer; version-dependent inline element maps remain source-only", file_version.as_str()), "FCStd file version diagnostic")?
         ), "FCStd container losses")?;
     }
-    let schema = crate::dialect::FcstdDialect::from_schema_version(&schema_version);
-    let (declaration_tag, data_tag, record_tag) = schema.persistence_tags();
+    let (declaration_tag, data_tag, record_tag) = vocabulary.tags();
     // discarded-value: the data section's uniqueness is the check; ? states its refusal and the node has no reader
     let _ = unique_section(root, data_tag)?;
     let declarations = unique_section(root, declaration_tag)?;

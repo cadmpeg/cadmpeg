@@ -110,7 +110,7 @@ pub(crate) fn text_header_losses(
 ) -> Result<(), cadmpeg_core::CodecError> {
     for diagnostic in &header.diagnostics {
         let code = match diagnostic.kind {
-            cadmpeg_asm::sat::HeaderDiagnosticKind::ProductMetadata => {
+            cadmpeg_asm::sat::HeaderDiagnosticKind::Metadata => {
                 SatLossCode::HeaderMetadataNoncanonical
             }
             cadmpeg_asm::sat::HeaderDiagnosticKind::Tolerance => {
@@ -128,6 +128,26 @@ pub(crate) fn text_header_losses(
                     "sat",
                     cadmpeg_core::decode::u64_from_index(diagnostic.error.offset),
                 )),
+            "SAT header losses",
+        )?;
+    }
+    Ok(())
+}
+
+/// Diagnose product payloads independently of their binary byte boundaries.
+pub(crate) fn binary_header_losses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    header: &cadmpeg_asm::kernel_header::KernelHeader,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    for field in header.unreadable_product_fields() {
+        let message = ctx.format_retained(
+            format_args!("binary header {field} is unreadable; independent records retained"),
+            "SAT header loss text",
+        )?;
+        ctx.push_vec(
+            losses,
+            SatLossCode::HeaderMetadataNoncanonical.note(message),
             "SAT header losses",
         )?;
     }

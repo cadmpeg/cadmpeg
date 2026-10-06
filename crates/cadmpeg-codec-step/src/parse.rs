@@ -21,7 +21,7 @@ use self::implementation_level::{DeclaredImplementationLevel, ImplementationLeve
 
 pub(crate) mod implementation_level;
 
-use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
+use crate::lex::{BinaryValue, LexError, Lexer, NumberAdmission, Token, TokenKind};
 use crate::parse::schema_identifier::{
     split_schema_identifier, valid_schema_identifier, AdmittedSchemaIdentifier,
 };
@@ -43,6 +43,8 @@ pub(crate) enum Value {
     Integer(i64),
     /// Real value.
     Real(FiniteReal),
+    /// A header numeric literal whose exact bytes remain in its source record.
+    UnrepresentableNumber,
     /// Enumeration or logical name without delimiter dots.
     Enumeration(String),
     /// Raw string-token bytes before Part 21 escape decoding.
@@ -81,6 +83,7 @@ fn try_clone_value(
         }
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
+        Value::UnrepresentableNumber => Value::UnrepresentableNumber,
         Value::Enumeration(text) => {
             budget.charge_work(u64_from_index(text.len()), operation)?;
             Value::Enumeration(budget.copy_retained_text(text, operation)?)
@@ -723,6 +726,7 @@ impl Parser<'_, '_, '_> {
         self.punct(&TokenKind::Semicolon)?;
         self.name("HEADER")?;
         self.punct(&TokenKind::Semicolon)?;
+        self.lexer.set_number_admission(NumberAdmission::Metadata);
         let mut header = Vec::new();
         while !self.peek_name("ENDSEC") {
             let offset = self.current_offset();
@@ -740,6 +744,7 @@ impl Parser<'_, '_, '_> {
                 "step_parse_header_records",
             )?;
         }
+        self.lexer.set_number_admission(NumberAdmission::Required);
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
         let (header_admission, header_diagnostics) = match validate_header(&header, self.budget) {
@@ -1364,6 +1369,7 @@ impl Parser<'_, '_, '_> {
                 TokenKind::ConstantValue(name) => Value::ExpressValueConstant(name),
                 TokenKind::Integer(v) => Value::Integer(v),
                 TokenKind::Real(v) => Value::Real(v),
+                TokenKind::UnrepresentableNumber => Value::UnrepresentableNumber,
                 TokenKind::Enumeration(value) => Value::Enumeration(value),
                 TokenKind::String(value) => Value::String(value),
                 TokenKind::Binary(value) => Value::Binary(value),
@@ -2375,7 +2381,7 @@ fn is_anchor_item(value: &Value) -> bool {
         | Value::Resource(_)
         | Value::Omitted => true,
         Value::List(values) => values.iter().all(is_anchor_item),
-        Value::Derived | Value::Typed(_, _) => false,
+        Value::Derived | Value::Typed(_, _) | Value::UnrepresentableNumber => false,
     }
 }
 

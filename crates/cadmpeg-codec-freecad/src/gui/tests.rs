@@ -339,7 +339,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
 }
 
 #[test]
-fn requires_one_camera_in_schema_one_gui_document() {
+fn retains_missing_and_ambiguous_cameras_in_schema_one_gui_document() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     for camera_records in [
@@ -349,7 +349,7 @@ fn requires_one_camera_in_schema_one_gui_document() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/>{camera_records}</Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document.as_bytes()),
@@ -357,13 +357,11 @@ fn requires_one_camera_in_schema_one_gui_document() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("schema-one camera cardinality");
+            .expect("independent persistence survives malformed GUI metadata");
 
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                if message.contains("schema 1 requires one Camera record")
-        ));
+        assert!(assert_gui_metadata_recovery(&recovered)
+            .message
+            .contains("camera selection is unresolved"));
     }
 }
 
@@ -432,7 +430,7 @@ fn a_noncanonical_gui_schema_one_declaration_is_unverified() {
 }
 
 #[test]
-fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
+fn ambiguous_foreign_gui_cameras_retain_a_valid_native_and_presentation_graph() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui = br#"<Document SchemaVersion="2"><ViewProviderData Count="0"/><Camera settings="first"/><Camera settings="second"/></Document>"#;
@@ -446,7 +444,8 @@ fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
         )
         .expect("broken foreign GUI schema degrades");
 
-    assert!(result.ir().model.presentation_documents.is_empty());
+    assert_eq!(result.ir().model.presentation_documents.len(), 1);
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     let loss = result
         .report()
         .losses
@@ -454,9 +453,7 @@ fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
         .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
         .expect("GUI schema warning");
     assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
-    assert!(loss
-        .message
-        .contains("declared schema 2 is the probable cause"));
+    assert!(loss.message.contains("declares schema 2"));
 }
 
 #[test]
@@ -492,7 +489,7 @@ fn a_failed_foreign_gui_parse_does_not_apply_staged_appearances() {
 }
 
 #[test]
-fn rejects_invalid_schema_one_camera_values() {
+fn retains_invalid_schema_one_camera_values_with_diagnostics() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let gui_documents = [
@@ -504,7 +501,7 @@ fn rejects_invalid_schema_one_camera_values() {
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="not a camera"/></Document>"#,
     ];
     for gui in gui_documents {
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -512,11 +509,8 @@ fn rejects_invalid_schema_one_camera_values() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid schema-one camera value");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -549,7 +543,7 @@ fn ignores_non_authoritative_camera_descendant_values() {
 }
 
 #[test]
-fn rejects_duplicate_camera_settings_fields() {
+fn retains_duplicate_camera_settings_fields_with_diagnostics() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     for settings in [
@@ -559,7 +553,7 @@ fn rejects_duplicate_camera_settings_fields() {
         let gui = format!(
             "<Document SchemaVersion=\"1\"><ViewProviderData Count=\"0\"/><Camera settings=\"{settings}\"/></Document>"
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -567,12 +561,10 @@ fn rejects_duplicate_camera_settings_fields() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("duplicate camera settings field");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                if message.contains("multiple")
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert!(assert_gui_metadata_recovery(&recovered)
+            .message
+            .contains("multiple"));
     }
 }
 
@@ -678,7 +670,7 @@ fn refuses_a_transparency_percentage_outside_its_domain() {
 <Property name="Transparency" type="App::PropertyPercent"><Integer value="{percent}"/></Property>
 </Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -686,14 +678,12 @@ fn refuses_a_transparency_percentage_outside_its_domain() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("a transparency percentage outside [0, 100] is refused");
+            .expect("independent persistence survives malformed GUI metadata");
         assert!(
-            matches!(
-                &error,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                    if message.contains("GUI color components must be in [0, 1]")
-            ),
-            "transparency {percent} must be refused by the color domain"
+            assert_gui_metadata_recovery(&recovered)
+                .message
+                .contains("GUI color components must be in [0, 1]"),
+            "transparency {percent}"
         );
     }
 }
@@ -875,7 +865,7 @@ Co 1001000 +2 0 *
 }
 
 #[test]
-fn rejects_ambiguous_gui_containers_and_names() {
+fn quarantines_ambiguous_gui_containers_and_names() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
@@ -886,7 +876,7 @@ fn rejects_ambiguous_gui_containers_and_names() {
         br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="0"/><Properties Count="0"/></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
         br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="2"><Property name="State" type="Vendor::PropertyState"><Value/></Property><Property name="State" type="Vendor::PropertyState"><Value/></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
     ] {
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -894,8 +884,8 @@ fn rejects_ambiguous_gui_containers_and_names() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("ambiguous GUI graph");
-        assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -933,12 +923,12 @@ fn gui_property_counts_ignore_nested_extension_properties() {
 }
 
 #[test]
-fn rejects_malformed_registered_gui_property_values() {
+fn quarantines_malformed_registered_gui_property_values() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
 <ViewProvider name="Model"><Properties Count="1"><Property name="LineWidth" type="App::PropertyFloatConstraint"><Integer value="2"/></Property></Properties></ViewProvider>
 </ViewProviderData><Camera settings=""/></Document>"#;
-    let error = FcstdCodec
+    let recovered = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[
                 ("Document.xml", document),
@@ -946,11 +936,8 @@ fn rejects_malformed_registered_gui_property_values() {
             ])),
             &DecodeOptions::default(),
         )
-        .expect_err("mismatched GUI value tag");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .expect("independent persistence survives malformed GUI metadata");
+    assert_gui_metadata_recovery(&recovered);
 }
 
 #[test]
@@ -986,7 +973,7 @@ fn validates_gui_link_value_grammars() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -994,11 +981,8 @@ fn validates_gui_link_value_grammars() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid GUI link grammar");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1029,7 +1013,7 @@ fn validates_gui_constraint_attribute_grammars() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1037,11 +1021,8 @@ fn validates_gui_constraint_attribute_grammars() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid GUI constraint attribute");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1076,7 +1057,7 @@ fn validates_gui_in_memory_list_grammars() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1084,11 +1065,8 @@ fn validates_gui_in_memory_list_grammars() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("nested GUI list value");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1137,7 +1115,7 @@ fn accepts_and_validates_gui_custom_enumerations() {
             br#"</Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
         ]
         .concat();
-        assert!(FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1145,7 +1123,8 @@ fn accepts_and_validates_gui_custom_enumerations() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .is_err());
+            .expect("invalid GUI enum remains source-only");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1206,7 +1185,7 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
             br#"</Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
         ]
         .concat();
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1214,8 +1193,8 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid visual layer list");
-        assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1277,7 +1256,7 @@ fn validates_dynamic_gui_property_registry_and_side_lists() {
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     let bad_float_list = [0_u32.to_le_bytes().as_slice(), &[0xff]].concat();
-    let error = FcstdCodec
+    let recovered = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[
                 ("Document.xml", document),
@@ -1288,15 +1267,12 @@ fn validates_dynamic_gui_property_registry_and_side_lists() {
             ])),
             &DecodeOptions::default(),
         )
-        .expect_err("trailing dynamic float-list bytes");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .expect("independent persistence survives malformed GUI metadata");
+    assert_gui_metadata_recovery(&recovered);
 }
 
 #[test]
-fn rejects_gui_side_entries_owned_by_nested_values() {
+fn quarantines_gui_side_entries_owned_by_nested_values() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let empty_count = 0_u32.to_le_bytes();
     let valid_gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="7">
@@ -1336,7 +1312,7 @@ fn rejects_gui_side_entries_owned_by_nested_values() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1350,11 +1326,8 @@ fn rejects_gui_side_entries_owned_by_nested_values() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("nested GUI side-entry reference");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1387,7 +1360,7 @@ fn validates_gui_mesh_and_points_value_grammars() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1398,11 +1371,8 @@ fn validates_gui_mesh_and_points_value_grammars() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid GUI mesh or points root");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1433,7 +1403,7 @@ fn validates_gui_techdraw_geom_format_list_grammar() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1441,11 +1411,8 @@ fn validates_gui_techdraw_geom_format_list_grammar() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid TechDraw GeomFormatList");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1499,7 +1466,7 @@ fn validates_gui_techdraw_cosmetic_vertex_list_grammar() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1507,11 +1474,8 @@ fn validates_gui_techdraw_cosmetic_vertex_list_grammar() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid TechDraw CosmeticVertexList");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1577,7 +1541,7 @@ fn validates_gui_techdraw_cosmetic_edge_list_grammar() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1585,11 +1549,8 @@ fn validates_gui_techdraw_cosmetic_edge_list_grammar() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid TechDraw CosmeticEdgeList");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1643,7 +1604,7 @@ fn validates_gui_techdraw_center_line_list_grammar() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
-        let error = FcstdCodec
+        let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
                     ("Document.xml", document),
@@ -1651,11 +1612,8 @@ fn validates_gui_techdraw_center_line_list_grammar() {
                 ])),
                 &DecodeOptions::default(),
             )
-            .expect_err("invalid TechDraw CenterLineList");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .expect("independent persistence survives malformed GUI metadata");
+        assert_gui_metadata_recovery(&recovered);
     }
 }
 
@@ -1717,12 +1675,12 @@ fn validates_the_complete_loaded_dynamic_gui_registry() {
 }
 
 #[test]
-fn rejects_truncated_gui_material_list_payload() {
+fn quarantines_truncated_gui_material_list_payload() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
 <ViewProvider name="Model"><Properties Count="1"><Property name="ShapeAppearance" type="App::PropertyMaterialList"><MaterialList file="ShapeAppearance" version="3"/></Property></Properties></ViewProvider>
 </ViewProviderData><Camera settings=""/></Document>"#;
-    let error = FcstdCodec
+    let recovered = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[
                 ("Document.xml", document),
@@ -1731,11 +1689,8 @@ fn rejects_truncated_gui_material_list_payload() {
             ])),
             &DecodeOptions::default(),
         )
-        .expect_err("truncated GUI material list");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .expect("independent persistence survives malformed GUI metadata");
+    assert_gui_metadata_recovery(&recovered);
 }
 
 #[test]
@@ -1919,10 +1874,9 @@ fn a_blank_gui_property_key_is_charged_and_the_presentation_graph_survives() {
 }
 
 /// Decodes one shape whose view provider states `shininess` as its
-/// `ShapeMaterial` shininess and asserts that GUI property validation refuses
-/// the document with `expected`. The appearance transfer reads the material
-/// only after that validation, so it never meets such a value.
-fn assert_material_shininess_is_refused(shininess: &str, expected: &str) {
+/// `ShapeMaterial` shininess and checks that the refusal is reported while
+/// retaining the GUI source. The invalid material never enters appearance.
+fn assert_material_shininess_remains_source_only(shininess: &str, expected: &str) {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="A"/></Objects>
 <ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData>
@@ -1942,26 +1896,43 @@ fn assert_material_shininess_is_refused(shininess: &str, expected: &str) {
         ])),
         &DecodeOptions::default(),
     );
-    let Err(error) = decoded else {
-        panic!("a {shininess} material shininess is refused");
-    };
-    assert_eq!(error.to_string(), expected);
+    let recovered = decoded.expect("malformed GUI material remains source-only");
+    assert!(assert_gui_metadata_recovery(&recovered)
+        .message
+        .contains(expected));
+    assert!(recovered.ir().model.appearances.is_empty());
 }
 
-/// A `nan` material shininess refuses the GUI document.
+/// A `nan` material shininess stays source-only.
 #[test]
-fn a_non_finite_material_value_refuses_the_gui_document() {
-    assert_material_shininess_is_refused(
+fn a_non_finite_material_value_keeps_the_gui_source_only() {
+    assert_material_shininess_remains_source_only(
         "nan",
         "malformed container: GUI property ShapeMaterial material has a non-finite shininess",
     );
 }
 
-/// An unparsable material shininess refuses the GUI document.
+/// An unparsable material shininess stays source-only.
 #[test]
-fn an_unparsable_material_value_refuses_the_gui_document() {
-    assert_material_shininess_is_refused(
+fn an_unparsable_material_value_keeps_the_gui_source_only() {
+    assert_material_shininess_remains_source_only(
         "glossy",
         "malformed container: GUI property ShapeMaterial material has an invalid shininess",
     );
 }
+
+fn assert_gui_metadata_recovery(
+    result: &cadmpeg_ir::codec::DecodeResult,
+) -> &cadmpeg_ir::report::loss::LossNote {
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "source.gui-metadata-unresolved")
+        .expect("GUI recovery diagnostic");
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
+    loss
+}
+
+mod metadata_recovery;

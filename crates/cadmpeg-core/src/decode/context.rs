@@ -44,6 +44,21 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
+    /// Starts post-decode processing with the measured byte length of an already
+    /// loaded input. This admits the input-proportional allowances without
+    /// keeping another copy of the source bytes. Format-declared counts must
+    /// not be used as the input length.
+    pub fn for_loaded_input(
+        arena: &'a DecodeArena,
+        policy: &DecodePolicy,
+        input_bytes: u64,
+    ) -> Result<Self, CodecError> {
+        let ctx = Self::new(arena, policy, false);
+        ctx.budget
+            .charge_input(input_bytes, "admit loaded input length")?;
+        Ok(ctx)
+    }
+
     /// Reads the root input under `max_input_bytes`, copies it into the arena,
     /// registers the root space, establishes input-proportional allowances,
     /// and returns the context and root view.
@@ -887,6 +902,40 @@ mod tests {
     use super::{u64_from_index, ByteRange, DecodeArena, DecodeContext, DecodePolicy};
     use crate::decode::{ResourceDimension, ResourceFailure};
     use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+    #[test]
+    fn loaded_input_processing_preserves_proportional_and_absolute_limits() {
+        let input_bytes = 1024;
+        let allowance = crate::decode::policy::MATERIALIZED_BASE
+            + input_bytes * crate::decode::policy::MATERIALIZED_PER_INPUT_BYTE;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        let ctx = DecodeContext::for_loaded_input(&arena, &policy, input_bytes)
+            .expect("admitted input length");
+        drop(
+            ctx.reserve_scoped(allowance, "loaded input allowance")
+                .expect("input-proportional allowance"),
+        );
+        assert!(
+            matches!(ctx.reserve_scoped(allowance + 1, "loaded input allowance"),
+            Err(crate::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes && limit.limit == allowance)
+        );
+
+        policy.limits.max_materialized_bytes = 32;
+        let ctx = DecodeContext::for_loaded_input(&arena, &policy, input_bytes)
+            .expect("admitted input length");
+        assert!(matches!(ctx.reserve_scoped(33, "absolute limit"),
+            Err(crate::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes && limit.limit == 32));
+
+        policy.limits.max_input_bytes = input_bytes - 1;
+        assert!(
+            matches!(DecodeContext::for_loaded_input(&arena, &policy, input_bytes),
+            Err(crate::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::InputBytes && limit.additional == input_bytes)
+        );
+    }
 
     #[test]
     fn zero_collection_limit_refuses_second_empty_finalization() {

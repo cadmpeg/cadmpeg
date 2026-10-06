@@ -59,7 +59,11 @@ pub(crate) fn load_artifact(
             let result = result.map_err(|failure| {
                 ApplicationError::from_decode_failure(path, format_id, failure)
             })?;
-            return Ok(LoadedDocument::decoded(result, selection));
+            return Ok(LoadedDocument::decoded(
+                result,
+                selection,
+                cadmpeg_core::decode::u64_from_index(prefix.len()),
+            ));
         }
         ResolvedSource::Cadir => {}
         ResolvedSource::Unrecognized => {
@@ -88,12 +92,16 @@ pub(crate) fn load_artifact(
     })?;
     let Some(sidecar) = artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
     else {
-        return Ok(LoadedDocument::neutral(ir));
+        return Ok(LoadedDocument::neutral(
+            ir,
+            cadmpeg_core::decode::u64_from_index(text.len()),
+        ));
     };
     Ok(LoadedDocument::restored(
         ir,
         sidecar.report,
         sidecar.fidelity,
+        cadmpeg_core::decode::u64_from_index(text.len()),
     ))
 }
 
@@ -158,6 +166,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(outcome.origin, LoadOrigin::Restored { .. }));
+        assert_eq!(outcome.input_bytes, u64::try_from(text.len()).unwrap());
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
         let error = load_artifact(

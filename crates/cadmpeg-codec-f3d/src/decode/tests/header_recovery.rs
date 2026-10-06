@@ -42,6 +42,9 @@ fn malformed_smt_metadata_keeps_geometry_and_reports_recovery() {
         original.replace("0.000001", "invalid"),
         original.replace("0.0000000001", "NaN"),
         original.replace("0.0000000001", ""),
+        original.replacen(" 0 2 2", " -1 2 2", 1),
+        original.replacen(" 0 2 2", " 4294967296 2 2", 1),
+        original.replacen(" 0 2 2", " invalid 2 2", 1),
     ] {
         let recovered = decode(&source);
         assert_eq!(recovered.ir().model, expected.ir().model);
@@ -65,6 +68,38 @@ fn malformed_smt_metadata_keeps_geometry_and_reports_recovery() {
             .findings
             .iter()
             .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error));
+    }
+}
+
+#[test]
+fn binary_product_encoding_recovery_keeps_independent_geometry() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+    let original = synthetic_geometry_smbh();
+    let decode = |source: &[u8]| {
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(source)),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+    let expected = decode(&original);
+    assert!(!expected.ir().model.faces.is_empty());
+    let mut cursor = 47; // ASM BinaryFile8 fixed words; docs/layouts/asm.toml.
+    for _ in 0..3 {
+        let mut source = original.clone();
+        source[cursor + 2] = 0xff;
+        let recovered = decode(&source);
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
+        assert!(recovered.report().losses.iter().any(
+            |loss| loss.code == crate::loss::F3dLossCode::KernelHeaderMetadataUnresolved.kind()
+        ));
+        assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+        cursor += 2 + usize::from(original[cursor + 1]);
     }
 }
 
@@ -135,5 +170,74 @@ fn invalid_binary_kernel_tolerances_keep_independent_geometry() {
                 .unwrap()
                 .is_ok());
         }
+    }
+}
+
+#[test]
+fn manifest_metadata_recovery_preserves_geometry_and_exact_archive() {
+    use std::io::{Read, Write};
+    let original = crate::test_support::zip_test::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    );
+    let expected = F3dCodec
+        .decode(&mut Cursor::new(&original), &DecodeOptions::default())
+        .unwrap();
+    for field in 0..5 {
+        let mut source = zip::ZipArchive::new(Cursor::new(&original)).unwrap();
+        let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for index in 0..source.len() {
+            let mut entry = source.by_index(index).unwrap();
+            let mut data = Vec::new();
+            entry.read_to_end(&mut data).unwrap();
+            if entry.name() == "Manifest.dat" {
+                if field == 0 {
+                    data[4] = 0xff;
+                } else {
+                    let mut cursor = 0;
+                    for _ in 0..2 {
+                        let count = usize::try_from(u32::from_le_bytes(
+                            data[cursor..cursor + 4].try_into().unwrap(),
+                        ))
+                        .expect("fixture string length fits usize");
+                        cursor += 4 + count;
+                    }
+                    for _ in 0..field {
+                        let count = usize::try_from(u32::from_le_bytes(
+                            data[cursor..cursor + 4].try_into().unwrap(),
+                        ))
+                        .expect("fixture string length fits usize");
+                        cursor += 4 + 2 * count;
+                    }
+                    data[cursor + 4..cursor + 6].copy_from_slice(&0xd800u16.to_le_bytes());
+                }
+            }
+            output
+                .start_file(entry.name(), zip::write::SimpleFileOptions::default())
+                .unwrap();
+            output.write_all(&data).unwrap();
+        }
+        let bytes = output.finish().unwrap().into_inner();
+        let recovered = cadmpeg_test_support::EditableDecodeResult::from(
+            F3dCodec
+                .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+                .unwrap(),
+        );
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert!(recovered
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::ManifestMetadataUnresolved.kind()));
+        assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+        let mut replay = Vec::new();
+        crate::test_support::plan_inherited_write(
+            recovered.ir(),
+            recovered.source_fidelity(),
+            &mut replay,
+        )
+        .unwrap();
+        assert_eq!(replay, bytes);
     }
 }

@@ -48,8 +48,8 @@ pub struct HeaderDiagnostic {
 /// Header recovery classes shared by SAT and Fusion SMT callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeaderDiagnosticKind {
-    /// Counted product strings did not conform to the product-line grammar.
-    ProductMetadata,
+    /// Independently framed descriptive strings or count words were unreadable.
+    Metadata,
     /// A tolerance cannot enter the normalized kernel header.
     Tolerance,
 }
@@ -363,9 +363,25 @@ fn parse_header(
         .into());
     }
     let save_format_version = header_int(line1[0], at, "save format")?;
-    header_int::<u32>(line1[1], at, "record count")?;
     let entity_count = header_int(line1[2], at, "entity count")?;
     let flags = header_int(line1[3], at, "flags")?;
+    let mut diagnostics = Vec::new();
+    if let Err(error) = header_int::<u32>(line1[1], at, "record count") {
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(error.reason.len()),
+            "SAT header diagnostic text",
+        )
+        .map_err(StreamFailure::from_operation)?;
+        ctx.push_vec(
+            &mut diagnostics,
+            HeaderDiagnostic {
+                kind: HeaderDiagnosticKind::Metadata,
+                error,
+            },
+            "SAT header diagnostics",
+        )
+        .map_err(StreamFailure::from_operation)?;
+    }
 
     let at = *pos;
     let line2_start = *pos;
@@ -381,7 +397,6 @@ fn parse_header(
     let line2 = &bytes[line2_start..line2_end];
     *pos = line2_end + 1;
     let mut cursor = 0usize;
-    let mut diagnostics = Vec::new();
     let mut products = [None, None, None];
     for (slot, what) in products
         .iter_mut()
@@ -412,7 +427,7 @@ fn parse_header(
                 ctx.push_vec(
                     &mut diagnostics,
                     HeaderDiagnostic {
-                        kind: HeaderDiagnosticKind::ProductMetadata,
+                        kind: HeaderDiagnosticKind::Metadata,
                         error,
                     },
                     "SAT header diagnostics",
@@ -431,7 +446,7 @@ fn parse_header(
         ctx.push_vec(
             &mut diagnostics,
             HeaderDiagnostic {
-                kind: HeaderDiagnosticKind::ProductMetadata,
+                kind: HeaderDiagnosticKind::Metadata,
                 error: StreamError {
                     format: StreamFormat::Text,
                     offset: at + cursor,

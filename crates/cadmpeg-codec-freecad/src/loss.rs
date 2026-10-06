@@ -43,6 +43,10 @@ pub(crate) enum FreecadLossCode {
     SourceGuiSchemaUnverified,
     /// A GUI property states a blank key, so its value has no name to carry.
     SourceGuiPropertyKeyBlank,
+    /// Optional GUI records could not be interpreted; exact XML remains retained.
+    SourceGuiMetadataUnresolved,
+    /// Optional persistent naming metadata could not be interpreted.
+    ElementMapMetadataUnresolved,
     /// A parameter-space curve could not enter neutral geometry.
     PcurveNotTransferred,
     /// Producer version metadata used an alias or conflicting declarations.
@@ -68,6 +72,8 @@ impl FreecadLossCode {
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
         Self::SourceGuiPropertyKeyBlank,
+        Self::SourceGuiMetadataUnresolved,
+        Self::ElementMapMetadataUnresolved,
         Self::PcurveNotTransferred,
         Self::ProgramVersionNoncanonical,
         Self::FileVersionNoncanonical,
@@ -92,6 +98,8 @@ impl FreecadLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
             Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
+            Self::SourceGuiMetadataUnresolved => "source.gui-metadata-unresolved",
+            Self::ElementMapMetadataUnresolved => "element-map.metadata-unresolved",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
@@ -113,6 +121,8 @@ impl FreecadLossCode {
             | Self::SourceDialectUnverified
             | Self::SourceGuiSchemaUnverified
             | Self::SourceGuiPropertyKeyBlank
+            | Self::SourceGuiMetadataUnresolved
+            | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
@@ -129,6 +139,8 @@ impl FreecadLossCode {
             Self::SketchNativeGeometry
             | Self::SketchNativeConstraint
             | Self::SourceGuiPropertyKeyBlank
+            | Self::SourceGuiMetadataUnresolved
+            | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
@@ -185,6 +197,8 @@ mod tests {
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
                 "source.gui-property-key-blank",
+                "source.gui-metadata-unresolved",
+                "element-map.metadata-unresolved",
                 "pcurve.not-transferred",
                 "metadata.program-version-noncanonical",
                 "metadata.file-version-noncanonical",

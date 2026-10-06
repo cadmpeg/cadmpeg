@@ -42,6 +42,8 @@ pub(crate) enum TokenKind {
     Integer(i64),
     /// Decimal real, including an optional exponent.
     Real(FiniteReal),
+    /// A bounded numeric metadata literal outside the admitted numeric domain.
+    UnrepresentableNumber,
     /// Dot-delimited enumeration or logical literal.
     Enumeration(String),
     /// Bytes between apostrophe delimiters, before escape decoding.
@@ -149,10 +151,17 @@ enum LiteralStorage {
     Transient,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum NumberAdmission {
+    Required,
+    Metadata,
+}
+
 pub(crate) struct Lexer<'a, 'ctx, 'arena> {
     input: &'a [u8],
     budget: &'ctx DecodeContext<'arena>,
     literal_storage: LiteralStorage,
+    number_admission: NumberAdmission,
     at: usize,
     allow_print_controls: bool,
     previous_was_signature: bool,
@@ -172,6 +181,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             input,
             budget: ctx,
             literal_storage: LiteralStorage::Retained,
+            number_admission: NumberAdmission::Required,
             at: 0,
             allow_print_controls: true,
             previous_was_signature: false,
@@ -181,6 +191,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
 
     pub(crate) fn set_transient_literals(&mut self) {
         self.literal_storage = LiteralStorage::Transient;
+    }
+
+    pub(crate) fn set_number_admission(&mut self, admission: NumberAdmission) {
+        self.number_admission = admission;
     }
 
     pub(crate) fn set_allow_print_controls(&mut self, allow: bool) {
@@ -570,7 +584,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         if exponent && raw.ends_with('.') {
             raw.pop();
         }
-        if dot || exponent {
+        let admitted = if dot || exponent {
             raw.make_ascii_uppercase();
             let mut index = 0;
             while index < raw.len() {
@@ -579,16 +593,21 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 }
                 index += 1;
             }
-            let parsed = raw
-                .parse::<f64>()
-                .map_err(|_| Self::error(start, "invalid real"))?;
-            FiniteReal::new(parsed)
-                .map(TokenKind::Real)
-                .ok_or_else(|| Self::error(start, "real exceeds finite binary64 range"))
+            raw.parse::<f64>()
+                .map_err(|_| Self::error(start, "invalid real"))
+                .and_then(|value| {
+                    FiniteReal::new(value)
+                        .map(TokenKind::Real)
+                        .ok_or_else(|| Self::error(start, "real exceeds finite binary64 range"))
+                })
         } else {
             raw.parse()
                 .map(TokenKind::Integer)
                 .map_err(|_| Self::error(start, "invalid integer"))
+        };
+        match (self.number_admission, admitted) {
+            (NumberAdmission::Metadata, Err(_)) => Ok(TokenKind::UnrepresentableNumber),
+            (_, result) => result,
         }
     }
 

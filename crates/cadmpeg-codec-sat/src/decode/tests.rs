@@ -35,6 +35,80 @@ fn sphere_radius(result: &DecodeResult) -> f64 {
 }
 
 #[test]
+fn binary_product_encoding_recovery_keeps_geometry_and_exact_header() {
+    for (kind, first_string) in [(BinaryFixtureKind::Asm, 47), (BinaryFixtureKind::Acis, 31)] {
+        let original = binary_sphere_stream(kind);
+        let expected = decode_bytes(&original);
+        let mut cursor = first_string;
+        let mut positions = Vec::new();
+        for _ in 0..3 {
+            positions.push(cursor + 2);
+            cursor += 2 + usize::from(original[cursor + 1]);
+        }
+        let header_end = cursor + 3 * 9;
+        for position in positions {
+            let mut bytes = original.clone();
+            bytes[position] = 0xff;
+            let recovered = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&bytes));
+            assert_eq!(recovered.ir().model, expected.ir().model);
+            assert_eq!(recovered.ir().tolerances, expected.ir().tolerances);
+            assert!(recovered
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == SatLossCode::HeaderMetadataNoncanonical.kind()));
+            assert_eq!(
+                recovered
+                    .source_fidelity()
+                    .retained_record("sat:source:header#0")
+                    .unwrap()
+                    .data(),
+                Some(&bytes[..header_end])
+            );
+            assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+                .unwrap()
+                .is_ok());
+        }
+    }
+}
+
+#[test]
+fn text_record_count_metadata_recovery_keeps_geometry_and_exact_header() {
+    for original in [text_sphere_stream(1.0), acis_text_sphere_stream(21_800)] {
+        let original = String::from_utf8(original).unwrap();
+        let expected = decode_bytes(original.as_bytes());
+        for value in [
+            "-1",
+            "4294967296",
+            "999999999999999999999999999999999",
+            "invalid",
+        ] {
+            let source = original.replacen(" 0 2 2", &format!(" {value} 2 2"), 1);
+            let recovered =
+                cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source.as_bytes()));
+            assert_eq!(recovered.ir().model, expected.ir().model);
+            assert!(recovered
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == SatLossCode::HeaderMetadataNoncanonical.kind()));
+            let header_end = source.match_indices('\n').nth(2).unwrap().0 + 1;
+            assert_eq!(
+                recovered
+                    .source_fidelity()
+                    .retained_record("sat:source:header#0")
+                    .unwrap()
+                    .data(),
+                Some(&source.as_bytes()[..header_end])
+            );
+            assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+                .unwrap()
+                .is_ok());
+        }
+    }
+}
+
+#[test]
 fn text_header_metadata_recovery_preserves_geometry_and_exact_header() {
     for original in [text_sphere_stream(1.0), acis_text_sphere_stream(23_200)] {
         let original = String::from_utf8(original).unwrap();

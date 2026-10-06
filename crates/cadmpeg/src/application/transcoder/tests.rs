@@ -90,7 +90,7 @@ fn prepared(
     let validation =
         cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     PreparedConversion {
-        document: LoadedDocument::neutral(ir),
+        document: LoadedDocument::neutral(ir, 0),
         validation,
         encoder,
         selection: TargetSelection::new(format, None),

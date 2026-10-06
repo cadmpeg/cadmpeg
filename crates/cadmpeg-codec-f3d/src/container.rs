@@ -278,6 +278,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) text_breps: std::collections::HashMap<String, TextBrepFraming>,
     /// Whether this ZIP is one F3D document or an outer F3Z archive.
     pub(crate) kind: F3dContainerKind,
+    /// Optional manifest payloads rejected after their byte spans were admitted.
+    pub(crate) manifest_diagnostics: Vec<manifest::MetadataDiagnostic>,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
     /// Entry indices per native scope key, in entry order.
@@ -646,6 +648,7 @@ pub(crate) fn scan<'a>(
     // discriminants, before anything semantic is read. Classifying here is what
     // keeps the report from re-deriving an identity the parse already settled.
     let root_document_members = root_f3d_members(ctx, &inflated_entries)?;
+    let mut manifest_diagnostics = Vec::new();
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(ctx, top_level_manifest.window())?;
         let matched = F3dDialect::classify_document(ctx, top_level_manifest.declared_version())?;
@@ -655,6 +658,7 @@ pub(crate) fn scan<'a>(
             inflated_entries.keys().map(String::as_str),
             |name| inflated_entries.get(name).map(|view| view.window()),
         )?;
+        manifest_diagnostics = top_level_manifest.diagnostics;
         F3dContainerKind::Document {
             design_asset_folder,
             matched,
@@ -690,6 +694,7 @@ pub(crate) fn scan<'a>(
         breps,
         text_breps: std::collections::HashMap::new(),
         kind,
+        manifest_diagnostics,
         inflated_entries,
         scope_entry_indices,
         metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
