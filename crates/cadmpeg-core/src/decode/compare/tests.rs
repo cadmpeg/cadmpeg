@@ -80,13 +80,13 @@ fn charged_tree_lookup_counts_key_bytes_at_depth_bound() {
         panic!("refusal")
     };
     // Three lookups each compare a two-byte key with both stored keys; the
-    // removal makes four mutation passes over the root and a possible new root.
+    // removal shifts the single leaf once.
     let node_bytes = 11 * (std::mem::size_of::<&str>() + std::mem::size_of::<i32>())
         + 16 * std::mem::size_of::<usize>()
         + 2 * std::mem::align_of::<usize>();
     assert_eq!(
         limit.used,
-        3 * 2 * 2 + 4 * 2 * u64::try_from(node_bytes).expect("test operation succeeds")
+        3 * 2 * 2 + u64::try_from(node_bytes).expect("test operation succeeds")
     );
 }
 
@@ -298,4 +298,32 @@ fn tree_height_counts_levels_of_a_minimally_filled_btree() {
     }
     assert_eq!(DecodeContext::tree_comparisons(3), 3);
     assert_eq!(DecodeContext::tree_comparisons(1_000_000), 88);
+}
+
+#[test]
+fn deep_tree_removal_pays_each_level_once() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let mut tree: std::collections::BTreeMap<u64, u64> = (0..11).map(|key| (key, key)).collect();
+    assert_eq!(
+        ctx.remove_btree_map(&mut tree, &5, "remove")
+            .expect("remove"),
+        Some(5)
+    );
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "probe").expect_err("probe")
+    else {
+        panic!("refusal")
+    };
+    // The eight-byte key is compared with each of the eleven stored keys. Eleven
+    // entries may span two levels, so the removal pays one shift, one steal and,
+    // for each level, a merge and the split that may recreate its node: eleven
+    // node passes.
+    let node_bytes = 11 * 2 * std::mem::size_of::<u64>()
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<usize>();
+    assert_eq!(
+        limit.used,
+        8 * 11 + 11 * u64::try_from(node_bytes).expect("test operation succeeds")
+    );
 }
