@@ -3,9 +3,10 @@
 use super::markers::{
     admit_sketch_input_entities, reference_cells_charged, relation_bindings_charged,
 };
-use super::names::{class_declarations, configuration, object_names};
+use super::names::{class_declarations, configuration, declared_class_names, object_names};
 use super::scalars::named_scalars_charged;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
+use crate::classification::native_object_class;
 use crate::container::ContainerScan;
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
 use cadmpeg_core::decode::DecodeContext;
@@ -21,26 +22,22 @@ pub(crate) fn lanes(
     scan: &ContainerScan,
     annotations: &mut Annotations,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
-    let has_explicit_lanes = scan.sections(ctx)?.any(|source| {
-        source
-            .name()
-            .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
-    });
+    let has_explicit_lanes = has_resolved_features_sections(ctx, scan)?;
     let mut result = Vec::new();
     for source in scan.sections(ctx)? {
         let Some(section) = source.name() else {
             continue;
         };
-        if if has_explicit_lanes {
-            !contains_ascii_case_insensitive(section, "resolvedfeatures")
+        let lane_section = if has_explicit_lanes {
+            names_resolved_features(ctx, section)?
         } else {
-            !legacy_feature_input_section(section)
-        } {
+            legacy_feature_input_section(ctx, section)?
+        };
+        if !lane_section {
             continue;
         }
         let lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
-        ctx.reserve_vec(&mut result, 1, "collect SLDPRT feature input lanes")?;
-        result.push(lane);
+        ctx.push_vec(&mut result, lane, "collect SLDPRT feature input lanes")?;
     }
     Ok(result)
 }
@@ -50,12 +47,7 @@ pub(crate) fn supplemental_config_lanes(
     scan: &ContainerScan,
     annotations: &mut Annotations,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
-    let has_explicit_lanes = scan.sections(ctx)?.any(|source| {
-        source
-            .name()
-            .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
-    });
-    if !has_explicit_lanes {
+    if !has_resolved_features_sections(ctx, scan)? {
         return Ok(Vec::new());
     }
     let mut lanes = Vec::new();
@@ -63,15 +55,45 @@ pub(crate) fn supplemental_config_lanes(
         let Some(section) = source.name() else {
             continue;
         };
-        if legacy_feature_input_section(section)
+        if legacy_feature_input_section(ctx, section)?
             && legacy_sketch_object_stream(ctx, source.payload())?
         {
             let lane = feature_input_lane(ctx, source, section, "config-objects", annotations)?;
-            ctx.reserve_vec(&mut lanes, 1, "collect SLDPRT supplemental feature lanes")?;
-            lanes.push(lane);
+            ctx.push_vec(
+                &mut lanes,
+                lane,
+                "collect SLDPRT supplemental feature lanes",
+            )?;
         }
     }
     Ok(lanes)
+}
+
+fn has_resolved_features_sections(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    ctx.any_by(
+        scan.section_steps(),
+        |source| match source.name() {
+            Some(name) => names_resolved_features(ctx, name),
+            None => Ok(false),
+        },
+        "find SLDPRT resolved-features sections",
+    )
+}
+
+/// Whether a section name contains `resolvedfeatures` in any ASCII case.
+fn names_resolved_features(
+    ctx: &DecodeContext<'_>,
+    section: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    const NEEDLE: &[u8] = b"resolvedfeatures";
+    ctx.any_by(
+        section.as_bytes().windows(NEEDLE.len()),
+        |window| Ok(window.eq_ignore_ascii_case(NEEDLE)),
+        "find SLDPRT resolved-features section name",
+    )
 }
 
 fn feature_input_lane(
@@ -92,7 +114,7 @@ fn feature_input_lane(
     let relation_bindings = relation_bindings_charged(ctx, &parent, &classes, &scalars)?;
     let references = reference_cells_charged(ctx, &scalars, &classes)?;
     let sketch_entities = admit_sketch_input_entities(ctx, payload, &parent)?;
-    for entity in &sketch_entities {
+    for entity in ctx.admit_iter(&sketch_entities, "annotate SLDPRT sketch input entities")? {
         let signature = usize::try_from(entity.offset())
             .ok()
             .and_then(|offset| payload.get(offset..offset + SKETCH_MARKER.len()))
@@ -146,17 +168,25 @@ fn feature_input_lane(
     })
 }
 
-fn legacy_feature_input_section(section: &str) -> bool {
+fn legacy_feature_input_section(
+    ctx: &DecodeContext<'_>,
+    section: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let bytes = section.as_bytes();
     if bytes.len() < "Contents/Config-".len()
         || !matches!(bytes[8], b'/' | b'\\')
         || !((bytes[..8] == *b"Contents" && bytes[9..16] == *b"Config-")
             || (bytes[..8] == *b"contents" && bytes[9..16] == *b"config-"))
     {
-        return false;
+        return Ok(false);
     }
     let configuration = &section[16..];
-    !configuration.is_empty() && configuration.bytes().all(|byte| byte.is_ascii_digit())
+    Ok(!configuration.is_empty()
+        && ctx.all_by(
+            configuration.bytes(),
+            |byte| Ok(byte.is_ascii_digit()),
+            "check SLDPRT legacy configuration section",
+        )?)
 }
 
 pub(super) fn contains_ascii_case_insensitive(text: &str, needle: &str) -> bool {
@@ -169,11 +199,16 @@ fn legacy_sketch_object_stream(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let classes = class_declarations(ctx, payload, "legacy-sketch-probe")?;
-    Ok(classes.iter().any(|class| class.name == "sgSketch")
-        && classes
-            .iter()
-            .any(|class| class.role() == FeatureInputClassRole::SketchEntity))
+    let mut sketch = false;
+    let mut sketch_entity = false;
+    for name in declared_class_names(ctx, payload)? {
+        sketch |= name == "sgSketch";
+        sketch_entity |= native_object_class(name).role() == FeatureInputClassRole::SketchEntity;
+        if sketch && sketch_entity {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
