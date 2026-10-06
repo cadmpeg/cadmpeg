@@ -123,3 +123,40 @@ fn live_annotations_refuse_first_identity_at_collection_limit() {
         },
     );
 }
+
+#[test]
+fn live_annotation_lookup_scales_with_tree_depth() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut annotations = crate::test_support::with_decode_context(|ctx| {
+        let mut builder = cadmpeg_ir::annotations::AnnotationBuilder::new();
+        for index in 0..4000 {
+            let id = cadmpeg_ir::ids::PointId::mint(format!("nx:model:point#{index}"))
+                .expect("identity");
+            builder
+                .exactness(ctx, &id, cadmpeg_ir::Exactness::Derived)
+                .expect("annotation");
+            ir.model.points.push(cadmpeg_ir::topology::Point::new(
+                id,
+                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0., 0., 0.))
+                    .expect("position"),
+                None,
+            ));
+        }
+        builder
+            .exactness(ctx, "nx:model:point#absent", cadmpeg_ir::Exactness::Derived)
+            .expect("absent selector");
+        builder.build()
+    });
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 30_000_000,
+        |ctx| {
+            retain_live_annotations(ctx, &ir, &[], &mut annotations)
+                .expect("indexed lookups fit budget");
+        },
+    );
+    assert_eq!(annotations.exactness().len(), 4000);
+    assert!(!annotations
+        .exactness()
+        .contains_key("nx:model:point#absent"));
+}

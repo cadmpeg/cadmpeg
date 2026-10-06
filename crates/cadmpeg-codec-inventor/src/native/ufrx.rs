@@ -918,20 +918,23 @@ impl UfrxRecord {
         namespace.set_arena(ctx, "ufrx_occurrences", self.occurrences())?;
         Ok(())
     }
-    pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        let [wire] = <[_; 1]>::try_from(namespace.arena_as::<UfrxRecordWire>("ufrx")?).map_err(
-            |records: Vec<_>| {
-                serde_json::Error::custom(format!(
-                    "Inventor native data has {} UFRxDoc state records",
-                    records.len()
-                ))
-            },
-        )?;
+    pub(crate) fn read(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        namespace: &NativeNamespace,
+    ) -> Result<Self, NativeConvertError> {
+        let [wire] =
+            <[_; 1]>::try_from(namespace.arena_as_for_decode::<UfrxRecordWire>(ctx, "ufrx")?)
+                .map_err(|records: Vec<_>| {
+                    serde_json::Error::custom(format!(
+                        "Inventor native data has {} UFRxDoc state records",
+                        records.len()
+                    ))
+                })?;
         wire.into_record(
-            namespace.arena_as("ufrx_model_states")?,
-            namespace.arena_as("external_references")?,
-            namespace.arena_as("embedded_references")?,
-            namespace.arena_as("ufrx_occurrences")?,
+            namespace.arena_as_for_decode(ctx, "ufrx_model_states")?,
+            namespace.arena_as_for_decode(ctx, "external_references")?,
+            namespace.arena_as_for_decode(ctx, "embedded_references")?,
+            namespace.arena_as_for_decode(ctx, "ufrx_occurrences")?,
         )
         .map_err(|detail| serde_json::Error::custom(detail).into())
     }
@@ -1318,7 +1321,7 @@ mod tests {
             .install(&crate::native::test_ctx(), &mut namespace)
             .expect("valid test fixture");
         assert_eq!(
-            UfrxRecord::read(&namespace).expect("valid test fixture"),
+            UfrxRecord::read(&crate::native::test_ctx(), &namespace).expect("valid test fixture"),
             record
         );
         let mut wire = namespace
@@ -1329,7 +1332,7 @@ mod tests {
         namespace
             .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
             .expect("valid test fixture");
-        assert!(UfrxRecord::read(&namespace)
+        assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace)
             .expect_err("invalid test fixture")
             .to_string()
             .contains("model_state_count"));
@@ -1339,7 +1342,7 @@ mod tests {
         namespace
             .set_arena(&crate::native::test_ctx(), "ufrx", &[absent])
             .expect("valid test fixture");
-        assert!(UfrxRecord::read(&namespace).is_err());
+        assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
     }
 
     #[test]
@@ -1368,7 +1371,8 @@ mod tests {
                 .install(&crate::native::test_ctx(), &mut namespace)
                 .expect("valid test fixture");
             assert_eq!(
-                UfrxRecord::read(&namespace).expect("valid test fixture"),
+                UfrxRecord::read(&crate::native::test_ctx(), &namespace)
+                    .expect("valid test fixture"),
                 record
             );
             let mut wire = namespace
@@ -1378,7 +1382,7 @@ mod tests {
             namespace
                 .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
                 .expect("valid test fixture");
-            assert!(UfrxRecord::read(&namespace).is_err());
+            assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
         }
     }
 

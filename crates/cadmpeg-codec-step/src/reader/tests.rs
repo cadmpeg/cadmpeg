@@ -292,7 +292,7 @@ fn byte_accounting_propagates_binary_lexeme_resource_refusal() {
             .expect("test exchange parses");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 4;
+    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(source.len()) + 4;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits the test policy");
     let error = byte_accounting(source, &exchange, &HashSet::new(), &[], &ctx)
@@ -1806,4 +1806,23 @@ fn protected_root_copy_refuses_collection_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "step_unowned_protected_root_copy"));
+}
+
+#[test]
+fn byte_coverage_does_not_spend_collection_items_per_byte() {
+    let source = vec![b' '; 100_000];
+    let (exchange, _) = crate::test_support::with_service_context(
+        b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;",
+        crate::parse::parse_inner,
+    )
+    .expect("empty exchange");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&source, &arena, &policy)
+        .expect("context");
+    let counts =
+        byte_accounting(&source, &exchange, &HashSet::new(), &[], &ctx).expect("byte budget");
+    assert_eq!(counts.structural, source.len());
+    assert_eq!(counts.unclassified, 0);
 }

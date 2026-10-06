@@ -1847,21 +1847,23 @@ fn retain_live_annotations(
         )?;
     }
     let mut keep = |id: &str| {
-        let work = ids
-            .len()
+        // A B-tree search compares at most the node width at each level.
+        // Twelve comparisons per binary level bounds Rust's eleven-key nodes.
+        let comparisons = 12
+            * u64::from(
+                u64::BITS - cadmpeg_core::decode::u64_from_index(ids.len()).leading_zeros(),
+            );
+        let work = comparisons
             .checked_add(1)
             .and_then(|count| {
-                id.len()
+                cadmpeg_core::decode::u64_from_index(id.len())
                     .checked_add(1)
                     .and_then(|bytes| count.checked_mul(bytes))
             })
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("nx annotation identity lookup", u64::MAX - 1, u64::MAX)
             })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "nx annotation identity lookup",
-        )?;
+        ctx.charge_work(work, "nx annotation identity lookup")?;
         Ok(ids.contains(id))
     };
     annotations.retain_provenance(ctx, &mut keep)?;

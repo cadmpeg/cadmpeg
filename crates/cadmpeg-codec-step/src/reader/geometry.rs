@@ -3849,8 +3849,9 @@ fn resolve_unit_scales(
             continue;
         };
         let mut members = BTreeSet::new();
+        let mut visited = BTreeSet::new();
         for item in items {
-            collect_unit_scope_members(item, exchange, &mut members, &mut BTreeSet::new(), ctx)?;
+            collect_unit_scope_members(item, exchange, &mut members, &mut visited, ctx)?;
         }
         for member in members {
             if let Some(length) = length {
@@ -3998,6 +3999,7 @@ fn collect_unit_scope_members(
     let mut pending = Vec::new();
     let mut next = Some(id);
     while let Some(current) = next {
+        ctx.charge_work(1, "step_unit_scope_walk")?;
         let _nested = (current != id)
             .then(|| ctx.enter_nested("step_unit_scope_walk"))
             .transpose()?;

@@ -206,6 +206,19 @@ impl<'a> DecodeContext<'a> {
         self.budget.reserve_scoped(bytes, operation)
     }
 
+    /// Admits a temporary byte allocation and holds its reservation until released.
+    pub fn try_materialized<T>(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+        allocate: impl FnOnce() -> Result<T, std::collections::TryReserveError>,
+    ) -> Result<(ScopedReservation<'_>, T), CodecError> {
+        let reservation = self.reserve_scoped(bytes, operation)?;
+        let value =
+            allocate().map_err(|_| self.budget.scoped_allocation_failed(bytes, operation))?;
+        Ok((reservation, value))
+    }
+
     /// Reserves temporary bytes and returns the typed resource refusal.
     pub fn reserve_scoped_limit(
         &self,
@@ -902,6 +915,31 @@ mod tests {
     use super::{u64_from_index, ByteRange, DecodeArena, DecodeContext, DecodePolicy};
     use crate::decode::{ResourceDimension, ResourceFailure};
     use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+    #[test]
+    fn temporary_byte_storage_uses_its_byte_budget_and_releases_it() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 32;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (reservation, bytes) = ctx
+            .try_materialized(32, "test bytes", || {
+                let mut bytes = Vec::<u8>::new();
+                bytes.try_reserve_exact(32)?;
+                Ok(bytes)
+            })
+            .expect("byte allowance");
+        assert_eq!(bytes.capacity(), 32);
+        drop(reservation);
+        let (reservation, _) = ctx
+            .try_materialized(32, "test bytes", || Ok(()))
+            .expect("released allowance");
+        assert!(
+            matches!(ctx.try_materialized(1, "test bytes", || Ok(())), Err(crate::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
+        drop(reservation);
+    }
 
     #[test]
     fn loaded_input_processing_preserves_proportional_and_absolute_limits() {

@@ -380,3 +380,37 @@ fn uncertainty_distinct_candidates_refuse_collection_limit() {
                 && refusal.operation == "step_uncertainty_distinct_candidates"
     ));
 }
+
+#[test]
+fn shared_geometry_is_visited_once_per_unit_scope() {
+    let mut records = format!("{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));#3=CARTESIAN_POINT('',(1.,2.,3.));");
+    for id in 10..1010 {
+        records.push_str(&format!("#{id}=GEOMETRIC_SET((#3));"));
+    }
+    records.push_str("#4=SHAPE_REPRESENTATION('',(");
+    for id in 10..1010 {
+        if id != 10 {
+            records.push(',');
+        }
+        records.push_str(&format!("#{id}"));
+    }
+    records.push_str("),#2);");
+    let source = format!("{HEADER}{records}{TAIL}");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 7000;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).expect("context");
+    let scales = super::super::resolve_unit_scales(
+        &exchange,
+        PositiveReal::ONE,
+        PositiveReal::ONE,
+        &mut Vec::new(),
+        &ctx,
+    )
+    .expect("shared members fit linear budget");
+    assert_eq!(scales.length([3]), PositiveReal::ONE);
+}

@@ -113,15 +113,19 @@ impl ProteinRecord {
         namespace.set_arena(ctx, "protein_entries", self.entries())
     }
 
-    pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        let [wire] = <[_; 1]>::try_from(namespace.arena_as::<ProteinRecordWire>("protein")?)
-            .map_err(|records: Vec<_>| {
-                serde_json::Error::custom(format!(
-                    "Inventor native data has {} Protein state records",
-                    records.len()
-                ))
-            })?;
-        let entries = namespace.arena_as("protein_entries")?;
+    pub(crate) fn read(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        namespace: &NativeNamespace,
+    ) -> Result<Self, NativeConvertError> {
+        let [wire] =
+            <[_; 1]>::try_from(namespace.arena_as_for_decode::<ProteinRecordWire>(ctx, "protein")?)
+                .map_err(|records: Vec<_>| {
+                    serde_json::Error::custom(format!(
+                        "Inventor native data has {} Protein state records",
+                        records.len()
+                    ))
+                })?;
+        let entries = namespace.arena_as_for_decode(ctx, "protein_entries")?;
         wire.into_record(entries)
             .map_err(|detail| serde_json::Error::custom(detail).into())
     }
@@ -441,14 +445,15 @@ mod tests {
             .expect("valid test fixture");
         assert_eq!(wire[0]["entry_count"], 1);
         assert_eq!(
-            ProteinRecord::read(&namespace).expect("valid test fixture"),
+            ProteinRecord::read(&crate::native::test_ctx(), &namespace)
+                .expect("valid test fixture"),
             record
         );
         wire[0]["entry_count"] = serde_json::json!(0);
         namespace
             .set_arena(&crate::native::test_ctx(), "protein", &wire)
             .expect("valid test fixture");
-        assert!(ProteinRecord::read(&namespace)
+        assert!(ProteinRecord::read(&crate::native::test_ctx(), &namespace)
             .expect_err("invalid test fixture")
             .to_string()
             .contains("entry_count"));
@@ -458,7 +463,7 @@ mod tests {
         namespace
             .set_arena(&crate::native::test_ctx(), "protein", &[absent])
             .expect("valid test fixture");
-        assert!(ProteinRecord::read(&namespace).is_err());
+        assert!(ProteinRecord::read(&crate::native::test_ctx(), &namespace).is_err());
     }
 
     #[test]
@@ -483,7 +488,8 @@ mod tests {
                 .expect("valid test fixture");
             assert!(record.entries().is_empty());
             assert_eq!(
-                ProteinRecord::read(&namespace).expect("valid test fixture"),
+                ProteinRecord::read(&crate::native::test_ctx(), &namespace)
+                    .expect("valid test fixture"),
                 record
             );
         }

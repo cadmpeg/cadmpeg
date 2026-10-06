@@ -1280,6 +1280,7 @@ fn source_record_id(identity: &str) -> Option<u64> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 enum ByteClass {
     Unclassified,
     Structural,
@@ -1302,8 +1303,15 @@ fn byte_accounting(
     header_spans: &[std::ops::Range<usize>],
     ctx: &DecodeContext<'_>,
 ) -> Result<ByteAccounting, CodecError> {
-    let mut classes =
-        ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?;
+    // Coverage slots describe bytes, not semantic collection members.
+    ctx.charge_work(u64_from_index(input.len()), "step byte classes")?;
+    let (_class_bytes, mut classes) =
+        ctx.try_materialized(u64_from_index(input.len()), "step byte classes", || {
+            let mut classes = Vec::new();
+            classes.try_reserve_exact(input.len())?;
+            classes.resize(input.len(), ByteClass::Unclassified);
+            Ok(classes)
+        })?;
     for span in header_spans {
         claim_range(
             &mut classes,

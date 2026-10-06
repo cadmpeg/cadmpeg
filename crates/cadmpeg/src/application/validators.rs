@@ -7,9 +7,12 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::validate::{
+    validate_neutral_for_decode, validate_neutral_with_source_fidelity_for_decode,
+};
 use cadmpeg_ir::{
     report::check::{Finding, ValidationReport},
-    validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity,
+    CadIr, SourceFidelity,
 };
 use cadmpeg_registry::InputCatalog;
 
@@ -21,8 +24,10 @@ pub(crate) fn validate_ir(
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     let mut report = match source_fidelity {
-        Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
-        None => validate_neutral(ir, losses),
+        Some(source_fidelity) => {
+            validate_neutral_with_source_fidelity_for_decode(ctx, ir, source_fidelity, losses)
+        }
+        None => validate_neutral_for_decode(ctx, ir, losses),
     }?;
     report.findings.extend(validate_native(ctx, inputs, ir)?);
     Ok(report)

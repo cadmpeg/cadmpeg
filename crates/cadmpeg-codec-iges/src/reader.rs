@@ -752,7 +752,7 @@ fn decode_with_occurrence_limits(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             "iges_semantic_validation",
         )?;
-        reject_invalid_semantic_ir(&ir)?;
+        reject_invalid_semantic_ir(ctx, &ir)?;
     }
     let attributed = if ctx.container_only() {
         BTreeSet::new()
@@ -874,8 +874,8 @@ fn decode_with_occurrence_limits(
 /// Keeps full [`cadmpeg_ir::validate_neutral`]: `DRAFT_CORE_CHECKS` error
 /// outcomes match full validation on every IGES golden fixture, so the route
 /// stays on the full validator.
-fn reject_invalid_semantic_ir(ir: &CadIr) -> Result<(), CodecError> {
-    let validation = cadmpeg_ir::validate_neutral(ir, Vec::new())?;
+fn reject_invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
+    let validation = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, ir, Vec::new())?;
     let Some(finding) = validation
         .findings
         .iter()
