@@ -181,13 +181,13 @@ fn sync_neutral_parameters(
                 parameter.id.as_str()
             )));
         };
-        if parameter.display != dimension_display(&ctx, &parameter.expression)? {
+        if parameter.display != dimension_display(&parameter.expression) {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has display semantics inconsistent with its expression",
                 parameter.id.as_str()
             )));
         }
-        if parse_neutral_parameter_literal(&ctx, owner, &parameter.name, &parameter.expression)?
+        if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
             .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
         {
             return Err(CodecError::malformed(format_args!(
@@ -248,7 +248,7 @@ fn sync_neutral_parameters(
             .iter()
             .map(|parameter| {
                 let mut properties = parameter.properties.clone();
-                if parse_parameter_literal(&ctx, &parameter.expression)?.is_none() {
+                if parse_parameter_literal(&parameter.expression).is_none() {
                     if let Some(value) = &parameter.value {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("Value"),

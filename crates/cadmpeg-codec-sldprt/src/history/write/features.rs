@@ -10,7 +10,7 @@ use cadmpeg_ir::topology::Body;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::history::classify::{
-    feature_tree_node_role, is_custom_property, principal_plane_in_history,
+    feature_tree_node_role, is_custom_property, principal_plane_in_history, HistoryIndex,
 };
 use crate::history::configuration::enrich_history_parameters_semantic;
 use crate::history::parameters::apply_evaluated_parameters;
@@ -295,15 +295,9 @@ pub(in crate::history) fn sync_neutral_features(
     }
     let mut principal_planes_by_record = HashMap::new();
     for history in &native.feature_histories {
-        let by_source = history
-            .features
-            .iter()
-            .filter_map(|feature| Some((feature.source_id?, feature)))
-            .collect::<std::collections::BTreeMap<_, _>>();
+        let index = HistoryIndex::new(&ctx, &history.features)?;
         for feature in &history.features {
-            if let Some(plane) =
-                principal_plane_in_history(&ctx, feature, &by_source, &history.features)?
-            {
+            if let Some(plane) = principal_plane_in_history(&ctx, feature, &index)? {
                 principal_planes_by_record.insert(feature.id.clone(), plane);
             }
         }
@@ -320,8 +314,9 @@ pub(in crate::history) fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let mut retained_tree_node_roles = HashMap::new();
     for history in &native.feature_histories {
+        let index = HistoryIndex::new(&ctx, &history.features)?;
         for feature in &history.features {
-            if let Some(role) = feature_tree_node_role(&ctx, feature, &history.features)? {
+            if let Some(role) = feature_tree_node_role(&ctx, feature, &index)? {
                 retained_tree_node_roles.insert(feature.id.clone(), role);
             }
         }

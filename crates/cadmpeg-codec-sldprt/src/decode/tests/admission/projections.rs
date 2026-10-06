@@ -457,13 +457,13 @@ fn metadata_offset_plane_binding_refuses_work_limit() {
         &construction_reference_source(),
         options,
         "index SLDPRT offset plane ordinals",
-        Some(1), // One visitor work unit; key reads have separate requests.
+        Some(2), // Two feature slots in the admitted plane-fact iteration.
     );
     assert_eq!(
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
-    assert_eq!(refusal.additional, 1);
+    assert_eq!(refusal.additional, 2);
 }
 
 #[test]
