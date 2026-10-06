@@ -45,6 +45,16 @@ fn charged_lookup_and_comparison_refuse_before_access() {
     };
     assert_eq!(limit, repeated);
     assert_eq!(ctx.resource_refusal(), Some(limit));
+
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let CodecError::ResourceLimit(lookup) = ctx
+        .get_hash_map(&values, "long key", "lookup")
+        .expect_err("refusal")
+    else {
+        panic!("refusal")
+    };
+    assert_eq!(lookup.operation, "lookup");
+    assert_eq!(ctx.resource_refusal(), Some(lookup));
 }
 
 #[test]
@@ -198,6 +208,14 @@ fn set_relations_and_stored_map_keys_use_complete_query_work() {
         panic!("refusal")
     };
     assert_eq!(first, repeated);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let CodecError::ResourceLimit(lookup) = ctx
+        .get_key_value_hash_map(&hash, "alpha", "refuse lookup")
+        .expect_err("work")
+    else {
+        panic!("refusal")
+    };
+    assert_eq!(lookup.operation, "refuse lookup");
 }
 
 #[test]

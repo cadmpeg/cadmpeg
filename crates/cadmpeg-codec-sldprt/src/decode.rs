@@ -742,41 +742,35 @@ fn append_design_losses_with(
                 "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
             )))?;
     }
-    // Filled in reverse so the first feature with an identity answers.
-    let (first_feature_by_id, _first_feature_by_id_storage) = ctx.collect_scoped_string_map(
-        ir.model.features.len(),
-        ctx.admit_iter(&ir.model.features, "index SLDPRT features by ID")?
-            .rev()
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT features by ID",
-    )?;
     let mut incoherent_configuration_suppression = 0;
     for configuration in ctx.admit_iter(
         &ir.model.configurations,
         "scan SLDPRT configuration suppression snapshots",
     )? {
-        let mut incoherent = false;
-        for (id, state) in ctx.admit_iter(
+        let mut incoherent = !ctx.all_by(
             &configuration.feature_states,
+            |(id, _)| ctx.contains_hash_set(&feature_ids, id, "test SLDPRT hashed identity"),
             "scan SLDPRT configuration suppression members",
-        )? {
-            if !ctx.contains_hash_set(&(feature_ids), id, "test SLDPRT hashed identity")?
-                || (configuration.active
-                    && ctx
-                        .get_hash_map(
-                            &first_feature_by_id,
-                            id.as_str(),
-                            "find SLDPRT configuration suppression feature",
+        )?;
+        // The active configuration's states agree with each feature's own
+        // suppression; each feature looks its state up.
+        if !incoherent && configuration.active {
+            incoherent = ctx.any_by(
+                &ir.model.features,
+                |feature| {
+                    let Some(suppressed) = feature.suppressed else {
+                        return Ok(false);
+                    };
+                    Ok(ctx
+                        .get_btree_map(
+                            &configuration.feature_states,
+                            &feature.id,
+                            "find SLDPRT configuration suppression state",
                         )?
-                        .is_some_and(|feature| {
-                            feature.suppressed.is_some_and(|suppressed| {
-                                suppressed != state.evaluation.is_suppressed()
-                            })
-                        }))
-            {
-                incoherent = true;
-                break;
-            }
+                        .is_some_and(|state| suppressed != state.evaluation.is_suppressed()))
+                },
+                "scan SLDPRT configuration suppression features",
+            )?;
         }
         incoherent_configuration_suppression += usize::from(incoherent);
     }
