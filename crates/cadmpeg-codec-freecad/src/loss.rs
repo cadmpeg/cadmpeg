@@ -25,6 +25,14 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 /// string form (via [`FreecadLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum FreecadLossCode {
+    /// A bounded archive payload cannot be opened; its stored bytes remain retained.
+    ArchiveEntryUnreadable,
+    /// A property payload cannot enter the admitted persistence graph.
+    PersistencePayloadUnresolved,
+    /// An optional file reference has no readable archive payload.
+    PersistenceSideEntryUnresolved,
+    /// Redundant persistence counts disagree with framed XML populations.
+    PersistenceCountNoncanonical,
     /// Feature history cannot enter a neutral definition because its ordering is cyclic.
     FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
@@ -63,6 +71,10 @@ impl FreecadLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [FreecadLossCode] = &[
+        Self::ArchiveEntryUnreadable,
+        Self::PersistencePayloadUnresolved,
+        Self::PersistenceSideEntryUnresolved,
+        Self::PersistenceCountNoncanonical,
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
@@ -85,6 +97,10 @@ impl FreecadLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
+            Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
+            Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
+            Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::SketchNativeGeometry => "sketch.native-geometry",
@@ -116,7 +132,11 @@ impl FreecadLossCode {
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
-            Self::AppearanceTopologyColorCountMismatch
+            Self::ArchiveEntryUnreadable
+            | Self::PersistencePayloadUnresolved
+            | Self::PersistenceSideEntryUnresolved
+            | Self::PersistenceCountNoncanonical
+            | Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred
             | Self::SourceDialectUnverified
             | Self::SourceGuiSchemaUnverified
@@ -133,6 +153,9 @@ impl FreecadLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::ArchiveEntryUnreadable
+            | Self::PersistencePayloadUnresolved
+            | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
                 LossTaxonomy::FeatureHistoryRetained
             }
@@ -144,7 +167,8 @@ impl FreecadLossCode {
             | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
-            Self::ProgramVersionNoncanonical
+            Self::PersistenceCountNoncanonical
+            | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
@@ -188,6 +212,10 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "source.archive-entry-unreadable",
+                "metadata.persistence-payload-unresolved",
+                "metadata.persistence-side-entry-unresolved",
+                "metadata.persistence-count-noncanonical",
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "sketch.native-geometry",

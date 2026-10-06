@@ -272,3 +272,60 @@ fn residual_status_fields_preserve_numeric_wire_values() {
         serde_json::to_value(later).unwrap()
     );
 }
+
+#[test]
+fn unreadable_directory_metadata_preserves_independent_point_geometry() {
+    let source = point_file();
+    let expected = IgesCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    for (card_index, column, field) in [
+        (0, 3, "line_font"),
+        (0, 4, "level"),
+        (0, 5, "view"),
+        (0, 7, "label_display"),
+        (1, 1, "line_weight"),
+        (1, 2, "color"),
+        (1, 8, "subscript"),
+    ] {
+        let mut changed = source.clone();
+        let starts = changed
+            .split_inclusive(|byte| *byte == b'\n')
+            .scan(0, |offset, line| {
+                let start = *offset;
+                *offset += line.len();
+                Some((start, line))
+            })
+            .filter(|(_, line)| line.get(72) == Some(&b'D'))
+            .map(|(offset, _)| offset)
+            .collect::<Vec<_>>();
+        let start = starts[card_index] + 8 * column;
+        changed[start..start + 8].copy_from_slice(b"     BAD");
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            decoded.ir().model.points,
+            expected.ir().model.points,
+            "{field}"
+        );
+        assert_eq!(
+            decoded.ir().model.bodies,
+            expected.ir().model.bodies,
+            "{field}"
+        );
+        assert_eq!(
+            decoded.ir().native.namespace("iges").unwrap().arenas()["entities"][0].fields()[field],
+            serde_json::Value::Null,
+            "{field}"
+        );
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::DirectoryMetadataUnreadable.kind()));
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+    }
+}

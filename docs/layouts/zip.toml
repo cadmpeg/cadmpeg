@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: Apache-2.0
+schema = 1
+format = "zip"
+spec = "docs/formats/zip.md"
+endianness = "little"
+
+[[record]]
+name = "central_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-container/src/archive.rs"
+section = "1"
+anchor = "The central-directory file header is 46 bytes in little-endian order."
+size = 46
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "offset 0"
+
+[[record.field]]
+name = "producer_version"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, and 8"
+
+[[record.field]]
+name = "extraction_version"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, and 8"
+
+[[record.field]]
+name = "flags"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, and 8"
+
+[[record.field]]
+name = "compression"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "offset 10"
+
+[[record.field]]
+name = "time"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "offsets 12 and 14"
+
+[[record.field]]
+name = "date"
+offset = 14
+type = "u16"
+source = "spec"
+anchor = "offsets 12 and 14"
+
+[[record.field]]
+name = "crc32"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "offsets 16, 20, and 24"
+
+[[record.field]]
+name = "compressed_length"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "offsets 16, 20, and 24"
+
+[[record.field]]
+name = "expanded_length"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "offsets 16, 20, and 24"
+
+[[record.field]]
+name = "name_length"
+offset = 28
+type = "u16"
+source = "spec"
+anchor = "offsets 28, 30, and 32"
+
+[[record.field]]
+name = "extra_length"
+offset = 30
+type = "u16"
+source = "spec"
+anchor = "offsets 28, 30, and 32"
+
+[[record.field]]
+name = "comment_length"
+offset = 32
+type = "u16"
+source = "spec"
+anchor = "offsets 28, 30, and 32"
+
+[[record.field]]
+name = "starting_disk"
+offset = 34
+type = "u16"
+source = "spec"
+anchor = "offsets 34 and 36"
+
+[[record.field]]
+name = "internal_attributes"
+offset = 36
+type = "u16"
+source = "spec"
+anchor = "offsets 34 and 36"
+
+[[record.field]]
+name = "external_attributes"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "offsets 38 and 42"
+
+[[record.field]]
+name = "local_header_position"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "offsets 38 and 42"

@@ -45,6 +45,11 @@ fn write_seekable(
     let namespace = resolution.namespace();
     let document = resolution.document();
     let schema_version = resolution.schema_version();
+    let unreadable =
+        namespace.arena_as::<crate::container::UnreadableEntry>("unreadable_entries")?;
+    if !unreadable.is_empty() {
+        return Err(CodecError::NotImplemented("FCStd repacking cannot preserve unreadable ZIP payloads; retained stored bytes are source-only".into()));
+    }
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let objects = namespace.arena_as::<ObjectRecord>("objects")?;
     let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
@@ -61,13 +66,28 @@ fn write_seekable(
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&document_xml, &arena, &policy)?;
-    let written_graph =
+    let mut written_graph =
         crate::persistence::parse_with_context(&document_xml, schema_version, &ctx)?;
     validate_declarations(
         &objects,
         &extensions,
         &written_graph.objects,
         &written_graph.extensions,
+    )?;
+    let mut entry_views = std::collections::BTreeMap::new();
+    for entry in &entries {
+        ctx.insert_btree_map(
+            &mut entry_views,
+            entry.name().to_owned(),
+            cadmpeg_core::decode::View::over_retained(entry.data()),
+            "FCStd written side entries",
+        )?;
+    }
+    crate::persistence::resolve_side_entries(
+        &ctx,
+        &mut written_graph.properties,
+        &entry_views,
+        &mut written_graph.losses,
     )?;
     validate_properties(&properties, &written_graph.properties)?;
     for property in &written_graph.properties {
@@ -247,6 +267,7 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
     }
     match (&left.body, &right.body) {
         (PropertyBody::Transient, PropertyBody::Transient) => true,
+        (PropertyBody::Unreadable(left), PropertyBody::Unreadable(right)) => left == right,
         (
             PropertyBody::Persisted {
                 values: left_values,
@@ -324,6 +345,9 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
 
 fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> {
     validate_property_wrapper(property)?;
+    if matches!(property.body, PropertyBody::Unreadable(_)) {
+        return Ok(property.xml.text().as_bytes().to_vec());
+    }
     let mut replacement = property.xml.text().to_owned();
     let wrapped = format!("<Root>{}</Root>", property.xml.text());
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {

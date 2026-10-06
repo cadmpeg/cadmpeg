@@ -145,22 +145,24 @@ fn subfigure_definition_directory_fields_valid(
         && (!matches!(global_table, GlobalTable::V4_0)
             || (entry.status.subordinate() == Some(Subordinate::Independent)
                 && (entry.status.hierarchy() == Some(Hierarchy::GlobalDefer)
-                    || entry.line_font != 0)))
+                    || entry.line_font.is_none_or(|value| value != 0))))
 }
 
 fn subfigure_definition_label_display_valid(
     entry: &DirectoryEntry,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    entry.label_display == 0
-        || u32::try_from(entry.label_display)
-            .ok()
-            .filter(|sequence| sequence % 2 == 1)
-            .is_some_and(|sequence| {
-                entries
-                    .get(&sequence)
-                    .is_some_and(|target| target.entity_type == 402 && target.form == 5)
-            })
+    entry.label_display.is_none_or(|pointer| {
+        pointer == 0
+            || u32::try_from(pointer)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1)
+                .is_some_and(|sequence| {
+                    entries
+                        .get(&sequence)
+                        .is_some_and(|target| target.entity_type == 402 && target.form == 5)
+                })
+    })
 }
 
 fn subfigure_definition_transform_valid(

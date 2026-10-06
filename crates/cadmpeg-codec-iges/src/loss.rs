@@ -45,6 +45,10 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
+    /// A Directory presentation or naming field remains source-only.
+    DirectoryMetadataUnreadable => "directory.metadata-unreadable",
+    /// A readable display field violates a source rule without changing geometry.
+    DirectoryMetadataNoncanonical => "directory.metadata-noncanonical",
     /// Product-occurrence root inference was suppressed by a malformed member list.
     OccurrenceRootInferenceBlocked => "occurrence.root-inference-blocked",
     /// Product-occurrence expansion omitted an instance or member with malformed placement data.
@@ -152,6 +156,8 @@ impl IgesLossCode {
             | Self::GlobalMetadataFieldUnusable
             | Self::GlobalSemanticContextSubstituted
             | Self::GlobalNumericSyntaxRecovered
+            | Self::DirectoryMetadataUnreadable
+            | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
             | Self::SourceDialectDisplaced
@@ -189,6 +195,8 @@ impl IgesLossCode {
             | Self::NurbsTransformNonFinite => LossTaxonomy::GeometryNotTransferred,
             Self::GlobalSemanticContextSubstituted
             | Self::GlobalNumericSyntaxRecovered
+            | Self::DirectoryMetadataUnreadable
+            | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
@@ -248,6 +256,8 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "directory.metadata-unreadable",
+                "directory.metadata-noncanonical",
                 "occurrence.root-inference-blocked",
                 "occurrence.placement-malformed",
                 "entity.retained-unprojected",

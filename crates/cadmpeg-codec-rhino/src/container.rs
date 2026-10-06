@@ -1028,6 +1028,47 @@ fn count_object_typecode(
     Ok(())
 }
 
+/// Discover the writer's boolean encoding before interpreting object records.
+/// Only the first properties table owns these semantics, wherever it occurs.
+fn first_writer_version(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    archive: ArchiveVersion,
+    mut offset: usize,
+) -> Result<Option<i64>, CodecError> {
+    while offset < data.len() {
+        ctx.charge_work(1, "Rhino writer version table search")?;
+        let chunk = chunk_at(data, offset, data.len(), archive, false).map_err(framing_error)?;
+        if chunk.typecode == TCODE_ENDOFFILE {
+            return Ok(None);
+        }
+        if table_base(chunk.typecode) == TCODE_PROPERTIES {
+            if chunk.short() {
+                return Err(CodecError::malformed(
+                    "properties table must use long framing",
+                ));
+            }
+            let mut value = None;
+            let mut child_offset = chunk.body().start;
+            while child_offset < chunk.body().end {
+                ctx.charge_work(1, "Rhino writer version record search")?;
+                let child = chunk_at(data, child_offset, chunk.body().end, archive, false)
+                    .map_err(framing_error)?;
+                if child.typecode == TCODE_ENDOFTABLE {
+                    break;
+                }
+                if child.typecode == TCODE_WRITER_VERSION && child.short() {
+                    value = Some(child.value().map_err(framing_error)?);
+                }
+                child_offset = child.next_offset();
+            }
+            return Ok(value);
+        }
+        offset = chunk.next_offset();
+    }
+    Ok(None)
+}
+
 fn scan_with_record_limit<'a>(
     ctx: &DecodeContext<'_>,
     data: &'a [u8],
@@ -1074,6 +1115,7 @@ fn scan_with_record_limit<'a>(
         )?;
         (None, comment_offset)
     };
+    let writer_version = first_writer_version(ctx, data, archive, offset)?;
     let mut tables = Vec::new();
     let mut last_rank = 0_u8;
     let mut saw_user = false;
@@ -1089,9 +1131,9 @@ fn scan_with_record_limit<'a>(
     while offset < data.len() {
         let chunk = chunk_at(data, offset, data.len(), archive, false).map_err(framing_error)?;
         if chunk.typecode == TCODE_ENDOFFILE {
-            if !saw_properties || !saw_settings || !saw_objects {
+            if !saw_settings || !saw_objects {
                 return Err(CodecError::Malformed(
-                    "properties, settings, and object tables are required".to_string(),
+                    "settings and object tables are required".to_string(),
                 ));
             }
             validate_eof(data, offset, archive).map_err(framing_error)?;
@@ -1121,6 +1163,11 @@ fn scan_with_record_limit<'a>(
         let rank = table_rank(chunk.typecode).ok_or_else(|| {
             CodecError::malformed(format_args!("expected table or EOF at offset {offset}"))
         })?;
+        let duplicate_metadata_table = match table_base(chunk.typecode) {
+            TCODE_PROPERTIES => saw_properties,
+            TCODE_SETTINGS => saw_settings,
+            _ => false,
+        };
         match table_base(chunk.typecode) {
             TCODE_PROPERTIES => saw_properties = true,
             TCODE_SETTINGS => saw_settings = true,
@@ -1132,7 +1179,15 @@ fn scan_with_record_limit<'a>(
                 "table chunks must use long framing".to_string(),
             ));
         }
-        if table_base(chunk.typecode) == TCODE_USER {
+        if matches!(
+            table_base(chunk.typecode),
+            TCODE_PROPERTIES | TCODE_SETTINGS
+        ) {
+            if duplicate_metadata_table || rank < last_rank || saw_user {
+                warnings.push_coded_admitted(ctx, crate::loss::RhinoLossCode::DuplicateRecordResolved,
+                    format_args!("metadata table {:#x} is repeated or out of order; first table owns its metadata", chunk.typecode))?;
+            }
+        } else if table_base(chunk.typecode) == TCODE_USER {
             if !saw_user && rank < last_rank {
                 return Err(CodecError::Malformed(
                     "user table is out of order".to_string(),
@@ -1152,17 +1207,6 @@ fn scan_with_record_limit<'a>(
         let mut records = Vec::new();
         let mut table_record_count = 0_usize;
         let mut object_typecodes = BTreeMap::new();
-        let writer_version = if table_base(chunk.typecode) == TCODE_OBJECTS {
-            tables
-                .iter()
-                .rev()
-                .filter(|table| table_base(table.typecode) == TCODE_PROPERTIES)
-                .flat_map(|table| table.records.iter().rev())
-                .filter(|record| record.typecode == TCODE_WRITER_VERSION)
-                .find_map(Record::short_value)
-        } else {
-            None
-        };
         let mut child_offset = chunk.body().start;
         let mut terminated = false;
         while child_offset < chunk.body().end {
@@ -1202,7 +1246,10 @@ fn scan_with_record_limit<'a>(
             let opaque = table_base(chunk.typecode) == TCODE_USER
                 || !record_is_allowed(chunk.typecode, record.typecode, record.is_short());
             if !record_is_allowed(chunk.typecode, record.typecode, record.is_short()) {
-                if known_record(record.typecode) {
+                if known_record(record.typecode)
+                    && !expected_record(TCODE_PROPERTIES, record.typecode)
+                    && !expected_record(TCODE_SETTINGS, record.typecode)
+                {
                     return Err(CodecError::malformed(format_args!(
                         "record typecode {:#x} is invalid or short-framed in table {:#x}",
                         record.typecode, chunk.typecode
@@ -1211,7 +1258,7 @@ fn scan_with_record_limit<'a>(
                 warnings.push_admitted(
                     ctx,
                     format_args!(
-                    "unknown bounded record {:#x} skipped in table {:#x} at offset {child_offset}",
+                    "unknown bounded record or inadmissible metadata {:#x} retained in table {:#x} at offset {child_offset}",
                     record.typecode, chunk.typecode
                 ),
                 )?;
@@ -1263,7 +1310,7 @@ fn scan_with_record_limit<'a>(
                     "Rhino scanned object descriptors",
                 )?;
             }
-            if opaque {
+            if opaque || duplicate_metadata_table {
                 ctx.push_vec(
                     &mut opaque_records,
                     OpaqueRecord {
@@ -1273,7 +1320,7 @@ fn scan_with_record_limit<'a>(
                     "Rhino scanned opaque records",
                 )?;
             }
-            if retain_records {
+            if retain_records && !opaque {
                 ctx.push_vec(&mut records, record, "Rhino scanned table records")?;
             }
             child_offset = child.next_offset();

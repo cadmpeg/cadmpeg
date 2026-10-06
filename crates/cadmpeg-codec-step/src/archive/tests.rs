@@ -1051,7 +1051,7 @@ fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
     )]));
     assert!(matches!(
         codec.inspect(&mut Cursor::new(encrypted), &InspectOptions::default()),
-        Err(cadmpeg_core::CodecError::Malformed(_))
+        Err(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("encrypted ZIP entry")
     ));
 
     let checksum_mismatch = corrupt_first_payload(step_zip(&[(

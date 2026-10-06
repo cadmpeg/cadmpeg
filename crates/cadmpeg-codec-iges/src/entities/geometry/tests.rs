@@ -453,7 +453,7 @@ fn source_object_fields_refuse_retained_limits_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut entry = transform_entry(1, 0);
     entry.label = *b"HELLO   ";
-    entry.level = 7;
+    entry.level = Some(7);
     for (cap, operation) in [
         (0, "iges source object ID"),
         (2, "iges source object name"),
@@ -564,19 +564,19 @@ fn transform_entry(sequence: u32, transform: i64) -> crate::directory::Directory
         entity_type: 124,
         parameter_start: 0,
         structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
+        line_font: Some(0),
+        level: Some(0),
+        view: Some(0),
         transform,
-        label_display: 0,
+        label_display: Some(0),
         status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
-        line_weight: 0,
-        color: 0,
+        line_weight: Some(0),
+        color: Some(0),
         parameter_line_count: 0,
         form: 0,
         reserved: [[b' '; 8]; 2],
         label: [b' '; 8],
-        subscript: 0,
+        subscript: Some(0),
     }
 }
 
@@ -715,7 +715,7 @@ fn base_geometry_use_flag_follows_the_declared_dialect() {
 }
 
 #[test]
-fn decode_rejects_a_zero_v4_base_geometry_line_font() {
+fn decode_retains_geometry_with_a_zero_v4_line_font() {
     const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let result = IgesCodec
         .decode(
@@ -733,9 +733,9 @@ fn decode_rejects_a_zero_v4_base_geometry_line_font() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::DirectoryMetadataNoncanonical.kind()
             && loss
                 .message
                 .contains("Line Font must be nonzero for this IGES 4.0 geometry entity")

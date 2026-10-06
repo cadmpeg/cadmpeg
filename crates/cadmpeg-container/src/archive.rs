@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
+use crate::layout::central_header;
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, ScopedReservation, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use zip::{CompressionMethod, HasZipMetadata};
@@ -17,17 +18,17 @@ pub enum ZipCompression {
     Deflate,
     /// The entry payload is a Zstandard frame.
     Zstd,
+    /// A declared method whose payload cannot be decoded by this service.
+    Unsupported(u16),
 }
 
 impl ZipCompression {
-    fn from_zip(method: CompressionMethod, name: &str) -> Result<Self, CodecError> {
+    fn from_zip(method: CompressionMethod, declared: u16) -> Self {
         match method {
-            CompressionMethod::Stored => Ok(Self::Stored),
-            CompressionMethod::Deflated => Ok(Self::Deflate),
-            CompressionMethod::Zstd => Ok(Self::Zstd),
-            other => Err(CodecError::NotImplemented(format!(
-                "ZIP compression {other:?} for {name}"
-            ))),
+            CompressionMethod::Stored => Self::Stored,
+            CompressionMethod::Deflated => Self::Deflate,
+            CompressionMethod::Zstd => Self::Zstd,
+            _ => Self::Unsupported(declared),
         }
     }
 
@@ -37,6 +38,7 @@ impl ZipCompression {
             Self::Stored => "stored",
             Self::Deflate => "deflate",
             Self::Zstd => "zstd",
+            Self::Unsupported(_) => "unsupported",
         }
     }
 
@@ -61,6 +63,12 @@ impl ZipCompression {
             }
             Self::Deflate => CompressionMethod::Deflate,
             Self::Zstd => CompressionMethod::Zstd,
+            Self::Unsupported(_) => {
+                return Ok(EntryStorage::payload_only(
+                    VerbatimLabel::None,
+                    compressed_size,
+                ))
+            }
         };
         Ok(EntryStorage::Compressed {
             method,
@@ -77,6 +85,8 @@ pub struct EntryRecord {
     pub name: String,
     /// Compression method admitted by the snapshot.
     pub compression: ZipCompression,
+    /// Whether the declared payload is encrypted.
+    pub encrypted: bool,
     /// CRC-32 of the uncompressed payload.
     pub crc32: u32,
     /// Compressed payload size.
@@ -188,18 +198,21 @@ impl<'a> ArchiveSnapshot<'a> {
                     "duplicate ZIP entry name {name}"
                 )));
             }
-            if file.encrypted() {
-                return Err(CodecError::malformed(format_args!(
-                    "encrypted ZIP entry {name}"
-                )));
-            }
-            let compression = ZipCompression::from_zip(file.compression(), &name)?;
+            let central_start = usize::try_from(file.central_header_start())
+                .map_err(|_| CodecError::malformed("ZIP central offset exceeds memory"))?;
+            let method_offset = central_start
+                .checked_add(central_header::COMPRESSION)
+                .ok_or_else(|| CodecError::malformed("ZIP central method offset overflows"))?;
+            let declared_method = View::u16_le_at(root.window(), method_offset)
+                .ok_or_else(|| CodecError::malformed("ZIP central method is truncated"))?;
+            let compression = ZipCompression::from_zip(file.compression(), declared_method);
             let data_start = file.data_start().ok_or_else(|| {
                 CodecError::malformed(format_args!("missing data offset for {name}"))
             })?;
             let record = EntryRecord {
                 name,
                 compression,
+                encrypted: file.encrypted(),
                 crc32: file.crc32(),
                 compressed_size: file.compressed_size(),
                 uncompressed_size: file.size(),
@@ -282,6 +295,12 @@ impl<'a> ArchiveSnapshot<'a> {
         let entry = self
             .entry(name)
             .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
+        if entry.encrypted {
+            return Err(CodecError::NotImplemented(format!(
+                "encrypted ZIP entry {}",
+                entry.name
+            )));
+        }
         let end = entry.data_end()?;
         let archive_start = cadmpeg_core::decode::u64_from_index(self.root.start());
         let absolute_start = archive_start.checked_add(entry.data_start).ok_or_else(|| {
@@ -295,6 +314,10 @@ impl<'a> ArchiveSnapshot<'a> {
             end: absolute_end,
         };
         match entry.compression {
+            ZipCompression::Unsupported(method) => Err(CodecError::NotImplemented(format!(
+                "ZIP compression {method:?} for {}",
+                entry.name
+            ))),
             ZipCompression::Stored => self.open_stored(ctx, entry, range),
             ZipCompression::Deflate => {
                 let source = self.compressed_source(entry, range)?;
@@ -434,13 +457,36 @@ impl<'a> ArchiveSnapshot<'a> {
                     ctx.format_retained(format_args!("{value}"), "ZIP summary attribute value")?,
                 );
             }
-            let storage = declared_storage(
-                ctx,
-                entry.compression,
-                entry.compressed_size,
-                entry.uncompressed_size,
-                &mut attributes,
-            )?;
+            if let ZipCompression::Unsupported(method) = entry.compression {
+                ctx.insert_btree_map(
+                    &mut attributes,
+                    ctx.copy_retained_text("compression", "ZIP compression declaration key")?,
+                    ctx.format_retained(format_args!("{method:?}"), "ZIP compression declaration")?,
+                    "ZIP compression declaration attribute",
+                )?;
+            }
+            if entry.encrypted {
+                ctx.insert_btree_map(
+                    &mut attributes,
+                    ctx.copy_retained_text("encrypted", "ZIP encryption declaration key")?,
+                    ctx.copy_retained_text("true", "ZIP encryption declaration")?,
+                    "ZIP encryption declaration attribute",
+                )?;
+            }
+            let storage = if entry.encrypted {
+                cadmpeg_core::container::EntryStorage::payload_only(
+                    cadmpeg_core::container::VerbatimLabel::None,
+                    entry.compressed_size,
+                )
+            } else {
+                declared_storage(
+                    ctx,
+                    entry.compression,
+                    entry.compressed_size,
+                    entry.uncompressed_size,
+                    &mut attributes,
+                )?
+            };
             output.push(ContainerEntry {
                 name: ctx.copy_retained_text(&entry.name, "ZIP summary entry name")?,
                 role: classify(&entry.name),
@@ -1197,6 +1243,59 @@ mod tests {
 
     use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
 
+    #[test]
+    fn payload_admission_is_local_to_opened_members() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        for (name, data) in [
+            ("required", b"geometry".as_slice()),
+            ("optional", b"preview".as_slice()),
+        ] {
+            writer.start_file(name, options).expect("member");
+            writer.write_all(data).expect("payload");
+        }
+        let original = writer.finish().expect("archive").into_inner();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, root) = DecodeContext::from_root_bytes(&original, &arena, &policy).expect("root");
+        let snapshot = ArchiveSnapshot::new(&ctx, root).expect("index");
+        let entry = snapshot.entry("optional").expect("optional");
+        let local = usize::try_from(entry.header_start).expect("offset");
+        let central = usize::try_from(entry.central_start).expect("offset");
+        let payload = usize::try_from(entry.data_start).expect("offset");
+        for kind in ["encrypted", "unsupported", "crc"] {
+            let mut bytes = original.clone();
+            match kind {
+                "encrypted" => {
+                    cadmpeg_test_support::bytes::put_u16(&mut bytes, local + 6, 1);
+                    cadmpeg_test_support::bytes::put_u16(&mut bytes, central + 8, 1);
+                }
+                "unsupported" => {
+                    cadmpeg_test_support::bytes::put_u16(&mut bytes, local + 8, 12);
+                    cadmpeg_test_support::bytes::put_u16(&mut bytes, central + 10, 12);
+                }
+                _ => bytes[payload] ^= 1,
+            }
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            let snapshot = ArchiveSnapshot::new(&ctx, root)
+                .expect("bounded index survives optional payload defect");
+            assert_eq!(
+                snapshot
+                    .open(&ctx, "required")
+                    .expect("independent member")
+                    .window(),
+                b"geometry"
+            );
+            assert!(snapshot.open(&ctx, "optional").is_err(), "{kind}");
+            assert!(!snapshot
+                .physical_ledger(&ctx)
+                .expect("physical framing")
+                .is_empty());
+        }
+    }
+
     fn summary_refuses(dimension: ResourceDimension, limit: u64, operation: &str) {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         writer
@@ -1415,6 +1514,7 @@ mod tests {
         let entry = EntryRecord {
             name: "empty".to_owned(),
             compression: ZipCompression::Stored,
+            encrypted: false,
             crc32: u32::from_le_bytes(signature),
             compressed_size: 0,
             uncompressed_size: 0,

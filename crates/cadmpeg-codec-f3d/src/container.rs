@@ -280,6 +280,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) kind: F3dContainerKind,
     /// Optional manifest payloads rejected after their byte spans were admitted.
     pub(crate) manifest_diagnostics: Vec<manifest::MetadataDiagnostic>,
+    /// Optional archive payload failures; complete stored bytes remain in `source_image`.
+    pub(crate) entry_diagnostics: Vec<String>,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
     /// Entry indices per native scope key, in entry order.
@@ -415,8 +417,8 @@ fn is_numbered_segment(segment: &str, prefix: &str) -> bool {
 
 /// Read and classify every entry, decoding ASM headers for BREP streams.
 ///
-/// Every entry is registered as a slice when stored or a decompressed space
-/// when compressed.
+/// Readable entries are registered as stored slices or decompressed spaces.
+/// Unreadable optional assets retain their declared storage and source bytes.
 pub(crate) fn scan<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
@@ -427,6 +429,7 @@ pub(crate) fn scan<'a>(
     let mut entries = Vec::new();
     let mut breps = Vec::new();
     let mut inflated_entries = BTreeMap::new();
+    let mut entry_diagnostics = Vec::new();
 
     for file in archive.entries() {
         let name = ctx.copy_retained_text(&file.name, "retain F3D entry name")?;
@@ -435,10 +438,53 @@ pub(crate) fn scan<'a>(
         let compressed_size = file.compressed_size;
         let uncompressed_size = file.uncompressed_size;
         let mut attributes = BTreeMap::new();
+        if let cadmpeg_container::ZipCompression::Unsupported(method) = compression {
+            ctx.insert_btree_map(
+                &mut attributes,
+                ctx.copy_retained_text("compression", "F3D compression declaration key")?,
+                ctx.format_retained(format_args!("{method}"), "F3D compression declaration")?,
+                "F3D compression declaration attribute",
+            )?;
+        }
+        if file.encrypted {
+            ctx.insert_btree_map(
+                &mut attributes,
+                ctx.copy_retained_text("encrypted", "F3D encryption declaration key")?,
+                ctx.copy_retained_text("true", "F3D encryption declaration")?,
+                "F3D encryption declaration attribute",
+            )?;
+        }
 
         let is_brep = role == ContainerRole::BrepSmbh || role == ContainerRole::BrepSmb;
-        let view = archive.open(ctx, &file.name)?;
-        let buf = view.window();
+        let view = match archive.open(ctx, &file.name) {
+            Ok(view) => Some(view),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error)
+                if matches!(
+                    role,
+                    ContainerRole::Preview | ContainerRole::Image | ContainerRole::OgsCache
+                ) =>
+            {
+                let diagnostic = ctx.format_retained(
+                    format_args!("{name} cannot be opened: {error}; stored payload retained"),
+                    "F3D optional entry diagnostic",
+                )?;
+                ctx.insert_btree_map(
+                    &mut attributes,
+                    ctx.copy_retained_text("payload_error", "F3D optional entry diagnostic key")?,
+                    ctx.copy_retained_text(&diagnostic, "F3D optional entry summary diagnostic")?,
+                    "F3D optional entry attributes",
+                )?;
+                ctx.push_vec(
+                    &mut entry_diagnostics,
+                    diagnostic,
+                    "F3D optional entry diagnostics",
+                )?;
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        let buf = view.map_or(&[][..], |view| view.window());
         if is_brep {
             let kernel = if asm_header::has_asm_magic(buf) {
                 match asm_header::parse(ctx, buf)? {
@@ -613,7 +659,15 @@ pub(crate) fn scan<'a>(
             )?;
         }
 
-        let storage = match compression.storage(compressed_size, uncompressed_size) {
+        let declared_storage = if file.encrypted {
+            Ok(EntryStorage::payload_only(
+                VerbatimLabel::None,
+                compressed_size,
+            ))
+        } else {
+            compression.storage(compressed_size, uncompressed_size)
+        };
+        let storage = match declared_storage {
             Ok(storage) => storage,
             Err(message) => {
                 ctx.insert_btree_map(
@@ -636,12 +690,14 @@ pub(crate) fn scan<'a>(
             },
             "collect F3D container entries",
         )?;
-        ctx.insert_btree_map(
-            &mut inflated_entries,
-            name,
-            view,
-            "index F3D inflated entries",
-        )?;
+        if let Some(view) = view {
+            ctx.insert_btree_map(
+                &mut inflated_entries,
+                name,
+                view,
+                "index F3D inflated entries",
+            )?;
+        }
     }
 
     // The parse strategy and the dialect row are chosen together, from the same
@@ -695,6 +751,7 @@ pub(crate) fn scan<'a>(
         text_breps: std::collections::HashMap::new(),
         kind,
         manifest_diagnostics,
+        entry_diagnostics,
         inflated_entries,
         scope_entry_indices,
         metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),

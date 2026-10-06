@@ -180,6 +180,7 @@ enum ZipCompressionWire {
     Stored,
     Deflate,
     Zstd,
+    Unsupported(u16),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

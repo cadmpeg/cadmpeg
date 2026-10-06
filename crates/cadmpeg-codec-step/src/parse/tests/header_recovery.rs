@@ -24,6 +24,15 @@ fn header_metadata_defects_preserve_data_and_source_records() {
         format!("{description}{name}{schema}SECTION_LANGUAGE();"),
         format!("{description}{name}{schema}SECTION_CONTEXT();"),
         format!("{description}{name}{schema}VENDOR_METADATA('retained');"),
+        format!("FILE_DESCRIPTION((\"41\"),'2;1');{name}{schema}"),
+        format!("FILE_DESCRIPTION((\"1F\"),'2;1');{name}{schema}"),
+        format!("FILE_DESCRIPTION((\"0ZZ\"),'2;1');{name}{schema}"),
+        format!("FILE_DESCRIPTION((\"\"),'2;1');{name}{schema}"),
+        format!(
+            "FILE_DESCRIPTION(('{}'),'2;1');{name}{schema}",
+            "A".repeat(40_000)
+        ),
+        format!("{description}{name}{schema}FILE_NOTE(<arbitrary-uri>);"),
         format!("{description}FILE_NAME(999999999999999999999999999999999);{schema}"),
         format!("{description}FILE_NAME(1.E999);{schema}"),
         format!("FILE_DESCRIPTION((1.E999),'2;1');{name}{schema}"),
@@ -79,7 +88,7 @@ fn header_recovery_does_not_hide_lost_framing_or_ambiguous_schema() {
 }
 
 #[test]
-fn header_numeric_overflow_recovery_preserves_geometry_and_exact_source() {
+fn header_literal_recovery_preserves_geometry_and_exact_source() {
     let original = include_str!("../../writer/tests/data/periodic_two_rims.p21");
     let codec = crate::StepCodec::default();
     let expected = codec
@@ -88,7 +97,13 @@ fn header_numeric_overflow_recovery_preserves_geometry_and_exact_source() {
     assert!(!expected.ir().model.faces.is_empty());
     let name_start = original.find("FILE_NAME").unwrap();
     let name_end = name_start + original[name_start..].find('\n').unwrap();
-    for literal in ["999999999999999999999999999999999", "1.E999", "-1.E999"] {
+    for literal in [
+        "999999999999999999999999999999999",
+        "1.E999",
+        "-1.E999",
+        "\"0ZZ\"",
+        "<uri>",
+    ] {
         let record = format!("FILE_NAME({literal});");
         let source = format!(
             "{}{}{}",
@@ -102,6 +117,10 @@ fn header_numeric_overflow_recovery_preserves_geometry_and_exact_source() {
                 .unwrap(),
         );
         assert_eq!(recovered.ir().model, expected.ir().model);
+        assert_eq!(
+            recovered.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
+            "0"
+        );
         assert!(recovered
             .report()
             .losses
@@ -236,4 +255,16 @@ fn unverified_header_interpretation_keeps_geometry_and_exact_source() {
             assert_eq!(retained.data(), Some(record.as_bytes()));
         }
     }
+}
+
+#[test]
+fn invalid_header_resource_encoding_preserves_bounded_data() {
+    let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));FILE_NOTE(<\xff>);ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = with_service_context(source, parse_inner).expect("bounded descriptive URI");
+    assert_eq!(exchange.records().len(), 1);
+    for source in [
+        &b"ISO-10303-21;HEADER;FILE_SCHEMA((\"41\"));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;"[..],
+        &b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));FILE_NOTE(\"41);ENDSEC;DATA;ENDSEC;END-ISO-10303-21;"[..],
+        &b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));FILE_NOTE(<broken);ENDSEC;DATA;ENDSEC;END-ISO-10303-21;"[..],
+    ] { assert!(with_service_context(source, parse_inner).is_err()); }
 }

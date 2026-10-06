@@ -1534,7 +1534,10 @@ pub(super) fn source_object(
         .filter(|value| !value.is_empty())
         .map(|value| render(format_args!("{value}"), "iges source object name"))
         .transpose()?;
-    let layer = render(format_args!("{}", entry.level), "iges source object layer")?;
+    let layer = entry
+        .level
+        .map(|level| render(format_args!("{level}"), "iges source object layer"))
+        .transpose()?;
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Iges,
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
@@ -1543,7 +1546,7 @@ pub(super) fn source_object(
         name,
         color: None,
         visible: Some(entry.status.is_visible()),
-        layer: Some(layer),
+        layer,
         instance_path: Vec::new(),
     })
 }
@@ -1561,12 +1564,7 @@ pub(crate) fn project_geometry(
     let admitted = |entry: &DirectoryEntry| {
         entry.status.use_flag(global_table).is_some_and(|use_flag| {
             base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table)
-        }) && base_geometry_line_font_valid(
-            entry.entity_type,
-            entry.form,
-            entry.line_font,
-            global_table,
-        ) && crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
+        }) && crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
     };
     let mut losses = Vec::new();
     for entry in directory {
@@ -1587,21 +1585,12 @@ pub(crate) fn project_geometry(
                     "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
                     entry.status.use_flag_code()
                 ))?;
-        } else if !base_geometry_line_font_valid(
-            entry.entity_type,
-            entry.form,
-            entry.line_font,
-            global_table,
-        ) {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!(
-                    "{}",
-                    "Line Font must be nonzero for this IGES 4.0 geometry entity"
-                ),
-            )?;
+        } else if !entry.line_font.is_none_or(|font| {
+            base_geometry_line_font_valid(entry.entity_type, entry.form, font, global_table)
+        }) {
+            ctx.push_vec(&mut losses, crate::loss::IgesLossCode::DirectoryMetadataNoncanonical.note(ctx.format_retained(
+                format_args!("Directory D{} Line Font must be nonzero for this IGES 4.0 geometry entity; geometry retained", entry.sequence),
+                "IGES directory metadata diagnostic")?), "IGES directory metadata losses")?;
         }
     }
     let admitted_directory = if directory.iter().any(|entry| !admitted(entry)) {

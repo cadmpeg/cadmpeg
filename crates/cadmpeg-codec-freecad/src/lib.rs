@@ -109,6 +109,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let extensions =
         arena!(namespace.arena_as_for_decode::<native::ExtensionRecord>(ctx, "extensions"));
     let entries = arena!(namespace.arena_as_for_decode::<native::EntryRecord>(ctx, "entries"));
+    let unreadable = arena!(
+        namespace.arena_as_for_decode::<container::UnreadableEntry>(ctx, "unreadable_entries")
+    );
     let physical =
         arena!(namespace.arena_as_for_decode::<native::ArchiveSpan>(ctx, "physical_ledger"));
     let logical =
@@ -152,6 +155,95 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         arena!(namespace.arena_as_for_decode::<native::DesignCensusRecord>(ctx, "design_census"));
 
     let mut findings = Vec::new();
+    let mut source_entry_storage =
+        ctx.reserve_scoped(0, "FCStd source entry validation indexes")?;
+    let mut payload_spans = HashMap::new();
+    let mut decoded_names = HashSet::new();
+    if !unreadable.is_empty() {
+        for span in &physical {
+            ctx.charge_work(1, "FCStd source payload span indexing")?;
+            let (name, range) = match &span.role {
+                native::ArchiveSpanRole::CompressedPayload(name) => {
+                    (name, (span.span.start(), span.span.end()))
+                }
+                native::ArchiveSpanRole::LocalName(name)
+                | native::ArchiveSpanRole::LocalExtra(name) => {
+                    (name, (span.span.end(), span.span.end()))
+                }
+                _ => continue,
+            };
+            let hash_work = cadmpeg_core::decode::u64_from_index(name.len())
+                .checked_mul(3)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("FCStd source payload name hashing", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(hash_work, "FCStd source payload name hashing")?;
+            if payload_spans
+                .get(name.as_str())
+                .is_none_or(|prior: &(u64, u64)| prior.1 < range.1)
+            {
+                source_entry_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut payload_spans,
+                        name.as_str(),
+                        range,
+                        "FCStd source payload span index",
+                    )
+                })?;
+            }
+        }
+        for entry in &entries {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entry.name().len()),
+                "FCStd decoded entry name hashing",
+            )?;
+            source_entry_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut decoded_names,
+                    entry.name(),
+                    "FCStd decoded entry name index",
+                )
+            })?;
+        }
+    }
+    let mut unreadable_names = HashSet::new();
+    for entry in &unreadable {
+        let hash_work = cadmpeg_core::decode::u64_from_index(entry.name.len())
+            .checked_mul(4)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("FCStd source entry validation hashing", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(hash_work, "FCStd source entry validation hashing")?;
+        let unique = source_entry_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut unreadable_names,
+                entry.name.as_str(),
+                "FCStd source entry validation names",
+            )
+        })?;
+        if !native::is_safe_entry_name(&entry.name)
+            || entry.id.strip_prefix("fcstd:native:unreadable_entry#") != Some(entry.name.as_str())
+            || entry.error.trim().is_empty()
+            || entry.data_end.checked_sub(entry.data_start)
+                != Some(cadmpeg_core::decode::u64_from_index(
+                    entry.stored_data.len(),
+                ))
+            || payload_spans.get(entry.name.as_str()) != Some(&(entry.data_start, entry.data_end))
+            || entry.data_end > physical.last().map_or(0, |span| span.span.end())
+            || decoded_names.contains(entry.name.as_str())
+            || !unique
+        {
+            ctx.push_vec(
+                &mut findings,
+                finding(
+                    Check::PayloadIntegrity,
+                    "invalid source-only FCStd entry",
+                    None,
+                ),
+                "FCStd source entry validation findings",
+            )?;
+        }
+    }
     if carrier_census != brep::carrier_census(ctx, &shape_payloads)? {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -925,6 +1017,9 @@ impl CodecBackend for FcstdCodec {
         let namespace = ir.native.namespace_mut("fcstd");
         namespace.set_arena(ctx, "document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena(ctx, "physical_ledger", &scan.ledger)?;
+        if !scan.unreadable_entries.is_empty() {
+            namespace.set_arena(ctx, "unreadable_entries", &scan.unreadable_entries)?;
+        }
         let decode_document = !ctx.container_only();
         if decode_document {
             let document_bytes = scan
@@ -936,6 +1031,7 @@ impl CodecBackend for FcstdCodec {
                 })?;
             let mut graph =
                 persistence::parse_with_context(document_bytes, &scan.schema_version, ctx)?;
+            ctx.extend_vec(&mut scan.losses, graph.losses, "FCStd persistence losses")?;
             persistence::resolve_side_entries(
                 ctx,
                 &mut graph.properties,

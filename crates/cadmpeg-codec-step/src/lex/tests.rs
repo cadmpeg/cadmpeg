@@ -134,6 +134,23 @@ fn binary_packed_bytes_refuse_collection_limit() {
 }
 
 #[test]
+fn metadata_literal_recovery_refuses_work_before_scanning_past_the_budget() {
+    let bytes = b"\"0invalid\"";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut lexer = super::Lexer::new(bytes, &ctx);
+    lexer.set_literal_admission(super::LiteralAdmission::Metadata);
+    let error = lexer.next_token().unwrap_err();
+    assert!(
+        matches!(error.resource, Some(CodecError::ResourceLimit(limit))
+        if limit.operation == "STEP metadata literal recovery" && limit.used == 2 && limit.additional == 1)
+    );
+}
+
+#[test]
 fn uri_lexeme_bytes_refuse_collection_limit() {
     let input = b"<part/path>";
     let service = DecodePolicy::service();
@@ -387,14 +404,27 @@ fn lexer_accepts_exponent_before_trailing_decimal_point() {
 }
 
 #[test]
-fn lexer_rejects_strings_that_exceed_the_stored_length_limit() {
+fn lexer_bounds_oversized_strings_before_string_admission() {
     let mut source = Vec::with_capacity(32_770);
     source.push(b'\'');
     source.extend(std::iter::repeat_n(b'x', 32_768));
     source.push(b'\'');
-    let error = crate::test_support::with_service_context(&source, crate::lex::lex_with_context)
-        .expect_err("oversized string");
-    assert!(error.message.contains("maximum stored length"));
+    let tokens = crate::test_support::with_service_context(&source, crate::lex::lex_with_context)
+        .expect("closed string has bounded framing");
+    let crate::lex::TokenKind::String(raw) = &tokens[0].kind else {
+        panic!("string token");
+    };
+    let error = crate::test_support::with_service_context(raw, |input, ctx| {
+        crate::strings::decode_with_context(
+            input,
+            crate::parse::implementation_level::ImplementationLevel::LegacyEdition1,
+            ctx,
+        )
+    })
+    .expect_err("oversized string remains inadmissible as a string value");
+    assert!(
+        matches!(error, crate::strings::StringDecodeFailure::Invalid(error) if error.to_string().contains("maximum stored length"))
+    );
 }
 
 #[test]

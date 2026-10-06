@@ -42,8 +42,8 @@ pub(crate) enum TokenKind {
     Integer(i64),
     /// Decimal real, including an optional exponent.
     Real(FiniteReal),
-    /// A bounded numeric metadata literal outside the admitted numeric domain.
-    UnrepresentableNumber,
+    /// A bounded metadata literal that cannot enter its typed domain.
+    UninterpretedLiteral,
     /// Dot-delimited enumeration or logical literal.
     Enumeration(String),
     /// Bytes between apostrophe delimiters, before escape decoding.
@@ -152,7 +152,7 @@ enum LiteralStorage {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum NumberAdmission {
+pub(crate) enum LiteralAdmission {
     Required,
     Metadata,
 }
@@ -161,14 +161,12 @@ pub(crate) struct Lexer<'a, 'ctx, 'arena> {
     input: &'a [u8],
     budget: &'ctx DecodeContext<'arena>,
     literal_storage: LiteralStorage,
-    number_admission: NumberAdmission,
+    literal_admission: LiteralAdmission,
     at: usize,
     allow_print_controls: bool,
     previous_was_signature: bool,
     tag_name_expected: bool,
 }
-
-const MAX_STORED_STRING_OCTETS: usize = 32_769;
 
 pub(crate) fn print_control_end(input: &[u8], at: usize) -> Option<usize> {
     match_exact_ignoring_controls(input, at, b"\\N\\")
@@ -181,7 +179,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             input,
             budget: ctx,
             literal_storage: LiteralStorage::Retained,
-            number_admission: NumberAdmission::Required,
+            literal_admission: LiteralAdmission::Required,
             at: 0,
             allow_print_controls: true,
             previous_was_signature: false,
@@ -193,8 +191,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         self.literal_storage = LiteralStorage::Transient;
     }
 
-    pub(crate) fn set_number_admission(&mut self, admission: NumberAdmission) {
-        self.number_admission = admission;
+    pub(crate) fn set_literal_admission(&mut self, admission: LiteralAdmission) {
+        self.literal_admission = admission;
     }
 
     pub(crate) fn set_allow_print_controls(&mut self, allow: bool) {
@@ -605,8 +603,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 .map(TokenKind::Integer)
                 .map_err(|_| Self::error(start, "invalid integer"))
         };
-        match (self.number_admission, admitted) {
-            (NumberAdmission::Metadata, Err(_)) => Ok(TokenKind::UnrepresentableNumber),
+        match (self.literal_admission, admitted) {
+            (LiteralAdmission::Metadata, Err(_)) => Ok(TokenKind::UninterpretedLiteral),
             (_, result) => result,
         }
     }
@@ -638,9 +636,6 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         self.at += 1;
         let mut bytes = Vec::new();
         loop {
-            if self.at - start + 1 > MAX_STORED_STRING_OCTETS {
-                return Err(Self::error(start, "string exceeds maximum stored length"));
-            }
             match self.input.get(self.at).copied() {
                 Some(b'\'') => {
                     if let Some(end) = self.match_exact_ignoring_controls(self.at, b"''") {
@@ -687,6 +682,34 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     }
 
     fn binary(&mut self) -> Result<TokenKind, LexError> {
+        let start = self.at;
+        self.binary_value()
+            .or_else(|error| self.recover_metadata_literal(start, b'"', error))
+    }
+
+    fn recover_metadata_literal(
+        &mut self,
+        start: usize,
+        closing: u8,
+        error: LexError,
+    ) -> Result<TokenKind, LexError> {
+        if error.resource.is_some() || !matches!(self.literal_admission, LiteralAdmission::Metadata)
+        {
+            return Err(error);
+        }
+        for end in start + 1..self.input.len() {
+            self.budget
+                .charge_work(1, "STEP metadata literal recovery")
+                .map_err(|error| Self::resource_error(start, error))?;
+            if self.input[end] == closing {
+                self.at = end + 1;
+                return Ok(TokenKind::UninterpretedLiteral);
+            }
+        }
+        Err(error)
+    }
+
+    fn binary_value(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
         let content = self.at;
@@ -800,6 +823,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     }
 
     fn resource(&mut self) -> Result<TokenKind, LexError> {
+        let start = self.at;
+        self.resource_value()
+            .or_else(|error| self.recover_metadata_literal(start, b'>', error))
+    }
+
+    fn resource_value(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
         let content = self.at;

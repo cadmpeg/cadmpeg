@@ -263,3 +263,91 @@ fn parser_recovers_omitted_shape_representation_with_parameters_name() {
         ]
     );
 }
+
+#[test]
+fn present_invalid_names_never_shift_geometry_parameters() {
+    use crate::parse::Value;
+    for name in [
+        "7",
+        ".BAD.",
+        "\"01\"",
+        "\"41\"",
+        "<bad-uri>",
+        "$",
+        "*",
+        "1.E999",
+    ] {
+        let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT({name},(1.,2.,3.));#2=ADVANCED_FACE({name},(),#3,.T.);#3=PLANE('',#4);#4=AXIS2_PLACEMENT_3D('',#1,$,$);ENDSEC;END-ISO-10303-21;");
+        let (exchange, diagnostics) =
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .expect("bounded invalid name");
+        let point = &exchange.records()[&1].partials[0].parameters;
+        assert_eq!(point.len(), 2, "{name}");
+        assert!(matches!(&point[1], Value::List(coordinates) if coordinates.len() == 3));
+        let face = &exchange.records()[&2].partials[0].parameters;
+        assert_eq!(face.len(), 4, "{name}");
+        assert_eq!(face[2], Value::Reference(3));
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|d| d.kind == crate::parse::ParseDiagnosticKind::OmittedEntityName),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn name_admission_preserves_brep_spline_and_transformation_layouts() {
+    for (kind, tail) in [
+        ("MANIFOLD_SOLID_BREP", "#2"),
+        ("FACETED_BREP", "#2"),
+        ("BREP_WITH_VOIDS", "#2,()"),
+        ("UNIFORM_CURVE", "1,(#2,#2),.UNSPECIFIED.,.F.,.F."),
+        ("B_SPLINE_CURVE_WITH_KNOTS", "1,(#2,#2),.UNSPECIFIED.,.F.,.F.,(2,2),(0.,1.),.UNSPECIFIED."),
+        ("B_SPLINE_SURFACE_WITH_KNOTS", "1,1,((#2,#2),(#2,#2)),.UNSPECIFIED.,.F.,.F.,.F.,(2,2),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED."),
+        ("CARTESIAN_TRANSFORMATION_OPERATOR_2D", "$,$,#2,1."),
+        ("CARTESIAN_TRANSFORMATION_OPERATOR_2D", "'description','',$,$,#2,1."),
+        ("CARTESIAN_TRANSFORMATION_OPERATOR_3D", "$,$,#2,1.,$"),
+        ("CARTESIAN_TRANSFORMATION_OPERATOR_3D", "'description','',$,$,#2,1.,$"),
+    ] {
+        let source = |parameters: &str| format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1={kind}({parameters});#2=KNOWN();ENDSEC;END-ISO-10303-21;");
+        let canonical = source(&format!("'',{tail}"));
+        let (expected, _) = crate::test_support::with_service_context(canonical.as_bytes(), crate::parse::parse_inner).unwrap();
+        for name in ["7", "1.E999", "\"0ZZ\"", "<uri>"] {
+            let changed = source(&format!("{name},{tail}"));
+            let (actual, diagnostics) = crate::test_support::with_service_context(changed.as_bytes(), crate::parse::parse_inner).unwrap();
+            assert_eq!(&actual.records()[&1].partials[0].parameters[1..], &expected.records()[&1].partials[0].parameters[1..], "{kind}");
+            assert_eq!(diagnostics.len(), 1, "{kind}");
+            assert_eq!(diagnostics[0].kind, crate::parse::ParseDiagnosticKind::EntityNameUnreadable, "{kind} present name keeps its slot");
+        }
+        // A dollar or string first attribute is ambiguous in a short mapping.
+        if !tail.starts_with('$') && !tail.starts_with('\'') {
+            let omitted = source(tail);
+            let (actual, diagnostics) = crate::test_support::with_service_context(omitted.as_bytes(), crate::parse::parse_inner).unwrap();
+            assert_eq!(actual.records()[&1].partials[0].parameters, expected.records()[&1].partials[0].parameters);
+            assert_eq!(diagnostics.len(), 1);
+        }
+    }
+    let required = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNIFORM_CURVE(1.E999,(),.UNSPECIFIED.,.F.,.F.);ENDSEC;END-ISO-10303-21;";
+    assert!(
+        crate::test_support::with_service_context(required, crate::parse::parse_inner).is_err()
+    );
+}
+
+#[test]
+fn omitted_name_recovery_keeps_required_coordinate_literals_strict() {
+    for data in [
+        "#1=CARTESIAN_POINT((0.,0.,1.E999));",
+        "#1=CARTESIAN_POINT('',(0.,0.,1.E999));",
+        "#1=CARTESIAN_POINT();#2=CARTESIAN_POINT('',(0.,0.,1.E999));",
+    ] {
+        let source = format!(
+            "ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;{data}ENDSEC;END-ISO-10303-21;"
+        );
+        assert!(
+            crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+                .is_err(),
+            "{data}"
+        );
+    }
+}

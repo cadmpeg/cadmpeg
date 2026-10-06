@@ -176,6 +176,9 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 crate::parse::ParseDiagnosticKind::OmittedEntityName => {
                     (StepLossCode::ParseNoncanonicalSyntax, "entity_name")
                 }
+                crate::parse::ParseDiagnosticKind::EntityNameUnreadable => {
+                    (StepLossCode::MetadataStringInvalid, "entity_name")
+                }
                 crate::parse::ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange => (
                     StepLossCode::SchemaObjectIdentifierOutOfRange,
                     "schema_identifier",
@@ -1332,6 +1335,9 @@ fn byte_accounting(
     }
     let mut lexer = crate::lex::Lexer::new(input, ctx);
     lexer.set_transient_literals();
+    // The exchange already owns typed admission. This pass accounts the exact
+    // spans of bounded source literals, including unreadable metadata.
+    lexer.set_literal_admission(crate::lex::LiteralAdmission::Metadata);
     let mut cursor = 0;
     loop {
         let token = match lexer.next_token() {

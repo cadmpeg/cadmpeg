@@ -253,7 +253,7 @@ struct NativeColorDefinition {
     green_percent: Option<f64>,
     blue_percent: Option<f64>,
     name: Option<Vec<u8>>,
-    fallback_color_number: i64,
+    fallback_color_number: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -263,14 +263,15 @@ struct NativeDisplayAttributes {
     visible: bool,
     line_font: DisplayRef,
     level: DisplayRef,
-    view: i64,
-    line_weight_number: i64,
+    view: Option<i64>,
+    line_weight_number: Option<i64>,
     line_weight_mm: Option<f64>,
     color: DisplayRef,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum DisplayRef {
+    Unreadable,
     Number(u64),
     Definition {
         pointer: i64,
@@ -281,7 +282,7 @@ enum DisplayRef {
 impl DisplayRef {
     fn definition(&self) -> Option<&str> {
         match self {
-            Self::Number(_) => None,
+            Self::Unreadable | Self::Number(_) => None,
             Self::Definition { target, .. } => target.as_deref(),
         }
     }
@@ -290,6 +291,7 @@ impl DisplayRef {
 impl Serialize for DisplayRef {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
+            Self::Unreadable => serializer.serialize_none(),
             Self::Number(number) => serializer.serialize_u64(*number),
             Self::Definition { pointer, .. } => serializer.serialize_i64(*pointer),
         }
@@ -307,8 +309,8 @@ impl Serialize for NativeDisplayAttributes {
             line_font_definition: Option<&'a str>,
             level_number: &'a DisplayRef,
             level_definition: Option<&'a str>,
-            view: i64,
-            line_weight_number: i64,
+            view: Option<i64>,
+            line_weight_number: Option<i64>,
             line_weight_mm: Option<f64>,
             color_number: &'a DisplayRef,
             color_definition: Option<&'a str>,
@@ -335,10 +337,13 @@ fn resolve_display_ref(
     ctx: &DecodeContext<'_>,
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     source_sequence: u32,
-    pointer: i64,
+    pointer: Option<i64>,
     kind: ReferenceKind,
     arena: &str,
 ) -> Result<DisplayRef, CodecError> {
+    let Some(pointer) = pointer else {
+        return Ok(DisplayRef::Unreadable);
+    };
     if pointer >= 0 {
         return Ok(DisplayRef::Number(pointer.unsigned_abs()));
     }
@@ -363,8 +368,11 @@ fn resolved_label_display_definition(
     ctx: &DecodeContext<'_>,
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     source_sequence: u32,
-    pointer: i64,
+    pointer: Option<i64>,
 ) -> Result<Option<String>, CodecError> {
+    let Some(pointer) = pointer else {
+        return Ok(None);
+    };
     (pointer > 0)
         .then(|| {
             references
@@ -390,7 +398,7 @@ enum NativeLineFontDefinition {
     Template {
         id: String,
         source_entity: String,
-        fallback_line_font_number: i64,
+        fallback_line_font_number: Option<i64>,
         tangent_oriented: Option<bool>,
         template: Option<String>,
         spacing: Option<f64>,
@@ -399,7 +407,7 @@ enum NativeLineFontDefinition {
     VisibleBlankPattern {
         id: String,
         source_entity: String,
-        fallback_line_font_number: i64,
+        fallback_line_font_number: Option<i64>,
         segment_count: Option<i64>,
         lengths: Vec<Option<f64>>,
         hexadecimal_pattern: Option<Vec<u8>>,
@@ -1960,18 +1968,18 @@ struct NativeEntity {
     parameter_start: i64,
     parameter_line_count: i64,
     structure: i64,
-    line_font: i64,
-    level: i64,
-    view: i64,
+    line_font: Option<i64>,
+    level: Option<i64>,
+    view: Option<i64>,
     transform: i64,
-    label_display: i64,
+    label_display: Option<i64>,
     #[serde(flatten)]
     status: SourceStatus,
-    line_weight: i64,
-    color: i64,
+    line_weight: Option<i64>,
+    color: Option<i64>,
     reserved: [[u8; 8]; 2],
     label: [u8; 8],
-    subscript: i64,
+    subscript: Option<i64>,
     #[serde(flatten)]
     parameter_record: NativeParameterRecordSlot,
     association_links: Vec<String>,
@@ -2975,9 +2983,11 @@ pub(crate) fn store(
                 )?,
                 view: entry.view,
                 line_weight_number: entry.line_weight,
-                line_weight_mm: global
-                    .length_context()
-                    .and_then(|context| context.line_weight_mm(entry.line_weight)),
+                line_weight_mm: global.length_context().and_then(|context| {
+                    entry
+                        .line_weight
+                        .and_then(|number| context.line_weight_mm(number))
+                }),
                 color: resolve_display_ref(
                     ctx,
                     references,

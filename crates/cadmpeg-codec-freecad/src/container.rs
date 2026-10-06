@@ -85,8 +85,22 @@ pub(crate) struct Scan<'a> {
     pub(crate) schema_version: String,
     /// Exact physical archive partition.
     pub(crate) ledger: Vec<ArchiveSpan>,
+    /// Bounded physical payloads that could not be opened.
+    pub(crate) unreadable_entries: Vec<UnreadableEntry>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
     pub(crate) data: BTreeMap<String, View<'a>>,
+}
+
+/// A source-only ZIP payload. Its bytes are stored bytes, never expanded data.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UnreadableEntry {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) data_start: u64,
+    pub(crate) data_end: u64,
+    pub(crate) stored_data: Vec<u8>,
+    pub(crate) error: String,
 }
 
 /// Scan an archive through the session resource budget.
@@ -118,6 +132,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     let mut losses = Vec::new();
     let (document, schema_version) = parse_document(ctx, document_bytes, &mut losses)?;
     let mut data = BTreeMap::new();
+    let mut unreadable_entries = Vec::new();
     for file in archive.entries() {
         let name = ctx.copy_retained_text(&file.name, "FCStd archive entry name")?;
         if !crate::native::is_safe_entry_name(&name) {
@@ -130,7 +145,54 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         let view = if file.name == "Document.xml" {
             document_view
         } else {
-            archive.open(ctx, &file.name)?
+            match archive.open(ctx, &file.name) {
+                Ok(view) => view,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(error) => {
+                    let end = file.data_end()?;
+                    let start_index = usize::try_from(file.data_start)
+                        .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
+                    let end_index = usize::try_from(end)
+                        .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
+                    let bytes = root
+                        .window()
+                        .get(start_index..end_index)
+                        .ok_or_else(|| CodecError::malformed("ZIP payload escapes archive"))?;
+                    ctx.push_vec(
+                        &mut losses,
+                        crate::loss::FreecadLossCode::ArchiveEntryUnreadable.note(
+                            ctx.format_retained(
+                                format_args!(
+                                    "{} cannot be opened: {error}; stored payload retained",
+                                    file.name
+                                ),
+                                "FCStd unreadable entry loss",
+                            )?,
+                        ),
+                        "FCStd unreadable entry losses",
+                    )?;
+                    ctx.push_vec(
+                        &mut unreadable_entries,
+                        UnreadableEntry {
+                            id: ctx.format_retained(
+                                format_args!("fcstd:native:unreadable_entry#{name}"),
+                                "FCStd unreadable entry identity",
+                            )?,
+                            name,
+                            data_start: file.data_start,
+                            data_end: end,
+                            stored_data: ctx
+                                .copy_retained(bytes, "FCStd unreadable stored payload")?,
+                            error: ctx.format_retained(
+                                format_args!("{error}"),
+                                "FCStd unreadable entry diagnostic",
+                            )?,
+                        },
+                        "FCStd unreadable entries",
+                    )?;
+                    continue;
+                }
+            }
         };
         ctx.insert_btree_map(&mut data, name, view, "FCStd archive entry map")?;
     }
@@ -149,6 +211,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         entries: archive.container_entries(ctx, classify)?,
         document,
         schema_version,
+        unreadable_entries,
         ledger,
         data,
     })
@@ -160,8 +223,31 @@ pub(crate) fn entry_records(
     properties: &[PropertyRecord],
 ) -> Result<Vec<EntryRecord>, CodecError> {
     let mut records = ctx.collection_vec(scan.entries.len(), "FCStd entry records")?;
+    let mut name_storage = ctx.reserve_scoped(0, "FCStd unreadable entry lookup")?;
+    let mut unreadable_names = HashSet::new();
+    for entry in &scan.unreadable_entries {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entry.name.len()),
+            "FCStd unreadable entry name hashing",
+        )?;
+        name_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut unreadable_names,
+                entry.name.as_str(),
+                "FCStd unreadable entry lookup",
+            )
+        })?;
+    }
     for entry in &scan.entries {
         let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "FCStd unreadable entry lookup hashing",
+            )?;
+            if unreadable_names.contains(entry.name.as_str()) {
+                // Stored source-only bytes have no expanded-byte coverage.
+                continue;
+            }
             return Err(CodecError::Malformed(ctx.format_retained(
                 format_args!("entry {} disappeared after scan", entry.name),
                 "FCStd missing entry error",

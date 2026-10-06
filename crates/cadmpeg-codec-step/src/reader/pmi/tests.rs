@@ -36,6 +36,11 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         .report()
         .losses
         .iter()
+        .any(|loss| loss.code == StepLossCode::MetadataStringInvalid.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
         .any(|loss| loss.message.contains("PLUS_MINUS_TOLERANCE #26")));
     let dimension = result
         .ir()

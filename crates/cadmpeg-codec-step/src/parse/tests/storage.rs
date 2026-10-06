@@ -53,7 +53,7 @@ fn moved_record_name_keeps_its_single_byte_admission() {
     policy.limits.max_retained_bytes = 4;
     with_policy_context(b"ITEM()", &policy, |source, ctx| {
         let partial = parser(source, ctx)
-            .partial()
+            .partial(true)
             .expect("four-byte name fits once");
         assert_eq!(partial.name, "ITEM");
         assert!(partial.parameters.is_empty());
@@ -68,7 +68,7 @@ fn parameter_and_list_slots_have_one_storage_admission() {
         policy.limits.max_retained_bytes = 4 + u64_from_index(slots * size_of::<Value>());
         with_policy_context(source, &policy, |source, ctx| {
             parser(source, ctx)
-                .partial()
+                .partial(true)
                 .expect("name plus container slots fit exactly");
         });
     }

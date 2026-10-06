@@ -107,6 +107,14 @@ fn header_losses(
     scan: &ContainerScan<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    for diagnostic in &scan.entry_diagnostics {
+        ctx.push_vec(
+            losses,
+            crate::loss::F3dLossCode::ArchiveEntryUnreadable
+                .note(ctx.copy_retained_text(diagnostic, "F3D optional entry loss")?),
+            "F3D optional entry losses",
+        )?;
+    }
     for diagnostic in &scan.manifest_diagnostics {
         let message = ctx.format_retained(
             format_args!(

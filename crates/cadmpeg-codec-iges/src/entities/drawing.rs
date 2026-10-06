@@ -66,9 +66,9 @@ fn drawing_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) ->
             GlobalTable::V5_0 | GlobalTable::V5Later => {
                 entry.status.use_flag(global_table) == Some(UseFlag::Annotation)
                     && entry.structure == 0
-                    && entry.line_font == 0
-                    && entry.line_weight == 0
-                    && entry.color == 0
+                    && entry.line_font.is_none_or(|value| value == 0)
+                    && entry.line_weight.is_none_or(|value| value == 0)
+                    && entry.color.is_none_or(|value| value == 0)
             }
         }
 }

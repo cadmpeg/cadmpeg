@@ -398,6 +398,11 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         let (global, mut global_losses) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =
             directory::parse(&scan, global.global_table(), ctx)?;
+        ctx.extend_vec(
+            &mut global_losses,
+            directory::metadata_losses(&directory, ctx)?,
+            "iges directory metadata losses",
+        )?;
         if mode == ParseMode::Decode {
             entities::geometry::enforce_transform_depth(&directory, ctx)?;
         }

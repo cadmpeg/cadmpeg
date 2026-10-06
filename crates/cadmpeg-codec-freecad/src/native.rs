@@ -3201,6 +3201,8 @@ pub(crate) struct ValueRecord {
 /// Persisted values of a property, or a status-only transient declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PropertyBody {
+    /// Persisted payload is unreadable; only its exact XML is authoritative.
+    Unreadable(String),
     /// Status-only transient property declaration.
     Transient,
     /// Persisted property payload.
@@ -3298,6 +3300,13 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
 }
 
 impl PropertyRecord {
+    fn payload_error(&self) -> Option<&str> {
+        match &self.body {
+            PropertyBody::Unreadable(detail) => Some(detail),
+            _ => None,
+        }
+    }
+
     /// Whether this is a status-only transient property declaration.
     pub(crate) fn is_transient(&self) -> bool {
         matches!(self.body, PropertyBody::Transient)
@@ -3307,7 +3316,7 @@ impl PropertyRecord {
     pub(crate) fn values(&self) -> &[ValueRecord] {
         match &self.body {
             PropertyBody::Persisted { values, .. } => values,
-            PropertyBody::Transient => &[],
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => &[],
         }
     }
 
@@ -3315,7 +3324,7 @@ impl PropertyRecord {
     pub(crate) fn links(&self) -> &[Option<LinkTarget>] {
         match &self.body {
             PropertyBody::Persisted { links, .. } => links,
-            PropertyBody::Transient => &[],
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => &[],
         }
     }
 
@@ -3323,7 +3332,7 @@ impl PropertyRecord {
     pub(crate) fn side_entries(&self) -> &[String] {
         match &self.body {
             PropertyBody::Persisted { side_entries, .. } => side_entries,
-            PropertyBody::Transient => &[],
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => &[],
         }
     }
 
@@ -3331,14 +3340,14 @@ impl PropertyRecord {
     fn dynamic(&self) -> Option<&DynamicPropertyMeta> {
         match &self.body {
             PropertyBody::Persisted { dynamic, .. } => dynamic.as_ref(),
-            PropertyBody::Transient => None,
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => None,
         }
     }
 
     pub(crate) fn values_mut(&mut self) -> Option<&mut Vec<ValueRecord>> {
         match &mut self.body {
             PropertyBody::Persisted { values, .. } => Some(values),
-            PropertyBody::Transient => None,
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => None,
         }
     }
 }
@@ -3352,6 +3361,7 @@ struct PropertyRecordWire {
     family: PropertyFamily,
     status: Option<u64>,
     transient: bool,
+    payload_error: Option<String>,
     dynamic: Option<DynamicPropertyMeta>,
     order: usize,
     values: Vec<ValueRecord>,
@@ -3371,6 +3381,8 @@ struct PropertyRecordOut<'a> {
     family: PropertyFamily,
     status: Option<u64>,
     transient: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_error: Option<&'a str>,
     dynamic: Option<&'a DynamicPropertyMeta>,
     order: usize,
     values: &'a [ValueRecord],
@@ -3391,6 +3403,7 @@ impl Serialize for PropertyRecord {
             family: self.family,
             status: self.status,
             transient: self.is_transient(),
+            payload_error: self.payload_error(),
             // A transient declaration writes no payload: the accessors state its
             // empty tables and absent metadata.
             dynamic: self.dynamic(),
@@ -3410,7 +3423,20 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
     type Error = String;
 
     fn try_from(wire: PropertyRecordWire) -> Result<Self, Self::Error> {
-        let body = if wire.transient {
+        let body = if let Some(detail) = wire.payload_error {
+            if detail.trim().is_empty()
+                || wire.transient
+                || !wire.values.is_empty()
+                || !wire.links.is_empty()
+                || !wire.side_entries.is_empty()
+                || wire.dynamic.is_some()
+            {
+                return Err(
+                    "unreadable property requires a diagnostic and no admitted payload".to_owned(),
+                );
+            }
+            PropertyBody::Unreadable(detail)
+        } else if wire.transient {
             if !wire.values.is_empty()
                 || !wire.links.is_empty()
                 || !wire.side_entries.is_empty()

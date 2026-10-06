@@ -1115,6 +1115,64 @@ fn native_arena_index_sort_preserves_cycles_and_identity_ties() {
 }
 
 #[test]
+fn canonical_native_finalization_uses_linear_work_without_sort_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let records = (0..1_000)
+        .map(|index| {
+            NativeRecord::from_typed(&serde_json::json!({
+                "id": format!("test:native:record#{index:04}"),
+            }))
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let mut native = super::Native(BTreeMap::from([(
+        "test".into(),
+        super::NativeNamespace {
+            arenas: BTreeMap::from([("records".into(), records.clone())]),
+        },
+    )]));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 100_000;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    native.finalize(&ctx).unwrap();
+    assert_eq!(native.0["test"].arenas["records"], records);
+
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(native.finalize(&ctx),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "finalize native arena"));
+}
+
+#[test]
+fn native_finalization_sorts_changed_arenas_and_preserves_identity_ties() {
+    let records = [("b", 1), ("a", 2), ("a", 3)]
+        .map(|(suffix, ordinal)| {
+            NativeRecord::from_typed(&serde_json::json!({
+                "id": format!("test:native:record#{suffix}"), "ordinal": ordinal,
+            }))
+            .unwrap()
+        })
+        .to_vec();
+    let mut native = super::Native(BTreeMap::from([(
+        "test".into(),
+        super::NativeNamespace {
+            arenas: BTreeMap::from([("records".into(), records)]),
+        },
+    )]));
+    native.finalize(&super::test_ctx()).unwrap();
+    let sorted = &native.0["test"].arenas["records"];
+    assert_eq!(sorted[0].field("ordinal"), Some(serde_json::json!(2)));
+    assert_eq!(sorted[1].field("ordinal"), Some(serde_json::json!(3)));
+    assert_eq!(sorted[2].field("ordinal"), Some(serde_json::json!(1)));
+}
+
+#[test]
 fn native_arena_sort_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 

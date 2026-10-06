@@ -287,6 +287,7 @@ pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
     ("protein", "crates/cadmpeg-protein/src/layout.rs"),
     ("rhino", "crates/cadmpeg-codec-rhino/src/layout.rs"),
     ("sldprt", "crates/cadmpeg-codec-sldprt/src/layout.rs"),
+    ("zip", "crates/cadmpeg-container/src/layout.rs"),
 ];
 
 const RUST_KEYWORDS: &[&str] = &[

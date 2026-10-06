@@ -628,7 +628,7 @@ explicit attributes before the attributes introduced by the leaf. External
 complex mapping supplies every partial's explicit attributes. `$` represents
 an absent OPTIONAL explicit attribute; no mapping removes an inherited
 attribute from its required position. A record that shifts a leaf parameter
-into an omitted inherited `name` position is invalid Part 21 source.
+into an omitted inherited `name` position is invalid Part 21 source. Recovery of a missing leading name requires one fewer parameter than the carrier's declared arity. A present value at canonical arity retains its position even when it is not an admissible name. Closed, bounded descriptive literals retain their source bytes when their values cannot be interpreted; this does not relax required schema selection, DATA geometry values, or delimiter framing.
 
 Entity instance names share one namespace across all DATA sections. Forward
 and backward references resolve after all DATA sections are read. A reference

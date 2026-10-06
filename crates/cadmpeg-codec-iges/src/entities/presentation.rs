@@ -123,7 +123,7 @@ pub(super) fn new_general_note_charset_valid(
 fn line_font_definition_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
     entry.status.subordinate() == Some(Subordinate::Independent)
         && entry.status.use_flag(global_table) == Some(UseFlag::Definition)
-        && (1..=5).contains(&entry.line_font)
+        && entry.line_font.is_none_or(|font| (1..=5).contains(&font))
 }
 
 fn text_template_directory_valid(entry: &DirectoryEntry, global_table: GlobalTable) -> bool {
@@ -131,17 +131,17 @@ fn text_template_directory_valid(entry: &DirectoryEntry, global_table: GlobalTab
         GlobalTable::V4_0 | GlobalTable::V5_0 => {
             entry.status.subordinate() != Some(Subordinate::Independent)
                 && entry.status.use_flag(global_table) == Some(UseFlag::Annotation)
-                && entry.line_font != 0
+                && entry.line_font.is_none_or(|value| value != 0)
         }
         GlobalTable::Legacy | GlobalTable::V5Later => {
             entry.status.subordinate() == Some(Subordinate::Independent)
                 && entry.status.use_flag(global_table) == Some(UseFlag::Definition)
                 && entry.structure == 0
-                && entry.line_font == 0
-                && entry.view == 0
+                && entry.line_font.is_none_or(|value| value == 0)
+                && entry.view.is_none_or(|value| value == 0)
                 && entry.transform == 0
-                && entry.label_display == 0
-                && entry.line_weight == 0
+                && entry.label_display.is_none_or(|value| value == 0)
+                && entry.line_weight.is_none_or(|value| value == 0)
                 && entry.status.hierarchy() == Some(Hierarchy::GlobalTopDown)
         }
     }
@@ -524,7 +524,7 @@ pub(super) fn project(
         };
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition)
-            && matches!(entry.color, 0..=8);
+            && entry.color.is_none_or(|color| matches!(color, 0..=8));
         if !directory_valid {
             push_presentation_loss(
                 ctx,
@@ -603,9 +603,13 @@ pub(super) fn project(
     };
 
     for entry in directory.iter().filter(|entry| {
-        entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
+        entry.color.is_none_or(|value| value != 0)
+            && directory_color_is_semantic(entry, global.global_table())
     }) {
-        if resolve_color(entry.color).is_none() {
+        if entry
+            .color
+            .is_some_and(|number| resolve_color(number).is_none())
+        {
             push_presentation_loss(
                 ctx,
                 &mut losses,
@@ -614,8 +618,13 @@ pub(super) fn project(
             )?;
         }
     }
-    for entry in directory.iter().filter(|entry| entry.level < 0) {
-        let sequence = entry.level.unsigned_abs();
+    for (entry, level) in directory.iter().filter_map(|entry| {
+        entry
+            .level
+            .filter(|level| *level < 0)
+            .map(|level| (entry, level))
+    }) {
+        let sequence = level.unsigned_abs();
         if u32::try_from(sequence).ok().is_none_or(|sequence| {
             !decoded.contains(&sequence)
                 || entries
@@ -631,9 +640,13 @@ pub(super) fn project(
         }
     }
     for entry in directory.iter().filter(|entry| {
-        entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.global_table())
+        entry.line_weight.is_none_or(|value| value != 0)
+            && directory_line_weight_is_semantic(entry, global.global_table())
     }) {
-        if !global.line_weight_number_is_valid(entry.line_weight) {
+        if entry
+            .line_weight
+            .is_some_and(|number| !global.line_weight_number_is_valid(number))
+        {
             push_presentation_loss(
                 ctx,
                 &mut losses,
@@ -648,7 +661,7 @@ pub(super) fn project(
             source.color = sequences
                 .curve(&curve.id)
                 .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| resolve_color(entry.color));
+                .and_then(|entry| entry.color.and_then(resolve_color));
         }
     }
     for surface in &mut ir.model.surfaces {
@@ -656,7 +669,7 @@ pub(super) fn project(
             source.color = sequences
                 .surface(&surface.id)
                 .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| resolve_color(entry.color));
+                .and_then(|entry| entry.color.and_then(resolve_color));
         }
     }
 
@@ -665,7 +678,7 @@ pub(super) fn project(
             let body = &ir.model.bodies[index];
             let sequence = sequences.body(&body.id)?;
             let entry = entries.get(&sequence)?;
-            Some((sequence, entry.color, entry.status.is_visible()))
+            Some((sequence, entry.color?, entry.status.is_visible()))
         })() else {
             continue;
         };
@@ -762,7 +775,7 @@ pub(super) fn project(
             let face = &ir.model.faces[index];
             let sequence = sequences.face(&face.id)?;
             let entry = entries.get(&sequence)?;
-            Some((sequence, entry.color))
+            Some((sequence, entry.color?))
         })() else {
             continue;
         };

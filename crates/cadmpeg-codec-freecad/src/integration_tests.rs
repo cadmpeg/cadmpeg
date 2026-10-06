@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
+mod metadata_recovery;
+
 use super::FcstdCodec;
 use crate::test_support::test_archive::{
     archive, archive_entries, assert_valid_document, rewrite_schema_version, streaming_archive,
@@ -38,7 +40,7 @@ use crate::drawing::tests::recovers_techdraw_page_template_and_view_graph;
 use crate::gui::tests::retains_ordered_document_level_gui_state;
 use crate::joint::tests::recovers_assembly_joint_operands_frames_and_state;
 use crate::persistence::tests::{
-    legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts,
+    legacy_schema_dispatch_rejects_wrong_envelopes_and_unmatched_objectdata,
     schema_three_uses_the_object_envelope_and_defaults_file_version,
     schema_two_uses_the_feature_envelope_and_common_property_grammar,
 };
@@ -416,7 +418,7 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
     rejects_unsafe_names();
     schema_three_uses_the_object_envelope_and_defaults_file_version();
     schema_two_uses_the_feature_envelope_and_common_property_grammar();
-    legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts();
+    legacy_schema_dispatch_rejects_wrong_envelopes_and_unmatched_objectdata();
     write_target_and_source_requirements_are_explicit();
     writer_rejects_unserialized_declaration_and_stale_payload_edits();
 

@@ -87,6 +87,9 @@ pub(super) fn embedded_image_asset(
             }
         })
         .map(str::to_owned);
+    if entry.attributes.contains_key("payload_error") {
+        return Ok(None);
+    }
     let data = ctx.copy_retained(scan.entry_bytes(&entry.name)?, "f3d embedded image data")?;
     let name =
         String::from_utf8(ctx.copy_retained(asset_name.as_bytes(), "f3d embedded image name")?)

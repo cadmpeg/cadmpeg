@@ -57,6 +57,21 @@ pub(crate) fn transfer(
             ctx.collection_vec(source.len(), "fcstd product selected properties")
         })?;
         owned.extend_from_slice(source);
+        if owned.iter().any(|property| {
+            matches!(property.body, crate::native::PropertyBody::Unreadable(_))
+                && matches!(
+                    property.name.as_str(),
+                    "Group"
+                        | "LinkedObject"
+                        | "ElementList"
+                        | "LinkCopyOnChangeSource"
+                        | "LinkCopyOnChangeGroup"
+                )
+        }) {
+            // These fields determine membership or prototype ownership. Their
+            // absence cannot be replaced with an empty group or local prototype.
+            continue;
+        }
         let group = sole_named_property(ctx, "product", &owned, "Group")?;
         let members = group
             .map(|property| {

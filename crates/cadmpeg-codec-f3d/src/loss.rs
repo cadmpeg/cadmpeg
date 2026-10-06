@@ -182,6 +182,8 @@ pub(crate) enum F3dLossCode {
     KernelHeaderMetadataUnresolved,
     /// A bounded descriptive manifest payload is unreadable.
     ManifestMetadataUnresolved,
+    /// An optional bounded archive payload is unreadable.
+    ArchiveEntryUnreadable,
 }
 
 impl F3dLossCode {
@@ -267,6 +269,7 @@ impl F3dLossCode {
         Self::KernelHeaderToleranceUnresolved,
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
+        Self::ArchiveEntryUnreadable,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -358,6 +361,7 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => "brep.header-tolerance-unresolved",
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
+            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
         }
     }
 
@@ -443,7 +447,8 @@ impl F3dLossCode {
             | Self::TextHeaderNoncanonical
             | Self::KernelHeaderToleranceUnresolved
             | Self::KernelHeaderMetadataUnresolved
-            | Self::ManifestMetadataUnresolved => Severity::Warning,
+            | Self::ManifestMetadataUnresolved
+            | Self::ArchiveEntryUnreadable => Severity::Warning,
         }
     }
 
@@ -533,6 +538,7 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ManifestMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::ArchiveEntryUnreadable => LossTaxonomy::RecordNotTyped,
         }
     }
 
@@ -647,6 +653,7 @@ mod tests {
                 "brep.header-tolerance-unresolved",
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
+                "source.archive-entry-unreadable",
             ]
         );
     }

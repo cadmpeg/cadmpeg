@@ -256,11 +256,13 @@ fn parser_resolves_anchor_and_reference_chain_before_name_recovery() {
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("resolve name branches");
 
+    // The numeric anchor is not a name. The missing local anchor resolves to
+    // an omitted value, which keeps its slot without a type diagnostic.
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(
-        diagnostics[0].kind,
-        crate::parse::ParseDiagnosticKind::OmittedEntityName
-    );
+    assert_eq!(diagnostics[0].offset, exchange.records()[&4].span.start);
+    assert!(diagnostics.iter().all(
+        |diagnostic| diagnostic.kind == crate::parse::ParseDiagnosticKind::EntityNameUnreadable
+    ));
     assert_eq!(
         exchange.records()[&1].partials[0].parameters[0],
         crate::parse::Value::String(b"literal".to_vec())
@@ -275,7 +277,7 @@ fn parser_resolves_anchor_and_reference_chain_before_name_recovery() {
     );
     assert_eq!(
         exchange.records()[&4].partials[0].parameters[0],
-        crate::parse::Value::String(Vec::new())
+        crate::parse::Value::Real(cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap())
     );
     assert_eq!(
         exchange.records()[&5].partials[0].parameters[0],

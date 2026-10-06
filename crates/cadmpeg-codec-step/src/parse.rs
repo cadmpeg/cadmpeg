@@ -21,7 +21,7 @@ use self::implementation_level::{DeclaredImplementationLevel, ImplementationLeve
 
 pub(crate) mod implementation_level;
 
-use crate::lex::{BinaryValue, LexError, Lexer, NumberAdmission, Token, TokenKind};
+use crate::lex::{BinaryValue, LexError, Lexer, LiteralAdmission, Token, TokenKind};
 use crate::parse::schema_identifier::{
     split_schema_identifier, valid_schema_identifier, AdmittedSchemaIdentifier,
 };
@@ -43,8 +43,8 @@ pub(crate) enum Value {
     Integer(i64),
     /// Real value.
     Real(FiniteReal),
-    /// A header numeric literal whose exact bytes remain in its source record.
-    UnrepresentableNumber,
+    /// A metadata literal whose exact bytes remain in its source record.
+    UninterpretedLiteral,
     /// Enumeration or logical name without delimiter dots.
     Enumeration(String),
     /// Raw string-token bytes before Part 21 escape decoding.
@@ -83,7 +83,7 @@ fn try_clone_value(
         }
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
-        Value::UnrepresentableNumber => Value::UnrepresentableNumber,
+        Value::UninterpretedLiteral => Value::UninterpretedLiteral,
         Value::Enumeration(text) => {
             budget.charge_work(u64_from_index(text.len()), operation)?;
             Value::Enumeration(budget.copy_retained_text(text, operation)?)
@@ -492,6 +492,8 @@ pub(crate) enum ParseDiagnosticKind {
     ComplexPartialsNotAlphabetical,
     /// A simple named carrier omits its inherited `name` value.
     OmittedEntityName,
+    /// A known name slot has a present non-string value.
+    EntityNameUnreadable,
     /// A `FILE_SCHEMA` object identifier has a component outside the range
     /// that its position permits.
     SchemaObjectIdentifierOutOfRange,
@@ -590,130 +592,125 @@ struct HeaderAdmission {
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
 }
 
-/// Return whether a simple geometry, topology, or representation carrier
-/// carries the inherited representation-item or representation `name` before
-/// its entity-specific attributes.
+/// External-mapping parameter counts for owned simple named carriers.
 ///
 /// The list is limited to carriers handled by the STEP reader. Context,
 /// representation-map, relationship, and shape-definition entities have
 /// different first attributes and must keep their positional layout.
-fn has_named_carrier(name: &str) -> bool {
-    matches!(
-        name,
-        "ANNOTATION_PLANE"
-            | "ANNOTATION_PLACEHOLDER_LEADER_LINE"
-            | "ANNOTATION_TO_ANNOTATION_LEADER_LINE"
-            | "ANNOTATION_TO_MODEL_LEADER_LINE"
-            | "ADVANCED_FACE"
-            | "ADVANCED_BREP_REPRESENTATION"
-            | "ADVANCED_BREP_SHAPE_REPRESENTATION"
-            | "APLL_POINT"
-            | "APLL_POINT_WITH_SURFACE"
-            | "AXIS1_PLACEMENT"
-            | "AXIS2_PLACEMENT_2D"
-            | "AXIS2_PLACEMENT_3D"
-            | "AUXILIARY_LEADER_LINE"
-            | "BEZIER_CURVE"
-            | "BOUNDARY_CURVE"
-            | "BREP_WITH_VOIDS"
-            | "B_SPLINE_CURVE_WITH_KNOTS"
-            | "B_SPLINE_SURFACE_WITH_KNOTS"
-            | "CARTESIAN_POINT"
-            | "CARTESIAN_TRANSFORMATION_OPERATOR_2D"
-            | "CARTESIAN_TRANSFORMATION_OPERATOR_3D"
-            | "CIRCLE"
-            | "CLOSED_SHELL"
-            | "COMPOSITE_CURVE"
-            | "CONNECTED_EDGE_SET"
-            | "CONNECTED_EDGE_SUB_SET"
-            | "CONNECTED_FACE_SET"
-            | "CONNECTED_FACE_SUB_SET"
-            | "CONICAL_SURFACE"
-            | "CYLINDRICAL_SURFACE"
-            | "CURVE_BOUNDED_SURFACE"
-            | "CURVE_REPLICA"
-            | "DEFINITIONAL_REPRESENTATION"
-            | "DEGENERATE_TOROIDAL_SURFACE"
-            | "DIRECTION"
-            | "DRAUGHTING_CALLOUT"
-            | "DRAUGHTING_MODEL"
-            | "EDGE_BASED_WIREFRAME_MODEL"
-            | "EDGE"
-            | "EDGE_CURVE"
-            | "EDGE_LOOP"
-            | "ELLIPSE"
-            | "ELLIPTICAL_SURFACE"
-            | "FACE_BASED_SURFACE_MODEL"
-            | "FACE_BOUND"
-            | "FACE_OUTER_BOUND"
-            | "FACE_SURFACE"
-            | "FACETED_BREP"
-            | "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION"
-            | "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION"
-            | "GEOMETRIC_CURVE_SET"
-            | "GEOMETRIC_SET"
-            | "HYPERBOLA"
-            | "INTERSECTION_CURVE"
-            | "LINE"
-            | "LOOP"
-            | "MAPPED_ITEM"
-            | "MANIFOLD_SOLID_BREP"
-            | "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
-            | "MEASURE_REPRESENTATION_ITEM"
-            | "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"
-            | "OFFSET_CURVE_2D"
-            | "OFFSET_CURVE_3D"
-            | "OFFSET_SURFACE"
-            | "OPEN_SHELL"
-            | "ORIENTED_CLOSED_SHELL"
-            | "ORIENTED_EDGE"
-            | "ORIENTED_FACE"
-            | "ORIENTED_OPEN_SHELL"
-            | "OUTER_BOUNDARY_CURVE"
-            | "PARABOLA"
-            | "PCURVE"
-            | "PLANE"
-            | "POLY_LOOP"
-            | "POLYLINE"
-            | "QUASI_UNIFORM_CURVE"
-            | "RECTANGULAR_TRIMMED_SURFACE"
-            | "REPRESENTATION"
-            | "SEAM_CURVE"
-            | "SEAM_EDGE"
-            | "SHELL_BASED_SURFACE_MODEL"
-            | "SHELL_BASED_WIREFRAME_MODEL"
-            | "SHELL"
-            | "SHAPE_DIMENSION_REPRESENTATION"
-            | "SHAPE_REPRESENTATION"
-            | "SHAPE_REPRESENTATION_WITH_PARAMETERS"
-            | "SPHERICAL_SURFACE"
-            | "SUBEDGE"
-            | "SUBFACE"
-            | "SURFACE_CURVE"
-            | "SURFACE_OF_LINEAR_EXTRUSION"
-            | "SURFACE_OF_REVOLUTION"
-            | "SURFACE_REPLICA"
-            | "TESSELLATED_FACE"
-            | "TESSELLATED_CURVE_SET"
-            | "TESSELLATED_GEOMETRIC_SET"
-            | "REPOSITIONED_TESSELLATED_ITEM"
-            | "TESSELLATED_SHELL"
-            | "TESSELLATED_SOLID"
-            | "TESSELLATED_SHAPE_REPRESENTATION"
-            | "TOROIDAL_SURFACE"
-            | "TRIMMED_CURVE"
-            | "UNIFORM_CURVE"
-            | "VECTOR"
-            | "VERTEX"
-            | "VERTEX_POINT"
-            | "VERTEX_LOOP"
-            | "VERTEX_SHELL"
-            | "WIRE_SHELL"
-    ) || (name.starts_with("ANNOTATION_") && name.ends_with("_OCCURRENCE"))
+/// A present malformed name keeps its slot; only a shorter mapping can omit it.
+fn named_carrier_arities(name: &str) -> &'static [usize] {
+    match name {
+        "CARTESIAN_TRANSFORMATION_OPERATOR_2D" => &[5, 7],
+        "CARTESIAN_TRANSFORMATION_OPERATOR_3D" => &[6, 8],
+        "LOOP" | "REPRESENTATION_ITEM" | "VERTEX" => &[1],
+        "SHELL"
+        | "SHELL_BASED_WIREFRAME_MODEL"
+        | "VERTEX_SHELL"
+        | "WIRE_SHELL"
+        | "CARTESIAN_POINT"
+        | "CLOSED_SHELL"
+        | "CONNECTED_EDGE_SET"
+        | "CONNECTED_FACE_SET"
+        | "DIRECTION"
+        | "DRAUGHTING_CALLOUT"
+        | "EDGE_BASED_WIREFRAME_MODEL"
+        | "EDGE_LOOP"
+        | "FACE_BASED_SURFACE_MODEL"
+        | "FACETED_BREP"
+        | "GEOMETRIC_CURVE_SET"
+        | "GEOMETRIC_SET"
+        | "OPEN_SHELL"
+        | "MANIFOLD_SOLID_BREP"
+        | "PLANE"
+        | "POLYLINE"
+        | "POLY_LOOP"
+        | "REPOSITIONED_TESSELLATED_ITEM"
+        | "SHELL_BASED_SURFACE_MODEL"
+        | "TESSELLATED_GEOMETRIC_SET"
+        | "VERTEX_LOOP"
+        | "VERTEX_POINT" => &[2],
+        "APLL_POINT"
+        | "ADVANCED_BREP_REPRESENTATION"
+        | "CONNECTED_EDGE_SUB_SET"
+        | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+        | "ANNOTATION_OCCURRENCE"
+        | "AXIS1_PLACEMENT"
+        | "AXIS2_PLACEMENT_2D"
+        | "BOUNDARY_CURVE"
+        | "BREP_WITH_VOIDS"
+        | "CIRCLE"
+        | "COMPOSITE_CURVE"
+        | "CONNECTED_FACE_SUB_SET"
+        | "CURVE_REPLICA"
+        | "CYLINDRICAL_SURFACE"
+        | "DEFINITIONAL_REPRESENTATION"
+        | "DRAUGHTING_MODEL"
+        | "EDGE"
+        | "FACE_BOUND"
+        | "FACE_OUTER_BOUND"
+        | "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION"
+        | "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION"
+        | "LINE"
+        | "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
+        | "MAPPED_ITEM"
+        | "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"
+        | "MEASURE_REPRESENTATION_ITEM"
+        | "OUTER_BOUNDARY_CURVE"
+        | "PARABOLA"
+        | "PCURVE"
+        | "REPRESENTATION"
+        | "SHAPE_DIMENSION_REPRESENTATION"
+        | "SHAPE_REPRESENTATION"
+        | "SHAPE_REPRESENTATION_WITH_PARAMETERS"
+        | "SPHERICAL_SURFACE"
+        | "SUBFACE"
+        | "SURFACE_OF_LINEAR_EXTRUSION"
+        | "SURFACE_OF_REVOLUTION"
+        | "SURFACE_REPLICA"
+        | "TESSELLATED_CURVE_SET"
+        | "TESSELLATED_SHAPE_REPRESENTATION"
+        | "TESSELLATED_SHELL"
+        | "TESSELLATED_SOLID"
+        | "VECTOR" => &[3],
+        "APLL_POINT_WITH_SURFACE"
+        | "OFFSET_CURVE_2D"
+        | "ADVANCED_FACE"
+        | "ANNOTATION_FILL_AREA_OCCURRENCE"
+        | "ANNOTATION_PLANE"
+        | "AXIS2_PLACEMENT_3D"
+        | "CONICAL_SURFACE"
+        | "CURVE_BOUNDED_SURFACE"
+        | "ELLIPSE"
+        | "FACE_SURFACE"
+        | "HYPERBOLA"
+        | "INTERSECTION_CURVE"
+        | "OFFSET_SURFACE"
+        | "ORIENTED_CLOSED_SHELL"
+        | "ORIENTED_FACE"
+        | "ORIENTED_OPEN_SHELL"
+        | "SEAM_CURVE"
+        | "SUBEDGE"
+        | "SURFACE_CURVE"
+        | "TOROIDAL_SURFACE" => &[4],
+        "TESSELLATED_FACE"
+        | "DEGENERATE_TOROIDAL_SURFACE"
+        | "EDGE_CURVE"
+        | "OFFSET_CURVE_3D"
+        | "ORIENTED_EDGE" => &[5],
+        "BEZIER_CURVE"
+        | "QUASI_UNIFORM_CURVE"
+        | "UNIFORM_CURVE"
+        | "SEAM_EDGE"
+        | "TRIMMED_CURVE" => &[6],
+        "RECTANGULAR_TRIMMED_SURFACE" => &[8],
+        "B_SPLINE_CURVE_WITH_KNOTS" => &[9],
+        "B_SPLINE_SURFACE_WITH_KNOTS" => &[13],
+        _ => &[],
+    }
 }
 
 fn omitted_entity_name(partial: &PartialRecord) -> bool {
-    has_named_carrier(&partial.name)
+    named_carrier_arities(&partial.name).contains(&(partial.parameters.len() + 1))
         && !matches!(
             partial.parameters.first(),
             Some(Value::String(_) | Value::Omitted)
@@ -726,7 +723,7 @@ impl Parser<'_, '_, '_> {
         self.punct(&TokenKind::Semicolon)?;
         self.name("HEADER")?;
         self.punct(&TokenKind::Semicolon)?;
-        self.lexer.set_number_admission(NumberAdmission::Metadata);
+        self.lexer.set_literal_admission(LiteralAdmission::Metadata);
         let mut header = Vec::new();
         while !self.peek_name("ENDSEC") {
             let offset = self.current_offset();
@@ -744,7 +741,7 @@ impl Parser<'_, '_, '_> {
                 "step_parse_header_records",
             )?;
         }
-        self.lexer.set_number_admission(NumberAdmission::Required);
+        self.lexer.set_literal_admission(LiteralAdmission::Required);
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
         let (header_admission, header_diagnostics) = match validate_header(&header, self.budget) {
@@ -1101,7 +1098,7 @@ impl Parser<'_, '_, '_> {
                 });
         resolve_local_references(&mut anchors, &mut records, &reference_entries, self.budget)
             .map_err(|error| error.into_parse_error(0))?;
-        for record in records.values_mut() {
+        for (&id, record) in &mut records {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 let parameters = &mut record.partials[0].parameters;
 
@@ -1118,6 +1115,25 @@ impl Parser<'_, '_, '_> {
                     None => {
                         self.omitted_entity_names = Some((record.span.start, NonZeroUsize::MIN));
                     }
+                }
+            }
+            for partial in &record.partials {
+                self.budget.charge_work(1, "step_entity_name_admission")?;
+                if (record.partials.len() == 1 || partial.name == "REPRESENTATION_ITEM")
+                    && named_carrier_arities(&partial.name).contains(&partial.parameters.len())
+                    && partial.parameters.first().is_some_and(|value| {
+                        !matches!(value, Value::String(_) | Value::Omitted | Value::Derived)
+                    })
+                {
+                    self.budget.push_vec(
+                        &mut self.diagnostics,
+                        ParseDiagnostic {
+                            offset: record.span.start,
+                            kind: ParseDiagnosticKind::EntityNameUnreadable,
+                            message: self.budget.format_retained(format_args!("{} #{id} has a non-string name; parameter positions and exact source retained", partial.name), "step_entity_name_diagnostic")?,
+                        },
+                        "step_parse_diagnostics",
+                    )?;
                 }
             }
         }
@@ -1188,15 +1204,16 @@ impl Parser<'_, '_, '_> {
         if let Some(message) = class3_restriction {
             return self.err(message);
         }
-        let has_resource_value = header
-            .iter()
-            .any(|record| record.parameters.iter().any(contains_resource_value))
-            || records.values().any(|record| {
-                record
-                    .partials
-                    .iter()
-                    .any(|partial| partial.parameters.iter().any(contains_resource_value))
-            });
+        let has_resource_value = records.values().any(|record| {
+            record.partials.iter().any(|partial| {
+                partial.parameters.iter().enumerate().any(|(index, value)| {
+                    let name_slot = index == 0
+                        && (record.partials.len() == 1 || partial.name == "REPRESENTATION_ITEM")
+                        && named_carrier_arities(&partial.name).contains(&partial.parameters.len());
+                    !name_slot && contains_resource_value(value)
+                })
+            })
+        });
         if has_resource_value {
             return self.err("resource values are only valid in edition-3 anchor items");
         }
@@ -1243,10 +1260,10 @@ impl Parser<'_, '_, '_> {
         self.budget.charge_entities(1, "step_parse_record")?;
         let mut partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
-            let first = self.partial()?;
+            let first = self.partial(false)?;
             let mut parts = partials::RecordPartials::single_charged(first, self.budget)?;
             while !self.peek(&TokenKind::RParen) {
-                let partial = self.partial()?;
+                let partial = self.partial(false)?;
                 self.budget
                     .push_vec(&mut parts.0, partial, "step_parse_record_partials")?;
             }
@@ -1295,7 +1312,7 @@ impl Parser<'_, '_, '_> {
             }
             parts
         } else {
-            let first = self.partial()?;
+            let first = self.partial(true)?;
             partials::RecordPartials::single_charged(first, self.budget)?
         };
         partials.0.shrink_to_fit();
@@ -1309,9 +1326,18 @@ impl Parser<'_, '_, '_> {
         ))
     }
 
-    fn partial(&mut self) -> Result<PartialRecord, ParseError> {
+    fn partial(&mut self, simple: bool) -> Result<PartialRecord, ParseError> {
         let name = self.take_name()?;
-        let parameters = self.parameter_nesting(Self::parameters_inner)?;
+        let first_is_name =
+            (simple || name == "REPRESENTATION_ITEM") && !named_carrier_arities(&name).is_empty();
+        let parameters =
+            self.parameter_nesting(|parser| parser.parameters_with_name(first_is_name))?;
+        if first_is_name
+            && matches!(parameters.first(), Some(Value::UninterpretedLiteral))
+            && !named_carrier_arities(&name).contains(&parameters.len())
+        {
+            return self.err("unreadable literal in a required DATA attribute");
+        }
         Ok(PartialRecord { name, parameters })
     }
 
@@ -1338,14 +1364,38 @@ impl Parser<'_, '_, '_> {
     }
 
     fn parameters_inner(&mut self) -> Result<Vec<Value>, ParseError> {
+        self.parameters_with_name(false)
+    }
+
+    fn parameters_with_name(&mut self, first_is_name: bool) -> Result<Vec<Value>, ParseError> {
+        if first_is_name {
+            self.lexer.set_literal_admission(LiteralAdmission::Metadata);
+        }
         self.punct(&TokenKind::LParen)?;
         let mut values = Vec::new();
         if self.peek(&TokenKind::RParen) {
+            if first_is_name {
+                self.lexer.set_literal_admission(LiteralAdmission::Required);
+            }
             self.next_kind()?;
             return Ok(values);
         }
         loop {
+            if first_is_name
+                && values.is_empty()
+                && matches!(
+                    self.current.as_ref().map(|token| &token.kind),
+                    Some(TokenKind::LParen | TokenKind::Name(_) | TokenKind::UserName(_))
+                )
+            {
+                // An omitted name can expose the coordinate list in this slot.
+                // Its contents retain required numeric admission.
+                self.lexer.set_literal_admission(LiteralAdmission::Required);
+            }
             let value = self.value()?;
+            if first_is_name {
+                self.lexer.set_literal_admission(LiteralAdmission::Required);
+            }
             self.budget
                 .push_vec(&mut values, value, "step_parse_parameter")?;
             if self.peek(&TokenKind::Comma) {
@@ -1369,7 +1419,7 @@ impl Parser<'_, '_, '_> {
                 TokenKind::ConstantValue(name) => Value::ExpressValueConstant(name),
                 TokenKind::Integer(v) => Value::Integer(v),
                 TokenKind::Real(v) => Value::Real(v),
-                TokenKind::UnrepresentableNumber => Value::UnrepresentableNumber,
+                TokenKind::UninterpretedLiteral => Value::UninterpretedLiteral,
                 TokenKind::Enumeration(value) => Value::Enumeration(value),
                 TokenKind::String(value) => Value::String(value),
                 TokenKind::Binary(value) => Value::Binary(value),
@@ -2381,7 +2431,7 @@ fn is_anchor_item(value: &Value) -> bool {
         | Value::Resource(_)
         | Value::Omitted => true,
         Value::List(values) => values.iter().all(is_anchor_item),
-        Value::Derived | Value::Typed(_, _) | Value::UnrepresentableNumber => false,
+        Value::Derived | Value::Typed(_, _) | Value::UninterpretedLiteral => false,
     }
 }
 

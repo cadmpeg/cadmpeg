@@ -2406,21 +2406,12 @@ fn project_with_type_130_policy(
             )?;
             continue;
         };
-        if !composite_line_font_valid(
-            entry.line_font,
-            entry.status.hierarchy(),
-            global.global_table(),
-        ) {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!(
-                    "{}",
-                    "Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01"
-                ),
-            )?;
-            continue;
+        if !entry.line_font.is_none_or(|font| {
+            composite_line_font_valid(font, entry.status.hierarchy(), global.global_table())
+        }) {
+            ctx.push_vec(&mut losses, crate::loss::IgesLossCode::DirectoryMetadataNoncanonical.note(ctx.format_retained(
+                format_args!("Directory D{} Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01; geometry retained", entry.sequence),
+                "IGES directory metadata diagnostic")?), "IGES directory metadata losses")?;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_entity_loss(

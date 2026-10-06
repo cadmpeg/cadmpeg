@@ -26,6 +26,35 @@ fn step_integer_number_refuses_inexact_f64() {
 }
 
 #[test]
+fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
+    let original = include_str!("../writer/tests/data/periodic_two_rims.p21");
+    let expected = StepCodec::default()
+        .decode(&mut Cursor::new(original), &DecodeOptions::default())
+        .unwrap();
+    assert!(!expected.ir().model.faces.is_empty());
+    for name in ["7", "1.E999", "\"0ZZ\"", "<uri>"] {
+        let changed = original.replace("ADVANCED_FACE('',", &format!("ADVANCED_FACE({name},"));
+        assert_ne!(changed, original);
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model, expected.ir().model);
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::MetadataStringInvalid.kind()));
+        assert_eq!(
+            result.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
+            "0"
+        );
+        assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+    }
+}
+
+#[test]
 fn record_display_name_refuses_retained_byte_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -334,6 +363,7 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
                 | "step_parse_parameter"
                 | "step_anchor_materialization"
                 | "step_reference_materialization"
+                | "step_entity_name_admission"
         ) {
             semantic_operation = Some(limit.operation);
             break;

@@ -175,7 +175,7 @@ Types 134, 136, 138, 146, 148, and 418 are standard finite-element records in th
 
 Type 136 Parameter Data is `ITOP, N, DE(1)..DE(N), ETYP` followed by any additional pointer groups. IGES 4.0 defines standard topology types 1 through 33. IGES 5.0 adds topology types 34 `OMASS`, 35 `OFBEAM`, 36 `PBEAM`, 37 `CBEAM`, and 38 `CPSOW` under E515. An `ITOP` value of 5001 or greater is implementor-defined. The typed FEM record retains `ITOP`, the declared node count, every node pointer including zero missing-node pointers, and the `ETYP` bytes; the generic entity record retains additional pointer groups. These rules are defined by [IGES 4.0 §3.21, Table 5](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf), [IGES 5.0 E515](https://nvlpubs.nist.gov/nistpubs/Legacy/IR/nistir4600.pdf), and [IGES 5.3 §4.28, Table 6](https://paulbourke.net/dataformats/iges/IGES.pdf).
 
-Each Directory Entry contains twenty fixed eight-byte fields across two cards. In the verified IGES 5.1–5.3 profile, blank numeric fields have their field-defined default. IGES 4.0 defines no default for fields 1, 2, 10, 11, 14, and 20. A 4.0 Directory Entry with a blank field 1, 2, 11, or 14 is quarantined; it does not obtain a zero value or recover Parameter Data ownership from the back-pointer census. Fields 10 and 20 are physical section sequence fields; the card-framing layer recovers a missing or invalid sequence from its position and reports a framing recovery. Nonblank numeric fields are right-aligned signed decimal integers.
+Each Directory Entry contains twenty fixed eight-byte fields across two cards. In the IGES 5.1–5.3 profile, blank numeric fields have their field-defined default. IGES 4.0 defines no default for fields 1, 2, 10, 11, 14, and 20. A 4.0 Directory Entry with a blank field 1, 2, or 14 is quarantined; it does not obtain a zero value or recover Parameter Data ownership from the back-pointer census. Fields 10 and 20 are physical section sequence fields; the card-framing layer recovers a missing or invalid sequence from its position and reports a framing recovery. Nonblank numeric fields are right-aligned signed decimal integers.
 
 The first card fields are entity type, Parameter Data start sequence, structure, line font pattern, level, view, transformation matrix, label-display associativity, and the eight-character status number. The second card fields are the repeated entity type, line weight, color, Parameter Data card count, form number, two reserved fields, entity label, and entity subscript. The repeated entity type must equal the first-card value. Reserved bytes are retained whether blank or nonblank.
 
@@ -333,9 +333,11 @@ The post-Terminate rule is dialect-specific. Type 5.x retains unsequenced physic
 
 ### Quarantined records
 
-Every Directory Entry is either typed or quarantined. A consumer of a typed Directory Entry sees only fields read from the file, never a substituted one. A field the parser could not read has no interpretation, so a quarantined record carries none. A quarantined record is retained under a stable identity that the transfer ledger and the reference graph name.
+Every Directory Entry has admitted interpretation fields or is quarantined. Admitted metadata fields contain values read from the source; unreadable metadata has no substituted value. A quarantined record carries no interpreted fields. A quarantined record is retained under a stable identity that the transfer ledger and the reference graph name.
 
-One quarantine record covers one whole Directory Entry, which is the two-card pair. A defect in either card quarantines the pair. A Directory Entry section with an odd card count quarantines its trailing unpaired card as one record; pairing is anchored at sequence one, so the unpaired card is the last one.
+Line Font, Level, View, Label Display, Line Weight, Color, and Subscript are independently interpretable metadata fields. An unreadable field has no interpreted value and retains its exact source bytes. It does not determine Parameter Data ownership or geometry admission. A readable display value that violates its dialect's field rule remains noncanonical metadata; it does not remove independently defined geometry.
+
+One quarantine record covers a Directory Entry whose identity, interpretation, status, transformation, or Parameter Data ownership fields cannot be read. The quarantine spans the two-card pair. A Directory Entry section with an odd card count quarantines its trailing unpaired card as one record; pairing is anchored at sequence one, so the unpaired card is the last one.
 
 Quarantined records count as native entities for resource accounting, on the same charge as every other native record.
 
@@ -353,7 +355,7 @@ The decoder does not analyze the outbound pointers of a quarantined Directory En
 
 A defect in one entity's Parameter Data quarantines that entity's parameter data and nothing else.
 
-- The typed Directory Entry stays in the typed list with all twenty fields.
+- The admitted Directory Entry retains its interpretation fields and available metadata.
 - The entity is not projected to neutral IR. No geometry, annotation, or product record is derived from tokens that were not read.
 - The raw Parameter Data text is retained under the quarantine identity. It has no other typed home.
 - The decoder charges one `iges/parameter.data-quarantined` loss whose provenance tag is `D<sequence>:parameter`. The reader counts that as an attributed loss, so the generic `iges/entity.retained-unprojected` note is not also charged and the entity's ledger note states that projection was omitted with an attributed loss.

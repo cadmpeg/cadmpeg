@@ -211,7 +211,8 @@ impl SourceStatus {
     }
 }
 
-/// Lossless typed Directory Entry fields.
+/// Directory interpretation fields and independently readable metadata.
+/// A missing metadata value is unreadable; its exact field remains in source cards.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DirectoryEntry {
     pub(crate) source_offset: u64,
@@ -219,19 +220,19 @@ pub(crate) struct DirectoryEntry {
     pub(crate) entity_type: i64,
     pub(crate) parameter_start: i64,
     pub(crate) structure: i64,
-    pub(crate) line_font: i64,
-    pub(crate) level: i64,
-    pub(crate) view: i64,
+    pub(crate) line_font: Option<i64>,
+    pub(crate) level: Option<i64>,
+    pub(crate) view: Option<i64>,
     pub(crate) transform: i64,
-    pub(crate) label_display: i64,
+    pub(crate) label_display: Option<i64>,
     pub(crate) status: SourceStatus,
-    pub(crate) line_weight: i64,
-    pub(crate) color: i64,
+    pub(crate) line_weight: Option<i64>,
+    pub(crate) color: Option<i64>,
     pub(crate) parameter_line_count: i64,
     pub(crate) form: i64,
     pub(crate) reserved: [[u8; 8]; 2],
     pub(crate) label: [u8; 8],
-    pub(crate) subscript: i64,
+    pub(crate) subscript: Option<i64>,
 }
 
 impl DirectoryEntry {
@@ -261,6 +262,34 @@ impl DirectoryEntry {
         )
         .with_tag(format!("directory_entry:D{}", self.sequence))
     }
+}
+
+pub(crate) fn metadata_losses(
+    entries: &[DirectoryEntry],
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    for entry in entries {
+        for (name, value) in [
+            ("line font", entry.line_font),
+            ("level", entry.level),
+            ("view", entry.view),
+            ("label display", entry.label_display),
+            ("line weight", entry.line_weight),
+            ("color", entry.color),
+            ("subscript", entry.subscript),
+        ] {
+            ctx.charge_work(1, "iges directory metadata admission")?;
+            if value.is_none() {
+                let note = IgesLossCode::DirectoryMetadataUnreadable.note(ctx.format_retained(
+                    format_args!("Directory D{} {name} is unreadable; interpretation fields and exact source cards remain available", entry.sequence),
+                    "iges directory metadata diagnostic",
+                )?).with_provenance(entry.admitted_loss_provenance(ctx)?);
+                ctx.push_vec(&mut losses, note, "iges directory metadata losses")?;
+            }
+        }
+    }
+    Ok(losses)
 }
 
 /// Why one Directory Entry record has no typed fields.
@@ -471,14 +500,14 @@ fn parse_pair(
             global_table,
         )?,
         structure: directory_integer(first_fields[2], "structure", 3, global_table)?,
-        line_font: directory_integer(first_fields[3], "line font", 4, global_table)?,
-        level: directory_integer(first_fields[4], "level", 5, global_table)?,
-        view: directory_integer(first_fields[5], "view", 6, global_table)?,
+        line_font: directory_integer(first_fields[3], "line font", 4, global_table).ok(),
+        level: directory_integer(first_fields[4], "level", 5, global_table).ok(),
+        view: directory_integer(first_fields[5], "view", 6, global_table).ok(),
         transform: directory_integer(first_fields[6], "transformation", 7, global_table)?,
-        label_display: directory_integer(first_fields[7], "label display", 8, global_table)?,
+        label_display: directory_integer(first_fields[7], "label display", 8, global_table).ok(),
         status: status(first_fields[8], global_table)?,
-        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table)?,
-        color: directory_integer(second_fields[2], "color", 13, global_table)?,
+        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table).ok(),
+        color: directory_integer(second_fields[2], "color", 13, global_table).ok(),
         parameter_line_count: directory_integer(
             second_fields[3],
             "Parameter Data count",
@@ -488,7 +517,7 @@ fn parse_pair(
         form: directory_integer(second_fields[4], "form", 15, global_table)?,
         reserved: [second_fields[5], second_fields[6]],
         label: second_fields[7],
-        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table)?,
+        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table).ok(),
     })
 }
 

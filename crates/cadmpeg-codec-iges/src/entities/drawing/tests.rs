@@ -43,19 +43,19 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         entity_type,
         parameter_start: 0,
         structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
+        line_font: Some(0),
+        level: Some(0),
+        view: Some(0),
         transform: 0,
-        label_display: 0,
+        label_display: Some(0),
         status: SourceStatus::from_codes([0, 0, 1, 0]),
-        line_weight: 0,
-        color: 0,
+        line_weight: Some(0),
+        color: Some(0),
         parameter_line_count: 0,
         form,
         reserved: [[b' '; 8]; 2],
         label: [b' '; 8],
-        subscript: 0,
+        subscript: Some(0),
     }
 }
 
@@ -118,9 +118,9 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
         let mut candidate = directory_entry(404, 0);
         match field {
             0 => candidate.structure = 1,
-            1 => candidate.line_font = 1,
-            2 => candidate.line_weight = 1,
-            _ => candidate.color = 1,
+            1 => candidate.line_font = Some(1),
+            2 => candidate.line_weight = Some(1),
+            _ => candidate.color = Some(1),
         }
         assert!(drawing_directory_valid(&candidate, GlobalTable::V4_0));
         assert!(!drawing_directory_valid(&candidate, GlobalTable::V5_0));
@@ -145,16 +145,16 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
         let mut candidate = directory_entry(410, 1);
         match field {
             0 => candidate.structure = 1,
-            1 => candidate.line_font = 1,
-            2 => candidate.line_weight = 1,
-            _ => candidate.color = 1,
+            1 => candidate.line_font = Some(1),
+            2 => candidate.line_weight = Some(1),
+            _ => candidate.color = Some(1),
         }
         assert!(view_directory_valid(&candidate, GlobalTable::V4_0));
         assert!(view_directory_valid(&candidate, GlobalTable::V5Later));
     }
-    view.level = 2;
-    view.view = 3;
-    view.label_display = 5;
+    view.level = Some(2);
+    view.view = Some(3);
+    view.label_display = Some(5);
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
     assert!(view_directory_valid(&view, GlobalTable::V5Later));
 
@@ -181,17 +181,17 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
             let mut candidate = directory_entry(402, form);
             match field {
                 0 => candidate.structure = 1,
-                1 => candidate.line_font = 1,
-                2 => candidate.line_weight = 1,
-                _ => candidate.color = 1,
+                1 => candidate.line_font = Some(1),
+                2 => candidate.line_weight = Some(1),
+                _ => candidate.color = Some(1),
             }
             assert!(views_visible_directory_valid(&candidate, GlobalTable::V4_0));
             assert!(views_visible_directory_valid(&candidate, GlobalTable::V5_0));
         }
-        visible.level = 2;
-        visible.view = 3;
+        visible.level = Some(2);
+        visible.view = Some(3);
         visible.transform = 5;
-        visible.label_display = 7;
+        visible.label_display = Some(7);
         assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
         assert!(views_visible_directory_valid(&visible, GlobalTable::V5_0));
     }
@@ -550,19 +550,19 @@ fn clipping_plane_use_flag_follows_the_declared_dialect() {
         entity_type: 108,
         parameter_start: 0,
         structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
+        line_font: Some(0),
+        level: Some(0),
+        view: Some(0),
         transform: 0,
-        label_display: 0,
+        label_display: Some(0),
         status: SourceStatus::from_codes([0, 0, 0, 0]),
-        line_weight: 0,
-        color: 0,
+        line_weight: Some(0),
+        color: Some(0),
         parameter_line_count: 0,
         form: 0,
         reserved: [[b' '; 8]; 2],
         label: [b' '; 8],
-        subscript: 0,
+        subscript: Some(0),
     };
     for use_flag in [0, 1, 2, 5] {
         target.status.set_use_flag(use_flag);

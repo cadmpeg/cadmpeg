@@ -1429,17 +1429,29 @@ fn rejects_non_schema_link_carrier_aliases() {
 <ObjectData Count="1"><Object name="Link"><Properties Count="1">
 <Property name="LinkedObject" type="App::PropertyXLink"><XLink document="document-7" name="Gear"/></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("unsupported XLink document alias");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-            if message.contains("unsupported link carrier document")
-    ));
+        .expect("source-only malformed prototype metadata");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("unsupported link carrier document")));
+    let records = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    assert!(
+        records.is_empty(),
+        "unreadable prototype is not an empty link"
+    );
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -1479,17 +1491,29 @@ fn rejects_conflicting_xlink_subelement_carriers() {
 <ObjectData Count="1"><Object name="Link"><Properties Count="1">
 <Property name="LinkedObject" type="App::PropertyXLink"><XLink name="Gear" sub="Face1" count="1"><Sub value="Face2"/></XLink></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("conflicting XLink subelement carriers");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-            if message.contains("both sub and count carriers")
-    ));
+        .expect("source-only malformed prototype metadata");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("both sub and count carriers")));
+    let records = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    assert!(
+        records.is_empty(),
+        "unreadable prototype is not an empty link"
+    );
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 fn node(object: &str, members: &[&str]) -> native::ProductNodeRecord {

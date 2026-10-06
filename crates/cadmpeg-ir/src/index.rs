@@ -22,7 +22,29 @@ use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vert
 
 /// Borrowed text keys with explicit hashing and collision comparisons.
 struct BorrowedIdentityIndex<'ir, V> {
-    slots: HashMap<u64, Vec<(&'ir str, V)>>,
+    slots: HashMap<u64, BorrowedIdentitySlots<'ir, V>>,
+}
+
+/// Distinct hashes store their identity inline; only collisions need a vector.
+enum BorrowedIdentitySlots<'ir, V> {
+    One((&'ir str, V)),
+    Many(Vec<(&'ir str, V)>),
+}
+
+impl<'ir, V> BorrowedIdentitySlots<'ir, V> {
+    fn as_slice(&self) -> &[(&'ir str, V)] {
+        match self {
+            Self::One(value) => std::slice::from_ref(value),
+            Self::Many(values) => values,
+        }
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [(&'ir str, V)] {
+        match self {
+            Self::One(value) => std::slice::from_mut(value),
+            Self::Many(values) => values,
+        }
+    }
 }
 
 impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
@@ -46,17 +68,39 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
         )?;
         storage.work(1, operation)?;
         storage.entry(&mut self.slots, &hash, operation)?;
-        let entries = self.slots.entry(hash).or_default();
-        let position = match found {
-            Some(position) => position,
-            None => {
-                let position = entries.len();
+        match self.slots.entry(hash) {
+            Entry::Vacant(entry) => {
                 storage.work(std::mem::size_of::<(&str, V)>(), operation)?;
-                storage.push(entries, (identity, value()), operation)?;
-                position
+                let entries = entry.insert(BorrowedIdentitySlots::One((identity, value())));
+                Ok(&mut entries.as_mut_slice()[0].1)
             }
-        };
-        Ok(&mut entries[position].1)
+            Entry::Occupied(entry) => {
+                let entries = entry.into_mut();
+                if let Some(position) = found {
+                    return Ok(&mut entries.as_mut_slice()[position].1);
+                }
+                let position = entries.as_slice().len();
+                storage.work(std::mem::size_of::<(&str, V)>(), operation)?;
+                let next = (identity, value());
+                match entries {
+                    BorrowedIdentitySlots::One(_) => {
+                        let mut values = storage.vector(2, operation)?;
+                        // All allocation and resource admission precedes moving
+                        // the existing value out of its inline slot.
+                        match std::mem::replace(entries, BorrowedIdentitySlots::Many(Vec::new())) {
+                            BorrowedIdentitySlots::One(first) => values.push(first),
+                            BorrowedIdentitySlots::Many(mut previous) => {
+                                values.append(&mut previous);
+                            }
+                        }
+                        values.push(next);
+                        *entries = BorrowedIdentitySlots::Many(values);
+                    }
+                    BorrowedIdentitySlots::Many(values) => storage.push(values, next, operation)?,
+                }
+                Ok(&mut entries.as_mut_slice()[position].1)
+            }
+        }
     }
 
     fn get<P: IndexQuery>(
@@ -70,7 +114,7 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
             |count| query.work(count, operation),
             |first, second| query.equal(first, second, operation),
         )?;
-        Ok(found.map(|position| &self.slots[&hash][position].1))
+        Ok(found.map(|position| &self.slots[&hash].as_slice()[position].1))
     }
 
     fn position<E>(
@@ -85,7 +129,7 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
         let Some(entries) = self.slots.get(&hash) else {
             return Ok((hash, None));
         };
-        for (position, (candidate, _)) in entries.iter().enumerate() {
+        for (position, (candidate, _)) in entries.as_slice().iter().enumerate() {
             work(1)?;
             if equal(candidate, identity)? {
                 return Ok((hash, Some(position)));
@@ -97,7 +141,7 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
     fn identities(&self) -> impl Iterator<Item = &'ir str> + '_ {
         self.slots
             .values()
-            .flat_map(|entries| entries.iter().map(|(identity, _)| *identity))
+            .flat_map(|entries| entries.as_slice().iter().map(|(identity, _)| *identity))
     }
 }
 
@@ -137,6 +181,7 @@ pub(crate) trait IndexStorage {
         key: &K,
         operation: &'static str,
     ) -> Result<(), Self::Error>;
+    fn vector<T>(&self, count: usize, operation: &'static str) -> Result<Vec<T>, Self::Error>;
     fn push<T>(
         &self,
         values: &mut Vec<T>,
@@ -200,6 +245,9 @@ impl IndexStorage for PublicStorage {
         _operation: &'static str,
     ) -> Result<(), Self::Error> {
         Ok(())
+    }
+    fn vector<T>(&self, count: usize, _operation: &'static str) -> Result<Vec<T>, Self::Error> {
+        Ok(Vec::with_capacity(count))
     }
     fn push<T>(
         &self,
@@ -335,6 +383,11 @@ impl IndexStorage for DecodeStorage<'_, '_> {
                 operation,
             )
         })
+    }
+    fn vector<T>(&self, count: usize, operation: &'static str) -> Result<Vec<T>, Self::Error> {
+        let mut values = Vec::new();
+        self.0.reserve_vec_limit(&mut values, count, operation)?;
+        Ok(values)
     }
     fn push<T>(
         &self,
@@ -718,7 +771,7 @@ macro_rules! define_model_index {
                             |count| storage.work(count, "model procedural surface ID query"),
                             |first, second| storage.equal(first, second, "model procedural surface ID query"))?;
                         if let Some(position) = found {
-                            let procedural = procedural_surfaces_by_id.slots[&hash][position].1;
+                            let procedural = procedural_surfaces_by_id.slots[&hash].as_slice()[position].1;
                             storage.work(std::mem::size_of::<&ProceduralSurface>(), "model procedural surface carrier copy")?;
                             *procedural_surface_by_surface.entry(carrier.id.as_str(), || procedural, storage, "model procedural surface carriers")? = procedural;
                         }
@@ -731,7 +784,7 @@ macro_rules! define_model_index {
                             |count| storage.work(count, "model procedural curve ID query"),
                             |first, second| storage.equal(first, second, "model procedural curve ID query"))?;
                         if let Some(position) = found {
-                            let procedural = procedural_curves_by_id.slots[&hash][position].1;
+                            let procedural = procedural_curves_by_id.slots[&hash].as_slice()[position].1;
                             let members = procedural_curves_by_curve.entry(carrier.id.as_str(), Vec::new, storage, "model procedural curve carriers")?;
                             storage.work(std::mem::size_of::<&ProceduralCurve>(), "model procedural curve carrier copy")?;
                             storage.push(members, procedural, "model procedural curve carrier members")?;
@@ -953,6 +1006,101 @@ mod tests {
     }
 
     #[test]
+    fn distinct_borrowed_identities_fit_scoped_memory_without_per_key_vectors() {
+        use super::IndexStorage;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let identities = (0..32_000)
+            .map(|index| format!("test:native:record#{index}"))
+            .collect::<Vec<_>>();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 4 * 1024 * 1024;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let storage = super::DecodeStorage(&ctx);
+        let index = storage
+            .temporary("test distinct borrowed identities", || {
+                let mut index = super::BorrowedIdentityIndex::new(&storage, "test identity map")?;
+                for identity in &identities {
+                    index.entry(identity, || (), &storage, "test identity insertion")?;
+                }
+                Ok(index)
+            })
+            .unwrap();
+        assert_eq!(index.identities().count(), identities.len());
+        for identity in [&identities[0], &identities[31_999]] {
+            assert!(index
+                .get(identity, &&ctx, "test identity lookup")
+                .unwrap()
+                .is_some());
+        }
+        drop(index);
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn borrowed_identity_collision_growth_preserves_values_and_admits_before_moving() {
+        use super::IndexStorage;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let query = "test:native:record#second";
+        let hash = super::identity_hash(query);
+        let make_index = || super::BorrowedIdentityIndex {
+            slots: std::collections::HashMap::from([(
+                hash,
+                super::BorrowedIdentitySlots::One(("test:native:record#first", 7)),
+            )]),
+        };
+        let mut index = make_index();
+        assert_eq!(
+            *index
+                .entry(
+                    query,
+                    || 8,
+                    &super::PublicStorage,
+                    "test collision insertion"
+                )
+                .unwrap(),
+            8
+        );
+        assert_eq!(
+            index.slots[&hash].as_slice(),
+            &[("test:native:record#first", 7), (query, 8)]
+        );
+        assert_eq!(
+            index
+                .get(query, &super::StandardIndex, "test collision lookup")
+                .unwrap(),
+            Some(&8)
+        );
+        assert_eq!(
+            *index
+                .entry(query, || 9, &super::PublicStorage, "test existing identity")
+                .unwrap(),
+            8
+        );
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let storage = super::DecodeStorage(&ctx);
+        let mut index = make_index();
+        let error = storage
+            .temporary("test refused collision", || {
+                index
+                    .entry(query, || 8, &storage, "test collision insertion")
+                    .map(|_| ())
+            })
+            .err()
+            .unwrap();
+        assert_eq!(error.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(
+            index.slots[&hash].as_slice(),
+            &[("test:native:record#first", 7)]
+        );
+    }
+
+    #[test]
     fn identity_universe_lookup_preserves_collision_and_resource_results() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let query = "abcd";
@@ -960,7 +1108,7 @@ mod tests {
         let index = super::BorrowedIdentityIndex {
             slots: std::collections::HashMap::from([(
                 super::identity_hash(query),
-                vec![("abce", ())],
+                super::BorrowedIdentitySlots::One(("abce", ())),
             )]),
         };
         assert!(index
