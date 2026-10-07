@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::FORMAT;
+use crate::ids::IdFormat;
+
+const FORMAT: IdFormat = crate::asm_format!("f3d");
 use crate::sab::{Record, Token};
 
 #[test]
