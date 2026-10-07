@@ -624,6 +624,11 @@ fn decode_with_occurrence_limits(
     let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
+        definition_storage,
+        placement_storage,
+        boundary_storage,
+        count_storage,
+        attribute_storage,
         occurrence_expansion: product_occurrence_expansion,
         ambiguous_parameter_boundaries,
         overdeclared_counts,
@@ -703,6 +708,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
+    drop(definition_storage);
     for source_sequence in ctx.admit_iter(
         product_occurrence_expansion.malformed_placement_sequences,
         "iges occurrence loss sequences",
@@ -714,6 +720,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
+    drop(placement_storage);
     for native::AmbiguousParameterBoundary {
         sequence: source_sequence,
         ambiguity,
@@ -734,6 +741,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
+    drop(boundary_storage);
     for (source_sequence, crate::parameter::OverdeclaredCount { declared, present }) in
         ctx.admit_iter(overdeclared_counts, "iges overdeclared count losses")?
     {
@@ -746,6 +754,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
+    drop(count_storage);
     for (source_sequence, refusal) in ctx.admit_iter(
         unstatable_attribute_tables,
         "iges attribute table count losses",
@@ -756,12 +765,13 @@ fn decode_with_occurrence_limits(
             IgesLossCode::AttributeTableCountUnstatable,
             format_args!(
                 "IGES attribute table instance D{source_sequence} {}, so no attribute row was read",
-                refusal.reason()
+                refusal
             ),
             source_sequence,
             &parse.directory,
         )?;
     }
+    drop(attribute_storage);
     let global_table = parse.global.global_table(ctx)?;
     let attributed = if ctx.container_only() {
         BTreeSet::new()

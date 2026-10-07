@@ -505,39 +505,6 @@ fn nodal_results(
     })
 }
 
-fn element_results_layout(record: Option<&ParameterRecord>) -> Option<(usize, usize, usize)> {
-    let record = record?;
-    let value_count = usize::try_from(record.integer(4)?).ok()?;
-    let element_count = usize::try_from(record.integer(6)?).ok()?;
-    let mut cursor = 7usize;
-    for _ in 0..element_count {
-        cursor = element_result_item_layout(record, cursor)?.4;
-    }
-    (cursor <= record.parameter_end()).then_some((value_count, element_count, 7))
-}
-
-fn element_result_item_layout(
-    record: &ParameterRecord,
-    cursor: usize,
-) -> Option<(usize, usize, usize, usize, usize)> {
-    let report_location_count_index = cursor.checked_add(5)?;
-    let report_location_count =
-        usize::try_from(record.integer(report_location_count_index)?).ok()?;
-    let report_start = cursor.checked_add(6)?;
-    let value_count_index = report_start.checked_add(report_location_count)?;
-    let result_count = usize::try_from(record.integer(value_count_index)?).ok()?;
-    let next = value_count_index
-        .checked_add(1)?
-        .checked_add(result_count)?;
-    (next <= record.parameter_end()).then_some((
-        report_location_count,
-        report_start,
-        value_count_index,
-        result_count,
-        next,
-    ))
-}
-
 fn element_results(
     entry: &DirectoryEntry,
     record: Option<&ParameterRecord>,
@@ -547,49 +514,49 @@ fn element_results(
     let sequence = entry.sequence;
     let declared_value_count = record_integer(record, 4);
     let declared_element_count = record_integer(record, 6);
-    let layout = element_results_layout(record);
-    let elements = if let Some((_, element_count, mut cursor)) = layout {
-        let mut elements = ctx.collection_vec(element_count, "iges_fem_element_result_elements")?;
-        for _ in 0..element_count {
-            let Some((report_location_count, report_start, value_count_index, result_count, next)) =
-                record.and_then(|record| element_result_item_layout(record, cursor))
-            else {
-                break;
-            };
-            let report_locations = ctx.collect_indexed_vec(
-                report_location_count,
-                "iges_fem_element_result_locations",
-                |offset| Ok(record_integer(record, report_start + offset)),
-            )?;
-            let values = ctx.collect_indexed_vec(
-                result_count,
-                "iges_fem_element_result_values",
-                |offset| Ok(record_number(record, value_count_index + 1 + offset)),
-            )?;
-            elements.push(NativeFemElementSample {
-                identifier: record_integer(record, cursor),
-                element: resolve_type(
-                    ctx,
-                    resolver,
-                    sequence,
-                    cursor + 1,
-                    record_integer(record, cursor + 1),
-                    136,
-                    &[0],
-                )?,
-                topology_type: record_integer(record, cursor + 2),
-                layers: record_integer(record, cursor + 3),
-                data_layer_flag: record_integer(record, cursor + 4),
-                report_locations,
-                declared_value_count: record_integer(record, value_count_index),
-                values,
+    let (mut layouts, mut layout_storage) = ctx.temporary_vec(0, "iges FEM element result layouts")?;
+    let element_count = declared_value_count.and_then(|count| usize::try_from(count).ok())
+        .and(declared_element_count.and_then(|count| usize::try_from(count).ok()));
+    let mut cursor = 7_usize;
+    let complete = if let Some(element_count) = element_count {
+        ctx.all_by(0..element_count, |_| {
+            let layout = record.and_then(|record| {
+                let count_index = cursor.checked_add(5)?;
+                let report_count = usize::try_from(record.integer(count_index)?).ok()?;
+                let report_start = cursor.checked_add(6)?;
+                let value_count_index = report_start.checked_add(report_count)?;
+                let value_count = usize::try_from(record.integer(value_count_index)?).ok()?;
+                let next = value_count_index.checked_add(1)?.checked_add(value_count)?;
+                (next <= record.parameter_end()).then_some((report_count, report_start, value_count_index, value_count, next))
             });
+            let Some((report_count, report_start, value_count_index, value_count, next)) = layout
+            else { return Ok(false); };
+            ctx.push_scoped_vec(&mut layout_storage, &mut layouts,
+                (cursor, report_count, report_start, value_count_index, value_count), "iges FEM element result layouts")?;
             cursor = next;
-        }
-        elements
-    } else {
-        Vec::new()
-    };
+            Ok(true)
+        }, "iges FEM element result layout scan")?
+        && record.is_some_and(|record| cursor <= record.parameter_end())
+    } else { false };
+    let elements = if complete {
+        ctx.try_collect_retained_with::<_, _, CodecError>(layouts, "iges_fem_element_result_elements",
+            |(cursor, report_count, report_start, value_count_index, value_count)| {
+                let report_locations = ctx.collect_indexed_vec(report_count,
+                    "iges_fem_element_result_locations", |offset| Ok(record_integer(record, report_start + offset)))?;
+                let values = ctx.collect_indexed_vec(value_count, "iges_fem_element_result_values",
+                    |offset| Ok(record_number(record, value_count_index + 1 + offset)))?;
+                Ok(NativeFemElementSample {
+                    identifier: record_integer(record, cursor),
+                    element: resolve_type(ctx, resolver, sequence, cursor + 1, record_integer(record, cursor + 1), 136, &[0])?,
+                    topology_type: record_integer(record, cursor + 2),
+                    layers: record_integer(record, cursor + 3),
+                    data_layer_flag: record_integer(record, cursor + 4),
+                    report_locations,
+                    declared_value_count: record_integer(record, value_count_index),
+                    values,
+                })
+            })?
+    } else { Vec::new() };
     Ok(NativeFemEntity::ElementResults {
         id: entity_id(ctx, "element-results", sequence)?,
         source_entity: source_entity(ctx, sequence)?,
@@ -687,24 +654,44 @@ mod tests {
         )
     }
 
+    fn refusal_at(directory: &[crate::directory::DirectoryEntry], records: &[crate::parameter::ParameterRecord],
+        dimension: cadmpeg_core::decode::ResourceDimension, operation: &str) -> cadmpeg_core::CodecError {
+        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => panic!("test dimension"),
+            }
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                let resolver = crate::graph::ParameterResolver::new(directory, ctx)?;
+                super::build(directory, records, &resolver, ctx)
+            })
+        })
+    }
+
     #[test]
     fn fem_directory_scan_refuses_before_filtering_a_non_fem_entry() {
         use crate::graph::ParameterResolver;
         use crate::test_support::directory_target;
-        use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::{ResourceDimension};
         use cadmpeg_core::CodecError;
 
         let directory = [directory_target(1, 116)];
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        crate::test_support::with_policy_context(&[], &policy, |ctx| {
-            let resolver = ParameterResolver::new(&[], ctx).unwrap();
-            assert!(matches!(super::build(&directory, &[], &resolver, ctx),
-                Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "iges FEM directory scan"
-                    && limit.used == 0 && limit.additional == 1));
+        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "iges FEM directory scan", |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                let resolver = ParameterResolver::new(&[], ctx)?;
+                super::build(&directory, &[], &resolver, ctx)
+            })
         });
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "iges FEM directory scan"
+                && limit.used == 0 && limit.additional == 1));
         crate::test_support::with_service_context(&[], |ctx| {
             let resolver = ParameterResolver::new(&[], ctx).unwrap();
             assert!(super::build(&directory, &[], &resolver, ctx).unwrap().is_empty());
@@ -722,17 +709,11 @@ mod tests {
         let directory = [directory_target(1, 134), directory_target(3, 136)];
         let element = integer_record(3, &[136, 1, 1, 1, 0]);
         let records = [element];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 4;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-        let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
-        let result = build(&directory, &records, &resolver, &ctx);
+        let result = refusal_at(&directory, &records, ResourceDimension::CollectionItems, "iges_fem_element_nodes");
         assert!(matches!(
             result,
-            Err(CodecError::ResourceLimit(limit))
+            CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == 4
                     && limit.additional == 1
                     && limit.operation == "iges_fem_element_nodes"
         ));
@@ -760,17 +741,11 @@ mod tests {
         let directory = [directory_target(1, 138)];
         let displacement = integer_record(1, &[138, 1, 0, 1, 1, 0, 1, 2, 3, 4, 5, 6]);
         let records = [displacement];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 5;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-        let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
-        let result = build(&directory, &records, &resolver, &ctx);
+        let result = refusal_at(&directory, &records, ResourceDimension::CollectionItems, "iges FEM rotations");
         assert!(matches!(
             result,
-            Err(CodecError::ResourceLimit(limit))
+            CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == 5
                     && limit.additional == 1
                     && limit.operation == "iges FEM rotations"
         ));
@@ -796,18 +771,11 @@ mod tests {
         use cadmpeg_core::CodecError;
 
         let directory = [directory_target(1, 134)];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::NativeFemEntity>());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-        let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
-        let result = build(&directory, &[], &resolver, &ctx);
+        let result = refusal_at(&directory, &[], ResourceDimension::RetainedBytes, "iges FEM entity id");
         assert!(matches!(
             result,
-            Err(CodecError::ResourceLimit(limit))
+            CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::NativeFemEntity>())
                     && limit.additional == cadmpeg_core::decode::u64_from_index(b"iges:fem:node#D1".len())
                     && limit.operation == "iges FEM entity id"
         ));
@@ -845,19 +813,11 @@ mod tests {
         .collect();
         let element = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), 4, tokens, Vec::new());
         let records = [element];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 3 + 4 * cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<super::NativeFemEntity>(),
-        );
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-        let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
-        let result = build(&directory, &records, &resolver, &ctx);
+        let result = refusal_at(&directory, &records, ResourceDimension::RetainedBytes, "iges FEM parameter string");
         assert!(matches!(
             result,
-            Err(CodecError::ResourceLimit(limit))
+            CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.used == 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::NativeFemEntity>())
                     && limit.additional == 4
                     && limit.operation == "iges FEM parameter string"
         ));
@@ -883,17 +843,11 @@ mod tests {
         use cadmpeg_core::CodecError;
 
         let directory = [directory_target(1, 134)];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-        let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
-        let result = build(&directory, &[], &resolver, &ctx);
+        let result = refusal_at(&directory, &[], ResourceDimension::CollectionItems, "iges FEM native entities");
         assert!(matches!(
             result,
-            Err(CodecError::ResourceLimit(limit))
+            CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == 1
                     && limit.additional == 1
                     && limit.operation == "iges FEM native entities"
         ));
