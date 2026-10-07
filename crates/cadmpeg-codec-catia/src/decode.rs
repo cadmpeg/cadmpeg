@@ -72,14 +72,13 @@ fn decode_over_routes(
         return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
     }
 
-    let applicable = ctx.collect_vec(
-        routes
-            .iter()
-            .filter(|route| (route.applicable)(scan.variant)),
-        "catia_applicable_routes",
-    )?;
+    let mut applicable = routes
+        .iter()
+        .filter(|route| (route.applicable)(scan.variant))
+        .peekable();
+    let mut route_storage = ctx.reserve_scoped(0, "catia_route_workspace")?;
     let mut fell_through = Vec::new();
-    for (index, route) in applicable.iter().enumerate() {
+    while let Some(route) = applicable.next() {
         let stated = refusal.note_count();
         let output = (route.decode)(ctx, &scan, refusal)?;
         if let Some(out) = output {
@@ -102,9 +101,10 @@ fn decode_over_routes(
         let refused = refusal.note_count() - stated;
         if refused > 0 {
             let next = applicable
-                .get(index + 1)
+                .peek()
                 .map_or("the metadata fallback", |next| next.name);
-            let note = ctx.format_retained(
+            let note = ctx.format_scoped_text(
+                &mut route_storage,
                 format_args!(
                     "{} refused {refused} CATIA record(s) and then transferred no model; \
                      the decode continued to {next}",
@@ -112,7 +112,12 @@ fn decode_over_routes(
                 ),
                 "catia_route_fallthrough_note",
             )?;
-            ctx.push_vec(&mut fell_through, note, "catia_route_fallthroughs")?;
+            ctx.push_scoped_vec(
+                &mut route_storage,
+                &mut fell_through,
+                note,
+                "catia_route_fallthroughs",
+            )?;
         }
     }
 
@@ -214,7 +219,7 @@ fn finish_decode(
     // `CodecError`: a refusal note is subordinate to a hard failure by design.
     // The fall-through statements say which route refused and where the decode
     // went next.
-    for statement in fell_through {
+    for statement in ctx.admit_iter(fell_through, "catia_route_fallthrough_visits")? {
         let message = ctx.copy_retained_text(statement, "catia_route_fallthrough_loss")?;
         ctx.push_vec(
             &mut report.losses,
@@ -245,12 +250,17 @@ fn finish_decode(
     for note in ctx.admit_iter(refusal.take_notes(), "catia_lane_refusal_notes")? {
         ctx.push_vec(&mut report.losses, note, "catia_lane_refusal_loss")?;
     }
-    let modeling_graph_scope = modeling_graph_scope(
-        ctx,
-        !scan.outer_container_declarations.is_empty(),
-        &native.object_graphs,
-    )?;
+    let (modeling_graph_scope, _scope_storage) =
+        ctx.with_scoped_storage("catia_modeling_graph_scope", || {
+            modeling_graph_scope(
+                ctx,
+                !scan.outer_container_declarations.is_empty(),
+                &native.object_graphs,
+            )
+        })?;
     // Distinct modeling-scope record ids, in record order.
+    let mut modeling_record_storage =
+        ctx.reserve_scoped(0, "catia_modeling_object_record_slots")?;
     let mut modeling_object_records = Vec::new();
     {
         let mut seen = HashSet::new();
@@ -275,7 +285,8 @@ fn finish_decode(
                         "catia_modeling_object_records",
                     )
                 })? {
-                    ctx.push_vec(
+                    ctx.push_scoped_vec(
+                        &mut modeling_record_storage,
                         &mut modeling_object_records,
                         record.id.as_str(),
                         "catia_modeling_object_records",
@@ -284,15 +295,18 @@ fn finish_decode(
             }
         }
     }
+    let mut membership_storage = ctx.reserve_scoped(0, "catia_transfer_membership")?;
     let design_feature_sources = design_feature::DesignFeatureSources::new(ctx, &native)?;
     let design_feature_transfer = design_feature::transfer_design_features(
         ctx,
+        &mut membership_storage,
         &mut ir,
         &design_feature_sources,
         &modeling_graph_scope,
     )?;
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
         ctx,
+        &mut membership_storage,
         &mut ir,
         &native,
         &design_feature_transfer,
@@ -300,6 +314,7 @@ fn finish_decode(
     )?;
     let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
         ctx,
+        &mut membership_storage,
         &mut ir,
         &native,
         &design_feature_transfer,
@@ -307,6 +322,7 @@ fn finish_decode(
     )?;
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
         ctx,
+        &mut membership_storage,
         &mut ir,
         &native,
         &design_feature_transfer,
@@ -338,6 +354,7 @@ fn finish_decode(
             .flatten(),
     )?;
 
+    let mut census_storage = ctx.reserve_scoped(0, "catia_census_indexes")?;
     let mut owned_definition_value_ids = HashSet::new();
     let mut object_records_by_id = std::collections::HashMap::new();
     let mut structurally_owned_records = HashSet::new();
@@ -357,37 +374,45 @@ fn finish_decode(
     let mut typed_relation_expression_count = 0usize;
     for record in ctx.admit_iter(&native.entity_records, "catia_census_entity_ids")? {
         if record.schema_configuration_record().is_some() {
-            ctx.insert_hash_set(
-                &mut schema_configuration_entities,
-                record.id.as_str(),
-                "catia_schema_configuration_entities",
-            )?;
+            census_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut schema_configuration_entities,
+                    record.id.as_str(),
+                    "catia_schema_configuration_entities",
+                )
+            })?;
         }
         if let Some(formula) = record.formula_relation() {
             if let Some(entity) = formula.expression_entity.reference.entity() {
-                ctx.insert_hash_set(
-                    &mut formula_referenced_relation_expressions,
-                    entity,
-                    "catia_formula_relation_expressions",
-                )?;
+                census_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut formula_referenced_relation_expressions,
+                        entity,
+                        "catia_formula_relation_expressions",
+                    )
+                })?;
             }
         }
         if let Some(instance) = record.relation_program_instance() {
             if let Some(entity) = instance.relation_expression.as_deref() {
-                ctx.insert_hash_set(
-                    &mut program_referenced_relation_expressions,
-                    entity,
-                    "catia_program_relation_expressions",
-                )?;
+                census_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut program_referenced_relation_expressions,
+                        entity,
+                        "catia_program_relation_expressions",
+                    )
+                })?;
             }
             if let Some(inputs) = &instance.inputs {
                 for input in ctx.admit_iter(inputs, "catia_distinct_program_inputs")? {
                     if let Some(entity) = input.entity.entity() {
-                        ctx.insert_hash_set(
-                            &mut distinct_relation_program_input_entities,
-                            entity,
-                            "catia_distinct_program_inputs",
-                        )?;
+                        census_storage.with_storage(|| {
+                            ctx.insert_hash_set(
+                                &mut distinct_relation_program_input_entities,
+                                entity,
+                                "catia_distinct_program_inputs",
+                            )
+                        })?;
                     }
                 }
             }
@@ -410,11 +435,13 @@ fn finish_decode(
             }
             if expression.signature_charged(ctx)?.is_some() {
                 typed_relation_expression_count += 1;
-                ctx.insert_hash_set(
-                    &mut typed_relation_expression_entities,
-                    record.id.as_str(),
-                    "catia_typed_relation_expressions",
-                )?;
+                census_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut typed_relation_expression_entities,
+                        record.id.as_str(),
+                        "catia_typed_relation_expressions",
+                    )
+                })?;
             }
         }
     }
@@ -430,20 +457,13 @@ fn finish_decode(
                 })
             })
     {
-        if !ctx.contains_hash_set(
-            &native_operation_feature_ids,
-            &feature.id,
-            "catia_census_lookup",
-        )? {
-            let id = feature
-                .id
-                .try_clone_for_decode(ctx, "catia_native_operation_feature_id")?;
+        census_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut native_operation_feature_ids,
-                id,
+                feature.id.as_str(),
                 "catia_native_operation_feature_ids",
-            )?;
-        }
+            )
+        })?;
     }
 
     let complete_schema_configuration_row_chain_count =
@@ -476,12 +496,14 @@ fn finish_decode(
 
         object_record_count += graph.records.len();
         for record in ctx.admit_iter(&graph.records, "catia_census_child")? {
-            let previous = ctx.insert_hash_map(
-                &mut object_records_by_id,
-                record.id.as_str(),
-                record,
-                "catia_object_records_by_id",
-            )?;
+            let previous = census_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut object_records_by_id,
+                    record.id.as_str(),
+                    record,
+                    "catia_object_records_by_id",
+                )
+            })?;
             // Only the final record for each id contributes to the owner count.
             if let Some(previous) = previous {
                 unassigned_owner_slot_count -= usize::from(previous.has_unassigned_owner());
@@ -543,11 +565,13 @@ fn finish_decode(
             "catia_census_feature_parent",
         )? {
             // Transfer keys are design-object ids; each key contributes once.
-            if ctx.insert_hash_set(
-                &mut counted_feature_objects,
-                object.id.as_str(),
-                "catia_census_feature_parent",
-            )? {
+            if census_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut counted_feature_objects,
+                    object.id.as_str(),
+                    "catia_census_feature_parent",
+                )
+            })? {
                 transferred_feature_parent_count +=
                     usize::from(ir.model.feature_regeneration_parent(feature).is_some());
             }
@@ -557,29 +581,35 @@ fn finish_decode(
             &object.definition_values,
             "catia_owned_definition_value_ids",
         )? {
-            ctx.insert_hash_set(
-                &mut owned_definition_value_ids,
-                id.as_str(),
-                "catia_owned_definition_value_ids",
-            )?;
+            census_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut owned_definition_value_ids,
+                    id.as_str(),
+                    "catia_owned_definition_value_ids",
+                )
+            })?;
         }
         if object.owner_record.is_some() {
             for id in ctx.admit_iter(&object.fields, "catia_structurally_owned_records")? {
-                ctx.insert_hash_set(
-                    &mut structurally_owned_records,
-                    id.as_str(),
-                    "catia_structurally_owned_records",
-                )?;
+                census_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut structurally_owned_records,
+                        id.as_str(),
+                        "catia_structurally_owned_records",
+                    )
+                })?;
             }
             for id in ctx.admit_iter(
                 &object.definition_chain_values,
                 "catia_owned_definition_chain_values",
             )? {
-                ctx.insert_hash_set(
-                    &mut structurally_owned_definition_chain_value_ids,
-                    id.as_str(),
-                    "catia_owned_definition_chain_values",
-                )?;
+                census_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut structurally_owned_definition_chain_value_ids,
+                        id.as_str(),
+                        "catia_owned_definition_chain_values",
+                    )
+                })?;
             }
         }
 
@@ -931,13 +961,19 @@ fn finish_decode(
             referenced_relation_expression_count += 1;
         }
 
-        let fields = record.value_fields_charged(ctx)?;
+        let (fields, _field_storage) = ctx
+            .with_scoped_storage("catia_census_value_fields", || {
+                record.value_fields_charged(ctx)
+            })?;
         entity_value_field_count = entity_value_field_count
             .checked_add(fields.len())
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("catia_entity_value_field_count", u64::MAX, u64::MAX)
             })?;
-        let packets = record.value_packets(ctx, &fields)?;
+        let (packets, _packet_storage) = ctx
+            .with_scoped_storage("catia_census_value_packets", || {
+                record.value_packets(ctx, &fields)
+            })?;
         for packet in ctx.admit_iter(packets, "catia_census_value_packets")? {
             match packet {
                 entity_table::EntityValuePacket::Compact { .. } => {
@@ -1478,8 +1514,12 @@ fn finish_decode(
     let mut value_field_count = 0usize;
     let mut value_selection_count = 0usize;
     for block in ctx.admit_iter(&native.value_blocks, "catia_census_value_blocks")? {
+        let (fields, _field_storage) = ctx
+            .with_scoped_storage("catia_census_value_fields", || {
+                crate::value_block::tokenize_charged(ctx, &block.payload)
+            })?;
         value_field_count = value_field_count
-            .checked_add(crate::value_block::tokenize_charged(ctx, &block.payload)?.len())
+            .checked_add(fields.len())
             .ok_or_else(|| ctx.refuse_codec_limit("catia_value_field_count", u64::MAX, u64::MAX))?;
 
         value_selection_count += block.schema_selections.len();
@@ -1506,9 +1546,11 @@ fn finish_decode(
     let mut transferred_native_operation_parameter_count = 0usize;
     for parameter in ctx.admit_iter(&ir.model.parameters, "catia_census_parameters")? {
         if match parameter.owner.as_ref() {
-            Some(owner) => {
-                ctx.contains_hash_set(&native_operation_feature_ids, owner, "catia_census_lookup")?
-            }
+            Some(owner) => ctx.contains_hash_set(
+                &native_operation_feature_ids,
+                owner.as_str(),
+                "catia_census_lookup",
+            )?,
             None => false,
         } {
             transferred_native_operation_parameter_count += 1;
@@ -3353,11 +3395,19 @@ pub(crate) enum ModelingGraphScope {
 
 impl ModelingGraphScope {
     /// Reports whether an object graph identity is inside the modeling scope.
-    pub(crate) fn contains(&self, graph: &str) -> bool {
+    pub(crate) fn contains(
+        &self,
+        ctx: &DecodeContext<'_>,
+        graph: &str,
+    ) -> Result<bool, CodecError> {
         match self {
-            Self::Unscoped => true,
-            Self::Unresolved => false,
-            Self::Scoped(part) => part == graph,
+            Self::Unscoped => Ok(true),
+            Self::Unresolved => Ok(false),
+            Self::Scoped(part) => ctx.equal_bytes(
+                part.as_bytes(),
+                graph.as_bytes(),
+                "catia_modeling_scope_match",
+            ),
         }
     }
 

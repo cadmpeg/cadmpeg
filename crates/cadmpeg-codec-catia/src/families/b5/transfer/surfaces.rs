@@ -825,9 +825,7 @@ pub(super) fn emit_surfaces(
                 admission.context(),
                 annotations,
                 id.as_str(),
-                "geometry",
-                "catia_b5_surface_annotation",
-            )?;
+                "geometry",)?;
         }
         let model_id = id.try_clone_for_decode(admission.context(), "catia_b5_model_surface_id")?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_b5_emit_surfaces")?;
@@ -868,9 +866,7 @@ pub(super) fn emit_surfaces(
                     admission.context(),
                     annotations,
                     directrix_id.as_str(),
-                    "geometry",
-                    "catia_b5_profile_annotation",
-                )?;
+                    "geometry",)?;
                 admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
                 ir.model.curves.push(Curve {
                     id: directrix_id.try_clone_for_decode(

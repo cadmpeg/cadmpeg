@@ -935,9 +935,7 @@ pub(super) fn emit_pcurves(
                     admission.context(),
                     annotations,
                     id.as_str(),
-                    "geometry.control_points",
-                    "catia_b5_pcurve_annotation",
-                )?;
+                    "geometry.control_points",)?;
             }
             if graph
                 .pcurves
@@ -949,9 +947,7 @@ pub(super) fn emit_pcurves(
                     admission.context(),
                     annotations,
                     id.as_str(),
-                    "parameter_range",
-                    "catia_b5_pcurve_annotation",
-                )?;
+                    "parameter_range",)?;
             }
             for &occurrence in admission
                 .context()

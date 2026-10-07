@@ -11,7 +11,7 @@ use cadmpeg_ir::pmi::{
 
 use crate::entity_table::RangeIntervalSlot;
 use crate::native::entity_record::CatiaEntityRecord;
-use crate::native::{CatiaNative, CatiaRangeInterval};
+use crate::native::CatiaNative;
 
 /// Transfer complete CATIA dimension productions.
 ///
@@ -32,34 +32,30 @@ pub(crate) fn transfer_dimensions(
     transferred_sketch_ranges: &HashSet<String>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
-    for entity in native
-        .entity_records
-        .iter()
-        .filter(|entity| graph_scope.contains(entity.object_graph.as_str()))
-    {
-        if transferred_sketch_ranges.contains(&entity.object_record) {
+    for entity in ctx.admit_iter(&native.entity_records, "catia_pmi_entity_visits")? {
+        if !graph_scope.contains(ctx, entity.object_graph.as_str())? {
             continue;
         }
-        let Some(definition) = dimension_definition(entity) else {
+        if ctx.contains_hash_set(
+            transferred_sketch_ranges,
+            &entity.object_record,
+            "catia_pmi_sketch_range_lookup",
+        )? {
+            continue;
+        }
+        let Some(definition) = dimension_definition(ctx, entity)? else {
             continue;
         };
-        let id = pmi_id(ctx, entity.byte_offset)?;
-        let mut duplicate = false;
-        for annotation in &ir.model.pmi {
-            let work = cadmpeg_core::decode::u64_from_index(annotation.id.as_str().len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("catia_pmi_duplicate_search", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(work, "catia_pmi_duplicate_search")?;
-            if annotation.id == id {
-                duplicate = true;
-                break;
-            }
-        }
-        if duplicate {
+        let (id, id_storage) =
+            ctx.with_scoped_storage("catia_pmi_dimension_id", || pmi_id(ctx, entity.byte_offset))?;
+        if ctx.any_by(
+            &ir.model.pmi,
+            |annotation| ctx.equal(&annotation.id, &id, "catia_pmi_duplicate_identity"),
+            "catia_pmi_duplicate_search",
+        )? {
             continue;
         }
+        id_storage.commit()?;
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
         ctx.push_vec(
             &mut ir.model.pmi,
@@ -93,66 +89,80 @@ fn pmi_id(
     )?))
 }
 
-fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {
-    let range = entity.range_interval.as_ref()?;
-    if entity.constraint_range().is_some() {
-        return None;
-    }
-    range_only_dimension_definition(entity, range)
-}
-
-fn range_only_dimension_definition(
+fn dimension_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &CatiaEntityRecord,
-    range: &CatiaRangeInterval,
-) -> Option<PmiDefinition> {
+) -> Result<Option<PmiDefinition>, cadmpeg_core::CodecError> {
+    let Some(range) = entity.range_interval.as_ref() else {
+        return Ok(None);
+    };
+    if entity.constraint_range().is_some() {
+        return Ok(None);
+    }
     if entity.lead != 2 {
-        return None;
+        return Ok(None);
     }
     let [definition] = entity.definition_schema_selections.as_slice() else {
-        return None;
+        return Ok(None);
     };
     let [selection] = entity.value_schema_selections.as_slice() else {
-        return None;
+        return Ok(None);
     };
     if selection.name != "Range"
-        || range.range.entry != selection.entry
+        || !ctx.equal(
+            &range.range.entry,
+            &selection.entry,
+            "catia_pmi_range_entry_match",
+        )?
         || range.range.ordinal != selection.ordinal
         || range.range.offset != selection.offset
         || !range.incoming_storage_references.is_empty()
     {
-        return None;
+        return Ok(None);
     }
     let [owner] = range.incoming_references.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    let source = owner.source_entity.as_ref()?;
+    let Some(source) = owner.source_entity.as_ref() else {
+        return Ok(None);
+    };
     if source.is_null() || source.entity().is_none() {
-        return None;
+        return Ok(None);
     }
-    let dimension = match definition.name.as_deref()? {
-        "DiameterThread" => DimensionKind::Diameter,
-        "FeatureRSUR" => DimensionKind::Size,
-        _ => return None,
+    let dimension = match definition.name.as_deref() {
+        Some("DiameterThread") => DimensionKind::Diameter,
+        Some("FeatureRSUR") => DimensionKind::Size,
+        _ => return Ok(None),
     };
-    let nominal = finite_length(range.nominal.as_ref()?.bits)?;
-    let [RangeIntervalSlot::Binary64 { bits: lower, .. }, RangeIntervalSlot::Binary64 { bits: upper, .. }] =
-        range.interval.slots.as_ref()?
+    let Some(nominal) = range
+        .nominal
+        .as_ref()
+        .and_then(|nominal| finite_length(nominal.bits))
     else {
-        return None;
+        return Ok(None);
     };
-    let lower_deviation = finite_length(*lower)?;
-    let upper_deviation = finite_length(*upper)?;
-    Some(PmiDefinition::Dimension(
-        cadmpeg_ir::pmi::PmiDimension::new(
-            dimension,
-            Some(nominal),
-            Some(DimensionTolerance::PlusMinus {
-                lower: lower_deviation,
-                upper: upper_deviation,
-            }),
-        )
-        .ok()?,
-    ))
+    let Some(
+        [RangeIntervalSlot::Binary64 { bits: lower, .. }, RangeIntervalSlot::Binary64 { bits: upper, .. }],
+    ) = range.interval.slots.as_ref()
+    else {
+        return Ok(None);
+    };
+    let Some(lower_deviation) = finite_length(*lower) else {
+        return Ok(None);
+    };
+    let Some(upper_deviation) = finite_length(*upper) else {
+        return Ok(None);
+    };
+    Ok(cadmpeg_ir::pmi::PmiDimension::new(
+        dimension,
+        Some(nominal),
+        Some(DimensionTolerance::PlusMinus {
+            lower: lower_deviation,
+            upper: upper_deviation,
+        }),
+    )
+    .ok()
+    .map(PmiDefinition::Dimension))
 }
 
 fn finite_length(bits: u64) -> Option<PmiValue> {
@@ -167,30 +177,34 @@ mod tests {
     #[test]
     fn pmi_identity_refuses_grammar_work() {
         for offset in [0, u64::MAX] {
-            let mut observed = false;
-            for work in 0..512 {
-                let (result, original) = crate::test_support::with_work_limit(work, |ctx| {
-                    (super::pmi_id(ctx, offset), ctx.resource_refusal())
-                });
-                match result {
-                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                        assert_eq!(original, Some(limit));
-                        if limit.operation == "catia_pmi_identity_grammar" {
-                            observed = true;
-                            break;
+            let refused =
+                crate::test_support::with_work_refusal("catia_pmi_identity_grammar", |ctx| {
+                    let result = super::pmi_id(ctx, offset);
+                    match &result {
+                        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit))
                         }
+                        Ok(identity) => {
+                            assert_eq!(
+                                identity.as_str(),
+                                format!("catia:model:pmi#entity-record-{offset:010}")
+                            );
+                            assert_eq!(ctx.resource_refusal(), None);
+                        }
+                        Err(error) => panic!("unexpected identity error: {error}"),
                     }
-                    Ok(identity) => {
-                        assert_eq!(
-                            identity.as_str(),
-                            format!("catia:model:pmi#entity-record-{offset:010}")
-                        );
-                        assert_eq!(original, None);
-                    }
-                    Err(error) => panic!("unexpected identity error: {error}"),
-                }
-            }
-            assert!(observed, "PMI grammar admission");
+                    result
+                });
+            assert!(
+                matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_pmi_identity_grammar")
+            );
+            let identity =
+                crate::test_support::with_service_context(|ctx| super::pmi_id(ctx, offset))
+                    .expect("service identity");
+            assert_eq!(
+                identity.as_str(),
+                format!("catia:model:pmi#entity-record-{offset:010}")
+            );
         }
     }
     use crate::entity_table::{RangeInterval, RangeIntervalPrefix, RangeIntervalSlot};
@@ -357,23 +371,22 @@ mod tests {
             )
         })
         .expect("first dimension");
-        // Identity work counts measurement, append and one grammar visit per ASCII scalar.
-        let id_work = 3 * u64::try_from("catia:model:pmi#entity-record-0000000000".len())
-            .expect("identity length fits u64");
-        crate::test_support::with_work_limit(id_work, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = transfer_dimensions(
+        let refused = crate::test_support::with_work_refusal("catia_pmi_duplicate_search", |ctx| {
+            let result = transfer_dimensions(
                 ctx,
                 &mut ir,
                 &native,
                 &crate::decode::ModelingGraphScope::Unscoped,
                 &HashSet::new(),
-            )
-            .expect_err("duplicate scan consumes work") else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_pmi_duplicate_search");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
+            );
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
         });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_pmi_duplicate_search")
+        );
         assert_eq!(ir.model.pmi.len(), 1);
     }
 

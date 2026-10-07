@@ -6,8 +6,8 @@
 //! allocation reference tokens; and fixed-size finite `f64` array reads.
 
 use super::cursor::Cursor;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -19,11 +19,8 @@ pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<FiniteReal>> {
         return None;
     }
     let mut view = View::over_retained(bytes);
-    let arena = DecodeArena::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).ok()?;
-    let mut values = ctx
-        .collection_vec(bytes.len() / 8, "catia_finite_f64_lane")
-        .ok()?;
+    let mut values = Vec::new();
+    values.try_reserve_exact(bytes.len() / 8).ok()?;
     while !view.is_empty() {
         values.push(FiniteReal::new(view.f64_le()?)?);
     }
@@ -195,10 +192,15 @@ mod tests {
         .expect("lane admission")
         .expect("finite lane");
         assert_eq!(
+            super::finite_f64_lane(&bytes).expect("pure finite lane"),
+            values
+        );
+        assert_eq!(
             values.iter().map(|value| value.get()).collect::<Vec<_>>(),
             [1.0, -2.0]
         );
         for bytes in [vec![0], f64::INFINITY.to_le_bytes().to_vec()] {
+            assert!(super::finite_f64_lane(&bytes).is_none());
             assert!(crate::test_support::with_service_context(|ctx| {
                 super::finite_f64_lane_charged(ctx, &bytes, "catia_lane_test")
             })
