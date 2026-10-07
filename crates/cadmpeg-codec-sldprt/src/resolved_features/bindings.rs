@@ -85,12 +85,20 @@ fn push_distinct_candidate<'ctx, T: PartialEq + cadmpeg_core::decode::cost::Deco
             |(existing, _)| ctx.equal(existing, &candidate, PATTERN_INPUTS),
             PATTERN_INPUTS,
         )? {
-            storage.with_storage(|| ctx.push_vec(group, (candidate, candidate_storage), PATTERN_INPUTS))?;
+            storage.with_storage(|| {
+                ctx.push_vec(group, (candidate, candidate_storage), PATTERN_INPUTS)
+            })?;
         }
         return Ok(());
     }
     storage.with_storage(|| {
-        ctx.push_btree_group(groups, index, (candidate, candidate_storage), PATTERN_INPUTS, PATTERN_INPUTS)
+        ctx.push_btree_group(
+            groups,
+            index,
+            (candidate, candidate_storage),
+            PATTERN_INPUTS,
+            PATTERN_INPUTS,
+        )
     })
 }
 
@@ -187,22 +195,31 @@ pub(crate) fn bind_pattern_inputs(
                 .copied(),
         )
     };
-    let mut seeds_by_pattern = BTreeMap::<usize, Vec<Candidate<'_, cadmpeg_ir::features::FeatureId>>>::new();
+    let mut seeds_by_pattern =
+        BTreeMap::<usize, Vec<Candidate<'_, cadmpeg_ir::features::FeatureId>>>::new();
     let mut paths_by_pattern =
         BTreeMap::<usize, Vec<Candidate<'_, (cadmpeg_ir::features::FeatureId, PathRef)>>>::new();
-    let mut linear_directions_by_pattern = BTreeMap::<usize, Vec<Candidate<'_, FeatureDirection3>>>::new();
-    let mut mirror_planes_by_pattern = BTreeMap::<usize, Vec<Candidate<'_, (Point3, Vector3)>>>::new();
+    let mut linear_directions_by_pattern =
+        BTreeMap::<usize, Vec<Candidate<'_, FeatureDirection3>>>::new();
+    let mut mirror_planes_by_pattern =
+        BTreeMap::<usize, Vec<Candidate<'_, (Point3, Vector3)>>>::new();
     let mut mirror_seed_sets_by_pattern =
         BTreeMap::<usize, Vec<Candidate<'_, Vec<cadmpeg_ir::features::FeatureId>>>>::new();
-    let mut circular_axes_by_pattern = BTreeMap::<usize, Vec<Candidate<'_, (FinitePoint3, UnitVector3)>>>::new();
+    let mut circular_axes_by_pattern =
+        BTreeMap::<usize, Vec<Candidate<'_, (FinitePoint3, UnitVector3)>>>::new();
     // Curve-pattern seeds join the pattern seeds after every lane is read.
-    let mut curve_seeds = Vec::<(usize, cadmpeg_ir::features::FeatureId, cadmpeg_core::decode::ScopedReservation<'_>)>::new();
+    let mut curve_seeds = Vec::<(
+        usize,
+        cadmpeg_ir::features::FeatureId,
+        cadmpeg_core::decode::ScopedReservation<'_>,
+    )>::new();
 
     for lane in ctx.admit_iter(lanes, "scan SLDPRT pattern input lanes")? {
         let mut lane_storage = ctx.reserve_scoped(0, PATTERN_INPUTS)?;
         let discovered_identities;
         let generated_identities = if lane.generated_surface_identities.is_empty() {
-            discovered_identities = lane_storage.with_storage(|| generated_surface_identities(ctx, lane))?;
+            discovered_identities =
+                lane_storage.with_storage(|| generated_surface_identities(ctx, lane))?;
             &discovered_identities
         } else {
             &lane.generated_surface_identities
@@ -220,13 +237,15 @@ pub(crate) fn bind_pattern_inputs(
         // that proof holds, and the objects below carry `usize` offsets.
         let mut starts = Vec::new();
         for (offset, feature) in ctx.admit_iter(
-            lane_storage.with_storage(|| lane_feature_objects(
-                ctx,
-                history_features.iter().copied(),
-                &metadata_ids,
-                lane,
-                "scan SLDPRT pattern input candidates",
-            ))?,
+            lane_storage.with_storage(|| {
+                lane_feature_objects(
+                    ctx,
+                    history_features.iter().copied(),
+                    &metadata_ids,
+                    lane,
+                    "scan SLDPRT pattern input candidates",
+                )
+            })?,
             "collect SLDPRT pattern input candidates",
         )? {
             if let Ok(offset) = usize::try_from(offset) {
@@ -303,7 +322,9 @@ pub(crate) fn bind_pattern_inputs(
                 }
                 let mut seed_storage = ctx.reserve_scoped(0, PATTERN_INPUTS)?;
                 let mut seeds = Vec::<cadmpeg_ir::features::FeatureId>::new();
-                let scan_end = object.len().saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len());
+                let scan_end = object
+                    .len()
+                    .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len());
                 for offset in
                     ctx.admit_iter(&(0..scan_end), "scan SLDPRT mirror pattern seed paths")?
                 {
@@ -312,9 +333,11 @@ pub(crate) fn bind_pattern_inputs(
                     {
                         continue;
                     }
-                    let (components, _components_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || mirror_pattern_component_path_at(ctx, object, offset))?;
-                    let Some(components) = components
-                    else {
+                    let (components, _components_storage) = ctx
+                        .with_scoped_storage(PATTERN_INPUTS, || {
+                            mirror_pattern_component_path_at(ctx, object, offset)
+                        })?;
+                    let Some(components) = components else {
                         continue;
                     };
                     let Some(native) = by_source.terminal_feature(ctx, &components)? else {
@@ -338,8 +361,11 @@ pub(crate) fn bind_pattern_inputs(
                         },
                         "compare SLDPRT mirror pattern seeds",
                     )? {
-                        let seed = seed_storage.with_storage(|| copy_feature_binding_id(ctx, seed))?;
-                        seed_storage.with_storage(|| ctx.push_vec(&mut seeds, seed, "collect SLDPRT mirror pattern seeds"))?;
+                        let seed =
+                            seed_storage.with_storage(|| copy_feature_binding_id(ctx, seed))?;
+                        seed_storage.with_storage(|| {
+                            ctx.push_vec(&mut seeds, seed, "collect SLDPRT mirror pattern seeds")
+                        })?;
                     }
                 }
                 if seeds.is_empty() {
@@ -350,17 +376,24 @@ pub(crate) fn bind_pattern_inputs(
                         } {
                             let mut seed_storage = ctx.reserve_scoped(0, PATTERN_INPUTS)?;
                             let mut seeds = Vec::new();
-                            let seed =
-                                seed_storage.with_storage(|| copy_feature_binding_id(ctx, &model_features[seed_index].id))?;
-                            seed_storage.with_storage(|| ctx.push_vec(&mut seeds, seed, "collect SLDPRT mirror pattern seeds"))?;
+                            let seed = seed_storage.with_storage(|| {
+                                copy_feature_binding_id(ctx, &model_features[seed_index].id)
+                            })?;
+                            seed_storage.with_storage(|| {
+                                ctx.push_vec(
+                                    &mut seeds,
+                                    seed,
+                                    "collect SLDPRT mirror pattern seeds",
+                                )
+                            })?;
                             push_distinct_candidate(
                                 ctx,
                                 &mut storage,
                                 &mut mirror_seed_sets_by_pattern,
                                 model_index,
                                 seeds,
-                            Some(seed_storage),
-                        )?;
+                                Some(seed_storage),
+                            )?;
                         }
                     }
                 } else {
@@ -370,8 +403,8 @@ pub(crate) fn bind_pattern_inputs(
                         &mut mirror_seed_sets_by_pattern,
                         model_index,
                         seeds,
-                            Some(seed_storage),
-                        )?;
+                        Some(seed_storage),
+                    )?;
                 }
                 continue;
             }
@@ -459,15 +492,18 @@ pub(crate) fn bind_pattern_inputs(
                             },
                             "deduplicate SLDPRT pattern input seeds",
                         )? {
-                            let (seed, seed_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || copy_feature_binding_id(ctx, first))?;
+                            let (seed, seed_storage) = ctx
+                                .with_scoped_storage(PATTERN_INPUTS, || {
+                                    copy_feature_binding_id(ctx, first)
+                                })?;
                             push_distinct_candidate(
                                 ctx,
                                 &mut storage,
                                 &mut seeds_by_pattern,
                                 model_index,
                                 seed,
-                            Some(seed_storage),
-                        )?;
+                                Some(seed_storage),
+                            )?;
                         }
                     }
                 }
@@ -550,7 +586,10 @@ pub(crate) fn bind_pattern_inputs(
                         Some(native) => model_of(native)?,
                         None => None,
                     } {
-                        let (seed, seed_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || copy_feature_binding_id(ctx, &model_features[seed_index].id))?;
+                        let (seed, seed_storage) = ctx
+                            .with_scoped_storage(PATTERN_INPUTS, || {
+                                copy_feature_binding_id(ctx, &model_features[seed_index].id)
+                            })?;
                         push_distinct_candidate(
                             ctx,
                             &mut storage,
@@ -576,12 +615,15 @@ pub(crate) fn bind_pattern_inputs(
                 let mut direction_storage = ctx.reserve_scoped(0, DIRECTIONS)?;
                 let mut directions = Vec::new();
                 for class in ctx.admit_iter(declarations, DIRECTIONS)? {
-                    let (declared, _declared_storage) = ctx.with_scoped_storage(DIRECTIONS, || declared_line_reference_directions(
-                        ctx,
-                        &lane.native_payload,
-                        class.offset,
-                        end,
-                    ))?;
+                    let (declared, _declared_storage) =
+                        ctx.with_scoped_storage(DIRECTIONS, || {
+                            declared_line_reference_directions(
+                                ctx,
+                                &lane.native_payload,
+                                class.offset,
+                                end,
+                            )
+                        })?;
                     direction_storage.with_storage(|| {
                         ctx.extend_vec(
                             &mut directions,
@@ -604,13 +646,15 @@ pub(crate) fn bind_pattern_inputs(
                         }
                     }
                 }
-                let (compact, _compact_storage) = ctx.with_scoped_storage(DIRECTIONS, || compact_line_reference_directions(
-                    ctx,
-                    &lane.native_payload,
-                    start,
-                    end,
-                    &excluded_handles,
-                ))?;
+                let (compact, _compact_storage) = ctx.with_scoped_storage(DIRECTIONS, || {
+                    compact_line_reference_directions(
+                        ctx,
+                        &lane.native_payload,
+                        start,
+                        end,
+                        &excluded_handles,
+                    )
+                })?;
                 direction_storage.with_storage(|| {
                     ctx.extend_vec(
                         &mut directions,
@@ -631,14 +675,17 @@ pub(crate) fn bind_pattern_inputs(
                                 .map(|value| value.get() / 1000.0),
                         )
                     };
-                    let (display, _display_storage) = ctx.with_scoped_storage(DIRECTIONS, || linear_pattern_display_directions(
-                        ctx,
-                        &lane.native_payload,
-                        start,
-                        end,
-                        &lane.names,
-                        [spacing_m("D3")?, spacing_m("D4")?],
-                    ))?;
+                    let (display, _display_storage) =
+                        ctx.with_scoped_storage(DIRECTIONS, || {
+                            linear_pattern_display_directions(
+                                ctx,
+                                &lane.native_payload,
+                                start,
+                                end,
+                                &lane.names,
+                                [spacing_m("D3")?, spacing_m("D4")?],
+                            )
+                        })?;
                     direction_storage.with_storage(|| {
                         ctx.extend_vec(
                             &mut directions,
@@ -706,9 +753,16 @@ pub(crate) fn bind_pattern_inputs(
                     .and_then(|index| starts.get(index))
                 {
                     if let Some(seed_index) = model_of(seed.id.as_str())? {
-                        let (seed, seed_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || copy_feature_binding_id(ctx, &model_features[seed_index].id))?;
+                        let (seed, seed_storage) = ctx
+                            .with_scoped_storage(PATTERN_INPUTS, || {
+                                copy_feature_binding_id(ctx, &model_features[seed_index].id)
+                            })?;
                         storage.with_storage(|| {
-                            ctx.push_vec(&mut curve_seeds, (model_index, seed, seed_storage), PATTERN_INPUTS)
+                            ctx.push_vec(
+                                &mut curve_seeds,
+                                (model_index, seed, seed_storage),
+                                PATTERN_INPUTS,
+                            )
                         })?;
                     }
                 }
@@ -731,7 +785,13 @@ pub(crate) fn bind_pattern_inputs(
             else {
                 continue;
             };
-            let ((dependency, sketch), path_storage) = ctx.with_scoped_storage(PATTERN_INPUTS, || Ok::<_, cadmpeg_core::CodecError>((copy_feature_binding_id(ctx, &model_features[target_index].id)?, copy_feature_binding_sketch_id(ctx, sketch)?)))?;
+            let ((dependency, sketch), path_storage) =
+                ctx.with_scoped_storage(PATTERN_INPUTS, || {
+                    Ok::<_, cadmpeg_core::CodecError>((
+                        copy_feature_binding_id(ctx, &model_features[target_index].id)?,
+                        copy_feature_binding_sketch_id(ctx, sketch)?,
+                    ))
+                })?;
             push_distinct_candidate(
                 ctx,
                 &mut storage,
@@ -739,11 +799,18 @@ pub(crate) fn bind_pattern_inputs(
                 model_index,
                 (dependency, PathRef::Sketch(sketch)),
                 Some(path_storage),
-                        )?;
+            )?;
         }
     }
     for (index, seed, seed_storage) in ctx.admit_iter(curve_seeds, PATTERN_INPUTS)? {
-        push_distinct_candidate(ctx, &mut storage, &mut seeds_by_pattern, index, seed, Some(seed_storage))?;
+        push_distinct_candidate(
+            ctx,
+            &mut storage,
+            &mut seeds_by_pattern,
+            index,
+            seed,
+            Some(seed_storage),
+        )?;
     }
     for (index, candidates) in ctx.admit_iter(seeds_by_pattern, PATTERN_INPUTS)? {
         let Ok([(seed, _seed_storage)]) = <[_; 1]>::try_from(candidates) else {
@@ -765,7 +832,13 @@ pub(crate) fn bind_pattern_inputs(
                 definition
             {
                 if seeds.is_empty() {
-                    edit_result = copy_feature_binding_id(ctx, &seed).and_then(|seed| ctx.push_vec(seeds, PatternSeed::Feature(seed), "collect SLDPRT feature binding assignments"));
+                    edit_result = copy_feature_binding_id(ctx, &seed).and_then(|seed| {
+                        ctx.push_vec(
+                            seeds,
+                            PatternSeed::Feature(seed),
+                            "collect SLDPRT feature binding assignments",
+                        )
+                    });
                 }
             }
         });
@@ -780,9 +853,11 @@ pub(crate) fn bind_pattern_inputs(
             &dependency,
             DEPENDENCIES,
         )? {
-            model_features[index]
-                .dependencies
-                .insert(ctx, copy_feature_binding_id(ctx, &dependency)?, DEPENDENCIES)?;
+            model_features[index].dependencies.insert(
+                ctx,
+                copy_feature_binding_id(ctx, &dependency)?,
+                DEPENDENCIES,
+            )?;
         }
         let mut path_result = Ok(());
         model_features[index].evaluation.edit(|definition, _| {
@@ -791,7 +866,9 @@ pub(crate) fn bind_pattern_inputs(
             {
                 if let Some(slot) = pattern.curve_path_mut() {
                     if slot.is_none() {
-                        let PathRef::Sketch(sketch) = &path else { return; };
+                        let PathRef::Sketch(sketch) = &path else {
+                            return;
+                        };
                         match copy_feature_binding_sketch_id(ctx, sketch) {
                             Ok(sketch) => *slot = Some(PathRef::Sketch(sketch)),
                             Err(error) => path_result = Err(error),
@@ -1233,11 +1310,16 @@ pub(crate) fn bind_sweep_adjacent_profiles(
     }
     let mut assignments = BTreeMap::<
         usize,
-        Vec<Candidate<'_, (
-            cadmpeg_ir::features::FeatureId,
-            SketchId,
-            Option<(cadmpeg_ir::features::FeatureId, SketchId)>,
-        )>>,
+        Vec<
+            Candidate<
+                '_,
+                (
+                    cadmpeg_ir::features::FeatureId,
+                    SketchId,
+                    Option<(cadmpeg_ir::features::FeatureId, SketchId)>,
+                ),
+            >,
+        >,
     >::new();
     {
         let mut model_by_native = HashMap::new();
@@ -1260,13 +1342,15 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             _ => None,
         };
         for lane in ctx.admit_iter(lanes, "scan SLDPRT sweep adjacent lanes")? {
-            let (mut starts, _starts_storage) = ctx.with_scoped_storage(INDEX, || lane_feature_objects(
-                ctx,
-                history_features.iter().copied(),
-                &metadata_ids,
-                lane,
-                "scan SLDPRT feature binding candidates",
-            ))?;
+            let (mut starts, _starts_storage) = ctx.with_scoped_storage(INDEX, || {
+                lane_feature_objects(
+                    ctx,
+                    history_features.iter().copied(),
+                    &metadata_ids,
+                    lane,
+                    "scan SLDPRT feature binding candidates",
+                )
+            })?;
             ctx.sort_unstable_by(
                 &mut starts,
                 |value| &value.0,
@@ -1321,14 +1405,19 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 let path = path
                     .map(|(feature, sketch)| {
                         Ok::<_, cadmpeg_core::CodecError>((
-                            candidate_storage.with_storage(|| copy_feature_binding_id(ctx, feature))?,
-                            candidate_storage.with_storage(|| copy_feature_binding_sketch_id(ctx, sketch))?,
+                            candidate_storage
+                                .with_storage(|| copy_feature_binding_id(ctx, feature))?,
+                            candidate_storage
+                                .with_storage(|| copy_feature_binding_sketch_id(ctx, sketch))?,
                         ))
                     })
                     .transpose()?;
                 let candidate = (
-                    candidate_storage.with_storage(|| copy_feature_binding_id(ctx, &model_features[profile_index].id))?,
-                    candidate_storage.with_storage(|| copy_feature_binding_sketch_id(ctx, sketch))?,
+                    candidate_storage.with_storage(|| {
+                        copy_feature_binding_id(ctx, &model_features[profile_index].id)
+                    })?,
+                    candidate_storage
+                        .with_storage(|| copy_feature_binding_sketch_id(ctx, sketch))?,
                     path,
                 );
                 push_distinct_candidate(
@@ -1338,12 +1427,14 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                     model_index,
                     candidate,
                     Some(candidate_storage),
-                        )?;
+                )?;
             }
         }
     }
     for (index, candidates) in ctx.admit_iter(assignments, INDEX)? {
-        let Ok([((profile_dependency, sketch, path), _candidate_storage)]) = <[_; 1]>::try_from(candidates) else {
+        let Ok([((profile_dependency, sketch, path), _candidate_storage)]) =
+            <[_; 1]>::try_from(candidates)
+        else {
             continue;
         };
         let mut profile_bound = false;
@@ -1358,8 +1449,14 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             {
                 if shape.section_is_unresolved() {
                     match copy_feature_binding_sketch_id(ctx, &sketch) {
-                        Ok(sketch) => { shape.set_referenced_profile(sketch.into()); profile_bound = true; }
-                        Err(error) => { assignment_result = Err(error); return; }
+                        Ok(sketch) => {
+                            shape.set_referenced_profile(sketch.into());
+                            profile_bound = true;
+                        }
+                        Err(error) => {
+                            assignment_result = Err(error);
+                            return;
+                        }
                     }
                 }
                 if let Some((dependency, path)) = path {
@@ -1369,7 +1466,10 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                     {
                         match copy_feature_binding_sketch_id(ctx, &path) {
                             Ok(path) => *path_slot = Some(PathRef::Sketch(path)),
-                            Err(error) => { assignment_result = Err(error); return; }
+                            Err(error) => {
+                                assignment_result = Err(error);
+                                return;
+                            }
                         }
                     }
                     path_dependency = Some(dependency);
@@ -1386,9 +1486,11 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 DEPENDENCIES,
             )?
         {
-            model_features[index]
-                .dependencies
-                .insert(ctx, copy_feature_binding_id(ctx, &profile_dependency)?, DEPENDENCIES)?;
+            model_features[index].dependencies.insert(
+                ctx,
+                copy_feature_binding_id(ctx, &profile_dependency)?,
+                DEPENDENCIES,
+            )?;
         }
         if let Some(dependency) = path_dependency {
             if !ctx.contains(
@@ -1396,9 +1498,11 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 &dependency,
                 DEPENDENCIES,
             )? {
-                model_features[index]
-                    .dependencies
-                    .insert(ctx, copy_feature_binding_id(ctx, &dependency)?, DEPENDENCIES)?;
+                model_features[index].dependencies.insert(
+                    ctx,
+                    copy_feature_binding_id(ctx, &dependency)?,
+                    DEPENDENCIES,
+                )?;
             }
         }
     }
@@ -1468,7 +1572,8 @@ pub(crate) fn bind_scalar_operands(
     const OWNER: &str = "bind SLDPRT scalar operand owners";
     const CANDIDATES: &str = "collect SLDPRT scalar binding candidates";
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
-    let represented_sketches = storage.with_storage(|| represented_sketch_features(ctx, histories, lanes))?;
+    let represented_sketches =
+        storage.with_storage(|| represented_sketch_features(ctx, histories, lanes))?;
     let metadata_ids = storage.with_storage(|| history_metadata_ids(ctx, histories))?;
     let mut history_features = Vec::new();
     let mut features_by_id = HashMap::new();
@@ -1493,13 +1598,15 @@ pub(crate) fn bind_scalar_operands(
         }
         let mut starts = Vec::new();
         for (offset, feature) in ctx.admit_iter(
-            lane_storage.with_storage(|| lane_feature_objects(
-                ctx,
-                history_features.iter().copied(),
-                &metadata_ids,
-                lane,
-                "scan SLDPRT scalar binding candidates",
-            ))?,
+            lane_storage.with_storage(|| {
+                lane_feature_objects(
+                    ctx,
+                    history_features.iter().copied(),
+                    &metadata_ids,
+                    lane,
+                    "scan SLDPRT scalar binding candidates",
+                )
+            })?,
             CANDIDATES,
         )? {
             lane_storage.with_storage(|| {
@@ -1658,7 +1765,8 @@ pub(crate) fn finalize_lane_bindings(
                 .with_storage(|| ctx.collect_vec(local_ids, "decode SLDPRT scalar local links"))?;
             Some((links, selector))
         } else {
-            local_storage.with_storage(|| coordinate_marker_local_links(ctx, &lane.native_payload, offset))?
+            local_storage
+                .with_storage(|| coordinate_marker_local_links(ctx, &lane.native_payload, offset))?
         };
         let Some((local_ids, selector)) = local_links else {
             continue;
@@ -1798,13 +1906,15 @@ fn represented_sketch_features(
             continue;
         }
         let mut lane_storage = ctx.reserve_scoped(0, OPERATION)?;
-        let mut objects = lane_storage.with_storage(|| lane_feature_objects(
-            ctx,
-            features.iter().copied(),
-            &metadata_ids,
-            lane,
-            OPERATION,
-        ))?;
+        let mut objects = lane_storage.with_storage(|| {
+            lane_feature_objects(
+                ctx,
+                features.iter().copied(),
+                &metadata_ids,
+                lane,
+                OPERATION,
+            )
+        })?;
         ctx.sort_unstable_by(
             &mut objects,
             |value| &value.0,
@@ -1815,7 +1925,8 @@ fn represented_sketch_features(
         let mut placed = Vec::new();
         for entity in ctx.admit_iter(&lane.sketch_entities, OPERATION)? {
             if entity.coordinates_m.is_some() {
-                lane_storage.with_storage(|| ctx.push_vec(&mut placed, entity.offset(), OPERATION))?;
+                lane_storage
+                    .with_storage(|| ctx.push_vec(&mut placed, entity.offset(), OPERATION))?;
             }
         }
         ctx.sort_unstable_by(&mut placed, |offset| offset, Ord::cmp, OPERATION)?;
@@ -1891,16 +2002,48 @@ struct ObjectRangeIndex<'ctx> {
 }
 
 impl<'ctx> ObjectRangeIndex<'ctx> {
-    fn new(ctx: &'ctx DecodeContext<'_>, lane: &FeatureInputLane) -> Result<Self, cadmpeg_core::CodecError> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        lane: &FeatureInputLane,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         const OPERATION: &str = "index SLDPRT detached sketch offsets";
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-        let mut markers = storage.with_storage(|| ctx.collect_vec(lane.sketch_entities.iter().enumerate().map(|(i, value)| (value.offset(), i)), OPERATION))?;
-        let mut references = storage.with_storage(|| ctx.collect_vec(lane.references.iter().enumerate().map(|(i, value)| (value.offset, i)), OPERATION))?;
-        let mut scalars = storage.with_storage(|| ctx.collect_vec(lane.scalars.iter().enumerate().map(|(i, value)| (value.offset, i)), OPERATION))?;
+        let mut markers = storage.with_storage(|| {
+            ctx.collect_vec(
+                lane.sketch_entities
+                    .iter()
+                    .enumerate()
+                    .map(|(i, value)| (value.offset(), i)),
+                OPERATION,
+            )
+        })?;
+        let mut references = storage.with_storage(|| {
+            ctx.collect_vec(
+                lane.references
+                    .iter()
+                    .enumerate()
+                    .map(|(i, value)| (value.offset, i)),
+                OPERATION,
+            )
+        })?;
+        let mut scalars = storage.with_storage(|| {
+            ctx.collect_vec(
+                lane.scalars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, value)| (value.offset, i)),
+                OPERATION,
+            )
+        })?;
         for values in [&mut markers, &mut references, &mut scalars] {
             ctx.sort_unstable_by(values, |value| value, Ord::cmp, OPERATION)?;
         }
-        Ok(Self { markers, references, scalars, _storage: storage })
+        Ok(Self {
+            markers,
+            references,
+            scalars,
+            _storage: storage,
+        })
     }
 }
 
@@ -1915,11 +2058,22 @@ fn assign_object_range(
     owner: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "bind SLDPRT detached sketch objects";
-    let range = |values: &[(u64, usize)]| -> Result<std::ops::Range<usize>, cadmpeg_core::CodecError> {
-        let first = ctx.partition_point(values, |(offset, _)| Ok(if include_start { *offset < start } else { *offset <= start }), OPERATION)?;
-        let last = ctx.partition_point(values, |(offset, _)| Ok(*offset < end), OPERATION)?;
-        Ok(first..last.max(first))
-    };
+    let range =
+        |values: &[(u64, usize)]| -> Result<std::ops::Range<usize>, cadmpeg_core::CodecError> {
+            let first = ctx.partition_point(
+                values,
+                |(offset, _)| {
+                    Ok(if include_start {
+                        *offset < start
+                    } else {
+                        *offset <= start
+                    })
+                },
+                OPERATION,
+            )?;
+            let last = ctx.partition_point(values, |(offset, _)| Ok(*offset < end), OPERATION)?;
+            Ok(first..last.max(first))
+        };
     for &(_, i) in ctx.admit_iter(&index.markers[range(&index.markers)?], OPERATION)? {
         lane.sketch_entities[i].feature_ref = Some(copy_binding_text(ctx, owner)?);
     }
@@ -2026,15 +2180,7 @@ pub(super) fn bind_detached_legacy_sketch_objects(
         ctx.admit_iter(&starts, OPERATION)?.zip(&owners).enumerate()
     {
         let end = starts.get(index + 1).copied().unwrap_or(limit);
-        assign_object_range(
-            ctx,
-            lane,
-            &ranges,
-            start,
-            end,
-            true,
-            &owner.id,
-        )?;
+        assign_object_range(ctx, lane, &ranges, start, end, true, &owner.id)?;
     }
     Ok(())
 }
@@ -2156,19 +2302,28 @@ fn bind_detached_spatial_relation_objects(
             }
         }
     }
-    let mut scalar_offsets = storage.with_storage(|| ctx.collect_vec(lane.scalars.iter().enumerate().map(|(index, scalar)| (scalar.offset, index)), MATCH))?;
+    let mut scalar_offsets = storage.with_storage(|| {
+        ctx.collect_vec(
+            lane.scalars
+                .iter()
+                .enumerate()
+                .map(|(index, scalar)| (scalar.offset, index)),
+            MATCH,
+        )
+    })?;
     ctx.sort_unstable_by(&mut scalar_offsets, |value| value, Ord::cmp, MATCH)?;
     let mut candidates = Vec::new();
     for &(start, end) in ctx.admit_iter(&ranges, MATCH)? {
-        let mut range_storage = ctx.reserve_scoped(0, "SLDPRT spatial sketch dimension workspace")?;
-        let first = ctx.partition_point(&scalar_offsets, |(offset, _)| Ok(*offset <= start), MATCH)?;
+        let mut range_storage =
+            ctx.reserve_scoped(0, "SLDPRT spatial sketch dimension workspace")?;
+        let first =
+            ctx.partition_point(&scalar_offsets, |(offset, _)| Ok(*offset <= start), MATCH)?;
         let last = ctx.partition_point(&scalar_offsets, |(offset, _)| Ok(*offset < end), MATCH)?;
         // The range's dimension scalars by name, with every value per name.
         let mut scalars = BTreeMap::<&str, Vec<f64>>::new();
         for &(_, index) in ctx.admit_iter(&scalar_offsets[first..last.max(first)], MATCH)? {
             let scalar = &lane.scalars[index];
-            if scalar.role == crate::records::FeatureInputScalarRole::Display
-            {
+            if scalar.role == crate::records::FeatureInputScalarRole::Display {
                 continue;
             }
             let Some(name) = ctx
@@ -2248,10 +2403,10 @@ fn bind_detached_spatial_relation_objects(
     }
     drop((range_counts, owner_counts, candidates, owners));
     if !bound.is_empty() {
-    let index = ObjectRangeIndex::new(ctx, lane)?;
-    for (start, end, owner) in ctx.admit_iter(&bound, "bind SLDPRT spatial sketch objects")? {
-        assign_object_range(ctx, lane, &index, *start, *end, false, owner)?;
-    }
+        let index = ObjectRangeIndex::new(ctx, lane)?;
+        for (start, end, owner) in ctx.admit_iter(&bound, "bind SLDPRT spatial sketch objects")? {
+            assign_object_range(ctx, lane, &index, *start, *end, false, owner)?;
+        }
     }
     Ok(bound)
 }
@@ -2266,8 +2421,8 @@ pub(super) fn normalize_indexed_curve_entities(
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
     let terminal_lines = {
         let mut marker_storage = ctx.reserve_scoped(0, TERMINAL)?;
-        let markers =
-            marker_storage.with_storage(|| ctx.collect_vec(lane.sketch_entities.iter(), TERMINAL))?;
+        let markers = marker_storage
+            .with_storage(|| ctx.collect_vec(lane.sketch_entities.iter(), TERMINAL))?;
         let mut terminal = Vec::new();
         for curve in ctx.admit_iter(&markers, TERMINAL)? {
             let is_terminal =
@@ -2319,8 +2474,8 @@ pub(super) fn normalize_indexed_curve_entities(
                     .with_storage(|| ctx.insert_hash_set(by_index, index, SCALAR_BINDING_INDEX))?;
             }
         }
-        let markers =
-            lookup_storage.with_storage(|| ctx.collect_vec(lane.sketch_entities.iter(), REVERSE))?;
+        let markers = lookup_storage
+            .with_storage(|| ctx.collect_vec(lane.sketch_entities.iter(), REVERSE))?;
         let mut coordinates = HashMap::new();
         for curve in ctx.admit_iter(&markers, REVERSE)? {
             let Some(offsets) = current_reverse_incidence_endpoint_offsets(
@@ -2419,7 +2574,8 @@ fn bind_resolved_curve_vertices(
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
     let selected_axis_endpoints = {
         let mut marker_storage = ctx.reserve_scoped(0, SELECTED)?;
-        let (markers_by_id, markers) = lane_marker_index(ctx, &mut marker_storage, &lane.sketch_entities)?;
+        let (markers_by_id, markers) =
+            lane_marker_index(ctx, &mut marker_storage, &lane.sketch_entities)?;
         let mut selected = HashSet::new();
         for curve in ctx.admit_iter(&markers, SELECTED)? {
             if !index_from_u64(curve.offset()).is_some_and(|offset| {
@@ -2427,13 +2583,15 @@ fn bind_resolved_curve_vertices(
             }) {
                 continue;
             }
-            let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(SELECTED, || marker_curve_endpoint_markers(
+            let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(SELECTED, || {
+                marker_curve_endpoint_markers(
                     ctx,
                     &lane.native_payload,
                     curve,
                     &markers_by_id,
                     &markers,
-                ))?;
+                )
+            })?;
             for marker in ctx.admit_iter(endpoints, SELECTED)? {
                 if marker.coordinates_m.is_some() {
                     storage.with_storage(|| {
@@ -2463,13 +2621,15 @@ fn bind_resolved_curve_vertices(
                 ) {
                     continue;
                 }
-                let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(RESOLVE, || marker_curve_endpoint_markers(
-                    ctx,
-                    &lane.native_payload,
-                    curve,
-                    &markers_by_id,
-                    &markers,
-                ))?;
+                let (endpoints, _endpoint_storage) = ctx.with_scoped_storage(RESOLVE, || {
+                    marker_curve_endpoint_markers(
+                        ctx,
+                        &lane.native_payload,
+                        curve,
+                        &markers_by_id,
+                        &markers,
+                    )
+                })?;
                 if endpoints.len() == 2 {
                     round.with_storage(|| {
                         ctx.insert_string_set(

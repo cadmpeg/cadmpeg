@@ -68,7 +68,10 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         source: u32,
         operation: &'static str,
     ) -> Result<Option<&'a Feature>, CodecError> {
-        Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied().flatten())
+        Ok(ctx
+            .get_hash_map(&self.table, &source, operation)?
+            .copied()
+            .flatten())
     }
 
     /// The feature the last resolvable component names, if one feature
@@ -85,7 +88,8 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
                 |component| self.component(ctx, component, OPERATION),
                 OPERATION,
             )?
-            .copied().flatten())
+            .copied()
+            .flatten())
     }
 
     /// The distinct features the components name, in component order.
@@ -265,7 +269,8 @@ pub(super) fn component_path_feature<'a>(
         }
         Ok(by_source
             .component(ctx, component, OPERATION)?
-            .copied().flatten()
+            .copied()
+            .flatten()
             .map(|feature| (component, feature)))
     };
     match end {
@@ -370,19 +375,20 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             Ord::cmp,
             "sort SLDPRT component path objects",
         )?;
-        let object_kind = |name: &FeatureInputName, feature: &Feature| -> Result<NativeClassKind, CodecError> {
-            let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
-            Ok(if is_profile_feature_object(feature) {
-                NativeClassKind::ProfileFeature
-            } else if kind == NativeClassKind::Unknown
-                && (matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
-                    || feature_inline_operation_fields(ctx, lane, name)?.is_some())
-            {
-                NativeClassKind::Extrusion
-            } else {
-                kind
-            })
-        };
+        let object_kind =
+            |name: &FeatureInputName, feature: &Feature| -> Result<NativeClassKind, CodecError> {
+                let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
+                Ok(if is_profile_feature_object(feature) {
+                    NativeClassKind::ProfileFeature
+                } else if kind == NativeClassKind::Unknown
+                    && (matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
+                        || feature_inline_operation_fields(ctx, lane, name)?.is_some())
+                {
+                    NativeClassKind::Extrusion
+                } else {
+                    kind
+                })
+            };
         let is_dissectable = |feature: &Feature| -> Result<bool, CodecError> {
             const OPERATION: &str = "find SLDPRT dissectable profile properties";
             Ok(
@@ -616,16 +622,28 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
         let mut characters = encoded.char_indices();
         let mut start = 0;
         loop {
-            let end = ctx.find_map(&mut characters, |(offset, character)| Ok((character == ',').then_some(offset)),
-                "parse SLDPRT profile block children")?.unwrap_or(encoded.len());
-            let value = ctx.trim_text(&encoded[start..end], "trim SLDPRT profile child identity")?;
-            let Ok(source) = ctx.parse_text::<u32>(value, "parse SLDPRT profile child identity")? else {
+            let end = ctx
+                .find_map(
+                    &mut characters,
+                    |(offset, character)| Ok((character == ',').then_some(offset)),
+                    "parse SLDPRT profile block children",
+                )?
+                .unwrap_or(encoded.len());
+            let value =
+                ctx.trim_text(&encoded[start..end], "trim SLDPRT profile child identity")?;
+            let Ok(source) = ctx.parse_text::<u32>(value, "parse SLDPRT profile child identity")?
+            else {
                 return Ok(false);
             };
-            if source == 0 || !storage.with_storage(|| ctx.insert_btree_set(&mut children, source, OWNERSHIP))? {
+            if source == 0
+                || !storage
+                    .with_storage(|| ctx.insert_btree_set(&mut children, source, OWNERSHIP))?
+            {
                 return Ok(false);
             }
-            if end == encoded.len() { break; }
+            if end == encoded.len() {
+                break;
+            }
             start = end + 1;
         }
         Some(children)

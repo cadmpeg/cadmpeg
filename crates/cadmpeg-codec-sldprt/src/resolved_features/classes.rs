@@ -521,10 +521,9 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
             let mut first = None;
             let mut multiple = false;
             let mut windows = history.features.windows(6).enumerate();
-            while let Some((index, records)) = ctx.next_charged(
-                &mut windows,
-                "scan SLDPRT idless startup features",
-            )? {
+            while let Some((index, records)) =
+                ctx.next_charged(&mut windows, "scan SLDPRT idless startup features")?
+            {
                 if idless_legacy_startup_shape(ctx, records)? {
                     if first.is_some() {
                         multiple = true;
@@ -639,7 +638,8 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
             let Some(names) = token_names.of(ctx, feature, name_is_unique)? else {
                 continue;
             };
-            let mut candidate_storage = ctx.reserve_scoped(0, "SLDPRT fallback class candidates")?;
+            let mut candidate_storage =
+                ctx.reserve_scoped(0, "SLDPRT fallback class candidates")?;
             let mut candidates = Vec::<&str>::new();
             for key in ctx.admit_iter(names, "scan SLDPRT fallback class names")? {
                 if let Some(classes) =

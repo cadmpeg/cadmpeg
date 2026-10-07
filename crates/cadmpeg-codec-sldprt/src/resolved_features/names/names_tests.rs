@@ -196,9 +196,14 @@ fn class_mismatch_does_not_scan_the_remaining_payload() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 4096;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let actual = crate::records::FeatureInputClass {
-        id: "invalid".into(), parent: "lane".into(), ordinal: 0, offset: 0, name: "sgSketch".into(),
+        id: "invalid".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        name: "sgSketch".into(),
     };
     assert!(!super::class_declarations_match(&ctx, &payload, "lane", &[actual]).unwrap());
 }

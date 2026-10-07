@@ -348,26 +348,82 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         Some(1)
     );
     assert_eq!(
-        feature_inline_operation(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(),
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some(BooleanOp::Join)
     );
     // The 0x01ca family supplies subtraction when its operation byte is zero.
     lane.native_payload[trailer + 4] = 0xca;
-    assert_eq!(feature_inline_operation(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(), Some(BooleanOp::Cut));
-    assert!(feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap().is_some());
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        Some(BooleanOp::Cut)
+    );
+    assert!(feature_inline_operation_fields(
+        &cadmpeg_test_support::service_decode_context(),
+        &lane,
+        &name
+    )
+    .unwrap()
+    .is_some());
     lane.native_payload[trailer + 6] = 2;
-    assert_eq!(feature_inline_operation(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(), Some(BooleanOp::Cut));
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        Some(BooleanOp::Cut)
+    );
     lane.native_payload[trailer + 4] = 0x40;
-    assert_eq!(feature_inline_operation(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(), None);
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
     lane.native_payload[trailer + 5] = 2;
     assert_eq!(
-        feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x0240, 2))
     );
-    assert_eq!(feature_inline_operation(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(), None);
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
     lane.native_payload[trailer + 5] = 1;
     lane.native_payload[trailer + 6] = 3;
-    assert_eq!(feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(), None);
+    assert_eq!(
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
 
     lane.native_payload[trailer + 6] = 0;
     lane.native_payload[trailer + 16..trailer + 19].fill(0);
@@ -376,19 +432,45 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[trailer + 24..trailer + 26].copy_from_slice(&0x0185u16.to_le_bytes());
     lane.native_payload[trailer + 38..trailer + 40].copy_from_slice(&0x019fu16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(),
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some(BooleanOp::Join)
     );
     lane.native_payload[trailer + 26..trailer + 30].copy_from_slice(&70_321u32.to_le_bytes());
     assert_eq!(
-        feature_inline_operation(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(),
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some(BooleanOp::Join)
     );
     lane.native_payload[trailer + 26..trailer + 30].fill(0xff);
-    assert_eq!(feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(), None);
+    assert_eq!(
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
     lane.native_payload[trailer + 26..trailer + 30].fill(0);
     lane.native_payload[trailer + 38..trailer + 40].fill(0);
-    assert_eq!(feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(), None);
+    assert_eq!(
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
 
     lane.native_payload[trailer + 4] = 0xca;
     lane.native_payload[trailer + 16..trailer + 40].fill(0);
@@ -396,10 +478,23 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[trailer + 20..trailer + 24].copy_from_slice(&360u32.to_le_bytes());
     lane.native_payload[trailer + 34..trailer + 36].copy_from_slice(&435u16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 0))
     );
-    assert_eq!(feature_inline_operation(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(), Some(BooleanOp::Cut));
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        Some(BooleanOp::Cut)
+    );
 
     // The common sparse form has its marker at +22 and final token at +38.
     lane.native_payload[trailer + 16..trailer + 40].fill(0);
@@ -408,15 +503,33 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[trailer + 24..trailer + 26].copy_from_slice(&0x04efu16.to_le_bytes());
     lane.native_payload[trailer + 38..trailer + 40].copy_from_slice(&0x008bu16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 2))
     );
-    assert_eq!(feature_inline_operation(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(), Some(BooleanOp::Cut));
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        Some(BooleanOp::Cut)
+    );
 
     // An older schema stores u64(1) in the field before the final token.
     lane.native_payload[trailer + 30] = 1;
     assert_eq!(
-        feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 2))
     );
 
@@ -427,12 +540,22 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[trailer + 24..trailer + 28].copy_from_slice(&0x0252u32.to_le_bytes());
     lane.native_payload[trailer + 38..trailer + 40].copy_from_slice(&0x0097u16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 2))
     );
     lane.native_payload[trailer + 20..trailer + 22].copy_from_slice(&0x00b2u16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation_fields(&cadmpeg_test_support::service_decode_context(), &lane, &name).unwrap(),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 2))
     );
 }

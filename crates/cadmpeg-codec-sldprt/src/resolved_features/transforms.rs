@@ -410,13 +410,15 @@ pub(super) fn dimensioned_circle_transform(
     let Some((first, rest)) = candidates.split_first() else {
         return Ok(None);
     };
-    let (first_signature, _first_storage) = ctx.with_scoped_storage(OPERATION, || signature(*first))?;
+    let (first_signature, _first_storage) =
+        ctx.with_scoped_storage(OPERATION, || signature(*first))?;
     let Some(first_signature) = first_signature else {
         return Ok(None);
     };
     let mut remaining = rest.iter();
     while let Some(transform) = ctx.next_charged(&mut remaining, OPERATION)? {
-        let (other, _other_storage) = ctx.with_scoped_storage(OPERATION, || signature(*transform))?;
+        let (other, _other_storage) =
+            ctx.with_scoped_storage(OPERATION, || signature(*transform))?;
         let Some(other) = other else {
             return Ok(None);
         };
@@ -572,7 +574,9 @@ where
                     else {
                         continue;
                     };
-                    let count = ctx.entry_btree_map(&mut translations, translation, OPERATION)?.or_insert(0_usize);
+                    let count = ctx
+                        .entry_btree_map(&mut translations, translation, OPERATION)?
+                        .or_insert(0_usize);
                     // A count never exceeds the number of compatible pairs.
                     *count += 1;
                 }
@@ -611,7 +615,8 @@ where
                     },
                     translation: (0, 0),
                 };
-                let (translations, _storage) = ctx.with_scoped_storage(OPERATION, || score(axes))?;
+                let (translations, _storage) =
+                    ctx.with_scoped_storage(OPERATION, || score(axes))?;
                 for (translation, count) in ctx.admit_iter(translations, OPERATION)? {
                     ctx.push_vec(
                         &mut scored,
@@ -680,9 +685,22 @@ fn unique_scored_transform(
         return Ok(None);
     }
     let mut remaining = translations.into_iter();
-    let Some(translation) = ctx.find_map(&mut remaining, |(translation, count)| Ok((count == maximum).then_some(translation)), OPERATION)? else { return Ok(None); };
-    Ok((!ctx.any_by(remaining, |(_, count)| Ok(count == maximum), OPERATION)?).then_some(MarkerTransform { translation, ..axes }))
-
+    let Some(translation) = ctx.find_map(
+        &mut remaining,
+        |(translation, count)| Ok((count == maximum).then_some(translation)),
+        OPERATION,
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(
+        (!ctx.any_by(remaining, |(_, count)| Ok(count == maximum), OPERATION)?).then_some(
+            MarkerTransform {
+                translation,
+                ..axes
+            },
+        ),
+    )
 }
 
 #[cfg(test)]

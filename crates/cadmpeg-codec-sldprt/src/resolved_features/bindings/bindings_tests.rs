@@ -1058,8 +1058,20 @@ fn duplicate_binding_votes_release_candidate_identity_storage() {
     let mut storage = ctx.reserve_scoped(0, super::PATTERN_INPUTS).unwrap();
     let mut groups = BTreeMap::new();
     for _ in 0..512 {
-        let (candidate, candidate_storage) = ctx.with_scoped_storage(super::PATTERN_INPUTS, || super::copy_feature_binding_id(&ctx, &id)).unwrap();
-        super::push_distinct_candidate(&ctx, &mut storage, &mut groups, 0, candidate, Some(candidate_storage)).unwrap();
+        let (candidate, candidate_storage) = ctx
+            .with_scoped_storage(super::PATTERN_INPUTS, || {
+                super::copy_feature_binding_id(&ctx, &id)
+            })
+            .unwrap();
+        super::push_distinct_candidate(
+            &ctx,
+            &mut storage,
+            &mut groups,
+            0,
+            candidate,
+            Some(candidate_storage),
+        )
+        .unwrap();
     }
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[&0].len(), 1);

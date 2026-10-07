@@ -25,13 +25,17 @@ fn feature_object_ranges_refuse_collection_limit() {
     let histories = [native_history()];
     let lane = lane_with_position_reference(7);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "index SLDPRT feature object byte ranges", |cap| {
+        ResourceDimension::CollectionItems,
+        "index SLDPRT feature object byte ranges",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).expect("test context");
+            let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+                .expect("test context");
             feature_object_byte_ranges(&ctx, &histories, &lane)
-        });
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -43,9 +47,10 @@ fn feature_object_ranges_refuse_collection_limit() {
 fn feature_object_ranges_refuse_work_limit() {
     let histories = [native_history()];
     let lane = lane_with_position_reference(7);
-    let error = crate::test_support::work_refusal_at("index SLDPRT feature object byte ranges", |ctx| {
-        feature_object_byte_ranges(ctx, &histories, &lane)
-    });
+    let error =
+        crate::test_support::work_refusal_at("index SLDPRT feature object byte ranges", |ctx| {
+            feature_object_byte_ranges(ctx, &histories, &lane)
+        });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits

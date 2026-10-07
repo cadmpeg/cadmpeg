@@ -1070,17 +1070,43 @@ fn operand_candidate_index_preserves_duplicates_and_refuses_before_lookup() {
     let markers = [first, second, third, fourth];
     let entities = markers.iter().collect::<Vec<_>>();
     let operands = [
-        FeatureInputOperand { offset: 0, reference_ref: "first-ref".into(), kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C), entity_index: 7, entity_ref: None },
-        FeatureInputOperand { offset: 1, reference_ref: "second-ref".into(), kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD), entity_index: 0, entity_ref: None },
-        FeatureInputOperand { offset: 2, reference_ref: "third-ref".into(), kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C), entity_index: 8, entity_ref: None },
+        FeatureInputOperand {
+            offset: 0,
+            reference_ref: "first-ref".into(),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C),
+            entity_index: 7,
+            entity_ref: None,
+        },
+        FeatureInputOperand {
+            offset: 1,
+            reference_ref: "second-ref".into(),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
+            entity_index: 0,
+            entity_ref: None,
+        },
+        FeatureInputOperand {
+            offset: 2,
+            reference_ref: "third-ref".into(),
+            kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_814C),
+            entity_index: 8,
+            entity_ref: None,
+        },
     ];
     let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         resolve_scalar_operand_markers(ctx, &entities, &operands)
     };
     let resolved = solve(&cadmpeg_test_support::service_decode_context()).unwrap();
-    assert_eq!(resolved.iter().map(|entity| entity.map(SketchInputEntity::id)).collect::<Vec<_>>(),
-        [None, Some("second"), Some("third")]);
-    for operation in ["index SLDPRT scalar operand candidates", "find indexed SLDPRT operand candidates"] {
+    assert_eq!(
+        resolved
+            .iter()
+            .map(|entity| entity.map(SketchInputEntity::id))
+            .collect::<Vec<_>>(),
+        [None, Some("second"), Some("third")]
+    );
+    for operation in [
+        "index SLDPRT scalar operand candidates",
+        "find indexed SLDPRT operand candidates",
+    ] {
         crate::test_support::work_refusal_at(operation, solve);
     }
 }
