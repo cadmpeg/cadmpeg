@@ -212,15 +212,10 @@ pub(super) fn resolve_two_center_semicircle_profile(
             curve_entities.push(entity);
         }
     }
-    if curve_entities.len() != 2
-        || curve_entities.iter().any(|entity| {
-            !entity
-                .native_ref
-                .as_deref()
-                .is_some_and(|id| record_refs.contains(&id))
-        })
-    {
-        return Ok(());
+    if curve_entities.len() != 2 { return Ok(()); }
+    for entity in &curve_entities {
+        let Some(id) = entity.native_ref.as_deref() else { return Ok(()); };
+        if !ctx.contains(&record_refs, &id, "collect SLDPRT semicircle curves")? { return Ok(()); }
     }
     let mut points = Vec::new();
     for entity in ctx.admit_iter(&entities[..], "collect SLDPRT semicircle points")? {
@@ -307,7 +302,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
     let [first, second] = centers.as_slice() else {
         return Ok(());
     };
-    if first.0 == second.0 || !same_dimension_length(first.5, second.5) {
+    if ctx.equal(first.0, second.0, "collect SLDPRT semicircle centers")? || !same_dimension_length(first.5, second.5) {
         return Ok(());
     }
     let center_delta = Point2::new(second.2.u - first.2.u, second.2.v - first.2.v);
@@ -692,12 +687,10 @@ pub(super) fn resolve_slot_marker_arcs(
         return Ok(());
     };
     let cycle = [first, second, third, fourth];
-    if cycle.iter().enumerate().any(|(index, marker)| {
-        cycle[index + 1..]
-            .iter()
-            .any(|other| marker.id() == other.id())
-    }) {
-        return Ok(());
+    for (index, marker) in cycle.iter().enumerate() {
+        for other in &cycle[index + 1..] {
+            if ctx.equal(marker.id(), other.id(), "collect SLDPRT slot curves")? { return Ok(()); }
+        }
     }
     let mut points = Vec::new();
     for marker in ctx.admit_iter(markers, "collect SLDPRT slot points")? {
@@ -723,7 +716,7 @@ pub(super) fn resolve_slot_marker_arcs(
         return Ok(());
     };
     let center_refs = [first_center, second_center];
-    if center_refs[0] == center_refs[1] {
+    if ctx.equal(center_refs[0], center_refs[1], "collect SLDPRT slot points")? {
         return Ok(());
     }
     let last_native = |native: &str| {
@@ -802,26 +795,24 @@ pub(super) fn resolve_slot_marker_arcs(
         };
         Some([first.as_str(), second.as_str()])
     };
-    let endpoint_not_shared = |entity: usize, other: usize| {
-        let entity = endpoint_refs(entity)?;
-        let other = endpoint_refs(other)?;
-        let mut unique = entity
-            .into_iter()
-            .filter(|endpoint| !other.contains(endpoint));
-        let endpoint = unique.next()?;
-        unique.next().is_none().then_some(endpoint)
+    let endpoint_not_shared = |entity: usize, other: usize| -> Result<Option<&str>, CodecError> {
+        let Some(entity) = endpoint_refs(entity) else { return Ok(None); };
+        let Some(other) = endpoint_refs(other) else { return Ok(None); };
+        let first_unique = !ctx.contains(&other, &entity[0], "find SLDPRT slot endpoints")?;
+        let second_unique = !ctx.contains(&other, &entity[1], "find SLDPRT slot endpoints")?;
+        Ok(match (first_unique, second_unique) { (true, false) => Some(entity[0]), (false, true) => Some(entity[1]), _ => None })
     };
     let previous = cycle_entities[(target_position + 3) % 4];
     let previous_other = cycle_entities[(target_position + 2) % 4];
     let next = cycle_entities[(target_position + 1) % 4];
     let next_other = cycle_entities[(target_position + 2) % 4];
-    let Some(start_ref) = endpoint_not_shared(previous, previous_other) else {
+    let Some(start_ref) = endpoint_not_shared(previous, previous_other)? else {
         return Ok(());
     };
-    let Some(end_ref) = endpoint_not_shared(next, next_other) else {
+    let Some(end_ref) = endpoint_not_shared(next, next_other)? else {
         return Ok(());
     };
-    if start_ref == end_ref {
+    if ctx.equal(start_ref, end_ref, "find SLDPRT slot endpoints")? {
         return Ok(());
     }
     let point_position = |reference: &str| -> Result<Option<Point2>, CodecError> {
@@ -916,7 +907,7 @@ fn closed_cycle_marker_arc_geometry(
     ) else {
         return Ok(None);
     };
-    if target_endpoints[0] == target_endpoints[1] {
+    if ctx.equal(target_endpoints[0], target_endpoints[1], OPERATION)? {
         return Ok(None);
     }
     let mut unique = None;
@@ -932,13 +923,10 @@ fn closed_cycle_marker_arc_geometry(
                 return Ok(false);
             }
             let witness_endpoints = witness.endpoints;
-            if target_endpoints
-                .iter()
-                .any(|endpoint| witness_endpoints.contains(endpoint))
-                || witness_endpoints[0] == witness_endpoints[1]
-            {
-                return Ok(false);
-            }
+            if ctx.contains(&witness_endpoints, &target_endpoints[0], OPERATION)?
+                || ctx.contains(&witness_endpoints, &target_endpoints[1], OPERATION)?
+                || ctx.equal(witness_endpoints[0], witness_endpoints[1], OPERATION)?
+            { return Ok(false); }
             let (Some(witness_start_point), Some(witness_end_point)) = (
                 ctx.get_hash_map(point_by_ref, witness_endpoints[0], OPERATION)?,
                 ctx.get_hash_map(point_by_ref, witness_endpoints[1], OPERATION)?,
@@ -959,29 +947,22 @@ fn closed_cycle_marker_arc_geometry(
                 return Ok(false);
             }
             // Lines joining a target endpoint to a witness endpoint, each counted once.
-            let mut connecting_lines: Vec<&SketchEntity> = Vec::new();
+            let mut connecting_lines: [Option<&SketchEntity>; 2] = [None; 2];
+            let mut connecting_count = 0;
             for endpoint in target_endpoints {
                 for &line in ctx.admit_iter(
                     ctx.get_hash_map(lines_by_endpoint, endpoint, OPERATION)?
                         .map_or(&[][..], Vec::as_slice),
                     OPERATION,
                 )? {
-                    if connecting_lines
-                        .iter()
-                        .any(|existing| std::ptr::eq(*existing, line))
-                        || !ctx.equal(&line.sketch, &target.sketch, OPERATION)?
-                        || !line
-                            .endpoint_refs
-                            .iter()
-                            .any(|endpoint| witness_endpoints.contains(&endpoint.as_str()))
-                    {
-                        continue;
-                    }
                     let ([first_ref, second_ref], SketchGeometryDefinition::Line { start, end }) =
                         (line.endpoint_refs.as_slice(), line.geometry.definition())
-                    else {
-                        continue;
-                    };
+                    else { continue; };
+                    if connecting_lines.iter().flatten().any(|existing| std::ptr::eq(*existing, line))
+                        || !ctx.equal(&line.sketch, &target.sketch, OPERATION)?
+                        || (!ctx.contains(&witness_endpoints, &first_ref.as_str(), OPERATION)?
+                            && !ctx.contains(&witness_endpoints, &second_ref.as_str(), OPERATION)?)
+                    { continue; }
                     let (Some(first), Some(second)) = (
                         ctx.get_hash_map(point_by_ref, first_ref.as_str(), OPERATION)?,
                         ctx.get_hash_map(point_by_ref, second_ref.as_str(), OPERATION)?,
@@ -999,39 +980,22 @@ fn closed_cycle_marker_arc_geometry(
                     if !matches {
                         continue;
                     }
-                    if connecting_lines.len() == 2 {
-                        return Ok(false);
-                    }
-                    connecting_lines.push(line);
+                    if connecting_count == 2 { return Ok(false); }
+                    connecting_lines[connecting_count] = Some(line);
+                    connecting_count += 1;
                 }
             }
-            let [first_line, second_line] = connecting_lines.as_slice() else {
-                return Ok(false);
-            };
-            let connecting_lines = [*first_line, *second_line];
-            if connecting_lines.iter().any(|line| {
-                let [first, second] = line.endpoint_refs.as_slice() else {
-                    return true;
-                };
-                first == second
-                    || (target_endpoints.contains(&first.as_str())
-                        && target_endpoints.contains(&second.as_str()))
-                    || (witness_endpoints.contains(&first.as_str())
-                        && witness_endpoints.contains(&second.as_str()))
-            }) {
-                return Ok(false);
+            let [Some(first_line), Some(second_line)] = connecting_lines else { return Ok(false); };
+            let connecting_lines = [first_line, second_line];
+            for line in connecting_lines {
+                let [first, second] = line.endpoint_refs.as_slice() else { return Ok(false); };
+                if ctx.equal(first, second, OPERATION)?
+                    || (ctx.contains(&target_endpoints, &first.as_str(), OPERATION)? && ctx.contains(&target_endpoints, &second.as_str(), OPERATION)?)
+                    || (ctx.contains(&witness_endpoints, &first.as_str(), OPERATION)? && ctx.contains(&witness_endpoints, &second.as_str(), OPERATION)?)
+                { return Ok(false); }
             }
-            let both_connected = |endpoints: [&str; 2]| {
-                endpoints.iter().all(|endpoint| {
-                    connecting_lines.iter().any(|line| {
-                        line.endpoint_refs
-                            .iter()
-                            .any(|reference| reference.as_str() == *endpoint)
-                    })
-                })
-            };
-            if !both_connected(target_endpoints) || !both_connected(witness_endpoints) {
-                return Ok(false);
+            for endpoint in [target_endpoints[0], target_endpoints[1], witness_endpoints[0], witness_endpoints[1]] {
+                if !ctx.any_by(connecting_lines, |line| ctx.any_by(&line.endpoint_refs, |reference| ctx.equal(reference.as_str(), endpoint, OPERATION), OPERATION), OPERATION)? { return Ok(false); }
             }
             let Some(geometry) = minor_arc_geometry(
                 *target_start_point,
@@ -1381,7 +1345,7 @@ pub(super) fn resolve_connected_marker_arcs(
         let first_distance = (geometry_start.u - first.u).hypot(geometry_start.v - first.v);
         let second_distance = (geometry_start.u - second.u).hypot(geometry_start.v - second.v);
         if second_distance < first_distance {
-            entity.endpoint_refs.reverse();
+            ctx.reverse(&mut entity.endpoint_refs, OPERATION)?;
         }
     }
     Ok(())
@@ -2922,79 +2886,40 @@ pub(super) fn compact_line_region_addresses(
     payload: &[u8],
 ) -> Result<Option<Vec<u16>>, CodecError> {
     const NAME: &[u8] = b"moSketchRegion_c";
-    let Some(offset) = ctx.find_bytes(payload, NAME, "scan SLDPRT compact region")? else {
-        return Ok(None);
-    };
-    if ctx
-        .find_bytes_from(payload, NAME, offset + 1, "scan SLDPRT compact region")?
-        .is_some()
-    {
-        return Ok(None);
-    }
-    let Some(header) = offset.checked_add(NAME.len()) else {
-        return Ok(None);
-    };
-    let Some(region_token) = View::u16_le_at(payload, header) else {
-        return Ok(None);
-    };
-    if region_token == 0 {
-        return Ok(None);
-    }
-    let Some(count) = View::u16_le_at(payload, header + 2).map(usize::from) else {
-        return Ok(None);
-    };
-    if count < 3 {
-        return Ok(None);
-    }
-    // Each region entry consumes a 12-byte record from `header + 4` onward.
-    let Some(entries_start) = header.checked_add(4) else {
-        return Ok(None);
-    };
-    let Some(remaining) = payload.len().checked_sub(entries_start) else {
-        return Ok(None);
-    };
-    if bounded_len(cadmpeg_core::decode::u64_from_index(count), 12, remaining).is_none() {
-        return Ok(None);
-    }
-    let mut addresses = ctx.alloc_filled(count, 0u16, "collect SLDPRT compact region addresses")?;
+    const COLLECT: &str = "collect SLDPRT compact region addresses";
+    const VALIDATE: &str = "validate SLDPRT compact region addresses";
+    let Some(offset) = ctx.find_bytes(payload, NAME, "scan SLDPRT compact region")? else { return Ok(None); };
+    if ctx.find_bytes_from(payload, NAME, offset + 1, "scan SLDPRT compact region")?.is_some() { return Ok(None); }
+    let Some(header) = offset.checked_add(NAME.len()) else { return Ok(None); };
+    let Some(region_token) = View::u16_le_at(payload, header) else { return Ok(None); };
+    if region_token == 0 { return Ok(None); }
+    let Some(count) = View::u16_le_at(payload, header + 2).map(usize::from) else { return Ok(None); };
+    if count < 3 { return Ok(None); }
+    let Some(entries_start) = header.checked_add(4) else { return Ok(None); };
+    let Some(remaining) = payload.len().checked_sub(entries_start) else { return Ok(None); };
+    if bounded_len(cadmpeg_core::decode::u64_from_index(count), 12, remaining).is_none() { return Ok(None); }
+    let (mut addresses, addresses_storage) = ctx.with_scoped_storage(COLLECT, || ctx.alloc_filled(count, 0u16, COLLECT))?;
     let mut entry_token = None;
-    for (index, slot) in addresses.iter_mut().enumerate() {
-        let Some(entry) = header.checked_add(4 + index * 12) else {
-            return Ok(None);
-        };
-        let Some(token) = View::u16_le_at(payload, entry) else {
-            return Ok(None);
-        };
+    if !ctx.all_by(addresses.iter_mut().enumerate(), |(index, slot)| {
+        let Some(entry) = header.checked_add(4 + index * 12) else { return Ok(false); };
+        let Some(token) = View::u16_le_at(payload, entry) else { return Ok(false); };
         if !matches!(token, 0x80e1 | 0x8386 | 0xbc87)
             || entry_token.is_some_and(|existing| existing != token)
             || payload.get(entry + 4..entry + 8) != Some(&[0xff; 4])
-            || payload.get(entry + 8..entry + 12) != Some(&[0; 4])
-        {
-            return Ok(None);
-        }
+            || payload.get(entry + 8..entry + 12) != Some(&[0; 4]) { return Ok(false); }
         entry_token = Some(token);
-        let Some(address) = View::u16_le_at(payload, entry + 2) else {
-            return Ok(None);
-        };
+        let Some(address) = View::u16_le_at(payload, entry + 2) else { return Ok(false); };
         *slot = address;
-    }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(count),
-        "validate SLDPRT compact region addresses",
-    )?;
-    let mut seen = ctx.alloc_filled(count, false, "validate SLDPRT compact region addresses")?;
-    for address in &addresses {
-        let Some(index) = usize::from(*address)
-            .checked_sub(1)
-            .filter(|index| *index < count)
-        else {
-            return Ok(None);
-        };
-        if seen[index] {
-            return Ok(None);
-        }
+        Ok(true)
+    }, COLLECT)? { return Ok(None); }
+    let (mut seen, _seen_storage) = ctx.with_scoped_storage(VALIDATE, || ctx.alloc_filled(count, false, VALIDATE))?;
+    if !ctx.all_by(&addresses, |address| {
+        let Some(index) = usize::from(*address).checked_sub(1).filter(|index| *index < count) else { return Ok(false); };
+        if seen[index] { return Ok(false); }
         seen[index] = true;
-    }
+        Ok(true)
+    }, VALIDATE)? { return Ok(None); }
+    addresses_storage.commit()?;
     Ok(Some(addresses))
 }
 
@@ -3002,18 +2927,15 @@ pub(super) fn compact_line_chain_addresses(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Option<Vec<u16>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(payload.len()),
-        "scan SLDPRT compact line chain",
-    )?;
+    const SCAN: &str = "scan SLDPRT compact line chain";
+    const COLLECT: &str = "collect SLDPRT compact chain addresses";
+    const VALIDATE: &str = "validate SLDPRT compact line chain";
     let mut selected = None;
-    for offset in 0..payload.len() {
+    let ambiguous = ctx.any_by(0..payload.len(), |offset| {
         let Some((bytes, count)) = (|| {
             let bytes = payload.get(offset..)?;
             let count = usize::from(View::u16_le_at(bytes, 0)?);
-            if !(3..=64).contains(&count) {
-                return None;
-            }
+            if !(3..=64).contains(&count) { return None; }
             let addresses_end = 2usize.checked_add(count.checked_mul(4)?)?;
             let trailer = bytes.get(addresses_end..addresses_end.checked_add(40)?)?;
             if View::u32_le_at(trailer, 0)? != 1
@@ -3024,53 +2946,30 @@ pub(super) fn compact_line_chain_addresses(
                 || View::u32_le_at(trailer, 22)? != u32::try_from(count + 1).ok()?
                 || View::u32_le_at(trailer, 26)? != u32::try_from(count + 1).ok()?
                 || trailer.get(30..36)? != [0xff, 0xfe, 0xff, 0, 0, 0]
-                || trailer.get(36..40)? != [0xff; 4]
-            {
-                return None;
-            }
+                || trailer.get(36..40)? != [0xff; 4] { return None; }
             Some((bytes, count))
-        })() else {
-            continue;
-        };
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(count),
-            "validate SLDPRT compact line chain",
-        )?;
-        let mut addresses =
-            ctx.alloc_filled(count, 0u16, "collect SLDPRT compact chain addresses")?;
+        })() else { return Ok(false); };
+        let (mut addresses, storage) = ctx.with_scoped_storage(COLLECT, || ctx.alloc_filled(count, 0u16, COLLECT))?;
         let mut seen = [false; 64];
-        let mut valid = true;
-        for (index, address) in addresses.iter_mut().enumerate() {
-            let parsed =
-                View::u32_le_at(bytes, 2 + index * 4).and_then(|value| u16::try_from(value).ok());
-            let Some(parsed) = parsed else {
-                valid = false;
-                break;
-            };
-            let Some(position) = usize::from(parsed)
-                .checked_sub(1)
-                .filter(|value| *value < count)
-            else {
-                valid = false;
-                break;
-            };
-            if seen[position] {
-                valid = false;
-                break;
-            }
+        let valid = ctx.all_by(addresses.iter_mut().enumerate(), |(index, address)| {
+            let Some(parsed) = View::u32_le_at(bytes, 2 + index * 4).and_then(|value| u16::try_from(value).ok()) else { return Ok(false); };
+            let Some(position) = usize::from(parsed).checked_sub(1).filter(|value| *value < count) else { return Ok(false); };
+            if seen[position] { return Ok(false); }
             seen[position] = true;
             *address = parsed;
-        }
-        if !valid {
-            continue;
-        }
+            Ok(true)
+        }, VALIDATE)?;
+        if !valid { return Ok(false); }
         match selected.as_ref() {
-            Some(previous) if previous != &addresses => return Ok(None),
-            Some(_) => {}
-            None => selected = Some(addresses),
+            Some((previous, _)) => Ok(!ctx.equal(previous, &addresses, VALIDATE)?),
+            None => { selected = Some((addresses, storage)); Ok(false) }
         }
+    }, SCAN)?;
+    if ambiguous { return Ok(None); }
+    match selected {
+        Some((addresses, storage)) => { storage.commit()?; Ok(Some(addresses)) }
+        None => Ok(None),
     }
-    Ok(selected)
 }
 
 #[cfg(test)]

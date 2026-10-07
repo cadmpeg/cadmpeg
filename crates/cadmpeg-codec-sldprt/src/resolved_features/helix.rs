@@ -19,7 +19,7 @@ pub(super) fn fit_helix_polyline(
         return Ok(None);
     }
     let revolutions = revolutions.get();
-    let mut parameters = ctx.alloc_filled(points.len(), 0.0, "fit SLDPRT helix parameters")?;
+    let (mut parameters, _parameters_storage) = ctx.with_scoped_storage("fit SLDPRT helix parameters", || ctx.alloc_filled(points.len(), 0.0, "fit SLDPRT helix parameters"))?;
     for (index, point) in ctx
         .admit_iter(&points[1..], "fit SLDPRT helix work")?
         .enumerate()

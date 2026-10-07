@@ -271,22 +271,12 @@ fn compact_body_retention_mode(
     let Some(scan_end) = end.checked_sub(HEADER_LEN - 1) else {
         return Ok(None);
     };
-    ctx.charge_work(
-        u64_from_index((start..scan_end).len())
-            .checked_mul(u64_from_index(HEADER_LEN))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
+    let token = token.to_le_bytes();
+    let Some(offset) = ctx.find_by((start..scan_end).rev(), |offset| Ok(compact_body_state_id(payload, *offset, token).is_some()), OPERATION)? else { return Ok(None); };
     Ok((|| {
-        let token = token.to_le_bytes();
-        let state_end = (start..scan_end)
-            .filter(|offset| compact_body_state_id(payload, *offset, token).is_some())
-            .map(|offset| offset + HEADER_LEN)
-            .max()?;
+        let state_end = offset + HEADER_LEN;
         let field = payload.get(state_end..state_end + 10)?;
-        if field[0..2] != [0x30, 0x80] || field[6..10] != [0; 4] {
-            return None;
-        }
+        if field[0..2] != [0x30, 0x80] || field[6..10] != [0; 4] { return None; }
         match View::u32_le_at(field, 2)? {
             0 => Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected),
             1 => Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected),
@@ -322,13 +312,7 @@ fn compact_body_state_ids(
     let Some(scan_end) = end.checked_sub(HEADER_LEN - 1) else {
         return Ok(result);
     };
-    ctx.charge_work(
-        u64_from_index((start..scan_end).len())
-            .checked_mul(u64_from_index(HEADER_LEN))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    for offset in start..scan_end {
+    for offset in ctx.admit_iter(start..scan_end, OPERATION)? {
         let Some(body_id) = compact_body_state_id(payload, offset, token) else {
             continue;
         };
@@ -349,10 +333,6 @@ pub(crate) fn compact_edge_reference_list_for_feature(
     if let Some(references) = compact_component_reference_list_at(ctx, payload, offset)? {
         return Ok(Some(references));
     }
-    ctx.charge_work(
-        u64_from_index(feature_kind.len()),
-        "decode SLDPRT feature edge references",
-    )?;
     if !feature_kind.eq_ignore_ascii_case("VarFillet") {
         return Ok(None);
     }
@@ -382,14 +362,11 @@ pub(super) fn compact_edge_selections(
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
     let dimension_classes = fillet_dimension_classes(ctx, lane)?;
-    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
-    let mut compact_edge_classes = lane
-        .classes
-        .iter()
-        .filter(|class| class.name == "moCompEdge_c");
-    let compact_edge_class = compact_edge_classes
-        .next()
-        .filter(|_| compact_edge_classes.next().is_none());
+    let mut compact_edge_class = None;
+    if ctx.any_by(&lane.classes, |class| {
+        if class.name != "moCompEdge_c" { return Ok(false); }
+        Ok(compact_edge_class.replace(class).is_some())
+    }, OPERATION)? { compact_edge_class = None; }
     let class_name_end = compact_edge_class.and_then(|class| {
         usize::try_from(class.offset)
             .ok()?
@@ -447,8 +424,7 @@ pub(super) fn compact_edge_selections(
             "deduplicate SLDPRT compact edge selection offsets",
         )?;
         let mut feature_selections = Vec::new();
-        for (offset, local_edge_ids) in selections {
-            ctx.charge_work(1, OPERATION)?;
+        for (offset, local_edge_ids) in ctx.admit_iter(selections, OPERATION)? {
             let references = compact_edge_reference_list_for_feature(
                 ctx,
                 &lane.native_payload,
@@ -671,26 +647,20 @@ pub(super) fn compact_surface_selections(
     identities: &[crate::records::FeatureInputGeneratedSurfaceIdentity],
 ) -> Result<Vec<FeatureInputSurfaceSelection>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact surface selections";
-    let mut classes = lane
-        .classes
-        .iter()
-        .filter(|class| class.name == "moCompSurfaceBody_c");
-    let surface_class = classes.next().filter(|_| classes.next().is_none());
+    let mut surface_class = None;
+    if ctx.any_by(&lane.classes, |class| {
+        if class.name != "moCompSurfaceBody_c" { return Ok(false); }
+        Ok(surface_class.replace(class).is_some())
+    }, OPERATION)? { surface_class = None; }
     let surface_token = surface_class.and_then(|class| {
         usize::try_from(class.offset)
             .ok()
             .and_then(|offset| offset.checked_add(6 + class.name.len()))
             .and_then(|offset| lane.native_payload.get(offset..offset + 2))
     });
-    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
+    let mut cylinder_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut cylinder_reference_tokens = HashSet::new();
-    for class in &lane.classes {
-        ctx.charge_work(
-            u64_from_index(class.name.len())
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
+    for class in ctx.admit_iter(&lane.classes, OPERATION)? {
         if class.name != "moCylinderRef_w" {
             continue;
         }
@@ -705,7 +675,7 @@ pub(super) fn compact_surface_selections(
         else {
             continue;
         };
-        ctx.insert_hash_set(&mut cylinder_reference_tokens, token, OPERATION)?;
+        cylinder_storage.with_storage(|| ctx.insert_hash_set(&mut cylinder_reference_tokens, token, OPERATION))?;
     }
     let mirror_surface_prefix = mirror_surface_type_prefix(ctx, lane)?;
     let operation_classes = OperationSurfaceClasses::new(ctx, lane, identities)?;
@@ -717,8 +687,7 @@ pub(super) fn compact_surface_selections(
         .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
-    for (index, &(name, feature, _)) in objects.iter().enumerate() {
-        ctx.charge_work(1, OPERATION)?;
+    for (index, &(name, feature, _)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
         let classified = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let kind = match classified {
             NativeClassKind::Unknown if matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") => {
@@ -738,19 +707,7 @@ pub(super) fn compact_surface_selections(
             continue;
         };
         let next_object = if kind == NativeClassKind::Extrusion {
-            let mut next_object = None;
-            for next in &objects[index + 1..] {
-                let work = u64_from_index(next.1.id.len())
-                    .checked_add(u64_from_index(feature.id.len()))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
-                if next.1.id != feature.id {
-                    next_object = Some(next);
-                    break;
-                }
-            }
-            next_object
+            ctx.find_by(&objects[index + 1..], |next| Ok(!ctx.equal(&next.1.id, &feature.id, OPERATION)?), OPERATION)?
         } else {
             objects.get(index + 1)
         };
@@ -761,8 +718,7 @@ pub(super) fn compact_surface_selections(
             NativeClassKind::Thicken => {
                 let mut candidates = Vec::new();
                 if let (Some(token), Some(scan_end)) = (surface_token, end.checked_sub(105)) {
-                    for offset in start..scan_end {
-                        ctx.charge_work(1, OPERATION)?;
+                    for offset in ctx.admit_iter(start..scan_end, OPERATION)? {
                         if lane.native_payload.get(offset..offset + 2) != Some(token) {
                             continue;
                         }
@@ -780,8 +736,7 @@ pub(super) fn compact_surface_selections(
             NativeClassKind::Extrusion => {
                 let mut candidates = Vec::new();
                 if let Some(scan_end) = end.checked_sub(103) {
-                    for offset in start..scan_end {
-                        ctx.charge_work(1, OPERATION)?;
+                    for offset in ctx.admit_iter(start..scan_end, OPERATION)? {
                         let marker = match compact_extrusion_to_face_at(
                             ctx,
                             &lane.native_payload,
@@ -854,12 +809,10 @@ pub(super) fn compact_surface_selections(
                         Vec::new()
                     };
                 let mut candidates = Vec::new();
-                for candidate in cylinder_references
-                    .into_iter()
-                    .chain(component_references)
-                    .chain(component_face_references)
+                for candidate in ctx.admit_iter(cylinder_references, OPERATION)?
+                    .chain(ctx.admit_iter(component_references, OPERATION)?)
+                    .chain(ctx.admit_iter(component_face_references, OPERATION)?)
                 {
-                    ctx.charge_work(1, OPERATION)?;
                     ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
                     candidates.push(candidate);
                 }
@@ -876,8 +829,7 @@ pub(super) fn compact_surface_selections(
                     start.checked_add(12),
                     end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()),
                 ) {
-                    for marker in scan_start..scan_end {
-                        ctx.charge_work(16, OPERATION)?;
+                    for marker in ctx.admit_iter(scan_start..scan_end, OPERATION)? {
                         if lane
                             .native_payload
                             .get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
@@ -1008,19 +960,10 @@ fn compact_extrusion_endpoint_selector_for_marker(
     end: usize,
     marker: usize,
 ) -> Result<Option<u32>, CodecError> {
-    for body in start..end {
-        ctx.charge_work(1, "scan SLDPRT extrusion endpoint selectors")?;
-        let Some((candidate, kind)) = compact_extrusion_to_vertex_at(ctx, payload, body, end)?
-        else {
-            continue;
-        };
-        if candidate == marker {
-            if let Some(selector) = kind.endpoint_selector() {
-                return Ok(Some(selector));
-            }
-        }
-    }
-    Ok(None)
+    ctx.find_map(start..end, |body| {
+        let Some((candidate, kind)) = compact_extrusion_to_vertex_at(ctx, payload, body, end)? else { return Ok(None); };
+        Ok((candidate == marker).then(|| kind.endpoint_selector()).flatten())
+    }, "scan SLDPRT extrusion endpoint selectors")
 }
 
 fn fillet_face_selection_candidates(
@@ -1059,10 +1002,9 @@ fn fillet_face_selection_candidates(
     )?;
     let mut candidates = Vec::new();
     if let Some(scan_end) = end.checked_sub(6) {
-        for (body, token) in class_bodies {
+        for (body, token) in ctx.admit_iter(class_bodies, OPERATION)? {
             let token = token.to_le_bytes();
-            for offset in body..scan_end {
-                ctx.charge_work(6, OPERATION)?;
+            for offset in ctx.admit_iter(body..scan_end, OPERATION)? {
                 let header = lane.native_payload.get(offset..offset + 6);
                 if offset != body
                     && (header.and_then(|header| header.get(..2)) != Some(token.as_slice())
@@ -1109,8 +1051,7 @@ fn planar_surface_selection_candidates(
     const OPERATION: &str = "decode SLDPRT planar surface candidates";
     let mut candidates = Vec::new();
     if let Some(scan_end) = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) {
-        for marker in start..scan_end {
-            ctx.charge_work(4, OPERATION)?;
+        for marker in ctx.admit_iter(start..scan_end, OPERATION)? {
             let Some(selector) = marker
                 .checked_sub(8)
                 .and_then(|start| payload.get(start..marker - 4))
@@ -1149,8 +1090,7 @@ fn face_reference_plane_selection_candidates(
             return Ok(Vec::new());
         };
         if let Some(scan_end) = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) {
-            for marker in body..scan_end {
-                ctx.charge_work(16, OPERATION)?;
+            for marker in ctx.admit_iter(body..scan_end, OPERATION)? {
                 if lane
                     .native_payload
                     .get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
@@ -1237,8 +1177,7 @@ fn operation_surface_selection_candidates(
     if operation == FeatureClass::CutWithSurface {
         let mut candidates = Vec::new();
         if let Some(scan_end) = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) {
-            for marker in start..scan_end {
-                ctx.charge_work(4, OPERATION)?;
+            for marker in ctx.admit_iter(start..scan_end, OPERATION)? {
                 let Some(selector) = marker
                     .checked_sub(8)
                     .and_then(|start| lane.native_payload.get(start..marker - 4))
@@ -1259,12 +1198,8 @@ fn operation_surface_selection_candidates(
                 )? {
                     Some(references) => {
                         let mut components = Vec::new();
-                        for reference in references {
-                            for component in reference {
-                                ctx.charge_work(1, OPERATION)?;
-                                ctx.reserve_vec(&mut components, 1, OPERATION)?;
-                                components.push(component);
-                            }
+                        for reference in ctx.admit_iter(references, OPERATION)? {
+                            ctx.extend_vec(&mut components, reference, OPERATION)?;
                         }
                         Some(components)
                     }
@@ -1383,8 +1318,7 @@ fn compact_surface_selection_candidates_for_class(
         return Ok(Vec::new());
     }
     let mut candidates = Vec::new();
-    for marker in body..=last_marker {
-        ctx.charge_work(1, OPERATION)?;
+    for marker in ctx.admit_iter(body..=last_marker, OPERATION)? {
         if let Some(components) = compact_surface_selection_at(ctx, bounded_payload, marker)? {
             ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
             candidates.push((marker, components));
@@ -1971,8 +1905,7 @@ fn component_face_reference_candidates(
     };
     let mut candidates = Vec::new();
     if let Some(scan_end) = bounded_end.checked_sub(8) {
-        for offset in start..scan_end {
-            ctx.charge_work(2, OPERATION)?;
+        for offset in ctx.admit_iter(start..scan_end, OPERATION)? {
             if View::u16_le_at(bounded_payload, offset) != Some(class_token) {
                 continue;
             }
@@ -2160,8 +2093,7 @@ fn flatten_surface_references(
         return Ok(None);
     };
     let mut components = Vec::new();
-    for reference in references {
-        ctx.charge_work(1, OPERATION)?;
+    for reference in ctx.admit_iter(references, OPERATION)? {
         for component in reference {
             ctx.charge_work(1, OPERATION)?;
             ctx.reserve_vec(&mut components, 1, OPERATION)?;
@@ -2255,8 +2187,7 @@ fn repeated_edge_selections(
     let token = token.to_le_bytes();
     let mut selections = Vec::new();
     if let Some(scan_end) = end.checked_sub(110) {
-        for offset in start..scan_end {
-            ctx.charge_work(3, OPERATION)?;
+        for offset in ctx.admit_iter(start..scan_end, OPERATION)? {
             if payload.get(offset..offset + 2) != Some(token.as_slice())
                 || payload.get(offset + 2) != Some(&2)
             {
@@ -2284,8 +2215,7 @@ fn edge_selection_vectors_in_interval(
         start.checked_add(12),
         end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()),
     ) {
-        for marker in scan_start..scan_end {
-            ctx.charge_work(16, OPERATION)?;
+        for marker in ctx.admit_iter(scan_start..scan_end, OPERATION)? {
             if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
                 != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
             {
@@ -3071,8 +3001,7 @@ pub(crate) fn compact_edge_selection_at(
     };
     if let Some(references) = compact_component_reference_list_at(ctx, payload, marker)? {
         let mut ids = Vec::new();
-        for reference in references {
-            ctx.charge_work(1, OPERATION)?;
+        for reference in ctx.admit_iter(references, OPERATION)? {
             if let Some(id) = reference.last().and_then(|entry| entry.local_id) {
                 ctx.reserve_vec(&mut ids, 1, OPERATION)?;
                 ids.push(id);
@@ -3312,8 +3241,7 @@ pub(super) fn variable_fillet_control_references(
         return Ok(None);
     };
     let mut controls = Vec::new();
-    for marker in marker_start..marker_end {
-        ctx.charge_work(1, OPERATION)?;
+    for marker in ctx.admit_iter(marker_start..marker_end, OPERATION)? {
         if lane
             .native_payload
             .get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
@@ -3373,17 +3301,17 @@ pub(crate) fn variable_fillet_dimension_index_for_feature(
     feature: &crate::records::Feature,
     name: &str,
 ) -> Result<Option<usize>, CodecError> {
-    if name == "D1" && !feature.parameters.contains_key("D01") {
+    if name == "D1" && !ctx.contains_key_btree_map(&feature.parameters, "D01", "resolve SLDPRT variable fillet dimension name")? {
         // SW2013-era lanes use D1 for the second variable-radius control.
         return Ok(Some(1));
     }
-    let Some(suffix) = name.strip_prefix("D0") else {
+    let Some(suffix) = ctx.strip_prefix(name, "D0", "resolve SLDPRT variable fillet dimension name")? else {
         return Ok(None);
     };
     if suffix.is_empty() {
         return Ok(Some(0));
     }
-    if suffix.starts_with('0') || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
+    if suffix.starts_with('0') || !ctx.all_by(suffix.bytes(), |byte| Ok(byte.is_ascii_digit()), "parse SLDPRT variable fillet dimension index")? {
         return Ok(None);
     }
     Ok(ctx
@@ -4177,9 +4105,9 @@ pub(super) fn read_compact_body_ids(
 ) -> Result<Vec<u32>, CodecError> {
     let mut result = Vec::new();
     ctx.reserve_capacity(&mut result, bytes.len() / 4, operation)?;
-    ctx.charge_work(u64_from_index(bytes.len() / 4), operation)?;
     let mut view = View::over_retained(bytes);
-    while let Some(id) = view.u32_le() {
+    for _ in ctx.admit_iter(0..bytes.len() / 4, operation)? {
+        let Some(id) = view.u32_le() else { break; };
         ctx.push_vec(&mut result, id, operation)?;
     }
     Ok(result)
