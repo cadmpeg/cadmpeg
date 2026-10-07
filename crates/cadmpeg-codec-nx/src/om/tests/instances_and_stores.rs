@@ -488,7 +488,7 @@ fn om_geometry_instance_reference_requires_one_complete_field() {
         crate::test_support::with_decode_context(|ctx| PatternReferences::read(ctx, record))
             .unwrap()
             .expect("complete field");
-    let references = field.into_references();
+    let references: Vec<_> = field.into_references().collect();
     assert_eq!(references[0].token.value(), 801);
     assert_eq!(references[0].offset, 205);
 

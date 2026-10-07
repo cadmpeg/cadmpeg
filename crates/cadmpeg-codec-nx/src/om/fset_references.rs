@@ -20,8 +20,8 @@ impl<B> FsetReferences<B> {
         first: [(u16, B); 2],
         second: [(u16, B); 3],
     ) -> Result<Self, &'static str> {
-        match Self::validate(offset, &selector, |selector| {
-            Ok::<_, std::convert::Infallible>(selector.chars())
+        match Self::validate(offset, &selector, |selector, predicate| {
+            Ok::<_, std::convert::Infallible>(selector.chars().all(predicate))
         }) {
             Ok(valid) => valid?,
             Err(error) => match error {},
@@ -34,31 +34,13 @@ impl<B> FsetReferences<B> {
         })
     }
 
-    fn from_wire(
-        ctx: &DecodeContext<'_>,
-        offset: u64,
-        selector: String,
-        first: [(u16, B); 2],
-        second: [(u16, B); 3],
-    ) -> Result<Result<Self, &'static str>, CodecError> {
-        Ok(Self::validate(offset, &selector, |selector| {
-            ctx.admit_iter(selector, "NX FSET selector syntax")
-        })?
-        .map(|()| Self {
-            offset,
-            selector,
-            first,
-            second,
-        }))
-    }
-
-    fn validate<'a, E, I: Iterator<Item = char>>(
+    fn validate<'a, E>(
         offset: u64,
         selector: &'a str,
-        admit: impl FnOnce(&'a str) -> Result<I, E>,
+        admit: impl FnOnce(&'a str, fn(char) -> bool) -> Result<bool, E>,
     ) -> Result<Result<(), &'static str>, E> {
         if !(1..=247).contains(&selector.len())
-            || !admit(selector)?.all(|ch| ch.is_ascii_graphic() && ch != '>')
+            || !admit(selector, |ch| ch.is_ascii_graphic() && ch != '>')?
         {
             return Ok(Err(
                 "selector: requires 1 through 247 graphic ASCII bytes excluding >",
@@ -113,7 +95,7 @@ impl FsetReferences<()> {
             *at += 3;
             Some((index, ()))
         };
-        let decode = |start: usize| -> Result<Option<Self>, CodecError> {
+        let decode = |start: usize| -> Result<Option<_>, CodecError> {
             if bytes.get(start) != Some(&1) {
                 return Ok(None);
             }
@@ -164,20 +146,18 @@ impl FsetReferences<()> {
             if bytes.get(at..end) != Some(&[0, 3, 0]) {
                 return Ok(None);
             }
-            Ok(Self::from_wire(
-                ctx,
-                cadmpeg_core::decode::u64_from_index(record.payload_offset() + start),
-                ctx.format_retained(format_args!("{selector}"), "NX FSET selector")?,
-                first,
-                second,
-            )?
-            .ok())
+            let offset = cadmpeg_core::decode::u64_from_index(record.payload_offset() + start);
+            if Self::validate(offset, selector, |selector, predicate| {
+                ctx.all_by(selector.chars(), |ch| Ok(predicate(ch)), "NX FSET selector syntax")
+            })?.is_err() { return Ok(None); }
+            Ok(Some((offset, selector, first, second)))
         };
         let Some(last) = bytes.len().checked_sub(1) else {
             return Ok(None);
         };
         let mut candidate = None;
-        for start in ctx.admit_iter(&(0..last), "NX FSET reference candidate search")? {
+        let mut starts = 0..last;
+        while let Some(start) = ctx.next_charged(&mut starts, "NX FSET reference candidate search")? {
             let Some(next) = decode(start)? else {
                 continue;
             };
@@ -186,7 +166,9 @@ impl FsetReferences<()> {
             }
             candidate = Some(next);
         }
-        Ok(candidate)
+        let Some((offset, selector, first, second)) = candidate else { return Ok(None); };
+        let selector = ctx.copy_retained_text(selector, "NX FSET selector")?;
+        Ok(Some(Self { offset, selector, first, second }))
     }
 
     pub(crate) fn resolve<B>(

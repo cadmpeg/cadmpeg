@@ -83,26 +83,22 @@ pub(crate) fn draft_feature_payload_references(
             origin: cadmpeg_core::decode::u64_from_index(record.payload_offset() + start),
         })
     };
-    Ok({
-        let Some(candidate_end_0) = record.payload().len().checked_sub(GRAPH_PREFIX.len()) else {
-            return Ok(None);
-        };
-        let mut candidates = (ctx.admit_iter(
-            &(PAYLOAD_PREFIX.len()..=candidate_end_0),
-            "NX draft feature payload references candidate search",
-        )?)
-        .filter(|&start| {
-            record.payload().get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
-        })
-        .filter_map(decode);
-        let first = candidates.next();
-        let second = candidates.next();
-        if second.is_none() {
-            first
-        } else {
-            None
+    let Some(candidate_end) = record.payload().len().checked_sub(GRAPH_PREFIX.len()) else {
+        return Ok(None);
+    };
+    let mut candidate = None;
+    let mut starts = PAYLOAD_PREFIX.len()..=candidate_end;
+    while let Some(start) = ctx.next_charged(&mut starts,
+        "NX draft feature payload references candidate search")? {
+        if record.payload().get(start..start + GRAPH_PREFIX.len()) != Some(&GRAPH_PREFIX) {
+            continue;
         }
-    })
+        if let Some(next) = decode(start) {
+            if candidate.is_some() { return Ok(None); }
+            candidate = Some(next);
+        }
+    }
+    Ok(candidate)
 }
 
 #[cfg(test)]
@@ -167,7 +163,7 @@ mod tests {
                     matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
                     && limit.operation == "NX draft feature payload references candidate search"
-                    && limit.additional == 5)
+                    && limit.additional == 1)
                 );
                 if let cadmpeg_core::CodecError::ResourceLimit(limit) = error {
                     assert_eq!(ctx.resource_refusal(), Some(limit));

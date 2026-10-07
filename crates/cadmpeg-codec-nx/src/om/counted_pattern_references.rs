@@ -40,8 +40,8 @@ impl<B> CountedPatternReferences<B> {
         B: 'a,
     {
         let end = admit(entries)?
-            .try_fold(offset, |end, (token, _)| {
-                end.checked_add(u64_from_index(token.raw().len()))
+            .fold(Some(offset), |end, (token, _)| {
+                end.and_then(|end| end.checked_add(u64_from_index(token.raw().len())))
             })
             .and_then(|end| end.checked_add(2))
             .and_then(|end| end.checked_add(u64_from_index(TRAILER.len())));
@@ -92,52 +92,51 @@ impl CountedPatternReferences<()> {
             return Ok(None);
         }
         let bytes = record.payload();
-        let shape = |start: usize| {
+        let shape = |start: usize| -> Result<Option<(usize, u8)>, CodecError> {
             if bytes.get(start) != Some(&1) {
-                return None;
+                return Ok(None);
             }
-            let count = bytes.get(start + 1)?.checked_sub(1)?;
-            if count == 0 {
-                return None;
+            let Some(count @ 1..) = bytes.get(start + 1).and_then(|value| value.checked_sub(1)) else {
+                return Ok(None);
+            };
+            let Some(at) = start.checked_add(2) else { return Ok(None); };
+            let Some(remaining) = bytes.len().checked_sub(at) else { return Ok(None); };
+            if cadmpeg_core::decode::bounded_len(u64::from(count), 2, remaining).is_none() {
+                return Ok(None);
             }
-            let at = start.checked_add(2)?;
-            cadmpeg_core::decode::bounded_len(u64::from(count), 2, bytes.len().checked_sub(at)?)?;
             let mut scan_at = at;
-            for _ in propagate_resource!(ctx
-                .admit_iter(&(0..count), "NX counted pattern reference validation")
-                .map_err(CodecError::from))
-            {
-                let token = PayloadIndexToken::read(bytes.get(scan_at..)?)?;
+            let mut rows = 0..count;
+            while ctx.next_charged(&mut rows, "NX counted pattern reference validation")?.is_some() {
+                let Some(token) = bytes.get(scan_at..).and_then(PayloadIndexToken::read) else {
+                    return Ok(None);
+                };
                 scan_at += token.raw().len();
             }
-            let end = scan_at.checked_add(TRAILER.len())?;
-            if bytes.get(scan_at..end) != Some(&TRAILER) {
-                return None;
+            let Some(end) = scan_at.checked_add(TRAILER.len()) else { return Ok(None); };
+            if bytes.get(scan_at..end) != Some(&TRAILER)
+                || record.payload_offset().checked_add(end).is_none()
+            {
+                return Ok(None);
             }
-            record.payload_offset().checked_add(end)?;
-            (Some((start, count))).map(Ok)
+            Ok(Some((start, count)))
         };
-        let Some((start, count)) = ({
-            let mut candidates = ctx
-                .admit_iter(&(0..bytes.len()), "scan NX counted pattern references")?
-                .filter_map(shape);
-            let first = candidates.next().transpose()?;
-            let second = candidates.next().transpose()?;
-            if second.is_none() {
-                first
-            } else {
-                None
+        let mut candidate = None;
+        let mut starts = 0..bytes.len();
+        while let Some(start) = ctx.next_charged(&mut starts, "scan NX counted pattern references")? {
+            if let Some(next) = shape(start)? {
+                if candidate.is_some() { return Ok(None); }
+                candidate = Some(next);
             }
-        }) else {
-            return Ok(None);
-        };
+        }
+        let Some((start, count)) = candidate else { return Ok(None); };
         let count = usize::from(count);
 
         let mut entries = ctx.collection_vec(count, "NX counted pattern references")?;
         let Some(mut at) = start.checked_add(2) else {
             return Ok(None);
         };
-        for _ in ctx.admit_iter(&(0..count), "NX counted pattern reference materialization")? {
+        let mut rows = 0..count;
+        while ctx.next_charged(&mut rows, "NX counted pattern reference materialization")?.is_some() {
             let Some(token) = bytes.get(at..).and_then(PayloadIndexToken::read) else {
                 return Ok(None);
             };

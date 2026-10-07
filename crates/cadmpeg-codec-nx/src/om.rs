@@ -1929,7 +1929,7 @@ pub(crate) fn sketch_payload_references(
     if let Some(error) = failure {
         return Err(error);
     }
-    Ok(field)
+    field.map(|shape| shape.materialize(ctx)).transpose()
 }
 
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
@@ -3960,22 +3960,21 @@ pub(crate) fn operation_common_frames(
         let prefix = CommonFramePrefix::read(bytes, marker)?;
         let state_at = prefix.byte_len();
         let state = bytes.get(state_at..state_at + 8)?.try_into().ok()?;
-        let suffix = propagate_resource!(CommonFrameSuffix::read(ctx, bytes.get(state_at + 8..)?))?;
+        let suffix = CommonFrameSuffix::read(bytes.get(state_at + 8..)?)?;
         CommonFrame::<usize>::new(
             prefix,
             state,
             suffix,
             record.payload_offset().checked_add(start)?,
         )
-        .map(Ok)
     };
     let mut frames = Vec::new();
     for start in ctx.admit_iter(&(0..record.payload().len()), "scan NX common frames")? {
-        if let Some(frame) = decode(start, [1, 3, 2]).transpose()? {
+        if let Some(frame) = decode(start, [1, 3, 2]) {
             ctx.reserve_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
-        if let Some(frame) = decode(start, [1, 1, 1]).transpose()? {
+        if let Some(frame) = decode(start, [1, 1, 1]) {
             ctx.reserve_vec(&mut frames, 1, "nx common frames")?;
             frames.push(frame);
         }
@@ -4012,7 +4011,7 @@ pub(crate) fn operation_terminal_frame(
     {
         let parsed = (|| {
             let suffix =
-                propagate_resource!(CommonFrameSuffix::read(ctx, record.payload().get(start..)?))?;
+                CommonFrameSuffix::read(record.payload().get(start..)?)?;
             (start + suffix.byte_len() == record.payload().len()).then_some(())?;
             let frame =
                 TerminalFrame::<usize>::new(suffix, record.payload_offset().checked_add(start)?)?;
