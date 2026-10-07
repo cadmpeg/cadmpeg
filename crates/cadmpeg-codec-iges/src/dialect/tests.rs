@@ -28,13 +28,17 @@ fn unverified_dialect_loss_refuses_message_limit() {
     use cadmpeg_core::CodecError;
 
     let global = resolved_global("1");
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges dialect loss message", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        dialect_loss(&global, &ctx)
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges dialect loss message",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            dialect_loss(&global, &ctx)
+        },
+    );
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -72,11 +76,10 @@ fn representation_version_products_and_registry_rows_are_closed_bidirectionally(
 
 #[test]
 fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits() {
-    crate::test_support::with_service_context(&[], |ctx| {
     // Fixed ASCII enumerates all eleven flags the version table declares.
     for flag in 1..=11 {
         assert_ne!(
-            dialect_id(Representation::FixedAscii, VersionFlag::exact(flag, ctx).unwrap()),
+            dialect_id(Representation::FixedAscii, VersionFlag::exact(flag)),
             IGES_UNKNOWN,
             "fixed ASCII flag {flag} must name its own row"
         );
@@ -85,20 +88,19 @@ fn the_totality_row_absorbs_the_representation_version_pairs_the_registry_omits(
     for representation in [Representation::CompressedAscii, Representation::Binary] {
         for flag in [6, 8, 9, 10, 11] {
             assert_ne!(
-                dialect_id(representation, VersionFlag::exact(flag, ctx).unwrap()),
+                dialect_id(representation, VersionFlag::exact(flag)),
                 IGES_UNKNOWN,
                 "{representation:?} flag {flag} must name its own row"
             );
         }
         for flag in [1, 2, 3, 4, 5, 7] {
             assert_eq!(
-                dialect_id(representation, VersionFlag::exact(flag, ctx).unwrap()),
+                dialect_id(representation, VersionFlag::exact(flag)),
                 IGES_UNKNOWN,
                 "{representation:?} flag {flag} has no declared row"
             );
         }
     }
-    });
 }
 
 #[test]
@@ -451,9 +453,18 @@ fn dialect_declarations_admit_retained_values_and_map_slots() {
     use cadmpeg_test_support::refusal::resource_limit_at;
     let global = resolved_global("1Hx");
     for (dimension, operation) in [
-        (ResourceDimension::RetainedBytes, "iges declared unreadable flag"),
-        (ResourceDimension::CollectionItems, "iges dialect declarations"),
-        (ResourceDimension::WorkUnits, "iges declared unreadable flag"),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges declared unreadable flag",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges dialect declarations",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "iges declared unreadable flag",
+        ),
     ] {
         resource_limit_at(dimension, operation, |cap| {
             let arena = DecodeArena::new();

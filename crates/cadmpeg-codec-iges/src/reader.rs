@@ -415,7 +415,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         let scan = scan_storage.with_storage(|| card::scan_with_context(bytes, ctx))?;
         let (global, mut global_losses, global_storage) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =
-            directory::parse(&scan, global.global_table(ctx)?, ctx)?;
+            directory::parse(&scan, global.global_table(), ctx)?;
         if mode == ParseMode::Decode {
             entities::geometry::enforce_transform_depth(&directory, ctx)?;
         }
@@ -473,7 +473,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &mut self.global_losses,
             "iges admission loss slots",
         )?;
-        if matches!(self.global.global_table(ctx)?, global::GlobalTable::V4_0) {
+        if matches!(self.global.global_table(), global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
             if post_terminate_count > 0 {
                 ctx.reserve_vec(&mut losses, 1, "iges admission loss slots")?;
@@ -583,7 +583,7 @@ fn decode_with_occurrence_limits(
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx, ParseMode::Decode)?;
-    let length_context = parse.global.length_context(ctx)?;
+    let length_context = parse.global.length_context();
     let quarantined_parameter_sequences =
         quarantined_parameter_sequences(&parse.quarantined_parameters, ctx)?;
     let projected_directory =
@@ -767,7 +767,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
-    let global_table = parse.global.global_table(ctx)?;
+    let global_table = parse.global.global_table();
     let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {

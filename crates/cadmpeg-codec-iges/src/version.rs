@@ -3,8 +3,6 @@
 
 use crate::global::GlobalTable;
 use crate::IgesVersion;
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 
 /// Whether field 23 selected a Global table this codec verified for the version
 /// the source declared, and if not, why not.
@@ -113,23 +111,17 @@ impl VersionFlag {
     }
 
     /// Returns the exact table entry, without applying postprocessor recovery.
-    pub(crate) fn exact(
-        value: i64,
-        _ctx: &DecodeContext<'_>,
-    ) -> Result<Option<Self>, CodecError> {
-        Ok(Self::ALL.into_iter().find(|flag| flag.value() == value))
+    pub(crate) fn exact(value: i64) -> Option<Self> {
+        Self::ALL.into_iter().find(|flag| flag.value() == value)
     }
 
     /// Applies the IGES 5.3 postprocessor clamp to a declared value.
-    pub(crate) fn effective(
-        declared: i64,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Self, CodecError> {
-        Ok(match Self::exact(declared, ctx)? {
+    pub(crate) fn effective(declared: i64) -> Self {
+        match Self::exact(declared) {
             Some(flag) => flag,
             None if declared < Self::MIN => Self::V2_0,
             None => Self::V5_3,
-        })
+        }
     }
 
     pub(crate) const fn value(self) -> i64 {

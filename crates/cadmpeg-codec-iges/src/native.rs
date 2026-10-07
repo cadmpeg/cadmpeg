@@ -2414,7 +2414,7 @@ pub(crate) fn store<'ctx>(
     limits: ProductOccurrenceLimits,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<NativeStoreResult<'ctx>, CodecError> {
-    let global_table = global.global_table(ctx)?;
+    let global_table = global.global_table();
     let NativeStoreInputs {
         scan,
         directory,
@@ -3006,7 +3006,7 @@ pub(crate) fn store<'ctx>(
                 view: entry.view,
                 line_weight_number: entry.line_weight,
                 line_weight_mm: global
-                    .length_context(ctx)?
+                    .length_context()
                     .and_then(|context| context.line_weight_mm(entry.line_weight)),
                 color: resolve_display_ref(
                     ctx,
@@ -6659,7 +6659,7 @@ pub(crate) fn store<'ctx>(
     // Scan every definition for root-inference diagnostics, then restrict the
     // map consumed by expansion to definitions admitted by structure.
     let occurrence_length_factor = global
-        .length_context(ctx)?
+        .length_context()
         .map(|context| context.length_factor_mm());
     let mut malformed_definition_sequences = Vec::new();
     let mut all_occurrence_definitions = BTreeMap::new();

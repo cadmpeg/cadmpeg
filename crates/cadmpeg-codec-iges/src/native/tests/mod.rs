@@ -175,7 +175,7 @@ fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
             .unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
@@ -271,7 +271,7 @@ fn native_required_back_pointer_member_refuses_node_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
             .unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
@@ -336,7 +336,7 @@ fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
             .unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
@@ -408,7 +408,7 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, parsed_quarantine) =
-        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
             .unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
