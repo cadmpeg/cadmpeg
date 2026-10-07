@@ -742,20 +742,22 @@ fn kernel_layer_refuses_retained_limit_before_recovery_grammar() {
             .expect("service context");
     let container = InventorContainer::open(&setup_ctx, root).expect("primary container");
     let primary = DialectMatch::admitted(InventorDialect::Unknown.id());
-    let mut policy = DecodePolicy::service();
-    // Five value bytes and three declaration keys precede the grammar copy.
-    let declared_bytes =
-        5 + "save_format_major".len() + "save_format_minor".len() + "reference_width".len();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(declared_bytes);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     // The recovery grammar retains the fifteen-byte local dialect id.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "copy dialect grammar",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+            layers(&ctx, &primary, &container.rse.active_carrier).map(|_| ())
+        },
+    );
     assert!(matches!(
-        layers(&ctx, &primary, &container.rse.active_carrier),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == cadmpeg_core::decode::u64_from_index(declared_bytes)
-                && limit.additional == 15
-                && limit.operation == "copy dialect grammar"
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 15
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
