@@ -268,14 +268,32 @@ fn finish_decode(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
     )?;
-    let modeling_object_records = ctx.collect_string_set(
-        native
-            .object_graphs
-            .iter()
-            .filter(|graph| modeling_graph_scope.contains(graph.id.as_str()))
-            .flat_map(|graph| graph.records.iter().map(|record| record.id.as_str())),
-        "catia_modeling_object_records",
-    )?;
+    // Distinct modeling-scope record ids, in record order.
+    let mut modeling_object_records = Vec::new();
+    {
+        let mut seen = HashSet::new();
+        let mut seen_storage = ctx.reserve_scoped(0, "catia_modeling_object_records")?;
+        for graph in ctx.admit_iter(&native.object_graphs, "catia_modeling_object_graphs")? {
+            if !modeling_graph_scope.contains(graph.id.as_str()) {
+                continue;
+            }
+            for record in ctx.admit_iter(&graph.records, "catia_modeling_object_records")? {
+                if seen_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut seen,
+                        record.id.as_str(),
+                        "catia_modeling_object_records",
+                    )
+                })? {
+                    ctx.push_vec(
+                        &mut modeling_object_records,
+                        record.id.as_str(),
+                        "catia_modeling_object_records",
+                    )?;
+                }
+            }
+        }
+    }
     let design_feature_transfer =
         design_feature::transfer_design_features(ctx, &mut ir, &native, &modeling_graph_scope)?;
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
@@ -1547,24 +1565,30 @@ fn finish_decode(
             .filter_map(|instance| instance.relation_expression.as_deref()),
         "catia_program_relation_expressions",
     )?;
-    let referenced_relation_expressions = ctx.collect_hash_set(
-        formula_referenced_relation_expressions
-            .union(&program_referenced_relation_expressions)
-            .copied(),
-        "catia_referenced_relation_expressions",
-    )?;
     let formula_referenced_relation_expression_count =
         formula_referenced_relation_expressions.len();
     let program_referenced_relation_expression_count =
         program_referenced_relation_expressions.len();
-    let referenced_relation_expression_count = native
-        .entity_records
-        .iter()
-        .filter(|record| {
-            record.relation_expression().is_some()
-                && referenced_relation_expressions.contains(record.id.as_str())
-        })
-        .count();
+    let mut referenced_relation_expression_count = 0usize;
+    for record in ctx.admit_iter(
+        &native.entity_records,
+        "catia_referenced_relation_expressions",
+    )? {
+        const OPERATION: &str = "catia_referenced_relation_expressions";
+        if record.relation_expression().is_some()
+            && (ctx.contains_hash_set(
+                &formula_referenced_relation_expressions,
+                record.id.as_str(),
+                OPERATION,
+            )? || ctx.contains_hash_set(
+                &program_referenced_relation_expressions,
+                record.id.as_str(),
+                OPERATION,
+            )?)
+        {
+            referenced_relation_expression_count += 1;
+        }
+    }
     let unreferenced_relation_expression_count =
         relation_expression_count - referenced_relation_expression_count;
     let resolved_formula_output_count = native
@@ -1862,55 +1886,94 @@ fn finish_decode(
                 .is_some_and(|record| record.has_unassigned_owner())
         })
         .count();
-    let transferred_formula_design_records = ctx.collect_string_set(
-        formula_transfer
-            .consumed_object_records
-            .intersection(&structurally_owned_records)
-            .map(String::as_str),
-        "catia_transferred_formula_records",
-    )?;
-    let transferred_principal_plane_records = ctx.collect_string_set(
-        design_feature_transfer
-            .principal_plane_records
-            .intersection(&structurally_owned_records)
-            .map(String::as_str),
-        "catia_transferred_principal_planes",
-    )?;
-    let transferred_design_feature_records = ctx.collect_string_set(
-        design_feature_transfer
-            .consumed_records()
-            .filter(|record| structurally_owned_records.contains(*record))
-            .map(String::as_str),
-        "catia_transferred_design_features",
-    )?;
-    let transferred_design_records = ctx.collect_string_set(
-        transferred_formula_design_records
-            .union(&transferred_design_feature_records)
-            .chain(
-                transferred_native_sketch_entity_records.intersection(&structurally_owned_records),
-            )
-            .chain(
-                transferred_native_sketch_constraint_records
-                    .intersection(&structurally_owned_records),
-            )
-            .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
-            .map(String::as_str),
-        "catia_transferred_design_records",
-    )?;
-    let unresolved_object_record_count = modeling_object_records
-        .difference(&transferred_design_records)
-        .count();
-    let unresolved_design_object_count = native
-        .design_objects
-        .iter()
-        .filter(|object| modeling_graph_scope.contains(object.parent.as_str()))
-        .filter(|object| {
-            object
-                .fields
-                .iter()
-                .any(|field| !transferred_design_records.contains(field))
-        })
-        .count();
+    // One pass over the owned records counts the formula and principal-plane
+    // records among them and collects those some transfer consumed.
+    let mut transferred_storage = ctx.reserve_scoped(0, "catia_transferred_design_records")?;
+    let mut transferred_design_records = HashSet::new();
+    let mut transferred_formula_design_record_count = 0usize;
+    let mut transferred_principal_plane_record_count = 0usize;
+    {
+        const OPERATION: &str = "catia_transferred_design_records";
+        let mut counted = HashSet::new();
+        for object in ctx.admit_iter(&native.design_objects, "catia_owned_design_objects")? {
+            if object.owner_record.is_none() {
+                continue;
+            }
+            for field in ctx.admit_iter(&object.fields, "catia_owned_design_fields")? {
+                if !transferred_storage
+                    .with_storage(|| ctx.insert_hash_set(&mut counted, field.as_str(), OPERATION))?
+                {
+                    continue;
+                }
+                let formula = ctx.contains_hash_set(
+                    &formula_transfer.consumed_object_records,
+                    field.as_str(),
+                    OPERATION,
+                )?;
+                let principal = ctx.contains_hash_set(
+                    &design_feature_transfer.principal_plane_records,
+                    field.as_str(),
+                    OPERATION,
+                )?;
+                transferred_formula_design_record_count += usize::from(formula);
+                transferred_principal_plane_record_count += usize::from(principal);
+                let transferred = formula
+                    || design_feature_transfer.consumes(ctx, field)?
+                    || ctx.contains_hash_set(
+                        &transferred_native_sketch_entity_records,
+                        field.as_str(),
+                        OPERATION,
+                    )?
+                    || ctx.contains_hash_set(
+                        &transferred_native_sketch_constraint_records,
+                        field.as_str(),
+                        OPERATION,
+                    )?
+                    || ctx.contains_hash_set(
+                        &transferred_constraint_range_records,
+                        field.as_str(),
+                        OPERATION,
+                    )?;
+                if transferred {
+                    transferred_storage.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut transferred_design_records,
+                            field.as_str(),
+                            OPERATION,
+                        )
+                    })?;
+                }
+            }
+        }
+    }
+    let mut unresolved_object_record_count = 0usize;
+    for record in ctx.admit_iter(&modeling_object_records, "catia_unresolved_object_records")? {
+        if !ctx.contains_hash_set(
+            &transferred_design_records,
+            record,
+            "catia_unresolved_object_records",
+        )? {
+            unresolved_object_record_count += 1;
+        }
+    }
+    let mut unresolved_design_object_count = 0usize;
+    for object in ctx.admit_iter(&native.design_objects, "catia_unresolved_design_objects")? {
+        if modeling_graph_scope.contains(object.parent.as_str())
+            && ctx.any_by(
+                &object.fields,
+                |field| {
+                    Ok(!ctx.contains_hash_set(
+                        &transferred_design_records,
+                        field.as_str(),
+                        "catia_unresolved_design_objects",
+                    )?)
+                },
+                "catia_unresolved_design_objects",
+            )?
+        {
+            unresolved_design_object_count += 1;
+        }
+    }
     let mut value_field_count = 0usize;
     for block in &native.value_blocks {
         value_field_count = value_field_count
@@ -3400,7 +3463,7 @@ fn finish_decode(
         ),
         (
             crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT,
-            transferred_formula_design_records.len(),
+            transferred_formula_design_record_count,
         ),
         (
             crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT,
@@ -3408,7 +3471,7 @@ fn finish_decode(
         ),
         (
             crate::coverage::TRANSFERRED_PRINCIPAL_PLANE_RECORD_COUNT,
-            transferred_principal_plane_records.len(),
+            transferred_principal_plane_record_count,
         ),
         (
             crate::coverage::TRANSFERRED_NATIVE_OPERATION_COUNT,
@@ -3643,8 +3706,8 @@ fn finish_decode(
             native.design_objects.len(),
             formula_transfer.typed_parameter_count,
             formula_transfer.relation_program_parameter_count,
-            transferred_formula_design_records.len(),
-            transferred_principal_plane_records.len(),
+            transferred_formula_design_record_count,
+            transferred_principal_plane_record_count,
             ir.model.sketches.len(),
         ),
             "catia_report_history_objects_loss",
