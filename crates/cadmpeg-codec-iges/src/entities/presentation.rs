@@ -286,13 +286,13 @@ pub(super) fn project(
     for entry in ctx.admit_iter(directory, "iges presentation directory traversal")?
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        let mut path_storage = ctx.reserve_scoped(0, "iges font cycle scratch")?;
+        let mut cycle_storage = ctx.reserve_scoped(0, "iges font cycle scratch")?;
         let mut active = BTreeSet::new();
         let mut chain = std::iter::successors(Some(entry.sequence), |sequence| text_fonts.get(sequence).and_then(|font| font.supersedes));
         let cyclic = loop {
             let Some(sequence) = ctx.next_charged(&mut chain, "iges font cycle traversal")? else { break false; };
             if let Some(cyclic) = cyclic_fonts.get(&sequence) { break *cyclic; }
-            if !path_storage.with_storage(|| ctx.insert_btree_set(&mut active, sequence, "iges font cycle active"))? { break true; }
+            if !cycle_storage.with_storage(|| ctx.insert_btree_set(&mut active, sequence, "iges font cycle active"))? { break true; }
         };
         for sequence in ctx.admit_iter(active, "iges font cycle result traversal")? {
             scratch.with_storage(|| ctx.insert_btree_map(&mut cyclic_fonts, sequence, cyclic, "iges font cycle results"))?;
@@ -360,22 +360,16 @@ pub(super) fn project(
         let levels_valid = if let Some(count) = record.count(1).filter(|count| *count > 0) {
             let mut level_storage = ctx.reserve_scoped(0, "iges presentation level scratch")?;
             let mut levels = BTreeSet::new();
-            let mut valid = true;
-            for index in ctx.admit_iter(0..count, "iges definition level traversal")? {
+            ctx.all_by(0..count, |index| {
                 let Some(level) = record.integer(2 + index).filter(|level| *level >= 0) else {
-                    valid = false;
-                    break;
+                    return Ok(false);
                 };
-                if !level_storage.with_storage(|| ctx.insert_btree_set(
+                level_storage.with_storage(|| ctx.insert_btree_set(
                     &mut levels,
                     level,
                     "iges presentation definition levels",
-                ))? {
-                    valid = false;
-                    break;
-                }
-            }
-            valid
+                ))
+            }, "iges definition level traversal")?
         } else {
             false
         };

@@ -443,8 +443,7 @@ pub(super) fn project(
         let mut closed_views = BTreeSet::new();
         let mut last_breakpoint: Option<FiniteReal> = None;
         let blocks_valid = if let Some(count) = count {
-            let mut valid = true;
-            for index in ctx.admit_iter(0..count, "iges segmented view traversal")? {
+            ctx.all_by(0..count, |index| {
                 let start = 2 + index * 6;
                 let view = record
                     .integer(start)
@@ -509,18 +508,13 @@ pub(super) fn project(
                     None | Some(crate::parameter::TokenValue::Omitted) => true,
                     _ => record.integer(start + 5).is_some_and(|value| value >= 0),
                 };
-                if !(view_order_valid
+                Ok(view_order_valid
                     && breakpoint_order_valid
                     && display_valid
                     && color_valid
                     && font_valid
                     && weight_valid)
-                {
-                    valid = false;
-                    break;
-                }
-            }
-            valid
+            }, "iges segmented view traversal")?
         } else {
             false
         };

@@ -135,6 +135,7 @@ fn two_loop_face_file() -> Vec<u8> {
 fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
     for (bytes, operation) in [
         (explicit_vertex_loop_file(), "iges B-rep vertex-list nodes"),
+        (explicit_vertex_loop_file(), "iges B-rep definition reservations"),
         (
             explicit_tetrahedron_solid_file(),
             "iges B-rep edge-list nodes",
@@ -876,4 +877,40 @@ fn brep_traversal_refusals_reach_decode() {
                 .map_err(|failure| match failure { cadmpeg_ir::codec::DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
         });
     }
+}
+
+#[test]
+fn rejected_brep_definition_vectors_release_their_storage() {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    let count = 2_000_u32;
+    let directory: Vec<_> = (0..count).map(|index| {
+        let mut entry = crate::test_support::directory_target(1 + index * 2, 502);
+        entry.form = 1;
+        entry
+    }).collect();
+    let parameters: Vec<_> = directory.iter().map(|entry| {
+        let mut values = vec![TokenValue::Integer(502), TokenValue::Integer(1_000), TokenValue::Omitted];
+        values.resize(2 + 1_000 * 3, TokenValue::Integer(0));
+        ParameterRecord::from_test_tokens(entry.sequence, 1..2, Vec::new(), values.len(), values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new())
+    }).collect();
+    let entries = directory.iter().map(|entry| (entry.sequence, entry)).collect();
+    let records = parameters.iter().map(|record| (record.directory_sequence, record)).collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One rejected coordinate vector fits; retaining all rejected vectors does not.
+    policy.limits.max_materialized_bytes = 1_000_000;
+    // Collection admission counts every attempted vector even after its bytes are released.
+    policy.limits.max_collection_items = 10_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let bytes = owned_test_file(&[]);
+    let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
+    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context(&ctx).unwrap().unwrap();
+    let mut ir = CadIr::empty();
+    let outcome = super::project(&mut ir, &directory, (&entries, &records), &global, &ctx, &mut super::super::geometry::SourceSequences::default()).unwrap();
+    assert!(outcome.decoded.is_empty());
+    assert_eq!(outcome.losses.len(), usize::try_from(count).unwrap());
+    assert!(ir.model.points.is_empty());
+    assert!(ir.model.vertices.is_empty());
+    ctx.finish_session().unwrap();
 }

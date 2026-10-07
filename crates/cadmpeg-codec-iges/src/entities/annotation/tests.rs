@@ -43,7 +43,7 @@ use super::{
     flag_or_label_valid, general_note_string_count_valid, general_note_text_valid_for_global_table,
     general_symbol_note_valid, justification_valid, leader_valid_for_global_table,
     mirror_flag_valid, new_general_note_charset_valid, new_general_note_font_valid,
-    sectioned_area_curves_coplanar, sectioned_area_valid, vertical_text_flag_valid,
+    sectioned_area_curve_coplanar, sectioned_area_valid, vertical_text_flag_valid,
 };
 
 fn assert_section_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimension) {
@@ -683,13 +683,12 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             });
         }
         let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
-        assert!(sectioned_area_curves_coplanar(
-            (&ir, &mut None),
-            [1, 3].into_iter(),
-            pattern_plane,
-            0.001,
-            decode_ctx
-        )
+        assert!({
+            let mut index = None;
+            decode_ctx.all_by([1, 3], |sequence| sectioned_area_curve_coplanar(
+                (&ir, &mut index), sequence, pattern_plane, 0.001, decode_ctx,
+            ), "test section boundary traversal")
+        }
         .unwrap());
         if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
             &mut ir.model.curves[1].geometry
@@ -708,13 +707,12 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             )
             .unwrap();
         }
-        assert!(!sectioned_area_curves_coplanar(
-            (&ir, &mut None),
-            [1, 3].into_iter(),
-            pattern_plane,
-            0.001,
-            decode_ctx
-        )
+        assert!(!{
+            let mut index = None;
+            decode_ctx.all_by([1, 3], |sequence| sectioned_area_curve_coplanar(
+                (&ir, &mut index), sequence, pattern_plane, 0.001, decode_ctx,
+            ), "test section boundary traversal")
+        }
         .unwrap());
 
         let entry = |sequence, entity_type| DirectoryEntry {
@@ -1406,6 +1404,7 @@ fn shared_note_and_leader_validation_stays_linear() {
 
 #[test]
 fn sectioned_area_shared_geometry_index_stays_linear() {
+    const MAX_WORK_PER_BOUNDARY: u64 = 4_096;
     let mut ir = CadIr::empty();
     for sequence in (1..=2_000_u32).map(|index| index * 2 - 1) {
         ir.model.curves.push(Curve {
@@ -1423,14 +1422,49 @@ fn sectioned_area_shared_geometry_index_stays_linear() {
     let mut policy = DecodePolicy::service();
     // One shared model index and one single-node active set per boundary fit
     // this envelope, including the core tree-node movement charges.
-    const MAX_WORK_PER_BOUNDARY: u64 = 4_096;
     policy.limits.max_work_units = 2_000 * MAX_WORK_PER_BOUNDARY;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = None;
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
     for sequence in (1..=2_000_u32).map(|index| index * 2 - 1) {
-        assert!(sectioned_area_curves_coplanar((&ir, &mut index), std::iter::once(sequence), plane, 0.001, &ctx).unwrap());
+        assert!(sectioned_area_curve_coplanar((&ir, &mut index), sequence, plane, 0.001, &ctx).unwrap());
     }
     drop(index);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn noncoplanar_section_boundary_skips_island_geometry_work() {
+    let mut ir = CadIr::empty();
+    for (sequence, z) in [(1, 1.0), (3, 0.0)] {
+        ir.model.curves.push(Curve {
+            id: CurveId::mint(format!("iges:model:curve#D{sequence}")).unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, z), Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0), 1.0,
+                ).unwrap(),
+            )),
+            source_object: None,
+        });
+    }
+    let mut boundary = leader_entry(0);
+    boundary.entity_type = 100;
+    let mut island = leader_entry(0);
+    island.entity_type = 100;
+    island.sequence = 3;
+    let entries = BTreeMap::from([(1, &boundary), (3, &island)]);
+    let count = 20_000;
+    let mut values = vec![TokenValue::Integer(230), TokenValue::Integer(1), TokenValue::Integer(0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::real(0.0), TokenValue::Integer(i64::try_from(count).unwrap())];
+    values.resize(9 + count, TokenValue::Integer(3));
+    let record = ParameterRecord::from_test_tokens(5, 1..2, Vec::new(), values.len(), values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The island pointer checks fit; admitting an unvisited second pass does not.
+    policy.limits.max_work_units = 30_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(!sectioned_area_valid((&ir, &mut None), &record, &entries, 0, super::SectionedAreaContext {
+        global_table: GlobalTable::V5Later, transform: Transform::identity(), length_factor: 1.0, resolution: 0.001,
+    }, &ctx).unwrap());
     ctx.finish_session().unwrap();
 }

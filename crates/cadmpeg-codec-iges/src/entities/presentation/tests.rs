@@ -1247,6 +1247,7 @@ fn body_property_utf8_refusal_reaches_the_decode_result() {
 
 #[test]
 fn cyclic_font_chains_are_classified_once_per_font() {
+    const MAX_WORK_PER_FONT: u64 = 4_096;
     use crate::parameter::{ParameterRecord, Token, TokenValue};
     let count = 2_000_u32;
     let directory: Vec<_> = (0..count).map(|index| {
@@ -1265,7 +1266,6 @@ fn cyclic_font_chains_are_classified_once_per_font() {
     let mut policy = DecodePolicy::service();
     // The three integer-key indexes, chain steps and final loss formatting
     // fit this envelope, including the core tree-node movement charges.
-    const MAX_WORK_PER_FONT: u64 = 4_096;
     policy.limits.max_work_units = u64::from(count) * MAX_WORK_PER_FONT;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let bytes = owned_test_file(&[]);
@@ -1301,4 +1301,29 @@ fn presentation_traversal_refusals_reach_decode() {
                 .map_err(|failure| match failure { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode failure: {other:?}") })
         });
     }
+}
+
+#[test]
+fn invalid_definition_levels_stop_before_the_remaining_count() {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    let mut entry = crate::test_support::directory_target(1, 406);
+    entry.form = 1;
+    let count = 20_000;
+    let mut values = vec![TokenValue::Integer(406), TokenValue::Integer(i64::try_from(count).unwrap()), TokenValue::Integer(-1)];
+    values.resize(2 + count, TokenValue::Integer(0));
+    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(), values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 10_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let bytes = owned_test_file(&[]);
+    let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
+    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context(&ctx).unwrap().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let outcome = super::project(&mut ir, std::slice::from_ref(&entry), (&BTreeMap::from([(1, &entry)]), &BTreeMap::from([(1, &record)])), &BTreeMap::new(), &global, &ctx, &super::super::geometry::SourceSequences::default()).unwrap();
+    assert!(outcome.decoded.is_empty());
+    assert_eq!(outcome.losses.len(), 1);
+    assert_eq!(outcome.losses[0].code, IgesLossCode::DisplayDataNotProjected.kind());
+    ctx.finish_session().unwrap();
 }

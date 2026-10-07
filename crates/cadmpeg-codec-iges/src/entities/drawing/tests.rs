@@ -1038,3 +1038,30 @@ fn drawing_traversal_refusals_reach_decode() {
         });
     }
 }
+
+#[test]
+fn invalid_segmented_view_stops_before_the_remaining_count() {
+    use crate::parameter::{ParameterRecord, Token, TokenValue};
+    use std::collections::BTreeMap;
+    let mut entry = crate::test_support::directory_target(1, 402);
+    entry.form = 19;
+    entry.status = SourceStatus::from_codes([0, 0, 1, 0]);
+    let count = 20_000;
+    let mut values = vec![TokenValue::Integer(402), TokenValue::Integer(i64::try_from(count).unwrap()), TokenValue::Integer(0), TokenValue::real(0.0), TokenValue::Integer(0), TokenValue::Integer(0), TokenValue::Integer(1), TokenValue::Integer(0)];
+    values.resize(2 + count * 6, TokenValue::Integer(0));
+    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(), values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 10_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let bytes = owned_test_file(&[]);
+    let scan = crate::card::scan_with_context(&bytes, &ctx).unwrap();
+    let (global, _) = crate::global::parse(&scan, &ctx).unwrap();
+    let global = global.length_context(&ctx).unwrap().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let outcome = super::project(&mut ir, std::slice::from_ref(&entry), (&BTreeMap::from([(1, &entry)]), &BTreeMap::from([(1, &record)])), &BTreeMap::new(), &global, &ctx).unwrap();
+    assert!(outcome.decoded.is_empty());
+    assert_eq!(outcome.losses.len(), 1);
+    assert_eq!(outcome.losses[0].code, IgesLossCode::EntityNotProjected.kind());
+    ctx.finish_session().unwrap();
+}
