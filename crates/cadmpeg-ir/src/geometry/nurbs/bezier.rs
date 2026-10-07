@@ -383,9 +383,9 @@ pub fn boundaries_within_resolution(
         // A control pair contributes when its indices sum to the product index.
         let end = index.min(degree);
         let start = index - end;
-        for first_index in start..=end {
+        for (offset, first_control) in first[start..=end].iter().enumerate() {
             ctx.charge_work_limit(1, "IR Bezier boundary control pair")?;
-            let first_control = &first[first_index];
+            let first_index = start + offset;
             let second_index = index - first_index;
             let second_control = &second[second_index];
             let coefficient = value!(binomial(degree, first_index)?)
