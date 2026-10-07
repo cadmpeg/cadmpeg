@@ -145,12 +145,12 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
 
     let groups_ctx = cadmpeg_test_support::service_decode_context();
     let groups = variable_fillet_radius_groups(
-            &groups_ctx,
-            "variable",
-            std::slice::from_ref(&history),
-            std::slice::from_ref(&lane),
-            &[&selection],
-        )
+        &groups_ctx,
+        "variable",
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+        &[&selection],
+    )
     .expect("fillet resource limits")
     .expect("vertex join");
     assert!(matches!(
@@ -344,9 +344,10 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
     };
 
     let groups_ctx = cadmpeg_test_support::service_decode_context();
-    let groups = variable_fillet_radius_groups(&groups_ctx, "variable", &[history], &[lane], &[&selection])
-    .expect("fillet resource limits")
-    .expect("legacy edge-control join");
+    let groups =
+        variable_fillet_radius_groups(&groups_ctx, "variable", &[history], &[lane], &[&selection])
+            .expect("fillet resource limits")
+            .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
         [super::super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections, _)]
@@ -412,12 +413,12 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
     let groups_ctx = cadmpeg_test_support::service_decode_context();
     let groups = variable_fillet_radius_groups(
-            &groups_ctx,
-            "variable",
-            std::slice::from_ref(&history),
-            &[],
-            &[&selection],
-        )
+        &groups_ctx,
+        "variable",
+        std::slice::from_ref(&history),
+        &[],
+        &[&selection],
+    )
     .expect("fillet resource limits")
     .expect("endpoint-less two-control roster");
     assert!(matches!(
@@ -438,6 +439,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         &[history],
         &[],
         &[&collision]
-    ).map(|groups| groups.is_none()))
+    )
+    .map(|groups| groups.is_none()))
     .expect("fillet resource limits"));
 }

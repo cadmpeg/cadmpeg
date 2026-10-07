@@ -44,8 +44,8 @@ fn inferred_point_candidate_deduplication_preserves_empty_constraints_and_refusa
 
 #[test]
 fn empty_solver_graphs_release_storage_without_retaining_output() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::records::FeatureInputLane;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -68,8 +68,12 @@ fn empty_solver_graphs_release_storage_without_retaining_output() {
     policy.limits.max_materialized_bytes = 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        assert!(crate::resolved_features::endpoints::inferred_point_coordinates_by_index(
-            &ctx, &lane, "feature",
-        ).unwrap().is_empty());
+        assert!(
+            crate::resolved_features::endpoints::inferred_point_coordinates_by_index(
+                &ctx, &lane, "feature",
+            )
+            .unwrap()
+            .is_empty()
+        );
     }
 }

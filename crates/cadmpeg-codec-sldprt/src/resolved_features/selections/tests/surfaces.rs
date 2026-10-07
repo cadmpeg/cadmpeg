@@ -23,13 +23,13 @@ use crate::resolved_features::selections::counted_surface_component_path_at;
 use crate::resolved_features::selections::face_reference_plane_selection_candidates;
 use crate::resolved_features::selections::fillet_face_selection_candidates;
 use crate::resolved_features::selections::generated_surface_identities;
-use crate::resolved_features::selections::SelectionHistory;
 use crate::resolved_features::selections::inline_surface_reference_at;
 use crate::resolved_features::selections::mirror_pattern_component_path_at;
 use crate::resolved_features::selections::operation_surface_selection_candidates;
 use crate::resolved_features::selections::planar_surface_selection_candidates;
 use crate::resolved_features::selections::surface_reference_matches_at;
 use crate::resolved_features::selections::ClassObjects;
+use crate::resolved_features::selections::SelectionHistory;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use std::collections::BTreeMap;
 
@@ -237,7 +237,24 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = operation_surface_selection_candidates(&identity_ctx, FeatureClass::TrimSurface, &lane, &crate::resolved_features::selections::OperationSurfaceClasses::new(&identity_ctx, &lane, &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap()).unwrap(), 0, payload.len(), None)
+    let selections = operation_surface_selection_candidates(
+        &identity_ctx,
+        FeatureClass::TrimSurface,
+        &lane,
+        &crate::resolved_features::selections::OperationSurfaceClasses::new(
+            &identity_ctx,
+            &lane,
+            &crate::resolved_features::selections::generated_surface_identities(
+                &identity_ctx,
+                &lane,
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+        0,
+        payload.len(),
+        None,
+    )
     .unwrap();
 
     assert_eq!(selections.len(), 1);
@@ -309,7 +326,24 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     one[class_body..class_body + 2].copy_from_slice(&class_token.to_le_bytes());
     build_face(&mut one, first_body, 6);
     let lane = lane_for(one);
-    let selections = operation_surface_selection_candidates(&identity_ctx, FeatureClass::Dome, &lane, &crate::resolved_features::selections::OperationSurfaceClasses::new(&identity_ctx, &lane, &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap()).unwrap(), first_body, first_end, None)
+    let selections = operation_surface_selection_candidates(
+        &identity_ctx,
+        FeatureClass::Dome,
+        &lane,
+        &crate::resolved_features::selections::OperationSurfaceClasses::new(
+            &identity_ctx,
+            &lane,
+            &crate::resolved_features::selections::generated_surface_identities(
+                &identity_ctx,
+                &lane,
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+        first_body,
+        first_end,
+        None,
+    )
     .unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].0, first_body + 68);
@@ -322,7 +356,24 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     build_face(&mut collision, first_body, 6);
     build_face(&mut collision, second_body, 9);
     let lane = lane_for(collision);
-    assert!(operation_surface_selection_candidates(&identity_ctx, FeatureClass::Dome, &lane, &crate::resolved_features::selections::OperationSurfaceClasses::new(&identity_ctx, &lane, &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap()).unwrap(), first_body, collision_end, None)
+    assert!(operation_surface_selection_candidates(
+        &identity_ctx,
+        FeatureClass::Dome,
+        &lane,
+        &crate::resolved_features::selections::OperationSurfaceClasses::new(
+            &identity_ctx,
+            &lane,
+            &crate::resolved_features::selections::generated_surface_identities(
+                &identity_ctx,
+                &lane
+            )
+            .unwrap()
+        )
+        .unwrap(),
+        first_body,
+        collision_end,
+        None
+    )
     .unwrap()
     .is_empty());
 }
@@ -1262,7 +1313,18 @@ fn face_reference_plane_owns_its_counted_surface_path() {
             native_feature("plane", 37, "moRefPlane_c"),
         ],
     }];
-    let selections = compact_surface_selections(&identity_ctx, &histories, crate::resolved_features::selections::SelectionHistory::new(&identity_ctx, &histories).unwrap().for_lane(&identity_ctx, &lane).unwrap(), &lane, &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap()).unwrap();
+    let selections = compact_surface_selections(
+        &identity_ctx,
+        &histories,
+        crate::resolved_features::selections::SelectionHistory::new(&identity_ctx, &histories)
+            .unwrap()
+            .for_lane(&identity_ctx, &lane)
+            .unwrap(),
+        &lane,
+        &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane)
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "plane");
     assert_eq!(
@@ -1448,7 +1510,24 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         sketch_entities: Vec::new(),
     };
 
-    let candidates = operation_surface_selection_candidates(&identity_ctx, FeatureClass::SplitFace, &lane, &crate::resolved_features::selections::OperationSurfaceClasses::new(&identity_ctx, &lane, &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap()).unwrap(), 0, payload.len(), Some(711))
+    let candidates = operation_surface_selection_candidates(
+        &identity_ctx,
+        FeatureClass::SplitFace,
+        &lane,
+        &crate::resolved_features::selections::OperationSurfaceClasses::new(
+            &identity_ctx,
+            &lane,
+            &crate::resolved_features::selections::generated_surface_identities(
+                &identity_ctx,
+                &lane,
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+        0,
+        payload.len(),
+        Some(711),
+    )
     .unwrap();
     assert_eq!(candidates.len(), 1, "{candidates:#?}");
     assert_eq!(candidates[0].1.len(), 2);
@@ -1461,7 +1540,24 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         &314u32.to_le_bytes()
     );
     assert_eq!(candidates[0].1[1].local_id, Some(3));
-    assert!(operation_surface_selection_candidates(&identity_ctx, FeatureClass::SplitFace, &lane, &crate::resolved_features::selections::OperationSurfaceClasses::new(&identity_ctx, &lane, &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap()).unwrap(), 0, payload.len(), Some(712))
+    assert!(operation_surface_selection_candidates(
+        &identity_ctx,
+        FeatureClass::SplitFace,
+        &lane,
+        &crate::resolved_features::selections::OperationSurfaceClasses::new(
+            &identity_ctx,
+            &lane,
+            &crate::resolved_features::selections::generated_surface_identities(
+                &identity_ctx,
+                &lane
+            )
+            .unwrap()
+        )
+        .unwrap(),
+        0,
+        payload.len(),
+        Some(712)
+    )
     .unwrap()
     .is_empty());
 }

@@ -2512,12 +2512,13 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
             }
             endpoints
         } else {
-            super::endpoints::coordinate_roster_curve_endpoint_markers_at(ctx,
-payload,
-curve,
-Some(56),
-geometry,
-)?
+            super::endpoints::coordinate_roster_curve_endpoint_markers_at(
+                ctx,
+                payload,
+                curve,
+                Some(56),
+                geometry,
+            )?
         };
         if endpoints.len() == 2 {
             return Ok(endpoints);
@@ -2551,8 +2552,10 @@ geometry,
     if endpoints.len() == 2 {
         if let Some(direct) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
             let roster = [endpoints[0], endpoints[1]];
-            if legacy_marker104_arc_center(ctx, payload, curve, markers, roster, geometry)?.is_none()
-                && legacy_marker104_arc_center(ctx, payload, curve, markers, direct, geometry)?.is_some()
+            if legacy_marker104_arc_center(ctx, payload, curve, markers, roster, geometry)?
+                .is_none()
+                && legacy_marker104_arc_center(ctx, payload, curve, markers, direct, geometry)?
+                    .is_some()
             {
                 return copy_endpoint_markers(ctx, &direct);
             }
