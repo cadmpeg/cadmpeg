@@ -2,7 +2,6 @@
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Case {
-    Group,
     Expected,
     Faces,
     Unreferenced,
@@ -15,7 +14,11 @@ enum Case {
     OverflowNodeOffset,
 }
 
-fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn face_result(
+    case: Case,
+    max_items: u64,
+    max_retained: u64,
+) -> Result<(), cadmpeg_core::CodecError> {
     crate::test_support::with_decode_context(|service_ctx| {
         use crate::records::{
             decal::DesignRecordHeader,
@@ -105,11 +108,6 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
             design_face_operands: vec![operand.clone()],
             ..Default::default()
         };
-        if case == Case::Group {
-            native.design_construction_operand_groups =
-                super::construction_group_limits::native(false, false)
-                    .design_construction_operand_groups;
-        }
         if case == Case::Record {
             let mut scope = DesignParameterScope::empty(
                 &format!("{stream}:design-parameter-scope#10"),
@@ -203,15 +201,21 @@ fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::Co
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
-        super::super::validate_face_operands(&ctx, &mut Vec::new(), &expected).unwrap_err()
+        super::super::validate_face_operands(&ctx, &mut Vec::new(), &expected).map(|_| ())
     })
 }
 
+fn face_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    face_result(case, max_items, max_retained).unwrap_err()
+}
+
 macro_rules! refuse_items {
-    ($name:ident, $case:expr, $limit:expr, $operation:literal) => {
+    ($name:ident, $case:expr, $operation:literal) => {
         #[test]
         fn $name() {
-            let error = face_error($case, $limit, u64::MAX);
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                $operation, |cap| face_result($case, cap, u64::MAX));
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
         }
@@ -219,69 +223,58 @@ macro_rules! refuse_items {
 }
 
 refuse_items!(
-    face_operand_group_index_refuses_collection_limit,
-    Case::Group,
-    0,
-    "index F3D face operand groups"
-);
-refuse_items!(
     face_operand_expected_index_refuses_collection_limit,
     Case::Expected,
-    0,
     "index F3D expected face operands"
 );
 refuse_items!(
     face_operand_expected_faces_refuse_collection_limit,
     Case::Faces,
-    0,
     "collect F3D expected operand faces"
 );
 refuse_items!(
     face_operand_unreferenced_faces_refuse_collection_limit,
     Case::Unreferenced,
-    1,
     "collect F3D unreferenced operand faces"
 );
 refuse_items!(
     face_operand_referenced_faces_refuse_collection_limit,
     Case::Referenced,
-    3,
     "index F3D referenced operand faces"
 );
 refuse_items!(
     face_operand_alternate_faces_refuse_collection_limit,
     Case::Alternate,
-    7,
     "collect F3D alternate selector operand faces"
 );
 refuse_items!(
     face_operand_node_offsets_refuse_collection_limit,
     Case::NodeOffsets,
-    0,
     "collect F3D face recipe node offsets"
 );
 refuse_items!(
     face_operand_nodes_refuse_collection_limit,
     Case::Nodes,
-    1,
     "collect F3D face recipe nodes"
 );
 refuse_items!(
     face_operand_record_refuses_collection_limit,
     Case::Record,
-    1,
     "index F3D face operand records"
 );
 refuse_items!(
     face_operand_invalid_finding_refuses_collection_limit,
     Case::Invalid,
-    0,
     "collect F3D native validation findings"
 );
 
 #[test]
 fn face_operand_invalid_entity_refuses_retained_limit() {
-    let error = face_error(Case::Invalid, u64::MAX, 0);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D validation entity",
+        |cap| Err::<(), cadmpeg_core::CodecError>(face_error(Case::Invalid, u64::MAX, cap)),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -459,4 +452,14 @@ fn thread_face_group_membership_refuses_work_limit() {
             if limit.operation == "find F3D thread face operand group"
                 && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
     ));
+}
+
+#[test]
+fn face_recipe_marker_skips_comparison_admission() {
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare F3D face recipe node marker",
+        None,
+    );
+    assert!(face_result(Case::NodeOffsets, u64::MAX, u64::MAX).is_ok());
 }

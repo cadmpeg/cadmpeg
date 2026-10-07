@@ -74,10 +74,16 @@ fn native_validation_refuses_decode_collection_limit() {
         )
         .unwrap();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = F3dCodec.validate_native(&ctx, &ir).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "load typed native record",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            F3dCodec.validate_native(&ctx, &ir)
+        },
+    );
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 

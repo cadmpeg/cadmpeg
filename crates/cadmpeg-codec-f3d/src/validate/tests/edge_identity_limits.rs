@@ -49,8 +49,7 @@ fn edge_result(
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
-        super::super::validate_edge_identity_operands(&decode, &ctx, &mut Vec::new(), &[])
-            .map(|_| ())
+        super::super::validate_edge_identity_operands(&ctx, &mut Vec::new(), &[]).map(|_| ())
     })
 }
 
@@ -146,11 +145,90 @@ fn edge_identity_valid_slot_has_no_finding() {
             .unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
         let mut findings = Vec::new();
-        let records = crate::test_support::with_decode_context(|decode_ctx| {
-            super::super::validate_edge_identity_operands(decode_ctx, &ctx, &mut findings, &[])
-        })
-        .unwrap();
+        let (records, _records_storage) =
+            super::super::validate_edge_identity_operands(&ctx, &mut findings, &[]).unwrap();
         assert!(findings.is_empty());
         assert!(records.contains(&("f3d:Design/BulkStream.dat", 101)));
     })
+}
+
+#[test]
+fn edge_identity_absent_expected_record_skips_child_comparison() {
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native(true);
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "compare F3D expected edge identity operand",
+            None,
+        );
+        let mut findings = Vec::new();
+        let (records, _storage) =
+            super::super::validate_edge_identity_operands(&ctx, &mut findings, &[]).unwrap();
+        assert!(records.is_empty());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].message,
+            "Fusion Design edge identity operand has an invalid fixed frame"
+        );
+        assert!(decode.resource_refusal().is_none());
+    });
+}
+
+#[test]
+fn edge_identity_present_expected_record_refuses_before_child_comparison() {
+    crate::test_support::with_decode_context(|service| {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native(true);
+        native
+            .store(service, ir.native.namespace_mut("f3d"))
+            .unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "compare F3D expected edge identity operand",
+            0,
+            |decode| {
+                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
+                ctx.decode = decode;
+                super::super::validate_edge_identity_operands(&ctx, &mut Vec::new(), &[])
+                    .map(|_| ())
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "compare F3D expected edge identity operand")
+        );
+    });
+}
+
+#[test]
+fn edge_identity_reload_and_indexes_release_their_scoped_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    crate::test_support::with_decode_context(|service| {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native(true);
+        native
+            .store(service, ir.native.namespace_mut("f3d"))
+            .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 1 << 20;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service).unwrap();
+        ctx.decode = &decode;
+        let mut findings = Vec::new();
+        let (records, storage) =
+            super::super::validate_edge_identity_operands(&ctx, &mut findings, &[]).unwrap();
+        assert!(findings.is_empty());
+        assert!(records.contains(&("f3d:Design/BulkStream.dat", 101)));
+        drop((records, storage));
+        decode
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "verify released edge identity scratch",
+            )
+            .unwrap();
+    });
 }
