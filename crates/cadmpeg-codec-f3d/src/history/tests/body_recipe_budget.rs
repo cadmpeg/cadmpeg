@@ -25,8 +25,8 @@ fn complete_body_error(operation: &str) -> cadmpeg_core::CodecError {
         0,
         |ctx| {
             let topology = complete_body_topology();
-            let index = super::super::body_face_index(ctx, &topology)?;
-            super::super::complete_body_face_slots(ctx, &index, 1)
+            let index = super::super::topology::body_face_index(ctx, &topology)?;
+            super::super::topology::complete_body_face_slots(ctx, &index, 1)
         },
     )
 }

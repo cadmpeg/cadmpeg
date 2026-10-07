@@ -19,7 +19,8 @@ fn intersection_error(max_items: u64) -> cadmpeg_core::CodecError {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bodies_intersecting(&ctx, &simple_topology(), &BTreeSet::from([1])).unwrap_err()
+    crate::history::topology::bodies_intersecting(&ctx, &simple_topology(), &BTreeSet::from([1]))
+        .unwrap_err()
 }
 
 #[test]
@@ -39,7 +40,7 @@ fn affected_topology_bodies_refuse_collection_limit() {
         operation,
         0,
         |ctx| {
-            super::super::bodies_intersecting(
+            crate::history::topology::bodies_intersecting(
                 ctx,
                 &simple_topology(),
                 &std::collections::BTreeSet::from([1]),
@@ -60,7 +61,7 @@ fn body_closure_owners_refuse_collection_limit() {
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         operation,
         0,
-        |ctx| super::super::body_closures(ctx, &wire_topology(true)).map(|_| ()),
+        |ctx| crate::history::topology::body_closures(ctx, &wire_topology(true)).map(|_| ()),
     );
     assert!(matches!(
         error,
@@ -77,9 +78,11 @@ fn body_closure_queries_match_direct_intersection() {
         std::collections::BTreeSet::from([99]),
     ] {
         let (direct, indexed) = crate::test_support::with_decode_context(|ctx| {
-            let direct = super::super::bodies_intersecting(ctx, &topology, &changed).unwrap();
-            let closures = super::super::body_closures(ctx, &topology).unwrap();
-            let indexed = super::super::closures_intersecting(ctx, &closures, &changed).unwrap();
+            let direct =
+                crate::history::topology::bodies_intersecting(ctx, &topology, &changed).unwrap();
+            let closures = crate::history::topology::body_closures(ctx, &topology).unwrap();
+            let indexed =
+                crate::history::topology::closures_intersecting(ctx, &closures, &changed).unwrap();
             (direct, indexed)
         });
         assert_eq!(direct, indexed);
@@ -94,8 +97,12 @@ fn index_error(
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bodies_intersecting(&ctx, topology, &std::collections::BTreeSet::new())
-        .unwrap_err()
+    crate::history::topology::bodies_intersecting(
+        &ctx,
+        topology,
+        &std::collections::BTreeSet::new(),
+    )
+    .unwrap_err()
 }
 
 #[test]
@@ -209,7 +216,7 @@ fn historical_body_closure_disjointness_refuses_work() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
         0,
-        |ctx| super::super::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
+        |ctx| crate::history::topology::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
     );
     assert!(matches!(
         error,
@@ -273,7 +280,7 @@ fn body_hierarchy_scan_error(operation: &'static str) -> cadmpeg_core::CodecErro
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
         0,
-        |ctx| super::super::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
+        |ctx| crate::history::topology::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
     )
 }
 
@@ -346,7 +353,7 @@ fn historical_shell_vertex_scan_refuses_work() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         operation,
         0,
-        |ctx| super::super::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
+        |ctx| crate::history::topology::bodies_intersecting(ctx, &topology, &changed).map(|_| ()),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -371,7 +378,7 @@ fn historical_treatment_carrier_face_scan_refuses_work() {
         operation,
         0,
         |ctx| {
-            super::super::treatment_edge_candidates::<true>(
+            crate::history::topology::treatment_edge_candidates::<true>(
                 ctx,
                 None,
                 &[],

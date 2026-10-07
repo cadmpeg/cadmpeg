@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::history::historical_transition;
+use crate::history::archive::historical_transition;
 use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
 
 #[test]
@@ -82,7 +82,7 @@ fn historical_transition_source_scans_refuse_work() {
         0,
         |ctx| {
             let mut states = vec![state(11, &[(1, 10)])];
-            super::super::bind_historical_transitions(ctx, &mut states)
+            crate::history::archive::bind_historical_transitions(ctx, &mut states)
         },
     );
     assert!(matches!(

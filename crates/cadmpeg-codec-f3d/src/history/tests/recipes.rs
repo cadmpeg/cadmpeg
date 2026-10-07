@@ -14,7 +14,8 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::history::{
-    bind_body_recipe_operand_history_candidates, body_face_index, complete_body_face_slots,
+    bind_body_recipe_operand_history_candidates, topology::body_face_index,
+    topology::complete_body_face_slots,
 };
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta, AsmHistoricalRelation,
@@ -1625,7 +1626,7 @@ fn opaque_history_span_retains_the_precise_framing_error() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("test input is within the service limit");
-    let records = super::super::decode_history_records(
+    let records = super::super::archive::decode_history_records(
         &ctx,
         &bytes,
         0,

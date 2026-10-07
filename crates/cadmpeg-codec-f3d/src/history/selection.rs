@@ -3,9 +3,10 @@
 
 use super::{
     bound_scope_history, design_axis, effective_scope_previous_history_state_id,
-    historical_edge_axis, history_state_reaches, native_stream_of, projection_was_finalized,
-    same_axis_line, single_btree_value, stable_ref, treatment_edge_candidates, unique_by,
-    unique_history_state_in, unique_history_state_pair, UniqueIndex, UniqueLookup,
+    history_state_reaches, native_stream_of, projection_was_finalized, same_axis_line,
+    single_btree_value, stable_ref, topology::historical_edge_axis,
+    topology::treatment_edge_candidates, unique_by, unique_history_state_in,
+    unique_history_state_pair, UniqueIndex, UniqueLookup,
     EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9, EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9,
     EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
     HOLE_SUPPORT_NORMAL_TOLERANCE, HOLE_SUPPORT_POINT_TOLERANCE,
