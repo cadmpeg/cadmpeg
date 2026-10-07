@@ -40,7 +40,7 @@ fn zero_face_loop_binding_rows_preserve_work_refusal() {
 
 #[test]
 fn zero_support_slot_range_preserves_work_refusal() {
-    const OPERATION: &str = "catia_zero_binding_values";
+    const OPERATION: &str = "catia_zero_binding_slot_lookup";
     let mut stream = crate::test_support::test_zero_entity::zero_entity_face_loop_support_stream();
     let support_slot = 0x6a + 12 + 13;
     stream[support_slot..support_slot + 4].copy_from_slice(&1u32.to_le_bytes());

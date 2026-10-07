@@ -111,21 +111,12 @@ fn assert_paired_face_lookup_refusal(operation: &'static str, unknown_carrier: b
 }
 
 #[test]
-fn zero_topology_reversed_curve_lookup_preserves_work_refusal() {
-    assert_paired_face_lookup_refusal("catia_zero_topology_reversed_curve_lookup", false);
+fn zero_topology_curve_position_lookup_preserves_work_refusal() {
+    assert_paired_face_lookup_refusal("catia_zero_wire_curve_lookup", false);
+    assert_paired_face_lookup_refusal("catia_zero_wire_curve_lookup", true);
 }
 
 #[test]
-fn zero_topology_unknown_curve_lookup_preserves_work_refusal() {
-    assert_paired_face_lookup_refusal("catia_zero_topology_unknown_curve_lookup", true);
-}
-
-#[test]
-fn zero_topology_first_radial_lookup_preserves_work_refusal() {
-    assert_paired_face_lookup_refusal("catia_zero_topology_first_radial_coedge_lookup", false);
-}
-
-#[test]
-fn zero_topology_second_radial_lookup_preserves_work_refusal() {
-    assert_paired_face_lookup_refusal("catia_zero_topology_second_radial_coedge_lookup", false);
+fn zero_topology_radial_lookup_preserves_work_refusal() {
+    assert_paired_face_lookup_refusal("catia_zero_topology_radial_coedge_lookup", false);
 }

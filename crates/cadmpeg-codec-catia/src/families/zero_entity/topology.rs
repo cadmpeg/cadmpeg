@@ -88,7 +88,11 @@ pub(crate) fn zero_entity_endpoint_pair_candidates(
     ctx: &DecodeContext<'_>,
     runs: &[ZeroEntitySupportRun],
 ) -> Result<Vec<ZeroEntityEndpointPairCandidate>, CodecError> {
-    endpoint_pair_candidates(ctx, &zero_entity_oriented_occurrences(ctx, runs)?)
+    let (occurrences, _occurrence_storage) = ctx
+        .with_scoped_storage("catia_zero_occurrences", || {
+            zero_entity_oriented_occurrences(ctx, runs)
+        })?;
+    endpoint_pair_candidates(ctx, &occurrences)
 }
 
 pub(super) fn zero_entity_endpoint_pair_candidates_with_budget(
@@ -96,7 +100,11 @@ pub(super) fn zero_entity_endpoint_pair_candidates_with_budget(
     runs: &[ZeroEntitySupportRun],
     budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<ZeroEntityEndpointPairCandidate>>, CodecError> {
-    endpoint_pair_candidates_with_budget(ctx, &zero_entity_oriented_occurrences(ctx, runs)?, budget)
+    let (occurrences, _occurrence_storage) = ctx
+        .with_scoped_storage("catia_zero_occurrences", || {
+            zero_entity_oriented_occurrences(ctx, runs)
+        })?;
+    endpoint_pair_candidates_with_budget(ctx, &occurrences, budget)
 }
 
 fn zero_entity_oriented_occurrences(
@@ -108,17 +116,23 @@ fn zero_entity_oriented_occurrences(
         let Some(face) = run.face.as_ref() else {
             continue;
         };
-        let mut midpoints = HashMap::new();
-        for support in ctx.admit_iter(&run.supports, "catia_zero_occurrence_support_visits")? {
-            if let Some(midpoint) = support.model_midpoint {
-                ctx.insert_hash_map(
-                    &mut midpoints,
-                    support.record_ordinal,
-                    midpoint,
-                    "catia_zero_midpoints",
-                )?;
-            }
-        }
+        let (midpoints, _midpoint_storage) =
+            ctx.with_scoped_storage("catia_zero_midpoints", || {
+                let mut midpoints = HashMap::new();
+                for support in
+                    ctx.admit_iter(&run.supports, "catia_zero_occurrence_support_visits")?
+                {
+                    if let Some(midpoint) = support.model_midpoint {
+                        ctx.insert_hash_map(
+                            &mut midpoints,
+                            support.record_ordinal,
+                            midpoint,
+                            "catia_zero_midpoints",
+                        )?;
+                    }
+                }
+                Ok::<_, CodecError>(midpoints)
+            })?;
         for loop_record in ctx.admit_iter(
             match face.loops.as_deref() {
                 Some(loops) => loops,
@@ -132,15 +146,16 @@ fn zero_entity_oriented_occurrences(
                     "catia_zero_occurrence_ordinal_visits",
                 )?
                 .copied()
-                .zip(
-                    ctx.admit_iter(
-                        &loop_record.oriented_model_endpoints,
-                        "catia_zero_occurrence_endpoint_visits",
-                    )?
-                    .copied(),
-                )
+                .zip(loop_record.oriented_model_endpoints.iter().copied())
             {
-                let Some(model_midpoint) = midpoints.get(&support_record_ordinal).copied() else {
+                let Some(model_midpoint) = ctx
+                    .get_hash_map(
+                        &midpoints,
+                        &support_record_ordinal,
+                        "catia_zero_midpoint_lookup",
+                    )?
+                    .copied()
+                else {
                     continue;
                 };
                 ctx.push_vec(
@@ -190,21 +205,30 @@ fn endpoint_pair_candidates_with_budget(
     occurrences: &[ZeroEntityOrientedOccurrence],
     budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<ZeroEntityEndpointPairCandidate>>, CodecError> {
-    let Some(endpoint_matches) = endpoint_match_graph(ctx, occurrences, budget)? else {
+    // The match graphs, face indexes and traversal state are scratch; only
+    // the candidates are kept.
+    let mut scratch = ctx.reserve_scoped(0, "catia_zero_pair_workspace")?;
+    let Some(endpoint_matches) =
+        scratch.with_storage(|| endpoint_match_graph(ctx, occurrences, budget))?
+    else {
         return Ok(None);
     };
-    let radial_matches = selected_radial_matches(ctx, occurrences, &endpoint_matches)?;
+    let radial_matches =
+        scratch.with_storage(|| selected_radial_matches(ctx, occurrences, &endpoint_matches))?;
     // Each distinct face ordinal gets the next union-find index.
-    let mut face_indices = HashMap::new();
-    for occurrence in ctx.admit_iter(occurrences, "catia_zero_pair_occurrence_visits")? {
-        let next = face_indices.len();
-        ctx.entry_hash_map(
-            &mut face_indices,
-            occurrence.face_record_ordinal,
-            "catia_zero_face_indices",
-        )?
-        .or_insert(next);
-    }
+    let face_indices = scratch.with_storage(|| {
+        let mut face_indices = HashMap::new();
+        for occurrence in ctx.admit_iter(occurrences, "catia_zero_pair_occurrence_visits")? {
+            let next = face_indices.len();
+            ctx.entry_hash_map(
+                &mut face_indices,
+                occurrence.face_record_ordinal,
+                "catia_zero_face_indices",
+            )?
+            .or_insert(next);
+        }
+        Ok::<_, CodecError>(face_indices)
+    })?;
     let face_index = |occurrence: usize| -> Result<usize, CodecError> {
         ctx.get_hash_map(
             &face_indices,
@@ -214,7 +238,8 @@ fn endpoint_pair_candidates_with_budget(
         .copied()
         .ok_or_else(|| ctx.refuse_codec_limit("catia_zero_face_indices", 0, 1))
     };
-    let mut face_components = UnionFind::charged(ctx, face_indices.len(), "catia_zero_face_union")?;
+    let mut face_components = scratch
+        .with_storage(|| UnionFind::charged(ctx, face_indices.len(), "catia_zero_face_union"))?;
     for (index, neighbors) in ctx
         .admit_iter(&radial_matches, "catia_zero_pair_radial_visits")?
         .enumerate()
@@ -222,7 +247,7 @@ fn endpoint_pair_candidates_with_budget(
         let [neighbor] = neighbors.as_slice() else {
             continue;
         };
-        if radial_matches[*neighbor].as_slice() != [index] {
+        if !matches!(radial_matches[*neighbor].as_slice(), [only] if *only == index) {
             continue;
         }
         face_components.union(ctx, face_index(index)?, face_index(*neighbor)?)?;
@@ -239,7 +264,9 @@ fn endpoint_pair_candidates_with_budget(
         let [neighbor] = neighbors.as_slice() else {
             continue;
         };
-        if index >= *neighbor || radial_matches[*neighbor].as_slice() != [index] {
+        if index >= *neighbor
+            || !matches!(radial_matches[*neighbor].as_slice(), [only] if *only == index)
+        {
             continue;
         }
         let [first, second] = [occurrences[index], occurrences[*neighbor]];
@@ -258,7 +285,8 @@ fn endpoint_pair_candidates_with_budget(
         )?;
     }
 
-    let mut visited = ctx.alloc_filled(occurrences.len(), false, "catia_zero_pair_visited")?;
+    let mut visited = scratch
+        .with_storage(|| ctx.alloc_filled(occurrences.len(), false, "catia_zero_pair_visited"))?;
     for (start, _) in ctx
         .admit_iter(occurrences, "catia_zero_pair_roots")?
         .enumerate()
@@ -266,32 +294,35 @@ fn endpoint_pair_candidates_with_budget(
         if visited[start] {
             continue;
         }
-        let mut stack = Vec::new();
-        ctx.push_vec(&mut stack, start, "catia_zero_pair_stack")?;
-        visited[start] = true;
-        let mut group = Vec::new();
-        while let Some(index) = stack.pop() {
-            ctx.push_vec(&mut group, index, "catia_zero_pair_group")?;
-            for neighbor in
-                ctx.admit_iter(&endpoint_matches[index], "catia_zero_pair_neighbor_visits")?
-            {
-                if !visited[*neighbor] {
-                    visited[*neighbor] = true;
-                    ctx.push_vec(&mut stack, *neighbor, "catia_zero_pair_stack")?;
+        let by_face_component = scratch.with_storage(|| {
+            let mut stack = Vec::new();
+            ctx.push_vec(&mut stack, start, "catia_zero_pair_stack")?;
+            visited[start] = true;
+            let mut group = Vec::new();
+            while let Some(index) = stack.pop() {
+                ctx.push_vec(&mut group, index, "catia_zero_pair_group")?;
+                for neighbor in
+                    ctx.admit_iter(&endpoint_matches[index], "catia_zero_pair_neighbor_visits")?
+                {
+                    if !visited[*neighbor] {
+                        visited[*neighbor] = true;
+                        ctx.push_vec(&mut stack, *neighbor, "catia_zero_pair_stack")?;
+                    }
                 }
             }
-        }
-        let mut by_face_component = BTreeMap::<usize, Vec<usize>>::new();
-        for &index in ctx.admit_iter(&group, "catia_zero_pair_group_visits")? {
-            let component = face_components.find(ctx, face_index(index)?)?;
-            ctx.push_btree_group(
-                &mut by_face_component,
-                component,
-                index,
-                "catia_zero_pair_face_components",
-                "catia_zero_pair_face_members",
-            )?;
-        }
+            let mut by_face_component = BTreeMap::<usize, Vec<usize>>::new();
+            for &index in ctx.admit_iter(&group, "catia_zero_pair_group_visits")? {
+                let component = face_components.find(ctx, face_index(index)?)?;
+                ctx.push_btree_group(
+                    &mut by_face_component,
+                    component,
+                    index,
+                    "catia_zero_pair_face_components",
+                    "catia_zero_pair_face_members",
+                )?;
+            }
+            Ok::<_, CodecError>(by_face_component)
+        })?;
         for (_, pair) in ctx.admit_iter(&by_face_component, "catia_zero_pair_component_visits")? {
             let &[left, right] = pair.as_slice() else {
                 continue;
@@ -351,6 +382,9 @@ pub(super) fn endpoint_locus_candidates_with_budget(
     endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
     budget: &WorkBudget<'_>,
 ) -> Result<Option<Vec<ZeroEntityEndpointLocusCandidate>>, CodecError> {
+    // The endpoint lane, cell index, neighbor graph and traversal state are
+    // scratch; only the locus candidates are kept.
+    let mut scratch = ctx.reserve_scoped(0, "catia_zero_locus_workspace")?;
     let mut endpoints = Vec::new();
     for (endpoint_pair, candidate) in ctx
         .admit_iter(endpoint_pairs, "catia_zero_locus_pair_visits")?
@@ -360,7 +394,8 @@ pub(super) fn endpoint_locus_candidates_with_budget(
             .into_iter()
             .zip(candidate.model_endpoints)
         {
-            ctx.push_vec(
+            ctx.push_scoped_vec(
+                &mut scratch,
                 &mut endpoints,
                 (EndpointPairIndex(endpoint_pair), endpoint, point),
                 "catia_zero_locus_endpoints",
@@ -375,18 +410,21 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         let Some(cell) = endpoint_cell(*point) else {
             return Ok(None);
         };
-        if let Some(indices) = cells.get_mut(&cell) {
-            ctx.push_vec(indices, index, "catia_zero_locus_cell_members")?;
-        } else {
-            let mut indices = Vec::new();
-            ctx.push_vec(&mut indices, index, "catia_zero_locus_cell_members")?;
-            ctx.insert_hash_map(&mut cells, cell, indices, "catia_zero_locus_cells")?;
-        }
+        scratch.with_storage(|| {
+            ctx.push_hash_group(
+                &mut cells,
+                cell,
+                index,
+                "catia_zero_locus_cells",
+                "catia_zero_locus_cell_members",
+            )
+        })?;
     }
-    let mut neighbors =
+    let mut neighbors = scratch.with_storage(|| {
         ctx.collect_indexed_vec(endpoints.len(), "catia_zero_locus_neighbors", |_| {
             Ok(Vec::new())
-        })?;
+        })
+    })?;
     for (index, (_, _, point)) in ctx
         .admit_iter(&endpoints, "catia_zero_locus_endpoint_visits")?
         .enumerate()
@@ -406,7 +444,11 @@ pub(super) fn endpoint_locus_candidates_with_budget(
                     };
                     let neighbor_cell = [x, y, z];
                     for other in ctx.admit_iter(
-                        match cells.get(&neighbor_cell) {
+                        match ctx.get_hash_map(
+                            &cells,
+                            &neighbor_cell,
+                            "catia_zero_locus_cell_lookup",
+                        )? {
                             Some(indices) => indices.as_slice(),
                             None => &[],
                         },
@@ -417,12 +459,14 @@ pub(super) fn endpoint_locus_candidates_with_budget(
                         }
                         charge_endpoint_work(ctx, budget)?;
                         if point.distance(endpoints[*other].2.get()) <= MODEL_POINT_TOLERANCE {
-                            ctx.push_vec(
+                            ctx.push_scoped_vec(
+                                &mut scratch,
                                 &mut neighbors[index],
                                 *other,
                                 "catia_zero_locus_neighbor_edges",
                             )?;
-                            ctx.push_vec(
+                            ctx.push_scoped_vec(
+                                &mut scratch,
                                 &mut neighbors[*other],
                                 index,
                                 "catia_zero_locus_neighbor_edges",
@@ -434,7 +478,8 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         }
     }
 
-    let mut visited = ctx.alloc_filled(endpoints.len(), false, "catia_zero_locus_visited")?;
+    let mut visited = scratch
+        .with_storage(|| ctx.alloc_filled(endpoints.len(), false, "catia_zero_locus_visited"))?;
     let mut candidates = Vec::new();
     for (start, _) in ctx
         .admit_iter(&endpoints, "catia_zero_locus_roots")?
@@ -443,19 +488,24 @@ pub(super) fn endpoint_locus_candidates_with_budget(
         if visited[start] {
             continue;
         }
-        let mut component = Vec::new();
-        let mut stack = Vec::new();
-        ctx.push_vec(&mut stack, start, "catia_zero_locus_stack")?;
-        visited[start] = true;
-        while let Some(index) = stack.pop() {
-            ctx.push_vec(&mut component, index, "catia_zero_locus_component")?;
-            for neighbor in ctx.admit_iter(&neighbors[index], "catia_zero_locus_neighbor_visits")? {
-                if !visited[*neighbor] {
-                    visited[*neighbor] = true;
-                    ctx.push_vec(&mut stack, *neighbor, "catia_zero_locus_stack")?;
+        let mut component = scratch.with_storage(|| {
+            let mut component = Vec::new();
+            let mut stack = Vec::new();
+            ctx.push_vec(&mut stack, start, "catia_zero_locus_stack")?;
+            visited[start] = true;
+            while let Some(index) = stack.pop() {
+                ctx.push_vec(&mut component, index, "catia_zero_locus_component")?;
+                for neighbor in
+                    ctx.admit_iter(&neighbors[index], "catia_zero_locus_neighbor_visits")?
+                {
+                    if !visited[*neighbor] {
+                        visited[*neighbor] = true;
+                        ctx.push_vec(&mut stack, *neighbor, "catia_zero_locus_stack")?;
+                    }
                 }
             }
-        }
+            Ok::<_, CodecError>(component)
+        })?;
         ctx.sort_unstable_by(
             &mut component,
             |value| value,
@@ -517,13 +567,13 @@ fn endpoint_match_graph(
             let Some(cell) = endpoint_cell(endpoint) else {
                 return Ok(None);
             };
-            if let Some(indices) = cells.get_mut(&cell) {
-                ctx.push_vec(indices, index, "catia_zero_match_cell_members")?;
-            } else {
-                let mut indices = Vec::new();
-                ctx.push_vec(&mut indices, index, "catia_zero_match_cell_members")?;
-                ctx.insert_hash_map(&mut cells, cell, indices, "catia_zero_match_cells")?;
-            }
+            ctx.push_hash_group(
+                &mut cells,
+                cell,
+                index,
+                "catia_zero_match_cells",
+                "catia_zero_match_cell_members",
+            )?;
         }
     }
     let mut matches =
@@ -550,7 +600,9 @@ fn endpoint_match_graph(
                             continue;
                         };
                         let neighbor = [x, y, z];
-                        if let Some(indices) = cells.get(&neighbor) {
+                        if let Some(indices) =
+                            ctx.get_hash_map(&cells, &neighbor, "catia_zero_match_cell_lookup")?
+                        {
                             for other in ctx
                                 .admit_iter(indices, "catia_zero_match_cell_member_visits")?
                                 .copied()

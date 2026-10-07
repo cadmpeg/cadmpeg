@@ -526,6 +526,7 @@ fn zero_entity_records_in_range(
     let mut records = Vec::new();
     let mut position = range.start;
     while position + a9_03::LEN <= range.end {
+        ctx.charge_work(1, "catia_zero_record_scan")?;
         if data[position + a9_03::FAMILY..position + a9_03::TAG_HI] != [0xa9, 0x03] {
             position += 1;
             continue;
@@ -995,6 +996,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
     let mut runs = Vec::new();
     let mut index = 0usize;
     while index + 1 < records.len() {
+        ctx.charge_work(1, "catia_zero_support_run_records")?;
         let carrier_record = records[index];
         let Some(carrier_geometry) =
             zero_entity_surface_at(ctx, data, carrier_record.pos, refusal)?
@@ -1012,6 +1014,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
             .get(next)
             .is_some_and(|record| record.tag[0] == 0x21)
         {
+            ctx.charge_work(1, "catia_zero_support_run_records")?;
             let record = records[next];
             if let Some(support) = zero_entity_support_occurrence(ctx, data, record, refusal)? {
                 let mut support = support;
@@ -1126,7 +1129,11 @@ pub(crate) fn zero_entity_support_runs_in_range(
     for loop_record in ctx.admit_iter(&loops, "catia_zero_loop_visits")? {
         loop_terminals.push(loop_record.members.terminal_id());
     }
-    let mut loop_roster_is_valid = flattened_terminals == loop_terminals;
+    let mut loop_roster_is_valid = ctx.equal(
+        &flattened_terminals,
+        &loop_terminals,
+        "catia_zero_loop_terminal_roster",
+    )?;
     if loop_roster_is_valid {
         let mut loop_index = 0;
         for terminals in ctx.admit_iter(&face_terminals, "catia_zero_face_terminal_visits")? {
@@ -1140,10 +1147,11 @@ pub(crate) fn zero_entity_support_runs_in_range(
             if !matches!(
                 outer.loop_class,
                 ZeroEntityLoopClass::Outer41 | ZeroEntityLoopClass::ReversedC1
-            ) || !ctx
-                .admit_iter(&face_loops[1..], "catia_zero_bound_loop_visits")?
-                .all(|inner| inner.loop_class == ZeroEntityLoopClass::Bound50)
-            {
+            ) || !ctx.all_by(
+                &face_loops[1..],
+                |inner| Ok(inner.loop_class == ZeroEntityLoopClass::Bound50),
+                "catia_zero_bound_loop_visits",
+            )? {
                 loop_roster_is_valid = false;
                 break;
             }
@@ -1155,15 +1163,11 @@ pub(crate) fn zero_entity_support_runs_in_range(
             .admit_iter(&face_terminals, "catia_zero_face_loop_binding_rows")?
             .enumerate()
         {
-            let face = &mut faces[face_index];
-            let mut face_loops = Vec::new();
-            ctx.reserve_vec(
-                &mut face_loops,
-                terminals.len(),
+            let face_loops = ctx.collect_vec(
+                remaining_loops.by_ref().take(terminals.len()),
                 "catia_zero_bound_face_loops",
             )?;
-            face_loops.extend(remaining_loops.by_ref().take(terminals.len()));
-            face.loops = Some(face_loops);
+            faces[face_index].loops = Some(face_loops);
         }
     }
     let face_population = ctx
@@ -1180,7 +1184,10 @@ pub(crate) fn zero_entity_support_runs_in_range(
         && runs.len() == surface_population
         && faces.len() == runs.len();
     if rosters_are_complete {
-        for (run, mut face) in runs.iter_mut().zip(faces) {
+        for (mut face, run) in ctx
+            .admit_iter(faces, "catia_zero_face_run_bindings")?
+            .zip(runs.iter_mut())
+        {
             bind_face_support_occurrences(ctx, &mut face, &run.supports)?;
             run.face = Some(face);
         }
@@ -1196,32 +1203,48 @@ fn bind_face_support_occurrences(
     let Some(face_loops) = face.loops.as_mut() else {
         return Ok(());
     };
+    // The slot and ordinal indexes and the bound-ordinal set are scratch.
+    let mut scratch = ctx.reserve_scoped(0, "catia_zero_supports_by_slot")?;
     let mut supports_by_slot = HashMap::<u32, Option<u32>>::new();
     for support in ctx.admit_iter(supports, "catia_zero_binding_support_visits")? {
-        if let Some(record) = supports_by_slot.get_mut(&support.face_local_slot) {
+        if let Some(record) = ctx.get_mut_hash_map(
+            &mut supports_by_slot,
+            &support.face_local_slot,
+            "catia_zero_supports_by_slot",
+        )? {
+            // A repeated slot binds no support.
             *record = None;
         } else {
-            ctx.insert_hash_map(
-                &mut supports_by_slot,
-                support.face_local_slot,
-                Some(support.record_ordinal),
-                "catia_zero_supports_by_slot",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut supports_by_slot,
+                    support.face_local_slot,
+                    Some(support.record_ordinal),
+                    "catia_zero_supports_by_slot",
+                )
+            })?;
         }
     }
     let mut bindings = Vec::new();
     ctx.reserve_vec(&mut bindings, face_loops.len(), "catia_zero_binding_rows")?;
     for loop_record in ctx.admit_iter(&*face_loops, "catia_zero_binding_loop_visits")? {
-        let Some(row) = ctx.collect_options(
-            loop_record
-                .members
-                .support_slots()
-                .map(|slot| supports_by_slot.get(&slot).copied().flatten()),
+        let slots = loop_record.members.support_slots();
+        let mut row = ctx.collection_vec(
+            usize::try_from(loop_record.members.member_count.get()).map_err(|_| {
+                ctx.refuse_codec_limit("catia_zero_binding_values", u64::MAX, u64::MAX)
+            })?,
             "catia_zero_binding_values",
-        )?
-        else {
-            return Ok(());
-        };
+        )?;
+        for slot in slots {
+            let Some(ordinal) = ctx
+                .get_hash_map(&supports_by_slot, &slot, "catia_zero_binding_slot_lookup")?
+                .copied()
+                .flatten()
+            else {
+                return Ok(());
+            };
+            row.push(ordinal);
+        }
         bindings.push(row);
     }
     if ctx
@@ -1235,39 +1258,49 @@ fn bind_face_support_occurrences(
     let mut bound = HashSet::new();
     for row in ctx.admit_iter(&bindings, "catia_zero_binding_row_visits")? {
         for &ordinal in ctx.admit_iter(row, "catia_zero_binding_ordinal_visits")? {
-            ctx.insert_hash_set(&mut bound, ordinal, "catia_zero_bound_supports")?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(&mut bound, ordinal, "catia_zero_bound_supports")
+            })?;
         }
     }
     if bound.len() != supports.len() {
         return Ok(());
     }
-    for (loop_record, support_record_ordinals) in face_loops.iter_mut().zip(bindings) {
+    for (loop_record, support_record_ordinals) in ctx
+        .admit_iter(&mut *face_loops, "catia_zero_binding_assignments")?
+        .zip(bindings)
+    {
         loop_record.support_record_ordinals = support_record_ordinals;
     }
     let mut supports_by_ordinal = HashMap::new();
-    ctx.reserve_map(
-        &mut supports_by_ordinal,
-        supports.len(),
-        "catia_zero_supports_by_ordinal",
-    )?;
     for support in ctx.admit_iter(supports, "catia_zero_binding_support_visits")? {
-        supports_by_ordinal.insert(support.record_ordinal, support);
+        scratch.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut supports_by_ordinal,
+                support.record_ordinal,
+                support,
+                "catia_zero_supports_by_ordinal",
+            )
+        })?;
     }
-    for loop_record in face_loops {
-        let mut endpoints = Vec::new();
-        ctx.reserve_vec(
-            &mut endpoints,
-            loop_record.support_record_ordinals.len(),
-            "catia_zero_support_endpoints",
-        )?;
+    for loop_record in ctx.admit_iter(face_loops, "catia_zero_endpoint_loop_visits")? {
+        let mut endpoints = scratch.with_storage(|| {
+            ctx.collection_vec(
+                loop_record.support_record_ordinals.len(),
+                "catia_zero_support_endpoints",
+            )
+        })?;
         for ordinal in ctx.admit_iter(
             &loop_record.support_record_ordinals,
             "catia_zero_endpoint_ordinal_visits",
         )? {
             endpoints.push(
-                supports_by_ordinal
-                    .get(ordinal)
-                    .and_then(|support| support.model_endpoints),
+                ctx.get_hash_map(
+                    &supports_by_ordinal,
+                    ordinal,
+                    "catia_zero_supports_by_ordinal",
+                )?
+                .and_then(|support| support.model_endpoints),
             );
         }
         if let Some(oriented) =
