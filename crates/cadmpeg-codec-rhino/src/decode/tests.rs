@@ -34,7 +34,6 @@ use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 mod candidate_annotations;
-mod carrier_copy;
 mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
@@ -1973,6 +1972,7 @@ fn finite_parameter(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
 }
 
 mod brep;
+mod budget_paths;
 
 mod instance_snapshots;
 
