@@ -189,23 +189,22 @@ fn validation_property_map_refuses_collection_limit() {
 #[test]
 fn validation_mesh_edges_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
     let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("mesh validation source decodes");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits collection policy");
-    assert!(matches!(
-        super::mesh_properties(result.ir(), &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_validation_mesh_edges"
-    ));
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "step_validation_mesh_edges",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits collection policy");
+            super::mesh_properties(result.ir(), &ctx)
+        },
+    );
 }
 
 #[test]
