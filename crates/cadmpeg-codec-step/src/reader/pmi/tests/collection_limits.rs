@@ -295,31 +295,43 @@ fn pmi_datum_id_walk_refuses_depth_limit() {
 
 #[test]
 fn pmi_datum_modifier_text_refuses_materialized_limit() {
-let source = format!("{HEADER}#1=ITEM();{TAIL}");
-let (exchange, _) =
-crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-.expect("valid exchange");
-// The three candidate bytes remain scoped until the datum reference is selected.
-let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_pmi_datum_modifier_text", |limit| {
-let arena = DecodeArena::new();
-let mut policy = DecodePolicy::service();
-policy.limits.max_materialized_bytes = limit;
-let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-.expect("empty root fits materialized policy");
-let mut losses = Vec::new();
-let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
-let mut measurements = super::super::MeasureContext {
-length_scale: 1.0,
-angle_scale: 1.0,
-graph_limit: 64,
-losses: (&mut losses, &reports),
-};
-let value = crate::parse::Value::Enumeration("ABC".into());
-let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
-let mut text_storage = ctx.reserve_scoped(0, "text fixture").expect("scope");
-super::super::modifier_text(&value, &exchange, (&mut std::collections::BTreeSet::new(), &mut claim_storage), &mut measurements, &mut text_storage, &ctx)
-});
-assert!(matches!(error, CodecError::ResourceLimit(refusal)
+    let source = format!("{HEADER}#1=ITEM();{TAIL}");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid exchange");
+    // The three candidate bytes remain scoped until the datum reference is selected.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_pmi_datum_modifier_text",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits materialized policy");
+            let mut losses = Vec::new();
+            let reports =
+                std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+            let mut measurements = super::super::MeasureContext {
+                length_scale: 1.0,
+                angle_scale: 1.0,
+                graph_limit: 64,
+                losses: (&mut losses, &reports),
+            };
+            let value = crate::parse::Value::Enumeration("ABC".into());
+            let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
+            let mut text_storage = ctx.reserve_scoped(0, "text fixture").expect("scope");
+            super::super::modifier_text(
+                &value,
+                &exchange,
+                (&mut std::collections::BTreeSet::new(), &mut claim_storage),
+                &mut measurements,
+                &mut text_storage,
+                &ctx,
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
 if refusal.dimension == ResourceDimension::MaterializedBytes
 && refusal.operation == "step_pmi_datum_modifier_text"));
 }
@@ -330,7 +342,8 @@ fn datum_reference_refuses(records: &str, operation: &str) {
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid datum exchange");
     let setup_ctx = cadmpeg_test_support::service_decode_context();
-    let mut annotations = super::super::Annotations::new(&setup_ctx).expect("annotation index setup");
+    let mut annotations =
+        super::super::Annotations::new(&setup_ctx).expect("annotation index setup");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::test_support::with_service_context(source.as_bytes(), |_, _ctx| {
         annotations
@@ -389,10 +402,6 @@ fn pmi_datum_modifier_items_refuse_collection_limit() {
         "step_pmi_datum_modifier_items",
     );
 }
-
-
-
-
 
 fn placement_refuses(operation: &str) {
     let source = format!(
@@ -469,12 +478,23 @@ fn target_slot_refusal(operation: &'static str) -> CodecError {
         .expect("empty root fits collection policy");
     let mut scratch = ctx.reserve_scoped(0, "STEP target index setup").unwrap();
     super::super::push_target(
-        (&mut std::array::from_fn(|_| std::collections::BTreeSet::new()), &mut scratch),
-        &mut Vec::new(), (8, "#1"),
-        || Ok(cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
-            source_id: crate::reader::step_source_id(&cadmpeg_test_support::service_decode_context(), 1).unwrap(),
-        }),
-        &ctx, operation,
+        (
+            &mut std::array::from_fn(|_| std::collections::BTreeSet::new()),
+            &mut scratch,
+        ),
+        &mut Vec::new(),
+        (8, "#1"),
+        || {
+            Ok(cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
+                source_id: crate::reader::step_source_id(
+                    &cadmpeg_test_support::service_decode_context(),
+                    1,
+                )
+                .unwrap(),
+            })
+        },
+        &ctx,
+        operation,
     )
     .expect_err("target slot exceeds collection limit")
 }
@@ -597,7 +617,10 @@ fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> C
         length_scale: 1.0,
         angle_scale: 1.0,
         graph_limit: 64,
-        losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
+        losses: (
+            &mut losses,
+            &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope")),
+        ),
     };
     super::super::measure(
         &crate::parse::Value::Reference(1),
@@ -702,7 +725,12 @@ fn typed_measure_length_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
+                losses: (
+                    &mut losses,
+                    &std::cell::RefCell::new(
+                        ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                    ),
+                ),
             };
             let result =
                 super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
@@ -734,7 +762,12 @@ fn typed_measure_angle_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
+                losses: (
+                    &mut losses,
+                    &std::cell::RefCell::new(
+                        ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                    ),
+                ),
             };
             let result =
                 super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
@@ -832,7 +865,12 @@ fn record_measure_length_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
+                losses: (
+                    &mut losses,
+                    &std::cell::RefCell::new(
+                        ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                    ),
+                ),
             };
             let result =
                 super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
@@ -861,7 +899,12 @@ fn record_measure_angle_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
+                losses: (
+                    &mut losses,
+                    &std::cell::RefCell::new(
+                        ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                    ),
+                ),
             };
             let result =
                 super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());

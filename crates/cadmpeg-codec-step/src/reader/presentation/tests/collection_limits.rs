@@ -207,9 +207,17 @@ fn transparency_refuses(operation: &str, retained: bool) {
                     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
                         .expect("root fits policy");
 
-                    let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
-                    super::super::surface_transparency(1, record, &exchange, (&mut Vec::new(), &reports), &ctx)
-                        .map(|_| ())
+                    let reports = std::cell::RefCell::new(
+                        ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                    );
+                    super::super::surface_transparency(
+                        1,
+                        record,
+                        &exchange,
+                        (&mut Vec::new(), &reports),
+                        &ctx,
+                    )
+                    .map(|_| ())
                 },
             );
             matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation)
@@ -270,7 +278,12 @@ fn invalid_side_refuses(operation: &str, retained: bool) {
                     let result = (super::super::surface_side_rank(
                         1,
                         record,
-                        (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
+                        (
+                            &mut Vec::new(),
+                            &std::cell::RefCell::new(
+                                ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                            ),
+                        ),
                         &mut BTreeSet::new(),
                         &std::cell::RefCell::new(
                             ctx.reserve_scoped(0, "step invalid surface side storage")
@@ -339,8 +352,6 @@ fn style_graph_refuses(
     ));
 }
 
-
-
 #[test]
 fn presentation_style_domain_active_refuses_collection_limit() {
     style_graph_refuses(
@@ -358,10 +369,6 @@ fn presentation_style_domain_walk_refuses_depth_limit() {
         |exchange, ctx| super::super::style_domain(4, exchange, ctx).map(|_| ()),
     );
 }
-
-
-
-
 
 #[test]
 fn presentation_null_style_visited_refuses_collection_limit() {
@@ -562,7 +569,6 @@ fn presentation_scalar_color_members_refuse_collection_limit() {
     scalar_candidate_refuses("step_presentation_scalar_color_members", false);
 }
 
-
 #[test]
 fn presentation_context_style_text_refuses_retained_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PRESENTATION_STYLE_BY_CONTEXT(#2);#2=ITEM();ENDSEC;END-ISO-10303-21;";
@@ -661,7 +667,12 @@ fn color_search_refuses(
                 ),
                 active: &mut BTreeSet::new(),
                 cache: &mut std::collections::BTreeMap::new(),
-                losses: (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
+                losses: (
+                    &mut Vec::new(),
+                    &std::cell::RefCell::new(
+                        ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                    ),
+                ),
                 invalid_surface_sides: &mut BTreeSet::new(),
             },
             0,
@@ -715,18 +726,43 @@ fn presentation_color_cache_copy_refuses_materialized_limit() {
         )),
     );
     // The cached candidate copy reserves the three bytes of its name as scratch.
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_presentation_color_cache_copy", |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
-        let result = super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { storage: &std::cell::RefCell::new(ctx.reserve_scoped(0, "color search fixture").expect("scope")), active: &mut BTreeSet::new(), cache: &mut cache, losses: (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))), invalid_surface_sides: &mut BTreeSet::new() }, 0, &ctx);
-        result
-    });
-    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_presentation_color_cache_copy"));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "step_presentation_color_cache_copy",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
+            let result = super::super::find_color(
+                1,
+                &exchange,
+                super::super::StyleDomain::Any,
+                super::super::ColorSearchState {
+                    storage: &std::cell::RefCell::new(
+                        ctx.reserve_scoped(0, "color search fixture")
+                            .expect("scope"),
+                    ),
+                    active: &mut BTreeSet::new(),
+                    cache: &mut cache,
+                    losses: (
+                        &mut Vec::new(),
+                        &std::cell::RefCell::new(
+                            ctx.reserve_scoped(0, "report fixture").expect("scope"),
+                        ),
+                    ),
+                    invalid_surface_sides: &mut BTreeSet::new(),
+                },
+                0,
+                &ctx,
+            );
+            result
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_presentation_color_cache_copy")
+    );
 }
-
-
 
 #[test]
 fn style_domain_point_containment_preserves_refusal() {

@@ -86,7 +86,12 @@ impl CarrierIndex {
             .enumerate()
         {
             if let Some(id) = step_instance_id(ctx, curve.id.as_str())? {
-                ctx.insert_hash_map(&mut curves, id, CurveIndex(index), "step_carrier_curve_index")?;
+                ctx.insert_hash_map(
+                    &mut curves,
+                    id,
+                    CurveIndex(index),
+                    "step_carrier_curve_index",
+                )?;
             }
         }
         let mut points = HashMap::new();
@@ -95,7 +100,8 @@ impl CarrierIndex {
             .enumerate()
         {
             if let Some(id) = step_instance_id(ctx, point.id.as_str())? {
-                ctx.insert_hash_map(&mut points,
+                ctx.insert_hash_map(
+                    &mut points,
                     id,
                     PointCarrier {
                         index: PointIndex(index),
@@ -111,7 +117,12 @@ impl CarrierIndex {
             .enumerate()
         {
             if let Some(id) = step_instance_id(ctx, surface.id.as_str())? {
-                ctx.insert_hash_map(&mut surfaces, id, SurfaceIndex(index), "step_carrier_surface_index")?;
+                ctx.insert_hash_map(
+                    &mut surfaces,
+                    id,
+                    SurfaceIndex(index),
+                    "step_carrier_surface_index",
+                )?;
             }
         }
         Ok(Self {
