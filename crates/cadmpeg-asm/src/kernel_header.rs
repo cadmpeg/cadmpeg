@@ -165,9 +165,8 @@ fn read_u8_string_span<'bytes>(
     let Some(value_bytes) = bytes.get(start..end) else {
         return Ok(None);
     };
-    let value = match ctx.validate_utf8(value_bytes, "validate kernel header product string")? {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
+    let Ok(value) = ctx.validate_utf8(value_bytes, "validate kernel header product string")? else {
+        return Ok(None);
     };
     Ok(Some((value, end)))
 }
@@ -186,8 +185,12 @@ mod tests {
     fn binary_header_product_string_refuses_retained_limit() {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = [0x07, 3, b'a', b'b', b'c'];
-        let refusal = crate::test_support::resource_limit_at(&bytes, ResourceDimension::RetainedBytes,
-            "retain kernel header product string", |ctx| super::read_string_region(ctx, &bytes, 0));
+        let refusal = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::RetainedBytes,
+            "retain kernel header product string",
+            |ctx| super::read_string_region(ctx, &bytes, 0),
+        );
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "retain kernel header product string");
     }
@@ -196,8 +199,12 @@ mod tests {
     fn binary_header_scan_refuses_utf8_validation_work() {
         use cadmpeg_core::decode::ResourceDimension;
         let bytes = [0x07, 3, b'a', b'b', b'c'];
-        let refusal = crate::test_support::resource_limit_at(&bytes, ResourceDimension::WorkUnits,
-            "validate kernel header product string", |ctx| super::scan_string_region(ctx, &bytes, 0));
+        let refusal = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::WorkUnits,
+            "validate kernel header product string",
+            |ctx| super::scan_string_region(ctx, &bytes, 0),
+        );
         assert_eq!(refusal.operation, "validate kernel header product string");
     }
 

@@ -195,11 +195,11 @@ impl<'a> FieldReader<'a> {
                 break;
             }
             let byte = self.bytes[self.pos];
-            integer &= byte.is_ascii_digit()
-                || (self.pos == start && matches!(byte, b'+' | b'-'));
+            integer &= byte.is_ascii_digit() || (self.pos == start && matches!(byte, b'+' | b'-'));
             self.pos += 1;
         }
-        integer &= self.pos - start > usize::from(matches!(self.bytes.get(start), Some(b'+' | b'-')));
+        integer &=
+            self.pos - start > usize::from(matches!(self.bytes.get(start), Some(b'+' | b'-')));
         let word = ctx
             .validate_utf8(&self.bytes[start..self.pos], "validate SAT field text")
             .map_err(StreamFailure::from_operation)?
@@ -233,10 +233,7 @@ impl<'a> FieldReader<'a> {
             .into());
         };
         let payload = ctx
-            .validate_utf8(
-                &self.bytes[self.pos..end],
-                "validate SAT string payload",
-            )
+            .validate_utf8(&self.bytes[self.pos..end], "validate SAT string payload")
             .map_err(StreamFailure::from_operation)?
             .map_err(|error| StreamError {
                 format: StreamFormat::Text,
@@ -253,9 +250,15 @@ impl<'a> FieldReader<'a> {
 // ---------------------------------------------------------------------------
 
 /// Split one header line into whitespace-separated fields.
-fn header_line<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], pos: &mut usize, what: &str) -> Result<&'a [u8], StreamFailure> {
+fn header_line<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    pos: &mut usize,
+    what: &str,
+) -> Result<&'a [u8], StreamFailure> {
     let start = *pos;
-    let end = ctx.position_by(&bytes[start..], |b| Ok(*b == b'\n'), "scan SAT header line")
+    let end = ctx
+        .position_by(&bytes[start..], |b| Ok(*b == b'\n'), "scan SAT header line")
         .map_err(StreamFailure::from_operation)?
         .map(|off| start + off)
         .ok_or_else(|| StreamError {
@@ -267,23 +270,44 @@ fn header_line<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], pos: &mut usize, wh
     Ok(&bytes[start..end])
 }
 
+type HeaderFieldSlots<'a, const N: usize> = [Option<&'a [u8]>; N];
+
 /// Read the required fields and detect a surplus field without scanning its tail.
 fn header_fields<'a, const N: usize>(
     ctx: &DecodeContext<'_>,
     line: &'a [u8],
-) -> Result<([Option<&'a [u8]>; N], bool), StreamFailure> {
+) -> Result<(HeaderFieldSlots<'a, N>, bool), StreamFailure> {
     let mut fields = [None; N];
     let mut pos = 0;
     for field in &mut fields {
-        let Some(start) = ctx.position_by(&line[pos..], |byte| Ok(!is_ws(*byte)), "scan SAT header fields")
-            .map_err(StreamFailure::from_operation)? else { break; };
+        let Some(start) = ctx
+            .position_by(
+                &line[pos..],
+                |byte| Ok(!is_ws(*byte)),
+                "scan SAT header fields",
+            )
+            .map_err(StreamFailure::from_operation)?
+        else {
+            break;
+        };
         pos += start;
-        let end = ctx.position_by(&line[pos..], |byte| Ok(is_ws(*byte)), "scan SAT header fields")
-            .map_err(StreamFailure::from_operation)?.map_or(line.len(), |end| pos + end);
+        let end = ctx
+            .position_by(
+                &line[pos..],
+                |byte| Ok(is_ws(*byte)),
+                "scan SAT header fields",
+            )
+            .map_err(StreamFailure::from_operation)?
+            .map_or(line.len(), |end| pos + end);
         *field = Some(&line[pos..end]);
         pos = end;
     }
-    let surplus = ctx.any_by(&line[pos..], |byte| Ok(!is_ws(*byte)), "scan SAT header suffix")
+    let surplus = ctx
+        .any_by(
+            &line[pos..],
+            |byte| Ok(!is_ws(*byte)),
+            "scan SAT header suffix",
+        )
         .map_err(StreamFailure::from_operation)?;
     Ok((fields, surplus))
 }
@@ -295,10 +319,10 @@ fn header_int<T: cadmpeg_core::decode::text::TextScalar>(
     what: &str,
 ) -> Result<T, StreamFailure> {
     let no_field = || StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: format!("header line has no {what} field"),
-        };
+        format: StreamFormat::Text,
+        offset: at,
+        reason: format!("header line has no {what} field"),
+    };
     let field = field.ok_or_else(no_field)?;
     let text = ctx
         .validate_utf8(field, "validate SAT header integer")
@@ -336,10 +360,10 @@ fn counted_string(
         *pos += 1;
     }
     let count_error = || StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: format!("header line has no {what} count"),
-        };
+        format: StreamFormat::Text,
+        offset: at,
+        reason: format!("header line has no {what} count"),
+    };
     let digits = ctx
         .validate_utf8(&line[start..*pos], "validate SAT header string length")
         .map_err(StreamFailure::from_operation)?
@@ -432,8 +456,14 @@ fn parse_header(
     let product_family = counted_string(ctx, line2, &mut cursor, at, "product family")?;
     let product_version = counted_string(ctx, line2, &mut cursor, at, "product version")?;
     let save_date = counted_string(ctx, line2, &mut cursor, at, "save date")?;
-    if ctx.any_by(&line2[cursor..], |byte| Ok(!is_ws(*byte)), "scan SAT product header suffix")
-        .map_err(StreamFailure::from_operation)? {
+    if ctx
+        .any_by(
+            &line2[cursor..],
+            |byte| Ok(!is_ws(*byte)),
+            "scan SAT product header suffix",
+        )
+        .map_err(StreamFailure::from_operation)?
+    {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
@@ -524,11 +554,23 @@ pub fn parse_container(
 ) -> Result<(TextHeader, Terminator), StreamFailure> {
     let mut position = 0;
     let header = parse_header(ctx, bytes, &mut position)?;
-    let end = ctx.rposition_by(bytes, |byte| Ok(!byte.is_ascii_whitespace()), "scan SAT container trailing whitespace")
-        .map_err(StreamFailure::from_operation)?.map_or(0, |end| end + 1);
+    let end = ctx
+        .rposition_by(
+            bytes,
+            |byte| Ok(!byte.is_ascii_whitespace()),
+            "scan SAT container trailing whitespace",
+        )
+        .map_err(StreamFailure::from_operation)?
+        .map_or(0, |end| end + 1);
     let tail = &bytes[..end];
-    let start = ctx.rposition_by(tail, |byte| Ok(is_ws(*byte)), "scan SAT container final marker")
-        .map_err(StreamFailure::from_operation)?.map_or(0, |start| start + 1);
+    let start = ctx
+        .rposition_by(
+            tail,
+            |byte| Ok(is_ws(*byte)),
+            "scan SAT container final marker",
+        )
+        .map_err(StreamFailure::from_operation)?
+        .map_or(0, |start| start + 1);
     let marker = Some(&tail[start..]);
     let branch = match marker {
         Some(b"End-of-ASM-data") => Terminator::Asm,
@@ -620,11 +662,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                     return Err(StreamError {
                         format: StreamFormat::Text,
                         offset: at,
-                        reason: record_error_reason(
-                            ctx,
-                            name,
-                            "closes an unopened subtype scope",
-                        )?,
+                        reason: record_error_reason(ctx, name, "closes an unopened subtype scope")?,
                     }
                     .into());
                 }
@@ -636,8 +674,10 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             ctx.push_scoped_vec(&mut scratch, &mut prims, prim, "frame SAT primitive")
                 .map_err(StreamFailure::from_operation)?;
         }
-        let head = ctx.split_once(name, "-", "dispatch SAT record head")
-            .map_err(StreamFailure::from_operation)?.map_or(name, |(head, _)| head);
+        let head = ctx
+            .split_once(name, "-", "dispatch SAT record head")
+            .map_err(StreamFailure::from_operation)?
+            .map_or(name, |(head, _)| head);
         let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
             TypedRecordFailure::Resource(error) => StreamFailure::from_operation(error),
             TypedRecordFailure::Type(failure) => {
@@ -671,7 +711,8 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             .map_err(StreamFailure::from_operation)?;
         records.push(Record {
             index: records.len(),
-            name: ctx.copy_retained_text(name, "retain SAT record name")
+            name: ctx
+                .copy_retained_text(name, "retain SAT record name")
                 .map_err(StreamFailure::from_operation)?,
             tokens: tokens.into(),
             offset: rec_start,
@@ -872,7 +913,9 @@ enum TypedRecordFailure {
 }
 
 impl From<CodecError> for TypedRecordFailure {
-    fn from(error: CodecError) -> Self { Self::Resource(error) }
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
 }
 
 impl From<TypeFailure> for TypedRecordFailure {
@@ -951,7 +994,9 @@ impl<'a> Cur<'a, '_, '_> {
         None
     }
     fn peek(&mut self) -> Option<&'a Prim<'a>> {
-        if self.resource.is_some() { return None; }
+        if self.resource.is_some() {
+            return None;
+        }
         if let Err(error) = self.ctx.charge_work(1, "read SAT typing primitive") {
             self.resource = Some(error);
             return None;
@@ -1061,7 +1106,10 @@ impl<'a> Cur<'a, '_, '_> {
             return None;
         }
         let out_mark = out.len();
-        self.push_token(out, PendingToken::Value(Token::Long(i64::try_from(count).ok()?)));
+        self.push_token(
+            out,
+            PendingToken::Value(Token::Long(i64::try_from(count).ok()?)),
+        );
         for _ in 0..count {
             let Some(value) = self.num() else {
                 self.pos = mark;
@@ -1279,7 +1327,11 @@ fn spline_poles<'a>(
 /// A `nubs`/`nurbs` curve block ([`asm.md` §6.5]): marker, degree, closure,
 /// unique-knot count, `(knot, multiplicity)` pairs, poles, and for `nurbs`
 /// one weight per pole.
-fn bs_curve_block<'a>(cur: &mut Cur<'a, '_, '_>, kind: BsKind, out: &mut Vec<PendingToken<'a>>) -> Option<()> {
+fn bs_curve_block<'a>(
+    cur: &mut Cur<'a, '_, '_>,
+    kind: BsKind,
+    out: &mut Vec<PendingToken<'a>>,
+) -> Option<()> {
     let marker = cur.word()?;
     let rational = match marker {
         "nubs" => false,
@@ -1374,7 +1426,10 @@ fn bs_surface_block<'a>(cur: &mut Cur<'a, '_, '_>, out: &mut Vec<PendingToken<'a
 /// curve cache and fit tolerance, two null supports, two null pcurves, two
 /// optional interval endpoints, three discontinuity arrays, the extension
 /// integer, the unextended-range pair, and two extension enums.
-fn exact_int_cur_tail<'a>(cur: &mut Cur<'a, '_, '_>, out: &mut Vec<PendingToken<'a>>) -> Option<()> {
+fn exact_int_cur_tail<'a>(
+    cur: &mut Cur<'a, '_, '_>,
+    out: &mut Vec<PendingToken<'a>>,
+) -> Option<()> {
     if let Some(stamp) = match cur.peek() {
         Some(Prim::Integer(value)) => Some(*value),
         _ => None,
@@ -1459,7 +1514,10 @@ fn exp_par_cur_tail<'a>(
 /// `exact_spl_sur` / `exactsur` payload after the subtype name
 /// ([`asm.md` §6.3]): optional stamp, cache-form enum, the solved surface,
 /// fit tolerance, the U and V intervals, and the extension integer.
-fn exact_spl_sur_tail<'a>(cur: &mut Cur<'a, '_, '_>, out: &mut Vec<PendingToken<'a>>) -> Option<()> {
+fn exact_spl_sur_tail<'a>(
+    cur: &mut Cur<'a, '_, '_>,
+    out: &mut Vec<PendingToken<'a>>,
+) -> Option<()> {
     if let Some(stamp) = match cur.peek() {
         Some(Prim::Integer(value)) => Some(*value),
         _ => None,
@@ -1667,7 +1725,10 @@ fn cache_first_curve_context<'a>(
 /// approximation form, its payload, six discontinuity arrays, and one
 /// boolean. Form `full` stores the solved surface and fit tolerance; form
 /// `none` stores the U and V intervals and four closure/singularity enums.
-fn revision_surface_tail<'a>(cur: &mut Cur<'a, '_, '_>, out: &mut Vec<PendingToken<'a>>) -> Option<()> {
+fn revision_surface_tail<'a>(
+    cur: &mut Cur<'a, '_, '_>,
+    out: &mut Vec<PendingToken<'a>>,
+) -> Option<()> {
     match cur.word()? {
         "full" => {
             push_token!(cur, out, Token::Enum(0));
@@ -1726,7 +1787,10 @@ fn cyl_spl_sur_tail<'a>(
 /// `exact_spl_sur` revision-gated payload: serializer stamp, the shared
 /// surface tail, the U and V unextended intervals as optional bounds, and
 /// the extension enum.
-fn exact_spl_sur_revision_tail<'a>(cur: &mut Cur<'a, '_, '_>, out: &mut Vec<PendingToken<'a>>) -> Option<()> {
+fn exact_spl_sur_revision_tail<'a>(
+    cur: &mut Cur<'a, '_, '_>,
+    out: &mut Vec<PendingToken<'a>>,
+) -> Option<()> {
     let stamp = cur.long()?;
     push_token!(cur, out, Token::Long(stamp));
     revision_surface_tail(cur, out)?;
@@ -1984,9 +2048,8 @@ fn type_record(
 ) -> Result<Vec<Token>, TypedRecordFailure> {
     let mut selected = None;
     for slots in head_shapes(head) {
-        let (candidate, storage) = ctx.with_scoped_storage("SAT typing attempt", || {
-            try_shape(ctx, prims, scale, slots)
-        })?;
+        let (candidate, storage) =
+            ctx.with_scoped_storage("SAT typing attempt", || try_shape(ctx, prims, scale, slots))?;
         if let Some(tokens) = candidate {
             selected = Some((tokens, storage));
             break;
@@ -1995,12 +2058,24 @@ fn type_record(
     let (pending, _storage) = match selected {
         Some(selected) => selected,
         None => ctx.with_scoped_storage("SAT lexical typing", || {
-            let mut cur = Cur { prims, pos: 0, scale, failure: None, resource: None, ctx };
+            let mut cur = Cur {
+                prims,
+                pos: 0,
+                scale,
+                failure: None,
+                resource: None,
+                ctx,
+            };
             let mut tokens = Vec::new();
-            ctx.find_map(prims, |prim| {
-                cur.push_lexical_token(&mut tokens, prim);
-                Ok(cur.resource.is_some().then_some(()))
-            }, "type SAT fallback primitives").map_err(TypedRecordFailure::Resource)?;
+            ctx.find_map(
+                prims,
+                |prim| {
+                    cur.push_lexical_token(&mut tokens, prim);
+                    Ok(cur.resource.is_some().then_some(()))
+                },
+                "type SAT fallback primitives",
+            )
+            .map_err(TypedRecordFailure::Resource)?;
             if let Some(error) = cur.resource {
                 return Err(TypedRecordFailure::Resource(error));
             }
@@ -2012,12 +2087,16 @@ fn type_record(
             PendingToken::Value(token) => token,
             PendingToken::Text(value, string) => {
                 let text = ctx.copy_retained_text(value, "retain SAT typed string")?;
-                if string { Token::Str(text) } else { Token::Ident(text) }
+                if string {
+                    Token::Str(text)
+                } else {
+                    Token::Ident(text)
+                }
             }
         })
-    }).map_err(TypedRecordFailure::Resource)
+    })
+    .map_err(TypedRecordFailure::Resource)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -2034,10 +2113,17 @@ mod tests {
     }
 
     fn assert_lex_prim_work_refusal(field: &str, operation: &str, additional: u64) {
-        let source = format!("0 0 0 0\n0 0 0 \n1 0 0\naudit {field} #\nEnd-of-ASM-data \n").into_bytes();
-        let refusal = crate::test_support::resource_limit_at(&source, ResourceDimension::WorkUnits,
-            operation, |ctx| super::parse(ctx, &source)
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let source =
+            format!("0 0 0 0\n0 0 0 \n1 0 0\naudit {field} #\nEnd-of-ASM-data \n").into_bytes();
+        let refusal = crate::test_support::resource_limit_at(
+            &source,
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                super::parse(ctx, &source)
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.operation, operation);
         assert_eq!(refusal.additional, additional);
@@ -2057,9 +2143,15 @@ mod tests {
     #[test]
     fn sat_container_framing_admits_work_before_header_scan() {
         let source = asm_stream("");
-        let refusal = crate::test_support::resource_limit_at(&source, ResourceDimension::WorkUnits,
-            "scan SAT header line", |ctx| super::parse_container(ctx, &source)
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let refusal = crate::test_support::resource_limit_at(
+            &source,
+            ResourceDimension::WorkUnits,
+            "scan SAT header line",
+            |ctx| {
+                super::parse_container(ctx, &source)
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.operation, "scan SAT header line");
     }
@@ -2068,49 +2160,156 @@ mod tests {
     fn sat_container_marker_search_does_not_scan_records() {
         let source = asm_stream(&format!("{} #\n", "x".repeat(100_000)));
         let result = with_work_limit(&source, 1_000, |ctx| super::parse_container(ctx, &source))
-            .expect("test context").expect("header and suffix fit the work limit");
+            .expect("test context")
+            .expect("header and suffix fit the work limit");
         assert_eq!(result.1, super::Terminator::Asm);
     }
 
     #[test]
     fn sat_field_reader_refuses_whitespace_and_field_scan_work() {
-        let whitespace = crate::test_support::resource_limit_at(b" ", ResourceDimension::WorkUnits,
-            "scan SAT whitespace", |ctx| { let mut reader = super::FieldReader { bytes: b" ", pos: 0 }; reader.skip_ws(ctx) }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let whitespace = crate::test_support::resource_limit_at(
+            b" ",
+            ResourceDimension::WorkUnits,
+            "scan SAT whitespace",
+            |ctx| {
+                {
+                    let mut reader = super::FieldReader {
+                        bytes: b" ",
+                        pos: 0,
+                    };
+                    reader.skip_ws(ctx)
+                }
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(whitespace.operation, "scan SAT whitespace");
-        let field = crate::test_support::resource_limit_at(b"x", ResourceDimension::WorkUnits,
-            "scan SAT field bytes", |ctx| { let mut reader = super::FieldReader { bytes: b"x", pos: 0 }; reader.next_field(ctx) }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let field = crate::test_support::resource_limit_at(
+            b"x",
+            ResourceDimension::WorkUnits,
+            "scan SAT field bytes",
+            |ctx| {
+                {
+                    let mut reader = super::FieldReader {
+                        bytes: b"x",
+                        pos: 0,
+                    };
+                    reader.next_field(ctx)
+                }
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(field.operation, "scan SAT field bytes");
     }
 
     #[test]
     fn sat_counted_string_refuses_whitespace_and_count_scan_work() {
-        let whitespace = crate::test_support::resource_limit_at(b" 1 x", ResourceDimension::WorkUnits,
-            "scan SAT header string whitespace", |ctx| { let mut pos = 0; super::counted_string(ctx, b" 1 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let whitespace = crate::test_support::resource_limit_at(
+            b" 1 x",
+            ResourceDimension::WorkUnits,
+            "scan SAT header string whitespace",
+            |ctx| {
+                {
+                    let mut pos = 0;
+                    super::counted_string(ctx, b" 1 x", &mut pos, 0, "fixture")
+                }
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(whitespace.operation, "scan SAT header string whitespace");
-        let digits = crate::test_support::resource_limit_at(b"1 x", ResourceDimension::WorkUnits,
-            "scan SAT header string count", |ctx| { let mut pos = 0; super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let digits = crate::test_support::resource_limit_at(
+            b"1 x",
+            ResourceDimension::WorkUnits,
+            "scan SAT header string count",
+            |ctx| {
+                {
+                    let mut pos = 0;
+                    super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
+                }
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(digits.operation, "scan SAT header string count");
     }
 
     #[test]
     fn sat_utf8_validation_refusals_preserve_work_errors() {
-        let field = crate::test_support::resource_limit_at(b"x", ResourceDimension::WorkUnits,
-            "validate SAT field text", |ctx| { let mut reader = super::FieldReader { bytes: b"x", pos: 0 }; reader.next_field(ctx) }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let field = crate::test_support::resource_limit_at(
+            b"x",
+            ResourceDimension::WorkUnits,
+            "validate SAT field text",
+            |ctx| {
+                {
+                    let mut reader = super::FieldReader {
+                        bytes: b"x",
+                        pos: 0,
+                    };
+                    reader.next_field(ctx)
+                }
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(field.operation, "validate SAT field text");
-        let payload = crate::test_support::resource_limit_at(b" abc", ResourceDimension::WorkUnits,
-            "validate SAT string payload", |ctx| { let mut reader = super::FieldReader { bytes: b" abc", pos: 0 }; reader.read_str_payload(ctx, 3, 0) }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let payload = crate::test_support::resource_limit_at(
+            b" abc",
+            ResourceDimension::WorkUnits,
+            "validate SAT string payload",
+            |ctx| {
+                {
+                    let mut reader = super::FieldReader {
+                        bytes: b" abc",
+                        pos: 0,
+                    };
+                    reader.read_str_payload(ctx, 3, 0)
+                }
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(payload.operation, "validate SAT string payload");
-        let integer = crate::test_support::resource_limit_at(b"1", ResourceDimension::WorkUnits,
-            "validate SAT header integer", |ctx| { super::header_int::<u32>(ctx, Some(b"1"), 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let integer = crate::test_support::resource_limit_at(
+            b"1",
+            ResourceDimension::WorkUnits,
+            "validate SAT header integer",
+            |ctx| {
+                { super::header_int::<u32>(ctx, Some(b"1"), 0, "fixture") }
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(integer.operation, "validate SAT header integer");
-        let length = crate::test_support::resource_limit_at(b"1 x", ResourceDimension::WorkUnits,
-            "validate SAT header string length", |ctx| { let mut pos = 0; super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let length = crate::test_support::resource_limit_at(
+            b"1 x",
+            ResourceDimension::WorkUnits,
+            "validate SAT header string length",
+            |ctx| {
+                {
+                    let mut pos = 0;
+                    super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
+                }
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(length.operation, "validate SAT header string length");
-        let value = crate::test_support::resource_limit_at(b"1 x", ResourceDimension::WorkUnits,
-            "validate SAT header string value", |ctx| { let mut pos = 0; super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let value = crate::test_support::resource_limit_at(
+            b"1 x",
+            ResourceDimension::WorkUnits,
+            "validate SAT header string value",
+            |ctx| {
+                {
+                    let mut pos = 0;
+                    super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
+                }
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(value.operation, "validate SAT header string value");
-        let float = crate::test_support::resource_limit_at(b"1", ResourceDimension::WorkUnits,
-            "validate SAT header tolerance", |ctx| { super::header_float(ctx, Some(b"1"), 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let float = crate::test_support::resource_limit_at(
+            b"1",
+            ResourceDimension::WorkUnits,
+            "validate SAT header tolerance",
+            |ctx| {
+                { super::header_float(ctx, Some(b"1"), 0, "fixture") }
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(float.operation, "validate SAT header tolerance");
     }
 
@@ -2118,9 +2317,15 @@ mod tests {
     fn sat_framing_refuses_record_and_payload_field_loop_work() {
         let source = b"0 0 0 0\n0 0 0 \n1 0 0\nx #\nEnd-of-ASM-data \n";
         for operation in ["frame SAT record", "frame SAT field"] {
-            let refusal = crate::test_support::resource_limit_at(source, ResourceDimension::WorkUnits,
-                operation, |ctx| super::parse(ctx, source)
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+            let refusal = crate::test_support::resource_limit_at(
+                source,
+                ResourceDimension::WorkUnits,
+                operation,
+                |ctx| {
+                    super::parse(ctx, source)
+                        .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                },
+            );
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
             assert_eq!(refusal.operation, operation);
         }
@@ -2128,20 +2333,44 @@ mod tests {
 
     #[test]
     fn sat_header_text_scalar_parses_refuse_after_utf8_validation() {
-        let integer = crate::test_support::resource_limit_at(b"12", ResourceDimension::WorkUnits,
-            "parse SAT header integer", |ctx| { super::header_int::<u32>(ctx, Some(b"12"), 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let integer = crate::test_support::resource_limit_at(
+            b"12",
+            ResourceDimension::WorkUnits,
+            "parse SAT header integer",
+            |ctx| {
+                { super::header_int::<u32>(ctx, Some(b"12"), 0, "fixture") }
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(integer.operation, "parse SAT header integer");
         assert_eq!(integer.dimension, ResourceDimension::WorkUnits);
         assert_eq!(integer.used, 2);
         assert_eq!(integer.additional, 2);
-        let length = crate::test_support::resource_limit_at(b"12 x", ResourceDimension::WorkUnits,
-            "parse SAT header string length", |ctx| { let mut pos = 0; super::counted_string(ctx, b"12 x", &mut pos, 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let length = crate::test_support::resource_limit_at(
+            b"12 x",
+            ResourceDimension::WorkUnits,
+            "parse SAT header string length",
+            |ctx| {
+                {
+                    let mut pos = 0;
+                    super::counted_string(ctx, b"12 x", &mut pos, 0, "fixture")
+                }
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(length.operation, "parse SAT header string length");
         assert_eq!(length.dimension, ResourceDimension::WorkUnits);
         assert_eq!(length.used, 6);
         assert_eq!(length.additional, 2);
-        let tolerance = crate::test_support::resource_limit_at(b"1.5", ResourceDimension::WorkUnits,
-            "parse SAT header tolerance", |ctx| { super::header_float(ctx, Some(b"1.5"), 0, "fixture") }.map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let tolerance = crate::test_support::resource_limit_at(
+            b"1.5",
+            ResourceDimension::WorkUnits,
+            "parse SAT header tolerance",
+            |ctx| {
+                { super::header_float(ctx, Some(b"1.5"), 0, "fixture") }
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(tolerance.operation, "parse SAT header tolerance");
         assert_eq!(tolerance.dimension, ResourceDimension::WorkUnits);
         assert_eq!(tolerance.used, 3);
@@ -2224,13 +2453,17 @@ mod tests {
             Prim::Word("I"),
             Prim::Word("I"),
         ];
-        let refusal = crate::test_support::resource_limit_at(&[], ResourceDimension::WorkUnits,
-            "read SAT typing primitive", |ctx| {
+        let refusal = crate::test_support::resource_limit_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "read SAT typing primitive",
+            |ctx| {
                 super::type_record(ctx, "intcurve", &prims, 1.0).map_err(|error| match error {
                     super::TypedRecordFailure::Resource(error) => error,
                     super::TypedRecordFailure::Type(error) => CodecError::malformed(error.reason()),
                 })
-            });
+            },
+        );
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.operation, "read SAT typing primitive");
         assert_eq!(refusal.additional, 1);
@@ -2265,8 +2498,6 @@ mod tests {
         }
     }
 
-
-
     #[test]
     fn sat_fallback_typed_tokens_refuse_collection_limit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -2286,21 +2517,27 @@ mod tests {
 
     fn assert_sat_frame_collection_limit(operation: &str) {
         let source = asm_stream("audit 1 #\n");
-        let limit = crate::test_support::resource_limit_at(&source, ResourceDimension::CollectionItems,
-            operation, |ctx| super::parse(ctx, &source)
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        let limit = crate::test_support::resource_limit_at(
+            &source,
+            ResourceDimension::CollectionItems,
+            operation,
+            |ctx| {
+                super::parse(ctx, &source)
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+            },
+        );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, operation);
     }
 
     #[test]
     fn sat_primitives_refuse_collection_limit() {
-        assert_sat_frame_collection_limit( "frame SAT primitive");
+        assert_sat_frame_collection_limit("frame SAT primitive");
     }
 
     #[test]
     fn sat_records_refuse_collection_limit() {
-        assert_sat_frame_collection_limit( "frame SAT record");
+        assert_sat_frame_collection_limit("frame SAT record");
     }
 
     #[test]
@@ -2407,9 +2644,11 @@ mod tests {
             (ResourceDimension::RetainedBytes, "retain SAT record name"),
             (ResourceDimension::MaterializedBytes, "frame SAT primitive"),
         ] {
-            let refusal = crate::test_support::resource_limit_at(&source, dimension, operation,
-                |ctx| super::parse(ctx, &source)
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+            let refusal =
+                crate::test_support::resource_limit_at(&source, dimension, operation, |ctx| {
+                    super::parse(ctx, &source)
+                        .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                });
             assert_eq!(refusal.dimension, dimension);
             assert_eq!(refusal.operation, operation);
         }
@@ -2419,9 +2658,15 @@ mod tests {
     fn sat_typed_string_copies_refuse_retained_limit() {
         for body in ["mystery @3 abc #\n", "asmheader $-1 -1 @3 abc #\n"] {
             let source = asm_stream(body);
-            let refusal = crate::test_support::resource_limit_at(&source, ResourceDimension::RetainedBytes,
-                "retain SAT typed string", |ctx| super::parse(ctx, &source)
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+            let refusal = crate::test_support::resource_limit_at(
+                &source,
+                ResourceDimension::RetainedBytes,
+                "retain SAT typed string",
+                |ctx| {
+                    super::parse(ctx, &source)
+                        .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                },
+            );
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
             assert_eq!(refusal.operation, "retain SAT typed string");
         }
@@ -2429,15 +2674,26 @@ mod tests {
 
     #[test]
     fn failed_sat_shape_releases_scratch_before_the_next_attempt() {
-        let prims = [Prim::Ref(-1), Prim::Integer(-1), Prim::Ref(-1),
-            Prim::Ref(-1), Prim::Ref(-1), Prim::Ref(-1), Prim::Ref(-1), Prim::Ref(-1),
-            Prim::Word("forward"), Prim::Word("double"), Prim::Word("T")];
+        let prims = [
+            Prim::Ref(-1),
+            Prim::Integer(-1),
+            Prim::Ref(-1),
+            Prim::Ref(-1),
+            Prim::Ref(-1),
+            Prim::Ref(-1),
+            Prim::Ref(-1),
+            Prim::Ref(-1),
+            Prim::Word("forward"),
+            Prim::Word("double"),
+            Prim::Word("T"),
+        ];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         let capacity = prims.len().next_power_of_two();
         // Growth keeps the previous allocation live until the new one exists.
         policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
-            (capacity + capacity / 2) * std::mem::size_of::<super::PendingToken<'_>>());
+            (capacity + capacity / 2) * std::mem::size_of::<super::PendingToken<'_>>(),
+        );
         let ctx = DecodeContext::new(&arena, &policy, false);
         let tokens = super::type_record(&ctx, "face", &prims, 10.0)
             .unwrap_or_else(|_| panic!("one live grammar buffer fits the scratch limit"));
@@ -2489,12 +2745,16 @@ mod tests {
     #[test]
     fn sat_kernel_header_copy_refuses_retained_limit() {
         let source = asm_stream("");
-        let refusal = crate::test_support::resource_limit_at(&source, ResourceDimension::RetainedBytes,
-            "retain SAT kernel header string", |ctx| {
+        let refusal = crate::test_support::resource_limit_at(
+            &source,
+            ResourceDimension::RetainedBytes,
+            "retain SAT kernel header string",
+            |ctx| {
                 let stream = super::parse(ctx, &source)
                     .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))?;
                 stream.header.as_kernel_header(ctx)
-            });
+            },
+        );
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "retain SAT kernel header string");
     }
@@ -2508,10 +2768,19 @@ mod tests {
         ] {
             let source = asm_stream(body);
             let reason = format!("record `mystery` {description}");
-            let refusal = crate::test_support::resource_limit_at(&source, ResourceDimension::RetainedBytes,
-                "SAT record error text", |ctx| super::parse(ctx, &source)
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
-            assert_eq!(refusal.additional, cadmpeg_core::decode::u64_from_index(reason.len()));
+            let refusal = crate::test_support::resource_limit_at(
+                &source,
+                ResourceDimension::RetainedBytes,
+                "SAT record error text",
+                |ctx| {
+                    super::parse(ctx, &source)
+                        .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                },
+            );
+            assert_eq!(
+                refusal.additional,
+                cadmpeg_core::decode::u64_from_index(reason.len())
+            );
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
             assert_eq!(refusal.operation, "SAT record error text");
         }
