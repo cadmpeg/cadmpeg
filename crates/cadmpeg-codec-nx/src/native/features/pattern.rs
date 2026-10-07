@@ -934,7 +934,7 @@ pub(in crate::native) fn feature_pattern_references(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(decoded) = PatternReferences::read(record.payload_view()) else {
+            let Some(decoded) = PatternReferences::read(ctx, record.payload_view())? else {
                 continue;
             };
             let layout = decoded.layout();

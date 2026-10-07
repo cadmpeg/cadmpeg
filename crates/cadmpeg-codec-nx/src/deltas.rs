@@ -2126,7 +2126,7 @@ fn merge_records(
         }
         Ok((merged, reservation))
     };
-    if graph.body_shape_shells(ctx)?.next().transpose()?.is_some() {
+    if graph.body_shape_shells(ctx)?.next().is_some() {
         let (merged, reservation) = build(false)?;
         reservation.commit()?;
         return Ok(merged);
@@ -3411,10 +3411,10 @@ fn consume_intersection_data(
     intersection_schema_anchor_seen: bool,
 ) -> Result<Option<Record>, CodecError> {
     let Some((curve, end)) = crate::topology::intersection_data_curve_at(
-        ctx, stream,
+        stream,
         offset,
         intersection_schema_anchor_seen,
-    )? else {
+    ) else {
         return Ok(None);
     };
     let mut references = curve

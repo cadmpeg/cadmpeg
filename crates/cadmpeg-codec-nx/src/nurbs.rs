@@ -83,7 +83,7 @@ fn decode_surfaces(
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Result<Vec<Surface>, CodecError> {
     let mut records = Vec::new();
-    for node in graph.of_kind(ctx, NodeKind::BSurface)? {
+    for node in graph.of_kind_charged(ctx, NodeKind::BSurface)? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(descriptors.len()),
             "resolve NX NURBS descriptor",
@@ -101,7 +101,7 @@ fn decode_surfaces(
             "resolve NX NURBS knots",
         )?;
         let candidate: Option<Result<_, CodecError>> = (|| {
-            let refs = propagate_resource!(node.compact_tail_references::<2>(ctx))?;
+            let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             descriptor
                 .payload
@@ -199,7 +199,7 @@ fn decode_surfaces(
                 }
                 NurbsPoleGrid::Polynomial { rows }
             };
-            let normal_reversed = propagate_resource!(node.common_header(ctx))?.0 == cadmpeg_ir::topology::Sense::Reversed;
+            let normal_reversed = node.common_header()?.0 == cadmpeg_ir::topology::Sense::Reversed;
             let surface = propagate_resource!(NurbsSurface::new(
                 ctx,
                 NurbsSurfaceAxis::new(
@@ -266,7 +266,7 @@ fn decode_pcurves(
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Result<Vec<Pcurve>, CodecError> {
     let mut records = Vec::new();
-    for node in graph.of_kind(ctx, NodeKind::BCurve)? {
+    for node in graph.of_kind_charged(ctx, NodeKind::BCurve)? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(descriptors.len()),
             "resolve NX NURBS descriptor",
@@ -284,7 +284,7 @@ fn decode_pcurves(
             "resolve NX NURBS knots",
         )?;
         let candidate: Option<Result<_, CodecError>> = (|| {
-            let refs = propagate_resource!(node.compact_tail_references::<2>(ctx))?;
+            let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             (descriptor.basis.dimension == 2).then_some(())?;
             let control = controls.get(&refs[1])?.as_ref()?;
@@ -405,7 +405,7 @@ fn decode_curves(
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Result<Vec<Curve>, CodecError> {
     let mut records = Vec::new();
-    for node in graph.of_kind(ctx, NodeKind::BCurve)? {
+    for node in graph.of_kind_charged(ctx, NodeKind::BCurve)? {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(descriptors.len()),
             "resolve NX NURBS descriptor",
@@ -423,7 +423,7 @@ fn decode_curves(
             "resolve NX NURBS knots",
         )?;
         let candidate: Option<Result<_, CodecError>> = (|| {
-            let refs = propagate_resource!(node.compact_tail_references::<2>(ctx))?;
+            let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             matches!(descriptor.basis.dimension, 3 | 4).then_some(())?;
             let control = controls.get(&refs[1])?.as_ref()?;

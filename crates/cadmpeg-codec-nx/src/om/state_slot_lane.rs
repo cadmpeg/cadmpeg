@@ -102,14 +102,6 @@ impl StateSlotLane<u64> {
         Ok(Self { offset, end, slots })
     }
 
-    pub(crate) fn from_wire(
-        ctx: &DecodeContext<'_>, offset: u64, slots: StateSlots<Option<StateIndexToken>>,
-    ) -> Result<Result<Self, &'static str>, CodecError> {
-        Ok(Self::extent(offset, slots.as_slice(), |slots| {
-            ctx.admit_iter(slots, "NX native state slot widths")
-        })?.map(|end| Self { offset, end, slots }))
-    }
-
     fn extent<'a, E, I: Iterator<Item = &'a Option<StateIndexToken>>>(
         offset: u64, slots: &'a [Option<StateIndexToken>],
         admit: impl FnOnce(&'a [Option<StateIndexToken>]) -> Result<I, E>,
@@ -164,17 +156,6 @@ mod tests {
                 );
             },
         );
-    }
-    #[test]
-    fn native_state_slot_iteration_refusal_propagates() {
-        use cadmpeg_core::decode::ResourceDimension;
-        use cadmpeg_core::CodecError;
-        let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "NX native state slot widths",
-            |ctx| super::StateSlotLane::from_wire(ctx, 100, super::StateSlots::new(vec![None]).unwrap()),
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX native state slot widths"));
     }
 
 }

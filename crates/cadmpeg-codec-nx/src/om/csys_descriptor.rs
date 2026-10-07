@@ -42,12 +42,6 @@ impl From<CsysIdentity> for String {
 }
 
 impl CsysIdentity {
-    pub(crate) fn from_wire(ctx: &DecodeContext<'_>, value: String) -> Result<Result<Self, &'static str>, CodecError> {
-        Ok(Self::validate(&value, |value| {
-            ctx.admit_iter(value, "NX datum CSYS identity syntax")
-        })?.map(|()| Self(value)))
-    }
-
     fn validate<'a, E, I: Iterator<Item = char>>(value: &'a str, admit: impl FnOnce(&'a str) -> Result<I, E>) -> Result<Result<(), &'static str>, E> {
         if !(30..=32).contains(&value.len()) || !admit(value)?.all(|ch| ch.is_ascii_digit() || ('a'..='f').contains(&ch)) {
             return Ok(Err("identity must contain 30 through 32 lowercase hexadecimal digits"));

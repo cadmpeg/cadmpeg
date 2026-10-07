@@ -114,7 +114,7 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             crate::topology::Graph::parse(ctx, &valid)
         })
         .unwrap();
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().collect::<Result<Vec<_>, _>>().unwrap().len(), 1);
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
 
         let mut broken = valid;
         let face = broken
@@ -130,7 +130,6 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             .body_shape_shells(ctx)
             .unwrap()
             .next()
-            .transpose().unwrap()
             .is_none()
         );
 
@@ -148,7 +147,7 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
             .unwrap()
             .body_shape_shells(ctx)
             .unwrap()
-            .collect::<Result<Vec<_>, _>>().unwrap().len(),
+            .count(),
             1
         );
     });
@@ -169,7 +168,7 @@ fn topology_retains_shell_body_identity_without_body_record() {
         })
         .unwrap();
         assert!(graph.get(NodeKind::Body, 2).is_none());
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().collect::<Result<Vec<_>, _>>().unwrap().len(), 1);
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
 
         let mut input = Cursor::new(prt_with_partition(&stream));
         let result = NxCodec
@@ -207,7 +206,7 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
         })
         .unwrap();
 
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().collect::<Result<Vec<_>, _>>().unwrap().len(), 1);
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
         assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
         assert!(crate::test_support::with_decode_context(
             |ctx| graph.has_complete_body_topology(ctx)
@@ -531,11 +530,11 @@ fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
     let face = graph.get(NodeKind::Face, 4).unwrap();
     let node_id = face.node_id().unwrap();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| graph.unique_xmt_by_node_id(ctx, NodeKind::Face, node_id)).unwrap(),
+        graph.unique_xmt_by_node_id(NodeKind::Face, node_id),
         Some(4)
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| graph.unique_xmt_by_node_id(ctx, NodeKind::Edge, node_id)).unwrap(),
+        graph.unique_xmt_by_node_id(NodeKind::Edge, node_id),
         Some(8)
     );
 
@@ -549,7 +548,7 @@ fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
         graph.get(NodeKind::Face, 39).and_then(Node::node_id),
         Some(node_id)
     );
-    assert_eq!(crate::test_support::with_decode_context(|ctx| graph.unique_xmt_by_node_id(ctx, NodeKind::Face, node_id)).unwrap(), None);
+    assert_eq!(graph.unique_xmt_by_node_id(NodeKind::Face, node_id), None);
 }
 
 #[test]
@@ -582,7 +581,7 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         })
         .unwrap();
         assert!(graph.get(NodeKind::Region, 12).is_none());
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().collect::<Result<Vec<_>, _>>().unwrap().len(), 1);
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
         assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 2);
 
         let mut input = Cursor::new(prt_with_partition(&stream));
@@ -808,7 +807,7 @@ fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
             graph.get(NodeKind::Shell, 3).map(super::Node::pos),
             Some(shell)
         );
-        assert_eq!(graph.body_shape_shells(ctx).unwrap().collect::<Result<Vec<_>, _>>().unwrap().len(), 1);
+        assert_eq!(graph.body_shape_shells(ctx).unwrap().count(), 1);
         assert_eq!(graph.body_shape_face_count(ctx).unwrap(), 1);
     });
 }
@@ -827,10 +826,10 @@ fn topology_iterates_each_record_family_in_physical_order() {
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| graph
-            .of_kind(ctx, NodeKind::Point).unwrap()
+        graph
+            .of_kind(NodeKind::Point)
             .map(super::Node::xmt)
-            .collect::<Vec<_>>()),
+            .collect::<Vec<_>>(),
         vec![77, 3]
     );
 }
@@ -859,7 +858,7 @@ fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
-    assert_eq!(crate::test_support::with_decode_context(|ctx| graph.of_kind(ctx, NodeKind::Body).unwrap().count()), 2);
+    assert_eq!(graph.of_kind(NodeKind::Body).count(), 2);
     assert_eq!(graph.at_pos(0).map(super::Node::xmt), Some(65_536));
     assert_eq!(graph.at_pos(26).map(super::Node::xmt), Some(3));
 }
@@ -915,7 +914,7 @@ fn topology_rejects_duplicate_fixed_record_identity() {
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &first))
             .unwrap();
     assert!(graph.get(NodeKind::Point, 11).is_none());
-    assert!(crate::test_support::with_decode_context(|ctx| graph.of_kind(ctx, NodeKind::Point).unwrap().next().is_none()));
+    assert!(graph.of_kind(NodeKind::Point).next().is_none());
 }
 
 #[test]
@@ -1057,7 +1056,7 @@ fn topology_rejects_status_framed_delta_as_fixed_record() {
     })
     .unwrap();
 
-    assert!(crate::test_support::with_decode_context(|ctx| graph.of_kind(ctx, NodeKind::Loop).unwrap().next().is_none()));
+    assert!(graph.of_kind(NodeKind::Loop).next().is_none());
 }
 
 #[test]
@@ -1293,39 +1292,9 @@ fn topology_field_tolerances_require_finite_native_values() {
             }
         }
         assert!(graph
-            .unique_curve_edge_witness(ctx, 9)
-            .unwrap()
+            .unique_curve_edge_witness(9)
             .unwrap()
             .tolerance()
             .is_finite());
     });
-}
-
-#[test]
-fn topology_kind_iteration_refusal_propagates() {
-    let stream = topology_partition_stream();
-    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-    for kind in [NodeKind::Face, NodeKind::Edge] {
-        let error = crate::test_support::resource_refusal_at(
-            &[], ResourceDimension::WorkUnits, "iterate NX topology records",
-            |ctx| graph.of_kind(ctx, kind).map(|nodes| nodes.count()),
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "iterate NX topology records"));
-    }
-    let node_id = graph.get(NodeKind::Face, 4).unwrap().node_id().unwrap();
-    let error = crate::test_support::resource_refusal_at(
-        &[], ResourceDimension::WorkUnits, "iterate NX topology records",
-        |ctx| graph.unique_xmt_by_node_id(ctx, NodeKind::Face, node_id),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "iterate NX topology records"));
-    let error = crate::test_support::resource_refusal_at(
-        &[], ResourceDimension::WorkUnits, "iterate NX topology records",
-        |ctx| graph.unique_curve_edge_witness(ctx, 9),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "iterate NX topology records"));
 }

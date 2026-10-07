@@ -55,7 +55,7 @@ pub(super) fn resolved_feature_payload_references<'h, 'ctx>(
     decode: impl Fn(
         crate::om::operation_record::OperationPayload<'_>,
         u64,
-    ) -> Option<Vec<(PayloadIndexToken, u64)>>,
+    ) -> Result<Option<Vec<(PayloadIndexToken, u64)>>, cadmpeg_core::CodecError>,
 ) -> Result<
     (
         Vec<ResolvedFeaturePayloadReference<'h>>,
@@ -75,7 +75,7 @@ pub(super) fn resolved_feature_payload_references<'h, 'ctx>(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(decoded) = decode(record.payload_view(), entry_offset) else {
+            let Some(decoded) = decode(record.payload_view(), entry_offset)? else {
                 continue;
             };
             for (ordinal, (token, source_offset)) in decoded.into_iter().enumerate() {
@@ -108,22 +108,21 @@ pub(in crate::native) fn feature_projected_curve_references(
 ) -> Result<Vec<FeatureProjectedCurveReference>, CodecError> {
     let (references, _references_storage) =
         resolved_feature_payload_references(ctx, history, |record, base| {
-            crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(
-                |field| {
-                    field
-                        .into_references()
-                        .into_iter()
-                        .map(|reference| {
-                            Some((
-                                reference.token,
-                                base.checked_add(cadmpeg_core::decode::u64_from_index(
-                                    reference.offset,
-                                ))?,
-                            ))
-                        })
-                        .collect()
-                },
-            )
+            let Some(field) =
+                crate::om::projected_references::ProjectedCurveReferences::read(ctx, record)?
+            else {
+                return Ok(None);
+            };
+            Ok(field
+                .into_references()
+                .into_iter()
+                .map(|reference| {
+                    Some((
+                        reference.token,
+                        base.checked_add(cadmpeg_core::decode::u64_from_index(reference.offset))?,
+                    ))
+                })
+                .collect())
         })?;
     let mut output = Vec::new();
     for reference in ctx.admit_iter(references, "build NX projected-curve references")? {
@@ -527,14 +526,18 @@ pub(in crate::native) fn feature_surface_construction_references(
 ) -> Result<Vec<FeatureSurfaceConstructionReference>, CodecError> {
     let (references, _references_storage) =
         resolved_feature_payload_references(ctx, history, |record, base| {
-            crate::om::surface_envelope::surface_feature_payload_references(record)
-                .and_then(|field| field.relocate(base))
-                .map(|field| field.references().into_iter().collect())
-                .or_else(|| {
-                    crate::om::surface_envelope::thru_curve_payload_references(record)
-                        .and_then(|field| field.relocate(base))
-                        .map(|field| field.references().into_iter().collect())
-                })
+            if let Some(field) =
+                crate::om::surface_envelope::surface_feature_payload_references(ctx, record)?
+            {
+                if let Some(field) = field.relocate(ctx, base)? {
+                    return Ok(Some(field.references().into_iter().collect()));
+                }
+            }
+            Ok(
+                crate::om::surface_envelope::thru_curve_payload_references(record)
+                    .and_then(|field| field.relocate(base))
+                    .map(|field| field.references().into_iter().collect()),
+            )
         })?;
     let mut output = Vec::new();
     for reference in ctx.admit_iter(references, "build NX surface construction references")? {
@@ -909,7 +912,7 @@ pub(in crate::native) fn feature_extrude_profile_references(
                     return Err(error);
                 }
             };
-            let Some(decoded) = decoded.relocate(entry_offset) else {
+            let Some(decoded) = decoded.relocate(ctx, entry_offset)? else {
                 continue;
             };
             for (ordinal, (token, source_offset, witness_source_offset)) in

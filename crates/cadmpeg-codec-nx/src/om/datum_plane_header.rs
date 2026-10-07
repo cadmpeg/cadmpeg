@@ -295,10 +295,8 @@ pub(crate) fn datum_plane_payload_header(
 
 /// Decode any datum-plane branch carrying one descriptor and one object reference.
 pub(crate) fn datum_plane_descriptor_reference_branch(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<DatumPlaneFrame<()>>, cadmpeg_core::CodecError> {
-    (|| {
+) -> Option<DatumPlaneFrame<()>> {
     let header = datum_plane_payload_header(record)?;
     let form = SingleForm::from_header(header.declared_count, header.branch_tag)?;
     let separator = form.separator();
@@ -306,11 +304,11 @@ pub(crate) fn datum_plane_descriptor_reference_branch(
     let mut at = 10;
     let descriptor = CompactIndexAtom::read(record.payload().get(at..)?)?;
     at += descriptor.raw().len();
-    (propagate_resource!(ctx.equal(&record.payload().get(at..at + separator.len()), &Some(separator), "NX datum plane branch framing equality"))).then_some(())?;
+    (record.payload().get(at..at + separator.len()) == Some(separator)).then_some(())?;
     at += separator.len();
     let object_index = PayloadIndexToken::read(record.payload().get(at..)?)?;
     at += object_index.raw().len();
-    (propagate_resource!(ctx.equal(&record.payload().get(at..at + suffix.len()), &Some(suffix), "NX datum plane branch framing equality"))).then_some(())?;
+    (record.payload().get(at..at + suffix.len()) == Some(suffix)).then_some(())?;
     DatumPlaneFrame::new(
         cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         DatumPlaneBranch::Single {
@@ -318,50 +316,37 @@ pub(crate) fn datum_plane_descriptor_reference_branch(
             descriptor: (descriptor, ()),
             object: (object_index, ()),
         },
-    ).map(Ok)
-    })().transpose()
+    )
 }
 
 /// Decode either exact tag-`29` two-reference branch form.
 pub(crate) fn datum_plane_double_reference_branch(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Result<Option<DatumPlaneFrame<()>>, cadmpeg_core::CodecError> {
-    (|| {
+) -> Option<DatumPlaneFrame<()>> {
     let header = datum_plane_payload_header(record)?;
     let form = DoubleForm::from_header(header.declared_count, header.branch_tag)?;
     let mut at = 10;
     let first_index = PayloadIndexToken::read(record.payload().get(at..)?)?;
     at += first_index.raw().len();
     let middle = form.separator();
-    (propagate_resource!(ctx.equal(&record.payload().get(at..at + middle.len()), &Some(middle), "NX datum plane branch framing equality"))).then_some(())?;
+    (record.payload().get(at..at + middle.len()) == Some(middle)).then_some(())?;
     at += middle.len();
     let second_index = PayloadIndexToken::read(record.payload().get(at..)?)?;
     at += second_index.raw().len();
     let suffix = form.suffix();
-    (propagate_resource!(ctx.equal(&record.payload().get(at..at + suffix.len()), &Some(suffix), "NX datum plane branch framing equality"))).then_some(())?;
+    (record.payload().get(at..at + suffix.len()) == Some(suffix)).then_some(())?;
     DatumPlaneFrame::new(
         cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         DatumPlaneBranch::Double {
             form,
             objects: [(first_index, ()), (second_index, ())],
         },
-    ).map(Ok)
-    })().transpose()
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::{DoubleForm, SingleForm};
-
-    #[test]
-    fn datum_branch_equality_refusal_propagates() {
-        let payload = [0x22, 0, 0, 1, 0, 1, 2, 0x23, 1, 2, 0x80, 0x4c, 1, 0xf1, 2, 0xbb, 0, 0x14, 2, 0, 1, 0, 0, 0, 0, 0xff, 0xff, 0];
-        let record = super::OperationPayload::new(&payload, 100, "DATUM_PLANE").unwrap();
-        crate::test_support::with_decode_context(|ctx| assert!(super::datum_plane_descriptor_reference_branch(ctx, record).unwrap().is_some()));
-        let error = crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::WorkUnits, "NX datum plane branch framing equality", |ctx| super::datum_plane_descriptor_reference_branch(ctx, record));
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 2));
-    }
 
     #[test]
     fn construction_forms_admit_only_their_header_pairs() {
