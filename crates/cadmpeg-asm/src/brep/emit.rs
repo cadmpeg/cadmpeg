@@ -5746,7 +5746,8 @@ pub(super) fn emit_containers(
                         kind: cadmpeg_ir::topology::BodyKind::Solid,
                         regions,
                         transform: transform_record
-                            .and_then(|transform| decode_transform(transform, header_scale)),
+                            .map(|transform| decode_transform(ctx, transform, header_scale))
+                            .transpose()?.flatten(),
                         name: attribute_name(r)?,
                         color: attribute_color(r)?,
                         visible: None,

@@ -113,26 +113,28 @@ fn decimal_attribute_color_refuses_work_before_parsing() {
         len: 0,
     };
     let by_index = HashMap::from([(1, &decimal)]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // No preceding admission; the decimal scalar parser reads seven bytes.
-    policy.limits.max_work_units = 6;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-
-    let error = crate::brep::attributes::attribute_chain_color_carrier(
-        &ctx,
-        &entity,
-        by_index.len(),
-        |index| by_index.get(&index).copied(),
-    )
-    .expect_err("seven-byte decimal parse exceeds six work units");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "parse ASM decimal color",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = crate::brep::attributes::attribute_chain_color_carrier(
+                &ctx, &entity, by_index.len(), |index| by_index.get(&index).copied(),
+            ).map(|_| ());
+            if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
     let CodecError::ResourceLimit(refusal) = error else {
         panic!("expected work refusal, got {error:?}");
     };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(refusal.operation, "parse ASM decimal color");
-    assert_eq!(refusal.used, 0);
     assert_eq!(refusal.additional, 7);
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
 
