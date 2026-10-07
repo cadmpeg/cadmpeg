@@ -6416,9 +6416,10 @@ fn attach_feature_operations(
                 Some(BooleanOffsetStoreResolution::Unresolved)
             ) {
                 let (native_target, offset_store_target) = boolean_target_writer(
+                    ctx,
                     &definition,
                     canonical_body(operation.target.token.value()),
-                );
+                )?;
                 body_writer_history.record_writer(
                     ctx,
                     native_target,
