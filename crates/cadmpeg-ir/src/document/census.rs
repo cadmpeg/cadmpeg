@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-use cadmpeg_core::decode::DecodeContext;
 use crate::index::{DecodeStorage, IndexStorage, PublicStorage};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use super::{ArenaName, CensusKey};
@@ -14,8 +14,16 @@ use crate::native::view::NativeView;
 
 pub(crate) trait CensusStorage {
     type Error;
-    fn admit_iter<'values, T>(&self, values: &'values [T], operation: &'static str) -> Result<impl Iterator<Item = &'values T>, Self::Error>;
-    fn native_counts(&self, view: NativeView<'_>, counts: &mut BTreeMap<CensusKey, usize>) -> Result<(), Self::Error>;
+    fn admit_iter<'values, T>(
+        &self,
+        values: &'values [T],
+        operation: &'static str,
+    ) -> Result<impl Iterator<Item = &'values T>, Self::Error>;
+    fn native_counts(
+        &self,
+        view: NativeView<'_>,
+        counts: &mut BTreeMap<CensusKey, usize>,
+    ) -> Result<(), Self::Error>;
     fn native_key(&self, format: &str, arena: &str) -> Result<CensusKey, Self::Error>;
     fn insert(
         &self,
@@ -30,10 +38,18 @@ pub(crate) struct StandardStorage;
 
 impl CensusStorage for StandardStorage {
     type Error = Infallible;
-    fn admit_iter<'values, T>(&self, values: &'values [T], _operation: &'static str) -> Result<impl Iterator<Item = &'values T>, Self::Error> {
+    fn admit_iter<'values, T>(
+        &self,
+        values: &'values [T],
+        _operation: &'static str,
+    ) -> Result<impl Iterator<Item = &'values T>, Self::Error> {
         Ok(values.iter())
     }
-    fn native_counts(&self, view: NativeView<'_>, counts: &mut BTreeMap<CensusKey, usize>) -> Result<(), Self::Error> {
+    fn native_counts(
+        &self,
+        view: NativeView<'_>,
+        counts: &mut BTreeMap<CensusKey, usize>,
+    ) -> Result<(), Self::Error> {
         count_native(self, view, counts, &PublicStorage)
     }
     fn native_key(&self, format: &str, arena: &str) -> Result<CensusKey, Self::Error> {
@@ -53,10 +69,18 @@ impl CensusStorage for StandardStorage {
 
 impl CensusStorage for DecodeContext<'_> {
     type Error = CodecError;
-    fn admit_iter<'values, T>(&self, values: &'values [T], operation: &'static str) -> Result<impl Iterator<Item = &'values T>, Self::Error> {
+    fn admit_iter<'values, T>(
+        &self,
+        values: &'values [T],
+        operation: &'static str,
+    ) -> Result<impl Iterator<Item = &'values T>, Self::Error> {
         Ok(DecodeContext::admit_iter(self, values, operation)?)
     }
-    fn native_counts(&self, view: NativeView<'_>, counts: &mut BTreeMap<CensusKey, usize>) -> Result<(), Self::Error> {
+    fn native_counts(
+        &self,
+        view: NativeView<'_>,
+        counts: &mut BTreeMap<CensusKey, usize>,
+    ) -> Result<(), Self::Error> {
         count_native(self, view, counts, &DecodeStorage(self))
     }
     fn native_key(&self, format: &str, arena: &str) -> Result<CensusKey, Self::Error> {
@@ -79,15 +103,25 @@ impl CensusStorage for DecodeContext<'_> {
 }
 
 fn count_native<S: CensusStorage, I: IndexStorage>(
-    storage: &S, view: NativeView<'_>, counts: &mut BTreeMap<CensusKey, usize>, index: &I,
-) -> Result<(), S::Error> where S::Error: From<I::Error> {
-    view.visit(index, "validation native census scan", |format, arena, records| {
-        if records.len() != 0 {
-            let key = storage.native_key(format, arena)?;
-            storage.insert(counts, key, records.len(), "validation native census slots")?;
-        }
-        Ok(())
-    })
+    storage: &S,
+    view: NativeView<'_>,
+    counts: &mut BTreeMap<CensusKey, usize>,
+    index: &I,
+) -> Result<(), S::Error>
+where
+    S::Error: From<I::Error>,
+{
+    view.visit(
+        index,
+        "validation native census scan",
+        |format, arena, records| {
+            if records.len() != 0 {
+                let key = storage.native_key(format, arena)?;
+                storage.insert(counts, key, records.len(), "validation native census slots")?;
+            }
+            Ok(())
+        },
+    )
 }
 
 macro_rules! define_census {

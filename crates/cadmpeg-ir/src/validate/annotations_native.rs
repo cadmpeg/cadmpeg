@@ -90,7 +90,8 @@ pub(super) fn check_annotations<'ir>(
     let mut entities = Vec::new();
     model_entity_projection(ctx, view.ir, &wanted, &mut entities, &mut storage)?;
     view.visit(
-        &crate::index::DecodeStorage(ctx), "annotated native arena scan",
+        &crate::index::DecodeStorage(ctx),
+        "annotated native arena scan",
         |_, _, records| -> Result<(), CodecError> {
             let mut append_record = |record: NativeEntity<'ir>| -> Result<(), CodecError> {
                 let id = record.id();
@@ -303,7 +304,8 @@ pub(super) fn check_native_links(
     let ir = view.ir;
     let native_ids = BorrowedIdentities::build(ctx, |add| {
         view.visit(
-            &crate::index::DecodeStorage(ctx), "native identity arena scan",
+            &crate::index::DecodeStorage(ctx),
+            "native identity arena scan",
             |_, _, records| -> Result<(), CodecError> {
                 match records {
                     NativeArena::Product(products) => {
@@ -498,9 +500,12 @@ pub(super) fn check_native_links(
     // field shapes; only an array made entirely of strings follows the generic
     // identity-link convention.
     view.visit(
-        &crate::index::DecodeStorage(ctx), "native link arena scan",
+        &crate::index::DecodeStorage(ctx),
+        "native link arena scan",
         |_, arena, records| -> Result<(), CodecError> {
-            for entity in records.records(&crate::index::DecodeStorage(ctx), "native link record scan")? {
+            for entity in
+                records.records(&crate::index::DecodeStorage(ctx), "native link record scan")?
+            {
                 let record = match entity {
                     NativeEntity::Product(record) => record,
                     NativeEntity::Source(source) => {

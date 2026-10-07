@@ -93,6 +93,9 @@ fn canonical_hash_matches_standard_pretty_json_for_compound_shapes() {
     });
     let expected = super::sha256_hex(&serde_json::to_vec_pretty(&value).unwrap());
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert_eq!(canonical_json_sha256(&ctx, &value, "standard pretty JSON digest").unwrap(), expected);
+    assert_eq!(
+        canonical_json_sha256(&ctx, &value, "standard pretty JSON digest").unwrap(),
+        expected
+    );
     ctx.finish_session().unwrap();
 }

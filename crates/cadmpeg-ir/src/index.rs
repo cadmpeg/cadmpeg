@@ -53,8 +53,12 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
         let position = self.values.len();
         storage.push(&mut self.values, (identity, value()), operation)?;
         match self.slots.entry(hash) {
-            Entry::Vacant(entry) => { entry.insert(IdentityEntry::One(position)); }
-            Entry::Occupied(entry) => { entry.into_mut().push(position, storage, operation)?; }
+            Entry::Vacant(entry) => {
+                entry.insert(IdentityEntry::One(position));
+            }
+            Entry::Occupied(entry) => {
+                entry.into_mut().push(position, storage, operation)?;
+            }
         }
         Ok(&mut self.values[position].1)
     }
@@ -96,8 +100,6 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
         }
         Ok((hash, None))
     }
-
-
 }
 
 /// Collision-safe identity slots with inline storage for one arena position.
@@ -114,7 +116,12 @@ enum IdentityEntry {
 }
 
 impl IdentityEntry {
-    fn push<S: IndexStorage>(&mut self, slot: usize, storage: &S, operation: &'static str) -> Result<(), S::Error> {
+    fn push<S: IndexStorage>(
+        &mut self,
+        slot: usize,
+        storage: &S,
+        operation: &'static str,
+    ) -> Result<(), S::Error> {
         match self {
             Self::One(previous) => {
                 let mut slots = Vec::new();
@@ -134,11 +141,20 @@ type IdentityIndex = HashMap<u64, IdentityEntry>;
 pub(crate) trait IndexStorage {
     type Error;
     const EAGER_LOOKUPS: bool;
-    type Iter<S: cadmpeg_core::decode::iter_source::IterSource>: Iterator<Item = <S::Iter as Iterator>::Item>;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource>: Iterator<
+        Item = <S::Iter as Iterator>::Item,
+    >;
     fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
-        &self, source: S, operation: &'static str,
+        &self,
+        source: S,
+        operation: &'static str,
     ) -> Result<Self::Iter<S>, Self::Error>;
-    fn compare(&self, first: &str, second: &str, operation: &'static str) -> Result<std::cmp::Ordering, Self::Error>;
+    fn compare(
+        &self,
+        first: &str,
+        second: &str,
+        operation: &'static str,
+    ) -> Result<std::cmp::Ordering, Self::Error>;
     fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error>;
     fn map<K: Eq + Hash, V>(
         &self,
@@ -191,11 +207,18 @@ impl IndexStorage for PublicStorage {
     const EAGER_LOOKUPS: bool = false;
     type Iter<S: cadmpeg_core::decode::iter_source::IterSource> = S::Iter;
     fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
-        &self, source: S, _operation: &'static str,
+        &self,
+        source: S,
+        _operation: &'static str,
     ) -> Result<Self::Iter<S>, Self::Error> {
         Ok(source.source_iter())
     }
-    fn compare(&self, first: &str, second: &str, operation: &'static str) -> Result<std::cmp::Ordering, Self::Error> {
+    fn compare(
+        &self,
+        first: &str,
+        second: &str,
+        operation: &'static str,
+    ) -> Result<std::cmp::Ordering, Self::Error> {
         crate::ids::comparison::compare(&StandardIndex, first, second, operation)
     }
     fn enter_nested(
@@ -256,13 +279,21 @@ pub(crate) struct DecodeStorage<'ctx, 'arena>(pub(crate) &'ctx DecodeContext<'ar
 impl IndexStorage for DecodeStorage<'_, '_> {
     type Error = ResourceLimit;
     const EAGER_LOOKUPS: bool = true;
-    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> = cadmpeg_core::decode::scan::AdmittedIter<S::Iter>;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> =
+        cadmpeg_core::decode::scan::AdmittedIter<S::Iter>;
     fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
-        &self, source: S, operation: &'static str,
+        &self,
+        source: S,
+        operation: &'static str,
     ) -> Result<Self::Iter<S>, Self::Error> {
         self.0.admit_iter(source, operation)
     }
-    fn compare(&self, first: &str, second: &str, operation: &'static str) -> Result<std::cmp::Ordering, Self::Error> {
+    fn compare(
+        &self,
+        first: &str,
+        second: &str,
+        operation: &'static str,
+    ) -> Result<std::cmp::Ordering, Self::Error> {
         crate::ids::comparison::compare(self.0, first, second, operation)
     }
     fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error> {
@@ -414,7 +445,10 @@ fn build_identity_index<T: EntitySchema, S: IndexStorage>(
     storage: &S,
 ) -> Result<IdentityIndex, S::Error> {
     let mut index = storage.map(0, "model identity index slots")?;
-    for (slot, entity) in storage.admit_iter(entities, "model identity index scan")?.enumerate() {
+    for (slot, entity) in storage
+        .admit_iter(entities, "model identity index scan")?
+        .enumerate()
+    {
         storage.work(entity.identity().len(), "model identity hash")?;
         let hash = identity_hash(entity.identity());
         storage.entry(&mut index, &hash, "model identity index slots")?;
@@ -423,7 +457,9 @@ fn build_identity_index<T: EntitySchema, S: IndexStorage>(
                 entry.insert(IdentityEntry::One(slot));
             }
             Entry::Occupied(entry) => {
-                entry.into_mut().push(slot, storage, "model identity collision slots")?;
+                entry
+                    .into_mut()
+                    .push(slot, storage, "model identity collision slots")?;
             }
         }
     }
@@ -520,10 +556,14 @@ pub trait IndexQuery: sealed::IndexQuery {
     /// An infallible value or a value carrying the resource refusal.
     type Output<T>;
     #[doc(hidden)]
-    type Iter<S: cadmpeg_core::decode::iter_source::IterSource>: Iterator<Item = <S::Iter as Iterator>::Item>;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource>: Iterator<
+        Item = <S::Iter as Iterator>::Item,
+    >;
     #[doc(hidden)]
     fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
-        &self, source: S, operation: &'static str,
+        &self,
+        source: S,
+        operation: &'static str,
     ) -> Result<Self::Iter<S>, Self::Error>;
     #[doc(hidden)]
     fn finish<T>(&self, result: Result<T, Self::Error>) -> Self::Output<T>;
@@ -545,7 +585,9 @@ impl IndexQuery for StandardIndex {
     type Output<T> = T;
     type Iter<S: cadmpeg_core::decode::iter_source::IterSource> = S::Iter;
     fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
-        &self, source: S, operation: &'static str,
+        &self,
+        source: S,
+        operation: &'static str,
     ) -> Result<Self::Iter<S>, Self::Error> {
         PublicStorage.admit_iter(source, operation)
     }
@@ -571,9 +613,12 @@ impl IndexQuery for StandardIndex {
 impl IndexQuery for &DecodeContext<'_> {
     type Error = ResourceLimit;
     type Output<T> = Result<T, ResourceLimit>;
-    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> = cadmpeg_core::decode::scan::AdmittedIter<S::Iter>;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> =
+        cadmpeg_core::decode::scan::AdmittedIter<S::Iter>;
     fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
-        &self, source: S, operation: &'static str,
+        &self,
+        source: S,
+        operation: &'static str,
     ) -> Result<Self::Iter<S>, Self::Error> {
         DecodeContext::admit_iter(self, source, operation)
     }
@@ -995,7 +1040,9 @@ mod tests {
             .unwrap()
             .is_none());
         let boundary = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "universe lookup complete", |cap| {
+            ResourceDimension::WorkUnits,
+            "universe lookup complete",
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 policy.limits.max_collection_items = 0;
@@ -1007,7 +1054,9 @@ mod tests {
                 ctx.charge_work(1, "universe lookup complete")
             },
         );
-        let cadmpeg_core::CodecError::ResourceLimit(boundary) = boundary else { panic!("work refusal"); };
+        let cadmpeg_core::CodecError::ResourceLimit(boundary) = boundary else {
+            panic!("work refusal");
+        };
         for cap in 0..boundary.used {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -1021,9 +1070,17 @@ mod tests {
             assert_eq!(first.limit, cap);
             let hash_work = cadmpeg_core::decode::u64_from_index(query.len());
             assert_eq!(first.used, if cap < hash_work { 0 } else { cap });
-            assert_eq!(first.additional, if cap < hash_work { hash_work } else { 1 });
-            assert_eq!(index.get("missing", &&ctx, "test universe query"), Err(first));
-            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+            assert_eq!(
+                first.additional,
+                if cap < hash_work { hash_work } else { 1 }
+            );
+            assert_eq!(
+                index.get("missing", &&ctx, "test universe query"),
+                Err(first)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+            );
         }
         let ir = crate::examples::unit_cube().unwrap();
         let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
@@ -1158,39 +1215,70 @@ mod tests {
             super::identity_hash(query),
             super::IdentityEntry::Many(vec![0, 0]),
         )]));
-        for operation in ["model identity lookup hash", "model identity lookup collision", "model identity lookup comparison"] {
-            let boundary = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                let result = super::lookup_identity(&ir.model.points, &cache, query, &&ctx);
-                if let Err(first) = result {
-                    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(first.operation, operation);
-                    assert_eq!(super::lookup_identity(&ir.model.points, &cache, query, &&ctx), Err(first));
-                    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
-                    return Err(first.into());
+        for operation in [
+            "model identity lookup hash",
+            "model identity lookup collision",
+            "model identity lookup comparison",
+        ] {
+            let boundary = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    let result = super::lookup_identity(&ir.model.points, &cache, query, &&ctx);
+                    if let Err(first) = result {
+                        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                        assert_eq!(first.operation, operation);
+                        assert_eq!(
+                            super::lookup_identity(&ir.model.points, &cache, query, &&ctx),
+                            Err(first)
+                        );
+                        assert!(
+                            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+                        );
+                        return Err(first.into());
+                    }
+                    Ok(())
+                },
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(first) = boundary else {
+                panic!("work refusal");
+            };
+            assert_eq!(
+                first.used,
+                if operation == "model identity lookup hash" {
+                    0
+                } else {
+                    first.limit
                 }
-                Ok(())
-            });
-            let cadmpeg_core::CodecError::ResourceLimit(first) = boundary else { panic!("work refusal"); };
-            assert_eq!(first.used, if operation == "model identity lookup hash" { 0 } else { first.limit });
-            assert_eq!(first.additional, if operation == "model identity lookup hash" { cadmpeg_core::decode::u64_from_index(query.len()) } else { 1 });
+            );
+            assert_eq!(
+                first.additional,
+                if operation == "model identity lookup hash" {
+                    cadmpeg_core::decode::u64_from_index(query.len())
+                } else {
+                    1
+                }
+            );
             if operation == "model identity lookup comparison" {
                 let cap = first.used + first.additional;
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let first = super::lookup_identity(&ir.model.points, &cache, query, &&ctx).unwrap_err();
+                let first =
+                    super::lookup_identity(&ir.model.points, &cache, query, &&ctx).unwrap_err();
                 assert_eq!(first.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(first.operation, operation);
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first)
+                );
             }
         }
-
     }
 
     #[test]
@@ -1285,11 +1373,21 @@ mod tests {
     fn identity_iteration_admits_only_stored_values_in_insertion_order() {
         use super::{BorrowedIdentityIndex, PublicStorage};
         let storage = PublicStorage;
-        let mut values = BorrowedIdentityIndex::new(&storage, "identity iteration fixture").unwrap();
+        let mut values =
+            BorrowedIdentityIndex::new(&storage, "identity iteration fixture").unwrap();
         for id in ["beta", "alpha", "beta", "gamma"] {
-            values.entry(id, || (), &storage, "identity iteration fixture").unwrap();
+            values
+                .entry(id, || (), &storage, "identity iteration fixture")
+                .unwrap();
         }
-        assert_eq!(values.values.iter().map(|value| value.0).collect::<Vec<_>>(), ["beta", "alpha", "gamma"]);
+        assert_eq!(
+            values
+                .values
+                .iter()
+                .map(|value| value.0)
+                .collect::<Vec<_>>(),
+            ["beta", "alpha", "gamma"]
+        );
         let ir = CadIr::empty();
         let index = ModelIndex::new_model_only(&ir, crate::index::StandardIndex);
         let arena = DecodeArena::new();

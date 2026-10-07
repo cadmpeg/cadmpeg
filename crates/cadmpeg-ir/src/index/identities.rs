@@ -108,7 +108,12 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
         value: T,
     ) -> Result<(), CodecError> {
         self.storage.with_storage(|| {
-            self.ctx.insert_vec(&mut self.values, low, (hash, id, value), "move validation identity slots")
+            self.ctx.insert_vec(
+                &mut self.values,
+                low,
+                (hash, id, value),
+                "move validation identity slots",
+            )
         })
     }
 
@@ -133,12 +138,24 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
         self.values.len()
     }
 
-    pub(crate) fn values(&self, operation: &'static str) -> Result<impl Iterator<Item = &T>, CodecError> {
-        Ok(self.ctx.admit_iter(&self.values, operation)?.map(|(_, _, value)| value))
+    pub(crate) fn values(
+        &self,
+        operation: &'static str,
+    ) -> Result<impl Iterator<Item = &T>, CodecError> {
+        Ok(self
+            .ctx
+            .admit_iter(&self.values, operation)?
+            .map(|(_, _, value)| value))
     }
 
-    pub(crate) fn identities(&self, operation: &'static str) -> Result<impl Iterator<Item = &'ir str> + '_, CodecError> {
-        Ok(self.ctx.admit_iter(&self.values, operation)?.map(|(_, identity, _)| *identity))
+    pub(crate) fn identities(
+        &self,
+        operation: &'static str,
+    ) -> Result<impl Iterator<Item = &'ir str> + '_, CodecError> {
+        Ok(self
+            .ctx
+            .admit_iter(&self.values, operation)?
+            .map(|(_, identity, _)| *identity))
     }
 
     fn position(
@@ -148,19 +165,27 @@ impl<'ctx, 'ir, T> BorrowedIdentities<'ctx, 'ir, T> {
     ) -> Result<(u64, usize, Option<usize>, usize), CodecError> {
         ctx.charge_work(u64_from_index(id.len()), "hash validation identity lookup")?;
         let hash = crate::index::identity_hash(id);
-        let low = ctx.partition_point(&self.values, |value| Ok(value.0 < hash), "search validation identity hashes")?;
+        let low = ctx.partition_point(
+            &self.values,
+            |value| Ok(value.0 < hash),
+            "search validation identity hashes",
+        )?;
         let mut found = None;
         let mut count = 0;
-        ctx.find_map(self.values[low..].iter().enumerate(), |(offset, (candidate, text, _))| {
-            if *candidate != hash {
-                return Ok(Some(()));
-            }
-            if crate::ids::comparison::equal(ctx, text, id, "compare validation identity")? {
-                found = Some(low + offset);
-                count += 1;
-            }
-            Ok(None)
-        }, "search validation identity collision")?;
+        ctx.find_map(
+            self.values[low..].iter().enumerate(),
+            |(offset, (candidate, text, _))| {
+                if *candidate != hash {
+                    return Ok(Some(()));
+                }
+                if crate::ids::comparison::equal(ctx, text, id, "compare validation identity")? {
+                    found = Some(low + offset);
+                    count += 1;
+                }
+                Ok(None)
+            },
+            "search validation identity collision",
+        )?;
         Ok((hash, low, found, count))
     }
 }
@@ -171,7 +196,10 @@ impl<'ir> BorrowedIdentities<'_, 'ir> {
         identities: impl IntoIterator<Item = &'ir str>,
     ) -> Result<(), CodecError> {
         let mut identities = identities.into_iter();
-        while let Some(identity) = self.ctx.next_charged(&mut identities, "extend validation identity scan")? {
+        while let Some(identity) = self
+            .ctx
+            .next_charged(&mut identities, "extend validation identity scan")?
+        {
             self.insert_unique(identity, ())?;
         }
         Ok(())
@@ -220,23 +248,31 @@ mod tests {
             super::BorrowedIdentities::build(&fixture, |add| add("test:model:point#stored", 7))
                 .unwrap();
         index.values[0].0 = crate::index::identity_hash(query);
-        for operation in ["hash validation identity lookup", "compare validation identity"] {
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                let result = index.get(&ctx, query);
-                if let Err(CodecError::ResourceLimit(limit)) = result {
-                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(limit.operation, operation);
-                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
-                    return Err(CodecError::ResourceLimit(limit));
-                }
-                result.map(|_| ())
-            });
+        for operation in [
+            "hash validation identity lookup",
+            "compare validation identity",
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    let result = index.get(&ctx, query);
+                    if let Err(CodecError::ResourceLimit(limit)) = result {
+                        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                        assert_eq!(limit.operation, operation);
+                        assert!(
+                            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+                        );
+                        return Err(CodecError::ResourceLimit(limit));
+                    }
+                    result.map(|_| ())
+                },
+            );
         }
-
     }
 
     #[test]
@@ -274,9 +310,7 @@ mod tests {
 
     #[test]
     fn borrowed_identity_insertion_refuses_movement_before_mutation() {
-        use cadmpeg_core::decode::{
-            DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-        };
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let first = "test:model:point#first";
         let second = "test:model:point#second";
@@ -286,25 +320,35 @@ mod tests {
             } else {
                 (second, first)
             };
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "move validation identity slots", |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            let mut index = super::BorrowedIdentities::build(&ctx, |_| Ok(()))?;
-            index.values.push((crate::index::identity_hash(stored), stored, ()));
-            let result = index.insert_unique(query, ());
-            if let Err(CodecError::ResourceLimit(limit)) = result {
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(limit.operation, "move validation identity slots");
-                assert_eq!(index.values.iter().map(|value| value.1).collect::<Vec<_>>(), [stored]);
-                drop(index);
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
-                return Err(CodecError::ResourceLimit(limit));
-            }
-            result.map(|_| ())
-        });
-
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "move validation identity slots",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let mut index = super::BorrowedIdentities::build(&ctx, |_| Ok(()))?;
+                index
+                    .values
+                    .push((crate::index::identity_hash(stored), stored, ()));
+                let result = index.insert_unique(query, ());
+                if let Err(CodecError::ResourceLimit(limit)) = result {
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(limit.operation, "move validation identity slots");
+                    assert_eq!(
+                        index.values.iter().map(|value| value.1).collect::<Vec<_>>(),
+                        [stored]
+                    );
+                    drop(index);
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+                    );
+                    return Err(CodecError::ResourceLimit(limit));
+                }
+                result.map(|_| ())
+            },
+        );
     }
 
     #[test]
@@ -380,7 +424,14 @@ mod tests {
         assert_eq!(index.insert(id, 3).unwrap(), Some(2));
         *index.get_mut(&ctx, id).unwrap().unwrap() = 4;
         assert_eq!(index.get(&ctx, id).unwrap(), Some(&4));
-        assert_eq!(index.values("test value iteration").unwrap().copied().collect::<Vec<_>>(), [1, 4]);
+        assert_eq!(
+            index
+                .values("test value iteration")
+                .unwrap()
+                .copied()
+                .collect::<Vec<_>>(),
+            [1, 4]
+        );
         assert_eq!(index.len(), 2);
         assert_eq!(index.insert("test:model:point#new", 5).unwrap(), None);
         assert_eq!(index.match_count(&ctx, "test:model:point#new").unwrap(), 1);
@@ -409,9 +460,7 @@ mod tests {
 
     #[test]
     fn borrowed_identity_lookup_admits_only_actual_collision_comparisons() {
-        use cadmpeg_core::decode::{
-            DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-        };
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let fixture = cadmpeg_test_support::service_decode_context();
         for (stored, query, comparison_work, expected) in [
@@ -424,23 +473,35 @@ mod tests {
             let mut index =
                 super::BorrowedIdentities::build(&fixture, |add| add(stored, 7)).unwrap();
             index.values[0].0 = crate::index::identity_hash(query);
-            let boundary = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "borrowed lookup complete", |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let arena = DecodeArena::new();
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                assert_eq!(index.get(&ctx, query)?, expected);
-                ctx.charge_work(1, "borrowed lookup complete")
-            });
-            let CodecError::ResourceLimit(boundary) = boundary else { panic!("work refusal"); };
-            let comparison = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "compare validation identity", |cap| {
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let arena = DecodeArena::new();
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                index.get(&ctx, query).map(|_| ())
-            });
-            let CodecError::ResourceLimit(comparison) = comparison else { panic!("comparison refusal"); };
+            let boundary = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                "borrowed lookup complete",
+                |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let arena = DecodeArena::new();
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    assert_eq!(index.get(&ctx, query)?, expected);
+                    ctx.charge_work(1, "borrowed lookup complete")
+                },
+            );
+            let CodecError::ResourceLimit(boundary) = boundary else {
+                panic!("work refusal");
+            };
+            let comparison = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                "compare validation identity",
+                |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let arena = DecodeArena::new();
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    index.get(&ctx, query).map(|_| ())
+                },
+            );
+            let CodecError::ResourceLimit(comparison) = comparison else {
+                panic!("comparison refusal");
+            };
             // The collision source pays one final next probe after equality.
             assert_eq!(boundary.used - comparison.used, comparison_work + 1);
             let work = boundary.used;

@@ -882,14 +882,17 @@ pub(super) fn check_carrier_reachability(
     // NativeLinks reports malformed link fields. Read each source link here so
     // one malformed record cannot erase reachability from the other records.
     view.visit(
-        &crate::index::DecodeStorage(ctx), "carrier native arena scan",
+        &crate::index::DecodeStorage(ctx),
+        "carrier native arena scan",
         |_, arena, records| -> Result<(), CodecError> {
             ctx.charge_work(
                 u64_from_index(arena.len()),
                 "carrier native arena comparison",
             )?;
             if arena == "unknowns" {
-                for record in records.records(&crate::index::DecodeStorage(ctx), "carrier reference scan")? {
+                for record in
+                    records.records(&crate::index::DecodeStorage(ctx), "carrier reference scan")?
+                {
                     match record {
                         crate::native::view::NativeEntity::Product(product) => {
                             for link in
