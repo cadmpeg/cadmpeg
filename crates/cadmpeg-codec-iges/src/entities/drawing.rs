@@ -219,29 +219,11 @@ fn push_drawing_entity_loss(
 pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    (entries, records): (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges drawing parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges drawing directory index",
-        )?;
-    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -290,8 +272,8 @@ pub(super) fn project(
             if conflicting_drawing_property_forms(
                 record,
                 form,
-                &entries,
-                &records,
+                entries,
+                records,
                 trailing_pointer_analysis,
             ) {
                 push_drawing_loss(
@@ -381,8 +363,8 @@ pub(super) fn project(
                 if target_valid {
                     match resolve_transform(
                         entry.transform,
-                        &entries,
-                        &records,
+                        entries,
+                        records,
                         global.length_factor_mm(),
                         global.real_precision(),
                         &mut BTreeSet::new(),

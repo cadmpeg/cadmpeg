@@ -397,29 +397,11 @@ fn resolve_pcurve_uses<'a>(
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    (entries, records): (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges brep parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges brep directory index",
-        )?;
-    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let factor = global.length_factor_mm();
@@ -1001,8 +983,8 @@ pub(super) fn project(
         }
         let transform = match resolve_transform(
             entry.transform,
-            &entries,
-            &records,
+            entries,
+            records,
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),

@@ -118,14 +118,12 @@ fn entity_projector_indexes_refuse_collection_limits() {
     }]);
     for name in [
         "csg",
-        "brep",
         "structure",
         "offsets",
         "surfaces",
         "trimming",
         "splines",
         "composite",
-        "annotation",
     ] {
         for index in ["parameter index", "directory index"] {
             let operation = format!("iges {name} {index}");
