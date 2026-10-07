@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
-fn model_brep_basename_comparison_preserves_work_refusal() {
+fn model_brep_basename_lookup_preserves_work_refusal() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
@@ -20,13 +20,13 @@ fn model_brep_basename_comparison_preserves_work_refusal() {
     assert_eq!(candidates.len(), blob_names.len());
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "compare F3D model BREP basenames",
+        "find F3D model BREP by basename",
         0,
         |limited| super::super::super::model_brep_candidates(limited, &scan, &blob_names),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "compare F3D model BREP basenames")
+        if limit.operation == "find F3D model BREP by basename")
     );
 }
 

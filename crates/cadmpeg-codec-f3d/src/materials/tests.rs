@@ -428,7 +428,15 @@ fn definition_catalog_uses_asset_and_schema_identity() {
 #[test]
 fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
     let body_map = [raw_body_map_pair(25, 100), raw_body_map_pair(41, 100)];
-    let Err(error) = super::unique_body_map_pair(&body_map, 100, "material assignment") else {
+    let Err(error) = crate::test_support::with_decode_context(|ctx| {
+        let (by_suffix, _storage) = ctx.unique_index(
+            body_map
+                .iter()
+                .map(|binding| (binding.entity_suffix, binding)),
+            "index F3D body-map pairs by entity",
+        )?;
+        super::unique_body_map_pair(ctx, &by_suffix, 100, "material assignment").map(|_| ())
+    }) else {
         panic!("one Design entity must not select two map pairs")
     };
     assert!(error
@@ -486,13 +494,17 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         visual_preset: None,
     };
     let projected = crate::test_support::with_decode_context(|ctx| {
+        let appearances = [appearance];
+        let index = super::AppearanceIndex::new(ctx, &appearances).unwrap();
+        let body_bindings = [first, second];
+        let pairs = super::BodyPairIndex::new(ctx, &body_bindings).unwrap();
         super::bind_bodies(
             ctx,
-            &[appearance],
+            (&appearances, &index),
             &[assignment],
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
-            &[first, second],
+            &pairs,
         )
         .expect("blob-qualified material binding")
     });
@@ -540,18 +552,20 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         visual_preset: None,
     };
 
-    assert!(crate::writer::primitives::with_writing_context(|ctx| {
-        super::appearance_for_assignment(ctx, std::slice::from_ref(&appearance), &assignment)
-    })
+    assert!(super::writer_appearance_for_assignment(
+        std::slice::from_ref(&appearance),
+        &assignment
+    )
     .expect("valid preset-less assignment")
     .is_none());
 
     assignment.visual_guid =
         crate::records::references::DesignVisualToken::try_from(appearance_guid.to_owned())
             .unwrap();
-    assert!(crate::writer::primitives::with_writing_context(|ctx| {
-        super::appearance_for_assignment(ctx, std::slice::from_ref(&appearance), &assignment)
-    })
+    assert!(super::writer_appearance_for_assignment(
+        std::slice::from_ref(&appearance),
+        &assignment
+    )
     .expect("exact visual-token assignment")
     .is_some());
 
@@ -564,9 +578,10 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         offset: 0,
     });
     appearance.name = Some("Prism-017".into());
-    assert!(crate::writer::primitives::with_writing_context(|ctx| {
-        super::appearance_for_assignment(ctx, std::slice::from_ref(&appearance), &assignment)
-    })
+    assert!(super::writer_appearance_for_assignment(
+        std::slice::from_ref(&appearance),
+        &assignment
+    )
     .expect("present preset-name fallback")
     .is_some());
 }
@@ -594,7 +609,7 @@ fn complete_visual_token_selects_one_revision_record() {
     ];
 
     let selected = crate::writer::primitives::with_writing_context(|ctx| {
-        super::appearance_for_visual_token(
+        appearance_for_visual_token(
             ctx,
             &appearances,
             &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned())
@@ -611,20 +626,18 @@ fn complete_visual_token_selects_one_revision_record() {
     policy.limits.max_work_units = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(super::appearance_for_visual_token(&ctx, &appearances,
+    assert!(matches!(appearance_for_visual_token(&ctx, &appearances,
         &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned()).unwrap(), None),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && failure.operation == "f3d appearance visual token search")
-    );
+                && failure.operation == "index F3D appearances"));
 
     let duplicates = [
         appearance("f3d:test:appearance#first", revised_token),
         appearance("f3d:test:appearance#second", revised_token),
     ];
     assert!(matches!(
-        crate::writer::primitives::with_writing_context(|ctx| super::appearance_for_visual_token(
+        crate::writer::primitives::with_writing_context(|ctx| appearance_for_visual_token(
             ctx,
             &duplicates,
             &crate::records::references::DesignVisualToken::try_from(revised_token.to_owned())
@@ -656,7 +669,7 @@ fn visual_preset_fallback_requires_one_record() {
     ];
 
     assert!(matches!(
-        crate::writer::primitives::with_writing_context(|ctx| super::appearance_for_visual_token(
+        crate::writer::primitives::with_writing_context(|ctx| appearance_for_visual_token(
             ctx,
             &appearances,
             &crate::records::references::DesignVisualToken::try_from(
@@ -699,19 +712,9 @@ fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
 
 #[test]
 fn decoded_color_requires_finite_normalized_channels() {
-    assert!(super::decoded_color(
-        &cadmpeg_test_support::service_decode_context(),
-        [0.0, 0.25, 0.5, 1.0]
-    )
-    .unwrap()
-    .is_some());
+    assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
     for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
-        assert!(super::decoded_color(
-            &cadmpeg_test_support::service_decode_context(),
-            [invalid, 0.25, 0.5, 1.0]
-        )
-        .unwrap()
-        .is_none());
+        assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
     }
 }
 
@@ -1835,4 +1838,19 @@ fn appearance_payload_comparison_preserves_work_refusal() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "compare F3D appearance names")
     );
+}
+
+/// Resolve a visual token through an index built over `appearances`.
+fn appearance_for_visual_token<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    appearances: &'a [cadmpeg_ir::appearance::Appearance],
+    token: &crate::records::references::DesignVisualToken,
+    fallback_name: Option<&str>,
+) -> Result<Option<&'a cadmpeg_ir::appearance::Appearance>, cadmpeg_core::CodecError> {
+    super::AppearanceIndex::new(ctx, appearances)?.for_visual_token(
+        ctx,
+        appearances,
+        token,
+        fallback_name,
+    )
 }

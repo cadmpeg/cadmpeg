@@ -2422,35 +2422,61 @@ fn model_brep_candidates<'s>(
     scan: &'s ContainerScan<'_>,
     blob_names: &[String],
 ) -> Result<Vec<&'s BrepFacts>, CodecError> {
+    if blob_names.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Design BREP entries by archive basename, built once; a repeated
+    // basename is kept as ambiguous and refused when a body map names it.
+    let mut by_basename_storage = ctx.reserve_scoped(0, "index F3D model BREP basenames")?;
+    let mut by_basename = std::collections::HashMap::new();
+    for brep in container::design_breps(ctx, scan)? {
+        let brep = brep?;
+        let basename = entry_basename(ctx, &brep.name)?;
+        by_basename_storage.with_storage(|| {
+            match ctx.entry_hash_map(
+                &mut by_basename,
+                basename,
+                "index F3D model BREP basenames",
+            )? {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(brep));
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
+            }
+            Ok::<(), CodecError>(())
+        })?;
+    }
     let mut candidates = Vec::new();
     for blob_name in ctx.admit_iter(blob_names, "scan F3D blob names")? {
-        let mut matches = container::design_breps(ctx, scan)?.filter_map(|brep| match brep {
-            Err(error) => Some(Err(error)),
-            Ok(brep) => match ctx.equal(
-                &brep.name.rsplit('/').next(),
-                &Some(blob_name.as_str()),
-                "compare F3D model BREP basenames",
-            ) {
-                Ok(true) => Some(Ok(brep)),
-                Ok(false) => None,
-                Err(error) => Some(Err(error)),
-            },
-        });
-        let Some(brep) = matches.next().transpose()? else {
-            return Err(CodecError::malformed(format_args!(
-                "Design body map references missing BREP entry {blob_name}"
-            )));
+        let brep = match ctx.get_hash_map(
+            &by_basename,
+            blob_name.as_str(),
+            "find F3D model BREP by basename",
+        )? {
+            None => {
+                return Err(CodecError::malformed(format_args!(
+                    "Design body map references missing BREP entry {blob_name}"
+                )))
+            }
+            Some(None) => {
+                return Err(CodecError::malformed(format_args!(
+                    "Design body map BREP basename is ambiguous: {blob_name}"
+                )))
+            }
+            Some(Some(brep)) => *brep,
         };
-        if matches.next().transpose()?.is_some() {
-            return Err(CodecError::malformed(format_args!(
-                "Design body map BREP basename is ambiguous: {blob_name}"
-            )));
-        }
-
-        ctx.reserve_vec(&mut candidates, 1, "collect F3D model BREP candidates")?;
-        candidates.push(brep);
+        ctx.push_vec(&mut candidates, brep, "collect F3D model BREP candidates")?;
     }
     Ok(candidates)
+}
+
+/// The text after the last `/` of an archive path, or the whole path.
+fn entry_basename<'n>(ctx: &DecodeContext<'_>, name: &'n str) -> Result<&'n str, CodecError> {
+    Ok(ctx
+        .rsplit_once(name, "/", "split F3D archive basename")?
+        .map_or(name, |(_, base)| base))
 }
 
 /// Decode the document model from its text-encoded carriers.
@@ -2528,7 +2554,7 @@ fn try_decode_text_model(
     let mut merged: Option<(BrepFacts, Brep)> = None;
     for (facts, mut part) in parts {
         if qualify {
-            let namespace = facts.name.rsplit('/').next().unwrap_or(&facts.name);
+            let namespace = entry_basename(ctx, &facts.name)?;
             part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
         }
         match &mut merged {
@@ -2597,7 +2623,7 @@ struct GeometrySessionPath {
 
 enum SessionPath {
     Geometry(Box<GeometrySessionPath>),
-    Bodyless,
+    Bodyless(Box<materials::DecodedMaterials>),
 }
 
 /// The inputs one decoded path hands to finalization.
@@ -2724,6 +2750,7 @@ impl<'a> F3dDecodeSession<'a> {
             source_attributes,
             unknowns,
         } = build_metadata_ir(ctx, scan)?;
+        let decoded_materials = materials::decode(ctx, scan)?;
         Ok((
             Self {
                 ctx,
@@ -2741,7 +2768,7 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
             },
-            SessionPath::Bodyless,
+            SessionPath::Bodyless(Box::new(decoded_materials)),
         ))
     }
 
@@ -2756,12 +2783,13 @@ impl<'a> F3dDecodeSession<'a> {
     /// Decode design graph, products, annotations, and the report.
     fn into_result(mut self, path: SessionPath) -> Result<AuthoredDecoded, CodecError> {
         self.admit_model_entities("admit F3D geometry entities")?;
-        self.decode_design_graph(&path)?;
+        let mut path = path;
+        self.decode_design_graph(&mut path)?;
         let path = self.decode_products(path)?;
         self.finalize(path)
     }
 
-    fn decode_design_graph(&mut self, path: &SessionPath) -> Result<(), CodecError> {
+    fn decode_design_graph(&mut self, path: &mut SessionPath) -> Result<(), CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
         for history_brep in container::history_breps(ctx, scan)? {
@@ -2780,8 +2808,10 @@ impl<'a> F3dDecodeSession<'a> {
             crate::design::decode::sketch::decode_persistent_references(ctx, scan)?;
         self.native.lost_edge_references =
             crate::design::decode::sketch::decode_lost_edge_references(ctx, scan)?;
-        self.native.design_material_assignments =
-            crate::materials::decode_design_assignments(ctx, scan)?;
+        self.native.design_material_assignments = std::mem::take(match path {
+            SessionPath::Geometry(geometry_path) => &mut geometry_path.materials.assignments,
+            SessionPath::Bodyless(decoded_materials) => &mut decoded_materials.assignments,
+        });
         self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
         self.native.design_parameters =
             crate::design::decode::parameters::decode_parameters(ctx, scan)?;
@@ -2909,7 +2939,7 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         self.native.design_body_members =
             crate::design::decode::body::decode_body_members(ctx, scan)?;
-        if matches!(path, SessionPath::Bodyless) {
+        if matches!(path, SessionPath::Bodyless(_)) {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
                     ctx,
@@ -3414,8 +3444,7 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 FinalizePath::Geometry(index)
             }
-            SessionPath::Bodyless => {
-                let decoded_materials = materials::decode(self.ctx, scan)?;
+            SessionPath::Bodyless(decoded_materials) => {
                 report_untyped_material_distances(
                     self.ctx,
                     &mut self.report,
@@ -3637,9 +3666,7 @@ fn brep_identity_namespace<'a>(
     ctx: &DecodeContext<'_>,
     entry: &'a str,
 ) -> Result<Option<&'a str>, CodecError> {
-    let Some(base) = entry.rsplit('/').next() else {
-        return Ok(None);
-    };
+    let base = entry_basename(ctx, entry)?;
     ctx.strip_prefix(base, "BREP.", "strip F3D BREP identity namespace prefix")
 }
 
@@ -3755,7 +3782,7 @@ fn decode_scanned_document<'a>(
             let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
                 continue;
             };
-            let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
+            let blob_name = entry_basename(ctx, &candidate.name)?;
             if let Some(keys) = ctx.get_hash_map(
                 &selected_body_keys,
                 blob_name,
@@ -4791,14 +4818,18 @@ fn apply_mesh_body_classification(
     {
         return Ok(());
     }
-    report.losses.retain(|loss| {
-        !matches!(
-            loss.code.taxonomy(),
-            LossTaxonomy::GeometryNotTransferred
-                | LossTaxonomy::TopologyNotTransferred
-                | LossTaxonomy::MissingGeometryStream
-        )
-    });
+    ctx.retain_vec(
+        &mut report.losses,
+        |loss| {
+            Ok(!matches!(
+                loss.code.taxonomy(),
+                LossTaxonomy::GeometryNotTransferred
+                    | LossTaxonomy::TopologyNotTransferred
+                    | LossTaxonomy::MissingGeometryStream
+            ))
+        },
+        "drop F3D geometry transfer losses",
+    )?;
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
     push_loss_vec(
         ctx,
@@ -4834,14 +4865,18 @@ fn apply_bodyless_design_classification(
     {
         return Ok(());
     }
-    report.losses.retain(|loss| {
-        !matches!(
-            loss.code.taxonomy(),
-            LossTaxonomy::GeometryNotTransferred
-                | LossTaxonomy::TopologyNotTransferred
-                | LossTaxonomy::MissingGeometryStream
-        )
-    });
+    ctx.retain_vec(
+        &mut report.losses,
+        |loss| {
+            Ok(!matches!(
+                loss.code.taxonomy(),
+                LossTaxonomy::GeometryNotTransferred
+                    | LossTaxonomy::TopologyNotTransferred
+                    | LossTaxonomy::MissingGeometryStream
+            ))
+        },
+        "drop F3D geometry transfer losses",
+    )?;
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
     let message = match (sketch_entities, reference_images) {
         (0, _) => ctx.format_retained(format_args!(
@@ -4874,13 +4909,17 @@ fn apply_assembly_classification(
     if !crate::xref::is_assembly(ctx, scan, Some(table))? {
         return Ok(());
     }
-    report.losses.retain(|loss| {
-        !(loss.severity >= Severity::Error
-            && matches!(
-                loss.code.category(),
-                LossCategory::Geometry | LossCategory::Topology
-            ))
-    });
+    ctx.retain_vec(
+        &mut report.losses,
+        |loss| {
+            Ok(!(loss.severity >= Severity::Error
+                && matches!(
+                    loss.code.category(),
+                    LossCategory::Geometry | LossCategory::Topology
+                )))
+        },
+        "drop F3D assembly geometry losses",
+    )?;
     push_loss_vec(
         ctx,
         &mut report.losses,
@@ -7028,9 +7067,11 @@ pub(crate) fn reconcile_appearance_loss(
         }
         return Ok(());
     }
-    report
-        .losses
-        .retain(|loss| loss.code.category() != LossCategory::Material);
+    ctx.retain_vec(
+        &mut report.losses,
+        |loss| Ok(loss.code.category() != LossCategory::Material),
+        "drop F3D material losses",
+    )?;
     Ok(())
 }
 
@@ -7182,7 +7223,7 @@ pub(crate) fn resolve_face_appearance_bindings(
     }
     drop(guid_by_face);
     drop(guid_by_face_storage);
-    for faces in faces_by_guid.values_mut() {
+    for (_, faces) in ctx.admit_iter(&mut faces_by_guid, "order F3D faces by material GUID")? {
         faces_by_guid_storage.with_storage(|| {
             ctx.stable_sort_by(
                 faces,
@@ -7228,6 +7269,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 .map(|_| ())
         })?;
     }
+    let appearance_index = materials::AppearanceIndex::new(ctx, &ir.model.appearances)?;
     let mut new_bindings = Vec::new();
     for (face_guid, assignment) in ctx.admit_iter(
         &assignments_by_guid,
@@ -7241,7 +7283,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         else {
             continue;
         };
-        let appearance = materials::appearance_for_visual_token(
+        let appearance = appearance_index.for_visual_token(
             ctx,
             &ir.model.appearances,
             assignment.visual_guid,
