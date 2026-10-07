@@ -364,7 +364,9 @@ fn patch_instance_colors(
     let frames = cadmpeg_protein::framing::record_frames_for_edit(bytes)?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        protein, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+        protein,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
     let schema_driven = cadmpeg_protein::has_schemas(&ctx, protein)?;
     let decoded = if schema_driven {

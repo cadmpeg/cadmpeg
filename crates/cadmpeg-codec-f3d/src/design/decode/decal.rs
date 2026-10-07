@@ -164,7 +164,7 @@ pub(crate) fn project_decal_images(
                 crate::design::identity::neutral_feature_id(ctx, scope)
             })?;
         let Some(feature_index) = ctx.position_by(
-            features,
+            &*features,
             |feature| {
                 ctx.equal_bytes(
                     feature.id.as_str().as_bytes(),

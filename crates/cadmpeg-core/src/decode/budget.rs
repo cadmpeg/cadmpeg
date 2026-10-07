@@ -100,6 +100,11 @@ impl DecodeBudget {
         .map_err(Into::into)
     }
 
+    #[cfg(test)]
+    pub(super) fn retained_used(&self) -> u64 {
+        self.retained.get()
+    }
+
     pub(super) fn decompressed_used(&self) -> u64 {
         self.decompressed.get()
     }
@@ -126,6 +131,25 @@ impl DecodeBudget {
         policy_limit.min(proportional)
     }
 
+    /// The policy leaves this dimension unlimited, which marks the budget a
+    /// refusal probe searches.
+    #[cfg(any(test, feature = "test-support"))]
+    fn unlimited_by_policy(&self, dimension: ResourceDimension) -> bool {
+        let limits = &self.policy.limits;
+        let limit = match dimension {
+            ResourceDimension::InputBytes => limits.max_input_bytes,
+            ResourceDimension::DecompressedBytes => limits.max_decompressed_bytes_total,
+            ResourceDimension::MaterializedBytes => limits.max_materialized_bytes,
+            ResourceDimension::RetainedBytes => limits.max_retained_bytes,
+            ResourceDimension::Entities => limits.max_entities,
+            ResourceDimension::CollectionItems => limits.max_collection_items,
+            ResourceDimension::RecursionDepth => limits.max_recursion_depth,
+            ResourceDimension::WorkUnits => limits.max_work_units,
+            ResourceDimension::Codec(_) => return false,
+        };
+        limit == u64::MAX
+    }
+
     fn charge(
         &self,
         dimension: ResourceDimension,
@@ -138,6 +162,29 @@ impl DecodeBudget {
             return Err(resource);
         }
         let before = used.get();
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(peak) = self
+            .unlimited_by_policy(dimension)
+            .then(|| {
+                super::refusal_probe::refusal_limit(
+                    std::ptr::from_ref(self).addr(),
+                    dimension,
+                    before,
+                    amount,
+                    operation,
+                )
+            })
+            .flatten()
+        {
+            return Err(self.refuse_limit(
+                dimension,
+                ResourceFailure::BudgetExceeded,
+                peak,
+                before,
+                amount,
+                operation,
+            ));
+        }
         if limit
             .checked_sub(before)
             .is_none_or(|remaining| amount > remaining)
@@ -910,8 +957,10 @@ impl<'a> WorkBudget<'a> {
         WorkBudget::new(limit.min(self.remaining()))
     }
 
-    /// Creates a child slice capped by this budget's remainder and attached to its session.
-    pub fn session_child_slice(&self, limit: usize) -> WorkBudget<'_> {
+    /// Creates a child slice capped by this budget's remainder and attached to
+    /// its session. The slice borrows the session, not this budget.
+    #[must_use]
+    pub fn session_child_slice(&self, limit: usize) -> WorkBudget<'a> {
         WorkBudget {
             limit: limit.min(self.remaining()),
             remaining: Cell::new(Some(limit.min(self.remaining()))),

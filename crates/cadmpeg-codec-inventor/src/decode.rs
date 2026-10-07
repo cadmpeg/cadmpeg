@@ -2315,13 +2315,13 @@ fn index_asm_face_keys<'b, T>(
     ctx: &DecodeContext<'_>,
     entries: &'b [T],
     mut project: impl FnMut(&'b T) -> Result<Option<(&'b FaceId, u64)>, CodecError>,
-) -> Result<HashMap<FaceId, u64>, CodecError> {
-    let mut output = HashMap::new();
+) -> Result<BTreeMap<FaceId, u64>, CodecError> {
+    let mut output = BTreeMap::new();
     for entry in ctx.admit_iter(entries, "visit Inventor ASM face keys")? {
         let Some((id, key)) = project(entry)? else {
             continue;
         };
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut output,
             id.try_clone_for_decode(ctx, "retain Inventor ASM face key id")?,
             key,

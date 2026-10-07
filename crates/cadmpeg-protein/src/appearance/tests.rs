@@ -43,8 +43,11 @@ fn distance_for_test(
 ) -> Result<Option<cadmpeg_ir::scalar::Length>, super::DistanceError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("service root");
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("service root");
     super::distance_property(&ctx, record, suffix).expect("service admission")
 }
 
