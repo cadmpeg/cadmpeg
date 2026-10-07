@@ -188,35 +188,38 @@ fn point_cloud_vertices_refuse_collection_limit() {
             warnings: Diagnostics::new(),
         })
     };
-    let refusal = with_transaction_limits(&scan, 4, None, None, |expand| {
+    let run = |cap| with_transaction_limits(&scan, cap, None, None, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        context
-            .commit_geometry(0, cloud())
-            .expect_err("point-cloud vertex exceeds four collection items")
+        let committed = context.commit_geometry(0, cloud())?;
+        Ok((committed, context.session.document().model.vertices.len()))
     });
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino point-cloud vertices", run,
+    );
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino point-cloud vertices"
     ));
-    let refusal = with_transaction_limits(&scan, 5, None, None, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        context
-            .commit_geometry(0, cloud())
-            .expect_err("unknown-record link exceeds five collection items")
-    });
+    // Four setup items, one cloud vertex, five arena entries, and two child slots precede the link.
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino unknown record links", run,
+    );
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)
             if limit.operation == "Rhino unknown record links"
     ));
-    with_transaction_limits(&scan, 6, None, None, |expand| {
-        let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-        assert!(context
-            .commit_geometry(0, cloud())
-            .expect("vertex admitted"));
-        assert_eq!(context.session.document().model.vertices.len(), 1);
-    });
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = refusal else {
+        panic!("named resource refusal");
+    };
+    let cap = limit.used.checked_add(limit.additional).expect("bounded fixture requirement");
+    let (committed, vertices) = run(cap).expect("vertex and link admitted");
+    assert!(committed);
+    assert_eq!(vertices, 1);
+
 }
 
 #[test]
