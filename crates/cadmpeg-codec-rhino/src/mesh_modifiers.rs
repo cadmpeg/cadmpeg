@@ -397,14 +397,19 @@ fn first_matching_descriptor<'a>(
     class_uuid: Uuid,
     item_uuid: Uuid,
 ) -> Result<Option<&'a AttributeUserdata>, cadmpeg_core::CodecError> {
-    Ok(ctx
-        .admit_iter(descriptors, "Rhino mesh modifier descriptor traversal")?
-        .filter_map(AttributeUserdataDescriptor::known)
-        .find(|descriptor| {
-            descriptor.class_uuid == class_uuid
+    ctx.find_map(
+        descriptors,
+        |raw| {
+            let Some(descriptor) = AttributeUserdataDescriptor::known(raw) else {
+                return Ok(None);
+            };
+            Ok((descriptor.class_uuid == class_uuid
                 && descriptor.item_uuid == item_uuid
-                && descriptor.application_uuid == Some(MESH_MODIFIER_PLUGIN)
-        }))
+                && descriptor.application_uuid == Some(MESH_MODIFIER_PLUGIN))
+            .then_some(descriptor))
+        },
+        "Rhino mesh modifier descriptor traversal",
+    )
 }
 
 fn parse_displacement(
@@ -1372,6 +1377,59 @@ mod tests {
             SHUT_LINING_ITEM,
             application_uuid,
         )
+    }
+
+    #[test]
+    fn descriptor_search_charges_visited_slots_and_end_probe() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+
+        // A match pays for one or two descriptor visits. No match pays for
+        // both descriptor visits plus one end probe.
+        for (matching, expected, work) in [
+            ([true, false], Some(0), 1),
+            ([false, true], Some(1), 2),
+            ([false, false], None, 3),
+        ] {
+            let descriptors = matching.map(|matches| {
+                descriptor_with_ids(
+                    0..0,
+                    DISPLACEMENT_CLASS,
+                    if matches {
+                        DISPLACEMENT_ITEM
+                    } else {
+                        EDGE_SOFTENING_ITEM
+                    },
+                    Some(MESH_MODIFIER_PLUGIN),
+                )
+            });
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let found = super::first_matching_descriptor(
+                &ctx,
+                &descriptors,
+                DISPLACEMENT_CLASS,
+                DISPLACEMENT_ITEM,
+            )
+            .unwrap();
+            assert_eq!(
+                found.map(|value| std::ptr::eq(
+                    value,
+                    descriptors[expected.unwrap_or(0)].known().unwrap()
+                )),
+                expected.map(|_| true)
+            );
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(1, "test descriptor search boundary")
+                .unwrap_err()
+            else {
+                panic!("the search consumes its exact work budget");
+            };
+            assert_eq!(limit.used, work);
+            assert_eq!(limit.additional, 1);
+        }
     }
 
     fn descriptor_with_ids(

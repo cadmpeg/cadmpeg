@@ -936,9 +936,11 @@ fn insert_knot_once(
     let n = points.len() - 1;
     // Endpoint clamping can select a span beyond the last control point.
     let k = ctx
-        .admit_iter(knots.as_slice(), "Rhino knot span search")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .rposition(|knot| *knot <= value)
+        .rposition_by(
+            knots.as_slice(),
+            |knot| Ok(*knot <= value),
+            "Rhino knot span search",
+        )?
         .map_or_else(
             || {
                 Err(error(
@@ -1253,33 +1255,30 @@ pub(crate) fn join_nurbs_segments(
             .copied();
         if start.is_none()
             || end.is_none()
-            || ctx
-                .admit_iter(
-                    &(segment.knots()[..multiplicity])[..],
-                    "Rhino join nurbs segments traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-                .any(|value| Some(*value) != start)
-            || ctx
-                .admit_iter(
-                    &(segment.knots()[segment.knots().len() - multiplicity..])[..],
-                    "Rhino join nurbs segments traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-                .any(|value| Some(*value) != end)
+            || ctx.any_by(
+                &(segment.knots()[..multiplicity])[..],
+                |value| Ok(Some(*value) != start),
+                "Rhino join nurbs segments traversal",
+            )?
+            || ctx.any_by(
+                &(segment.knots()[segment.knots().len() - multiplicity..])[..],
+                |value| Ok(Some(*value) != end),
+                "Rhino join nurbs segments traversal",
+            )?
         {
             return Err(error(offset, "polycurve segment is not endpoint-clamped"));
         }
     }
-    let rational = ctx
-        .admit_iter(&segments[..], "Rhino join nurbs segments traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .any(|segment| {
-            matches!(
+    let rational = ctx.any_by(
+        &segments[..],
+        |segment| {
+            Ok(matches!(
                 segment.pole_rows(),
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
-            )
-        });
+            ))
+        },
+        "Rhino join nurbs segments traversal",
+    )?;
     let mut control_points: Vec<Point3> = Vec::new();
     let mut knots: Vec<f64> = Vec::new();
     let mut weights = rational.then(Vec::new);

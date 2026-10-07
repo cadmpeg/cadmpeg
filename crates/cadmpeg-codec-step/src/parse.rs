@@ -475,12 +475,11 @@ impl Exchange {
         Ok(ctx
             .admit_iter(&self.records, "STEP matching entity record traversal")?
             .map(move |(&id, record)| -> Result<Option<u64>, CodecError> {
-                let matched = ctx
-                    .admit_iter(
-                        &record.partials[..],
-                        "STEP matching entity partial traversal",
-                    )?
-                    .any(|partial| matches(&partial.name));
+                let matched = ctx.any_by(
+                    &record.partials[..],
+                    |partial| Ok(matches(&partial.name)),
+                    "STEP matching entity partial traversal",
+                )?;
                 Ok(matched.then_some(id))
             })
             .filter_map(Result::transpose))
@@ -509,9 +508,11 @@ impl Exchange {
             .admit_iter(&self.records, "STEP entity union record traversal")?
             .map(
                 move |(&id, record)| -> Result<Option<(u64, &'a RawRecord)>, CodecError> {
-                    let matched = ctx
-                        .admit_iter(&record.partials[..], "STEP entity union partial traversal")?
-                        .any(|partial| names.contains(&partial.name.as_str()));
+                    let matched = ctx.any_by(
+                        &record.partials[..],
+                        |partial| Ok(names.contains(&partial.name.as_str())),
+                        "STEP entity union partial traversal",
+                    )?;
                     Ok(matched.then_some((id, record)))
                 },
             )
@@ -1072,22 +1073,18 @@ impl Parser<'_, '_, '_> {
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
         }
-        if self
-            .budget
-            .admit_iter(&(records), "STEP exchange map traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .map(|(key, _)| key)
-            .any(|id| external_reference_ids.contains(id))
-        {
+        if self.budget.any_by(
+            records.keys(),
+            |id| Ok(external_reference_ids.contains(id)),
+            "STEP exchange map traversal",
+        )? {
             return self.err("external reference instance collides with a DATA instance");
         }
-        if self
-            .budget
-            .admit_iter(&(records), "STEP exchange map traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .map(|(key, _)| key)
-            .any(|id| external_value_reference_ids.contains(id))
-        {
+        if self.budget.any_by(
+            records.keys(),
+            |id| Ok(external_value_reference_ids.contains(id)),
+            "STEP exchange map traversal",
+        )? {
             return self.err("external value instance collides with a DATA instance");
         }
         if !anchors.is_empty() {
@@ -1249,20 +1246,18 @@ impl Parser<'_, '_, '_> {
             reference_storage.with_storage(|| {
                 references(&anchor.value, &mut refs, &mut value_refs, self.budget)
             })?;
-            if self
-                .budget
-                .admit_iter(&refs[..], "STEP exchange traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
-            {
+            if self.budget.any_by(
+                &refs[..],
+                |id| Ok(!records.contains_key(id) && !external_reference_ids.contains(id)),
+                "STEP exchange traversal",
+            )? {
                 return self.err("unresolved instance reference in anchor binding");
             }
-            if self
-                .budget
-                .admit_iter(&value_refs[..], "STEP exchange traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .any(|id| !external_value_reference_ids.contains(id))
-            {
+            if self.budget.any_by(
+                &value_refs[..],
+                |id| Ok(!external_value_reference_ids.contains(id)),
+                "STEP exchange traversal",
+            )? {
                 return self.err("unresolved value instance reference in anchor binding");
             }
             for tag in self
@@ -1275,20 +1270,18 @@ impl Parser<'_, '_, '_> {
                 reference_storage.with_storage(|| {
                     references(&tag.value, &mut refs, &mut value_refs, self.budget)
                 })?;
-                if self
-                    .budget
-                    .admit_iter(&refs[..], "STEP exchange traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                    .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
-                {
+                if self.budget.any_by(
+                    &refs[..],
+                    |id| Ok(!records.contains_key(id) && !external_reference_ids.contains(id)),
+                    "STEP exchange traversal",
+                )? {
                     return self.err("unresolved instance reference in anchor tag");
                 }
-                if self
-                    .budget
-                    .admit_iter(&value_refs[..], "STEP exchange traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                    .any(|id| !external_value_reference_ids.contains(id))
-                {
+                if self.budget.any_by(
+                    &value_refs[..],
+                    |id| Ok(!external_value_reference_ids.contains(id)),
+                    "STEP exchange traversal",
+                )? {
                     return self.err("unresolved value instance reference in anchor tag");
                 }
             }
@@ -1316,24 +1309,22 @@ impl Parser<'_, '_, '_> {
                     })?;
                 }
             }
-            if self
-                .budget
-                .admit_iter(&refs[..], "STEP exchange traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
-            {
+            if self.budget.any_by(
+                &refs[..],
+                |id| Ok(!records.contains_key(id) && !external_reference_ids.contains(id)),
+                "STEP exchange traversal",
+            )? {
                 return Self::err_at(
                     self.budget,
                     record.span.start,
                     "unresolved instance reference",
                 );
             }
-            if self
-                .budget
-                .admit_iter(&value_refs[..], "STEP exchange traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .any(|id| !external_value_reference_ids.contains(id))
-            {
+            if self.budget.any_by(
+                &value_refs[..],
+                |id| Ok(!external_value_reference_ids.contains(id)),
+                "STEP exchange traversal",
+            )? {
                 return Self::err_at(
                     self.budget,
                     record.span.start,
@@ -2170,10 +2161,11 @@ fn valid_section_language(
         return invalid("SECTION_LANGUAGE has invalid parameters");
     };
     if language.len() != 3
-        || !budget
-            .admit_iter(language.as_bytes(), "STEP section language validation")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .all(|byte| byte.is_ascii_alphabetic())
+        || !budget.all_by(
+            language.as_bytes(),
+            |byte| Ok(byte.is_ascii_alphabetic()),
+            "STEP section language validation",
+        )?
     {
         return invalid("SECTION_LANGUAGE has invalid parameters");
     }
@@ -2390,9 +2382,11 @@ fn days_in_month(year: usize, month: usize) -> Option<usize> {
 
 fn all_ascii_digits(budget: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     Ok(!bytes.is_empty()
-        && budget
-            .admit_iter(bytes, "STEP decimal digit validation")?
-            .all(u8::is_ascii_digit))
+        && budget.all_by(
+            bytes,
+            |value| Ok(u8::is_ascii_digit(value)),
+            "STEP decimal digit validation",
+        )?)
 }
 
 fn parse_ascii_digits(budget: &DecodeContext<'_>, bytes: &[u8]) -> Result<usize, CodecError> {
@@ -2604,9 +2598,11 @@ fn schema_names_for_matching(
 
 fn is_string_list(budget: &DecodeContext<'_>, value: Option<&Value>) -> Result<bool, CodecError> {
     match value {
-        Some(Value::List(values)) if !values.is_empty() => Ok(budget
-            .admit_iter(values.as_slice(), "STEP string list traversal")?
-            .all(|value| matches!(value, Value::String(_)))),
+        Some(Value::List(values)) if !values.is_empty() => budget.all_by(
+            values.as_slice(),
+            |value| Ok(matches!(value, Value::String(_))),
+            "STEP string list traversal",
+        ),
         _ => Ok(false),
     }
 }
@@ -2617,9 +2613,11 @@ fn is_string_or_omitted(value: Option<&Value>) -> bool {
 
 fn valid_anchor_name(budget: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
     Ok(!name.is_empty()
-        && budget
-            .admit_iter(name.as_bytes(), "STEP anchor name traversal")?
-            .any(|byte| !byte.is_ascii_digit()))
+        && budget.any_by(
+            name.as_bytes(),
+            |byte| Ok(!byte.is_ascii_digit()),
+            "STEP anchor name traversal",
+        )?)
 }
 
 fn is_anchor_item(budget: &DecodeContext<'_>, value: &Value) -> Result<bool, CodecError> {
@@ -3172,14 +3170,15 @@ fn reference_target_matches(name: ReferenceName, value: &Value) -> bool {
 
 fn is_uuid_fragment(budget: &DecodeContext<'_>, fragment: &str) -> Result<bool, CodecError> {
     Ok(fragment.len() == 36
-        && budget
-            .admit_iter(fragment.as_bytes(), "STEP UUID fragment traversal")?
-            .enumerate()
-            .all(|(index, byte)| {
-                matches!(index, 8 | 13 | 18 | 23)
+        && budget.all_by(
+            fragment.as_bytes().iter().enumerate(),
+            |(index, byte)| {
+                Ok(matches!(index, 8 | 13 | 18 | 23)
                     .then_some(*byte == b'-')
-                    .unwrap_or_else(|| byte.is_ascii_hexdigit())
-            }))
+                    .unwrap_or_else(|| byte.is_ascii_hexdigit()))
+            },
+            "STEP UUID fragment traversal",
+        )?)
 }
 
 fn value_node_count(

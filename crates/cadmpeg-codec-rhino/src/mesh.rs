@@ -482,18 +482,20 @@ pub(crate) fn decode(
         }
     }
     if ngon_count == 0 {
-        if let Some(extra) = expand
-            .ctx()
-            .admit_iter(&userdata[..], "Rhino decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .filter_map(UserdataDescriptor::known)
-            .find(|value| {
-                value.class_uuid == V4V5_MESH_NGON_USERDATA
+        if let Some(extra) = expand.ctx().find_map(
+            userdata,
+            |raw| {
+                let Some(value) = UserdataDescriptor::known(raw) else {
+                    return Ok(None);
+                };
+                Ok((value.class_uuid == V4V5_MESH_NGON_USERDATA
                     && value.item_uuid == V4V5_MESH_NGON_USERDATA
                     && (value.application_uuid.is_none()
-                        || value.application_uuid == Some(OPENNURBS4))
-            })
-        {
+                        || value.application_uuid == Some(OPENNURBS4)))
+                .then_some(value))
+            },
+            "Rhino decode traversal",
+        )? {
             match read_v4v5_ngon_userdata(
                 expand.ctx(),
                 data,
@@ -543,16 +545,18 @@ pub(crate) fn decode(
         )?;
     }
     if double_vertices.is_none() {
-        if let Some(extra) = expand
-            .ctx()
-            .admit_iter(&userdata[..], "Rhino decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .filter_map(UserdataDescriptor::known)
-            .find(|value| {
-                value.class_uuid == V5_MESH_DOUBLE_VERTICES
-                    && value.item_uuid == V5_MESH_DOUBLE_VERTICES
-            })
-        {
+        if let Some(extra) = expand.ctx().find_map(
+            userdata,
+            |raw| {
+                let Some(value) = UserdataDescriptor::known(raw) else {
+                    return Ok(None);
+                };
+                Ok((value.class_uuid == V5_MESH_DOUBLE_VERTICES
+                    && value.item_uuid == V5_MESH_DOUBLE_VERTICES)
+                    .then_some(value))
+            },
+            "Rhino decode traversal",
+        )? {
             match read_v5_double_vertices(expand.ctx(), data, extra, archive, &decoded.vertices) {
                 Ok(Some(values)) => double_vertices = Some(values),
                 Ok(None) => decoded.warnings.push_coded_admitted(expand.ctx(), crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!(
@@ -599,15 +603,17 @@ pub(crate) fn decode(
             }
         }
     }
-    let proxy_fingerprint = if expand
-        .ctx()
-        .admit_iter(&userdata[..], "Rhino mesh proxy userdata scan")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .filter_map(UserdataDescriptor::known)
-        .any(|extra| {
-            extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
-                && extra.item_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
-        }) {
+    let proxy_fingerprint = if expand.ctx().any_by(
+        userdata,
+        |raw| {
+            let Some(extra) = UserdataDescriptor::known(raw) else {
+                return Ok(false);
+            };
+            Ok(extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+                && extra.item_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA)
+        },
+        "Rhino mesh proxy userdata scan",
+    )? {
         Some(native_proxy_fingerprint(
             &faces,
             &decoded.vertices,
@@ -1764,19 +1770,21 @@ fn synchronization_ok(
     double: &[[f64; 3]],
     float: &[[FiniteBinary32; 3]],
 ) -> Result<bool, CodecError> {
-    Ok(ctx
-        .admit_iter(double, "Rhino mesh synchronized double vertices")?
-        .zip(ctx.admit_iter(float, "Rhino mesh synchronized double vertices float lane")?)
-        .all(|(a, b)| {
+    ctx.all_by(
+        double.iter().zip(float),
+        |(a, b)| {
+            ctx.charge_work(1, "Rhino mesh synchronized double vertices float lane")?;
             let scale = f64::from(
                 b.iter()
                     .map(|value| value.get().abs())
                     .fold(0.0_f32, f32::max),
             );
-            a.iter().zip(b).all(|(left, right)| {
+            Ok(a.iter().zip(b).all(|(left, right)| {
                 (*left - f64::from(right.get())).abs() <= scale * EPS_MESH_SYNCHRONIZATION_OK_E6
-            })
-        }))
+            }))
+        },
+        "Rhino mesh synchronized double vertices",
+    )
 }
 
 fn v5_synchronization_ok(
@@ -1784,14 +1792,16 @@ fn v5_synchronization_ok(
     double: &[[f64; 3]],
     float: &[[FiniteBinary32; 3]],
 ) -> Result<bool, CodecError> {
-    Ok(ctx
-        .admit_iter(double, "Rhino V5 synchronized double vertices")?
-        .zip(ctx.admit_iter(float, "Rhino V5 synchronized double vertices float lane")?)
-        .all(|(double, float)| {
-            double.iter().zip(float).all(|(double, float)| {
+    ctx.all_by(
+        double.iter().zip(float.iter()),
+        |(double, float)| {
+            ctx.charge_work(1, "Rhino V5 synchronized double vertices float lane")?;
+            Ok(double.iter().zip(float).all(|(double, float)| {
                 cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())
-            })
-        }))
+            }))
+        },
+        "Rhino V5 synchronized double vertices",
+    )
 }
 
 fn channel(

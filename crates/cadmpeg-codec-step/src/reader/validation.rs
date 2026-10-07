@@ -401,13 +401,11 @@ fn area_or_volume_measure<'a>(
 
 fn measure_unit(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<u64>, CodecError> {
     if let Some(partial) = record.partial(ctx, "MEASURE_WITH_UNIT")? {
-        let unit = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP validation measure unit traversal",
-            )?
-            .rev()
-            .find_map(ValueExt::reference);
+        let unit = ctx.find_map(
+            partial.parameters.as_slice().iter().rev(),
+            |value| Ok(ValueExt::reference(value)),
+            "STEP validation measure unit traversal",
+        )?;
         if unit.is_some() {
             return Ok(unit);
         }
@@ -423,19 +421,7 @@ fn derived_unit_elements<'a>(
     record: &'a RawRecord,
 ) -> Result<Option<&'a Value>, CodecError> {
     for name in ["DERIVED_UNIT", "AREA_UNIT", "VOLUME_UNIT"] {
-        if let Some(partial) = ctx
-            .admit_iter(&record.partials[..], "STEP derived unit partial traversal")?
-            .map(|partial| -> Result<Option<_>, CodecError> {
-                Ok((ctx.equal(
-                    partial.name.as_str(),
-                    name,
-                    "STEP derived unit elements equality",
-                )?)
-                .then_some(partial))
-            })
-            .find_map(Result::transpose)
-            .transpose()?
-        {
+        if let Some(partial) = record.partial(ctx, name)? {
             return Ok(partial.parameters.first());
         }
     }
@@ -494,31 +480,24 @@ fn mesh_properties(
     let Some(body) = (ir.model.bodies.len() == 1).then(|| &ir.model.bodies[0].id) else {
         return Ok(None);
     };
-    let origin = ctx
-        .admit_iter(
-            ir.model.tessellations.as_slice(),
-            "STEP validation mesh origin traversal",
-        )?
-        .map(|mesh| -> Result<Option<_>, CodecError> {
-            Ok(ctx
-                .equal(
-                    &mesh.body.as_ref(),
-                    &Some(body),
-                    "STEP validation mesh body equality",
-                )?
-                .then_some(mesh))
-        })
-        .filter_map(Result::transpose)
-        .map(|mesh| -> Result<Option<_>, CodecError> {
-            let mesh = mesh?;
+    let origin = ctx.find_map(
+        ir.model.tessellations.as_slice(),
+        |mesh| {
+            if !ctx.equal(
+                &mesh.body.as_ref(),
+                &Some(body),
+                "STEP validation mesh body equality",
+            )? {
+                return Ok(None);
+            }
             Ok(mesh.triangles().first().and_then(|triangle| {
                 mesh.vertices()
                     .get(cadmpeg_core::decode::index_from_u32(triangle[0]))
                     .copied()
             }))
-        })
-        .find_map(Result::transpose)
-        .transpose()?;
+        },
+        "STEP validation mesh origin traversal",
+    )?;
     let Some(origin) = origin else {
         return Ok(None);
     };
@@ -646,10 +625,11 @@ fn mesh_properties(
             triangles += 1;
         }
         watertight &= !edge_uses.is_empty()
-            && ctx
-                .admit_iter(&(edge_uses), "STEP mesh properties map traversal")?
-                .map(|(_, value)| value)
-                .all(|uses| *uses == 2);
+            && ctx.all_by(
+                edge_uses.values(),
+                |uses| Ok(*uses == 2),
+                "STEP mesh properties map traversal",
+            )?;
     }
     if triangles == 0 || area == 0.0 {
         return Ok(None);
