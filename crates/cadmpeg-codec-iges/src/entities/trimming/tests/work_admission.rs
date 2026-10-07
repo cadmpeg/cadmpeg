@@ -192,32 +192,18 @@ fn assert_scan_work_refusal<T>(
     operation: &str,
     run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
 ) {
-    let mut cap = 0_u64;
-    for _ in 0..128 {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+        let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
-        match run(&ctx) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            Err(error) => panic!("unexpected error before {operation}: {error}"),
-            Ok(_) => panic!("operation {operation} was not admitted"),
-        }
-    }
-    panic!("operation {operation} was not reached");
+        crate::test_support::with_policy_context(&[], &policy, |ctx| run(ctx))
+    });
 }
 
 #[test]
-fn pcurve_internal_multiplicity_refuses_work_before_scan() {
+fn pcurve_knot_insertion_refuses_work_before_shift() {
     let controls = [[1.0, 0.0, 0.0, 0.0]; 4];
     let knots = [0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0];
-    assert_scan_work_refusal("iges pcurve internal knot multiplicity", |ctx| {
+    assert_scan_work_refusal("iges pcurve inserted knots", |ctx| {
         super::super::homogeneous_pcurve_spans(2, &knots, controls.to_vec(), ctx)
     });
 }
@@ -305,5 +291,42 @@ fn support_interval_identity_parse_refusal_precedes_missing_record_fallback() {
                 ctx,
             ),
         );
+    });
+}
+
+#[test]
+fn pcurve_knot_runs_preserve_quadratic_span_controls() {
+    let knots = [0.0, 0.0, 0.0, 0.25, 0.75, 1.0, 1.0, 1.0];
+    let controls = (0..5).map(|value| [1.0, f64::from(value), 0.0, 0.0]).collect();
+    crate::test_support::with_service_context(&[], |ctx| {
+        let spans = super::super::homogeneous_pcurve_spans(2, &knots, controls, ctx)
+            .unwrap().unwrap();
+        assert_eq!(spans.len(), 3);
+        let expected = [
+            ([0.0, 0.25], [0.0, 1.0, 4.0 / 3.0]),
+            ([0.25, 0.75], [4.0 / 3.0, 2.0, 8.0 / 3.0]),
+            ([0.75, 1.0], [8.0 / 3.0, 3.0, 4.0]),
+        ];
+        for (span, (domain, ordinates)) in spans.iter().zip(expected) {
+            assert_eq!(span.domain, domain);
+            assert_eq!(span.controls.len(), 3);
+            for (control, ordinate) in span.controls.iter().zip(ordinates) {
+                assert_eq!(control[0], 1.0);
+                assert!((control[1] - ordinate).abs() <= 4.0 * f64::EPSILON);
+                assert_eq!(&control[2..], &[0.0, 0.0]);
+            }
+        }
+    });
+}
+
+#[test]
+fn pcurve_knot_validation_stops_at_the_first_invalid_value() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
+        let knots = [f64::NAN, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0];
+        assert!(super::super::homogeneous_pcurve_spans(
+            2, &knots, vec![[1.0, 0.0, 0.0, 0.0]; 4], ctx,
+        ).unwrap().is_none());
     });
 }

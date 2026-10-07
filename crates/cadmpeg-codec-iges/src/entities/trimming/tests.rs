@@ -675,31 +675,14 @@ fn pcurve_support_check_refuses_unadmitted_span_and_split_storage() {
 fn pcurve_internal_knot_insertion_refuses_before_storage() {
     let controls = [[1.0, 0.0, 0.0, 0.0]; 4];
     let knots = [0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0];
-    for operation in [
-        "iges pcurve internal knots",
-        "iges pcurve inserted controls",
-        "iges pcurve inserted knots",
-    ] {
-        let mut cap = 0_u64;
-        let mut reached = false;
-        for _ in 0..128 {
+    for operation in ["iges pcurve inserted controls", "iges pcurve inserted knots"] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match homogeneous_pcurve_spans(2, &knots, controls.to_vec(), &ctx) {
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        reached = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                _ => panic!("expected pcurve knot refusal at {operation}"),
-            }
-        }
-        assert!(reached, "pcurve knot refusal was not reached: {operation}");
+            homogeneous_pcurve_spans(2, &knots, controls.to_vec(), &ctx)
+        });
     }
 }
 
