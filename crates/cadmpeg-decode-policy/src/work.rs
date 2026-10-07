@@ -208,6 +208,27 @@ impl<'tcx> Analysis<'_, 'tcx> {
         let Some((definition, operands)) = self.call(expression) else {
             return;
         };
+        // Core's removal operations are the charged removals the removal rule
+        // names, and its generic keyed operations are proven at each concrete
+        // instance its callers import.
+        let core_body = self
+            .tcx
+            .crate_name(rustc_span::def_id::LOCAL_CRATE)
+            .as_str()
+            == "cadmpeg_core";
+        if let Some(removal) =
+            crate::hash_tables::removal(self.tcx, definition).filter(|_| !core_body)
+        {
+            self.report(
+                expression.span,
+                "uncharged_decode_work",
+                &format!(
+                    "hash table {removal} outside core's charged removal; replacement: {}",
+                    crate::hash_tables::REMOVAL_REPLACEMENT
+                ),
+            );
+            return;
+        }
         if let Some(traversal) = crate::hash_tables::traversal(
             self.tcx,
             definition,
@@ -271,11 +292,6 @@ impl<'tcx> Analysis<'_, 'tcx> {
         }
         // Core's generic keyed operations are proven at each concrete instance
         // its callers import.
-        let core_body = self
-            .tcx
-            .crate_name(rustc_span::def_id::LOCAL_CRATE)
-            .as_str()
-            == "cadmpeg_core";
         if let Some((receiver, query)) =
             operands.first().zip(operands.get(1)).filter(|_| !core_body)
         {

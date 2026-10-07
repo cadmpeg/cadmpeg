@@ -1299,18 +1299,28 @@ fn layer_fixture(
     (data, tables)
 }
 
-/// Which singleton-bearing tables a metadata ladder fixture carries.
+/// Whether a ladder fixture's layer records carry the writer-version stamp.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LayerStamp {
+    WriterVersion,
+    Unstamped,
+}
+
+/// Which singleton-bearing tables a metadata ladder fixture carries, and
+/// how its layer records are stamped.
 #[derive(Clone, Copy)]
 struct MetadataTables {
     properties: bool,
     settings: bool,
     layers: bool,
+    stamp: LayerStamp,
 }
 
 const ALL_METADATA_TABLES: MetadataTables = MetadataTables {
     properties: true,
     settings: true,
     layers: true,
+    stamp: LayerStamp::WriterVersion,
 };
 
 fn metadata_limit_operations(
@@ -1335,9 +1345,16 @@ fn metadata_limit_operations_for(
     userdata: &[u8],
     carried: MetadataTables,
 ) -> Vec<&'static str> {
-    let (data, mut layer_tables) =
-        layer_fixture(extension, Some(200_912_010), 1, source_id, userdata);
-    layer_tables.remove(0);
+    let (data, mut layer_tables) = layer_fixture(
+        extension,
+        (carried.stamp == LayerStamp::WriterVersion).then_some(200_912_010),
+        1,
+        source_id,
+        userdata,
+    );
+    if carried.stamp == LayerStamp::WriterVersion {
+        layer_tables.remove(0);
+    }
     let mut tables = Vec::new();
     if carried.properties {
         tables.push(metadata_table(
@@ -1429,19 +1446,35 @@ fn metadata_collection_operations() -> &'static [&'static str] {
 fn metadata_materialized_operations() -> &'static [&'static str] {
     static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
     OPERATIONS.get_or_init(|| {
+        let unstamped_layers = MetadataTables {
+            properties: false,
+            settings: false,
+            layers: true,
+            stamp: LayerStamp::Unstamped,
+        };
         [
-            ALL_METADATA_TABLES,
-            MetadataTables {
-                properties: false,
-                settings: true,
-                layers: false,
-            },
+            (ALL_METADATA_TABLES, [0x44; 16]),
+            (
+                MetadataTables {
+                    properties: false,
+                    settings: true,
+                    layers: false,
+                    stamp: LayerStamp::WriterVersion,
+                },
+                [0x44; 16],
+            ),
+            // Without the writer-version stamp no property set is charged
+            // before the layers, so the layer UUID workspace refuses first; a
+            // layer without a UUID charges no UUID set, so the layer index
+            // workspace refuses first.
+            (unstamped_layers, [0x44; 16]),
+            (unstamped_layers, [0; 16]),
         ]
         .into_iter()
-        .flat_map(|carried| {
+        .flat_map(|(carried, source_id)| {
             metadata_limit_operations_for(
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                [0x44; 16],
+                source_id,
                 &[0],
                 &[],
                 carried,
@@ -1566,90 +1599,16 @@ metadata_limit_test!(
     metadata_materialized_operations,
     "Rhino setting singleton workspace"
 );
-/// Each new layer UUID grows its workspace before the set grows; the set's
-/// growth bound always outweighs one entry, so the workspace is driven alone.
-#[test]
-fn layer_uuid_workspace_refuses_materialized_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let entry = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Uuid>());
-    for limit in 0..=entry {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let mut workspace = ctx
-            .reserve_scoped(0, "Rhino layer UUID workspace")
-            .expect("empty workspace");
-        let mut ids = std::collections::HashSet::new();
-        let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = super::admit_layer_uuid(
-            &ctx,
-            &mut workspace,
-            &mut ids,
-            Uuid::from_canonical([0x44; 16]),
-        ) else {
-            panic!("the UUID admission must refuse at {limit} bytes");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
-        if limit < entry {
-            assert_eq!(refusal.operation, "Rhino layer UUID workspace");
-            assert_eq!((refusal.used, refusal.additional), (0, entry));
-        } else {
-            // The workspace entry fits; the set's growth refuses next.
-            assert_eq!(refusal.operation, "Rhino layer UUID keys");
-            assert_eq!(refusal.used, entry);
-        }
-        assert!(ids.is_empty());
-    }
-}
-
-/// Each new layer index grows its workspace before its count slot.
-#[test]
-fn layer_index_workspace_refuses_materialized_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let (data, layer_tables) = layer_fixture(&[0], Some(200_912_010), 1, [0x44; 16], &[]);
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let ctx = retained_limit_context(&data, &arena, &policy);
-    let parsed = settings::parse_metadata(
-        &ctx,
-        &data,
-        ArchiveVersion::V8,
-        &layer_tables,
-        &mut Diagnostics::new(),
-    )
-    .expect("layer metadata")
-    .layers;
-    let [layer] = parsed.as_slice() else {
-        panic!("one layer");
-    };
-    let layers = [3, 1].map(|index| {
-        let mut layer = layer.clone();
-        layer.index = index;
-        layer
-    });
-    let entry = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(i32, usize)>());
-    for limit in 0..=2 * entry {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let mut workspace = ctx
-            .reserve_scoped(0, "Rhino layer index workspace")
-            .expect("empty workspace");
-        let result = super::count_layer_indexes(&ctx, &mut workspace, &layers);
-        if limit == 2 * entry {
-            assert_eq!(result.expect("both indexes fit"), [(1, 1), (3, 1)]);
-            continue;
-        }
-        let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result else {
-            panic!("the index workspace must refuse at {limit} bytes");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!(refusal.operation, "Rhino layer index workspace");
-        let used = if limit < entry { 0 } else { entry };
-        assert_eq!((refusal.used, refusal.additional), (used, entry));
-    }
-}
+metadata_limit_test!(
+    layer_uuid_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino layer UUID workspace"
+);
+metadata_limit_test!(
+    layer_index_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino layer index workspace"
+);
 /// The parent-reference pass starts after the layer UUID set has charged its
 /// larger transient bound, so a whole-metadata ladder never meets the parent
 /// workspace first; the pass is driven alone over the parsed layers.
