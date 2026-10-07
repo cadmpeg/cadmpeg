@@ -1028,6 +1028,7 @@ pub(crate) fn value_schema_selections(
     fields: &[value_block::ValueField],
     catalog: &CatiaCatalog,
 ) -> Result<Vec<CatiaValueSchemaSelection>, cadmpeg_core::CodecError> {
+    let mut selector_storage = ctx.reserve_scoped(0, "catia_value_selector_indices")?;
     let mut selector_indices = Vec::new();
     for (index, field) in ctx
         .admit_iter(fields, "catia_native_value_selector_field_visits")?
@@ -1040,7 +1041,9 @@ pub(crate) fn value_schema_selections(
             .ok()
             .is_some_and(|ordinal| ordinal <= catalog.entries.len())
         {
-            ctx.push_vec(&mut selector_indices, index, "catia_value_selector_indices")?;
+            selector_storage.with_storage(|| {
+                ctx.push_vec(&mut selector_indices, index, "catia_value_selector_indices")
+            })?;
         }
     }
     let mut selections = Vec::new();
@@ -1122,7 +1125,11 @@ impl CatiaValueBlock {
             format_args!("catia:outer:value-block#{:010}", block.pos),
             "catia_value_block_id",
         )?;
-        let fields = value_block::tokenize_charged(ctx, &block.payload)?;
+        // The tokenized fields are dropped once the selections are built.
+        let (fields, _fields_storage) = ctx
+            .with_scoped_storage("catia_value_block_fields", || {
+                value_block::tokenize_charged(ctx, &block.payload)
+            })?;
         let byte_offset = u64_from_index(block.pos);
         let schema_selections = value_schema_selections(ctx, &id, byte_offset, &fields, catalog)?;
         Ok(Self {
