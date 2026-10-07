@@ -56,15 +56,21 @@ pub(crate) fn placement_matrix_value_charged(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Result<FiniteFrame, PlacementIssue>, CodecError> {
+    ctx.charge_work(0, "FreeCAD placement value admission")?;
     placement_matrix_value(
         property,
         |value, name| {
-            let Some(text) = ctx.get_btree_map(
-                &value.attributes,
-                name,
-                "FreeCAD placement attribute lookup",
-            )?
-            else {
+            let operation = if name == "A" {
+                "FreeCAD placement angle lookup"
+            } else {
+                "FreeCAD placement attribute lookup"
+            };
+            Ok(ctx
+                .get_btree_map(&value.attributes, name, operation)?
+                .map(String::as_str))
+        },
+        |text| {
+            let Some(text) = text else {
                 return Ok(None);
             };
             Ok(ctx
@@ -72,16 +78,16 @@ pub(crate) fn placement_matrix_value_charged(
                 .ok()
                 .and_then(FiniteReal::new))
         },
-        |value| {
-            ctx.contains_key_btree_map(&value.attributes, "A", "FreeCAD placement angle lookup")
-        },
     )
 }
 
-fn placement_matrix_value<E>(
-    property: &PropertyRecord,
-    mut number: impl FnMut(&crate::native::ValueRecord, &str) -> Result<Option<FiniteReal>, E>,
-    mut has_angle: impl FnMut(&crate::native::ValueRecord) -> Result<bool, E>,
+fn placement_matrix_value<'property, E>(
+    property: &'property PropertyRecord,
+    mut attribute: impl FnMut(
+        &'property crate::native::ValueRecord,
+        &'static str,
+    ) -> Result<Option<&'property str>, E>,
+    mut number: impl FnMut(Option<&'property str>) -> Result<Option<FiniteReal>, E>,
 ) -> Result<Result<FiniteFrame, PlacementIssue>, E> {
     if property.type_name != "App::PropertyPlacement" {
         return Ok(Err(PlacementIssue::RuntimeType));
@@ -93,23 +99,23 @@ fn placement_matrix_value<E>(
     if value.tag != "PropertyPlacement" {
         return Ok(Err(PlacementIssue::ValueTag));
     }
-    let mut number = |name: &str| number(value, name);
-    let [px, py, pz] = [number("Px")?, number("Py")?, number("Pz")?];
-    let position = match (px, py, pz) {
-        (None, _, _) => return Ok(Err(PlacementIssue::Position("Px"))),
-        (_, None, _) => return Ok(Err(PlacementIssue::Position("Py"))),
-        (_, _, None) => return Ok(Err(PlacementIssue::Position("Pz"))),
-        (Some(px), Some(py), Some(pz)) => [px, py, pz],
-    };
-    let quaternion = if has_angle(value)? {
-        let [ox, oy, oz] = [number("Ox")?, number("Oy")?, number("Oz")?];
-        let [ox, oy, oz] = match (ox, oy, oz) {
-            (None, _, _) => return Ok(Err(PlacementIssue::Axis("Ox"))),
-            (_, None, _) => return Ok(Err(PlacementIssue::Axis("Oy"))),
-            (_, _, None) => return Ok(Err(PlacementIssue::Axis("Oz"))),
-            (Some(ox), Some(oy), Some(oz)) => [ox, oy, oz],
+    let mut position = [FiniteReal::ZERO; 3];
+    for (name, component) in ["Px", "Py", "Pz"].into_iter().zip(&mut position) {
+        let Some(value) = number(attribute(value, name)?)? else {
+            return Ok(Err(PlacementIssue::Position(name)));
         };
-        let Some(angle) = number("A")? else {
+        *component = value;
+    }
+    let quaternion = if let Some(angle) = attribute(value, "A")? {
+        let mut axis = [FiniteReal::ZERO; 3];
+        for (name, component) in ["Ox", "Oy", "Oz"].into_iter().zip(&mut axis) {
+            let Some(value) = number(attribute(value, name)?)? else {
+                return Ok(Err(PlacementIssue::Axis(name)));
+            };
+            *component = value;
+        }
+        let [ox, oy, oz] = axis;
+        let Some(angle) = number(Some(angle))? else {
             return Ok(Err(PlacementIssue::Angle));
         };
         let axis = FiniteVector3::from_components(ox, oy, oz);
@@ -124,14 +130,14 @@ fn placement_matrix_value<E>(
         };
         [q0, q1, q2, q3]
     } else {
-        let [q0, q1, q2, q3] = [number("Q0")?, number("Q1")?, number("Q2")?, number("Q3")?];
-        match (q0, q1, q2, q3) {
-            (None, _, _, _) => return Ok(Err(PlacementIssue::Quaternion("Q0"))),
-            (_, None, _, _) => return Ok(Err(PlacementIssue::Quaternion("Q1"))),
-            (_, _, None, _) => return Ok(Err(PlacementIssue::Quaternion("Q2"))),
-            (_, _, _, None) => return Ok(Err(PlacementIssue::Quaternion("Q3"))),
-            (Some(q0), Some(q1), Some(q2), Some(q3)) => [q0, q1, q2, q3],
+        let mut components = [FiniteReal::ZERO; 4];
+        for (name, component) in ["Q0", "Q1", "Q2", "Q3"].into_iter().zip(&mut components) {
+            let Some(value) = number(attribute(value, name)?)? else {
+                return Ok(Err(PlacementIssue::Quaternion(name)));
+            };
+            *component = value;
         }
+        components
     };
     let [px, py, pz] = position;
     let [q0, q1, q2, q3] = quaternion;
@@ -143,15 +149,13 @@ pub(crate) fn placement_matrix_unreported(property: &PropertyRecord) -> Option<F
     match placement_matrix_value(
         property,
         |value, name| {
-            Ok::<_, std::convert::Infallible>(
-                value
-                    .attributes
-                    .get(name)
-                    .and_then(|text| text.parse().ok())
-                    .and_then(FiniteReal::new),
-            )
+            Ok::<_, std::convert::Infallible>(value.attributes.get(name).map(String::as_str))
         },
-        |value| Ok(value.attributes.contains_key("A")),
+        |text| {
+            Ok(text
+                .and_then(|text| text.parse().ok())
+                .and_then(FiniteReal::new))
+        },
     ) {
         Ok(value) => value.ok(),
         Err(never) => match never {},
@@ -402,6 +406,125 @@ mod tests {
                     |ctx| super::placement_matrix(ctx, &property),
                 );
             }
+        }
+    }
+
+    #[test]
+    fn placement_value_admission_preserves_prior_refusal_before_shape_checks() {
+        for property in [
+            property("App::PropertyString", Vec::new()),
+            property("App::PropertyPlacement", Vec::new()),
+            property("App::PropertyPlacement", vec![value("Other", &[])]),
+        ] {
+            crate::test_support::with_service_context(&[], |ctx| {
+                let CodecError::ResourceLimit(expected) =
+                    ctx.charge_work(u64::MAX, "prior refusal").unwrap_err()
+                else {
+                    panic!("work refusal");
+                };
+                assert!(matches!(
+                    super::placement_matrix_value_charged(ctx, &property),
+                    Err(CodecError::ResourceLimit(limit)) if limit == expected
+                ));
+            });
+        }
+    }
+
+    fn attribute_trace(
+        property: &PropertyRecord,
+    ) -> (
+        Result<super::FiniteFrame, super::PlacementIssue>,
+        Vec<&'static str>,
+    ) {
+        let mut visited = Vec::new();
+        let result = super::placement_matrix_value(
+            property,
+            |value, name| {
+                visited.push(name);
+                Ok::<_, std::convert::Infallible>(value.attributes.get(name).map(String::as_str))
+            },
+            |text| {
+                Ok(text
+                    .and_then(|text| text.parse().ok())
+                    .and_then(super::FiniteReal::new))
+            },
+        )
+        .unwrap();
+        (result, visited)
+    }
+
+    #[test]
+    fn placement_reuses_angle_attribute_for_presence_and_parsing() {
+        let property = property(
+            "App::PropertyPlacement",
+            vec![value(
+                "PropertyPlacement",
+                &[
+                    ("Px", "2"),
+                    ("Py", "3"),
+                    ("Pz", "4"),
+                    ("Ox", "0"),
+                    ("Oy", "0"),
+                    ("Oz", "1"),
+                    ("A", "0"),
+                ],
+            )],
+        );
+        let (result, visited) = attribute_trace(&property);
+        assert_eq!(visited, ["Px", "Py", "Pz", "A", "Ox", "Oy", "Oz"]);
+        assert_eq!(
+            result.ok().expect("valid axis-angle placement").rows(),
+            [
+                [1.0, 0.0, 0.0, 2.0],
+                [0.0, 1.0, 0.0, 3.0],
+                [0.0, 0.0, 1.0, 4.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        );
+    }
+
+    #[test]
+    fn placement_component_reads_stop_at_first_invalid_value() {
+        for (attributes, expected, issue) in [
+            (
+                vec![("Px", "bad"), ("Py", "unread"), ("Pz", "unread")],
+                vec!["Px"],
+                "has an invalid Px component",
+            ),
+            (
+                vec![
+                    ("Px", "0"),
+                    ("Py", "0"),
+                    ("Pz", "0"),
+                    ("A", "unread"),
+                    ("Ox", "bad"),
+                    ("Oy", "unread"),
+                    ("Oz", "unread"),
+                ],
+                vec!["Px", "Py", "Pz", "A", "Ox"],
+                "has an invalid Ox axis component",
+            ),
+            (
+                vec![
+                    ("Px", "0"),
+                    ("Py", "0"),
+                    ("Pz", "0"),
+                    ("Q0", "bad"),
+                    ("Q1", "unread"),
+                    ("Q2", "unread"),
+                    ("Q3", "unread"),
+                ],
+                vec!["Px", "Py", "Pz", "A", "Q0"],
+                "has an invalid Q0 quaternion component",
+            ),
+        ] {
+            let property = property(
+                "App::PropertyPlacement",
+                vec![value("PropertyPlacement", &attributes)],
+            );
+            let (result, visited) = attribute_trace(&property);
+            assert_eq!(visited, expected);
+            assert_eq!(result.unwrap_err().to_string(), issue);
         }
     }
 
