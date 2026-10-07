@@ -7,7 +7,12 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     patterns::{PatternKind, PatternSeed, PatternTransform},
-    FeatureDefinition, FeatureId, FeatureOperation, PathRef,
+    FeatureDefinition, FeatureOperation, PathRef,
+};
+
+use super::{
+    copy_projected_feature_id, either_parameter, parameter_literal, property_literal,
+    property_value,
 };
 use std::collections::HashMap;
 
@@ -25,7 +30,30 @@ pub(in crate::history) enum NativePatternClass {
     Mirror,
 }
 
+/// The pattern form a native record names, for the writer.
 pub(in crate::history) fn pattern_form(feature: &Feature) -> Option<NativePatternClass> {
+    match pattern_form_with(feature, || {
+        Ok::<_, std::convert::Infallible>(feature.properties.get("PatternType").map(String::as_str))
+    }) {
+        Ok(form) => form,
+        Err(never) => match never {},
+    }
+}
+
+/// The pattern form a native record names, with a charged property lookup.
+pub(in crate::history) fn native_pattern_form(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Option<NativePatternClass>, CodecError> {
+    pattern_form_with(feature, || property_value(ctx, feature, "PatternType"))
+}
+
+/// The pattern form from the native class, the kind token, the element tag,
+/// and, for a generic pattern element, its `PatternType` property.
+fn pattern_form_with<'f, E>(
+    feature: &'f Feature,
+    pattern_type: impl FnOnce() -> Result<Option<&'f str>, E>,
+) -> Result<Option<NativePatternClass>, E> {
     let parse = |form: &str| {
         if ["linear", "linearpattern", "lpattern"]
             .iter()
@@ -49,26 +77,95 @@ pub(in crate::history) fn pattern_form(feature: &Feature) -> Option<NativePatter
         }
     };
     if feature_input_class(feature, NativeClassKind::LinearPattern) {
-        return Some(NativePatternClass::Linear);
+        return Ok(Some(NativePatternClass::Linear));
     }
     if feature_input_class(feature, NativeClassKind::CircularPattern) {
-        return Some(NativePatternClass::Circular);
+        return Ok(Some(NativePatternClass::Circular));
     }
     if feature_input_class(feature, NativeClassKind::CurvePattern) {
-        return Some(NativePatternClass::CurveDriven);
+        return Ok(Some(NativePatternClass::CurveDriven));
     }
     if let Some(form) = parse(&feature.kind) {
-        return Some(form);
+        return Ok(Some(form));
     }
     if feature.xml_tag.eq_ignore_ascii_case("Mirror") {
-        return Some(NativePatternClass::Mirror);
+        return Ok(Some(NativePatternClass::Mirror));
     }
-    feature
-        .xml_tag
-        .eq_ignore_ascii_case("Pattern")
-        .then(|| feature.properties.get("PatternType"))
-        .flatten()
-        .and_then(|form| parse(form))
+    if !feature.xml_tag.eq_ignore_ascii_case("Pattern") {
+        return Ok(None);
+    }
+    Ok(pattern_type()?.and_then(parse))
+}
+
+/// The pattern transform a native record states completely.
+fn resolve_pattern(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+    form: NativePatternClass,
+    curve_path: Option<PathRef>,
+) -> Result<Option<PatternKind>, CodecError> {
+    let direction = |name| -> Result<_, CodecError> {
+        Ok(property_literal(ctx, feature, name)?.and_then(parse_valid_direction))
+    };
+    let spacing = || -> Result<_, CodecError> {
+        Ok(either_parameter(ctx, feature, "Spacing", "D3")?
+            .and_then(parse_positive_dimension_length_mm))
+    };
+    let count = |name, positional| -> Result<_, CodecError> {
+        Ok(either_parameter(ctx, feature, name, positional)?.and_then(parse_count))
+    };
+    let transform = match form {
+        NativePatternClass::Linear => {
+            let direction = match property_literal(ctx, feature, "Direction")? {
+                Some(value) => Some(require!(parse_valid_direction(value))),
+                None => None,
+            };
+            let spacing = require!(spacing()?);
+            let count = require!(count("Count", "D1")?);
+            let second = match (
+                property_literal(ctx, feature, "Direction2")?,
+                parameter_literal(ctx, feature, "D4")?,
+                parameter_literal(ctx, feature, "D2")?,
+            ) {
+                (Some(direction), Some(spacing), Some(count)) => {
+                    Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
+                        direction: require!(parse_valid_direction(direction)),
+                        spacing: require!(parse_positive_dimension_length_mm(spacing)),
+                        count: require!(parse_count(count)),
+                    })
+                }
+                _ => None,
+            };
+            PatternTransform::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            }
+        }
+        NativePatternClass::Circular => PatternTransform::Circular {
+            axis_origin: require!(
+                property_literal(ctx, feature, "AxisOrigin")?.and_then(parse_point3_mm)
+            ),
+            axis_dir: require!(direction("AxisDirection")?),
+            angle: require!(
+                parameter_literal(ctx, feature, "Angle")?.and_then(parse_positive_angle_rad)
+            ),
+            count: require!(parameter_literal(ctx, feature, "Count")?.and_then(parse_count)),
+        },
+        NativePatternClass::CurveDriven => PatternTransform::CurveDriven {
+            path: curve_path,
+            spacing: require!(spacing()?),
+            count: require!(count("Count", "D1")?),
+        },
+        NativePatternClass::Mirror => PatternTransform::Mirror {
+            plane_origin: require!(
+                property_literal(ctx, feature, "PlaneOrigin")?.and_then(parse_point3_mm)
+            ),
+            plane_normal: require!(direction("PlaneNormal")?),
+        },
+    };
+    Ok(PatternKind::new(transform).ok())
 }
 
 pub(super) fn project_pattern(
@@ -78,110 +175,38 @@ pub(super) fn project_pattern(
     native_by_source: &HashMap<String, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
     const OPERATION: &str = "project SLDPRT pattern seeds";
-    let form = pattern_form(feature);
+    let form = native_pattern_form(ctx, feature)?;
     let mut seeds = Vec::new();
-    if let Some(source_seeds) = feature.properties.get("Seeds") {
+    if let Some(source_seeds) = property_value(ctx, feature, "Seeds")? {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(source_seeds.len()),
+            OPERATION,
+        )?;
         for source in source_seeds.split(',').map(str::trim) {
-            ctx.charge_work(1, OPERATION)?;
-            let Some(id) = ctx.get_hash_map(&(by_source), source, "look up SLDPRT hash key")?
-            else {
+            let Some(id) = ctx.get_hash_map(by_source, source, "look up SLDPRT hash key")? else {
                 seeds.clear();
                 break;
             };
-            let copied = ctx.format_retained(format_args!("{}", id.as_str()), OPERATION)?;
-            let id = FeatureId::mint(copied).map_err(CodecError::malformed)?;
-            ctx.reserve_vec(&mut seeds, 1, OPERATION)?;
-            seeds.push(PatternSeed::Feature(id));
+            let id = copy_projected_feature_id(ctx, id)?;
+            ctx.push_vec(&mut seeds, PatternSeed::Feature(id), OPERATION)?;
         }
     }
-    let mut curve_path = if form == Some(NativePatternClass::CurveDriven) {
-        feature
-            .properties
-            .get("Path")
-            .map(|source| {
-                let text = ctx
-                    .get_hash_map(
-                        &(native_by_source),
-                        source.as_str(),
-                        "look up SLDPRT hash key",
-                    )?
-                    .copied()
-                    .unwrap_or(source);
-                ctx.format_retained(format_args!("{text}"), "retain SLDPRT pattern path")
-                    .map(PathRef::Native)
-            })
-            .transpose()?
-    } else {
-        None
+    let curve_path = match (form, property_value(ctx, feature, "Path")?) {
+        (Some(NativePatternClass::CurveDriven), Some(source)) => {
+            let text = ctx
+                .get_hash_map(native_by_source, source, "look up SLDPRT hash key")?
+                .copied()
+                .unwrap_or(source);
+            Some(PathRef::Native(
+                ctx.copy_retained_text(text, "retain SLDPRT pattern path")?,
+            ))
+        }
+        _ => None,
     };
-    let resolved = form.and_then(|form| {
-        Some(match form {
-            NativePatternClass::Linear => PatternKind::new(PatternTransform::Linear {
-                direction: match feature.properties.get("Direction") {
-                    Some(value) => Some(parse_valid_direction(value)?),
-                    None => None,
-                },
-                spacing: parse_positive_dimension_length_mm(
-                    feature
-                        .parameters
-                        .get("Spacing")
-                        .or_else(|| feature.parameters.get("D3"))?,
-                )?,
-                count: parse_count(
-                    feature
-                        .parameters
-                        .get("Count")
-                        .or_else(|| feature.parameters.get("D1"))?,
-                )?,
-                second: match (
-                    feature.properties.get("Direction2"),
-                    feature.parameters.get("D4"),
-                    feature.parameters.get("D2"),
-                ) {
-                    (Some(direction), Some(spacing), Some(count)) => {
-                        Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                            direction: parse_valid_direction(direction)?,
-                            spacing: parse_positive_dimension_length_mm(spacing)?,
-                            count: parse_count(count)?,
-                        })
-                    }
-                    _ => None,
-                },
-            })
-            .ok()?,
-            NativePatternClass::Circular => PatternKind::new(PatternTransform::Circular {
-                axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
-                axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
-                angle: feature
-                    .parameters
-                    .get("Angle")
-                    .and_then(|value| parse_positive_angle_rad(value))?,
-                count: parse_count(feature.parameters.get("Count")?)?,
-            })
-            .ok()?,
-            NativePatternClass::CurveDriven => PatternKind::new(PatternTransform::CurveDriven {
-                path: curve_path.take(),
-                spacing: parse_positive_dimension_length_mm(
-                    feature
-                        .parameters
-                        .get("Spacing")
-                        .or_else(|| feature.parameters.get("D3"))?,
-                )?,
-                count: parse_count(
-                    feature
-                        .parameters
-                        .get("Count")
-                        .or_else(|| feature.parameters.get("D1"))?,
-                )?,
-            })
-            .ok()?,
-            NativePatternClass::Mirror => PatternKind::new(PatternTransform::Mirror {
-                plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
-                plane_normal: parse_valid_direction(feature.properties.get("PlaneNormal")?)?,
-            })
-            .ok()?,
-        })
-    });
+    let resolved = match form {
+        Some(form) => resolve_pattern(ctx, feature, form, curve_path)?,
+        None => None,
+    };
     let seeds_required = !matches!(
         form,
         Some(NativePatternClass::Linear | NativePatternClass::CurveDriven)

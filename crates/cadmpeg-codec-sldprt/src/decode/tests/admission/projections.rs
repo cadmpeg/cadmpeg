@@ -136,13 +136,19 @@ fn metadata_curve_projection_refuses_work_limit() {
         &composite_curve_source(),
         options,
         "project SLDPRT composite curve segments",
-        Some(1), // One visitor work unit; key reads have separate requests.
+        // One scan of the segment list admits every token.
+        Some(cadmpeg_core::decode::u64_from_index(
+            "curve-a;curve-b".len(),
+        )),
     );
     assert_eq!(
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
-    assert_eq!(refusal.additional, 1);
+    assert_eq!(
+        refusal.additional,
+        cadmpeg_core::decode::u64_from_index("curve-a;curve-b".len())
+    );
 }
 
 fn variable_fillet_source() -> Vec<u8> {
@@ -375,11 +381,11 @@ fn metadata_hole_projection_refuses_retained_limit() {
         ..DecodeOptions::default()
     };
     options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT hole face reference");
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT feature property");
     assert!(matches!(error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT hole face reference"
+                && limit.operation == "retain SLDPRT feature property"
     ));
 }
 
