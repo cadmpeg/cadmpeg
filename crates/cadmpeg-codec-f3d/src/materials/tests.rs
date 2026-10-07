@@ -199,8 +199,12 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
 
     let paged = crate::test_support::with_decode_context(|ctx| super::page_logical(ctx, &logical))
         .expect("page catalog record");
-    let frames =
-        cadmpeg_protein::framing::record_frames_for_edit(&paged).expect("frame catalog pages");
+    let frames = crate::test_support::with_decode_context(|ctx| {
+        cadmpeg_protein::framing::record_frames_admitted(ctx, &paged)
+            .expect("frame catalog pages")
+            .frames()
+            .to_vec()
+    });
     let [frame] = frames.as_slice() else {
         panic!("marker-shaped length prefix must remain inside one logical record")
     };

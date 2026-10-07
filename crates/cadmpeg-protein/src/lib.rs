@@ -2,10 +2,9 @@
 //! Schema-driven decoding of Protein `InstanceProperties` records.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::io::{Cursor, Read};
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -71,45 +70,6 @@ fn take_lp_utf8_capped(
     Ok(Some(value))
 }
 
-fn read_entry_bounded(
-    ctx: &DecodeContext<'_>,
-    entry: &mut impl Read,
-    declared_size: u64,
-) -> Result<Vec<u8>, CodecError> {
-    if declared_size > MAX_SCHEMA_BYTES {
-        return Err(ctx.refuse_codec_limit(
-            "Protein schema bytes",
-            MAX_SCHEMA_BYTES,
-            declared_size,
-        ));
-    }
-    let mut writer = ctx.begin_expand(ExpandSpec::Exact(declared_size))?;
-    let mut limited = entry.take(MAX_SCHEMA_BYTES + 1);
-    let mut chunk = [0_u8; 16 * 1024];
-    loop {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(chunk.len()),
-            "Protein schema read",
-        )?;
-        let read = limited.read(&mut chunk)?;
-        if read == 0 {
-            break;
-        }
-        let count = cadmpeg_core::decode::u64_from_index(read);
-        let total = writer.written().checked_add(count).ok_or_else(|| {
-            ctx.refuse_codec_limit("Protein schema bytes", MAX_SCHEMA_BYTES, u64::MAX)
-        })?;
-        if total > MAX_SCHEMA_BYTES {
-            return Err(ctx.refuse_codec_limit("Protein schema bytes", MAX_SCHEMA_BYTES, total));
-        }
-        ctx.charge_retained(count, "Protein schema allocation")?;
-        ctx.charge_collection_items(count, "Protein schema allocation")?;
-        ctx.charge_work(count, "Protein schema copy")?;
-        writer.write(&chunk[..read])?;
-    }
-    writer.finalize_owned()
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ValueCarrier {
     Boolean,
@@ -146,20 +106,24 @@ struct Schema {
 }
 
 /// Parsed Protein schemas with inherited properties resolved once per schema.
-pub struct SchemaCatalog {
+///
+/// The catalog is decode scratch: its names and maps live under one scoped
+/// reservation that is released when the catalog is dropped.
+pub struct SchemaCatalog<'ctx> {
     schemas: HashMap<String, Schema>,
     properties: HashMap<String, BTreeMap<String, Property>>,
+    storage: ScopedReservation<'ctx>,
 }
 
-impl SchemaCatalog {
+impl<'ctx> SchemaCatalog<'ctx> {
     /// Parse the schemas in one nested Protein archive through the decode session.
     /// Returns `None` when the archive has no schema entries.
     pub fn load<'a>(
-        ctx: &DecodeContext<'a>,
+        ctx: &'ctx DecodeContext<'a>,
         protein: View<'a>,
     ) -> Result<Option<Self>, CodecError> {
         let archive = ArchiveSnapshot::new(ctx, protein)?;
-        let mut schemas = HashMap::new();
+        let mut catalog = Self::empty(ctx)?;
         for entry in ctx.admit_iter(archive.entries(), "Protein schema entries")? {
             if !is_schema_entry(ctx, &entry.name)? {
                 continue;
@@ -172,25 +136,25 @@ impl SchemaCatalog {
                 ));
             }
             let xml = archive.open(ctx, &entry.name)?;
-            parse_schema_document(ctx, &entry.name, xml.window(), &mut schemas)?;
+            parse_schema_document(
+                ctx,
+                &mut catalog.storage,
+                &entry.name,
+                xml.window(),
+                &mut catalog.schemas,
+            )?;
         }
-        if schemas.is_empty() {
+        if catalog.schemas.is_empty() {
             return Ok(None);
         }
-        Ok(Some(Self {
-            schemas,
-            properties: HashMap::new(),
-        }))
+        Ok(Some(catalog))
     }
 
-    /// Parse schemas for source-retaining export edits.
-    pub fn load_for_edit(protein: &[u8]) -> Result<Self, CodecError> {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(protein, &arena, &DecodePolicy::default())?;
-        let schemas = schemas(&ctx, protein)?;
+    fn empty(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            schemas,
+            schemas: HashMap::new(),
             properties: HashMap::new(),
+            storage: ctx.reserve_scoped(0, "Protein schema catalog")?,
         })
     }
 
@@ -199,7 +163,13 @@ impl SchemaCatalog {
         ctx: &DecodeContext<'_>,
         name: &str,
     ) -> Result<&BTreeMap<String, Property>, CodecError> {
-        resolve_inheritance(ctx, &self.schemas, &mut self.properties, name)?;
+        resolve_inheritance(
+            ctx,
+            &mut self.storage,
+            &self.schemas,
+            &mut self.properties,
+            name,
+        )?;
         ctx.get_hash_map(&self.properties, name, "Protein resolved schema lookup")?
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -209,16 +179,19 @@ impl SchemaCatalog {
     }
 }
 
-fn resolve_inheritance(
+/// Resolves the inherited property closure of `name` and of every base it
+/// names that is not yet resolved, base first.
+fn resolve_inheritance<'s>(
     ctx: &DecodeContext<'_>,
-    schemas: &HashMap<String, Schema>,
+    storage: &mut ScopedReservation<'_>,
+    schemas: &'s HashMap<String, Schema>,
     resolved: &mut HashMap<String, BTreeMap<String, Property>>,
-    name: &str,
+    name: &'s str,
 ) -> Result<(), CodecError> {
     let mut path_storage = ctx.reserve_scoped(0, "Protein schema inheritance path")?;
     let mut active_storage = ctx.reserve_scoped(0, "Protein schema inheritance active set")?;
     let mut guard_storage = ctx.reserve_scoped(0, "Protein schema inheritance guards")?;
-    let mut path = Vec::new();
+    let mut path: Vec<(&'s str, &'s Schema)> = Vec::new();
     let mut active = BTreeSet::new();
     let mut depth_guards = Vec::new();
     let mut current = name;
@@ -255,7 +228,7 @@ fn resolve_inheritance(
         ctx.push_scoped_vec(
             &mut path_storage,
             &mut path,
-            current,
+            (current, schema),
             "Protein schema inheritance path",
         )?;
         let Some(base) = schema.base.as_deref() else {
@@ -265,51 +238,51 @@ fn resolve_inheritance(
     }
     loop {
         ctx.charge_work(1, "Protein schema inheritance closure traversal")?;
-        let Some(current) = path.pop() else {
+        let Some((current, schema)) = path.pop() else {
             break;
         };
-        let schema = ctx
-            .get_hash_map(schemas, current, "Protein inherited schema lookup")?
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "Protein instance references absent schema {current}"
-                ))
-            })?;
         let inherited = match schema.base.as_deref() {
             Some(base) => ctx.get_hash_map(resolved, base, "Protein inherited closure lookup")?,
             None => None,
         };
-        let mut properties = BTreeMap::new();
-        if let Some(inherited) = inherited {
-            for (id, property) in ctx.admit_iter(inherited, "Protein inherited property closure")? {
-                let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
-                ctx.insert_btree_map(
-                    &mut properties,
-                    id,
-                    property.clone(),
-                    "Protein inherited property closure",
-                )?;
+        let properties = storage.with_storage(|| {
+            let mut properties = BTreeMap::new();
+            if let Some(inherited) = inherited {
+                for (id, property) in
+                    ctx.admit_iter(inherited, "Protein inherited property closure")?
+                {
+                    let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
+                    ctx.insert_btree_map(
+                        &mut properties,
+                        id,
+                        property.clone(),
+                        "Protein inherited property closure",
+                    )?;
+                }
             }
-        }
-        for (id, property) in
-            ctx.admit_iter(&schema.properties, "Protein inherited property closure")?
-        {
-            if let Some(value) =
-                ctx.get_mut_btree_map(&mut properties, id, "Protein local property override")?
+            for (id, property) in
+                ctx.admit_iter(&schema.properties, "Protein inherited property closure")?
             {
-                *value = property.clone();
-            } else {
-                let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
-                ctx.insert_btree_map(
-                    &mut properties,
-                    id,
-                    property.clone(),
-                    "Protein inherited property closure",
-                )?;
+                if let Some(value) =
+                    ctx.get_mut_btree_map(&mut properties, id, "Protein local property override")?
+                {
+                    *value = property.clone();
+                } else {
+                    let id = ctx.copy_retained_text(id, "Protein inherited property names")?;
+                    ctx.insert_btree_map(
+                        &mut properties,
+                        id,
+                        property.clone(),
+                        "Protein inherited property closure",
+                    )?;
+                }
             }
-        }
-        let name = ctx.copy_retained_text(current, "Protein inherited property names")?;
-        ctx.insert_hash_map(resolved, name, properties, "Protein resolved schema")?;
+            Ok::<_, CodecError>(properties)
+        })?;
+        storage.with_storage(|| {
+            let name = ctx.copy_retained_text(current, "Protein inherited property names")?;
+            ctx.insert_hash_map(resolved, name, properties, "Protein resolved schema")
+        })?;
         drop(depth_guards.pop());
     }
     Ok(())
@@ -361,41 +334,16 @@ pub fn decode_detailed<'a>(
 ) -> Result<DecodeOutcome, CodecError> {
     let mut catalog = match SchemaCatalog::load(ctx, protein)? {
         Some(catalog) => catalog,
-        None => SchemaCatalog {
-            schemas: HashMap::new(),
-            properties: HashMap::new(),
-        },
+        None => SchemaCatalog::empty(ctx)?,
     };
     let frames = framing::record_frames_admitted(ctx, instance.window())?;
     decode_frames_admitted(ctx, &mut catalog, frames.frames())
 }
 
-/// Decode already framed records for source-retaining export edits.
-pub fn decode_frames_for_edit(
-    protein: &[u8],
-    frames: &[framing::RecordFrame],
-) -> Result<DecodeOutcome, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(protein, &arena, &DecodePolicy::default())?;
-    let mut catalog = SchemaCatalog {
-        schemas: schemas(&ctx, protein)?,
-        properties: HashMap::new(),
-    };
-    decode_frames(&ctx, &mut catalog, frames)
-}
-
 /// Decode frames admitted by the caller against one parsed schema catalog.
 pub fn decode_frames_admitted(
     ctx: &DecodeContext<'_>,
-    catalog: &mut SchemaCatalog,
-    frames: &[framing::RecordFrame],
-) -> Result<DecodeOutcome, CodecError> {
-    decode_frames(ctx, catalog, frames)
-}
-
-fn decode_frames(
-    ctx: &DecodeContext<'_>,
-    catalog: &mut SchemaCatalog,
+    catalog: &mut SchemaCatalog<'_>,
     frames: &[framing::RecordFrame],
 ) -> Result<DecodeOutcome, CodecError> {
     let mut outcome = DecodeOutcome::default();
@@ -404,83 +352,54 @@ fn decode_frames(
         .enumerate()
     {
         let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
-        ctx.charge_collection_items(1, "Protein record outcome")?;
         match decode_record(ctx, frame.bytes(), catalog, ordinal, frame.logical_offset()) {
             Ok(Some(record)) => {
-                ctx.reserve_capacity(&mut outcome.records, 1, "Protein record outcome")?;
-                outcome.records.push(record);
+                ctx.push_vec(&mut outcome.records, record, "Protein record outcome")?;
             }
             Ok(None) => {
                 const DETAIL: &str = "Protein instance record header is malformed";
                 let detail = ctx.copy_retained_text(DETAIL, "Protein rejected record detail")?;
-                ctx.reserve_capacity(&mut outcome.rejected, 1, "Protein record outcome")?;
-                outcome.rejected.push(RejectedRecord { ordinal, detail });
+                ctx.push_vec(
+                    &mut outcome.rejected,
+                    RejectedRecord { ordinal, detail },
+                    "Protein record outcome",
+                )?;
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 let detail =
                     ctx.format_retained(format_args!("{error}"), "Protein rejected record detail")?;
-                ctx.reserve_capacity(&mut outcome.rejected, 1, "Protein record outcome")?;
-                outcome.rejected.push(RejectedRecord { ordinal, detail });
+                ctx.push_vec(
+                    &mut outcome.rejected,
+                    RejectedRecord { ordinal, detail },
+                    "Protein record outcome",
+                )?;
             }
         }
     }
     Ok(outcome)
 }
 
-/// Whether the Protein archive packages schema XML documents.
-pub fn has_schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<bool, CodecError> {
-    cadmpeg_container::ArchiveSnapshot::probe_readable_names(ctx, protein, |name| {
-        is_schema_entry(ctx, name)
-    })
-}
-
 fn is_schema_entry(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
-    Ok((name.starts_with("Schemas/")
-        || ctx.contains_text(name, "/Schemas/", "Protein schema entry path search")?)
-        && name.ends_with("Schema.xml"))
-}
-
-fn schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
-        CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
-    })?;
-    let mut schemas = HashMap::new();
-    let mut entry_names = BTreeSet::new();
-    for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|error| {
-            CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
-        })?;
-        if !entry_names.insert(entry.name().to_owned()) {
-            return Err(CodecError::malformed(format_args!(
-                "Protein archive defines entry {} more than once",
-                entry.name()
-            )));
-        }
-        if !is_schema_entry(ctx, entry.name())? {
-            continue;
-        }
-        let size = entry.size();
-        let name = entry.name().to_owned();
-        let bytes = read_entry_bounded(ctx, &mut entry, size)?;
-        parse_schema_document(ctx, &name, &bytes, &mut schemas)?;
-    }
-    Ok(schemas)
+    // The fixed suffix test runs first, so only schema-named entries pay for
+    // the directory search.
+    Ok(name.ends_with("Schema.xml")
+        && (name.starts_with("Schemas/")
+            || ctx.contains_text(name, "/Schemas/", "Protein schema entry path search")?))
 }
 
 fn parse_schema_document(
     ctx: &DecodeContext<'_>,
+    storage: &mut ScopedReservation<'_>,
     name: &str,
     bytes: &[u8],
     schemas: &mut HashMap<String, Schema>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "validate Protein XML UTF-8",
-    )?;
-    let xml = std::str::from_utf8(bytes).map_err(|error| {
-        CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
-    })?;
+    let xml = ctx
+        .validate_utf8(bytes, "validate Protein XML UTF-8")?
+        .map_err(|error| {
+            CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
+        })?;
     let admitted_document = ctx
         .parse_xml(xml, "Protein schema XML tree")
         .map_err(|error| {
@@ -523,11 +442,8 @@ fn parse_schema_document(
         }
         if node.has_tag_name("Base") {
             if let Some(value) = ctx.xml_attribute(node, "val", "Protein schema base search")? {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(value.len()),
-                    "Protein schema base name",
-                )?;
-                schema.base = Some(value.to_owned());
+                schema.base =
+                    Some(ctx.copy_scoped_text(value, storage, "Protein schema base name")?);
             }
             continue;
         }
@@ -552,36 +468,30 @@ fn parse_schema_document(
         let Some(id) = ctx.xml_attribute(node, "id", "Protein property id search")? else {
             continue;
         };
-        if ctx.contains_key_btree_map(
-            &schema.properties,
-            id,
-            "Protein local property uniqueness",
-        )? {
+        let replaced = storage.with_storage(|| {
+            let key = ctx.copy_retained_text(id, "Protein schema property name")?;
+            ctx.insert_btree_map(
+                &mut schema.properties,
+                key,
+                property,
+                "Protein schema property",
+            )
+        })?;
+        if replaced.is_some() {
             return Err(CodecError::malformed(format_args!(
                 "Protein schema {uid} declares property {id} more than once"
             )));
         }
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id.len()),
-            "Protein schema property name",
-        )?;
-        ctx.insert_btree_map(
-            &mut schema.properties,
-            id.to_owned(),
-            property,
-            "Protein schema property",
-        )?;
     }
-    if ctx.contains_key_hash_map(schemas, uid, "Protein schema uniqueness")? {
+    let replaced = storage.with_storage(|| {
+        let key = ctx.copy_retained_text(uid, "Protein schema UID")?;
+        ctx.insert_hash_map(schemas, key, schema, "Protein parsed schema")
+    })?;
+    if replaced.is_some() {
         return Err(CodecError::malformed(format_args!(
             "Protein archive defines schema {uid} more than once"
         )));
     }
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(uid.len()),
-        "Protein schema UID",
-    )?;
-    ctx.insert_hash_map(schemas, uid.to_owned(), schema, "Protein parsed schema")?;
     Ok(())
 }
 
@@ -639,7 +549,7 @@ fn schema_property(
 fn decode_record(
     ctx: &DecodeContext<'_>,
     record: &[u8],
-    catalog: &mut SchemaCatalog,
+    catalog: &mut SchemaCatalog<'_>,
     ordinal: u64,
     logical_offset: usize,
 ) -> Result<Option<DecodedRecord>, CodecError> {
@@ -797,12 +707,10 @@ fn read_property(
                 ctx.collect_indexed_vec(count, "Protein multiple property members", |_| {
                     read_value(ctx, bytes, at, carrier, id)
                 })?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(values.len()),
-                "Protein repeated carrier validation",
-            )?;
+            // `read_value` yields the one scalar variant its carrier selects,
+            // so the members already share one scalar carrier.
             Ok(PropertyValue::Multiple(
-                values.try_into().map_err(CodecError::malformed)?,
+                RepeatedValues::of_one_scalar_carrier(values),
             ))
         }
     }
@@ -819,11 +727,11 @@ fn read_texture_uri(
     let malformed = || CodecError::malformed(format_args!("Protein property {id} is truncated"));
     let kind = take::<1>(bytes, at).ok_or_else(malformed)?[0];
     if kind == 1 {
-        ctx.charge_collection_items(1, "Protein texture URI paths")?;
-        return Ok(PropertyValue::TextureUri(vec![take_lp_utf8_capped(
-            ctx, bytes, at, 1_048_576,
-        )?
-        .ok_or_else(malformed)?]));
+        return Ok(PropertyValue::TextureUri(ctx.collect_indexed_vec(
+            1,
+            "Protein texture URI paths",
+            |_| take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed),
+        )?));
     }
     if kind != 0 {
         return Err(CodecError::malformed(format_args!(
@@ -970,7 +878,11 @@ mod tests {
 
     use std::io::{Cursor, Write};
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::collections::{BTreeMap, HashMap};
+
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ScopedReservation,
+    };
     use cadmpeg_core::CodecError;
 
     use super::{
@@ -1000,6 +912,35 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("fixture fits service profile");
         use_context(&ctx)
+    }
+
+    /// Frames a paged stream under a service context and keeps copies of the
+    /// frames past that context.
+    fn frames_of(stream: &[u8]) -> Result<Vec<framing::RecordFrame>, CodecError> {
+        with_service_context(stream, |ctx| {
+            Ok(framing::record_frames_admitted(ctx, stream)?
+                .frames()
+                .to_vec())
+        })
+    }
+
+    /// Empty scoped storage for a schema parse or inheritance resolution.
+    fn scratch<'ctx>(ctx: &'ctx DecodeContext<'_>) -> ScopedReservation<'ctx> {
+        ctx.reserve_scoped(0, "test schema catalog")
+            .expect("empty reservation")
+    }
+
+    /// A catalog from parsed schemas and already resolved property closures.
+    fn catalog_of<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        schemas: HashMap<String, super::Schema>,
+        properties: HashMap<String, BTreeMap<String, super::Property>>,
+    ) -> super::SchemaCatalog<'ctx> {
+        super::SchemaCatalog {
+            schemas,
+            properties,
+            storage: scratch(ctx),
+        }
     }
 
     #[test]
@@ -1035,54 +976,6 @@ mod tests {
             panic!("expected work refusal")
         };
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-    }
-
-    #[test]
-    fn schema_edit_reader_uses_the_caller_resource_limits() {
-        let arena = DecodeArena::new();
-        for dimension in [
-            ResourceDimension::RetainedBytes,
-            ResourceDimension::CollectionItems,
-        ] {
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 2,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2,
-                _ => unreachable!("test dimensions"),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(b"xml", &arena, &policy).expect("root");
-            let mut reader = Cursor::new(b"xml");
-            assert!(matches!(super::read_entry_bounded(&ctx, &mut reader, 3),
-                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == "Protein schema allocation"));
-        }
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(b"xml", &arena, &DecodePolicy::service()).expect("root");
-        assert_eq!(
-            super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3)
-                .expect("service admission"),
-            b"xml"
-        );
-    }
-
-    #[test]
-    fn schema_size_and_edit_expansion_limits_are_resource_refusals() {
-        with_service_context(&[], |ctx| {
-            let error =
-                super::read_entry_bounded(ctx, &mut Cursor::new(b""), super::MAX_SCHEMA_BYTES + 1)
-                    .expect_err("local byte ceiling");
-            assert!(
-                matches!(error, CodecError::ResourceLimit(limit) if matches!(limit.dimension, ResourceDimension::Codec("Protein schema bytes")))
-            );
-        });
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_decompressed_bytes_per_expand = 2;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(b"xml", &arena, &policy).expect("root");
-        let error = super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3)
-            .expect_err("caller expansion limit");
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::DecompressedBytes)
-        );
     }
 
     #[test]
@@ -1136,7 +1029,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
         assert!(matches!(
-            super::resolve_inheritance(&ctx, &schemas, &mut std::collections::HashMap::new(), "AChild"),
+            super::resolve_inheritance(&ctx, &mut scratch(&ctx), &schemas, &mut std::collections::HashMap::new(), "AChild"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RecursionDepth
         ));
@@ -1145,51 +1038,12 @@ mod tests {
             .expect("fixture fits service profile");
         assert!(super::resolve_inheritance(
             &ctx,
+            &mut scratch(&ctx),
             &schemas,
             &mut std::collections::HashMap::new(),
             "AChild"
         )
         .is_ok());
-    }
-
-    #[test]
-    fn edit_decode_uses_default_inheritance_limit() {
-        fn archive_with_depth(depth: usize) -> Vec<u8> {
-            let entries = (0..depth)
-                .map(|index| {
-                    let name = format!("Schemas/Schema{index}/Schema.xml");
-                    let base = index
-                        .checked_sub(1)
-                        .map_or_else(String::new, |base| format!("<Base val=\"Schema{base}\"/>"));
-                    let xml = format!("<Schema><UID val=\"Schema{index}\"/>{base}</Schema>");
-                    (name, xml)
-                })
-                .collect::<Vec<_>>();
-            let borrowed = entries
-                .iter()
-                .map(|(name, xml)| (name.as_str(), xml.as_str()))
-                .collect::<Vec<_>>();
-            schema_archive(&borrowed)
-        }
-
-        fn frames_for_schema(name: &str) -> Vec<framing::RecordFrame> {
-            let mut record = Vec::new();
-            for value in [name, "guid", "base", ""] {
-                push_lp(&mut record, value);
-            }
-            framing::record_frames_for_edit(&paged_stream(&[&record]))
-                .expect("fixture framing is valid")
-        }
-
-        let normal =
-            super::decode_frames_for_edit(&archive_with_depth(1), &frames_for_schema("Schema0"))
-                .expect("one schema fits the default policy");
-        assert_eq!(normal.records.len(), 1, "{:?}", normal.rejected);
-        assert!(matches!(
-            super::decode_frames_for_edit(&archive_with_depth(257), &frames_for_schema("Schema256")),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RecursionDepth
-        ));
     }
 
     #[test]
@@ -1199,9 +1053,13 @@ mod tests {
             push_lp(&mut record, value);
         }
         let stream = paged_stream(&[&record]);
-        let frames = framing::record_frames_for_edit(&stream).expect("fixture framing is valid");
-        let mut catalog = super::SchemaCatalog {
-            schemas: std::collections::HashMap::from([
+        let frames = frames_of(&stream).expect("fixture framing is valid");
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
+            .expect("stream fits service input limit");
+        let mut catalog = catalog_of(
+            &ctx,
+            HashMap::from([
                 ("Good".into(), super::Schema::default()),
                 (
                     "Unused".into(),
@@ -1211,11 +1069,8 @@ mod tests {
                     },
                 ),
             ]),
-            properties: std::collections::HashMap::new(),
-        };
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
-            .expect("stream fits service input limit");
+            HashMap::new(),
+        );
         let outcome = super::decode_frames_admitted(&ctx, &mut catalog, &frames)
             .expect("unused schema is not resolved");
         assert_eq!(outcome.records.len(), 1);
@@ -1228,6 +1083,7 @@ mod tests {
         with_service_context(xml, |ctx| {
             let error = super::parse_schema_document(
                 ctx,
+                &mut scratch(ctx),
                 "schema",
                 xml,
                 &mut std::collections::HashMap::new(),
@@ -1266,6 +1122,24 @@ mod tests {
     }
 
     #[test]
+    fn schema_catalog_storage_is_scoped_and_released_with_the_catalog() {
+        let xml =
+            br#"<Schema><UID val="Simple"/><Base val="Root"/><String id="comment"/></Schema>"#;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
+        let mut storage = scratch(&ctx);
+        let mut schemas = HashMap::new();
+        super::parse_schema_document(&ctx, &mut storage, "schema", xml, &mut schemas)
+            .expect("catalog names and maps use no retained allowance");
+        let schema = &schemas["Simple"];
+        assert_eq!(schema.base.as_deref(), Some("Root"));
+        assert!(schema.properties.contains_key("comment"));
+    }
+
+    #[test]
     fn schema_xml_tree_refuses_before_parse_allocation() {
         let xml = br#"<Schema><UID val="Simple"/><String id="comment"/></Schema>"#;
         let arena = DecodeArena::new();
@@ -1275,8 +1149,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
         assert!(matches!(
-            super::parse_schema_document(
-                &ctx,
+            super::parse_schema_document(&ctx, &mut scratch(&ctx),
                 "Schemas/SimpleSchema.xml",
                 xml,
                 &mut std::collections::HashMap::new(),
@@ -1296,8 +1169,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
         assert!(matches!(
-            super::parse_schema_document(
-                &ctx,
+            super::parse_schema_document(&ctx, &mut scratch(&ctx),
                 "Schemas/SimpleSchema.xml",
                 xml,
                 &mut std::collections::HashMap::new(),
@@ -1311,6 +1183,7 @@ mod tests {
             .expect("XML fits service profile");
         assert!(super::parse_schema_document(
             &ctx,
+            &mut scratch(&ctx),
             "Schemas/SimpleSchema.xml",
             xml,
             &mut std::collections::HashMap::new(),
@@ -1329,6 +1202,7 @@ mod tests {
                 DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
             let error = super::parse_schema_document(
                 &ctx,
+                &mut scratch(&ctx),
                 "Schemas/SimpleSchema.xml",
                 xml,
                 &mut std::collections::HashMap::new(),
@@ -1373,16 +1247,16 @@ mod tests {
         )]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Three six-byte lookups, two visits and four active-set node passes precede the closure.
+        // Two six-byte lookups, two visits and four active-set node passes precede the closure.
         let active_node_bytes = 11 * std::mem::size_of::<&str>()
             + 16 * std::mem::size_of::<usize>()
             + 2 * std::mem::align_of::<usize>();
         policy.limits.max_work_units =
-            20 + cadmpeg_core::decode::u64_from_index(4 * active_node_bytes);
+            14 + cadmpeg_core::decode::u64_from_index(4 * active_node_bytes);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
         assert!(matches!(
-            super::resolve_inheritance(&ctx, &schemas, &mut std::collections::HashMap::new(), "Simple"),
+            super::resolve_inheritance(&ctx, &mut scratch(&ctx), &schemas, &mut std::collections::HashMap::new(), "Simple"),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "Protein inherited property closure"
@@ -1435,13 +1309,11 @@ mod tests {
             .expect("stream fits input limit");
         let frames = framing::record_frames_admitted(&ctx, &stream)
             .expect("one frame fits the collection limit");
-        let mut catalog = super::SchemaCatalog {
-            schemas: std::collections::HashMap::new(),
-            properties: std::collections::HashMap::from([(
-                "Simple".into(),
-                std::collections::BTreeMap::new(),
-            )]),
-        };
+        let mut catalog = catalog_of(
+            &ctx,
+            HashMap::new(),
+            HashMap::from([("Simple".into(), BTreeMap::new())]),
+        );
         let outcome = super::decode_frames_admitted(&ctx, &mut catalog, frames.frames())
             .expect("one outcome needs no second framing pass");
         assert_eq!(outcome.records.len(), 1);
@@ -1581,16 +1453,13 @@ mod tests {
     #[test]
     fn decoded_outcome_refuses_before_rejection_vector_growth() {
         let stream = paged_stream(&[b"bad header"]);
-        let frames = framing::record_frames_for_edit(&stream).expect("fixture framing is valid");
-        let mut catalog = super::SchemaCatalog {
-            schemas: std::collections::HashMap::new(),
-            properties: std::collections::HashMap::new(),
-        };
+        let frames = frames_of(&stream).expect("fixture framing is valid");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("stream fits input limit");
+        let mut catalog = catalog_of(&ctx, HashMap::new(), HashMap::new());
         assert!(matches!(
             super::decode_frames_admitted(&ctx, &mut catalog, &frames),
             Err(CodecError::ResourceLimit(limit))
@@ -1606,16 +1475,13 @@ mod tests {
             push_lp(&mut record, value);
         }
         let stream = paged_stream(&[&record]);
-        let frames = framing::record_frames_for_edit(&stream).expect("fixture framing is valid");
-        let mut catalog = super::SchemaCatalog {
-            schemas: std::collections::HashMap::new(),
-            properties: std::collections::HashMap::new(),
-        };
+        let frames = frames_of(&stream).expect("fixture framing is valid");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 14;
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("stream fits input limit");
+        let mut catalog = catalog_of(&ctx, HashMap::new(), HashMap::new());
         assert!(matches!(
             super::decode_frames_admitted(&ctx, &mut catalog, &frames),
             Err(CodecError::ResourceLimit(limit))
@@ -1625,6 +1491,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service())
             .expect("stream fits service profile");
+        let mut catalog = catalog_of(&ctx, HashMap::new(), HashMap::new());
         assert_eq!(
             super::decode_frames_admitted(&ctx, &mut catalog, &frames)
                 .expect("rejection detail fits service profile")
@@ -1636,19 +1503,6 @@ mod tests {
 
     #[test]
     fn nested_property_resource_refusal_is_not_a_rejected_record() {
-        let mut catalog = super::SchemaCatalog {
-            schemas: std::collections::HashMap::new(),
-            properties: std::collections::HashMap::from([(
-                "Simple".into(),
-                std::collections::BTreeMap::from([(
-                    "values".into(),
-                    super::Property::Value {
-                        layout: super::ValueLayout::Multiple(ValueCarrier::Integer),
-                        connectable: false,
-                    },
-                )]),
-            )]),
-        };
         let mut record = Vec::new();
         for value in ["Simple", "guid", "base", ""] {
             push_lp(&mut record, value);
@@ -1657,12 +1511,26 @@ mod tests {
         record.extend_from_slice(&1_u32.to_le_bytes());
         record.extend_from_slice(&2_u32.to_le_bytes());
         let stream = paged_stream(&[&record]);
-        let frames = framing::record_frames_for_edit(&stream).expect("fixture framing is valid");
+        let frames = frames_of(&stream).expect("fixture framing is valid");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &policy)
             .expect("stream fits input limit");
+        let mut catalog = catalog_of(
+            &ctx,
+            HashMap::new(),
+            HashMap::from([(
+                "Simple".into(),
+                BTreeMap::from([(
+                    "values".into(),
+                    super::Property::Value {
+                        layout: super::ValueLayout::Multiple(ValueCarrier::Integer),
+                        connectable: false,
+                    },
+                )]),
+            )]),
+        );
         assert!(matches!(
             super::decode_frames_admitted(&ctx, &mut catalog, &frames),
             Err(CodecError::ResourceLimit(limit))
@@ -2028,7 +1896,7 @@ mod tests {
             push_lp(&mut second, value);
         }
         let stream = paged_stream(&[&first, &second]);
-        let frames = framing::record_frames_for_edit(&stream).expect("stream is paged");
+        let frames = frames_of(&stream).expect("stream is paged");
         assert_eq!(frames.len(), 2);
         assert_eq!(frames[0].logical_offset(), 0);
         assert_eq!(frames[0].bytes(), [RECORD_MARKER, &first].concat());
@@ -2036,10 +1904,10 @@ mod tests {
         assert_eq!(frames[1].bytes(), [RECORD_MARKER, &second].concat());
         assert!(stream.len() > 16 + 3 * PAGE_SIZE, "record one spans pages");
 
-        assert!(framing::record_frames_for_edit(&[]).is_err());
+        assert!(frames_of(&[]).is_err());
         let mut truncated = stream.clone();
         truncated.truncate(16 + PAGE_SIZE + 1);
-        assert!(framing::record_frames_for_edit(&truncated).is_err());
+        assert!(frames_of(&truncated).is_err());
     }
 
     #[test]
@@ -2063,7 +1931,7 @@ mod tests {
         stream.extend_from_slice(&record);
         stream.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
 
-        let frames = framing::record_frames_for_edit(&stream).expect("standalone terminal page");
+        let frames = frames_of(&stream).expect("standalone terminal page");
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0].logical_offset(), 0);
         assert_eq!(frames[0].bytes(), [RECORD_MARKER, &record].concat());
