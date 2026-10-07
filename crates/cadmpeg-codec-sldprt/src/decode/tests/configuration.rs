@@ -597,14 +597,26 @@ fn out_of_range_partition_body_identity_is_not_retained() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ir = CadIr::empty();
-    let body = BodyId::mint("test:model:entity#body:unclaimed").unwrap();
-    let identity = configuration_body(&ctx, &body);
+    let body = cadmpeg_ir::topology::Body {
+        id: BodyId::mint("test:model:entity#body:unclaimed").unwrap(),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let mut workspace = ctx
+        .reserve_scoped(0, "configuration body copy test workspace")
+        .unwrap();
+    let identities = crate::decode::copy_body_ids(&ctx, &[body], &mut workspace).unwrap();
     assign_configuration_bodies(
         &ctx,
         &mut ir,
-        vec![(usize::try_from(4_294_967_296_u64).unwrap(), vec![identity])],
+        vec![(usize::try_from(4_294_967_296_u64).unwrap(), identities)],
     )
     .unwrap();
     assert!(ir.model.configurations.is_empty());
+    drop(workspace);
     ctx.finish_session().unwrap();
 }
