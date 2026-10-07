@@ -496,8 +496,14 @@ fn extended_direct_object_line_uses_exact_point_identities() {
     let explicit = entity("explicit", Some(4), Some([3.0, 4.0]));
     let markers = [&curve, &implicit, &explicit];
     assert_eq!(
-        extended_direct_object_line_endpoints(&payload, &curve, &markers)
-            .map(|endpoints| endpoints.map(crate::records::SketchInputEntity::id)),
+        extended_direct_object_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .map(|endpoints| endpoints.map(crate::records::SketchInputEntity::id)),
         Some(["implicit", "explicit"])
     );
     let arc = {
@@ -506,7 +512,13 @@ fn extended_direct_object_line_uses_exact_point_identities() {
         constructed_marker
     };
     assert_eq!(
-        extended_direct_object_line_endpoints(&payload, &arc, &markers),
+        extended_direct_object_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &arc,
+            &markers
+        )
+        .unwrap(),
         None
     );
     let wrong_first = entity("wrong-first", Some(5), Some([5.0, 6.0]));

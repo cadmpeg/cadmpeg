@@ -860,7 +860,7 @@ pub(super) fn relation_definition(
             None => resolve_curve(operand),
         }
     };
-    if relation_uses_solver_points(ctx, relation)? && (point(0)?.is_none() || point(1)?.is_none()) {
+    if relation_uses_solver_points(relation) && (point(0)?.is_none() || point(1)?.is_none()) {
         return Ok(None);
     }
     let dynamic_point_pair = if dynamic {
