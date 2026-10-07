@@ -128,3 +128,24 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
     assert!(wire.get("source_content").is_none());
     assert_eq!(serde_json::from_value::<Feature>(wire).unwrap(), feature);
 }
+
+#[test]
+fn decoded_source_content_admits_identity_comparison_before_append() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let reference = FeatureSourceContent::Parameter(ParameterId::mint("test:test:parameter#long-identity").unwrap());
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "source content comparison", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut content = FeatureContent::try_from(vec![reference.clone()]).unwrap();
+        let before = content.clone();
+        let result = content.push(reference.clone(), &ctx, "source content comparison").map_err(CodecError::from);
+        if let Err(CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(content, before);
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+        }
+        result
+    });
+}

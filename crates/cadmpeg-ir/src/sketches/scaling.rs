@@ -173,7 +173,7 @@ impl SketchGeometry {
     ) -> Result<Result<Self, SketchLengthScaleError>, cadmpeg_core::CodecError> {
         let result = (|| -> Result<Self, SketchLengthScaleError> {
             use SketchGeometryDefinition as Definition;
-            ctx.charge_work(1, "IR sketch unit scaling work")
+            ctx.charge_work(0, "IR sketch unit scaling work")
                 .map_err(SketchLengthScaleError::from)?;
 
             let mut definition = self.0;
@@ -320,7 +320,7 @@ impl SpatialSketchGeometry {
         scale: PositiveReal,
     ) -> Result<Self, SketchLengthScaleError> {
         use SpatialSketchGeometryDefinition as Definition;
-        ctx.charge_work(1, "IR spatial sketch unit scaling work")
+        ctx.charge_work(0, "IR spatial sketch unit scaling work")
             .map_err(SketchLengthScaleError::from)?;
 
         let mut definition = self
@@ -622,16 +622,21 @@ mod tests {
             )
         };
         for rational in [false, true] {
-            for cap in [1, 2] {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                assert!(
-                    matches!(make(1.0, rational).scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale")),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR sketch NURBS unit scaling work")
-                );
-            }
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                "IR sketch NURBS unit scaling work",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = make(1.0, rational).scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale"));
+                    if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                    }
+                    result
+                },
+            );
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = 0;

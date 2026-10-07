@@ -968,12 +968,30 @@ pub struct TessellationChannel {
     count: u32,
 }
 
-fn require_triangle_indices(
+impl<P: Copy, N: Copy> TessellationMesh<P, N> {
+    fn checked_triangle_count(&self) -> Result<usize, TessellationError> {
+        let vertex_count = self.vertex_count();
+        match self {
+            Self::List { triangles, .. } | Self::ShadedList { triangles, .. } => {
+                require_triangle_indices(vertex_count, triangles)?;
+                Ok(triangles.len())
+            }
+            Self::CornerShadedList { triangles, .. } => {
+                require_triangle_indices(vertex_count, triangles.iter().map(|triangle| &triangle.corners))?;
+                Ok(triangles.len())
+            }
+            // Strip constructors prove that all generated indices fit the vertex span.
+            Self::Strips { .. } | Self::ShadedStrips { .. } => Ok(self.triangle_count()),
+        }
+    }
+}
+
+fn require_triangle_indices<'a>(
     vertex_count: usize,
-    triangles: &[[u32; 3]],
+    triangles: impl IntoIterator<Item = &'a [u32; 3]>,
 ) -> Result<(), TessellationError> {
     if triangles
-        .iter()
+        .into_iter()
         .flatten()
         .any(|index| cadmpeg_core::decode::index_from_u32(*index) >= vertex_count)
     {
@@ -1129,18 +1147,7 @@ impl Tessellation {
         mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
-        let triangle_count = match &mesh {
-            TessellationMesh::Strips { .. } | TessellationMesh::ShadedStrips { .. } => {
-                // Strips::new proved the total vertex span fits a u32 index,
-                // and Strip::new proved each row has at least three vertices.
-                mesh.triangle_count()
-            }
-            _ => {
-                let triangles = mesh.triangles();
-                require_triangle_indices(mesh.vertex_count(), &triangles)?;
-                triangles.len()
-            }
-        };
+        let triangle_count = mesh.checked_triangle_count()?;
         require_channel_indices(triangle_count, &channels)?;
         Ok(Self {
             id,
@@ -1166,12 +1173,11 @@ impl Tessellation {
         mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
-        let triangles = mesh.triangles();
-        require_triangle_indices(mesh.vertex_count(), &triangles)?;
-        require_channel_indices(triangles.len(), &channels)?;
+        let triangle_count = mesh.checked_triangle_count()?;
+        require_channel_indices(triangle_count, &channels)?;
         require_feature_edges(mesh.vertex_count(), &self.feature_edges)?;
-        require_triangle_groups(triangles.len(), &self.triangle_groups)?;
-        require_texture_assignments(triangles.len(), &self.texture_assignments)?;
+        require_triangle_groups(triangle_count, &self.triangle_groups)?;
+        require_texture_assignments(triangle_count, &self.texture_assignments)?;
         Ok(Self {
             mesh,
             channels,

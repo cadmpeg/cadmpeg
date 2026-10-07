@@ -674,72 +674,6 @@ fn subd_carriers_hold_their_admitted_points_axes_and_weights() {
 }
 
 #[test]
-fn edge_constructors_keep_first_and_later_caller_work_refusals() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    for parts in [false, true] {
-        for (cap, operation) in [
-            (0, "SubD edge endpoints"),
-            (1, "SubD edge sharpness"),
-            (2, "SubD edge sharpness"),
-            (3, "SubD edge sector coefficients"),
-            (4, "SubD edge sector coefficients"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = if parts {
-                SubdEdge::from_parts(
-                    [1, 0],
-                    [0.0, 1.0],
-                    SubdEdgeTag::SmoothX,
-                    None,
-                    [-2.0, 3.0],
-                    &ctx,
-                )
-            } else {
-                SubdEdge::new(
-                    [1, 0],
-                    [0.0, 1.0],
-                    SubdEdgeTag::SmoothX,
-                    None,
-                    [-2.0, 3.0],
-                    &ctx,
-                )
-            };
-            let Err(CodecError::ResourceLimit(limit)) = result else {
-                panic!("edge work must refuse");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, operation);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-            );
-        }
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = SubdEdge::from_controls(
-        [1, 0],
-        [NonNegativeReal::ZERO; 2],
-        SubdEdgeTag::Smooth,
-        None,
-        [FiniteReal::ZERO; 2],
-        &ctx,
-    ) else {
-        panic!("typed edge work must refuse");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.operation, "SubD edge endpoints");
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-    );
-}
-
-#[test]
 fn edge_admission_diagnostics_use_caller_storage_and_valid_controls_allocate_nothing() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -799,7 +733,7 @@ fn edge_admission_diagnostics_use_caller_storage_and_valid_controls_allocate_not
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_collection_items = 0;
-    policy.limits.max_work_units = 5;
+    policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let edge = SubdEdge::new(
         [1, 0],
@@ -815,6 +749,10 @@ fn edge_admission_diagnostics_use_caller_storage_and_valid_controls_allocate_not
     assert_eq!(edge.sharpness.map(NonNegativeReal::get), [0.0, 1.0]);
     assert_eq!(edge.knot_interval.map(PositiveReal::get), Some(2.0));
     assert_eq!(edge.sector_coefficients.map(FiniteReal::get), [-2.0, 3.0]);
+    assert_eq!(SubdEdge::from_parts([1, 0], [0.0, 1.0], SubdEdgeTag::SmoothX,
+        Some(PositiveReal::new(2.0).unwrap()), [-2.0, 3.0], &ctx).unwrap().unwrap(), edge);
+    assert_eq!(SubdEdge::from_controls(edge.vertices, edge.sharpness, edge.tag,
+        edge.knot_interval, edge.sector_coefficients, &ctx).unwrap().unwrap(), edge);
     ctx.finish_session().unwrap();
     let wire = serde_json::to_value(&edge).unwrap();
     assert_eq!(serde_json::from_value::<SubdEdge>(wire).unwrap(), edge);

@@ -294,6 +294,73 @@ fn selection_reference_constructors_admit_text_before_validation() {
         result.map(|result| result.map(|_| ()))
     }
     for owner in 0..12 {
+        let construct = |ctx: &DecodeContext<'_>| {
+            let text = "  face  ".to_owned();
+            let reference = || "local".to_owned().try_into().unwrap();
+            match owner {
+                0 => finish(SelectionReference::new(text, ctx)),
+                1 => finish(GeneratedBodyRef::new(feature_id("producer"), text, ctx)),
+                2 => finish(GeneratedFaceRef::new(feature_id("producer"), text, ctx)),
+                3 => finish(GeneratedEdgeRef::new(feature_id("producer"), text, ctx)),
+                4 => finish(GeneratedVertexRef::new(feature_id("producer"), text, ctx)),
+                5 => finish(GeneratedCurveRef::new(feature_id("producer"), text, ctx)),
+                6 => finish(FaceSelection::generated(
+                    vec![GeneratedFaceRef {
+                        feature: feature_id("producer"),
+                        local_id: reference(),
+                    }],
+                    text,
+                    ctx,
+                )),
+                7 => finish(EdgeSelection::generated(
+                    vec![GeneratedEdgeRef {
+                        feature: feature_id("producer"),
+                        local_id: reference(),
+                    }],
+                    text,
+                    ctx,
+                )),
+                8 => finish(PlanarProfileRef::generated(
+                    vec![GeneratedCurveRef {
+                        feature: feature_id("producer"),
+                        local_id: reference(),
+                    }],
+                    text,
+                    ctx,
+                )),
+                9 => finish(VertexSelection::generated(
+                    GeneratedVertexRef {
+                        feature: feature_id("producer"),
+                        local_id: reference(),
+                    },
+                    text,
+                    ctx,
+                )),
+                10 => finish(VertexSelection::historical(
+                    FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap(),
+                    HistoricalVertexId::mint("test:model:historical-vertex#one").unwrap(),
+                    text,
+                    ctx,
+                )),
+                11 => finish(VertexSelection::native(text, ctx)),
+                _ => unreachable!(),
+            }
+        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits,
+            "selection reference complete", |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                policy.limits.max_recursion_depth = 0;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                construct(&ctx)?.unwrap();
+                ctx.charge_work(1, "selection reference complete")
+            });
+        let cadmpeg_core::CodecError::ResourceLimit(complete) = error else { panic!("completion boundary"); };
+        let need = complete.used;
         for allowance in 0..=8 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = allowance;
@@ -303,65 +370,11 @@ fn selection_reference_constructors_admit_text_before_validation() {
             policy.limits.max_recursion_depth = 0;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let text = "  face  ".to_owned();
-            let reference = || "local".to_owned().try_into().unwrap();
-            let result = match owner {
-                0 => finish(SelectionReference::new(text, &ctx)),
-                1 => finish(GeneratedBodyRef::new(feature_id("producer"), text, &ctx)),
-                2 => finish(GeneratedFaceRef::new(feature_id("producer"), text, &ctx)),
-                3 => finish(GeneratedEdgeRef::new(feature_id("producer"), text, &ctx)),
-                4 => finish(GeneratedVertexRef::new(feature_id("producer"), text, &ctx)),
-                5 => finish(GeneratedCurveRef::new(feature_id("producer"), text, &ctx)),
-                6 => finish(FaceSelection::generated(
-                    vec![GeneratedFaceRef {
-                        feature: feature_id("producer"),
-                        local_id: reference(),
-                    }],
-                    text,
-                    &ctx,
-                )),
-                7 => finish(EdgeSelection::generated(
-                    vec![GeneratedEdgeRef {
-                        feature: feature_id("producer"),
-                        local_id: reference(),
-                    }],
-                    text,
-                    &ctx,
-                )),
-                8 => finish(PlanarProfileRef::generated(
-                    vec![GeneratedCurveRef {
-                        feature: feature_id("producer"),
-                        local_id: reference(),
-                    }],
-                    text,
-                    &ctx,
-                )),
-                9 => finish(VertexSelection::generated(
-                    GeneratedVertexRef {
-                        feature: feature_id("producer"),
-                        local_id: reference(),
-                    },
-                    text,
-                    &ctx,
-                )),
-                10 => finish(VertexSelection::historical(
-                    FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap(),
-                    HistoricalVertexId::mint("test:model:historical-vertex#one").unwrap(),
-                    text,
-                    &ctx,
-                )),
-                11 => finish(VertexSelection::native(text, &ctx)),
-                _ => unreachable!(),
-            };
-            // A historical vertex's native token is validated up to its first
-            // letter, past two spaces; the other owners charge the whole reference.
-            let need = if owner == 10 { 3 } else { 8 };
+            let result = construct(&ctx);
             if allowance < need {
                 let limit = result.unwrap_err();
                 assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert!(
-                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
-                );
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
             } else {
                 result.unwrap().unwrap();
                 ctx.finish_session().unwrap();
@@ -1423,4 +1436,23 @@ fn operand_constructors_preserve_each_overlap_refusal_in_the_caller_session() {
     .unwrap();
     ctx.finish_session()
         .expect("automatic sides have no membership comparisons");
+}
+
+#[test]
+fn persistent_selection_reference_preserves_owned_text_and_wire() {
+    use crate::features::SelectionReference;
+    for text in [String::new(), " \t\r\n\u{2003}".into(), "\u{2003}x  ".into(), format!("  f{}", " ".repeat(1024))] {
+        let expected = SelectionReference::try_from(text.clone());
+        let pointer = text.as_ptr();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let result = SelectionReference::new(text.clone(), &ctx).unwrap();
+        assert_eq!(result, expected);
+        let moved = SelectionReference::new(text, &ctx).unwrap();
+        if let Ok(value) = moved {
+            assert_eq!(value.as_str().as_ptr(), pointer);
+            assert_eq!(serde_json::to_value(&value).unwrap(), serde_json::Value::String(value.as_str().into()));
+            assert_eq!(serde_json::from_value::<SelectionReference>(serde_json::to_value(&value).unwrap()).unwrap(), value);
+        }
+        ctx.finish_session().unwrap();
+    }
 }
