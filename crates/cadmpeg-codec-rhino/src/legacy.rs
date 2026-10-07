@@ -1836,9 +1836,10 @@ fn append_legacy_brep(
         )?;
         values
     };
-    for _ in 0..brep.faces.len() {
+    for _ in ctx.admit_iter(&brep.faces, "Rhino V1 Brep face trim rows")? {
         face_trim_indices.push(Vec::new());
     }
+    let mut first_trim_by_loop = BTreeMap::new();
     for (face_index, face) in ctx
         .admit_iter(&brep.faces[..], "Rhino append legacy brep traversal")?
         .enumerate()
@@ -1867,7 +1868,20 @@ fn append_legacy_brep(
             .admit_iter(&face.loops[..], "Rhino append legacy brep traversal")?
             .enumerate()
         {
-            for trim_index in 0..loop_record.trims.len() {
+            if !loop_record.trims.is_empty() {
+                workspace.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut first_trim_by_loop,
+                        (face_index, loop_index),
+                        trim_paths.len(),
+                        "Rhino V1 Brep first trim index",
+                    )
+                })?;
+            }
+            for (trim_index, _) in ctx
+                .admit_iter(&loop_record.trims, "Rhino V1 Brep trim indexing")?
+                .enumerate()
+            {
                 let global = trim_paths.len();
                 trim_paths.push((face_index, loop_index, trim_index));
                 face_trim_indices[face_index].push(global);
@@ -1999,12 +2013,6 @@ fn append_legacy_brep(
         "Rhino V1 Brep unique roots sort",
     )?;
     group_roots.dedup();
-    admit_v1_temporary_items::<(usize, NurbsCurve)>(
-        ctx,
-        &mut workspace,
-        group_roots.len(),
-        "Rhino V1 Brep grouped curves",
-    )?;
     admit_v1_temporary_items::<(usize, f64)>(
         ctx,
         &mut workspace,
@@ -2021,7 +2029,9 @@ fn append_legacy_brep(
         let record = &brep.faces[face].loops[loop_index].trims[trim];
         let root = roots[index];
         if let Some(curve) = &record.curve {
-            if let std::collections::btree_map::Entry::Vacant(entry) = group_curve.entry(root) {
+            if let std::collections::btree_map::Entry::Vacant(entry) = workspace.with_storage(|| {
+                ctx.entry_btree_map(&mut group_curve, root, "Rhino V1 Brep grouped curves")
+            })? {
                 entry.insert(curve.try_clone_for_decode(ctx, "Rhino V1 grouped curve copy")?);
             }
         }
@@ -2055,37 +2065,26 @@ fn append_legacy_brep(
             .admit_iter(&face.loops[..], "Rhino append legacy brep traversal")?
             .enumerate()
         {
-            let start = ctx
-                .find_map(
-                    trim_paths.iter().enumerate(),
-                    |(global, path)| Ok((*path == (face_index, loop_index, 0)).then_some(global)),
-                    "Rhino append legacy brep traversal",
+            let start = *ctx
+                .get_btree_map(
+                    &first_trim_by_loop,
+                    &(face_index, loop_index),
+                    "Rhino V1 Brep first trim lookup",
                 )?
                 .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
-            let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep loop globals")?;
-            let mut globals = {
-                let mut values = Vec::new();
-                ctx.reserve_scoped_vec::<usize>(
-                    &mut globals_workspace,
-                    &mut values,
-                    loop_record.trims.len(),
-                    "Rhino V1 Brep loop globals",
-                )?;
-                values
-            };
-            globals.extend(start..start + loop_record.trims.len());
-            for (position, global) in ctx
-                .admit_iter(&globals[..], "Rhino append legacy brep traversal")?
-                .copied()
+            for (position, _) in ctx
+                .admit_iter(&loop_record.trims, "Rhino append legacy brep traversal")?
                 .enumerate()
             {
+                let global = start + position;
                 let root = roots[global];
                 if group_points.contains_key(&root) {
                     continue;
                 }
-                let previous = globals[(position + globals.len() - 1) % globals.len()];
-                let previous_record =
-                    &loop_record.trims[(position + globals.len() - 1) % globals.len()];
+                let previous_position =
+                    (position + loop_record.trims.len() - 1) % loop_record.trims.len();
+                let previous = start + previous_position;
+                let previous_record = &loop_record.trims[previous_position];
                 if let Some(points) = group_points.get(&roots[previous]).copied() {
                     let point = if previous_record.reversed {
                         points[0]
@@ -2132,35 +2131,19 @@ fn append_legacy_brep(
             .admit_iter(&face.loops[..], "Rhino append legacy brep traversal")?
             .enumerate()
         {
-            let start = ctx
-                .position_by(
-                    &(face_trim_indices[face_index])[..],
-                    |global| {
-                        let (_, candidate_loop, candidate_trim) = trim_paths[*global];
-                        Ok(candidate_loop == loop_index && candidate_trim == 0)
-                    },
-                    "Rhino append legacy brep traversal",
+            let start = *ctx
+                .get_btree_map(
+                    &first_trim_by_loop,
+                    &(face_index, loop_index),
+                    "Rhino V1 Brep first trim lookup",
                 )?
-                .map(|position| face_trim_indices[face_index][position])
                 .ok_or_else(|| CodecError::Malformed("V1 loop has no indexed trim".to_string()))?;
-            let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep endpoint globals")?;
-            let mut globals = {
-                let mut values = Vec::new();
-                ctx.reserve_scoped_vec::<usize>(
-                    &mut globals_workspace,
-                    &mut values,
-                    loop_record.trims.len(),
-                    "Rhino V1 Brep endpoint globals",
-                )?;
-                values
-            };
-            globals.extend((0..loop_record.trims.len()).map(|offset| start + offset));
-            for (position, global) in ctx
-                .admit_iter(&globals[..], "Rhino append legacy brep traversal")?
-                .copied()
+            for (position, _) in ctx
+                .admit_iter(&loop_record.trims, "Rhino append legacy brep traversal")?
                 .enumerate()
             {
-                let next = globals[(position + 1) % globals.len()];
+                let global = start + position;
+                let next = start + (position + 1) % loop_record.trims.len();
                 let (_, _, trim_index) = trim_paths[global];
                 let (_, _, next_trim_index) = trim_paths[next];
                 let current = &loop_record.trims[trim_index];
@@ -4922,44 +4905,46 @@ mod tests {
             false,
         )
         .expect("V1 face chunk");
-        let parse_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (parse_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &data,
-            &parse_arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("V1 Brep fits service input limit");
-        let mut parse_workspace = parse_ctx
-            .reserve_scoped(0, "V1 test parsing workspace")
-            .expect("service parsing workspace");
-        let brep = super::legacy_brep(
-            &parse_ctx,
-            &mut parse_workspace,
-            &data,
-            &face,
-            super::MillimeterScale::IDENTITY,
-        )
-        .expect("valid V1 Brep payload");
-        let trim_count = brep.faces[0].loops[0].trims.len();
-        let prior_bytes = trim_count.max(4) * std::mem::size_of::<(usize, usize, usize)>()
-            + 4 * std::mem::size_of::<Vec<usize>>()
-            + 5 * trim_count.max(4) * std::mem::size_of::<usize>();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_materialized_bytes =
-            u64::try_from(prior_bytes).expect("request fits u64");
-        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (limited_ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &limited_arena, &policy)
+        let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "Rhino V1 Brep grouped curves",
+            |cap| {
+                let parse_arena = cadmpeg_core::decode::DecodeArena::new();
+                let (parse_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &data,
+                    &parse_arena,
+                    &cadmpeg_core::decode::DecodePolicy::service(),
+                )
                 .expect("V1 Brep fits service input limit");
-        let mut ir = CadIr::empty();
-        let refusal = super::append_legacy_brep(&limited_ctx, &mut ir, brep, "limited")
-            .expect_err("grouped map entries exceed the remaining workspace");
-        assert!(
-            matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.used == policy.limits.max_materialized_bytes)
+                let mut parse_workspace = parse_ctx
+                    .reserve_scoped(0, "V1 test parsing workspace")
+                    .expect("service parsing workspace");
+                let brep = super::legacy_brep(
+                    &parse_ctx,
+                    &mut parse_workspace,
+                    &data,
+                    &face,
+                    super::MillimeterScale::IDENTITY,
+                )
+                .expect("valid V1 Brep payload");
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+                let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &data,
+                    &limited_arena,
+                    &policy,
+                )
+                .expect("V1 Brep fits service input limit");
+                let mut ir = CadIr::empty();
+                let result = super::append_legacy_brep(&limited_ctx, &mut ir, brep, "limited");
+                assert_eq!(ir.model.entity_count(), 0);
+                result
+            },
         );
-        assert!(ir.model.bodies.is_empty());
+        assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "Rhino V1 Brep grouped curves"));
         assert_eq!(
             decode_v1(&data)
                 .expect("service admits Brep")
