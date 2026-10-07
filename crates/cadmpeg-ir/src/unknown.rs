@@ -485,7 +485,7 @@ mod tests {
             serde_json::json!({"links": [false]}),
             serde_json::json!({"links": [-7]}),
             serde_json::json!({"links": [7]}),
-            serde_json::json!({"links": [18446744073709551615_u64]}),
+            serde_json::json!({"links": [18_446_744_073_709_551_615_u64]}),
             serde_json::json!({"links": [2.5]}),
             serde_json::json!({"links": [-0.0]}),
             serde_json::json!({"links": [1e-20]}),
@@ -521,7 +521,7 @@ mod tests {
             match (expected, actual) {
                 (Ok(expected), Ok(actual)) => assert_eq!(expected, [actual]),
                 (Err(expected), Err(CodecError::Malformed(actual))) => {
-                    assert_eq!(expected.to_string(), actual)
+                    assert_eq!(expected.to_string(), actual);
                 }
                 (expected, actual) => {
                     panic!("projection changed admission: {expected:?} versus {actual:?}")
@@ -554,7 +554,7 @@ mod tests {
                         ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
                         ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
                         ResourceDimension::CollectionItems => {
-                            policy.limits.max_collection_items = cap
+                            policy.limits.max_collection_items = cap;
                         }
                         _ => unreachable!(),
                     }
