@@ -29,18 +29,18 @@ pub(super) fn attach_parasolid_topology_string_attributes(
             .strings
             .iter()
             .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid attribute record index",
+        "NX Parasolid string record index",
     )?;
     let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
         sources
             .string_uses
             .iter()
             .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
-        "NX Parasolid attribute use groups",
+        "NX Parasolid string use groups",
     )?;
     for (_, uses) in ctx.admit_iter(
         &mut uses_by_entity,
-        "NX Parasolid attribute use group ordering",
+        "NX Parasolid string use group traversal",
     )? {
         ctx.stable_sort_by(
             uses,
@@ -167,6 +167,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                     class_use.entity_51_record.as_str(),
                 ),
                 class_use,
+                "NX attribute class identity index",
             )?;
         }
 
@@ -178,6 +179,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                 &mut fields_by_value_use,
                 field_use.value_use.as_str(),
                 field_use,
+                "NX attribute value-use identity index",
             )?;
         }
 
@@ -189,6 +191,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                 &mut definitions_by_id,
                 definition.id.as_str(),
                 definition,
+                "NX attribute definition identity index",
             )?;
         }
 
@@ -200,6 +203,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                 &mut field_names_by_definition,
                 names.attribute_definition.as_str(),
                 names,
+                "NX attribute field-name definition index",
             )?;
         }
 
@@ -243,11 +247,11 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
         if !ctx.equal_bytes(
             field_use.attribute_class_use.as_str().as_bytes(),
             class_use.attribute_class_use.as_str().as_bytes(),
-            "NX field name equality",
+            "NX attribute field class-use identity equality",
         )? || !ctx.equal_bytes(
             field_use.attribute_definition.as_bytes(),
             class_use.attribute_definition.as_bytes(),
-            "NX field name equality",
+            "NX attribute field definition identity equality",
         )? {
             return Ok(None);
         }
@@ -353,10 +357,9 @@ fn insert_sole<'a, K: Ord + cadmpeg_core::decode::cost::DecodeCost, V>(
     values: &mut BTreeMap<K, Option<&'a V>>,
     key: K,
     value: &'a V,
+    operation: &'static str,
 ) -> Result<(), CodecError> {
-    match reservation
-        .with_storage(|| ctx.entry_btree_map(values, key, "NX insert sole values entry"))?
-    {
+    match reservation.with_storage(|| ctx.entry_btree_map(values, key, operation))? {
         Entry::Vacant(entry) => {
             entry.insert(Some(value));
         }
@@ -855,25 +858,25 @@ pub(super) fn attach_parasolid_topology_numeric_attributes(
             .integers
             .iter()
             .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid attribute record index",
+        "NX Parasolid integer record index",
     )?;
     let (doubles_by_id, _doubles_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .doubles
             .iter()
             .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid attribute record index",
+        "NX Parasolid double record index",
     )?;
     let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
         sources
             .numeric_uses
             .iter()
             .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
-        "NX Parasolid attribute use groups",
+        "NX Parasolid numeric use groups",
     )?;
     for (_, uses) in ctx.admit_iter(
         &mut uses_by_entity,
-        "NX Parasolid attribute use group ordering",
+        "NX Parasolid numeric use group traversal",
     )? {
         ctx.stable_sort_by(
             uses,
@@ -1004,39 +1007,39 @@ pub(super) fn attach_parasolid_topology_structured_attributes(
             .vectors
             .iter()
             .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid attribute record index",
+        "NX Parasolid vector record index",
     )?;
     let (axes_by_id, _axes_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .axes
             .iter()
             .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid attribute record index",
+        "NX Parasolid axis record index",
     )?;
     let (tags_by_id, _tags_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .tags
             .iter()
             .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid attribute record index",
+        "NX Parasolid tag record index",
     )?;
     let (unicode_by_id, _unicode_by_id_reservation) = ctx.collect_scoped_btree_map(
         sources
             .unicode
             .iter()
             .map(|record| (record.id.as_str(), record)),
-        "NX Parasolid attribute record index",
+        "NX Parasolid Unicode record index",
     )?;
     let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
         sources
             .structured_uses
             .iter()
             .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
-        "NX Parasolid attribute use groups",
+        "NX Parasolid structured use groups",
     )?;
     for (_, uses) in ctx.admit_iter(
         &mut uses_by_entity,
-        "NX Parasolid attribute use group ordering",
+        "NX Parasolid structured use group traversal",
     )? {
         ctx.stable_sort_by(
             uses,
