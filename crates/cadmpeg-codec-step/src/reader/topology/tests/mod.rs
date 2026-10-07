@@ -14,7 +14,9 @@ mod representation_bodies;
 fn topology_failure_count_refuses_overflow() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut outcome = super::BuildOutcome {
-        storage: ctx.reserve_scoped(0, "test outcome").expect("empty outcome"),
+        storage: ctx
+            .reserve_scoped(0, "test outcome")
+            .expect("empty outcome"),
         built: Vec::new(),
         failures: Some(super::BuildFailures {
             count: std::num::NonZeroUsize::new(usize::MAX).expect("nonzero maximum"),

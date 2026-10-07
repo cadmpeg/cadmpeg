@@ -144,17 +144,29 @@ fn shared_vertex_components(count: usize) -> u64 {
         .map(|id| FaceId::from(crate::ids::data(crate::ids::kind!("face"), id)))
         .collect();
     let vertex = VertexId::try_from("step:data:vertex#1").expect("test vertex");
-    let loops: Vec<_> = faces.iter().enumerate().map(|(id, face)| Loop {
-        id: LoopId::from(crate::ids::data(crate::ids::kind!("loop"), id)),
-        face: face.clone(),
-        boundary: LoopBoundary::Vertex { vertex: vertex.clone(), pcurves: Vec::new() },
-    }).collect();
+    let loops: Vec<_> = faces
+        .iter()
+        .enumerate()
+        .map(|(id, face)| Loop {
+            id: LoopId::from(crate::ids::data(crate::ids::kind!("loop"), id)),
+            face: face.clone(),
+            boundary: LoopBoundary::Vertex {
+                vertex: vertex.clone(),
+                pcurves: Vec::new(),
+            },
+        })
+        .collect();
     let ctx = cadmpeg_test_support::service_decode_context();
-    let components = super::super::connected_face_components(&faces, &loops, &[], &BTreeMap::new(), &ctx)
-        .expect("one shared-vertex component");
+    let components =
+        super::super::connected_face_components(&faces, &loops, &[], &BTreeMap::new(), &ctx)
+            .expect("one shared-vertex component");
     assert_eq!(components, vec![(0..count).collect::<Vec<_>>()]);
-    let error = ctx.charge_work(u64::MAX, "measure connected-face work").expect_err("work counter probe");
-    let CodecError::ResourceLimit(limit) = error else { panic!("work probe resource refusal"); };
+    let error = ctx
+        .charge_work(u64::MAX, "measure connected-face work")
+        .expect_err("work counter probe");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("work probe resource refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     limit.used
 }
@@ -170,14 +182,20 @@ fn shared_vertex_component_links_scale_without_a_clique() {
 #[test]
 fn connected_face_scratch_releases_after_the_components_are_consumed() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let (components, storage) = ctx.with_scoped_storage("test component output", ||
-        super::super::connected_face_components(&faces(), &[], &[], &BTreeMap::new(), &ctx)
-    ).expect("component scratch fits");
+    let (components, storage) = ctx
+        .with_scoped_storage("test component output", || {
+            super::super::connected_face_components(&faces(), &[], &[], &BTreeMap::new(), &ctx)
+        })
+        .expect("component scratch fits");
     assert_eq!(components, vec![vec![0], vec![1]]);
     drop(components);
     drop(storage);
-    let error = ctx.reserve_scoped(u64::MAX, "measure released component scratch").expect_err("scratch counter probe");
-    let CodecError::ResourceLimit(limit) = error else { panic!("scratch probe resource refusal"); };
+    let error = ctx
+        .reserve_scoped(u64::MAX, "measure released component scratch")
+        .expect_err("scratch counter probe");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("scratch probe resource refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(limit.used, 0);
 }

@@ -36,7 +36,7 @@ fn representation_body_vector_refuses_before_two_item_copy() {
 
 fn topology_with_body_at(root: u64) -> TopologyData<'static> {
     TopologyData {
-        _storage: None,
+        storage: None,
         claim_storage: None,
         body_by_root: BTreeMap::from([(root, vec![body_id()])]),
         shape_representation_relationships: BTreeMap::new(),
