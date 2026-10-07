@@ -1239,8 +1239,14 @@ fn wide_line_uses_direct_point_ids_after_one_based_resolution_fails() {
     ];
     let markers = entities.iter().collect::<Vec<_>>();
 
-    let endpoints = wide_direct_line_endpoint_markers(&payload, &entities[0], &markers)
-        .expect("direct point IDs");
+    let endpoints = wide_direct_line_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &entities[0],
+        &markers,
+    )
+    .unwrap()
+    .expect("direct point IDs");
     assert_eq!(
         endpoints
             .iter()
@@ -1253,19 +1259,37 @@ fn wide_line_uses_direct_point_ids_after_one_based_resolution_fails() {
     payload[64..66].fill(0);
     let zero = entity("zero", None, Some([0.0, 0.0]), SketchInputKind::Point);
     let extended = [&entities[0], &zero, &entities[2]];
-    let endpoints = wide_direct_line_endpoint_markers(&payload, &entities[0], &extended)
-        .expect("unique zero-identity point");
+    let endpoints = wide_direct_line_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &entities[0],
+        &extended,
+    )
+    .unwrap()
+    .expect("unique zero-identity point");
     assert_eq!(endpoints[0].id(), "zero");
 
     let other_zero = entity("other-zero", None, Some([2.0, 0.0]), SketchInputKind::Point);
     let ambiguous = [&entities[0], &zero, &other_zero, &entities[2]];
     assert_eq!(
-        wide_direct_line_endpoint_markers(&payload, &entities[0], &ambiguous),
+        wide_direct_line_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &ambiguous
+        )
+        .unwrap(),
         None
     );
     payload[92] = 0;
     assert_eq!(
-        wide_direct_line_endpoint_markers(&payload, &entities[0], &extended),
+        wide_direct_line_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &extended
+        )
+        .unwrap(),
         None
     );
 }

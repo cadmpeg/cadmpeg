@@ -2,6 +2,7 @@
 
 use super::assembly::contains_ascii_case_insensitive;
 use super::names::configuration;
+use super::profiles::mint_formatted;
 use super::sketch_edges::{
     project_edge, project_endpoint_constraints, project_point, EndpointConstraintSource,
 };
@@ -15,40 +16,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet};
-use std::fmt::{self, Write};
 use std::hash::Hash;
-
-fn retained_text(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let mut copy = String::new();
-    ctx.append_retained(&mut copy, text, operation)?;
-    Ok(copy)
-}
-
-fn retained_format(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    args: fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    struct ByteCount(usize);
-    impl Write for ByteCount {
-        fn write_str(&mut self, text: &str) -> fmt::Result {
-            self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
-            Ok(())
-        }
-    }
-    let mut count = ByteCount(0);
-    fmt::write(&mut count, args)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    let mut result = String::new();
-    ctx.try_reserve_retained_text(&mut result, count.0, operation)?;
-    fmt::write(&mut result, args)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    Ok(result)
-}
 
 fn index_brep<'a, T, K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -88,10 +56,13 @@ pub(crate) fn sketches(
             continue;
         }
         let source_stream = source.source_stream();
-        let native_ref = format!(
-            "sldprt:feature-input:resolved-features#{}",
-            source.ordinal()
-        );
+        let native_ref = ctx.format_retained(
+            format_args!(
+                "sldprt:feature-input:resolved-features#{}",
+                source.ordinal()
+            ),
+            "retain SLDPRT sketch native reference",
+        )?;
         for (stream_ordinal, stream) in ctx
             .admit_iter(source.ps_streams(), "project SLDPRT section streams")?
             .enumerate()
@@ -195,9 +166,12 @@ fn project_brep(
         let origin = plane_surface.origin().get();
         let normal = plane_surface.frame().axis().as_raw();
         let u_axis = plane_surface.frame().reference().as_raw();
-        let Ok(sketch_id) = SketchId::mint(format!(
-            "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
-        )) else {
+        let Some(sketch_id) = mint_formatted::<SketchId>(
+            ctx,
+            format_args!("sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"),
+            "retain SLDPRT projected sketch ID",
+        )?
+        else {
             continue;
         };
         let Ok(placement) =
@@ -255,21 +229,19 @@ fn project_brep(
                     &edge.id,
                     "resolve SLDPRT sketch_projection keys",
                 )? {
-                    let id = retained_text(ctx, id.as_str(), "retain SLDPRT sketch entity ID")?;
-                    {
-                        let identity_text = id;
-                        ctx.charge_work(
-                            cadmpeg_core::decode::u64_from_index(identity_text.len()),
-                            "validate SLDPRT sketch_projection identity",
-                        )?;
-                        SketchEntityId::mint(identity_text)
-                    }
-                    .map_err(cadmpeg_core::CodecError::malformed)?
+                    id.try_clone_for_decode(ctx, "retain SLDPRT sketch entity ID")?
                 } else {
-                    let Ok(id) = SketchEntityId::mint(format!(
-                        "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
-                        edge_entities.len()
-                    )) else { continue };
+                    let Some(id) = mint_formatted::<SketchEntityId>(
+                        ctx,
+                        format_args!(
+                            "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
+                            edge_entities.len()
+                        ),
+                        "retain SLDPRT sketch entity ID",
+                    )?
+                    else {
+                        continue;
+                    };
                     let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
                     let projected = project_edge(
                         ctx,
@@ -287,17 +259,6 @@ fn project_brep(
                     let edge_refusals = edge_refusal.take_records();
                     if !edge_refusals.is_empty() {
                         let operation = "retain SLDPRT sketch edge refusal";
-                        let _message_len = ctx
-                            .admit_iter(&edge_refusals, "measure SLDPRT edge refusal text")?
-                            .try_fold(0usize, |len, record| len.checked_add(record.len()))
-                            .and_then(|len| {
-                                (edge_refusals.len() - 1)
-                                    .checked_mul(2)
-                                    .and_then(|separators| len.checked_add(separators))
-                            })
-                            .ok_or_else(|| {
-                                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-                            })?;
                         let mut message = String::new();
 
                         for (index, record) in ctx
@@ -339,16 +300,14 @@ fn project_brep(
                         "feature_input_profile_edge",
                         Exactness::Derived,
                     )?;
-                    let native_edge_ref = retained_format(
-                        ctx,
+                    let native_edge_ref = ctx.format_retained(
                         format_args!("{stream_ordinal}:{}", edge.id.as_str()),
                         "retain SLDPRT sketch native edge reference",
                     )?;
                     let geometry_ref = edge
                         .curve()
                         .map(|curve_id| {
-                            retained_format(
-                                ctx,
+                            ctx.format_retained(
                                 format_args!("{stream_ordinal}:{}", curve_id.as_str()),
                                 "retain SLDPRT sketch curve reference",
                             )
@@ -361,35 +320,15 @@ fn project_brep(
                         "collect SLDPRT sketch edge endpoints",
                     )?;
                     for point in [start_point, end_point] {
-                        endpoint_refs.push(retained_format(
-                            ctx,
+                        endpoint_refs.push(ctx.format_retained(
                             format_args!("{stream_ordinal}:{}", point.as_str()),
                             "retain SLDPRT sketch edge endpoint",
                         )?);
                     }
-                    let entity_id = {
-                        let identity_text =
-                            retained_text(ctx, id.as_str(), "retain SLDPRT sketch entity ID")?;
-                        ctx.charge_work(
-                            cadmpeg_core::decode::u64_from_index(identity_text.len()),
-                            "validate SLDPRT sketch_projection identity",
-                        )?;
-                        SketchEntityId::mint(identity_text)
-                    }
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
-                    let entity_sketch_id = {
-                        let identity_text = retained_text(
-                            ctx,
-                            sketch_id.as_str(),
-                            "retain SLDPRT entity sketch ID",
-                        )?;
-                        ctx.charge_work(
-                            cadmpeg_core::decode::u64_from_index(identity_text.len()),
-                            "validate SLDPRT sketch_projection identity",
-                        )?;
-                        SketchId::mint(identity_text)
-                    }
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    let entity_id =
+                        id.try_clone_for_decode(ctx, "retain SLDPRT sketch entity ID")?;
+                    let entity_sketch_id =
+                        sketch_id.try_clone_for_decode(ctx, "retain SLDPRT entity sketch ID")?;
                     ctx.reserve_vec(entities, 1, "collect SLDPRT sketch edge entities")?;
                     entities.push(
                         SketchEntity::new(entity_id, entity_sketch_id, geometry)
@@ -399,17 +338,7 @@ fn project_brep(
                     );
 
                     let index_id = temporary_storage.with_storage(|| {
-                        let identity_text = retained_text(
-                            ctx,
-                            id.as_str(),
-                            "retain SLDPRT indexed sketch entity ID",
-                        )?;
-                        ctx.charge_work(
-                            cadmpeg_core::decode::u64_from_index(identity_text.len()),
-                            "validate SLDPRT sketch_projection identity",
-                        )?;
-                        SketchEntityId::mint(identity_text)
-                            .map_err(cadmpeg_core::CodecError::malformed)
+                        id.try_clone_for_decode(ctx, "retain SLDPRT indexed sketch entity ID")
                     })?;
                     temporary_storage.with_storage(|| {
                         ctx.insert_hash_map(
@@ -457,31 +386,23 @@ fn project_brep(
             else {
                 continue;
             };
-            let mut owned_entity_count = 0usize;
-            for entity in ctx.admit_iter(&entities[..], "count SLDPRT sketch entities")? {
-                if ctx.equal(
-                    &entity.sketch,
-                    &sketch_id,
-                    "compare SLDPRT sketch entity ownership",
-                )? {
-                    owned_entity_count = owned_entity_count.checked_add(1).ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "count SLDPRT sketch entities",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                }
-            }
+            // Every entity this face appended belongs to its sketch, and no earlier face shares
+            // the sketch identity.
+            let owned_entity_count = entities.len() - first_entity;
             let entity_ordinal = edge_entities
                 .len()
                 .checked_add(owned_entity_count)
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("count SLDPRT sketch entities", u64::MAX - 1, u64::MAX)
                 })?;
-            let Ok(id) = SketchEntityId::mint(format!(
-                "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{entity_ordinal}"
-            )) else {
+            let Some(id) = mint_formatted::<SketchEntityId>(
+                ctx,
+                format_args!(
+                    "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{entity_ordinal}"
+                ),
+                "retain SLDPRT sketch point entity ID",
+            )?
+            else {
                 continue;
             };
             let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -498,18 +419,9 @@ fn project_brep(
                 "feature_input_profile_point",
                 Exactness::Derived,
             )?;
-            let entity_sketch_id = {
-                let identity_text =
-                    retained_text(ctx, sketch_id.as_str(), "retain SLDPRT point sketch ID")?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(identity_text.len()),
-                    "validate SLDPRT sketch_projection identity",
-                )?;
-                SketchId::mint(identity_text)
-            }
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-            let native_vertex_ref = retained_format(
-                ctx,
+            let entity_sketch_id =
+                sketch_id.try_clone_for_decode(ctx, "retain SLDPRT point sketch ID")?;
+            let native_vertex_ref = ctx.format_retained(
                 format_args!("{stream_ordinal}:{}", vertex.id.as_str()),
                 "retain SLDPRT sketch native vertex reference",
             )?;
@@ -519,8 +431,7 @@ fn project_brep(
                 1,
                 "collect SLDPRT sketch point endpoints",
             )?;
-            endpoint_refs.push(retained_format(
-                ctx,
+            endpoint_refs.push(ctx.format_retained(
                 format_args!("{stream_ordinal}:{}", vertex.point.as_str()),
                 "retain SLDPRT sketch point endpoint",
             )?);
@@ -534,21 +445,8 @@ fn project_brep(
         let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else {
             continue;
         };
-        if profiles.is_empty() {
-            let mut present = false;
-            for entity in ctx.admit_iter(&entities[..], "check SLDPRT sketch entities")? {
-                if ctx.equal(
-                    &entity.sketch,
-                    &sketch_id,
-                    "compare SLDPRT sketch ownership",
-                )? {
-                    present = true;
-                    break;
-                }
-            }
-            if !present {
-                continue;
-            }
+        if profiles.is_empty() && entities.len() == first_entity {
+            continue;
         }
         crate::annotations::note(
             ctx,
@@ -573,12 +471,13 @@ fn project_brep(
             constraints,
         )?;
         let name = (!sketch_name.is_empty())
-            .then(|| retained_text(ctx, sketch_name, "retain SLDPRT sketch name"))
+            .then(|| ctx.copy_retained_text(sketch_name, "retain SLDPRT sketch name"))
             .transpose()?;
         let configuration = configuration
-            .map(|name| retained_text(ctx, name, "retain SLDPRT sketch configuration"))
+            .map(|name| ctx.copy_retained_text(name, "retain SLDPRT sketch configuration"))
             .transpose()?;
-        let native_ref = retained_text(ctx, native_ref, "retain SLDPRT sketch native reference")?;
+        let native_ref =
+            ctx.copy_retained_text(native_ref, "retain SLDPRT sketch native reference")?;
         ctx.reserve_vec(sketches, 1, "collect SLDPRT projected sketches")?;
         sketches.push(Sketch {
             id: sketch_id,

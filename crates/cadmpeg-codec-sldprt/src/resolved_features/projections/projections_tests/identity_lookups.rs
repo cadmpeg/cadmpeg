@@ -25,54 +25,36 @@ fn identity_lookup_input() -> [Feature; 2] {
     })
 }
 
-fn assert_identity_lookup_refusal(
-    operation: &str,
-    project: impl Fn(&DecodeContext<'_>, &mut [Feature]) -> Result<(), CodecError>,
-) {
-    crate::test_support::work_refusal_at(operation, |ctx| {
-        project(ctx, &mut identity_lookup_input())
+#[test]
+fn feature_identity_index_keeps_the_last_duplicate_and_propagates_work_refusal() {
+    const OPERATION: &str = "index SLDPRT test feature identities";
+    let features = identity_lookup_input();
+    crate::test_support::work_refusal_at(OPERATION, |ctx| {
+        super::super::model_feature_ids_by_native(ctx, &features, OPERATION).map(|_| ())
     });
-    let mut features = identity_lookup_input();
-    project(
-        &cadmpeg_test_support::service_decode_context(),
-        &mut features,
-    )
-    .unwrap();
-    assert_eq!(features[0].id.as_str(), "synthetic:test:id#first");
-    assert_eq!(features[1].id.as_str(), "synthetic:test:id#second");
-    assert_eq!(features[0].native_ref.as_deref(), Some("native"));
-    assert_eq!(features[1].native_ref.as_deref(), Some("native"));
-}
-
-#[test]
-fn compact_edge_identity_lookup_propagates_work_refusal() {
-    assert_identity_lookup_refusal(
-        "lookup SLDPRT compact edge feature identity",
-        |ctx, features| super::super::project_compact_edge_selections(ctx, features, &[], &[]),
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let (ids, _storage) =
+        super::super::model_feature_ids_by_native(&ctx, &features, OPERATION).unwrap();
+    assert_eq!(ids.len(), 1);
+    assert_eq!(
+        ids.get("native").map(FeatureId::as_str),
+        Some("synthetic:test:id#second")
     );
 }
 
 #[test]
-fn compact_surface_identity_lookup_propagates_work_refusal() {
-    assert_identity_lookup_refusal(
-        "lookup SLDPRT compact surface feature identity",
-        |ctx, features| super::super::project_compact_surface_selections(ctx, features, &[], &[]),
-    );
-}
-
-#[test]
-fn draft_identity_lookup_propagates_work_refusal() {
-    assert_identity_lookup_refusal("lookup SLDPRT draft feature identity", |ctx, features| {
-        super::super::project_draft_operands(ctx, features, &[], &[])
-    });
-}
-
-#[test]
-fn cosmetic_thread_identity_lookup_propagates_work_refusal() {
-    assert_identity_lookup_refusal(
-        "lookup SLDPRT cosmetic thread feature identity",
-        |ctx, features| {
-            super::super::project_unbound_cosmetic_thread_faces(ctx, features, &[], &[], &[], &[])
-        },
-    );
+fn feature_identity_index_refuses_materialized_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    const OPERATION: &str = "index SLDPRT test feature identities";
+    let features = identity_lookup_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = super::super::model_feature_ids_by_native(&ctx, &features, OPERATION)
+        .map(|_| ())
+        .expect_err("the feature identity index exceeds the materialized limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == OPERATION));
 }

@@ -31,7 +31,10 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use std::{collections::HashSet, ops::Range};
+use std::{
+    collections::{BTreeSet, HashSet},
+    ops::Range,
+};
 
 use crate::layout::{
     component_face_compact_reference_prefix as compact_face,
@@ -58,24 +61,16 @@ fn selection_objects<'history, 'lane>(
     CodecError,
 > {
     let mut objects = Vec::new();
-    for (input_index, feature) in histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .enumerate()
-    {
-        ctx.charge_work(1, operation)?;
-        for name in &lane.names {
-            let work = u64_from_index(name.value.len())
-                .checked_add(u64_from_index(feature.name.len()))
-                .and_then(|work| work.checked_add(2))
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, operation)?;
+    let mut input_index = 0_usize;
+    for history in ctx.admit_iter(histories, operation)? {
+        for feature in ctx.admit_iter(&history.features, operation)? {
+            let index = input_index;
+            input_index += 1;
+            let Some(name) = feature_object_name(feature, lane) else {
+                continue;
+            };
+            ctx.push_vec(&mut objects, (name, feature, index), operation)?;
         }
-        let Some(name) = feature_object_name(feature, lane) else {
-            continue;
-        };
-        ctx.reserve_vec(&mut objects, 1, operation)?;
-        objects.push((name, feature, input_index));
     }
     ctx.sort_unstable_by_key(
         &mut objects,
@@ -87,18 +82,6 @@ fn selection_objects<'history, 'lane>(
         operation,
     )?;
     Ok(objects)
-}
-
-fn copy_selection_text(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_work(u64_from_index(text.len()), operation)?;
-    let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, text.len(), operation)?;
-    copy.push_str(text);
-    Ok(copy)
 }
 
 pub(super) fn compact_body_selections(
@@ -113,9 +96,10 @@ pub(super) fn compact_body_selections(
         .map_or(lane.id.as_str(), |(_, key)| key);
     ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
     let state_token = compact_body_state_token(lane);
+    let (move_data_offsets, _move_data_storage) =
+        super::profiles::class_offsets(ctx, lane, "moMoveCopyBodyData_c", OPERATION)?;
     let mut result = Vec::new();
-    for (object_index, &(name, feature, _)) in objects.iter().enumerate() {
-        ctx.charge_work(1, OPERATION)?;
+    for (object_index, &(name, feature, _)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let Some(start) = usize::try_from(name.offset).ok() else {
             continue;
@@ -140,18 +124,23 @@ pub(super) fn compact_body_selections(
                 None => None,
             }
         } else if kind == NativeClassKind::Operation(FeatureClass::MoveBody) {
-            ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
-            let mut data_classes = lane.classes.iter().filter(|class| {
-                class.name == "moMoveCopyBodyData_c"
-                    && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-            });
-            match (data_classes.next(), data_classes.next()) {
-                (Some(class), None) => super::direct_edits::move_body_translation_record(
+            let lower = ctx.partition_point(
+                &move_data_offsets,
+                |offset| Ok(*offset < u64_from_index(start)),
+                OPERATION,
+            )?;
+            let upper = ctx.partition_point(
+                &move_data_offsets,
+                |offset| Ok(*offset < u64_from_index(end)),
+                OPERATION,
+            )?;
+            match move_data_offsets.get(lower..upper.max(lower)) {
+                Some(&[class_offset]) => super::direct_edits::move_body_translation_record(
                     ctx,
                     &lane.native_payload,
                     start,
                     end,
-                    class.offset,
+                    class_offset,
                 )?
                 .map(|record| (record.selection_offset, record.local_body_ids)),
                 _ => None,
@@ -165,14 +154,13 @@ pub(super) fn compact_body_selections(
         let ordinal = u32::try_from(result.len()).map_err(|_| {
             ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len()))
         })?;
-        ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
         let id = ctx.format_retained(
             format_args!("sldprt:feature-input:body-selection#{lane_key}:{offset}"),
             OPERATION,
         )?;
-        let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
-        let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
-        let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
+        let parent = ctx.copy_retained_text(&lane.id, OPERATION)?;
+        let object_name_ref = ctx.copy_retained_text(&name.id, OPERATION)?;
+        let feature_ref = ctx.copy_retained_text(&feature.id, OPERATION)?;
         let (body_state_ids, mode) = match (kind, state_token) {
             (NativeClassKind::DeleteBody, Some(token)) => (
                 compact_body_state_ids(ctx, &lane.native_payload, start, offset, token)?,
@@ -219,20 +207,19 @@ pub(crate) fn compact_body_state_ids_for_selection(
     let Some(token) = compact_body_state_token(lane) else {
         return Ok(Vec::new());
     };
-    let mut start = None;
-    for name in &lane.names {
-        let work = name
-            .id
-            .len()
-            .checked_add(selection.object_name_ref.len())
-            .and_then(|size| size.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(u64_from_index(work), OPERATION)?;
-        if name.id == selection.object_name_ref {
-            start = usize::try_from(name.offset).ok();
-            break;
-        }
-    }
+    let start = ctx
+        .find_by(
+            &lane.names,
+            |name| {
+                ctx.equal(
+                    name.id.as_str(),
+                    selection.object_name_ref.as_str(),
+                    OPERATION,
+                )
+            },
+            OPERATION,
+        )?
+        .and_then(|name| usize::try_from(name.offset).ok());
     let (Some(start), Ok(end)) = (start, usize::try_from(selection.offset)) else {
         return Ok(Vec::new());
     };
@@ -249,20 +236,19 @@ pub(crate) fn compact_body_retention_mode_for_selection(
     let Some(token) = compact_body_state_token(lane) else {
         return Ok(None);
     };
-    let mut start = None;
-    for name in &lane.names {
-        let work = name
-            .id
-            .len()
-            .checked_add(selection.object_name_ref.len())
-            .and_then(|size| size.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(u64_from_index(work), OPERATION)?;
-        if name.id == selection.object_name_ref {
-            start = usize::try_from(name.offset).ok();
-            break;
-        }
-    }
+    let start = ctx
+        .find_by(
+            &lane.names,
+            |name| {
+                ctx.equal(
+                    name.id.as_str(),
+                    selection.object_name_ref.as_str(),
+                    OPERATION,
+                )
+            },
+            OPERATION,
+        )?
+        .and_then(|name| usize::try_from(name.offset).ok());
     let (Some(start), Ok(end)) = (start, usize::try_from(selection.offset)) else {
         return Ok(None);
     };
@@ -391,6 +377,7 @@ pub(super) fn compact_edge_selections(
         .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
+    let dimension_classes = fillet_dimension_classes(ctx, lane)?;
     ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
     let mut compact_edge_classes = lane
         .classes
@@ -406,8 +393,7 @@ pub(super) fn compact_edge_selections(
     });
     let compact_edge_token =
         class_name_end.and_then(|offset| View::u16_le_at(&lane.native_payload, offset));
-    for (object_index, &(name, feature, _)) in objects.iter().enumerate() {
-        ctx.charge_work(1, OPERATION)?;
+    for (object_index, &(name, feature, _)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
         let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         if !matches!(kind, NativeClassKind::Fillet | NativeClassKind::Chamfer) {
             continue;
@@ -420,7 +406,8 @@ pub(super) fn compact_edge_selections(
             .and_then(|(next, _, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
         let end = if kind == NativeClassKind::Fillet {
-            fillet_edge_roster_end(ctx, lane, start, object_end)?.unwrap_or(object_end)
+            fillet_edge_roster_end(ctx, lane, &dimension_classes, start, object_end)?
+                .unwrap_or(object_end)
         } else {
             object_end
         };
@@ -488,14 +475,13 @@ pub(super) fn compact_edge_selections(
                 &history_features,
                 &feature.id,
             )?;
-            ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
             let id = ctx.format_retained(
                 format_args!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
                 OPERATION,
             )?;
-            let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
-            let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
-            let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
+            let parent = ctx.copy_retained_text(&lane.id, OPERATION)?;
+            let object_name_ref = ctx.copy_retained_text(&name.id, OPERATION)?;
+            let feature_ref = ctx.copy_retained_text(&feature.id, OPERATION)?;
             ctx.reserve_vec(&mut feature_selections, 1, OPERATION)?;
             feature_selections.push(FeatureInputEdgeSelection {
                 id,
@@ -511,13 +497,10 @@ pub(super) fn compact_edge_selections(
                 terminal_feature_ref,
             });
         }
-        ctx.charge_work(
-            u64_from_index(feature_selections.len())
-                .checked_mul(2)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        for mut selection in ctx.admit_iter(
+            input_owned_edge_selections(ctx, feature_selections)?,
             OPERATION,
-        )?;
-        for mut selection in input_owned_edge_selections(feature_selections) {
+        )? {
             selection.ordinal = u32::try_from(result.len()).map_err(|_| {
                 ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len()))
             })?;
@@ -528,15 +511,87 @@ pub(super) fn compact_edge_selections(
     Ok(result)
 }
 
+/// The declarations of one class in a lane, in offset order, with the class token their
+/// repeated instances carry when every declaration names the same one.
+pub(super) struct ClassObjects {
+    offsets: Vec<usize>,
+    token: Option<u16>,
+}
+
+impl ClassObjects {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        lane: &FeatureInputLane,
+        class_name: &'static str,
+    ) -> Result<Self, CodecError> {
+        const OPERATION: &str = "decode SLDPRT selection class intervals";
+        let mut offsets = Vec::new();
+        let mut token = None;
+        let mut ambiguous = false;
+        for class in ctx.admit_iter(&lane.classes, OPERATION)? {
+            if class.name != class_name {
+                continue;
+            }
+            let Some(offset) = usize::try_from(class.offset).ok() else {
+                continue;
+            };
+            ctx.push_vec(&mut offsets, offset, OPERATION)?;
+            let candidate = offset
+                .checked_add(6 + class.name.len())
+                .and_then(|body| View::u16_le_at(&lane.native_payload, body))
+                .filter(|token| is_class_token(*token));
+            if let Some(candidate) = candidate {
+                if token.is_some_and(|token| token != candidate) {
+                    ambiguous = true;
+                } else {
+                    token = Some(candidate);
+                }
+            }
+        }
+        ctx.sort_unstable_by_key(&mut offsets, |offset| *offset, Ord::cmp, OPERATION)?;
+        Ok(Self {
+            offsets,
+            token: token.filter(|_| !ambiguous),
+        })
+    }
+}
+
+impl ClassObjects {
+    /// The declaration offsets in `start..end`.
+    fn in_interval(
+        &self,
+        ctx: &DecodeContext<'_>,
+        start: usize,
+        end: usize,
+    ) -> Result<&[usize], CodecError> {
+        const OPERATION: &str = "decode SLDPRT selection class intervals";
+        let lower = ctx.partition_point(&self.offsets, |offset| Ok(*offset < start), OPERATION)?;
+        let upper = ctx.partition_point(&self.offsets, |offset| Ok(*offset < end), OPERATION)?;
+        Ok(&self.offsets[lower..upper.max(lower)])
+    }
+}
+
+/// The edge- and vertex-dimension declarations that end a fillet's edge roster.
+pub(super) fn fillet_dimension_classes(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+) -> Result<[ClassObjects; 2], CodecError> {
+    Ok([
+        ClassObjects::new(ctx, lane, "moEdgeDim_c")?,
+        ClassObjects::new(ctx, lane, "moVertDim_c")?,
+    ])
+}
+
 fn fillet_edge_roster_end(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
+    classes: &[ClassObjects; 2],
     start: usize,
     end: usize,
 ) -> Result<Option<usize>, CodecError> {
     let mut first = None;
-    for class_name in ["moEdgeDim_c", "moVertDim_c"] {
-        if let Some(offset) = first_class_object_in_interval(ctx, lane, start, end, class_name)? {
+    for class in classes {
+        if let Some(offset) = first_class_object_in_interval(ctx, lane, class, start, end)? {
             first = Some(first.map_or(offset, |first: usize| first.min(offset)));
         }
     }
@@ -546,75 +601,61 @@ fn fillet_edge_roster_end(
 fn first_class_object_in_interval(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
+    class: &ClassObjects,
     start: usize,
     end: usize,
-    class_name: &str,
 ) -> Result<Option<usize>, CodecError> {
     const OPERATION: &str = "decode SLDPRT selection class intervals";
     let mut direct = None;
-    let mut token = None;
-    let mut ambiguous = false;
-    for class in &lane.classes {
-        let work = u64_from_index(class.name.len())
-            .checked_add(u64_from_index(class_name.len()))
-            .and_then(|work| work.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, OPERATION)?;
-        if class.name != class_name {
-            continue;
-        }
-        let Some(offset) = usize::try_from(class.offset).ok() else {
-            continue;
-        };
-        if (start..end).contains(&offset) {
-            let record = offset
-                .checked_sub(4)
-                .filter(|record| {
-                    lane.native_payload.get(*record..*record + 2) == Some(&[0x20, 0x81])
-                })
-                .unwrap_or(offset);
-            direct = Some(direct.map_or(record, |direct: usize| direct.min(record)));
-        }
-        let candidate = offset
-            .checked_add(6 + class.name.len())
-            .and_then(|body| View::u16_le_at(&lane.native_payload, body))
-            .filter(|token| is_class_token(*token));
-        if let Some(candidate) = candidate {
-            if token.is_some_and(|token| token != candidate) {
-                ambiguous = true;
-            } else {
-                token = Some(candidate);
-            }
-        }
+    for &offset in ctx.admit_iter(class.in_interval(ctx, start, end)?, OPERATION)? {
+        let record = offset
+            .checked_sub(4)
+            .filter(|record| lane.native_payload.get(*record..*record + 2) == Some(&[0x20, 0x81]))
+            .unwrap_or(offset);
+        direct = Some(direct.map_or(record, |direct: usize| direct.min(record)));
     }
     let mut repeated = None;
-    if let (Some(token), false, Some(scan_end)) = (token, ambiguous, end.checked_sub(7)) {
+    if let (Some(token), Some(scan_end)) = (class.token, end.checked_sub(7)) {
         let token = token.to_le_bytes();
-        for offset in start..scan_end {
-            ctx.charge_work(8, OPERATION)?;
-            if lane.native_payload.get(offset..offset + 2) == Some(&[0x20, 0x81])
-                && lane.native_payload.get(offset + 2..offset + 4) == Some(&[0x10, 0x00])
-                && View::u16_le_at(&lane.native_payload, offset + 4).is_some_and(is_class_token)
-                && lane.native_payload.get(offset + 6..offset + 8) == Some(token.as_slice())
-            {
-                repeated = Some(offset);
-                break;
-            }
-        }
+        repeated = ctx
+            .position_by(
+                start..scan_end.max(start),
+                |offset| {
+                    Ok(
+                        lane.native_payload.get(offset..offset + 2) == Some(&[0x20, 0x81])
+                            && lane.native_payload.get(offset + 2..offset + 4)
+                                == Some(&[0x10, 0x00])
+                            && View::u16_le_at(&lane.native_payload, offset + 4)
+                                .is_some_and(is_class_token)
+                            && lane.native_payload.get(offset + 6..offset + 8)
+                                == Some(token.as_slice()),
+                    )
+                },
+                OPERATION,
+            )?
+            .map(|position| start + position);
     }
     Ok(direct.into_iter().chain(repeated).min())
 }
 
+/// The selections a producer path ties to an input feature, or every selection when none is.
 pub(super) fn input_owned_edge_selections(
+    ctx: &DecodeContext<'_>,
     mut selections: Vec<FeatureInputEdgeSelection>,
-) -> Vec<FeatureInputEdgeSelection> {
-    if selections
-        .iter()
-        .any(|selection| !selection.producer_feature_refs.is_empty())
-    {
-        selections.retain(|selection| !selection.producer_feature_refs.is_empty());
+) -> Result<Vec<FeatureInputEdgeSelection>, CodecError> {
+    const OPERATION: &str = "retain SLDPRT input-owned edge selections";
+    if ctx.any_by(
+        &selections,
+        |selection| Ok(!selection.producer_feature_refs.is_empty()),
+        OPERATION,
+    )? {
+        ctx.retain_vec(
+            &mut selections,
+            |selection| Ok(!selection.producer_feature_refs.is_empty()),
+            OPERATION,
+        )?;
     }
-    selections
+    Ok(selections)
 }
 
 pub(super) fn compact_surface_selections(
@@ -661,6 +702,8 @@ pub(super) fn compact_surface_selections(
         ctx.insert_hash_set(&mut cylinder_reference_tokens, token, OPERATION)?;
     }
     let mirror_surface_prefix = mirror_surface_type_prefix(lane);
+    let face_classes = ClassObjects::new(ctx, lane, "moCompFace_c")?;
+    let reference_plane_classes = ClassObjects::new(ctx, lane, "moFaceRefPlnData_c")?;
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
     let lane_key = ctx
         .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
@@ -780,22 +823,10 @@ pub(super) fn compact_surface_selections(
                     &cylinder_reference_tokens,
                 )?;
                 let mut component_face_references = Vec::new();
-                for class in &lane.classes {
-                    ctx.charge_work(
-                        u64_from_index(class.name.len())
-                            .checked_add(1)
-                            .ok_or_else(|| {
-                                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                            })?,
-                        OPERATION,
-                    )?;
-                    let Some(offset) = usize::try_from(class.offset).ok() else {
-                        continue;
-                    };
-                    if class.name != "moCompFace_c" || !(start..end).contains(&offset) {
-                        continue;
-                    }
-                    let reference = match offset.checked_add(6 + class.name.len()) {
+                for &offset in
+                    ctx.admit_iter(face_classes.in_interval(ctx, start, end)?, OPERATION)?
+                {
+                    let reference = match offset.checked_add(6 + "moCompFace_c".len()) {
                         Some(body) => component_face_reference_at(ctx, &lane.native_payload, body)?,
                         None => None,
                     };
@@ -827,7 +858,7 @@ pub(super) fn compact_surface_selections(
                 candidates
             }
             NativeClassKind::Fillet if feature.input_class.as_deref() == Some("Fillet_c") => {
-                fillet_face_selection_candidates(ctx, lane, start, end)?
+                fillet_face_selection_candidates(ctx, lane, &face_classes, start, end)?
             }
             NativeClassKind::Fillet => continue,
             NativeClassKind::MirrorPattern => {
@@ -861,9 +892,14 @@ pub(super) fn compact_surface_selections(
                 }
                 candidates
             }
-            NativeClassKind::ReferencePlane => {
-                face_reference_plane_selection_candidates(ctx, lane, start, end)?
-            }
+            NativeClassKind::ReferencePlane => face_reference_plane_selection_candidates(
+                ctx,
+                lane,
+                &face_classes,
+                &reference_plane_classes,
+                start,
+                end,
+            )?,
             NativeClassKind::PlanarSurface => {
                 planar_surface_selection_candidates(ctx, &lane.native_payload, start, end)?
             }
@@ -916,14 +952,13 @@ pub(super) fn compact_surface_selections(
                 terminal_feature_ref.as_deref(),
                 &history_features,
             )?;
-            ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
             let id = ctx.format_retained(
                 format_args!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
                 OPERATION,
             )?;
-            let parent = copy_selection_text(ctx, &lane.id, OPERATION)?;
-            let object_name_ref = copy_selection_text(ctx, &name.id, OPERATION)?;
-            let feature_ref = copy_selection_text(ctx, &feature.id, OPERATION)?;
+            let parent = ctx.copy_retained_text(&lane.id, OPERATION)?;
+            let object_name_ref = ctx.copy_retained_text(&name.id, OPERATION)?;
+            let feature_ref = ctx.copy_retained_text(&feature.id, OPERATION)?;
             let ordinal = u32::try_from(result.len()).map_err(|_| {
                 ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(result.len()))
             })?;
@@ -982,6 +1017,7 @@ fn compact_extrusion_endpoint_selector_for_marker(
 fn fillet_face_selection_candidates(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
+    face_classes: &ClassObjects,
     start: usize,
     end: usize,
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
@@ -990,23 +1026,8 @@ fn fillet_face_selection_candidates(
     // carriers in that order. Other role-03 counts are different fillet
     // constructions and remain outside this projection.
     let mut class_bodies = Vec::new();
-    for class in &lane.classes {
-        ctx.charge_work(
-            u64_from_index(class.name.len())
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        if class.name != "moCompFace_c" {
-            continue;
-        }
-        let Some(class_offset) = usize::try_from(class.offset).ok() else {
-            continue;
-        };
-        if !(start..end).contains(&class_offset) {
-            continue;
-        }
-        let Some(body) = class_offset.checked_add(6 + class.name.len()) else {
+    for &class_offset in ctx.admit_iter(face_classes.in_interval(ctx, start, end)?, OPERATION)? {
+        let Some(body) = class_offset.checked_add(6 + "moCompFace_c".len()) else {
             continue;
         };
         let Some(token) =
@@ -1107,21 +1128,15 @@ fn planar_surface_selection_candidates(
 fn face_reference_plane_selection_candidates(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
+    face_classes: &ClassObjects,
+    reference_plane_classes: &ClassObjects,
     start: usize,
     end: usize,
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     const OPERATION: &str = "decode SLDPRT reference plane surface candidates";
-    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
-    let mut data_classes = lane.classes.iter().filter(|class| {
-        class.name == "moFaceRefPlnData_c"
-            && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-    });
     let mut candidates = Vec::new();
-    if let (Some(data_class), None) = (data_classes.next(), data_classes.next()) {
-        let Some(body) = usize::try_from(data_class.offset)
-            .ok()
-            .and_then(|offset| offset.checked_add(6 + data_class.name.len()))
-        else {
+    if let &[data_offset] = reference_plane_classes.in_interval(ctx, start, end)? {
+        let Some(body) = data_offset.checked_add(6 + "moFaceRefPlnData_c".len()) else {
             return Ok(Vec::new());
         };
         if let Some(scan_end) = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) {
@@ -1143,23 +1158,8 @@ fn face_reference_plane_selection_candidates(
             }
         }
     }
-    for class in &lane.classes {
-        ctx.charge_work(
-            u64_from_index(class.name.len())
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        if class.name != "moCompFace_c" {
-            continue;
-        }
-        let Some(offset) = usize::try_from(class.offset)
-            .ok()
-            .filter(|offset| (start..end).contains(offset))
-        else {
-            continue;
-        };
-        let reference = match offset.checked_add(6 + class.name.len()) {
+    for &offset in ctx.admit_iter(face_classes.in_interval(ctx, start, end)?, OPERATION)? {
+        let reference = match offset.checked_add(6 + "moCompFace_c".len()) {
             Some(body) => component_face_reference_at(ctx, &lane.native_payload, body)?,
             None => None,
         };
@@ -1176,49 +1176,18 @@ fn face_reference_plane_selection_candidates(
     })
 }
 
+/// Orders candidates by marker offset and drops repeated (offset, path) pairs.
 fn order_surface_candidates(
     ctx: &DecodeContext<'_>,
     candidates: &mut Vec<(usize, Vec<FeatureInputComponentPathEntry>)>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let mut indexed_storage = ctx.reserve_scoped(0, operation)?;
-    let mut indexed = Vec::new();
-    indexed_storage
-        .with_storage(|| ctx.reserve_capacity(&mut indexed, candidates.len(), operation))?;
-    {
-        const DRAIN_OPERATION: &str = "drain SLDPRT surface selection candidates";
-        let mut drain_reservation = ctx.reserve_scoped(0, DRAIN_OPERATION)?;
-        let count = candidates.len();
-        let drained = drain_reservation
-            .with_storage(|| ctx.drain_vec(candidates, 0..count, DRAIN_OPERATION))?;
-        for (index, (offset, components)) in drained.into_iter().enumerate() {
-            indexed_storage.with_storage(|| {
-                ctx.push_vec(&mut indexed, (offset, components, index), operation)
-            })?;
-        }
-    }
-    ctx.sort_unstable_by_key(
-        &mut indexed,
-        |value| {
-            let (left_offset, _, left_index) = value;
-            (*left_offset, *left_index)
-        },
-        Ord::cmp,
+    ctx.stable_sort_by_key(candidates, |value| value.0, Ord::cmp, operation)?;
+    ctx.dedup_by(
+        candidates,
+        |left, right| Ok(left.0 == right.0 && ctx.equal(&left.1, &right.1, operation)?),
         operation,
-    )?;
-    for pair in indexed.windows(2) {
-        let work = u64_from_index(pair[0].1.len())
-            .checked_add(u64_from_index(pair[1].1.len()))
-            .and_then(|work| work.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, operation)?;
-    }
-    indexed.dedup_by(|left, right| left.0 == right.0 && left.1 == right.1);
-    ctx.reserve_capacity(candidates, indexed.len(), operation)?;
-    for (offset, components, _) in indexed {
-        candidates.push((offset, components));
-    }
-    Ok(())
+    )
 }
 
 fn operation_surface_selection_candidates(
@@ -1347,7 +1316,8 @@ fn operation_surface_selection_candidates(
         )?,
         _ => Vec::new(),
     };
-    let mut component_face_tokens = HashSet::new();
+    // Distinct tokens in ascending order, so candidates gather in a fixed order.
+    let mut component_face_tokens = BTreeSet::new();
     for class in &lane.classes {
         ctx.charge_work(
             u64_from_index(class.name.len())
@@ -1377,7 +1347,7 @@ fn operation_surface_selection_candidates(
         else {
             continue;
         };
-        ctx.insert_hash_set(&mut component_face_tokens, token, OPERATION)?;
+        ctx.insert_btree_set(&mut component_face_tokens, token, OPERATION)?;
     }
     for token in component_face_tokens {
         let repeated =
@@ -1445,10 +1415,11 @@ fn history_features_with_object_sources(
 ) -> Result<Vec<crate::records::Feature>, CodecError> {
     const OPERATION: &str = "clone SLDPRT selection history features";
     let mut features = Vec::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, OPERATION)?;
-        ctx.reserve_vec(&mut features, 1, OPERATION)?;
-        features.push(feature.clone_charged(ctx, OPERATION)?);
+    for history in ctx.admit_iter(histories, OPERATION)? {
+        for feature in ctx.admit_iter(&history.features, OPERATION)? {
+            let feature = feature.clone_charged(ctx, OPERATION)?;
+            ctx.push_vec(&mut features, feature, OPERATION)?;
+        }
     }
     enrich_feature_object_sources(ctx, &mut features, std::slice::from_ref(lane))?;
     Ok(features)
@@ -1462,24 +1433,13 @@ pub(crate) fn enrich_feature_object_sources(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "resolve SLDPRT selection feature object sources";
-    for feature in features {
-        ctx.charge_work(1, OPERATION)?;
+    for feature in ctx.admit_iter(features, OPERATION)? {
         if feature.source_id.is_some() {
             continue;
         }
         let mut source = None;
         let mut ambiguous = false;
-        for lane in lanes {
-            ctx.charge_work(1, OPERATION)?;
-            for name in &lane.names {
-                let work = name
-                    .value
-                    .len()
-                    .checked_add(feature.name.len())
-                    .and_then(|size| size.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(u64_from_index(work), OPERATION)?;
-            }
+        for lane in ctx.admit_iter(lanes, OPERATION)? {
             let Some(candidate) = feature_object_name(feature, lane)
                 .and_then(|name| name.object_id)
                 .and_then(ObjectId::value)
@@ -1652,8 +1612,7 @@ fn cosmetic_thread_component_references(
         }
     }
     order_surface_candidates(ctx, &mut references, OPERATION)?;
-    ctx.charge_work(u64_from_index(references.len()), OPERATION)?;
-    references.dedup_by_key(|(marker, _)| *marker);
+    ctx.dedup_by_key(&mut references, |(marker, _)| Ok(*marker), OPERATION)?;
     Ok(references)
 }
 
@@ -3387,7 +3346,10 @@ pub(super) fn variable_fillet_control_references(
     else {
         return Ok(None);
     };
-    let Some(control_start) = fillet_edge_roster_end(ctx, lane, object_start, object_end)? else {
+    let classes = fillet_dimension_classes(ctx, lane)?;
+    let Some(control_start) =
+        fillet_edge_roster_end(ctx, lane, &classes, object_start, object_end)?
+    else {
         return Ok(None);
     };
     let (Some(marker_start), Some(marker_end)) = (
@@ -3620,20 +3582,21 @@ fn compact_edge_component_path_candidates(
         }
     }
     let mut full_paths = component_paths(count)?;
-    for (components, _) in &full_paths {
-        for (prefix, _, _) in &terminal_paths {
-            let work = u64_from_index(components.len())
-                .checked_add(u64_from_index(prefix.len()))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
-        }
-    }
-    full_paths.retain(|(components, end)| {
-        !terminal_paths
-            .iter()
-            .any(|(prefix, prefix_end, _)| *prefix_end < *end && components.starts_with(prefix))
-    });
+    ctx.retain_vec(
+        &mut full_paths,
+        |(components, end)| {
+            Ok(!ctx.any_by(
+                &terminal_paths,
+                |(prefix, prefix_end, _)| {
+                    Ok(*prefix_end < *end
+                        && components.len() >= prefix.len()
+                        && ctx.equal(&components[..prefix.len()], prefix.as_slice(), OPERATION)?)
+                },
+                OPERATION,
+            )?)
+        },
+        OPERATION,
+    )?;
     let mut candidates = Vec::new();
     for candidate in terminal_paths
         .into_iter()
@@ -3732,7 +3695,7 @@ pub(crate) fn compact_edge_owner_feature_at(
                 continue;
             }
             if feature_precedes_consumer(ctx, feature, features, consumer_ref)? {
-                return Ok(Some(copy_selection_text(ctx, &feature.id, OPERATION)?));
+                return Ok(Some(ctx.copy_retained_text(&feature.id, OPERATION)?));
             }
             break;
         }
@@ -3797,7 +3760,7 @@ pub(crate) fn surface_selection_terminal_feature_at(
             found = Some(feature);
         }
         if let Some(feature) = found {
-            return Ok(Some(copy_selection_text(ctx, &feature.id, OPERATION)?));
+            return Ok(Some(ctx.copy_retained_text(&feature.id, OPERATION)?));
         }
     }
     component_path_terminal_feature(ctx, components, features)

@@ -9,42 +9,6 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
-use std::fmt;
-
-struct FormattedByteCount(usize);
-
-impl fmt::Write for FormattedByteCount {
-    fn write_str(&mut self, text: &str) -> fmt::Result {
-        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
-        Ok(())
-    }
-}
-
-fn retained_curve_debug(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    curve: &CurveGeometry,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let mut count = FormattedByteCount(0);
-    fmt::write(&mut count, format_args!("{curve:?}")).map_err(|_| {
-        ctx.refuse_codec_limit("retain SLDPRT opaque sketch curve", u64::MAX - 1, u64::MAX)
-    })?;
-    let mut text = String::new();
-    ctx.try_reserve_retained_text(&mut text, count.0, "retain SLDPRT opaque sketch curve")?;
-    fmt::write(&mut text, format_args!("{curve:?}")).map_err(|_| {
-        cadmpeg_core::CodecError::malformed("cannot format SLDPRT opaque sketch curve")
-    })?;
-    Ok(text)
-}
-
-fn retained_id_text(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let mut text = String::new();
-    ctx.append_retained(&mut text, value, operation)?;
-    Ok(text)
-}
 
 const EPS_SKETCH_EDGES_PROJECT_EDGE_E9: f64 = 1.0e-9;
 const EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9: f64 = 1.0e-9;
@@ -132,58 +96,28 @@ pub(super) fn project_endpoint_constraints(
         let Some((_, first)) = sources.first() else {
             continue;
         };
-        let mut distinct = false;
-        for (_, entity) in ctx.admit_iter(sources, "compare SLDPRT shared sketch endpoints")? {
-            if !ctx.equal(
-                entity,
-                first,
-                "compare SLDPRT shared sketch endpoint identities",
-            )? {
-                distinct = true;
-                break;
-            }
-        }
-        if !distinct {
+        if !ctx.any_by(
+            sources,
+            |(_, entity)| {
+                Ok(!ctx.equal(
+                    entity,
+                    first,
+                    "compare SLDPRT shared sketch endpoint identities",
+                )?)
+            },
+            "compare SLDPRT shared sketch endpoints",
+        )? {
             continue;
         }
-        let digits = |value: usize| {
-            if value == 0 {
-                1
-            } else {
-                cadmpeg_core::decode::index_from_u32(value.ilog10()) + 1
-            }
-        };
-        let id_length = "sldprt:model:sketch-constraint#:::".len()
-            + digits(block_offset)
-            + digits(stream_ordinal)
-            + digits(face_ordinal)
-            + digits(constraints.len());
-        let mut id_text = String::new();
-        ctx.try_reserve_retained_text(
-            &mut id_text,
-            id_length,
-            "retain SLDPRT shared endpoint constraint ID",
-        )?;
-        std::fmt::Write::write_fmt(
-            &mut id_text,
+        let Some(id) = super::profiles::mint_formatted::<SketchConstraintId>(
+            ctx,
             format_args!(
                 "sldprt:model:sketch-constraint#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                 constraints.len()
             ),
-        )
-        .map_err(|_| {
-            cadmpeg_core::CodecError::malformed(
-                "cannot format SLDPRT shared endpoint constraint ID",
-            )
-        })?;
-        let Ok(id) = ({
-            let identity_text = id_text;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(identity_text.len()),
-                "validate SLDPRT sketch_edges identity",
-            )?;
-            SketchConstraintId::mint(identity_text)
-        }) else {
+            "retain SLDPRT shared endpoint constraint ID",
+        )?
+        else {
             continue;
         };
         let mut loci = Vec::new();
@@ -191,21 +125,8 @@ pub(super) fn project_endpoint_constraints(
             .admit_iter(sources, "project SLDPRT shared endpoint loci")?
             .copied()
         {
-            let source = {
-                let identity_text = retained_id_text(
-                    ctx,
-                    source.as_str(),
-                    "retain SLDPRT shared endpoint entity ID",
-                )?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(identity_text.len()),
-                    "validate SLDPRT sketch_edges identity",
-                )?;
-                cadmpeg_ir::sketches::SketchEntityId::mint(identity_text)
-            }
-            .map_err(|_| {
-                cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch entity ID")
-            })?;
+            let source =
+                source.try_clone_for_decode(ctx, "retain SLDPRT shared endpoint entity ID")?;
             ctx.push_vec(
                 &mut loci,
                 if start {
@@ -224,42 +145,32 @@ pub(super) fn project_endpoint_constraints(
         crate::annotations::note(
             ctx,
             annotations,
-            retained_id_text(
-                ctx,
-                id.as_str(),
-                "retain SLDPRT shared endpoint annotation ID",
-            )?,
+            ctx.copy_retained_text(id.as_str(), "retain SLDPRT shared endpoint annotation ID")?,
             stream,
             0,
             "feature_input_shared_endpoint",
             Exactness::Derived,
         )?;
-        let sketch = {
-            let identity_text =
-                retained_id_text(ctx, sketch.as_str(), "retain SLDPRT constraint sketch ID")?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(identity_text.len()),
-                "validate SLDPRT sketch_edges identity",
-            )?;
-            SketchId::mint(identity_text)
-        }
-        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch ID"))?;
-        ctx.reserve_vec(constraints, 1, "collect SLDPRT shared endpoint constraints")?;
-        constraints.push(SketchConstraint {
-            id,
-            sketch,
-            definition,
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: None,
-        });
+        let sketch = sketch.try_clone_for_decode(ctx, "retain SLDPRT constraint sketch ID")?;
+        ctx.push_vec(
+            constraints,
+            SketchConstraint {
+                id,
+                sketch,
+                definition,
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: None,
+            },
+            "collect SLDPRT shared endpoint constraints",
+        )?;
     }
     Ok(())
 }
@@ -317,12 +228,13 @@ pub(super) fn project_edge(
         return Ok(None);
     };
     let tolerance = tolerance.get();
-    if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = match edge.curve() {
+    let curve = match edge.curve() {
         Some(id) => ctx
             .get_hash_map(curves, id, "find SLDPRT projected edge curve")?
             .copied(),
         None => None,
-    } {
+    };
+    if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = curve {
         let operation = "project SLDPRT sketch NURBS edge";
         let knots = nurbs.knots().try_clone_for_decode(ctx, operation)?;
         let projected = match nurbs.pole_rows() {
@@ -367,12 +279,6 @@ pub(super) fn project_edge(
             }
         };
     }
-    let curve = match edge.curve() {
-        Some(id) => ctx
-            .get_hash_map(curves, id, "find SLDPRT projected edge curve")?
-            .copied(),
-        None => None,
-    };
     let native = match curve {
         Some(CurveGeometry::Solved(
             SolvedCurveGeometry::Circle(_)
@@ -383,7 +289,10 @@ pub(super) fn project_edge(
         | None => None,
         Some(other) => cadmpeg_core::text::NonBlankString::for_decode(
             ctx,
-            retained_curve_debug(ctx, other)?,
+            ctx.format_retained(
+                format_args!("{other:?}"),
+                "retain SLDPRT opaque sketch curve",
+            )?,
             "validate nonblank text",
         )?
         .map(SketchGeometry::native),

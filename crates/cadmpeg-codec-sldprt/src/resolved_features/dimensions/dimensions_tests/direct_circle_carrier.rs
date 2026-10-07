@@ -1,4 +1,6 @@
-use super::super::reconcile_direct_circle_dimension_carriers;
+use super::super::{
+    circle_relations_by_feature, reconcile_direct_circle_dimension_carriers, LaneMarkerIndex,
+};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -189,15 +191,13 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
         mut sketches,
     } = direct_circle_fixture();
 
-    reconcile_direct_circle_dimension_carriers(
-        &cadmpeg_test_support::service_decode_context(),
+    reconcile(
         &mut entities,
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
 
     assert!(!entities.iter().any(|entity| entity.id().clone()
         == SketchEntityId::mint("synthetic:test:id#native-circle").unwrap()));
@@ -228,15 +228,13 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
     )];
     let mut sketches = vec![sketch(&sketch_id, Vec::new())];
 
-    reconcile_direct_circle_dimension_carriers(
-        &cadmpeg_test_support::service_decode_context(),
+    reconcile(
         &mut entities,
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
 
     assert_eq!(entities.len(), 1);
     assert!(matches!(
@@ -283,7 +281,7 @@ fn marker_circle_projection_refuses_retained_limit() {
     } = direct_circle_fixture();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT circle carrier entity identity",
+        "project SLDPRT marker circles",
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
@@ -305,6 +303,30 @@ fn marker_circle_projection_refuses_retained_limit() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT circle carrier entity identity")
+            && limit.operation == "project SLDPRT marker circles")
     );
+}
+
+/// Reconciles the direct circle carriers of `feature` the way marker circle projection does.
+fn reconcile(
+    entities: &mut Vec<cadmpeg_ir::sketches::SketchEntity>,
+    sketches: &mut [cadmpeg_ir::sketches::Sketch],
+    sketch_id: &cadmpeg_ir::sketches::SketchId,
+    feature: &str,
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = LaneMarkerIndex::new(&ctx, lanes).unwrap();
+    let (relations, _storage) = circle_relations_by_feature(&ctx, lanes).unwrap();
+    let sketch = sketches.iter_mut().find(|sketch| &sketch.id == sketch_id);
+    reconcile_direct_circle_dimension_carriers(
+        &ctx,
+        entities,
+        sketch,
+        sketch_id,
+        feature,
+        &index,
+        relations.get(feature).map_or(&[][..], Vec::as_slice),
+    )
+    .unwrap();
 }

@@ -25,15 +25,14 @@ fn dimensioned_rectangle_refuses_collection_limit() {
 fn dimensioned_rectangle_refuses_work_limit() {
     let markers = rectangle_limit_markers();
     let marker_refs = markers.iter().collect::<Vec<_>>();
-    let mut policy = DecodePolicy::service();
-    // Four i64 cells, eight bytes each, three bit-length levels plus one, eight work units per byte.
-    policy.limits.max_work_units = 4 + 4 * 8 * 4 * 8 - 1;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5]).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "sldprt rectangle cells u sort"));
+    for operation in [
+        "scan SLDPRT rectangle corners",
+        "scan SLDPRT rectangle dimensions",
+    ] {
+        crate::test_support::work_refusal_at(operation, |ctx| {
+            unique_dimensioned_rectangle_markers(ctx, &marker_refs, &[8.5, 5.5])
+        });
+    }
 }
 
 #[test]
@@ -110,8 +109,8 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     for operation in [
-        "deduplicate SLDPRT dimensioned rectangle u coordinates",
-        "deduplicate SLDPRT rectangle v coordinates",
+        "scan SLDPRT rectangle corners",
+        "scan SLDPRT rectangle dimensions",
     ] {
         crate::test_support::work_refusal_at(operation, |ctx| {
             unique_dimensioned_rectangle_markers(ctx, &marker_refs, &[8.5, 5.5])
