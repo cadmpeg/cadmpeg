@@ -1921,7 +1921,7 @@ mod tests {
         let class_uuid = Uuid::from_canonical([1; 16]);
         let refusal = with_retained_limit(
             &[],
-            crate::test_support::retained_limit_at("Rhino annotation loss text", 1, |cap| {
+            crate::test_support::retained_limit_at("Rhino annotation loss text", 0, |cap| {
                 match with_retained_limit(&[], cap, |ctx| {
                     super::annotation_record_dropped(
                         ctx,

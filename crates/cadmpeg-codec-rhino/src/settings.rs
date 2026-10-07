@@ -2772,43 +2772,29 @@ pub(crate) fn parse_metadata(
 ) -> Result<DocumentMetadata, CodecError> {
     let mut metadata = DocumentMetadata::default();
     let mut ids = HashSet::<Uuid>::new();
-    let mut property_singletons = HashSet::<u32>::new();
-    let mut setting_singletons = HashSet::<u32>::new();
+    let mut seen_property_singletons = [false; PROPERTY_SINGLETONS.len()];
+    let mut seen_setting_singletons = [false; SETTING_SINGLETONS.len()];
     let mut id_workspace = ctx.reserve_scoped(0, "Rhino layer UUID workspace")?;
-    let mut property_workspace = ctx.reserve_scoped(0, "Rhino property singleton workspace")?;
-    let mut setting_workspace = ctx.reserve_scoped(0, "Rhino setting singleton workspace")?;
     let mut opaque_records = Vec::new();
     for table in ctx.admit_iter(tables, "Rhino parse metadata traversal")? {
         let table_type = table.typecode & !0x0000_8000;
         for record in ctx.admit_iter(&table.records[..], "Rhino parse metadata traversal")? {
+            // The singleton lists are constants, so finding a record's slot
+            // and remembering that it was seen is fixed work.
             let singleton = match table_type {
-                PROPERTIES => matches!(
+                PROPERTIES => singleton_slot(
+                    &PROPERTY_SINGLETONS,
+                    &mut seen_property_singletons,
                     record.typecode,
-                    WRITER_VERSION | REVISION_HISTORY | NOTES | APPLICATION | AS_FILE_NAME
                 ),
-                SETTINGS => matches!(
+                SETTINGS => singleton_slot(
+                    &SETTING_SINGLETONS,
+                    &mut seen_setting_singletons,
                     record.typecode,
-                    PLUGIN_LIST
-                        | UNITS
-                        | RENDER_MESH
-                        | ANALYSIS_MESH
-                        | ATTRIBUTES
-                        | CURRENT_LAYER
-                        | CURRENT_MATERIAL
-                        | CURRENT_COLOR
-                        | CURRENT_WIRE_DENSITY
-                        | CURRENT_FONT
-                        | CURRENT_DIMSTYLE
-                        | MODEL_URL
                 ),
-                _ => false,
+                _ => None,
             };
-            let duplicate_singleton = singleton
-                && match table_type {
-                    PROPERTIES => property_singletons.contains(&record.typecode),
-                    SETTINGS => setting_singletons.contains(&record.typecode),
-                    _ => false,
-                };
+            let duplicate_singleton = singleton.as_deref().copied().unwrap_or(false);
             let result = if table_type == PROPERTIES {
                 match record.typecode {
                     WRITER_VERSION => {
@@ -2856,7 +2842,7 @@ pub(crate) fn parse_metadata(
                 ) {
                     Ok((layer, source_requires_opaque)) => {
                         if let Some(id) = layer.id {
-                            if ids.contains(&id) {
+                            if !admit_layer_uuid(ctx, &mut id_workspace, &mut ids, id)? {
                                 warnings.push_coded_admitted(
                                     ctx,
                                     crate::loss::RhinoLossCode::DuplicateRecordResolved,
@@ -2864,12 +2850,6 @@ pub(crate) fn parse_metadata(
                                     "duplicate layer UUID {id}; first record owns archive identity"
                                 ),
                                 )?;
-                            } else {
-                                id_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                                    std::mem::size_of::<Uuid>(),
-                                ))?;
-                                ctx.reserve_set(&mut ids, 1, "Rhino layer UUID keys")?;
-                                ids.insert(id);
                             }
                         }
                         ctx.reserve_vec(&mut metadata.layers, 1, "Rhino metadata layers")?;
@@ -2892,32 +2872,8 @@ pub(crate) fn parse_metadata(
             } else {
                 Ok(())
             };
-            if result.is_ok() && singleton {
-                match table_type {
-                    PROPERTIES if !property_singletons.contains(&record.typecode) => {
-                        property_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                            std::mem::size_of::<u32>(),
-                        ))?;
-                        ctx.reserve_set(
-                            &mut property_singletons,
-                            1,
-                            "Rhino property singleton keys",
-                        )?;
-                        property_singletons.insert(record.typecode);
-                    }
-                    SETTINGS if !setting_singletons.contains(&record.typecode) => {
-                        setting_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                            std::mem::size_of::<u32>(),
-                        ))?;
-                        ctx.reserve_set(
-                            &mut setting_singletons,
-                            1,
-                            "Rhino setting singleton keys",
-                        )?;
-                        setting_singletons.insert(record.typecode);
-                    }
-                    _ => {}
-                }
+            if let Some(seen) = singleton.filter(|_| result.is_ok()) {
+                *seen = true;
                 if duplicate_singleton {
                     warnings.push_coded_admitted(
                         ctx,
@@ -2973,6 +2929,57 @@ pub(crate) fn parse_metadata(
     metadata.opaque_records = opaque_records;
     report_layer_parent_references(ctx, &metadata.layers, warnings)?;
     Ok(metadata)
+}
+
+/// Records a layer UUID in the table of UUIDs seen so far and returns whether
+/// it is new. The table is dropped when metadata parsing returns, so its
+/// growth is charged to the caller's scoped workspace; a repeated UUID adds
+/// nothing.
+fn admit_layer_uuid(
+    ctx: &DecodeContext<'_>,
+    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ids: &mut HashSet<Uuid>,
+    id: Uuid,
+) -> Result<bool, CodecError> {
+    workspace.with_storage(|| ctx.insert_hash_set(ids, id, "Rhino layer UUID keys"))
+}
+
+/// Property records a document carries at most once.
+const PROPERTY_SINGLETONS: [u32; 5] = [
+    WRITER_VERSION,
+    REVISION_HISTORY,
+    NOTES,
+    APPLICATION,
+    AS_FILE_NAME,
+];
+
+/// Settings records a document carries at most once.
+const SETTING_SINGLETONS: [u32; 12] = [
+    PLUGIN_LIST,
+    UNITS,
+    RENDER_MESH,
+    ANALYSIS_MESH,
+    ATTRIBUTES,
+    CURRENT_LAYER,
+    CURRENT_MATERIAL,
+    CURRENT_COLOR,
+    CURRENT_WIRE_DENSITY,
+    CURRENT_FONT,
+    CURRENT_DIMSTYLE,
+    MODEL_URL,
+];
+
+/// Returns the seen flag of `typecode` when it names one of the singleton
+/// records, or `None` for any other record.
+fn singleton_slot<'seen, const N: usize>(
+    singletons: &[u32; N],
+    seen: &'seen mut [bool; N],
+    typecode: u32,
+) -> Option<&'seen mut bool> {
+    let slot = singletons
+        .iter()
+        .position(|singleton| *singleton == typecode)?;
+    seen.get_mut(slot)
 }
 
 /// Counts how often each table index occurs, in ascending index order.

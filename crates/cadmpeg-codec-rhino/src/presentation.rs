@@ -5063,16 +5063,9 @@ fn retain_unbound_presentation_record(
     Ok(())
 }
 
-/// Opens the workspace that counts each group's key entry while members are
-/// gathered.
-fn group_member_workspace<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<cadmpeg_core::decode::ScopedReservation<'ctx>, CodecError> {
-    ctx.reserve_scoped(0, "Rhino group member workspace")
-}
-
-/// Records one object's membership in a group: a new group grows the
-/// workspace and the key table before the member link is copied.
+/// Records one object's membership in a group. The member table is dropped
+/// when install returns, so a new group's key is charged to the scoped
+/// workspace; the member link moves into the group record and is retained.
 fn admit_group_member(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
@@ -5080,20 +5073,15 @@ fn admit_group_member(
     group: i32,
     source_order: usize,
 ) -> Result<(), CodecError> {
-    if !group_members.contains_key(&group) {
-        workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            i32,
-            Vec<String>,
-        )>()))?;
-        ctx.reserve_map(group_members, 1, "Rhino group member keys")?;
-    }
-    let members = group_members.entry(group).or_default();
-    ctx.reserve_vec(members, 1, "Rhino group member links")?;
-    members.push(ctx.format_retained(
+    let members = workspace.with_storage(|| {
+        ctx.entry_hash_map(group_members, group, "Rhino group member keys")
+            .map(|entry| entry.or_default())
+    })?;
+    let link = ctx.format_retained(
         format_args!("rhino:object:record#{source_order:06}"),
         "Rhino group member link",
-    )?);
-    Ok(())
+    )?;
+    ctx.push_vec(members, link, "Rhino group member links")
 }
 
 pub(crate) fn install(
@@ -5620,7 +5608,7 @@ pub(crate) fn install(
         }
     }
     let mut group_members = HashMap::<i32, Vec<String>>::new();
-    let mut group_member_workspace = group_member_workspace(ctx)?;
+    let mut group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
     for (source_order, object) in ctx
         .admit_iter(&scan.objects[..], "Rhino install traversal")?
         .enumerate()
