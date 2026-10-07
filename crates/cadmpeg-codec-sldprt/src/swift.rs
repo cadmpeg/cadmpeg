@@ -1406,6 +1406,7 @@ fn project_with_topology(
             continue;
         };
         let disposition = if let Some(tolerance) = project_tolerance(ctx, entity, &datum_ids)? {
+            const SYSTEMS: &str = "match SWIFT datum-system references";
             let Some(targets) = targets(ctx, entity, &feature_index, topology)? else {
                 record_projection(
                     ctx,
@@ -1416,7 +1417,6 @@ fn project_with_topology(
                 )?;
                 continue;
             };
-            const SYSTEMS: &str = "match SWIFT datum-system references";
             let bucket = {
                 let key = ctx.collect_vec(
                     tolerance.references.as_slice().iter().map(|reference| {

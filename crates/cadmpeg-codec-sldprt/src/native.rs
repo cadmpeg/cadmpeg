@@ -1074,6 +1074,7 @@ impl SldprtNative {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        const CLASSES: &str = "compare SLDPRT stored history classes";
         // Load admits every record against the lane payload it is derived from;
         // that is the boundary a hand-written namespace crosses. Store holds the
         // relations between records that no single payload derives.
@@ -1745,7 +1746,6 @@ impl SldprtNative {
             &mut expected_histories,
             &history_lanes,
         )?;
-        const CLASSES: &str = "compare SLDPRT stored history classes";
         if ctx.any_by(
             self.feature_histories.iter().zip(&expected_histories),
             |(history, expected)| {
@@ -2145,15 +2145,15 @@ fn edge_selection_disagrees_with_payload(
     record: &FeatureInputEdgeSelection,
     edge_features: &[crate::records::Feature],
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
+    use crate::resolved_features::selections::{
+        compact_edge_component_path_at, compact_edge_owner_feature_at,
+        compact_edge_producer_features_at, compact_edge_selection_at,
+    };
     let Ok(offset) = usize::try_from(record.offset) else {
         // An offset no index can name reads no selection from the payload.
         return Ok(true);
     };
     let payload = &lane.native_payload;
-    use crate::resolved_features::selections::{
-        compact_edge_component_path_at, compact_edge_owner_feature_at,
-        compact_edge_producer_features_at, compact_edge_selection_at,
-    };
     Ok(differs(
         ctx,
         compact_edge_selection_at(ctx, payload, offset)?.as_ref(),

@@ -181,6 +181,7 @@ fn scan_units_xml(
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
+    const OPERATION: &str = "read SLDPRT document unit XML";
     let Some(text) = crate::container::xml_text_charged(
         ctx,
         section.payload(),
@@ -196,7 +197,6 @@ fn scan_units_xml(
             return Ok(());
         }
     };
-    const OPERATION: &str = "read SLDPRT document unit XML";
     let document = admitted_document.document();
     let mut nodes = document.descendants();
     while let Some(node) = ctx.next_charged(&mut nodes, OPERATION)? {
