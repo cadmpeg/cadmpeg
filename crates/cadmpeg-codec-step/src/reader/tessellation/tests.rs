@@ -7,9 +7,7 @@
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -68,10 +66,13 @@ fn decode_tessellation_under_policy(
 }
 
 fn assert_tessellation_collection_refusal(records: &str, operation: &'static str) {
-    decode_tessellation_under_policy(records, DecodePolicy::service()).expect("service admits tessellation");
+    decode_tessellation_under_policy(records, DecodePolicy::service())
+        .expect("service admits tessellation");
     // Probe the selected emitted slot; prior allocation counts do not define this boundary.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, operation, |cap| {
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             decode_tessellation_under_policy(records, policy)
@@ -96,10 +97,7 @@ const MISSING_CONTAINER_ITEMS: &str = "#1=TESSELLATED_SOLID('',$,$);";
 
 #[test]
 fn tessellation_loss_note_collection_is_admitted_before_creation() {
-    assert_tessellation_collection_refusal(
-        MISSING_CONTAINER_ITEMS,
-        "step_tessellation_loss_notes",
-    );
+    assert_tessellation_collection_refusal(MISSING_CONTAINER_ITEMS, "step_tessellation_loss_notes");
 }
 
 #[test]
@@ -418,10 +416,7 @@ fn tessellation_item_body_links_charge_before_cloning() {
 
 #[test]
 fn tessellation_claims_charge_before_insertion() {
-    assert_tessellation_collection_refusal(
-        ONE_TRIANGLE_IN_CONTAINER,
-        "step_tessellation_claims",
-    );
+    assert_tessellation_collection_refusal(ONE_TRIANGLE_IN_CONTAINER, "step_tessellation_claims");
 }
 
 #[test]
@@ -455,18 +450,12 @@ fn tessellation_placements_charge_before_push() {
 
 #[test]
 fn tessellation_placed_vertices_charge_before_projection() {
-    assert_tessellation_collection_refusal(
-        PLACED_ANNOTATION,
-        "step_tessellation_placed_vertices",
-    );
+    assert_tessellation_collection_refusal(PLACED_ANNOTATION, "step_tessellation_placed_vertices");
 }
 
 #[test]
 fn tessellation_placed_normals_charge_before_projection() {
-    assert_tessellation_collection_refusal(
-        PLACED_ANNOTATION,
-        "step_tessellation_placed_normals",
-    );
+    assert_tessellation_collection_refusal(PLACED_ANNOTATION, "step_tessellation_placed_normals");
 }
 
 #[test]
@@ -1378,7 +1367,9 @@ fn single_tessellation_normal_replication_charges_collection_items() {
     assert_eq!(accepted.model.tessellations[0].vertex_normals().len(), 3);
     // Replication emits three normal slots after the prior mesh allocations.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "step_tessellation_normal_replication", |cap| {
+        ResourceDimension::CollectionItems,
+        "step_tessellation_normal_replication",
+        |cap| {
             let mut limited = service;
             limited.limits.max_collection_items = cap;
             decode_tessellation_under_policy(records, limited)
@@ -1399,7 +1390,9 @@ fn tessellation_triangle_rows_charge_before_collection() {
     assert_eq!(accepted.model.tessellations[0].triangles(), [[0, 1, 2]]);
     // One triangle emits one slot after the coordinate allocations.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "step_tessellation_triangle_rows", |cap| {
+        ResourceDimension::CollectionItems,
+        "step_tessellation_triangle_rows",
+        |cap| {
             let mut limited = service;
             limited.limits.max_collection_items = cap;
             decode_tessellation_under_policy(records, limited)
@@ -1419,7 +1412,9 @@ fn tessellation_container_items_charge_before_collection() {
     decode_tessellation_under_policy(records, service).expect("service admits both items");
     // Each container item emits one slot, including both repeated references.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "step_tessellation_container_items", |cap| {
+        ResourceDimension::CollectionItems,
+        "step_tessellation_container_items",
+        |cap| {
             let mut limited = service;
             limited.limits.max_collection_items = cap;
             decode_tessellation_under_policy(records, limited)
@@ -1438,7 +1433,9 @@ fn complex_tessellation_rows_charge_before_collection() {
     decode_tessellation_under_policy(records, service).expect("service admits both strips");
     // Two strip rows emit two slots after their three- and four-index child lanes.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "step_complex_tessellation_rows", |cap| {
+        ResourceDimension::CollectionItems,
+        "step_complex_tessellation_rows",
+        |cap| {
             let mut limited = service;
             limited.limits.max_collection_items = cap;
             decode_tessellation_under_policy(records, limited)
@@ -1457,7 +1454,9 @@ fn complex_tessellation_indices_charge_before_collection() {
     decode_tessellation_under_policy(records, service).expect("service admits three indices");
     // Three indices emit three slots before the containing strip row.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "step_complex_tessellation_indices", |cap| {
+        ResourceDimension::CollectionItems,
+        "step_complex_tessellation_indices",
+        |cap| {
             let mut limited = service;
             limited.limits.max_collection_items = cap;
             decode_tessellation_under_policy(records, limited)
@@ -1476,7 +1475,9 @@ fn complex_tessellation_triangles_charge_before_collection() {
     decode_tessellation_under_policy(records, service).expect("service admits one triangle");
     // A three-index strip emits one triangle slot after the strip row.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "step_complex_tessellation_triangles", |cap| {
+        ResourceDimension::CollectionItems,
+        "step_complex_tessellation_triangles",
+        |cap| {
             let mut limited = service;
             limited.limits.max_collection_items = cap;
             decode_tessellation_under_policy(records, limited)

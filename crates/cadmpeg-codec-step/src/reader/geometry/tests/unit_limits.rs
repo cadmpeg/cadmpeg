@@ -206,7 +206,7 @@ fn candidate_refusal(angle: bool, limit: u64) -> CodecError {
         )
     };
     ctx.push_btree_group(&mut BTreeMap::new(), 1, PositiveReal::ONE, group, value)
-    .expect_err("candidate exceeds the limit")
+        .expect_err("candidate exceeds the limit")
 }
 
 #[test]
@@ -345,14 +345,18 @@ fn uncertainty_refusal(operation: &'static str) -> CodecError {
             .expect("valid uncertainty exchange");
     // Locate the emitted slot after the unit resolver and context lane have
     // admitted their actual allocations; no earlier slot count is assumed.
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-            .expect("source fits policy");
-        super::super::linear_uncertainty(&exchange, &ctx).map(|_| ())
-    })
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                .expect("source fits policy");
+            super::super::linear_uncertainty(&exchange, &ctx).map(|_| ())
+        },
+    )
 }
 
 #[test]
@@ -383,8 +387,9 @@ fn document_unit_failure_does_not_charge_unvisited_records() {
         write!(source, "#{id}=CARTESIAN_POINT('',(0.,0.,0.));").expect("write synthetic record");
     }
     source.push_str(TAIL);
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-        .expect("valid unit exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid unit exchange");
     let run = |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -394,13 +399,20 @@ fn document_unit_failure_does_not_charge_unvisited_records() {
         super::super::document_unit_scale(&exchange, super::super::UnitScaleKind::Length, &ctx)
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "step_length_unit_active", &run,
+        ResourceDimension::WorkUnits,
+        "step_length_unit_active",
+        &run,
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("resource probe returns a refusal") };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("resource probe returns a refusal")
+    };
     // Twice the visited-prefix insertion need also admits its removal. The
     // allowance remains smaller than even one visit to each untouched record.
     let cap = 2 * (limit.used + limit.additional);
-    assert!(cap < 4096, "the prefix allowance must exclude the later records");
+    assert!(
+        cap < 4096,
+        "the prefix allowance must exclude the later records"
+    );
     assert_eq!(run(cap).expect("visited prefix fits work budget"), None);
 }
 
@@ -411,16 +423,24 @@ fn typed_unit_number_walk_refuses_work_limit() {
         value = crate::parse::Value::Typed("NUMBER".into(), Box::new(value));
     }
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "step unit typed number walk", |cap| {
+        ResourceDimension::WorkUnits,
+        "step unit typed number walk",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+                .expect("empty root fits policy");
             super::super::typed_number(&value, &ctx)
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "step unit typed number walk"));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "step unit typed number walk")
+    );
     crate::test_support::with_service_context(b"", |_, ctx| {
-        assert_eq!(super::super::typed_number(&value, ctx).expect("service admits typed number"), Some(7.0));
+        assert_eq!(
+            super::super::typed_number(&value, ctx).expect("service admits typed number"),
+            Some(7.0)
+        );
     });
 }

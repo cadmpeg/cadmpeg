@@ -248,12 +248,16 @@ mod tests {
     #[test]
     fn reference_matching_propagates_predicate_work_refusal() {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "test reference predicate scan", |cap| {
+            ResourceDimension::WorkUnits,
+            "test reference predicate scan",
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 with_policy_context(b"", &policy, |_, ctx| {
                     let result = first_matching([&Value::Reference(9)], ctx, |_| {
-                        Ok(ctx.admit_iter(&[1_u64, 2], "test reference predicate scan")?.any(|value| *value == 9))
+                        Ok(ctx
+                            .admit_iter(&[1_u64, 2], "test reference predicate scan")?
+                            .any(|value| *value == 9))
                     });
                     if let Err(CodecError::ResourceLimit(limit)) = &result {
                         assert_eq!(Some(*limit), ctx.resource_refusal());
@@ -262,6 +266,8 @@ mod tests {
                 })
             },
         );
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "test reference predicate scan"));
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "test reference predicate scan")
+        );
     }
 }

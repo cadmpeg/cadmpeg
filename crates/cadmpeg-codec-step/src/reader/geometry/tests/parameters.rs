@@ -43,7 +43,8 @@ fn source_curve_refusal(operation: &'static str) -> cadmpeg_core::CodecError {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+            let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("source fits policy");
             super::super::resolve_source_curve_parameter_scales(&exchange, &scales, &ctx)
         },
     )
@@ -60,7 +61,15 @@ fn surface_parameter_scales_for_step(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let (index, _workspace) = SurfaceScaleIndex::build(ir, ctx)?;
-    procedural_surface_parameter_scales(ir, &index, surface_id, geometry, [length_scale, angle_scale], source_curve_parameter_scales, ctx)
+    procedural_surface_parameter_scales(
+        ir,
+        &index,
+        surface_id,
+        geometry,
+        [length_scale, angle_scale],
+        source_curve_parameter_scales,
+        ctx,
+    )
 }
 
 #[test]
@@ -282,7 +291,11 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
         Some([0.0, 2.0])
     );
     assert_eq!(
-        surface_periodic_domains(&SolvedSurfaceGeometry::Nurbs(surface), &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
+        surface_periodic_domains(
+            &SolvedSurfaceGeometry::Nurbs(surface),
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         [Some([0.0, 2.0]), Some([0.0, 1.0])]
     );
 }
@@ -323,7 +336,13 @@ fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
     let start = FiniteReal::new(max * 0.5).expect("finite start");
     let end = FiniteReal::new(-max).expect("finite end");
     assert_eq!(
-        edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
+        edge_parameter_range(
+            &SolvedCurveGeometry::Nurbs(curve),
+            start,
+            end,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         Some([max * 0.5, max])
     );
 }
@@ -344,7 +363,14 @@ fn periodic_pcurve_trim_shifts_a_wide_finite_seam_endpoint() {
     .expect("wide periodic pcurve");
     let geometry = PcurveGeometry::Nurbs { nurbs };
     assert_eq!(
-        trimmed_pcurve_parameterization(&geometry, max * 0.5, -max, true, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
+        trimmed_pcurve_parameterization(
+            &geometry,
+            max * 0.5,
+            -max,
+            true,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         ([max * 0.5, max], true)
     );
 }
@@ -360,15 +386,33 @@ fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
     ));
     let [two, five] = [2.0, 5.0].map(|value| FiniteReal::new(value).expect("finite parameter"));
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), two, five, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
+        edge_parameter_range(
+            line.solved().expect("solved carrier"),
+            two,
+            five,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         Some([2.0, 5.0])
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), five, two, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
+        edge_parameter_range(
+            line.solved().expect("solved carrier"),
+            five,
+            two,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         None
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), two, two, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
+        edge_parameter_range(
+            line.solved().expect("solved carrier"),
+            two,
+            two,
+            &cadmpeg_test_support::service_decode_context()
+        )
+        .expect("parameter walk admission"),
         None
     );
 }
@@ -389,8 +433,14 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
         0.5 - 20_000.0 * std::f64::consts::TAU,
     ]
     .map(|value| FiniteReal::new(value).expect("finite parameter"));
-    let range = edge_parameter_range(circle.solved().expect("solved carrier"), start, end, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission")
-        .expect("periodic interval");
+    let range = edge_parameter_range(
+        circle.solved().expect("solved carrier"),
+        start,
+        end,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("parameter walk admission")
+    .expect("periodic interval");
     assert!((range[0] - 1.5).abs() < 1.0e-10);
     assert!((range[1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-10);
 }
@@ -408,7 +458,14 @@ fn periodic_edge_range_reduces_finite_endpoints_separately_when_difference_overf
     );
     let start = FiniteReal::new(-f64::MAX).expect("finite start");
     let end = FiniteReal::new(f64::MAX).expect("finite end");
-    let range = edge_parameter_range(&circle, start, end, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission").expect("finite cyclic sweep");
+    let range = edge_parameter_range(
+        &circle,
+        start,
+        end,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("parameter walk admission")
+    .expect("finite cyclic sweep");
     assert!(range[0].is_finite() && range[1].is_finite());
     assert!(range[1] > range[0]);
     assert!(range[1] - range[0] < std::f64::consts::TAU);
@@ -447,7 +504,13 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         1.0,
     )
     .expect("end point");
-    let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission");
+    let start_seed = curve_endpoint_seed(
+        geometry.solved().expect("solved carrier"),
+        false,
+        0.0,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("parameter walk admission");
     let start = nurbs_curve_parameter_near_point(
         &cadmpeg_test_support::service_decode_context(),
         &nurbs,
@@ -469,7 +532,13 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     .expect("unanchored end witness")
     .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
-    let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission");
+    let end_seed = curve_endpoint_seed(
+        geometry.solved().expect("solved carrier"),
+        true,
+        start,
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("parameter walk admission");
     let end = nurbs_curve_parameter_near_point(
         &cadmpeg_test_support::service_decode_context(),
         &nurbs,
@@ -1131,7 +1200,15 @@ ENDSEC;END-ISO-10303-21;",
             angle_scale: 1.0
         },
         &mut losses,
-        &mut super::super::PcurveWalk { active: &mut active, workspace: &mut super::super::PcurveWorkspace { records: BTreeSet::new(), storage: ctx.reserve_scoped(0, "test pcurve workspace").expect("empty scope") } },
+        &mut super::super::PcurveWalk {
+            active: &mut active,
+            workspace: &mut super::super::PcurveWorkspace {
+                records: BTreeSet::new(),
+                storage: ctx
+                    .reserve_scoped(0, "test pcurve workspace")
+                    .expect("empty scope")
+            }
+        },
         0,
         &ctx
     )
@@ -1149,7 +1226,15 @@ ENDSEC;END-ISO-10303-21;",
             angle_scale: 1.0
         },
         &mut losses,
-        &mut super::super::PcurveWalk { active: &mut active, workspace: &mut super::super::PcurveWorkspace { records: BTreeSet::new(), storage: ctx.reserve_scoped(0, "test pcurve workspace").expect("empty scope") } },
+        &mut super::super::PcurveWalk {
+            active: &mut active,
+            workspace: &mut super::super::PcurveWorkspace {
+                records: BTreeSet::new(),
+                storage: ctx
+                    .reserve_scoped(0, "test pcurve workspace")
+                    .expect("empty scope")
+            }
+        },
         0,
         &ctx
     )
@@ -1224,9 +1309,14 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
         .unwrap();
         let [start, end] =
             [0.8 * d, 0.9 * d].map(|value| FiniteReal::new(value).expect("finite parameter"));
-        let range =
-            super::super::edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission")
-                .unwrap();
+        let range = super::super::edge_parameter_range(
+            &SolvedCurveGeometry::Nurbs(curve),
+            start,
+            end,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .expect("parameter walk admission")
+        .unwrap();
         assert!((range[0] / d - 0.8).abs() < 16. * f64::EPSILON);
         assert!((range[1] / d - 0.9).abs() < 16. * f64::EPSILON);
     }
@@ -1245,37 +1335,71 @@ fn surface_scale_index_tracks_appends_and_duplicate_owners() {
             source_object: None,
         };
         ir.model.surfaces.push(surface);
-        ir.model.add_procedural_surface(
-            &cadmpeg_ir::document::admission::StandardAdmission,
-            &owner,
-            ProceduralSurface::new(construction, ProceduralSurfaceDefinition::DegenerateTorus {
-                select_outer: true,
-            }, None),
-        ).expect("construction admission").expect("valid construction");
-        let (mut index, mut storage) = SurfaceScaleIndex::build(&CadIr::empty(), ctx)
-            .expect("empty index");
-        storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
-            index.add_surface(&ir.model.surfaces[0], 0, ctx)?;
-            index.add_procedural(&ir.model.procedural_surfaces[0], 0, ctx)
-        }).expect("appended records");
-        assert_eq!(index.surface(&ir, ctx, &owner).expect("lookup").map(|s| &s.id), Some(&owner));
-        assert!(index.owned_procedural(&ir, ctx, &owner).expect("lookup").is_some());
+        ir.model
+            .add_procedural_surface(
+                &cadmpeg_ir::document::admission::StandardAdmission,
+                &owner,
+                ProceduralSurface::new(
+                    construction,
+                    ProceduralSurfaceDefinition::DegenerateTorus { select_outer: true },
+                    None,
+                ),
+            )
+            .expect("construction admission")
+            .expect("valid construction");
+        let (mut index, mut storage) =
+            SurfaceScaleIndex::build(&CadIr::empty(), ctx).expect("empty index");
+        storage
+            .with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+                index.add_surface(&ir.model.surfaces[0], 0, ctx)?;
+                index.add_procedural(&ir.model.procedural_surfaces[0], 0, ctx)
+            })
+            .expect("appended records");
+        assert_eq!(
+            index
+                .surface(&ir, ctx, &owner)
+                .expect("lookup")
+                .map(|s| &s.id),
+            Some(&owner)
+        );
+        assert!(index
+            .owned_procedural(&ir, ctx, &owner)
+            .expect("lookup")
+            .is_some());
         ir.model.surfaces.push(ir.model.surfaces[0].clone());
-        storage.with_storage(|| index.add_surface(&ir.model.surfaces[1], 1, ctx))
+        storage
+            .with_storage(|| index.add_surface(&ir.model.surfaces[1], 1, ctx))
             .expect("duplicate owner");
-        assert!(index.owned_procedural(&ir, ctx, &owner).expect("lookup").is_none());
-        let (rebuilt, _rebuilt_storage) = SurfaceScaleIndex::build(&ir, ctx).expect("rebuilt index");
-        assert!(rebuilt.owned_procedural(&ir, ctx, &owner).expect("lookup").is_none());
+        assert!(index
+            .owned_procedural(&ir, ctx, &owner)
+            .expect("lookup")
+            .is_none());
+        let (rebuilt, _rebuilt_storage) =
+            SurfaceScaleIndex::build(&ir, ctx).expect("rebuilt index");
+        assert!(rebuilt
+            .owned_procedural(&ir, ctx, &owner)
+            .expect("lookup")
+            .is_none());
     });
 }
 
 #[test]
 fn pcurve_trim_fallback_visits_each_selector_once() {
-    let value = Value::List(vec![Value::Integer(17), Value::Omitted, Value::Reference(1)]);
+    let value = Value::List(vec![
+        Value::Integer(17),
+        Value::Omitted,
+        Value::Reference(1),
+    ]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // Three selector visits plus the terminal probe; the first bare number is kept during typed selection.
     policy.limits.max_work_units = 3 + 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    assert_eq!(pcurve_trim_parameter(&ctx, &value).expect("one selector pass fits").map(FiniteReal::get), Some(17.0));
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert_eq!(
+        pcurve_trim_parameter(&ctx, &value)
+            .expect("one selector pass fits")
+            .map(FiniteReal::get),
+        Some(17.0)
+    );
 }
