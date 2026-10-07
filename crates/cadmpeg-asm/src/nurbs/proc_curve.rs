@@ -96,14 +96,6 @@ pub enum SupportSlot {
 }
 
 impl SupportSlot {
-    fn from_parsed(surface: Option<SurfaceGeometry>, declared: bool) -> Self {
-        match surface {
-            Some(surface) => Self::Surface(surface),
-            None if declared => Self::DeclaredOnly,
-            None => Self::Absent,
-        }
-    }
-
     pub(crate) fn into_surface(self) -> Option<SurfaceGeometry> {
         match self {
             Self::Surface(surface) => Some(surface),
@@ -2646,29 +2638,15 @@ fn cache_first_curve_context(
         _ => return None,
     };
     let first_surface_start = cur.pos();
-    let first_support_present = match support_slot_present(ctx, cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
-    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+    let EmbeddedSurfaceWithBounds {
         surface: first_surface,
         bounds: first_bounds,
-    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-        Ok(surface) => surface,
-        Err(error) => return Some(Err(error)),
-    };
+    } = propagate_resource!(cache_first_support(ctx, cur, table)?);
     let second_surface_start = cur.pos();
-    let second_support_present = match support_slot_present(ctx, cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
-    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+    let EmbeddedSurfaceWithBounds {
         surface: second_surface,
         bounds: second_bounds,
-    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-        Ok(surface) => surface,
-        Err(error) => return Some(Err(error)),
-    };
+    } = propagate_resource!(cache_first_support(ctx, cur, table)?);
     let mut pcurves = [
         propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value(),
         propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value(),
@@ -2705,10 +2683,7 @@ fn cache_first_curve_context(
             solved_range,
             extension,
         },
-        surfaces: [
-            SupportSlot::from_parsed(first_surface, first_support_present),
-            SupportSlot::from_parsed(second_surface, second_support_present),
-        ],
+        surfaces: [first_surface, second_surface],
         pcurves,
         discontinuities,
     }))
@@ -3177,27 +3152,16 @@ fn cache_first_intersection(
     cur.set_pos(cache_end);
     cur.take_f64()?;
     let first_surface_start = cur.pos();
-    let first_support_present = match support_slot_present(ctx, &cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
-    let first_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.surface,
-        Err(error) => return Some(Err(error)),
-    };
+    let EmbeddedSurfaceWithBounds {
+        surface: first_surface,
+        ..
+    } = propagate_resource!(cache_first_support(ctx, &mut cur, table)?);
     let second_surface_start = cur.pos();
-    let second_support_present = match support_slot_present(ctx, &cur, table) {
-        Ok(present) => present,
-        Err(error) => return Some(Err(error)),
-    };
-    let second_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.surface,
-        Err(error) => return Some(Err(error)),
-    };
-    let surfaces = [
-        SupportSlot::from_parsed(first_surface, first_support_present),
-        SupportSlot::from_parsed(second_surface, second_support_present),
-    ];
+    let EmbeddedSurfaceWithBounds {
+        surface: second_surface,
+        ..
+    } = propagate_resource!(cache_first_support(ctx, &mut cur, table)?);
+    let surfaces = [first_surface, second_surface];
     let mut pcurves = [
         propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value(),
         propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value(),
@@ -3370,74 +3334,64 @@ fn optional_pcurve(
     Some(Ok(Nullable::Value(pcurve)))
 }
 
-/// Whether the next cache-first support slot contains a valid non-null
-/// surface construction.
-///
-/// The neutral `SurfaceGeometry` field cannot represent a cacheless
-/// procedural surface without assigning it a document-level construction ID.
-/// Keep that distinction separate: a typed support reference still proves that
-/// its paired native pcurve slot is eligible, while `null_surface` does not.
-fn support_slot_present(
+/// Parse a cache-first support once and preserve cacheless support presence.
+fn cache_first_support(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    cur: &Cur<'_>,
+    cur: &mut Cur<'_>,
     table: &SubtypeTable,
-) -> Result<bool, cadmpeg_core::CodecError> {
+) -> Option<Result<EmbeddedSurfaceWithBounds<SupportSlot>, cadmpeg_core::CodecError>> {
     let mut probe = *cur;
-    if probe.take_ident() == Some("null_surface") {
-        return Ok(false);
+    let parsed = propagate_resource!(optional_embedded_surface_with_bounds(ctx, cur, table)?);
+    if let Some(surface) = parsed.surface {
+        return Some(Ok(EmbeddedSurfaceWithBounds {
+            surface: SupportSlot::Surface(surface),
+            bounds: parsed.bounds,
+        }));
     }
-
-    let mut parsed = *cur;
-    if let Some(parsed) = optional_embedded_surface_with_bounds(ctx, &mut parsed, table) {
-        if parsed?.surface.is_some() {
-            return Ok(true);
-        }
-    }
-
-    let mut probe = *cur;
     if probe.take_ident() != Some("spline") {
-        return Ok(false);
+        return Some(Ok(EmbeddedSurfaceWithBounds {
+            surface: SupportSlot::Absent,
+            bounds: parsed.bounds,
+        }));
     }
-    if matches!(probe.peek(), Some(Token::True | Token::False)) && probe.take_bool().is_none() {
-        return Ok(false);
+    if matches!(probe.peek(), Some(Token::True | Token::False)) {
+        probe.take_bool()?;
     }
-    let Some(Token::SubtypeOpen) = probe.peek() else {
-        return Ok(false);
-    };
-    let start = probe.pos();
-    let Some(scope) = crate::nurbs::toks::subtype_span(probe.toks(), start) else {
-        return Ok(false);
-    };
-    let Some(Token::Ident(name)) = probe.toks().get(start + 1) else {
-        return Ok(false);
-    };
-    if name == "ref" {
-        let Some(Token::Long(index)) = probe.toks().get(start + 2) else {
-            return Ok(false);
+    let reference = probe.pos();
+    let tokens = probe.toks();
+    // Inline cacheless supports were validated by the surface parser. A
+    // referenced support with no solved cache needs its construction checked.
+    let declared = if matches!(tokens.get(reference + 1), Some(Token::Ident(name)) if name == "ref")
+    {
+        let Some(Token::Long(index)) = tokens.get(reference + 2) else {
+            return None;
         };
-        let Ok(index) = usize::try_from(*index) else {
-            return Ok(false);
-        };
-        let Some(target) = table.span(index) else {
-            return Ok(false);
-        };
-        if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, target, table).is_some() {
-            return Ok(true);
+        let index = usize::try_from(*index).ok()?;
+        if let Some(target) = table.span(index) {
+            let (decoded, _storage) = propagate_resource!(ctx.with_scoped_storage(
+                "ASM cacheless support presence",
+                || crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                    ctx,
+                    target.tokens(),
+                    table,
+                )
+                .transpose(),
+            ));
+            decoded.is_some()
+        } else {
+            false
         }
-        return crate::nurbs::proc_surface::procedural_surface_resolving_refs(
-            ctx,
-            target.tokens(),
-            table,
-        )
-        .transpose()
-        .map(|decoded| decoded.is_some());
-    }
-    if crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table).is_some() {
-        return Ok(true);
-    }
-    crate::nurbs::proc_surface::procedural_surface_resolving_refs(ctx, scope.tokens(), table)
-        .transpose()
-        .map(|decoded| decoded.is_some())
+    } else {
+        true
+    };
+    Some(Ok(EmbeddedSurfaceWithBounds {
+        surface: if declared {
+            SupportSlot::DeclaredOnly
+        } else {
+            SupportSlot::Absent
+        },
+        bounds: parsed.bounds,
+    }))
 }
 
 /// Writable scalar locations in a retained `off_int_cur` construction.
@@ -3887,9 +3841,9 @@ fn decode_embedded_surface_fields(
     }
 }
 
-/// Optional embedded support surface plus its four optional U/V bound fields.
-pub(super) struct EmbeddedSurfaceWithBounds {
-    pub(super) surface: Option<SurfaceGeometry>,
+/// Embedded support representation plus its four optional U/V bound fields.
+pub(super) struct EmbeddedSurfaceWithBounds<S = Option<SurfaceGeometry>> {
+    pub(super) surface: S,
     pub(super) bounds: [Option<f64>; 4],
 }
 
@@ -3972,14 +3926,16 @@ pub(super) fn optional_embedded_surface_with_bounds(
                         propagate_resource!(surface),
                     )))
                 } else {
-                    let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
-                        ctx,
-                        scope.tokens(),
-                        table,
-                    )?;
-                    if let Err(error) = decoded {
-                        return Some(Err(error));
-                    }
+                    let (decoded, _storage) = propagate_resource!(ctx.with_scoped_storage(
+                        "ASM cacheless embedded support",
+                        || crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+                            ctx,
+                            scope.tokens(),
+                            table,
+                        )
+                        .transpose(),
+                    ));
+                    decoded?;
                     None
                 };
             cur.set_pos(cur.pos() + scope.tokens().len());
@@ -4254,6 +4210,76 @@ mod cache_form_tests {
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::PcurveNurbs};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn cache_first_support_propagates_reference_cache_allocation_refusal() {
+        use crate::sab::Record;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let mut target = vec![
+            Token::SubtypeOpen,
+            Token::Ident("exact_spl_sur".into()),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Long(2),
+        ];
+        for _ in 0..2 {
+            target.extend([
+                Token::Double(0.0),
+                Token::Long(1),
+                Token::Double(1.0),
+                Token::Long(1),
+            ]);
+        }
+        for point in [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ] {
+            target.extend(point.map(Token::Double));
+        }
+        target.push(Token::SubtypeClose);
+        let record = Record {
+            index: 0,
+            name: "spline".into(),
+            tokens: target.into(),
+            offset: 0,
+            len: 0,
+        };
+        let table = crate::nurbs::toks::SubtypeTable::from_records(
+            &cadmpeg_test_support::service_decode_context(),
+            &[record],
+        )
+        .unwrap();
+        let tokens = [
+            Token::Ident("spline".into()),
+            Token::SubtypeOpen,
+            Token::Ident("ref".into()),
+            Token::Long(0),
+            Token::SubtypeClose,
+            Token::False,
+            Token::False,
+            Token::False,
+            Token::False,
+        ];
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "ASM NURBS grid row poles",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                super::cache_first_support(&ctx, &mut Cur::at(&tokens, 0), &table).transpose()
+            },
+        );
+    }
 
     #[test]
     fn support_chart_mapping_propagates_the_original_work_refusal() {

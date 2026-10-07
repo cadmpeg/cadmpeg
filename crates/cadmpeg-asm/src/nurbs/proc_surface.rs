@@ -870,8 +870,8 @@ fn g2_blend_spl_sur(
         *parameter = cur.take_f64()?;
     }
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -2227,8 +2227,8 @@ fn loft_spl_sur(
         Err(error) => return Some(Err(error)),
     };
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -2463,8 +2463,8 @@ fn compound_loft_spl_sur(
         return revision_compound_loft(ctx, span, resolver);
     }
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -2569,8 +2569,8 @@ fn scaled_compound_loft_spl_sur(
     let singularity = cur.take_enum()?;
     let (shape, cache_fit_tolerance) = if cur.peek().is_some_and(Token::is_payload_ident) {
         let cache_end = {
-            let (decoded, _cache_storage) =
-                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+            let (decoded, _cache_storage) = propagate_resource!(ctx
+                .with_scoped_storage("ASM construction cache", || {
                     surface_block(ctx, span, cur.pos()).transpose()
                 },));
             decoded?.1
@@ -2709,13 +2709,8 @@ fn sweep_law_expression(
 ) -> Option<Result<EmbeddedLawExpression, cadmpeg_core::CodecError>> {
     if matches!(cur.peek(), Some(Token::Str(_))) {
         let source = cur.take_str()?;
-        source
-            .chars()
-            .any(|character| !character.is_whitespace())
-            .then_some(())?;
-        let copied = propagate_resource!(ctx.copy_retained_text(source, "ASM sweep law text"));
         return Some(Ok(EmbeddedLawExpression::Text(propagate_resource!(
-            cadmpeg_core::text::NonBlankString::for_decode(ctx, copied, "validate nonblank text")
+            cadmpeg_core::text::NonBlankString::for_decode(ctx, source, "ASM sweep law text")
                 .map_err(cadmpeg_core::CodecError::from)
         )?)));
     }
@@ -2865,10 +2860,16 @@ fn law_formula_resolving(
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<EmbeddedLawFormula, cadmpeg_core::CodecError>> {
-    let name = propagate_resource!(ctx.copy_retained_text(cur.take_str()?, "ASM law formula name"));
+    let name = cur.take_str()?;
     if name == "null_law" {
         return Some(Ok(EmbeddedLawFormula::Null));
     }
+    let name = propagate_resource!(cadmpeg_core::text::NonBlankString::for_decode(
+        ctx,
+        name,
+        "ASM law formula name",
+    )
+    .map_err(cadmpeg_core::CodecError::from))?;
     let count = usize::try_from(cur.take_long()?).ok()?;
     if count > 100_000 {
         return None;
@@ -2882,15 +2883,7 @@ fn law_formula_resolving(
             ctx, cur, 0, resolver
         )?));
     }
-    Some(Ok(EmbeddedLawFormula::Named {
-        name: propagate_resource!(cadmpeg_core::text::NonBlankString::for_decode(
-            ctx,
-            name,
-            "validate nonblank text"
-        )
-        .map_err(cadmpeg_core::CodecError::from))?,
-        variables,
-    }))
+    Some(Ok(EmbeddedLawFormula::Named { name, variables }))
 }
 
 fn skin_spl_sur(
@@ -2957,8 +2950,8 @@ fn skin_spl_sur(
         propagate_resource!(curve_block(ctx, span, cur.pos())?);
     cur.set_pos(parameter_curve_end);
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -3030,8 +3023,8 @@ pub(super) fn law_spl_sur(
     let (tail, cache_fit_tolerance) = match selector {
         0 => {
             let cache_end = {
-                let (decoded, _cache_storage) =
-                    propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+                let (decoded, _cache_storage) = propagate_resource!(ctx
+                    .with_scoped_storage("ASM construction cache", || {
                         surface_block(ctx, span, cur.pos()).transpose()
                     },));
                 decoded?.1
@@ -3155,8 +3148,8 @@ fn net_spl_sur(
         propagate_resource!(law_formula(ctx, &mut cur)?),
     ];
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -3393,8 +3386,8 @@ fn sweep_spl_sur(
         }
     };
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -3675,8 +3668,8 @@ fn taper_spl_sur(
     };
     let parameter = cur.take_f64()?;
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -3743,8 +3736,8 @@ fn comp_spl_sur(
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -3827,8 +3820,8 @@ pub fn revision_surface_tail(
     let enumeration = cur.take_enum()?;
     let cache = match enumeration {
         0 => {
-            let (cache, _cache_storage) =
-                propagate_resource!(ctx.with_scoped_storage("ASM surface cache domains", || {
+            let (cache, _cache_storage) = propagate_resource!(ctx
+                .with_scoped_storage("ASM surface cache domains", || {
                     surface_block(ctx, cur.toks(), cur.pos()).transpose()
                 }));
             let (cache, cache_end) = cache?;
@@ -3957,8 +3950,8 @@ fn off_spl_sur(
         cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}
     };
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -4057,8 +4050,8 @@ fn rot_spl_sur(
     let axis_direction = UnitVector3::normalized_nonzero(
         cadmpeg_ir::features::FiniteVector3::new(Vector3::from(axis))?,
     )?;
-    let (cache, _cache_storage) =
-        propagate_resource!(ctx.with_scoped_storage("ASM surface cache domains", || {
+    let (cache, _cache_storage) = propagate_resource!(ctx
+        .with_scoped_storage("ASM surface cache domains", || {
             surface_block(ctx, span, cur.pos()).transpose()
         }));
     let (cache, cache_end) = cache?;
@@ -4148,8 +4141,8 @@ fn sum_spl_sur(
         None
     } else {
         let cache_end = {
-            let (decoded, _cache_storage) =
-                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+            let (decoded, _cache_storage) = propagate_resource!(ctx
+                .with_scoped_storage("ASM construction cache", || {
                     surface_block(ctx, span, cur.pos()).transpose()
                 },));
             decoded?.1
@@ -4184,8 +4177,8 @@ fn ruled_spl_sur(
         None
     } else {
         let cache_end = {
-            let (decoded, _cache_storage) =
-                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+            let (decoded, _cache_storage) = propagate_resource!(ctx
+                .with_scoped_storage("ASM construction cache", || {
                     surface_block(ctx, span, cur.pos()).transpose()
                 },));
             decoded?.1
@@ -4255,8 +4248,8 @@ fn exact_spl_sur(
         )));
     }
     let cache_end = {
-        let (decoded, _cache_storage) =
-            propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+        let (decoded, _cache_storage) = propagate_resource!(ctx
+            .with_scoped_storage("ASM construction cache", || {
                 surface_block(ctx, span, cur.pos()).transpose()
             },));
         decoded?.1
@@ -4329,8 +4322,8 @@ fn t_spl_sur(
         }));
     } else {
         let cache_end = {
-            let (decoded, _cache_storage) =
-                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+            let (decoded, _cache_storage) = propagate_resource!(ctx
+                .with_scoped_storage("ASM construction cache", || {
                     surface_block(ctx, span, cur.pos()).transpose()
                 },));
             decoded?.1
@@ -4712,8 +4705,8 @@ fn defm_spl_sur(
         )))
     } else {
         let cache_end = {
-            let (decoded, _cache_storage) =
-                propagate_resource!(ctx.with_scoped_storage("ASM construction cache", || {
+            let (decoded, _cache_storage) = propagate_resource!(ctx
+                .with_scoped_storage("ASM construction cache", || {
                     surface_block(ctx, span, cur.pos()).transpose()
                 },));
             decoded?.1
@@ -5504,6 +5497,58 @@ mod sweep_law_tests {
     use crate::nurbs::toks::Cur;
     use crate::sab::Token;
     use cadmpeg_ir::math::Vector3;
+
+    #[test]
+    fn null_law_formula_needs_no_text_copy_or_variable_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::Str("null_law".into()), Token::Long(21)];
+        let mut cur = Cur::at(&tokens, 0);
+        assert!(matches!(
+            law_formula_resolving(&ctx, &mut cur, None),
+            Some(Ok(super::EmbeddedLawFormula::Null))
+        ));
+        assert_eq!(cur.take_long(), Some(21));
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn blank_sweep_law_text_needs_no_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let tokens = [Token::Str(" \u{2003}\t".into()), Token::Long(21)];
+        let mut cur = Cur::at(&tokens, 0);
+        assert!(sweep_law_expression(&ctx, &mut cur).is_none());
+        assert_eq!(cur.take_long(), Some(21));
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn sweep_law_text_refuses_unadmitted_whitespace_search() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let tokens = [Token::Str(" \u{2003}X".into())];
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "ASM sweep law text",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                sweep_law_expression(&ctx, &mut Cur::at(&tokens, 0)).transpose()
+            },
+        );
+    }
 
     #[test]
     fn sweep_text_law_consumes_one_serializer_token() {
