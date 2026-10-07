@@ -1605,33 +1605,70 @@ fn operation_label_at<'a>(
     .transpose()
 }
 
+fn operation_label_index<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    labels: &[OperationLabel<'a>],
+) -> Result<
+    (
+        BTreeMap<usize, OperationLabel<'a>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    let mut index = BTreeMap::new();
+    let mut storage = ctx.reserve_scoped(0, "NX operation label index storage")?;
+    for label in ctx.admit_iter(labels, "NX operation label index entries")? {
+        storage.with_storage(|| {
+            ctx.entry_btree_map(
+                &mut index,
+                label.header.offset(),
+                "NX operation label index insertion",
+            )?
+            .or_insert(*label);
+            Ok::<_, CodecError>(())
+        })?;
+    }
+    Ok((index, storage))
+}
+
 fn operation_records_with_labels_and_ordinals<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     base_offset: usize,
     labels: &[OperationLabel<'a>],
 ) -> Result<Vec<(usize, OperationRecord<'a>)>, CodecError> {
-    let headers = validated_operation_headers(ctx, bytes, base_offset)?;
+    let mut header_storage = ctx.reserve_scoped(0, "NX labeled operation header storage")?;
+    let headers =
+        header_storage.with_storage(|| validated_operation_headers(ctx, bytes, base_offset))?;
+    let (labels, _label_storage) = operation_label_index(ctx, labels)?;
     let mut records = Vec::new();
     for (ordinal, header) in ctx
-        .admit_iter(&headers, "NX bounded operation record headers")?
+        .admit_iter(&headers, "NX labeled operation record headers")?
         .enumerate()
     {
-        let record = (|| {
-            let label = propagate_resource!(ctx
-                .admit_iter(labels, "NX labeled operation header lookup")
-                .map_err(CodecError::from))
-            .find(|label| label.header.offset() == header.offset())?;
-            let start = label.header.offset().checked_sub(base_offset)?;
-            let end = headers
-                .get(ordinal + 1)
-                .map_or(bytes.len(), |next| next.offset() - base_offset);
-            propagate_resource!(OperationRecord::new(ctx, bytes.get(start..end)?, *label)).map(Ok)
-        })()
-        .transpose()?;
-        if let Some(record) = record {
-            ctx.reserve_vec(&mut records, 1, "nx labeled operation records")?;
-            records.push((ordinal, record));
+        let Some(label) = ctx.get_btree_map(
+            &labels,
+            &header.offset(),
+            "NX labeled operation header lookup",
+        )?
+        else {
+            continue;
+        };
+        let Some(start) = label.header.offset().checked_sub(base_offset) else {
+            continue;
+        };
+        let end = headers
+            .get(ordinal + 1)
+            .map_or(bytes.len(), |next| next.offset() - base_offset);
+        let Some(record_bytes) = bytes.get(start..end) else {
+            continue;
+        };
+        if let Some(record) = OperationRecord::new(ctx, record_bytes, *label)? {
+            ctx.push_vec(
+                &mut records,
+                (ordinal, record),
+                "NX labeled operation records",
+            )?;
         }
     }
     Ok(records)
@@ -1643,30 +1680,37 @@ fn unlabeled_operation_records_with_ordinals<'a>(
     base_offset: usize,
     labels: &[OperationLabel<'a>],
 ) -> Result<Vec<(usize, UnlabeledOperationRecord<'a>)>, CodecError> {
-    let headers = validated_operation_headers(ctx, bytes, base_offset)?;
+    let mut header_storage = ctx.reserve_scoped(0, "NX unlabeled operation header storage")?;
+    let headers =
+        header_storage.with_storage(|| validated_operation_headers(ctx, bytes, base_offset))?;
+    let (labels, _label_storage) = operation_label_index(ctx, labels)?;
     let mut records = Vec::new();
     for (ordinal, header) in ctx
-        .admit_iter(&headers, "NX bounded operation record headers")?
+        .admit_iter(&headers, "NX unlabeled operation record headers")?
         .enumerate()
     {
-        let record = (|| {
-            if propagate_resource!(ctx
-                .admit_iter(labels, "NX unlabeled operation header exclusion")
-                .map_err(CodecError::from))
-            .any(|label| label.header.offset() == header.offset())
-            {
-                return None;
-            }
-            let start = header.offset().checked_sub(base_offset)?;
-            let end = headers
-                .get(ordinal + 1)
-                .map_or(bytes.len(), |next| next.offset() - base_offset);
-            UnlabeledOperationRecord::new(*header, bytes.get(start..end)?).map(Ok)
-        })()
-        .transpose()?;
-        if let Some(record) = record {
-            ctx.reserve_vec(&mut records, 1, "nx unlabeled operation records")?;
-            records.push((ordinal, record));
+        if ctx.contains_key_btree_map(
+            &labels,
+            &header.offset(),
+            "NX unlabeled operation header exclusion",
+        )? {
+            continue;
+        }
+        let Some(start) = header.offset().checked_sub(base_offset) else {
+            continue;
+        };
+        let end = headers
+            .get(ordinal + 1)
+            .map_or(bytes.len(), |next| next.offset() - base_offset);
+        let Some(record_bytes) = bytes.get(start..end) else {
+            continue;
+        };
+        if let Some(record) = UnlabeledOperationRecord::new(*header, record_bytes) {
+            ctx.push_vec(
+                &mut records,
+                (ordinal, record),
+                "NX unlabeled operation records",
+            )?;
         }
     }
     Ok(records)
