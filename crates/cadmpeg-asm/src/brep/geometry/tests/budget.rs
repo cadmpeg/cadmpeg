@@ -79,3 +79,33 @@ fn pcurve_tail_search_ignores_payload_identifiers() {
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
     assert_eq!(limit.operation, "ASM pcurve parameter tail");
 }
+
+#[test]
+fn record_sense_search_admits_raw_tokens_and_keeps_scope_precedence() {
+    use super::super::record_reversed;
+    let tokens = vec![
+        Token::Ident("ignored".into()), Token::Ref(-1), Token::Long(-1), Token::Ref(-1),
+        Token::True, Token::False, Token::Ident("ignored".into()), Token::SubtypeOpen,
+        Token::SubtypeClose,
+    ];
+    let record = Record { name: "intcurve".into(), ..record(tokens) };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "ASM record sense tokens", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            record_reversed(&ctx, &record)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+    assert_eq!(limit.operation, "ASM record sense tokens");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(!record_reversed(&ctx, &record).unwrap());
+    let plain = Record { name: "intcurve".into(), tokens: vec![
+        Token::Ident("ignored".into()), Token::Ref(-1), Token::Long(-1), Token::Ref(-1), Token::True,
+    ].into(), ..record };
+    assert!(record_reversed(&ctx, &plain).unwrap());
+    let spline = Record { name: "spline".into(), ..plain };
+    assert!(!record_reversed(&ctx, &spline).unwrap());
+}
