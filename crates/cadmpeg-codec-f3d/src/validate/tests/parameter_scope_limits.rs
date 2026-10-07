@@ -76,28 +76,6 @@ fn invalid_parameter_scope_preserves_finding() {
 }
 
 #[test]
-fn parameter_scope_kind_comparison_preserves_work_refusal() {
-    crate::test_support::with_decode_context(|service| {
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = native();
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "compare F3D parameter scope kind",
-            0,
-            |decode| {
-                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
-                ctx.decode = decode;
-                super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "compare F3D parameter scope kind")
-        );
-    });
-}
-
-#[test]
 fn component_pattern_occurrence_checks_preserve_work_refusal() {
     use crate::records::feature::assembly_features::{
         DesignComponentOccurrence, DesignComponentOccurrenceDraft,

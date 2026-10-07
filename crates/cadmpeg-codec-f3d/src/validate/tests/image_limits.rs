@@ -320,28 +320,10 @@ fn canvas_scope_lookup_preserves_work_refusal() {
 }
 
 #[test]
-fn canvas_scope_kind_preserves_work_refusal() {
-    let error = image_work_error(true, "compare F3D Canvas scope kind");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "compare F3D Canvas scope kind")
-    );
-}
-
-#[test]
 fn decal_scope_lookup_preserves_work_refusal() {
     let error = image_work_error(false, "find F3D Decal scope");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "find F3D Decal scope")
-    );
-}
-
-#[test]
-fn decal_scope_kind_preserves_work_refusal() {
-    let error = image_work_error(false, "compare F3D Decal scope kind");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "compare F3D Decal scope kind")
     );
 }
