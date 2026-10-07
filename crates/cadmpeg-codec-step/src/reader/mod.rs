@@ -1531,10 +1531,10 @@ fn byte_accounting(
             ByteClass::Structural,
             format_args!("token at byte {}", token.span.start),
         )?;
-        claim_trivia(input, cursor..token.span.start, &mut classes)?;
+        claim_trivia(input, cursor..token.span.start, &mut classes, ctx)?;
         cursor = token.span.end;
     }
-    claim_trivia(input, cursor..input.len(), &mut classes)?;
+    claim_trivia(input, cursor..input.len(), &mut classes, ctx)?;
 
     Ok(classes
         .into_iter()
@@ -1586,6 +1586,7 @@ fn claim_trivia(
     input: &[u8],
     range: std::ops::Range<usize>,
     classes: &mut [ByteClass],
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let end = range.end;
     if end > input.len() || range.start > end {
@@ -1610,7 +1611,7 @@ fn claim_trivia(
                 format_args!("trivia byte at {at}"),
             )?;
             at += 1;
-        } else if let Some(after_print_control) = crate::lex::print_control_end(input, at) {
+        } else if let Some(after_print_control) = crate::lex::print_control_end(ctx, input, at)? {
             if after_print_control > end {
                 return Err(CodecError::malformed(format_args!(
                     "STEP print control directive at byte {at} ends at {after_print_control}, but its trivia run ends at {end}"
