@@ -9,13 +9,12 @@ use super::edge_definition::CatiaConsolidatedEdgeDefinition;
 
 use super::{
     catalog, container, design_object_id, entity_table, resolved_payload_references,
-    resolved_storage_link, terminal_null_entity_id, value_block, AliasLead, CatiaAliasRow,
-    CatiaAllocationReferenceEncoding, CatiaCatalog, CatiaCatalogEntry,
-    CatiaConsolidatedAnalyticCircleBinding, CatiaConsolidatedCircle,
-    CatiaConsolidatedClass25Descriptor, CatiaConsolidatedEdgeNode, CatiaConsolidatedEdgeRun,
-    CatiaConsolidatedEdgeUses, CatiaConsolidatedOwnerPacket, CatiaConsolidatedPcurve,
-    CatiaConsolidatedSupportBinding, CatiaDesignClass, CatiaEntityRecord, CatiaEntityRecordBody,
-    CatiaEntityReference, CatiaExternalReference, CatiaFaceNodeRelation,
+    resolved_storage_link, value_block, AliasLead, CatiaAliasRow, CatiaAllocationReferenceEncoding,
+    CatiaCatalog, CatiaCatalogEntry, CatiaConsolidatedAnalyticCircleBinding,
+    CatiaConsolidatedCircle, CatiaConsolidatedClass25Descriptor, CatiaConsolidatedEdgeNode,
+    CatiaConsolidatedEdgeRun, CatiaConsolidatedEdgeUses, CatiaConsolidatedOwnerPacket,
+    CatiaConsolidatedPcurve, CatiaConsolidatedSupportBinding, CatiaDesignClass, CatiaEntityRecord,
+    CatiaEntityRecordBody, CatiaEntityReference, CatiaExternalReference, CatiaFaceNodeRelation,
     CatiaFaceNodeTargetEncoding, CatiaFinjplSegment, CatiaObjectClass, CatiaObjectEntity,
     CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaObjectStorage,
     CatiaOuterContainerBinding, CatiaOwnerBoundaryCycle, CatiaOwnerBoundaryEdge,
@@ -24,7 +23,8 @@ use super::{
     CatiaOwnerIdentityEncoding, CatiaOwnerIdentityTarget, CatiaOwnerPacketPayload,
     CatiaOwnerReferenceEncoding, CatiaPreviewImage, CatiaReferenceSignature, CatiaValueBlock,
     CatiaValueSchemaSelection, CatiaValueSchemaSelectionKind, CatiaValueSchemaSelectionValue,
-    CatiaZeroEntityRecord, CodecError, ConsolidatedRecord, DecodeContext, HashMap, HashSet,
+    CatiaZeroEntityRecord, CodecError, ConsolidatedRecord, DecodeContext, GraphRecordIndex,
+    HashMap, HashSet,
 };
 
 pub(crate) fn consolidated_owner_packets(
@@ -32,10 +32,15 @@ pub(crate) fn consolidated_owner_packets(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<CatiaConsolidatedOwnerPacket>, CodecError> {
-    let fixed = ctx.collect_vec(
-        crate::families::b2::records::b2_owner_packets_from_records(ctx, bytes, records)?,
-        "catia_native_fixed_owner_packets",
-    )?;
+    // Packet rows and the chart, target, cycle, face-node and position indexes
+    // are dropped once the packets are built.
+    let mut scratch = ctx.reserve_scoped(0, "catia_native_owner_packet_scratch")?;
+    let fixed = scratch.with_storage(|| {
+        ctx.collect_vec(
+            crate::families::b2::records::b2_owner_packets_from_records(ctx, bytes, records)?,
+            "catia_native_fixed_owner_packets",
+        )
+    })?;
     let mut owner_charts = HashMap::new();
     let owner_chart_rows =
         crate::families::b2::records::b2_owner_charts_from_records(ctx, bytes, records)?;
@@ -88,7 +93,9 @@ pub(crate) fn consolidated_owner_packets(
             },
             parameter_point_byte_offsets: chart.parameter_point_offsets().map(u64_from_index),
         };
-        ctx.insert_hash_map(&mut owner_charts, key, value, "catia_native_owner_charts")?;
+        scratch.with_storage(|| {
+            ctx.insert_hash_map(&mut owner_charts, key, value, "catia_native_owner_charts")
+        })?;
     }
     let mut identity_targets = HashMap::<(usize, usize), Vec<CatiaOwnerIdentityTarget>>::new();
     let identity_target_rows =
@@ -104,22 +111,13 @@ pub(crate) fn consolidated_owner_packets(
             target_byte_offset: u64_from_index(target.target_pos),
             target_class: target.target_class,
         };
-        if let Some(targets) = identity_targets.get_mut(&key) {
-            ctx.push_vec(targets, value, "catia_native_owner_identity_target_entries")?;
-        } else {
-            let mut targets = Vec::new();
-            ctx.push_vec(
-                &mut targets,
-                value,
-                "catia_native_owner_identity_target_entries",
-            )?;
-            ctx.insert_hash_map(
-                &mut identity_targets,
-                key,
-                targets,
-                "catia_native_owner_identity_target_groups",
-            )?;
-        }
+        ctx.push_hash_group(
+            &mut identity_targets,
+            key,
+            value,
+            "catia_native_owner_identity_target_groups",
+            "catia_native_owner_identity_target_entries",
+        )?;
     }
     let mut boundary_cycles = HashMap::new();
     let boundary_cycle_rows =
@@ -156,12 +154,14 @@ pub(crate) fn consolidated_owner_packets(
                         endpoint_records: edge.endpoint_records.map(u64_from_index),
                     }),
                 };
-        ctx.insert_hash_map(
-            &mut boundary_cycles,
-            key,
-            value,
-            "catia_native_owner_boundary_cycles",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut boundary_cycles,
+                key,
+                value,
+                "catia_native_owner_boundary_cycles",
+            )
+        })?;
     }
     let adjacent_counted =
         crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
@@ -174,87 +174,101 @@ pub(crate) fn consolidated_owner_packets(
         &adjacent_face_owners,
         "catia_native_adjacent_face_owner_visits",
     )? {
-        ctx.insert_hash_map(
-            &mut face_nodes,
-            (linked.owner.source_index, linked.owner.pos),
-            linked.face_node,
-            "catia_native_owner_face_nodes",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut face_nodes,
+                (linked.owner.source_index, linked.owner.pos),
+                linked.face_node,
+                "catia_native_owner_face_nodes",
+            )
+        })?;
     }
     for linked in ctx.admit_iter(
         &adjacent_counted,
         "catia_native_adjacent_counted_owner_visits",
     )? {
-        ctx.insert_hash_map(
-            &mut face_nodes,
-            (linked.owner.source_index, linked.owner.pos),
-            linked.face_node,
-            "catia_native_owner_face_nodes",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut face_nodes,
+                (linked.owner.source_index, linked.owner.pos),
+                linked.face_node,
+                "catia_native_owner_face_nodes",
+            )
+        })?;
     }
     let mut fixed_positions = HashSet::new();
     for packet in ctx.admit_iter(&fixed, "catia_native_fixed_owner_position_visits")? {
-        ctx.insert_hash_set(
-            &mut fixed_positions,
-            (packet.source_index, packet.pos),
-            "catia_native_fixed_owner_positions",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut fixed_positions,
+                (packet.source_index, packet.pos),
+                "catia_native_fixed_owner_positions",
+            )
+        })?;
     }
     let counted_owners =
         crate::families::b2::records::b2_counted_owners_from_records(ctx, bytes, records)?;
-    let mut packets = ctx.collect_vec(fixed
-        .into_iter()
-        .map(|packet| {
-            (
-                packet.pos,
-                packet.source_index,
-                packet.header_token,
-                CatiaOwnerPacketPayload::FixedNine {
-                    reference_encoding: match packet.reference_encoding {
-                        crate::families::b2::records::B2OwnerReferenceEncoding::TaggedU16Strong => {
-                            CatiaOwnerReferenceEncoding::TaggedU16Strong
-                        }
-                        crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
-                            CatiaOwnerReferenceEncoding::WidthCodedStrong
-                        }
-                        crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact => {
-                            CatiaOwnerReferenceEncoding::AllCompact
-                        }
-                    },
-                    references: packet.references,
-                    identity_encodings: packet.identity_encodings.map(|encoding| match encoding {
-                        crate::families::b2::records::B2OwnerIdentityEncoding::Allocation(
-                            encoding,
-                        ) => CatiaOwnerIdentityEncoding::Allocation(
-                            native_allocation_reference_encoding(encoding),
-                        ),
-                        crate::families::b2::records::B2OwnerIdentityEncoding::RawU8 => {
-                            CatiaOwnerIdentityEncoding::RawU8
-                        }
-                    }),
-                    numeric_tail: packet.numeric_tail,
-                    identity_targets: Vec::new(),
-                    owner_chart: None,
-                    boundary_cycle: None,
+    let row_count = fixed
+        .len()
+        .checked_add(counted_owners.len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("catia_native_owner_packet_rows", u64::MAX, u64::MAX)
+        })?;
+    let mut packets =
+        scratch.with_storage(|| ctx.collection_vec(row_count, "catia_native_owner_packet_rows"))?;
+    for packet in ctx.admit_iter(fixed, "catia_native_fixed_owner_packet_rows")? {
+        packets.push((
+            packet.pos,
+            packet.source_index,
+            packet.header_token,
+            CatiaOwnerPacketPayload::FixedNine {
+                reference_encoding: match packet.reference_encoding {
+                    crate::families::b2::records::B2OwnerReferenceEncoding::TaggedU16Strong => {
+                        CatiaOwnerReferenceEncoding::TaggedU16Strong
+                    }
+                    crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
+                        CatiaOwnerReferenceEncoding::WidthCodedStrong
+                    }
+                    crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact => {
+                        CatiaOwnerReferenceEncoding::AllCompact
+                    }
                 },
-            )
-        })
-        .chain(
-            counted_owners
-                .into_iter()
-                .filter(|packet| !fixed_positions.contains(&(packet.source_index, packet.pos)))
-                .map(|packet| {
-                    (
-                        packet.pos,
-                        packet.source_index,
-                        packet.header_token,
-                        CatiaOwnerPacketPayload::Counted {
-                            references: packet.references,
-                            tail: packet.tail,
-                        },
-                    )
+                references: packet.references,
+                identity_encodings: packet.identity_encodings.map(|encoding| match encoding {
+                    crate::families::b2::records::B2OwnerIdentityEncoding::Allocation(encoding) => {
+                        CatiaOwnerIdentityEncoding::Allocation(
+                            native_allocation_reference_encoding(encoding),
+                        )
+                    }
+                    crate::families::b2::records::B2OwnerIdentityEncoding::RawU8 => {
+                        CatiaOwnerIdentityEncoding::RawU8
+                    }
                 }),
-        ), "catia_native_owner_packet_rows")?;
+                numeric_tail: packet.numeric_tail,
+                identity_targets: Vec::new(),
+                owner_chart: None,
+                boundary_cycle: None,
+            },
+        ));
+    }
+    for packet in ctx.admit_iter(counted_owners, "catia_native_counted_owner_packet_rows")? {
+        if ctx.contains_hash_set(
+            &fixed_positions,
+            &(packet.source_index, packet.pos),
+            "catia_native_fixed_owner_positions",
+        )? {
+            continue;
+        }
+        packets.push((
+            packet.pos,
+            packet.source_index,
+            packet.header_token,
+            CatiaOwnerPacketPayload::Counted {
+                references: packet.references,
+                tail: packet.tail,
+            },
+        ));
+    }
     ctx.stable_sort_by_key(
         &mut packets,
         |value| (value.0, value.1),
@@ -272,12 +286,16 @@ pub(crate) fn consolidated_owner_packets(
                     ..
                 } = &mut payload
                 {
-                    *stored_targets = identity_targets
-                        .remove(&(source_index, pos))
+                    const LOOKUP: &str = "catia_native_owner_packet_lookups";
+                    let key = (source_index, pos);
+                    *stored_targets = ctx
+                        .remove_hash_map(&mut identity_targets, &key, LOOKUP)?
                         .unwrap_or_default();
-                    *owner_chart = owner_charts.remove(&(source_index, pos)).map(Box::new);
-                    *boundary_cycle = boundary_cycles
-                        .get(&(source_index, pos))
+                    *owner_chart = ctx
+                        .remove_hash_map(&mut owner_charts, &key, LOOKUP)?
+                        .map(Box::new);
+                    *boundary_cycle = ctx
+                        .get_hash_map(&boundary_cycles, &key, LOOKUP)?
                         .copied()
                         .map(Box::new);
                 }
@@ -290,8 +308,12 @@ pub(crate) fn consolidated_owner_packets(
                     source_index,
                     header_token,
                     payload,
-                    face_node: face_nodes
-                        .get(&(source_index, pos))
+                    face_node: ctx
+                        .get_hash_map(
+                            &face_nodes,
+                            &(source_index, pos),
+                            "catia_native_owner_packet_lookups",
+                        )?
                         .and_then(|face_node| {
                             let byte_len = pos.checked_sub(face_node.pos)?;
                             Some(CatiaFaceNodeRelation {
@@ -327,14 +349,11 @@ pub(crate) fn consolidated_edge_runs(
     let mut lookup_storage = ctx.reserve_scoped(0, "CATIA native edge run lookup")?;
     let mut pcurve_ids = HashMap::new();
     for pcurve in ctx.admit_iter(pcurves, "catia_native_edge_run_pcurve_visits")? {
-        let id = lookup_storage.with_storage(|| {
-            ctx.copy_retained_text(&pcurve.id, "catia_native_edge_run_pcurve_index_id")
-        })?;
         lookup_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut pcurve_ids,
                 pcurve.byte_offset,
-                id,
+                pcurve.id.as_str(),
                 "catia_native_edge_run_pcurve_index",
             )
         })?;
@@ -380,16 +399,19 @@ pub(crate) fn consolidated_edge_runs(
             .pcurves
             .each_ref()
             .map(|pcurve| u64_from_index(pcurve.pos));
-        let resolved = resolved.get(&run.edge.pcurves[0].pos);
-        let Some(node) = nodes_by_offset.get(&(u64_from_index(run.node.pos))) else {
+        const LOOKUP: &str = "catia_native_edge_run_lookups";
+        let resolved = ctx.get_hash_map(&resolved, &run.edge.pcurves[0].pos, LOOKUP)?;
+        let Some(node) =
+            ctx.get_hash_map(&nodes_by_offset, &u64_from_index(run.node.pos), LOOKUP)?
+        else {
             continue;
         };
         if node.uses.is_none() {
             continue;
         }
         let (Some(first), Some(second)) = (
-            pcurve_ids.get(&pcurve_offsets[0]),
-            pcurve_ids.get(&pcurve_offsets[1]),
+            ctx.get_hash_map(&pcurve_ids, &pcurve_offsets[0], LOOKUP)?,
+            ctx.get_hash_map(&pcurve_ids, &pcurve_offsets[1], LOOKUP)?,
         ) else {
             continue;
         };
@@ -501,8 +523,11 @@ pub(crate) fn consolidated_edge_nodes(
         })?;
     }
     let mut use_runs = HashMap::new();
-    for run in crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
-        ctx, bytes, records,
+    for run in ctx.admit_iter(
+        crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
+            ctx, bytes, records,
+        )?,
+        "catia_native_edge_use_run_visits",
     )? {
         let Some(uses) = native_consolidated_edge_uses(&run.uses) else {
             continue;
@@ -521,12 +546,18 @@ pub(crate) fn consolidated_edge_nodes(
         })?;
     }
     let mut analytic_circles = HashMap::new();
-    for run in
+    for run in ctx.admit_iter(
         crate::families::consolidated::records::consolidated_analytic_circle_edge_runs_from_records(
             ctx, bytes, records,
+        )?,
+        "catia_native_analytic_edge_run_visits",
+    )? {
+        let Some(circle) = ctx.get_hash_map(
+            &circle_ids,
+            &u64_from_index(run.circle.pos),
+            "catia_native_edge_circle_ids",
         )?
-    {
-        let Some(circle) = circle_ids.get(&(u64_from_index(run.circle.pos))) else {
+        else {
             continue;
         };
         let circle = ctx.copy_retained_text(circle, "catia_native_analytic_edge_circle_id")?;
@@ -566,12 +597,14 @@ pub(crate) fn consolidated_edge_nodes(
     for (index, node) in
         crate::families::b2::records::b2_edge_nodes_from_records(ctx, bytes, records)?.enumerate()
     {
-        let Some(&(width, flag, source_index)) = frames.get(&node.pos) else {
+        const LOOKUP: &str = "catia_native_edge_node_lookups";
+        let Some(&(width, flag, source_index)) = ctx.get_hash_map(&frames, &node.pos, LOOKUP)?
+        else {
             continue;
         };
         ctx.reserve_vec(&mut output, 1, "catia_native_consolidated_edge_nodes")?;
-        let allocation = owned_nodes
-            .get(&node.pos)
+        let allocation = ctx
+            .get_hash_map(&owned_nodes, &node.pos, LOOKUP)?
             .map(|(pos, ordinal)| {
                 Ok::<_, CodecError>((
                     ctx.format_retained(
@@ -582,7 +615,7 @@ pub(crate) fn consolidated_edge_nodes(
                 ))
             })
             .transpose()?;
-        let (uses, definition) = match use_runs.remove(&node.pos) {
+        let (uses, definition) = match ctx.remove_hash_map(&mut use_runs, &node.pos, LOOKUP)? {
             Some((uses, definition)) => (Some(uses), definition),
             None => (None, None),
         };
@@ -599,7 +632,9 @@ pub(crate) fn consolidated_edge_nodes(
             allocation,
             curve_ref: node.curve_ref,
             vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
-            endpoint_records: compact_endpoints.get(&node.pos).copied(),
+            endpoint_records: ctx
+                .get_hash_map(&compact_endpoints, &node.pos, LOOKUP)?
+                .copied(),
             parameter_selectors: [node.start_parameter_ref, node.end_parameter_ref],
             reference_encodings: node
                 .reference_encodings
@@ -609,8 +644,8 @@ pub(crate) fn consolidated_edge_nodes(
             tail: node.tail,
             definition,
             uses,
-            analytic_circle: analytic_circles.remove(&node.pos),
-            class25_descriptor: class25_descriptors.remove(&node.pos),
+            analytic_circle: ctx.remove_hash_map(&mut analytic_circles, &node.pos, LOOKUP)?,
+            class25_descriptor: ctx.remove_hash_map(&mut class25_descriptors, &node.pos, LOOKUP)?,
         });
     }
     Ok(output)
@@ -743,21 +778,47 @@ pub(crate) fn finjpl_family(kind: container::FinjplKind) -> &'static str {
     }
 }
 
-pub(crate) fn containing_finjpl_segment(
+/// The one segment containing an extent. Segments are disjoint and in offset
+/// order, each running from one marker to the next, so only the last segment
+/// starting at or before the extent can contain it, together with its
+/// predecessor when the extent is empty and on their shared boundary.
+pub(crate) fn containing_finjpl_segment<'s>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     byte_offset: u64,
     byte_len: u64,
-    segments: &[CatiaFinjplSegment],
-) -> Option<&str> {
-    let byte_end = byte_offset.checked_add(byte_len)?;
-    let mut containing = segments.iter().filter(|segment| {
+    segments: &'s [CatiaFinjplSegment],
+) -> Result<Option<&'s str>, CodecError> {
+    let Some(byte_end) = byte_offset.checked_add(byte_len) else {
+        return Ok(None);
+    };
+    let contains = |segment: &CatiaFinjplSegment| {
         segment.byte_offset <= byte_offset
             && segment
                 .byte_offset
                 .checked_add(segment.byte_len)
                 .is_some_and(|segment_end| byte_end <= segment_end)
-    });
-    let segment = containing.next()?;
-    containing.next().is_none().then_some(segment.id.as_str())
+    };
+    let after = ctx.partition_point(
+        segments,
+        |segment| Ok(segment.byte_offset <= byte_offset),
+        "catia_native_finjpl_segment_search",
+    )?;
+    let Some(last) = after.checked_sub(1) else {
+        return Ok(None);
+    };
+    let previous = last
+        .checked_sub(1)
+        .and_then(|index| segments.get(index))
+        .filter(|segment| contains(segment));
+    Ok(
+        match (
+            segments.get(last).filter(|segment| contains(segment)),
+            previous,
+        ) {
+            (Some(segment), None) | (None, Some(segment)) => Some(segment.id.as_str()),
+            (Some(_), Some(_)) | (None, None) => None,
+        },
+    )
 }
 
 pub(crate) fn preview_views(
@@ -806,7 +867,10 @@ pub(crate) fn external_reference_views(
 ) -> Result<Vec<CatiaExternalReference>, cadmpeg_core::CodecError> {
     let mut views = Vec::new();
     for segment in ctx.admit_iter(segments, "catia_native_external_reference_segment_visits")? {
-        for reference in container::external_references(ctx, &segment.data)? {
+        for reference in ctx.admit_iter(
+            container::external_references(ctx, &segment.data)?,
+            "catia_native_external_reference_visits",
+        )? {
             let Some(byte_offset) = segment
                 .byte_offset
                 .checked_add(u64_from_index(reference.offset))
@@ -838,35 +902,30 @@ pub(crate) fn resolve_alias_surface_tags(
     ctx: &DecodeContext<'_>,
     rows: &mut [CatiaAliasRow],
 ) -> Result<(), CodecError> {
-    let mut stored_by_group = HashMap::<(u32, u32), Option<u32>>::new();
-    for row in ctx.admit_iter(&*rows, "catia_native_alias_tag_read_visits")? {
-        let Some(group) = row.group.as_ref() else {
-            continue;
-        };
-        if row.lead() != AliasLead::SurfaceSupportStorage {
-            continue;
-        }
-        let key = (group.prototype, group.group_id);
-        if let Some(stored) = stored_by_group.get_mut(&key) {
-            *stored = None;
-        } else {
-            ctx.insert_hash_map(
-                &mut stored_by_group,
-                key,
-                Some(row.tag()),
-                "catia_alias_group_index",
-            )?;
-        }
-    }
-    for row in rows {
+    // The stored tag of each group, or `None` when several rows store one.
+    let (stored_by_group, _storage) = ctx.unique_index(
+        ctx.admit_iter(&*rows, "catia_native_alias_tag_read_visits")?
+            .filter_map(|row| {
+                let group = row.group.as_ref()?;
+                (row.lead() == AliasLead::SurfaceSupportStorage)
+                    .then_some(((group.prototype, group.group_id), row.tag()))
+            }),
+        "catia_alias_group_index",
+    )?;
+    for row in ctx.admit_iter(rows, "catia_native_alias_tag_write_visits")? {
         row.canonical_surface_tag = match row.lead() {
             AliasLead::SurfaceSupportStorage => Some(row.tag()),
-            AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
-                stored_by_group
-                    .get(&(group.prototype, group.group_id))
+            AliasLead::NonSurfaceAlias => match row.group.as_ref() {
+                Some(group) => ctx
+                    .get_hash_map(
+                        &stored_by_group,
+                        &(group.prototype, group.group_id),
+                        "catia_alias_group_index",
+                    )?
                     .copied()
-                    .flatten()
-            }),
+                    .flatten(),
+                None => None,
+            },
             _ => None,
         };
     }
@@ -878,23 +937,17 @@ pub(crate) fn resolve_owner_chart_support_aliases(
     packets: &mut [CatiaConsolidatedOwnerPacket],
     aliases: &[CatiaAliasRow],
 ) -> Result<(), CodecError> {
-    let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
-    for row in ctx.admit_iter(aliases, "catia_native_owner_alias_visits")? {
-        let key = row.tag();
-        if let Some(stored) = unique_by_tag.get_mut(&key) {
-            *stored = None;
-        } else {
-            ctx.insert_hash_map(
-                &mut unique_by_tag,
-                key,
-                Some(row),
-                "catia_owner_alias_index",
-            )?;
-        }
-    }
+    let (unique_by_tag, _storage) = ctx.unique_index(
+        aliases.iter().map(|row| (row.tag(), row)),
+        "catia_owner_alias_index",
+    )?;
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| -> Result<(), CodecError> {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
-            *alias = if let Some(row) = unique_by_tag.get(&reference.value).copied().flatten() {
+            *alias = if let Some(row) = ctx
+                .get_hash_map(&unique_by_tag, &reference.value, "catia_owner_alias_index")?
+                .copied()
+                .flatten()
+            {
                 let id = ctx.copy_retained_text(&row.id, "catia_owner_alias_binding_id")?;
                 cadmpeg_core::text::NonBlankString::for_decode(ctx, id, "validate nonblank text")?
                     .map(|id| CatiaOwnerChartAliasBinding::new(id, row.canonical_surface_tag))
@@ -904,7 +957,7 @@ pub(crate) fn resolve_owner_chart_support_aliases(
         }
         Ok(())
     };
-    for packet in packets {
+    for packet in ctx.admit_iter(packets, "catia_native_owner_alias_packet_visits")? {
         let Some(chart) = packet.owner_chart_mut() else {
             continue;
         };
@@ -1147,13 +1200,16 @@ impl CatiaCatalog {
     }
 }
 
+/// Projects one parsed graph and its entity records. The returned record
+/// index lives in the caller's scoped storage.
 pub(crate) fn native_object_graph(
     ctx: &DecodeContext<'_>,
+    index_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     graph: &object_graph::ObjectGraph,
     entity_records: Vec<entity_table::EntityRecord>,
     finjpl_segment: Option<String>,
     outer_container: Option<CatiaOuterContainerBinding>,
-) -> Result<(CatiaObjectGraph, Vec<CatiaEntityRecord>), CodecError> {
+) -> Result<(CatiaObjectGraph, Vec<CatiaEntityRecord>, GraphRecordIndex), CodecError> {
     let id = ctx.format_retained(
         format_args!("catia:outer:object-graph#{:010}", graph.pos),
         "catia_native_graph_id",
@@ -1209,19 +1265,13 @@ pub(crate) fn native_object_graph(
         };
         ctx.push_vec(&mut records, row, "catia_native_graph_records")?;
     }
-    for record in &mut records {
+    for record in ctx.admit_iter(&mut records, "catia_native_graph_design_object_ids")? {
         record.design_object = record
             .owner_entity_id()
             .map(|owner| design_object_id(ctx, u64_from_index(graph.pos), owner))
             .transpose()?;
     }
-    let record_indices = ctx.collect_hash_map(
-        ctx.admit_iter(&records, "catia_native_graph_index_source_visits")?
-            .enumerate()
-            .filter_map(|(index, record)| Some((record.entity_id()?, index))),
-        "catia_native_graph_record_indices",
-    )?;
-    let terminal_null_entity_id = terminal_null_entity_id(ctx, &records)?;
+    let record_index = GraphRecordIndex::new(ctx, index_storage, &records)?;
     for index in ctx.admit_iter(
         &(0..records.len()),
         "catia_native_graph_record_link_updates",
@@ -1231,14 +1281,9 @@ pub(crate) fn native_object_graph(
             .as_ref()
             .map(|storage| storage.reference);
         let (storage_record, storage_design_object) =
-            resolved_storage_link(ctx, storage_ref, &records, &record_indices)?;
-        let references = resolved_payload_references(
-            ctx,
-            &records[index].payload,
-            &records,
-            &record_indices,
-            terminal_null_entity_id,
-        )?;
+            resolved_storage_link(ctx, storage_ref, &records, &record_index)?;
+        let references =
+            resolved_payload_references(ctx, &records[index].payload, &records, &record_index)?;
         let record = &mut records[index];
         if let Some(storage) = &mut record.storage {
             storage.record = storage_record;
@@ -1247,7 +1292,10 @@ pub(crate) fn native_object_graph(
         record.references = references;
     }
     let mut entities = Vec::new();
-    for (ordinal, entity) in entity_records.into_iter().enumerate() {
+    for (ordinal, entity) in ctx
+        .admit_iter(entity_records, "catia_native_graph_entity_visits")?
+        .enumerate()
+    {
         let Some(object_record) = records.get(ordinal) else {
             continue;
         };
@@ -1307,6 +1355,7 @@ pub(crate) fn native_object_graph(
             records,
         },
         entities,
+        record_index,
     ))
 }
 
@@ -1470,6 +1519,6 @@ mod consolidated_edge_run_limit_tests {
                 "{operation} did not refuse"
             );
         }
-        assert!(scoped_refusals.contains("catia_native_edge_run_pcurve_index_id"));
+        assert!(scoped_refusals.contains("catia_native_edge_run_pcurve_index"));
     }
 }
