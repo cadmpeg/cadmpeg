@@ -42,28 +42,40 @@ fn competing_source() -> String {
 
 #[test]
 fn context_candidate_groups_refuse_collection_limit() {
-    super::product_collection_refuses_source(CONTEXT_SOURCE, "step_context_candidate_groups");
+    super::resource_limits::product_collection_refuses_source(
+        CONTEXT_SOURCE,
+        "step_context_candidate_groups",
+    );
 }
 
 #[test]
 fn context_candidate_members_refuse_collection_limit() {
-    super::product_collection_refuses_source(CONTEXT_SOURCE, "step_context_candidate_members");
+    super::resource_limits::product_collection_refuses_source(
+        CONTEXT_SOURCE,
+        "step_context_candidate_members",
+    );
 }
 
 #[test]
 fn occurrence_placement_results_refuse_collection_limit() {
-    super::product_collection_refuses_source(CONTEXT_SOURCE, "step_occurrence_placement_results");
+    super::resource_limits::product_collection_refuses_source(
+        CONTEXT_SOURCE,
+        "step_occurrence_placement_results",
+    );
 }
 
 #[test]
 fn sibling_usage_counts_refuse_collection_limit() {
-    super::product_collection_refuses_source(CONTEXT_SOURCE, "step_sibling_usage_counts");
+    super::resource_limits::product_collection_refuses_source(
+        CONTEXT_SOURCE,
+        "step_sibling_usage_counts",
+    );
 }
 
 #[test]
 fn ambiguous_context_source_copy_refuses_collection_limit() {
     let source = duplicate_context_source();
-    super::product_collection_refuses_source(
+    super::resource_limits::product_collection_refuses_source(
         source.as_bytes(),
         "step_ambiguous_context_source_copy",
     );
@@ -72,13 +84,16 @@ fn ambiguous_context_source_copy_refuses_collection_limit() {
 #[test]
 fn ambiguous_placement_groups_refuse_collection_limit() {
     let source = duplicate_context_source();
-    super::product_collection_refuses_source(source.as_bytes(), "step_ambiguous_placement_groups");
+    super::resource_limits::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_ambiguous_placement_groups",
+    );
 }
 
 #[test]
 fn occurrence_representation_groups_refuse_collection_limit() {
     let source = occurrence_mapped_source(false);
-    super::product_collection_refuses_source(
+    super::resource_limits::product_collection_refuses_source(
         source.as_bytes(),
         "step_occurrence_representation_groups",
     );
@@ -87,7 +102,7 @@ fn occurrence_representation_groups_refuse_collection_limit() {
 #[test]
 fn occurrence_representation_members_refuse_collection_limit() {
     let source = occurrence_mapped_source(false);
-    super::product_collection_refuses_source(
+    super::resource_limits::product_collection_refuses_source(
         source.as_bytes(),
         "step_occurrence_representation_members",
     );
@@ -96,7 +111,7 @@ fn occurrence_representation_members_refuse_collection_limit() {
 #[test]
 fn occurrence_placement_candidates_refuse_collection_limit() {
     let source = occurrence_mapped_source(false);
-    super::product_collection_refuses_source(
+    super::resource_limits::product_collection_refuses_source(
         source.as_bytes(),
         "step_occurrence_placement_candidates",
     );
@@ -105,13 +120,16 @@ fn occurrence_placement_candidates_refuse_collection_limit() {
 #[test]
 fn ambiguous_mapped_sources_refuse_collection_limit() {
     let source = occurrence_mapped_source(true);
-    super::product_collection_refuses_source(source.as_bytes(), "step_ambiguous_mapped_sources");
+    super::resource_limits::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_ambiguous_mapped_sources",
+    );
 }
 
 #[test]
 fn competing_context_source_copy_refuses_collection_limit() {
     let source = competing_source();
-    super::product_collection_refuses_source(
+    super::resource_limits::product_collection_refuses_source(
         source.as_bytes(),
         "step_competing_context_source_copy",
     );
@@ -120,31 +138,43 @@ fn competing_context_source_copy_refuses_collection_limit() {
 #[test]
 fn competing_mapped_sources_refuse_collection_limit() {
     let source = competing_source();
-    super::product_collection_refuses_source(source.as_bytes(), "step_competing_mapped_sources");
+    super::resource_limits::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_competing_mapped_sources",
+    );
 }
 
 #[test]
 fn competing_source_copy_refuses_collection_limit() {
     let source = competing_source();
-    super::product_collection_refuses_source(source.as_bytes(), "step_competing_source_copy");
+    super::resource_limits::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_competing_source_copy",
+    );
 }
 
 #[test]
 fn competing_placement_groups_refuse_collection_limit() {
     let source = competing_source();
-    super::product_collection_refuses_source(source.as_bytes(), "step_competing_placement_groups");
+    super::resource_limits::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_competing_placement_groups",
+    );
 }
 
 #[test]
 fn fallback_occurrence_placements_refuse_collection_limit() {
-    super::product_collection_refuses_source(MAPPED_SOURCE, "step_fallback_occurrence_placements");
+    super::resource_limits::product_collection_refuses_source(
+        MAPPED_SOURCE,
+        "step_fallback_occurrence_placements",
+    );
 }
 
 #[test]
 fn ambiguous_placement_source_text_refuses_work_limit() {
     // Detail text is scratch; its byte work is cumulative even below an earlier storage peak.
     let source = duplicate_context_source();
-    super::product_text_work_refuses_source(
+    super::resource_limits::product_text_work_refuses_source(
         source.as_bytes(),
         "step_ambiguous_placement_source_text",
     );
@@ -153,14 +183,17 @@ fn ambiguous_placement_source_text_refuses_work_limit() {
 #[test]
 fn ambiguous_placement_loss_text_refuses_retained_limit() {
     let source = duplicate_context_source();
-    super::product_retained_refuses_source(source.as_bytes(), "step_ambiguous_placement_loss_text");
+    super::resource_limits::product_retained_refuses_source(
+        source.as_bytes(),
+        "step_ambiguous_placement_loss_text",
+    );
 }
 
 #[test]
 fn competing_placement_source_text_refuses_work_limit() {
     // Detail text is scratch; its byte work is cumulative even below an earlier storage peak.
     let source = competing_source();
-    super::product_text_work_refuses_source(
+    super::resource_limits::product_text_work_refuses_source(
         source.as_bytes(),
         "step_competing_placement_source_text",
     );
@@ -169,22 +202,30 @@ fn competing_placement_source_text_refuses_work_limit() {
 #[test]
 fn competing_placement_loss_text_refuses_retained_limit() {
     let source = competing_source();
-    super::product_retained_refuses_source(source.as_bytes(), "step_competing_placement_loss_text");
+    super::resource_limits::product_retained_refuses_source(
+        source.as_bytes(),
+        "step_competing_placement_loss_text",
+    );
 }
 
 #[test]
 fn body_conflict_source_text_refuses_work_limit() {
     // Detail text is scratch; its byte work is cumulative even below an earlier storage peak.
-    let source = super::mapped_body_placement_source();
-    super::product_text_work_refuses_source(source.as_bytes(), "step_body_conflict_source_text");
+    let source = super::resource_limits::mapped_body_placement_source();
+    super::resource_limits::product_text_work_refuses_source(
+        source.as_bytes(),
+        "step_body_conflict_source_text",
+    );
 }
 
 #[test]
 fn body_conflict_loss_text_refuses_retained_limit() {
-    let source = super::mapped_body_placement_source();
-    super::product_retained_refuses_source(source.as_bytes(), "step_body_conflict_loss_text");
+    let source = super::resource_limits::mapped_body_placement_source();
+    super::resource_limits::product_retained_refuses_source(
+        source.as_bytes(),
+        "step_body_conflict_loss_text",
+    );
 }
-
 
 #[test]
 fn missing_shape_body_loss_text_refuses_retained_limit() {

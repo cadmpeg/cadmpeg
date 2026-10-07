@@ -51,7 +51,10 @@ pub(super) struct Annotations<'ctx> {
 
 impl<'ctx> Annotations<'ctx> {
     pub(super) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
-        Ok(Self { indices: BTreeMap::new(), storage: ctx.reserve_scoped(0, "STEP annotation index scratch")? })
+        Ok(Self {
+            indices: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "STEP annotation index scratch")?,
+        })
     }
 
     /// Insert an annotation and return its arena index.
@@ -71,13 +74,21 @@ impl<'ctx> Annotations<'ctx> {
             visible: draft.visible,
             definition: draft.definition,
         });
-        self.storage.with_storage(|| ctx.insert_btree_map(&mut self.indices, id, index, "step_pmi_annotation_index"))?;
+        self.storage.with_storage(|| {
+            ctx.insert_btree_map(&mut self.indices, id, index, "step_pmi_annotation_index")
+        })?;
         Ok(index)
     }
 
     /// The inserted annotation index for a STEP record.
-    pub(super) fn get(&self, ctx: &DecodeContext<'_>, id: u64) -> Result<Option<AnnotationIndex>, CodecError> {
-        Ok(ctx.get_btree_map(&self.indices, &id, "STEP annotation index lookup")?.copied())
+    pub(super) fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        id: u64,
+    ) -> Result<Option<AnnotationIndex>, CodecError> {
+        Ok(ctx
+            .get_btree_map(&self.indices, &id, "STEP annotation index lookup")?
+            .copied())
     }
 }
 
@@ -98,7 +109,8 @@ mod tests {
             DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
         let mut ir = CadIr::empty();
         let mut annotations = Annotations::new(&ctx).expect("annotation index setup");
-        annotations.push(
+        annotations
+            .push(
                 &ctx,
                 &mut ir,
                 1,
@@ -137,21 +149,38 @@ mod tests {
     fn annotation_index_lookup_preserves_refusal() {
         let setup = cadmpeg_test_support::service_decode_context();
         let mut annotations = Annotations::new(&setup).expect("index");
-        annotations.push(&setup, &mut CadIr::empty(), 1, AnnotationDraft {
-            name: None,
-            targets: Vec::new(),
-            visible: None,
-            definition: PmiDefinition::Datum { identification: String::new() },
-        }).expect("annotation");
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP annotation index lookup", |limit| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
-            let result = annotations.get(&ctx, 1);
-            if let Err(CodecError::ResourceLimit(ref refusal)) = result { assert_eq!(ctx.resource_refusal(), Some(refusal.clone())); }
-            result
-        });
-        assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.operation == "STEP annotation index lookup"));
+        annotations
+            .push(
+                &setup,
+                &mut CadIr::empty(),
+                1,
+                AnnotationDraft {
+                    name: None,
+                    targets: Vec::new(),
+                    visible: None,
+                    definition: PmiDefinition::Datum {
+                        identification: String::new(),
+                    },
+                },
+            )
+            .expect("annotation");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "STEP annotation index lookup",
+            |limit| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
+                let result = annotations.get(&ctx, 1);
+                if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+                    assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                }
+                result
+            },
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(refusal) if refusal.operation == "STEP annotation index lookup")
+        );
     }
 }

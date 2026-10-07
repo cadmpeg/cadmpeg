@@ -22,23 +22,35 @@ fn exchange(records: &str) -> (String, crate::parse::Exchange) {
 
 fn value_refusal(value: &Value, operation: &'static str) {
     let (source, exchange) = exchange("#1=ITEM();");
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, operation, |limit| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).expect("root fits retained policy");
-        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
-        super::super::value_text(&exchange, value, (&mut Vec::new(), &reports), 1, "value", &ctx)
-    });
-    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::RetainedBytes && refusal.operation == operation));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+                .expect("root fits retained policy");
+            let reports =
+                std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+            super::super::value_text(
+                &exchange,
+                value,
+                (&mut Vec::new(), &reports),
+                1,
+                "value",
+                &ctx,
+            )
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::RetainedBytes && refusal.operation == operation)
+    );
 }
 
 #[test]
 fn drawing_string_value_refuses_retained_limit() {
-    value_refusal(
-        &Value::String(b"drawing text".to_vec()),
-        "step_string_text",
-    );
+    value_refusal(&Value::String(b"drawing text".to_vec()), "step_string_text");
 }
 
 #[test]
@@ -136,12 +148,13 @@ fn drawing_sheet_usage_sequence_propagates_string_refusal() {
     );
 }
 
-
 #[test]
 fn nested_drawing_text_retains_only_the_complete_result() {
     let (_source, exchange) = exchange("#1=ITEM();");
     let mut value = Value::String(b"AB".to_vec());
-    for _ in 0..48 { value = Value::Typed("WRAP".into(), Box::new(value)); }
+    for _ in 0..48 {
+        value = Value::Typed("WRAP".into(), Box::new(value));
+    }
     let expected = format!("{}AB{}", "WRAP(".repeat(48), ")".repeat(48));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -149,6 +162,14 @@ fn nested_drawing_text_retains_only_the_complete_result() {
     policy.limits.max_retained_bytes = u64::try_from(expected.len()).expect("fixture length");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
     let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
-    let text = super::super::value_text(&exchange, &value, (&mut Vec::new(), &reports), 1, "fixture", &ctx).expect("only final text retained");
+    let text = super::super::value_text(
+        &exchange,
+        &value,
+        (&mut Vec::new(), &reports),
+        1,
+        "fixture",
+        &ctx,
+    )
+    .expect("only final text retained");
     assert_eq!(text.as_deref(), Some(expected.as_str()));
 }

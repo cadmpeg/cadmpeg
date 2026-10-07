@@ -154,32 +154,65 @@ fn validation_property_name_refuses_materialized_limit() {
 
 #[test]
 fn validation_property_description_refuses_materialized_limit() {
-    validation_property_text_refuses(Some(cadmpeg_core::decode::u64_from_index("description".len())));
+    validation_property_text_refuses(Some(cadmpeg_core::decode::u64_from_index(
+        "description".len(),
+    )));
 }
 
 fn validation_property_text_refuses(text_bytes: Option<u64>) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    let (exchange, _) = crate::test_support::with_service_context(VALIDATION_LIMIT_SOURCE, crate::parse::parse_inner).expect("exchange");
+    let (exchange, _) = crate::test_support::with_service_context(
+        VALIDATION_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("exchange");
     let setup = cadmpeg_test_support::service_decode_context();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &setup).expect("geometry");
     // Source bytes and prior scratch allocations precede the selected string.
-    let probe = RefusalProbe::arm(ResourceDimension::MaterializedBytes, "step_string_text", text_bytes);
+    let probe = RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        "step_string_text",
+        text_bytes,
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = u64::MAX;
-    let (ctx, _) = DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy).expect("root");
-    let Err(CodecError::ResourceLimit(refusal)) = super::decode(&exchange, &geometry.value, &mut ir.clone(), &ctx) else { panic!("selected string boundary"); };
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy).expect("root");
+    let Err(CodecError::ResourceLimit(refusal)) =
+        super::decode(&exchange, &geometry.value, &mut ir.clone(), &ctx)
+    else {
+        panic!("selected string boundary");
+    };
     assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(refusal.operation, "step_string_text");
     drop(probe);
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = refusal.used + refusal.additional - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy).expect("root");
-    let Err(CodecError::ResourceLimit(replay)) = super::decode(&exchange, &geometry.value, &mut ir, &ctx) else { panic!("string replay refusal"); };
-    assert_eq!((replay.dimension, replay.operation, replay.used, replay.additional), (refusal.dimension, refusal.operation, refusal.used, refusal.additional));
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy).expect("root");
+    let Err(CodecError::ResourceLimit(replay)) =
+        super::decode(&exchange, &geometry.value, &mut ir, &ctx)
+    else {
+        panic!("string replay refusal");
+    };
+    assert_eq!(
+        (
+            replay.dimension,
+            replay.operation,
+            replay.used,
+            replay.additional
+        ),
+        (
+            refusal.dimension,
+            refusal.operation,
+            refusal.used,
+            refusal.additional
+        )
+    );
     assert_eq!(ctx.resource_refusal(), Some(replay));
 }
 
@@ -533,7 +566,8 @@ fn validation_point_number_parse_preserves_refusal() {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_work_units = limit;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
             let result = super::step_id(&ctx, "step:data:point#7");
             if let Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal)) = result {
                 assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
