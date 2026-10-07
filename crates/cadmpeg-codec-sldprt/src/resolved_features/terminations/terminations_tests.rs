@@ -18,17 +18,6 @@ use crate::records::ObjectId;
 use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName};
 use std::collections::BTreeMap;
 
-fn with_service_context<T>(call: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("decode context");
-    call(&ctx)
-}
-
 #[test]
 fn compact_extrusion_through_all_requires_the_complete_end_spec() {
     let mut payload = vec![0; 104];
@@ -37,23 +26,15 @@ fn compact_extrusion_through_all_requires_the_complete_end_spec() {
     payload[18] = 1;
     payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
     payload[92] = 1;
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_at(&payload, 0));
     payload[8] = 1;
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_at(&payload, 0));
     payload[8] = 0;
     payload[18] = 0;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_at(&payload, 0));
     payload[18] = 1;
     payload[103] = 1;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_at(&payload, 0));
     let declaration = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
     let mut direct = vec![0; declaration.len() + 102];
     direct[..declaration.len()].copy_from_slice(declaration);
@@ -63,13 +44,9 @@ fn compact_extrusion_through_all_requires_the_complete_end_spec() {
     direct[body + 28..body + 32].copy_from_slice(&[1, 0, 0, 1]);
     direct[body + 88..body + 92].copy_from_slice(&[0, 0, 1, 0]);
     direct[body + 98..body + 102].copy_from_slice(&[0xff, 0xff, 1, 0]);
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &direct, body - 2).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_at(&direct, body - 2));
     direct[body + 6..body + 10].copy_from_slice(&1u32.to_le_bytes());
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &direct, body - 2).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_at(&direct, body - 2));
 }
 
 #[test]
@@ -939,30 +916,18 @@ fn compact_extrusion_through_next_shares_the_traversal_tail() {
     payload[18] = 2;
     payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
     payload[92] = 1;
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
-    }));
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_next_at(&payload, 0));
+    assert!(!compact_extrusion_through_all_at(&payload, 0));
     payload[18] = 1;
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_at(&payload, 0));
+    assert!(!compact_extrusion_through_next_at(&payload, 0));
     payload[18] = 2;
     payload[103] = 1;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_next_at(&payload, 0));
     payload[103] = 0;
     payload[92] = 0;
     payload[90] = 1;
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_next_at(&payload, 0));
     payload.resize(108, 0);
     payload[100..102].copy_from_slice(&[0x83, 0x81]);
     payload[102..106].copy_from_slice(&5u32.to_le_bytes());
@@ -971,9 +936,7 @@ fn compact_extrusion_through_next_shares_the_traversal_tail() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 1]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_next_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_next_at(&payload, 0));
 }
 
 #[test]
@@ -989,13 +952,9 @@ fn compact_extrusion_through_all_accepts_a_retained_dimension_child() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_at(&payload, 0));
     payload[22] = 1;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_at(&payload, 0));
 }
 
 #[test]
@@ -1014,13 +973,9 @@ fn compact_extrusion_through_all_accepts_a_dimensioned_traversal_body() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 1]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_at(&payload, 0));
     payload[44] = 0;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_at(&payload, 0));
 }
 
 #[test]
@@ -1039,32 +994,20 @@ fn compact_extrusion_mid_plane_requires_the_dimension_child() {
     payload[18] = 6;
     payload.extend_from_slice(&[0x6a, 0x81]);
     dimension_tail(&mut payload);
-    assert!(with_service_context(|ctx| compact_extrusion_mid_plane_at(
-        ctx, &payload, 0
-    )
-    .expect("decode admission")));
+    assert!(compact_extrusion_mid_plane_at(&payload, 0));
     payload[18] = 5;
-    assert!(!with_service_context(|ctx| compact_extrusion_mid_plane_at(
-        ctx, &payload, 0
-    )
-    .expect("decode admission")));
+    assert!(!compact_extrusion_mid_plane_at(&payload, 0));
     payload[18] = 6;
     let last = payload.len() - 1;
     payload[last] = 0;
-    assert!(!with_service_context(|ctx| compact_extrusion_mid_plane_at(
-        ctx, &payload, 0
-    )
-    .expect("decode admission")));
+    assert!(!compact_extrusion_mid_plane_at(&payload, 0));
     let mut payload = vec![0; 26];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
     payload[4] = 1;
     payload[18] = 6;
     payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
     dimension_tail(&mut payload);
-    assert!(with_service_context(|ctx| compact_extrusion_mid_plane_at(
-        ctx, &payload, 0
-    )
-    .expect("decode admission")));
+    assert!(compact_extrusion_mid_plane_at(&payload, 0));
 }
 
 #[test]
@@ -1079,32 +1022,17 @@ fn compact_extrusion_blind_requires_code_zero_and_the_dimension_child() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-    assert!(with_service_context(|ctx| compact_extrusion_blind_at(
-        ctx, &payload, 0
-    )
-    .expect("decode admission")));
+    assert!(compact_extrusion_blind_at(&payload, 0));
     payload[block + 8] = 0x40;
-    assert!(with_service_context(|ctx| compact_extrusion_blind_at(
-        ctx, &payload, 0
-    )
-    .expect("decode admission")));
+    assert!(compact_extrusion_blind_at(&payload, 0));
     payload[18] = 1;
-    assert!(!with_service_context(|ctx| compact_extrusion_blind_at(
-        ctx, &payload, 0
-    )
-    .expect("decode admission")));
+    assert!(!compact_extrusion_blind_at(&payload, 0));
     payload[18] = 0;
     payload[22] = 1;
-    assert!(!with_service_context(|ctx| compact_extrusion_blind_at(
-        ctx, &payload, 0
-    )
-    .expect("decode admission")));
+    assert!(!compact_extrusion_blind_at(&payload, 0));
     let mut compact = payload[..22].to_vec();
     compact.extend_from_slice(&payload[26..]);
-    assert!(with_service_context(|ctx| compact_extrusion_blind_at(
-        ctx, &compact, 0
-    )
-    .expect("decode admission")));
+    assert!(compact_extrusion_blind_at(&compact, 0));
 }
 
 #[test]
@@ -1124,30 +1052,18 @@ fn compact_extrusion_through_all_both_accepts_both_carriers() {
     payload[22] = 1;
     payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
     payload[92] = 1;
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
-    }));
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_both_at(&payload, 0));
+    assert!(!compact_extrusion_through_all_at(&payload, 0));
     payload[8] = 1;
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_both_at(&payload, 0));
     payload[8] = 2;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_both_at(&payload, 0));
     payload[8] = 0;
     payload[22] = 0;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_both_at(&payload, 0));
     payload[22] = 1;
     payload[18] = 2;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_both_at(&payload, 0));
     // Dedicated code 9 carrier with the retained dimension child.
     let mut payload = vec![0; 26];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
@@ -1155,18 +1071,12 @@ fn compact_extrusion_through_all_both_accepts_both_carriers() {
     payload[22] = 1;
     payload.extend_from_slice(&[0x6a, 0x81]);
     dimension_tail(&mut payload);
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_both_at(&payload, 0));
     payload[22] = 0;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_both_at(&payload, 0));
     payload[22] = 1;
     payload[4] = 2;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_both_at(&payload, 0));
 }
 
 #[test]
@@ -1182,27 +1092,17 @@ fn compact_extrusion_blind_second_direction_requires_the_dimension_child() {
     payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
     payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
     payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")
-    }));
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_both_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_blind_through_all_second_at(&payload, 0));
+    assert!(!compact_extrusion_through_all_both_at(&payload, 0));
     payload[22] = 0;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_blind_through_all_second_at(&payload, 0));
     payload[22] = 1;
     payload[4] = 0;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_blind_through_all_second_at(&payload, 0));
     payload[4] = 1;
     let last = payload.len() - 1;
     payload[last] = 0;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_blind_through_all_second_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_blind_through_all_second_at(&payload, 0));
 }
 
 #[test]
@@ -1214,30 +1114,20 @@ fn end_spec_headers_require_the_anchor_class_identity() {
     payload[92] = 1;
     // Header-shaped run without a class token or declaration at the anchor
     // is a fillet edge-set impostor, not an end spec.
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_at(&payload, 0));
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_at(&payload, 0));
     payload[..2].copy_from_slice(&[0xff, 0xff]);
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 0).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_at(&payload, 0));
     let mut payload = vec![0; 15];
     payload.extend_from_slice(&[0; 104]);
     payload[15 + 4] = 1;
     payload[15 + 18] = 1;
     payload[15 + 30..15 + 34].copy_from_slice(&[1, 0, 0, 1]);
     payload[15 + 92] = 1;
-    assert!(!with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 15).expect("decode admission")
-    }));
+    assert!(!compact_extrusion_through_all_at(&payload, 15));
     payload[..17].copy_from_slice(b"\xff\xff\x01\x00\x0b\x00moEndSpec_c");
-    assert!(with_service_context(|ctx| {
-        compact_extrusion_through_all_at(ctx, &payload, 15).expect("decode admission")
-    }));
+    assert!(compact_extrusion_through_all_at(&payload, 15));
 }
 
 #[test]
@@ -1725,18 +1615,11 @@ fn compact_combine_operation_is_name_length_relative() {
     payload[operation..operation + 4].copy_from_slice(&2u32.to_le_bytes());
     payload[operation + 10..operation + 14].copy_from_slice(&[0xff; 4]);
     assert_eq!(
-        with_service_context(|ctx| {
-            compact_combine_operation_at(ctx, &payload, offset).expect("decode admission")
-        }),
+        compact_combine_operation_at(&payload, offset),
         Some("Intersect")
     );
     payload[operation - 1] = 1;
-    assert_eq!(
-        with_service_context(|ctx| {
-            compact_combine_operation_at(ctx, &payload, offset).expect("decode admission")
-        }),
-        None
-    );
+    assert_eq!(compact_combine_operation_at(&payload, offset), None);
     let offset = 11;
     let mut tokenized = vec![0; 180];
     tokenized[offset..offset + 5].copy_from_slice(&[0xe3, 0x85, 0xff, 0xfe, 0xff]);
@@ -1744,18 +1627,11 @@ fn compact_combine_operation_is_name_length_relative() {
     let operation = offset + 117 + 16;
     tokenized[operation + 4..operation + 10].copy_from_slice(&[0, 0, 0xff, 0xff, 0xff, 0xff]);
     assert_eq!(
-        with_service_context(|ctx| {
-            compact_combine_operation_at(ctx, &tokenized, offset).expect("decode admission")
-        }),
+        compact_combine_operation_at(&tokenized, offset),
         Some("Join")
     );
     tokenized[operation + 9] = 0;
-    assert_eq!(
-        with_service_context(|ctx| {
-            compact_combine_operation_at(ctx, &tokenized, offset).expect("decode admission")
-        }),
-        None
-    );
+    assert_eq!(compact_combine_operation_at(&tokenized, offset), None);
 }
 
 fn sweep_path_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {

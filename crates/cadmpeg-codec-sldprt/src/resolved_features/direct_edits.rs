@@ -2,10 +2,11 @@
 
 use super::axes::{compact_line_reference_directions, declared_line_reference_directions};
 use super::scalars::feature_object_name;
+use super::{classes_within, sorted_classes};
 use crate::classification::{classify, FeatureClass};
-use crate::records::{FeatureInputClass, FeatureInputLane};
+use crate::records::FeatureInputLane;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDirection3, FiniteVector3};
 use cadmpeg_ir::scalar::FiniteReal;
@@ -154,39 +155,6 @@ pub(super) fn move_body_selection_at(
     )
 }
 
-/// One lane's classes of one name, in offset order.
-fn sorted_classes<'l>(
-    ctx: &DecodeContext<'_>,
-    storage: &mut ScopedReservation<'_>,
-    lane: &'l FeatureInputLane,
-    name: &str,
-    operation: &'static str,
-) -> Result<Vec<&'l FeatureInputClass>, CodecError> {
-    let mut classes = storage.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(&lane.classes, operation)?
-                .filter(|class| class.name == name),
-            operation,
-        )
-    })?;
-    ctx.stable_sort_by(&mut classes, |class| &class.offset, Ord::cmp, operation)?;
-    Ok(classes)
-}
-
-/// The sorted classes declared in `start..end`.
-fn classes_within<'c, 'l>(
-    ctx: &DecodeContext<'_>,
-    classes: &'c [&'l FeatureInputClass],
-    start: usize,
-    end: usize,
-    operation: &'static str,
-) -> Result<&'c [&'l FeatureInputClass], CodecError> {
-    let (start, end) = (u64_from_index(start), u64_from_index(end));
-    let first = ctx.partition_point(classes, |class| Ok(class.offset < start), operation)?;
-    let last = ctx.partition_point(classes, |class| Ok(class.offset < end), operation)?;
-    Ok(classes.get(first..last).unwrap_or_default())
-}
-
 /// Charge each Move Face candidate and its per-feature slot before insertion.
 fn push_move_face_candidate(
     ctx: &DecodeContext<'_>,
@@ -296,15 +264,15 @@ pub(crate) fn enrich_history_move_face_translations(
             let specs_within = classes_within(
                 ctx,
                 &direction_specs,
-                start,
-                end,
+                u64_from_index(start),
+                u64_from_index(end),
                 "find SLDPRT move-face direction classes",
             )?;
             let line_refs_within = classes_within(
                 ctx,
                 &line_refs,
-                start,
-                end,
+                u64_from_index(start),
+                u64_from_index(end),
                 "find SLDPRT move-face line references",
             )?;
             let ([_], [line_ref]) = (specs_within, line_refs_within) else {
@@ -505,8 +473,8 @@ pub(crate) fn enrich_history_move_body_translations(
             let candidate = match classes_within(
                 ctx,
                 &data_classes,
-                start,
-                end,
+                u64_from_index(start),
+                u64_from_index(end),
                 "find SLDPRT move-body data classes",
             )? {
                 [class] => move_body_translation_record(

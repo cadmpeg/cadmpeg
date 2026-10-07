@@ -134,7 +134,10 @@ impl LayerClassification {
         ctx: &DecodeContext<'_>,
         losses: &mut Vec<LossNote>,
     ) -> Result<(), CodecError> {
-        for loss in dialect_losses(ctx, &self.layers)? {
+        for loss in ctx.admit_iter(
+            dialect_losses(ctx, &self.layers)?,
+            "append SLDPRT dialect losses",
+        )? {
             ctx.reserve_vec(losses, 1, "append SLDPRT dialect losses")?;
             losses.push(loss);
         }
@@ -197,7 +200,10 @@ pub(crate) fn classify_layers(
     let mut layers = DialectLayers::of(host.matched(ctx, declaration)?);
     let extra = cadmpeg_parasolid::extra_layers(ctx, kernels, &VERIFIED_KERNELS)?;
     let mut losses = Vec::new();
-    for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
+    for message in ctx.admit_iter(
+        cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)?,
+        "collect SLDPRT dialect collision losses",
+    )? {
         ctx.reserve_vec(&mut losses, 1, "collect SLDPRT dialect collision losses")?;
         losses.push(SldprtLossCode::DialectLayerCollision.note(message));
     }
@@ -355,7 +361,7 @@ fn dialect_losses(
     layers: &DialectLayers,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    for layer in layers.iter() {
+    for layer in ctx.admit_iter(layers, "collect SLDPRT dialect losses")? {
         if let Some(loss) = dialect_loss(ctx, layer)? {
             ctx.reserve_vec(&mut losses, 1, "collect SLDPRT dialect losses")?;
             losses.push(loss);
