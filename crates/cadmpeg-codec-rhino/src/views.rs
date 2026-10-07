@@ -480,7 +480,7 @@ fn append_file_reference_diagnostics(
     source_offset: usize,
     tag: &'static str,
 ) -> Result<(), FramingError> {
-    for diagnostic in diagnostics {
+    for diagnostic in ctx.admit_iter(&diagnostics[..], "Rhino view diagnostic traversal").map_err(CodecError::from)? {
         let code = diagnostic
             .code
             .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
@@ -941,6 +941,7 @@ fn parse_attributes(
                 FramingError::structural(count_offset, "clipping-plane count is invalid")
             })?;
         for _ in 0..count {
+            ctx.charge_work(1, "Rhino views cursor traversal")?;
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             if chunk.typecode != 0x4000_8000 || chunk.short() {
                 return Err(FramingError::structural(
@@ -1090,6 +1091,7 @@ fn scan_viewport_userdata(
     let mut children = Vec::new();
     let mut has_untyped_content = false;
     loop {
+        ctx.charge_work(1, "Rhino views cursor traversal")?;
         if reader.position() == reader.end() {
             return Err(FramingError::structural(
                 reader.end(),
@@ -1121,7 +1123,7 @@ fn scan_viewport_userdata(
                 }
                 let mut warnings = Diagnostics::new();
                 let parsed = parse_userdata(ctx, data, &child, archive, &mut warnings);
-                for warning in warnings {
+                for warning in ctx.admit_iter(&warnings[..], "Rhino viewport diagnostic traversal").map_err(CodecError::from)? {
                     let code = warning
                         .code
                         .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
@@ -1194,6 +1196,7 @@ fn parse_view(
     let mut parse_warnings = Vec::new();
     let mut terminated = false;
     while offset < record.body().end {
+        ctx.charge_work(1, "Rhino views cursor traversal")?;
         let child = chunk_at(data, offset, record.body().end, archive, false)?;
         ctx.reserve_vec(&mut checksum_children, 1, "Rhino view checksum children")
             .map_err(crate::chunks::FramingError::from)?;
@@ -1551,6 +1554,7 @@ fn parse_list(
     }
     let mut views = Vec::new();
     for index in 0..count {
+        ctx.charge_work(1, "Rhino views cursor traversal")?;
         let child_offset = reader.position();
         let view = match chunk_at(data, reader.position(), reader.end(), archive, false) {
             Ok(view) => view,
@@ -1643,6 +1647,7 @@ fn parse_named_cplanes(
         })?;
     let mut values = Vec::new();
     for index in 0..count {
+        ctx.charge_work(1, "Rhino views cursor traversal")?;
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.typecode != VIEW_CPLANE || chunk.short() {
             return Err(FramingError::structural(

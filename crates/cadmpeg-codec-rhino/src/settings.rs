@@ -1191,6 +1191,7 @@ fn parse_layer_extensions(
     let mut values = Vec::new();
     ctx.reserve_capacity(&mut values, count, "Rhino layer extension capacity")?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino settings cursor traversal")?;
         let entry = chunk_at(
             data,
             outer_reader.position(),
@@ -1657,6 +1658,7 @@ fn parse_plugin_list(
         count_offset,
     )?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino settings cursor traversal")?;
         parse_plugin_reference(ctx, data, &mut reader, archive)?;
     }
     reader.skip_remaining()?;
@@ -1937,6 +1939,7 @@ pub(crate) fn parse_rendering_attributes(
         .collection_vec(count, "Rhino rendering material references")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino settings cursor traversal")?;
         let material =
             crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
         if material.typecode != ANONYMOUS || material.short() {
@@ -1967,6 +1970,7 @@ pub(crate) fn parse_rendering_attributes(
             .collection_vec(obsolete_mapping_count, "Rhino obsolete rendering mappings")
             .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..obsolete_mapping_count {
+            ctx.charge_work(1, "Rhino settings cursor traversal")?;
             let mapping = crate::chunks::chunk_at(
                 data,
                 material_payload.position(),
@@ -2030,6 +2034,7 @@ pub(crate) fn parse_rendering_attributes(
             payload.position(),
         )?;
         for _ in 0..mapping_count {
+            ctx.charge_work(1, "Rhino settings cursor traversal")?;
             let mapping =
                 crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
             if mapping.typecode != ANONYMOUS || mapping.short() {
@@ -2060,6 +2065,7 @@ pub(crate) fn parse_rendering_attributes(
                 .collection_vec(channel_count, "Rhino rendering mapping channels")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..channel_count {
+                ctx.charge_work(1, "Rhino settings cursor traversal")?;
                 let channel = crate::chunks::chunk_at(
                     data,
                     mapping_payload.position(),
@@ -2181,7 +2187,7 @@ fn skip_model_attributes(
     Ok(chunk.range())
 }
 
-fn read_segments(payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
+fn read_segments(ctx: &DecodeContext<'_>, payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
     let count = payload.i32()?;
     let bytes = crate::chunks::checked_count_bytes(
         count,
@@ -2192,6 +2198,7 @@ fn read_segments(payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
     )?;
     let mut segment_reader = payload.unread()?;
     for _ in 0..(bytes / 12) {
+        ctx.charge_work(1, "Rhino settings cursor traversal")?;
         let length = segment_reader.f64()?;
         if !length.is_finite() {
             return Err(FramingError::structural(
@@ -2226,7 +2233,7 @@ pub(crate) fn parse_direct_linetype<'a>(
     if version.0 == 1 {
         payload.i32()?;
         utf16_deferred(ctx, &mut payload)?;
-        read_segments(&mut payload)?;
+        read_segments(ctx, &mut payload)?;
         if version.1 >= 1 {
             uuid(&mut payload)?;
         }
@@ -2244,7 +2251,7 @@ pub(crate) fn parse_direct_linetype<'a>(
             archive,
             warnings,
         )?);
-        read_segments(&mut payload)?;
+        read_segments(ctx, &mut payload)?;
         if version.1 >= 1 {
             // ON_Linetype::Read() consumes extension IDs through an ordered
             // cascade. A duplicate, out-of-order, or future ID ends the

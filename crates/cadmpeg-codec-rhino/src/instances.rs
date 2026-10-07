@@ -579,6 +579,7 @@ fn members(
         .collection_vec(count, "Rhino instance member UUIDs")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino instances cursor traversal")?;
         values.push(uuid(reader)?);
     }
     Ok(values)
@@ -879,6 +880,7 @@ fn skip_object_array(
     ctx.reserve_vec(ranges, count, "Rhino reference object ranges")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino instances cursor traversal")?;
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.short() {
             return Err(FramingError::structural(
