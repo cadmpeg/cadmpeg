@@ -2631,14 +2631,18 @@ fn parse_layer(
     // source recovery while using its archive index and source offset for
     // internal disambiguation.
     let mut source_requires_opaque = serialized_id.is_some_and(super::wire::Uuid::is_nil);
-    if let Some(descriptor) = ctx
-        .admit_iter(&userdata[..], "Rhino parse layer traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .filter_map(UserdataDescriptor::known)
-        .find(|descriptor| {
-            descriptor.class_uuid == LAYER_EXTENSIONS && descriptor.item_uuid == LAYER_EXTENSIONS
-        })
-    {
+    if let Some(descriptor) = ctx.find_map(
+        &userdata,
+        |raw| {
+            let Some(descriptor) = UserdataDescriptor::known(raw) else {
+                return Ok(None);
+            };
+            Ok((descriptor.class_uuid == LAYER_EXTENSIONS
+                && descriptor.item_uuid == LAYER_EXTENSIONS)
+                .then_some(descriptor))
+        },
+        "Rhino parse layer traversal",
+    )? {
         match parse_layer_extensions(
             ctx,
             data,

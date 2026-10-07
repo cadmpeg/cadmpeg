@@ -446,12 +446,9 @@ fn referenced_target_ids(
                 collect_reference_ids(value, &mut ids, ctx)?;
             }
         }
-        if ctx
-            .admit_iter(
-                &(record.partials)[..],
-                "STEP referenced target ids traversal",
-            )?
-            .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
+        if record
+            .partial(ctx, "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")?
+            .is_some()
         {
             if let Some(placeholder_id) =
                 association_placeholder_reference(ctx, record, parameters)?
@@ -554,18 +551,7 @@ fn drawing_type(
     record: &RawRecord,
 ) -> Result<Option<(&'static str, &'static crate::ids::IdentityKind)>, CodecError> {
     for (name, kind) in drawing_entities() {
-        if ctx
-            .admit_iter(&record.partials[..], "STEP drawing type partial traversal")?
-            .map(|partial| -> Result<Option<_>, CodecError> {
-                Ok(
-                    (ctx.equal(partial.name.as_str(), name, "STEP drawing type equality")?)
-                        .then_some(()),
-                )
-            })
-            .find_map(Result::transpose)
-            .transpose()?
-            .is_some()
-        {
+        if record.partial(ctx, name)?.is_some() {
             return Ok(Some((name, kind)));
         }
     }
@@ -600,20 +586,18 @@ fn source_parameters<'a>(
     name: &str,
 ) -> Result<DrawingParameters<'a>, CodecError> {
     let direct = ctx
-        .admit_iter(
+        .find_map(
             &record.partials[..],
+            |partial| -> Result<Option<_>, CodecError> {
+                Ok((ctx.equal(
+                    partial.name.as_str(),
+                    name,
+                    "STEP source parameters equality",
+                )?)
+                .then_some(partial))
+            },
             "STEP drawing source parameter traversal",
         )?
-        .map(|partial| -> Result<Option<_>, CodecError> {
-            Ok((ctx.equal(
-                partial.name.as_str(),
-                name,
-                "STEP source parameters equality",
-            )?)
-            .then_some(partial))
-        })
-        .find_map(Result::transpose)
-        .transpose()?
         .map(|partial| partial.parameters.as_slice());
     if name == "DRAUGHTING_CALLOUT" {
         if let Some(parameters) = direct.filter(|parameters| parameters.len() >= 2) {
@@ -1036,22 +1020,13 @@ fn association_parameters<'a>(
         "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
         "ITEM_IDENTIFIED_REPRESENTATION_USAGE",
     ] {
-        if let Some(partial) = ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP drawing association parameter traversal",
-            )?
-            .map(|partial| -> Result<Option<_>, CodecError> {
-                Ok((ctx.equal(
-                    partial.name.as_str(),
-                    name,
-                    "STEP association parameters equality",
-                )? && partial.parameters.len() >= 5)
-                    .then_some(partial))
-            })
-            .find_map(Result::transpose)
-            .transpose()?
-        {
+        if let Some(partial) = ctx.find_map(
+            &record.partials[..],
+            |partial| -> Result<Option<_>, CodecError> {
+                Ok((partial.name == name && partial.parameters.len() >= 5).then_some(partial))
+            },
+            "STEP drawing association parameter traversal",
+        )? {
             return Ok(Some(partial.parameters.as_slice()));
         }
     }
@@ -1174,12 +1149,8 @@ fn wrapper_target_resolution(
         let Some(record) = exchange.records().get(&id) else {
             continue;
         };
-        if let Some(plane) = ctx
-            .admit_iter(
-                &(record.partials)[..],
-                "STEP wrapper target resolution traversal",
-            )?
-            .find(|partial| partial.name == "ANNOTATION_PLANE")
+        if let Some(plane) = record
+            .partial(ctx, "ANNOTATION_PLANE")?
             .and_then(|partial| partial.parameters.get(2))
             .and_then(ValueExt::reference)
         {

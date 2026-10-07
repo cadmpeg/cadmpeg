@@ -742,13 +742,18 @@ pub(crate) fn install(
             class,
             AnnotationClass::Modern { leader: false } | AnnotationClass::Legacy { leader: false }
         ) {
-            if let Some(extra) = ctx
-                .admit_iter(&object.userdata[..], "Rhino install traversal")?
-                .filter_map(UserdataDescriptor::known)
-                .find(|userdata| {
-                    userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA
-                })
-            {
+            if let Some(extra) = ctx.find_map(
+                &object.userdata[..],
+                |raw| {
+                    let Some(userdata) = UserdataDescriptor::known(raw) else {
+                        return Ok(None);
+                    };
+                    Ok((userdata.class_uuid == V5_TEXT_EXTRA
+                        && userdata.item_uuid == V5_TEXT_EXTRA)
+                        .then_some(userdata))
+                },
+                "Rhino install traversal",
+            )? {
                 match parse_v5_text_extra(ctx, scan.data, extra, scan.archive) {
                     Ok(value) => v5_text_extra = Some(value),
                     Err(FramingError::Resource(limit)) => {

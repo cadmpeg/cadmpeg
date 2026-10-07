@@ -327,10 +327,11 @@ fn has_uri_scheme(ctx: &DecodeContext<'_>, uri: &str) -> Result<bool, CodecError
     let scheme = &uri[..colon];
     Ok(!scheme.is_empty()
         && scheme.as_bytes()[0].is_ascii_alphabetic()
-        && ctx
-            .admit_iter(scheme.as_bytes(), "STEP URI scheme traversal")?
-            .copied()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.')))
+        && ctx.all_by(
+            scheme.as_bytes().iter().copied(),
+            |byte| Ok(byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.')),
+            "STEP URI scheme traversal",
+        )?)
 }
 
 /// Classifies a physical ZIP member for the STEP container report.

@@ -1309,12 +1309,19 @@ fn first_user_string_records(
     losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<UserStringRecord>, Vec<UserStringRecord>), CodecError> {
     let geometry_range = ctx
-        .admit_iter(
-            &(class_userdata)[..],
+        .find_map(
+            class_userdata,
+            |raw| {
+                let Some(value) = UserdataDescriptor::known(raw) else {
+                    return Ok(None);
+                };
+                Ok(
+                    (value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
+                        .then_some(value),
+                )
+            },
             "Rhino first user string records traversal",
         )?
-        .filter_map(UserdataDescriptor::known)
-        .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .map(|value| value.payload_range.clone());
     let geometry = read_user_string_records(
         ctx,
@@ -1326,12 +1333,19 @@ fn first_user_string_records(
         losses,
     )?;
     let attributes_range = ctx
-        .admit_iter(
-            &(attribute_userdata)[..],
+        .find_map(
+            attribute_userdata,
+            |raw| {
+                let Some(value) = AttributeUserdataDescriptor::known(raw) else {
+                    return Ok(None);
+                };
+                Ok(
+                    (value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
+                        .then_some(value),
+                )
+            },
             "Rhino first user string records traversal",
         )?
-        .filter_map(AttributeUserdataDescriptor::known)
-        .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .map(|value| value.payload_range.clone());
     let mut attributes = read_user_string_records(
         ctx,
@@ -1342,13 +1356,9 @@ fn first_user_string_records(
         "object-attributes user-string userdata",
         losses,
     )?;
-    if let Some(index) = ctx
-        .admit_iter(
-            &(attributes)[..],
-            "Rhino first user string records traversal",
-        )?
-        .enumerate()
-        .map(|(index, value)| -> Result<_, CodecError> {
+    if let Some(index) = ctx.find_map(
+        (attributes)[..].iter().enumerate(),
+        |(index, value)| -> Result<_, CodecError> {
             Ok(ctx
                 .eq_ignore_ascii_case(
                     value.key.as_str(),
@@ -1356,10 +1366,9 @@ fn first_user_string_records(
                     "Rhino temporary user string key case equality",
                 )?
                 .then_some(index))
-        })
-        .find_map(Result::transpose)
-        .transpose()?
-    {
+        },
+        "Rhino first user string records traversal",
+    )? {
         attributes.remove(index);
     }
     Ok((geometry, attributes))
@@ -4481,15 +4490,18 @@ fn parse_texture_mapping(
         let mut warnings = Diagnostics::new();
         let (value, userdata) =
             parse_class_wrapper_with_userdata(ctx, data, object.range(), archive, &mut warnings)?;
-        let cache_requires_opaque = ctx
-            .admit_iter(&userdata[..], "Rhino parse texture mapping traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .filter_map(UserdataDescriptor::known)
-            .any(|value| {
-                value.class_uuid == MAPPING_CRC_CACHE
+        let cache_requires_opaque = ctx.any_by(
+            &userdata,
+            |raw| {
+                let Some(value) = UserdataDescriptor::known(raw) else {
+                    return Ok(false);
+                };
+                Ok(value.class_uuid == MAPPING_CRC_CACHE
                     && value.item_uuid == MAPPING_CRC_CACHE
-                    && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
-            });
+                    && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err())
+            },
+            "Rhino parse texture mapping traversal",
+        )?;
         (
             Some(ctx.format_retained(
                 format_args!("{}", value.class_uuid),

@@ -222,10 +222,9 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
-    // Magic scan, three admitted version traversals (8 + 6 + 2), and the two-digit parse.
-    let total_work = scan_work
-        + 2 * cadmpeg_core::decode::u64_from_index(file_header::LEN - file_header::ARCHIVE_VERSION)
-        + 2;
+    // Magic scan, seven digit-search visits, six prefix visits plus an end
+    // probe, two suffix visits plus an end probe, and the two-digit parse.
+    let total_work = scan_work + 7 + (6 + 1) + (2 + 1) + 2;
     policy.limits.max_work_units = total_work;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");

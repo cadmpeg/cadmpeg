@@ -313,22 +313,19 @@ pub(super) fn decode(
                 ctx.admit_iter(bodies.as_slice(), "STEP missing body reference traversal")?
                     .map(|body| {
                         Ok::<_, CodecError>(
-                            (!ctx
-                                .admit_iter(
-                                    ir.model.bodies.as_slice(),
-                                    "STEP missing body carrier traversal",
-                                )?
-                                .map(|candidate| -> Result<Option<_>, CodecError> {
+                            (ctx.find_map(
+                                ir.model.bodies.as_slice(),
+                                |candidate| -> Result<Option<_>, CodecError> {
                                     Ok((ctx.equal(
                                         &candidate.id,
                                         body,
                                         "STEP product body identity equality",
                                     )?)
                                     .then_some(()))
-                                })
-                                .find_map(Result::transpose)
-                                .transpose()?
-                                .is_some())
+                                },
+                                "STEP missing body carrier traversal",
+                            )?
+                            .is_none())
                             .then_some(body.as_str()),
                         )
                     })
@@ -340,20 +337,18 @@ pub(super) fn decode(
                 &mut bodies,
                 |body| {
                     Ok(ctx
-                        .admit_iter(
+                        .find_map(
                             ir.model.bodies.as_slice(),
+                            |candidate| -> Result<Option<_>, CodecError> {
+                                Ok((ctx.equal(
+                                    &candidate.id,
+                                    body,
+                                    "STEP product body identity equality",
+                                )?)
+                                .then_some(()))
+                            },
                             "STEP retained body carrier traversal",
                         )?
-                        .map(|candidate| -> Result<Option<_>, CodecError> {
-                            Ok((ctx.equal(
-                                &candidate.id,
-                                body,
-                                "STEP product body identity equality",
-                            )?)
-                            .then_some(()))
-                        })
-                        .find_map(Result::transpose)
-                        .transpose()?
                         .is_some())
                 },
                 "STEP product body retention",
@@ -1033,9 +1028,11 @@ fn drawing_owned_items(
         .admit_iter(exchange.records(), "STEP drawing owned items map traversal")?
         .map(|(_, value)| value)
     {
-        let drawing_owner = ctx
-            .admit_iter(&record.partials[..], "STEP drawing owned items traversal")?
-            .any(|partial| DRAWING_ITEM_OWNER_TYPES.contains(&partial.name.as_str()));
+        let drawing_owner = ctx.any_by(
+            &record.partials[..],
+            |partial| Ok(DRAWING_ITEM_OWNER_TYPES.contains(&partial.name.as_str())),
+            "STEP drawing owned items traversal",
+        )?;
         if drawing_owner {
             for partial in
                 ctx.admit_iter(&record.partials[..], "STEP drawing owned items traversal")?
@@ -1077,15 +1074,16 @@ fn drawing_owned_items(
                 )
             })
         {
-            let Some(values) = ctx
-                .admit_iter(
-                    &(partial.parameters)[..],
-                    "STEP drawing owned items traversal",
-                )?
-                .find_map(|value| match value {
-                    Value::List(values) => Some(values.as_slice()),
-                    _ => None,
-                })
+            let Some(values) = ctx.find_map(
+                &(partial.parameters)[..],
+                |value| {
+                    Ok(match value {
+                        Value::List(values) => Some(values.as_slice()),
+                        _ => None,
+                    })
+                },
+                "STEP drawing owned items traversal",
+            )?
             else {
                 continue;
             };

@@ -2056,9 +2056,11 @@ fn append_legacy_brep(
             .enumerate()
         {
             let start = ctx
-                .admit_iter(&trim_paths[..], "Rhino append legacy brep traversal")?
-                .enumerate()
-                .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
+                .find_map(
+                    trim_paths.iter().enumerate(),
+                    |(global, path)| Ok((*path == (face_index, loop_index, 0)).then_some(global)),
+                    "Rhino append legacy brep traversal",
+                )?
                 .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
             let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep loop globals")?;
             let mut globals = {
@@ -2131,14 +2133,14 @@ fn append_legacy_brep(
             .enumerate()
         {
             let start = ctx
-                .admit_iter(
+                .position_by(
                     &(face_trim_indices[face_index])[..],
+                    |global| {
+                        let (_, candidate_loop, candidate_trim) = trim_paths[*global];
+                        Ok(candidate_loop == loop_index && candidate_trim == 0)
+                    },
                     "Rhino append legacy brep traversal",
                 )?
-                .position(|global| {
-                    let (_, candidate_loop, candidate_trim) = trim_paths[*global];
-                    candidate_loop == loop_index && candidate_trim == 0
-                })
                 .map(|position| face_trim_indices[face_index][position])
                 .ok_or_else(|| CodecError::Malformed("V1 loop has no indexed trim".to_string()))?;
             let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep endpoint globals")?;
