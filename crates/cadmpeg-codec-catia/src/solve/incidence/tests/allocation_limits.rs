@@ -19,7 +19,7 @@ fn face_configuration_mask_refuses_before_word_and_key_growth() {
         let mut masks = HashMap::<usize, Vec<u64>>::new();
         assert!(matches!(
             crate::test_support::with_collection_limit(cap, |ctx| {
-                super::super::set_mask_bit(ctx, &mut masks, 3, 0, 1, 1, "catia_face_configuration_mask_words")
+                super::super::set_mask_bit(ctx, &mut masks, 3, 0, 1, "catia_face_configuration_mask_words")
             }),
             Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
         ));
@@ -32,7 +32,6 @@ fn face_configuration_mask_refuses_before_word_and_key_growth() {
             &mut masks,
             3,
             0,
-            1,
             1,
             "catia_face_configuration_mask_words",
         )
@@ -65,8 +64,8 @@ fn face_configuration_support_refuses_collection_growth() {
         }
     }
     for operation in [
-        "catia face configuration edge sets",
-        "catia face configuration edges",
+        "catia face configuration neighbors",
+        "catia face configuration queue",
         "catia face configuration keep marks",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
@@ -74,7 +73,7 @@ fn face_configuration_support_refuses_collection_growth() {
 }
 
 #[test]
-fn face_configuration_singleton_refuses_trial_copies() {
+fn face_configuration_singleton_refuses_trial_undo_growth() {
     let fixture = || {
         vec![
             vec![vec![(0, [0, 1])], vec![(0, [0, 1])]],
@@ -102,36 +101,36 @@ fn face_configuration_singleton_refuses_trial_copies() {
     }
     for operation in [
         "catia face configuration singleton order",
-        "catia face configuration trial rows",
-        "catia face configuration trial masks",
+        "catia face configuration mask undo",
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
 }
 
 #[test]
-fn incidence_degree_adjustment_refuses_before_undo_and_point_growth() {
-    for (cap, operation) in [
-        (0, "catia incidence degree undo entries"),
-        (4, "catia incidence degree points"),
-    ] {
-        let mut degrees = vec![BTreeMap::new(), BTreeMap::new()];
-        assert!(matches!(
-            crate::test_support::with_collection_limit(cap, |ctx| {
-                super::super::adjust_incidence_degrees(ctx, &mut degrees, &[[0, 1]], 0, [2, 3])
-            }),
-            Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
-        ));
-        assert!(degrees.iter().all(BTreeMap::is_empty));
-    }
+fn incidence_degree_adjustment_refuses_before_point_growth() {
     let mut degrees = vec![BTreeMap::new(), BTreeMap::new()];
-    let undo = crate::test_support::with_service_context(|ctx| {
-        super::super::adjust_incidence_degrees(ctx, &mut degrees, &[[0, 1]], 0, [2, 3])
-    })
-    .expect("service resource budget");
-    assert_eq!(undo.entries.len(), 4);
-    assert_eq!(degrees[0].len(), 2);
-    assert_eq!(degrees[1].len(), 2);
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, |ctx| {
+            super::super::adjust_incidence_degrees(ctx, &mut degrees, &[[0, 1]], 0, [2, 3])
+        }),
+        Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia incidence degree points"
+    ));
+    assert!(degrees.iter().all(BTreeMap::is_empty));
+    let mut degrees = vec![BTreeMap::new(), BTreeMap::new()];
+    crate::test_support::with_service_context(|ctx| {
+        let undo = super::super::adjust_incidence_degrees(ctx, &mut degrees, &[[0, 1]], 0, [2, 3])
+            .expect("service resource budget");
+        assert_eq!(undo.len, 4);
+        assert_eq!(degrees[0].len(), 2);
+        assert_eq!(degrees[1].len(), 2);
+        super::super::restore_incidence_degrees(ctx, &mut degrees, undo)
+            .expect("service resource budget");
+    });
+    // Restored points keep their entries at degree zero.
+    assert!(degrees
+        .iter()
+        .all(|face| face.len() == 2 && face.values().all(|degree| *degree == 0)));
 }
 
 #[test]
@@ -325,7 +324,6 @@ fn incidence_component_coupling_refuses_each_collection_limit() {
         "catia_incidence_coupling_union",
         "catia_incidence_joined_roots",
         "catia_incidence_joined_edges",
-        "catia_incidence_joined_groups",
         "catia_incidence_joined_components",
     ] {
         assert!(operations.contains(operation), "no refusal at {operation}");
