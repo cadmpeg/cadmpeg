@@ -433,12 +433,12 @@ impl DefinitionScan {
         &self.definitions
     }
 
-    pub(crate) fn is_ambiguous(&self, id: Uuid) -> bool {
-        self.ambiguous_ids.contains(&id)
+    pub(crate) fn is_ambiguous(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, id: Uuid) -> Result<bool, cadmpeg_core::CodecError> {
+        ctx.contains_hash_set(&self.ambiguous_ids, &id, "Rhino ambiguous definition lookup")
     }
 
-    pub(crate) fn contains_member(&self, id: Uuid) -> bool {
-        self.member_object_ids.contains(&id)
+    pub(crate) fn contains_member(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, id: Uuid) -> Result<bool, cadmpeg_core::CodecError> {
+        ctx.contains_hash_set(&self.member_object_ids, &id, "Rhino definition member lookup")
     }
 
     pub(crate) fn diagnostics(&self) -> &[DefinitionDiagnostic] {
@@ -1429,15 +1429,6 @@ fn apply_idef_alternative_path(
 }
 
 /// Parses all instance-definition records without losing framing after a bad record.
-fn insert_opaque_index(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    indices: &mut BTreeSet<usize>,
-    index: usize,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.insert_btree_set(indices, index, "Rhino opaque instance definition indexes")?;
-    Ok(())
-}
-
 pub(crate) fn parse_definitions(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
@@ -1448,6 +1439,8 @@ pub(crate) fn parse_definitions(
     let mut result = DefinitionParse::default();
     let mut seen = HashMap::new();
     let mut opaque_indices = BTreeSet::new();
+    let mut seen_workspace = ctx.reserve_scoped(0, "Rhino definition identity workspace")?;
+    let mut opaque_workspace = ctx.reserve_scoped(0, "Rhino opaque definition workspace")?;
     for (source_order, record) in ctx
         .admit_iter(&records[..], "Rhino parse definitions traversal")?
         .enumerate()
@@ -1473,25 +1466,8 @@ pub(crate) fn parse_definitions(
                 .unwrap_or_default();
             let v5_layout =
                 archive == ArchiveVersion::V5 || (archive == ArchiveVersion::V6 && first != 0x00);
-            match extract_member_ids(
-                ctx,
-                data,
-                class.class_data_range.clone(),
-                archive,
-                v5_layout,
-            ) {
-                Ok(member_ids) => {
-                    ctx.reserve_set(
-                        &mut result.scan.member_object_ids,
-                        member_ids.len(),
-                        "Rhino instance member identities",
-                    )?;
-                    result.scan.member_object_ids.extend(member_ids);
-                }
-                Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
-                Err(_) => {}
-            }
-            let mut definition = if v5_layout {
+            let class_data_range = class.class_data_range.clone();
+            let parsed_definition = if v5_layout {
                 parse_v5(
                     ctx,
                     data,
@@ -1509,7 +1485,29 @@ pub(crate) fn parse_definitions(
                     archive,
                     &mut warnings,
                 )
-            }?;
+            };
+            let mut definition = match parsed_definition {
+                Ok(definition) => {
+                    for member in ctx.admit_iter(&definition.members[..], "Rhino instance member traversal").map_err(FramingError::Resource)? {
+                        ctx.insert_hash_set(&mut result.scan.member_object_ids, *member, "Rhino instance member identities")?;
+                    }
+                    definition
+                }
+                Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
+                Err(error) => {
+                    let mut prefix_workspace = ctx.reserve_scoped(0, "Rhino definition prefix workspace")?;
+                    match prefix_workspace.with_storage(|| extract_member_ids(ctx, data, class_data_range, archive, v5_layout)) {
+                        Ok(member_ids) => {
+                            for member in ctx.admit_iter(member_ids, "Rhino instance member traversal").map_err(FramingError::Resource)? {
+                                ctx.insert_hash_set(&mut result.scan.member_object_ids, member, "Rhino instance member identities")?;
+                            }
+                        }
+                        Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
+                        Err(_) => {}
+                    }
+                    return Err(error);
+                }
+            };
             let userdata_degraded = apply_idef_alternative_path(
                 ctx,
                 data,
@@ -1525,43 +1523,25 @@ pub(crate) fn parse_definitions(
             warnings.len(),
             "Rhino instance definition diagnostics",
         )?;
-        result
-            .scan
-            .diagnostics
-            .extend(warnings.into_iter().map(|diagnostic| DefinitionDiagnostic {
-                diagnostic,
-                source_range: record.range.clone(),
-            }));
+        let mut warnings = warnings.into_iter();
+        while let Some(diagnostic) = ctx.next_charged(&mut warnings, "Rhino definition diagnostic traversal")? {
+            result.scan.diagnostics.push(DefinitionDiagnostic { diagnostic, source_range: record.range.clone() });
+        }
         match parsed {
             Ok((definition, userdata_degraded)) => {
                 if userdata_degraded {
-                    insert_opaque_index(ctx, &mut opaque_indices, source_order)?;
+                    ctx.insert_scoped_btree_value(&mut opaque_workspace, &mut opaque_indices, source_order, "Rhino opaque instance definition indexes")?;
                 }
-                ctx.reserve_set(
-                    &mut result.scan.member_object_ids,
-                    definition.members.len(),
-                    "Rhino instance member identities",
-                )?;
-                result
-                    .scan
-                    .member_object_ids
-                    .extend(definition.members.iter().copied());
-                if let Some(&first) = seen.get(&definition.id) {
-                    insert_opaque_index(ctx, &mut opaque_indices, first)?;
-                    insert_opaque_index(ctx, &mut opaque_indices, source_order)?;
+                if let Some(&first) = ctx.get_hash_map(&seen, &definition.id, "Rhino definition identity lookup")? {
+                    ctx.insert_scoped_btree_value(&mut opaque_workspace, &mut opaque_indices, first, "Rhino opaque instance definition indexes")?;
+                    ctx.insert_scoped_btree_value(&mut opaque_workspace, &mut opaque_indices, source_order, "Rhino opaque instance definition indexes")?;
                     let duplicate_message = || {
                         ctx.format_retained(
                             format_args!("duplicate instance definition UUID {}", definition.id),
                             "Rhino duplicate instance definition diagnostic",
                         )
                     };
-                    if !result.scan.ambiguous_ids.contains(&definition.id) {
-                        ctx.reserve_set(
-                            &mut result.scan.ambiguous_ids,
-                            1,
-                            "Rhino ambiguous instance definitions",
-                        )?;
-                        result.scan.ambiguous_ids.insert(definition.id);
+                    if ctx.insert_hash_set(&mut result.scan.ambiguous_ids, definition.id, "Rhino ambiguous instance definitions")? {
                         ctx.reserve_vec(
                             &mut result.scan.diagnostics,
                             1,
@@ -1588,8 +1568,7 @@ pub(crate) fn parse_definitions(
                         source_range: record.range.clone(),
                     });
                 } else {
-                    ctx.reserve_map(&mut seen, 1, "Rhino instance definition identities")?;
-                    seen.insert(definition.id, source_order);
+                    seen_workspace.with_storage(|| ctx.insert_hash_map(&mut seen, definition.id, source_order, "Rhino instance definition identities"))?;
                     ctx.reserve_vec(
                         &mut result.scan.definitions,
                         1,
@@ -1617,18 +1596,18 @@ pub(crate) fn parse_definitions(
                     },
                     source_range: record.range.clone(),
                 });
-                insert_opaque_index(ctx, &mut opaque_indices, source_order)?;
+                ctx.insert_scoped_btree_value(&mut opaque_workspace, &mut opaque_indices, source_order, "Rhino opaque instance definition indexes")?;
             }
         }
     }
     ctx.retain_vec(
         &mut result.scan.definitions,
-        |definition| Ok(!result.scan.ambiguous_ids.contains(&definition.id)),
+        |definition| Ok(!ctx.contains_hash_set(&result.scan.ambiguous_ids, &definition.id, "Rhino ambiguous definition lookup")?),
         "Rhino ambiguous instance definition retention",
     )?;
     let mut opaque_records =
         ctx.collection_vec(opaque_indices.len(), "Rhino opaque instance definitions")?;
-    for index in opaque_indices {
+    for index in ctx.admit_iter(opaque_indices, "Rhino opaque definition traversal")? {
         opaque_records.push(OpaqueRecord {
             table_typecode,
             record: records[index].clone(),

@@ -157,30 +157,27 @@ fn layer_parent_workspace_refuses_materialized_limit() {
     )
     .expect("layer metadata");
     assert_eq!(metadata.layers.len(), 1);
-    let workspace = u64::try_from(std::mem::size_of::<(crate::wire::Uuid, usize)>()).unwrap();
-    let mut operations = Vec::new();
-    for limit in 0..workspace {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_materialized_bytes = limit;
-        let ctx = retained_limit_context(&data, &arena, &policy);
-        match crate::settings::report_layer_parent_references(
-            &ctx,
-            &metadata.layers,
-            &mut crate::loss::Diagnostics::new(),
-        ) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
-                assert_eq!(refusal.used, 0);
-                assert_eq!(refusal.additional, workspace);
-                operations.push(refusal.operation);
-            }
-            other => panic!("limit {limit} below the workspace must refuse: {other:?}"),
-        }
-    }
-    assert!(
-        operations
-            .iter()
-            .all(|operation| *operation == "Rhino layer parent workspace"),
-        "reached {operations:?}"
+    // The only workspace is the hash table's bucket and control storage.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino layer parent counts",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let ctx = retained_limit_context(&data, &arena, &policy);
+            crate::settings::report_layer_parent_references(&ctx, &metadata.layers, &mut crate::loss::Diagnostics::new())
+        },
     );
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("materialized refusal") };
+    assert_eq!(refusal.used, 0);
+    assert!(refusal.additional > 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = refusal.additional;
+    policy.limits.max_retained_bytes = 0;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    crate::settings::report_layer_parent_references(&ctx, &metadata.layers, &mut crate::loss::Diagnostics::new()).expect("exact table bound admitted");
+    ctx.reserve_scoped(refusal.additional, "reclaimed layer parent workspace").expect("workspace released after the pass");
 }

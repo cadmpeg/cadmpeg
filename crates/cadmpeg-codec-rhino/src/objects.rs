@@ -1681,11 +1681,12 @@ fn resolve_identity(
     warnings: &mut Diagnostics,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
+    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<SourceIdentity, cadmpeg_core::CodecError> {
     let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
-    let layer = match layers.resolve(layer_index) {
+    let layer = match layers.resolve(ctx, layer_index)? {
         LayerMatch::Unique(layer) => Some(layer),
         LayerMatch::Ambiguous => {
             if attributes.is_some() {
@@ -1756,7 +1757,7 @@ fn resolve_identity(
             ),
             "Rhino identity source ID",
         )?
-    } else if seen_ids.contains(&object_id) {
+    } else if !workspace.with_storage(|| ctx.insert_hash_set(seen_ids, object_id, "Rhino identity seen UUIDs"))? {
         warnings.push_admitted(ctx, format_args!("duplicate object UUID {object_id}"))?;
         ctx.format_retained(
             format_args!(
@@ -1766,8 +1767,6 @@ fn resolve_identity(
             "Rhino identity source ID",
         )?
     } else {
-        ctx.reserve_set(seen_ids, 1, "Rhino identity seen UUIDs")?;
-        seen_ids.insert(object_id);
         ctx.format_retained(
             format_args!("rhino:object:record#{object_id}"),
             "Rhino identity source ID",
@@ -2051,8 +2050,9 @@ pub(crate) fn resolve_identities(
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut seen_ids = HashSet::new();
     let mut layers = LayerLookup::new();
+    let mut workspace = ctx.reserve_scoped(0, "Rhino identity lookup workspace")?;
     for layer in ctx.admit_iter(&metadata.layers[..], "Rhino resolve identities traversal")? {
-        layers.insert(ctx, layer)?;
+        workspace.with_storage(|| layers.insert(ctx, layer))?;
     }
     let mut resolved = Vec::new();
     for (index, object) in ctx.admit_iter(objects, "Rhino resolve identities traversal")?.enumerate() {
@@ -2068,6 +2068,7 @@ pub(crate) fn resolve_identities(
                     &mut local_warnings,
                     index,
                     &mut seen_ids,
+                    &mut workspace,
                 )?;
                 for warning in
                     ctx.admit_iter(&local_warnings[..], "Rhino resolve identities traversal")?
@@ -2126,10 +2127,7 @@ impl<'a> LayerLookup<'a> {
         ctx: &DecodeContext<'_>,
         layer: &'a crate::settings::LayerRecord,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if !self.entries.contains_key(&layer.index) {
-            ctx.reserve_map(&mut self.entries, 1, "Rhino identity layer lookup")?;
-        }
-        match self.entries.entry(layer.index) {
+        match ctx.entry_hash_map(&mut self.entries, layer.index, "Rhino identity layer lookup")? {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(LayerEntry::Unique(layer));
             }
@@ -2140,12 +2138,12 @@ impl<'a> LayerLookup<'a> {
         Ok(())
     }
 
-    fn resolve(&self, index: i32) -> LayerMatch<'a> {
-        match self.entries.get(&index) {
+    fn resolve(&self, ctx: &DecodeContext<'_>, index: i32) -> Result<LayerMatch<'a>, cadmpeg_core::CodecError> {
+        Ok(match ctx.get_hash_map(&self.entries, &index, "Rhino identity layer query")? {
             None => LayerMatch::Missing,
             Some(LayerEntry::Unique(layer)) => LayerMatch::Unique(layer),
             Some(LayerEntry::Ambiguous) => LayerMatch::Ambiguous,
-        }
+        })
     }
 }
 

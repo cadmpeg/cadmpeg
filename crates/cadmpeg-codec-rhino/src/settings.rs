@@ -759,7 +759,7 @@ pub(crate) struct LayerRecord {
 }
 
 /// A source-normalized per-viewport layer override.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LayerPerViewportSettings {
     /// Viewport identity selected by the source entry.
     pub(crate) viewport_id: Uuid,
@@ -3043,16 +3043,10 @@ fn report_layer_parent_references(
     let mut workspace = ctx.reserve_scoped(0, "Rhino layer parent workspace")?;
     for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal")? {
         if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
-            if let Some(count) = id_counts.get_mut(&id) {
-                *count += 1;
-            } else {
-                workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                    Uuid,
-                    usize,
-                )>()))?;
-                ctx.reserve_map(&mut id_counts, 1, "Rhino layer parent counts")?;
-                id_counts.insert(id, 1);
-            }
+            let count = workspace.with_storage(|| ctx.entry_hash_map(
+                &mut id_counts, id, "Rhino layer parent counts",
+            ))?.or_default();
+            *count += 1;
         }
     }
     for layer in ctx.admit_iter(layers, "Rhino report layer parent references traversal")? {
@@ -3063,7 +3057,7 @@ fn report_layer_parent_references(
         else {
             continue;
         };
-        match id_counts.get(&parent).copied() {
+        match ctx.get_hash_map(&id_counts, &parent, "Rhino layer parent lookup")?.copied() {
             None => warnings.push_admitted(ctx, format_args!(
                 "layer {} references missing parent UUID {parent}",
                 layer.index

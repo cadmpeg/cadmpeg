@@ -267,7 +267,7 @@ fn push_light_refusal(
 #[test]
 fn light_identity_workspace_refuses_materialized_limit() {
     assert!(
-        matches!(push_light_refusal(u64::MAX, 0, u64::MAX, false), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino light identity workspace")
+        matches!(push_light_refusal(u64::MAX, 0, u64::MAX, false), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino light identity index")
     );
 }
 
@@ -1245,7 +1245,7 @@ presentation_install_limit_test!(
 presentation_install_limit_test!(
     object_identity_workspace_refuses_materialized_limit,
     presentation_install_materialized_operations,
-    "Rhino object identity workspace"
+    "Rhino object identity counts"
 );
 /// Runs two memberships of one group on a fresh context with the given
 /// materialized and retained allowances.
@@ -1312,7 +1312,7 @@ fn group_member_links_are_retained() {
 presentation_install_limit_test!(
     layer_identity_workspace_refuses_materialized_limit,
     presentation_install_materialized_operations,
-    "Rhino layer identity workspace"
+    "Rhino layer identity counts"
 );
 
 fn font_refusal(limit: u64) -> FramingError {

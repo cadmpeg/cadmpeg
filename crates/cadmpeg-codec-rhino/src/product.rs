@@ -206,24 +206,20 @@ pub(crate) fn install(
     ir: &mut CadIr,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    let mut object_records = HashMap::<Uuid, Vec<(usize, String)>>::new();
+    let mut object_records = HashMap::<Uuid, Option<usize>>::new();
+    let mut object_workspace = ctx.reserve_scoped(0, "Rhino product object workspace")?;
     for (source_order, object) in ctx
         .admit_iter(&scan.objects[..], "Rhino install traversal")?
         .enumerate()
     {
         if let Some(identity) = object.identity() {
-            if !object_records.contains_key(&identity.object_id) {
-                ctx.reserve_map(&mut object_records, 1, "Rhino product object keys")?;
-            }
-            let rows = object_records.entry(identity.object_id).or_default();
-            ctx.reserve_vec(rows, 1, "Rhino product object positions")?;
-            rows.push((
-                source_order,
-                ctx.format_retained(
-                    format_args!("rhino:object:record#{source_order:06}"),
-                    "Rhino product object ID",
-                )?,
-            ));
+            object_workspace.with_storage(|| -> Result<(), CodecError> {
+                match ctx.entry_hash_map(&mut object_records, identity.object_id, "Rhino product object keys")? {
+                    std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(Some(source_order)); }
+                    std::collections::hash_map::Entry::Occupied(mut entry) => { entry.insert(None); }
+                }
+                Ok(())
+            })?;
         }
     }
 
@@ -243,13 +239,11 @@ pub(crate) fn install(
             external.push(value);
         }
         let mut links = Vec::new();
-        for matches in ctx
-            .admit_iter(&definition.members[..], "Rhino install traversal")?
-            .filter_map(|id| object_records.get(id))
-            .filter(|matches| matches.len() == 1)
-        {
-            ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
-            links.push(ctx.copy_retained_text(&matches[0].1, "Rhino definition member link")?);
+        for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
+            if let Some(Some(source_order)) = ctx.get_hash_map(&object_records, member, "Rhino definition member lookup")? {
+                ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
+                links.push(ctx.format_retained(format_args!("rhino:object:record#{source_order:06}"), "Rhino definition member link")?);
+            }
         }
         if let Some(id) = &external_id {
             ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
@@ -261,7 +255,7 @@ pub(crate) fn install(
             Ord::cmp,
             "Rhino definition links sort",
         )?;
-        links.dedup();
+        ctx.dedup_vec(&mut links, "Rhino definition link deduplication")?;
         let mut member_object_ids = Vec::new();
         for id in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
             ctx.reserve_vec(&mut member_object_ids, 1, "Rhino definition member UUIDs")?;
@@ -343,6 +337,7 @@ pub(crate) fn install(
             object.class_data_range.clone(),
         ) {
             Ok(reference) => reference,
+            Err(crate::chunks::FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 ctx.reserve_vec(&mut losses, 1, "Rhino product occurrence losses")?;
                 let loss = crate::wire::admitted_loss(
@@ -397,9 +392,8 @@ pub(crate) fn install(
             }
         }
         let key = if identity.object_id.is_nil()
-            || object_records
-                .get(&identity.object_id)
-                .is_some_and(|matches| matches.len() != 1)
+            || ctx.get_hash_map(&object_records, &identity.object_id, "Rhino occurrence identity lookup")?
+                .is_some_and(Option::is_none)
         {
             ctx.format_retained(
                 format_args!("record-{source_order:06}"),
@@ -480,15 +474,6 @@ mod tests {
         test(&ctx)
     }
 
-    fn product_limit_error(
-        scan: &crate::container::Scan<'_>,
-        limit: u64,
-    ) -> cadmpeg_core::CodecError {
-        with_collection_limit(scan, limit, |ctx| {
-            install(ctx, scan, &mut CadIr::empty()).expect_err("product collection exceeds limit")
-        })
-    }
-
     fn one_reference_scan() -> crate::container::Scan<'static> {
         let archive = crate::chunks::ArchiveVersion::V5;
         let payload = crate::test_support::test_dump::instance_reference_payload(
@@ -535,37 +520,41 @@ mod tests {
     fn product_object_keys_refuse_collection_limit() {
         let scan = one_reference_scan();
         assert!(matches!(
-            product_limit_error(&scan, 0),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product object keys", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino product object keys"
         ));
     }
 
     #[test]
-    fn product_object_positions_refuse_collection_limit() {
-        let scan = one_reference_scan();
-        assert!(matches!(
-            product_limit_error(&scan, 1),
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product object positions"
-        ));
-    }
-
-    #[test]
+    // One unique object key precedes the occurrence link slot.
     fn occurrence_links_refuse_collection_limit() {
         let scan = one_reference_scan();
         assert!(matches!(
-            product_limit_error(&scan, 2),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino occurrence links", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino occurrence links"
         ));
     }
 
     #[test]
+    // One object key and one link precede the occurrence slot.
     fn product_occurrences_refuse_collection_limit() {
         let scan = one_reference_scan();
         assert!(matches!(
-            product_limit_error(&scan, 3),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product occurrences", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino product occurrences"
         ));
@@ -575,7 +564,11 @@ mod tests {
     fn definition_member_uuids_refuse_collection_limit() {
         let scan = one_definition_scan();
         assert!(matches!(
-            product_limit_error(&scan, 0),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino definition member UUIDs", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino definition member UUIDs"
         ));
@@ -585,7 +578,11 @@ mod tests {
     fn product_definitions_refuse_collection_limit() {
         let scan = one_definition_scan();
         assert!(matches!(
-            product_limit_error(&scan, 1),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product definitions", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino product definitions"
         ));
@@ -595,7 +592,11 @@ mod tests {
     fn product_definition_keys_refuse_collection_limit() {
         let scan = one_definition_scan();
         assert!(matches!(
-            product_limit_error(&scan, 2),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product definition keys", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino product definition keys"
         ));
@@ -605,7 +606,11 @@ mod tests {
     fn product_member_keys_refuse_collection_limit() {
         let scan = one_definition_scan();
         assert!(matches!(
-            product_limit_error(&scan, 3),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product member keys", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino product member keys"
         ));
@@ -615,7 +620,11 @@ mod tests {
     fn product_member_parents_refuse_collection_limit() {
         let scan = one_definition_scan();
         assert!(matches!(
-            product_limit_error(&scan, 4),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product member parents", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino product member parents"
         ));
@@ -636,7 +645,11 @@ mod tests {
     fn external_reference_links_refuse_collection_limit() {
         let scan = one_linked_definition_scan(6);
         assert!(matches!(
-            product_limit_error(&scan, 0),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino external reference links", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino external reference links"
         ));
@@ -646,7 +659,11 @@ mod tests {
     fn external_references_refuse_collection_limit() {
         let scan = one_linked_definition_scan(6);
         assert!(matches!(
-            product_limit_error(&scan, 1),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino external references", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino external references"
         ));
@@ -702,6 +719,7 @@ mod tests {
     }
 
     #[test]
+    // One unique object key precedes the loss slot.
     fn malformed_occurrence_loss_refuses_collection_limit() {
         let scan = scan_with_objects(&[object_record_with_payload(
             crate::chunks::ArchiveVersion::V5,
@@ -710,7 +728,11 @@ mod tests {
             &[],
         )]);
         assert!(matches!(
-            product_limit_error(&scan, 2),
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, "Rhino product occurrence losses", |cap| {
+                    with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty()))
+                }
+            ),
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == "Rhino product occurrence losses"
         ));
@@ -745,33 +767,6 @@ mod tests {
             limit = (item.used + item.additional).max(limit + 1);
         }
         panic!("product loss note copy was not reached");
-    }
-
-    #[test]
-    fn product_object_id_refuses_retained_limit() {
-        let scan = one_reference_scan();
-        let run = |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
-                    .expect("root bytes admitted");
-            install(&ctx, &scan, &mut CadIr::empty()).expect_err("object ID exceeds retained limit")
-        };
-        let error = run(crate::test_support::retained_limit_at(
-            "Rhino product object ID",
-            0,
-            |cap| match run(cap) {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => limit,
-                error => panic!("unexpected resource refusal: {error:?}"),
-            },
-        ));
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "Rhino product object ID"
-        ));
     }
 
     #[test]

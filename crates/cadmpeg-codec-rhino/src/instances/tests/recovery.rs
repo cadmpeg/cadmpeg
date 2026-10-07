@@ -341,8 +341,8 @@ fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
                     .unwrap(),
             );
             assert!(scan.definitions.definitions().is_empty());
-            assert!(scan.definitions.contains_member(Uuid::from_wire(member)));
-            assert!(!scan.definitions.contains_member(Uuid::from_wire(ordinary)));
+            assert!(scan.definitions.contains_member(&cadmpeg_test_support::service_decode_context(), Uuid::from_wire(member)).expect("member lookup admitted"));
+            assert!(!scan.definitions.contains_member(&cadmpeg_test_support::service_decode_context(), Uuid::from_wire(ordinary)).expect("member lookup admitted"));
             let losses: Vec<_> = decoded
                 .report()
                 .losses
