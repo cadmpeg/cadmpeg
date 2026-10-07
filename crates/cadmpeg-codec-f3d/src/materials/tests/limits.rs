@@ -60,19 +60,16 @@ fn material_utf16_candidate_scan_refuses_work_limit() {
 }
 
 #[test]
-fn material_utf16_prefix_refuses_work_limit() {
+fn material_utf16_prefix_checks_four_units_without_work_charge() {
     let mut bytes = Vec::new();
     super::lp_utf16(&mut bytes, "Alpha");
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "validate F3D UTF-16 string prefix",
-        0,
-        |ctx| super::super::lp_utf16_strings(ctx, &bytes),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "validate F3D UTF-16 string prefix")
-    );
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(super::super::utf16_string_prefix_is_text(&ctx, &bytes, 4, 5).unwrap());
+    ctx.finish_session().unwrap();
 }
 
 #[test]

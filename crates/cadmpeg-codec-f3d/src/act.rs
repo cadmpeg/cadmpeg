@@ -117,31 +117,29 @@ fn decode_record_frames(
             if let Some(record_type) = meta.types.get(class_index) {
                 let (entity_ids, _) = record_type.entities.storage_slices();
                 if let Some(located_entities) = record_type.entities.located_rows() {
-                    for row in
-                        ctx.admit_iter(located_entities, "check F3D ACT entity registration")?
-                    {
-                        if ctx.equal(
-                            &row.value,
-                            &record.entity_id,
-                            "compare F3D ACT entity registration",
-                        )? {
-                            registered = true;
-                            break;
-                        }
-                    }
+                    registered = ctx.any_by(
+                        located_entities,
+                        |row| {
+                            ctx.equal(
+                                &row.value,
+                                &record.entity_id,
+                                "compare F3D ACT entity registration",
+                            )
+                        },
+                        "check F3D ACT entity registration",
+                    )?;
                 } else {
-                    for registered_id in
-                        ctx.admit_iter(entity_ids, "check F3D ACT entity registration")?
-                    {
-                        if ctx.equal(
-                            registered_id,
-                            &record.entity_id,
-                            "compare F3D ACT entity registration",
-                        )? {
-                            registered = true;
-                            break;
-                        }
-                    }
+                    registered = ctx.any_by(
+                        entity_ids,
+                        |registered_id| {
+                            ctx.equal(
+                                registered_id,
+                                &record.entity_id,
+                                "compare F3D ACT entity registration",
+                            )
+                        },
+                        "check F3D ACT entity registration",
+                    )?;
                 }
             }
             if !registered {
@@ -711,10 +709,11 @@ fn decode_channel_group(
         (None, cursor)
     };
     let remainder = &bytes[end..frame.end];
-    let class_tail = if ctx
-        .admit_iter(remainder, "check F3D ACT class-tail padding")?
-        .all(|byte| *byte == 0)
-    {
+    let class_tail = if ctx.all_by(
+        remainder,
+        |byte| Ok(*byte == 0),
+        "check F3D ACT class-tail padding",
+    )? {
         None
     } else {
         Some(
@@ -793,7 +792,6 @@ fn decode_component_link(
         if components_marker >= frame.end || components_marker - cursor >= 8 {
             break;
         }
-        ctx.charge_work(1, "scan F3D ACT component padding")?;
         if bytes.get(components_marker) != Some(&0) {
             break;
         }
@@ -806,10 +804,11 @@ fn decode_component_link(
     let Some(trailing_padding) = bytes.get(end..frame.end) else {
         return Ok(None);
     };
-    if !ctx
-        .admit_iter(trailing_padding, "check F3D ACT component-tail padding")?
-        .all(|byte| *byte == 0)
-    {
+    if !ctx.all_by(
+        trailing_padding,
+        |byte| Ok(*byte == 0),
+        "check F3D ACT component-tail padding",
+    )? {
         return Ok(None);
     }
     let registry_flag = some!(crate::records::act::ActRegistryFlag::from_code(
@@ -876,10 +875,8 @@ fn marker_ref(
     let Some(padding) = bytes.get(position + 5..end) else {
         return Ok(None);
     };
-    if ctx
-        .admit_iter(padding, "check F3D ACT marker padding")?
-        .all(|byte| *byte == 0)
-    {
+    ctx.charge_work(0, "check F3D ACT marker padding")?;
+    if padding.iter().all(|byte| *byte == 0) {
         Ok(Some((value, end)))
     } else {
         Ok(None)

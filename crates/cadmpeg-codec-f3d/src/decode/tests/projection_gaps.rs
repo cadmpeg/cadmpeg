@@ -1324,7 +1324,7 @@ fn projection_body_binding_scan_preserves_work_refusal() {
 }
 
 #[test]
-fn appearance_attribute_guid_scan_preserves_work_refusal() {
+fn appearance_attribute_guid_values_scan_preserves_work_refusal() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     use cadmpeg_ir::ids::{AttributeId, FaceId};
 
@@ -1349,7 +1349,7 @@ fn appearance_attribute_guid_scan_preserves_work_refusal() {
     };
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D face material GUID case",
+        "scan F3D face material GUID values",
         0,
         |ctx| {
             let mut ir = ir.borrow_mut();
@@ -1362,7 +1362,7 @@ fn appearance_attribute_guid_scan_preserves_work_refusal() {
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "scan F3D face material GUID case")
+        if limit.operation == "scan F3D face material GUID values")
     );
 }
 

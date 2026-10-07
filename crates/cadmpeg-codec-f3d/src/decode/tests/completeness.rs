@@ -718,7 +718,7 @@ fn knit_surfaces_require_resolved_faces_and_operation_settings() {
 }
 
 #[test]
-fn datum_point_completeness_preserves_work_refusal() {
+fn datum_point_completeness_needs_no_work_for_fixed_plane_array() {
     use cadmpeg_ir::features::{
         DatumPlaneReference, DatumPointConstruction, FeatureDefinition, FeatureId,
         FeatureOperation, FinitePoint3,
@@ -731,16 +731,41 @@ fn datum_point_completeness_preserves_work_refusal() {
             })),
         })),
     });
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D datum point construction planes",
-        0,
-        |decode| feature_definition_is_incomplete(decode, &definition),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "scan F3D datum point construction planes")
-    );
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (decode, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(!feature_definition_is_incomplete(&decode, &definition).unwrap());
+    decode.finish_session().unwrap();
+}
+
+#[test]
+fn loft_completeness_searches_ignore_unvisited_sections_and_guides() {
+    let definition: cadmpeg_ir::features::FeatureDefinition =
+        serde_json::from_value(serde_json::json!({
+            "definition": "loft",
+            "sections": [
+                {"kind": "native", "value": "native:profile:first"},
+                {"kind": "native", "value": "native:profile:second"},
+                {"kind": "native", "value": "native:profile:third"}
+            ],
+            "guidance": {"kind": "guides", "path": [
+                {"kind": "native", "value": "native:guide:first"},
+                {"kind": "native", "value": "native:guide:second"},
+                {"kind": "native", "value": "native:guide:third"}
+            ]},
+            "op": "join"
+        }))
+        .unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Each search stops at its first incomplete item.
+    policy.limits.max_work_units = 2;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (decode, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(feature_definition_is_incomplete(&decode, &definition).unwrap());
+    decode.finish_session().unwrap();
 }
 
 #[test]

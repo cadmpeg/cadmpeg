@@ -303,19 +303,20 @@ fn model_root_member(
         let root_ids = root_storage.with_storage(|| {
             ctx.collect_btree_set(graph.root_ids.iter().copied(), "index F3Z root object IDs")
         })?;
-        let mut root = None;
-        for object in ctx.admit_iter(&graph.design_objects, "scan F3Z root objects")? {
-            if ctx.contains_btree_set(&root_ids, &object.id, "match F3Z root object ID")? {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(object.relative_path.len()),
-                    "match F3Z root object path",
-                )?;
-                if object.relative_path == archive_root {
-                    root = Some(object);
-                    break;
-                }
-            }
-        }
+        let root = ctx.find_by(
+            &graph.design_objects,
+            |object| {
+                Ok(
+                    ctx.contains_btree_set(&root_ids, &object.id, "match F3Z root object ID")?
+                        && ctx.equal(
+                            object.relative_path.as_str(),
+                            archive_root,
+                            "match F3Z root object path",
+                        )?,
+                )
+            },
+            "scan F3Z root objects",
+        )?;
         drop(root_ids);
         drop(root_storage);
         let Some(root) = root else {
