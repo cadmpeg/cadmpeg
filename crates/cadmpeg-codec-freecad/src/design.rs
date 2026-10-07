@@ -4105,22 +4105,24 @@ fn constraint_operands(
         ctx.xml_attribute(node, "ElementPositions", "FreeCAD design XML attribute")?;
     match (ids_text, positions_text) {
         (Some(ids), Some(positions)) => {
-            let ids = split_ints(ctx, ids)?;
-            let positions = split_ints(ctx, positions)?;
-            if ids.len() != positions.len() {
+            let ((ids_values, positions_values), integer_storage) = ctx
+                .with_scoped_storage("fcstd constraint integer lane storage", || {
+                    Ok::<_, CodecError>((split_ints(ctx, ids)?, split_ints(ctx, positions)?))
+                })?;
+            if ids_values.len() != positions_values.len() {
                 return Err(malformed_design(
                     ctx,
                     format_args!("ElementIds and ElementPositions counts differ"),
                 ));
             }
             let mut operands = Vec::new();
-            let mut ids = ctx
-                .admit_iter(&ids, "fcstd constraint entity values")?
+            let ids = ctx
+                .admit_iter(&ids_values, "fcstd constraint entity values")?
                 .copied();
             let mut positions = ctx
-                .admit_iter(&positions, "fcstd constraint position values")?
+                .admit_iter(&positions_values, "fcstd constraint position values")?
                 .copied();
-            while let Some(entity) = ids.next() {
+            for entity in ids {
                 let Some(position) = positions.next() else {
                     return Err(malformed_design(
                         ctx,
@@ -4135,6 +4137,9 @@ fn constraint_operands(
                     )?;
                 }
             }
+            drop(ids_values);
+            drop(positions_values);
+            drop(integer_storage);
             return Ok(operands);
         }
         (Some(_), None) | (None, Some(_)) => {
