@@ -187,7 +187,8 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     let tokens = expression_identifier_tokens(&ctx, "\"\" + Width")
-        .unwrap().0
+        .unwrap()
+        .0
         .expect("closed quotes");
     assert_eq!(
         tokens
@@ -201,7 +202,8 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
         .any(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
 
     let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"")
-        .unwrap().0
+        .unwrap()
+        .0
         .expect("closed quotes");
     assert_eq!(
         named
@@ -702,15 +704,28 @@ fn reverse_parameter_dependency_chain_evaluates_all_values() {
     let mut owner = feature("chain", Some("1"), 0);
     for index in 0..40 {
         let name = cadmpeg_core::text::NonBlankString::try_from(format!("D{index:02}")).unwrap();
-        let expression = if index == 39 { "1".to_owned() } else { format!("D{:02}+1", index + 1) };
+        let expression = if index == 39 {
+            "1".to_owned()
+        } else {
+            format!("D{:02}+1", index + 1)
+        };
         owner.parameters.insert(name, expression);
     }
     let histories = [FeatureHistory {
-        id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(), configurations: Vec::new(), features: vec![owner],
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![owner],
     }];
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    let parameters =
+        project_parameters(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
     for (index, parameter) in parameters.iter().enumerate() {
-        assert_eq!(parameter.value, Some(ParameterValue::Integer(40 - i64::try_from(index).unwrap())));
+        assert_eq!(
+            parameter.value,
+            Some(ParameterValue::Integer(40 - i64::try_from(index).unwrap()))
+        );
         assert_eq!(parameter.ordinal, 39 - u32::try_from(index).unwrap());
     }
 }
@@ -735,7 +750,8 @@ fn repeated_parameter_ids_keep_source_pass_replacements() {
         &mut parameters,
         &HashMap::new(),
         &HashSet::new(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(parameters[0].value, Some(ParameterValue::Integer(2)));
     assert_eq!(parameters[1].value, Some(ParameterValue::Integer(1)));
     assert_eq!(parameters[2].value, Some(ParameterValue::Integer(3)));
@@ -750,11 +766,31 @@ fn parameter_retries_follow_numeric_and_non_ascii_aliases() {
             (producer, "D00 + 1".to_owned()),
             ("D00", "1".to_owned()),
         ] {
-            owner.parameters.insert(cadmpeg_core::text::NonBlankString::try_from(name).unwrap(), expression);
+            owner.parameters.insert(
+                cadmpeg_core::text::NonBlankString::try_from(name).unwrap(),
+                expression,
+            );
         }
-        let histories = [FeatureHistory { id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(), configurations: Vec::new(), features: vec![owner] }];
-        let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
-        let value = |name| parameters.iter().find(|parameter| parameter.name == name).unwrap().value.as_ref().unwrap();
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }];
+        let parameters =
+            project_parameters(&cadmpeg_test_support::service_decode_context(), &histories)
+                .unwrap();
+        let value = |name| {
+            parameters
+                .iter()
+                .find(|parameter| parameter.name == name)
+                .unwrap()
+                .value
+                .as_ref()
+                .unwrap()
+        };
         assert_eq!(value(consumer), &ParameterValue::Integer(3));
         assert_eq!(value(producer), &ParameterValue::Integer(2));
         assert_eq!(value("D00"), &ParameterValue::Integer(1));
@@ -765,11 +801,25 @@ fn parameter_retries_follow_numeric_and_non_ascii_aliases() {
 fn display_modifier_aliases_do_not_block_expression_evaluation() {
     let mut owner = feature("modifiers", Some("1"), 0);
     owner.parameters = BTreeMap::from([
-        (cadmpeg_core::nonblank_literal!("D1"), "(<MOD-DIAM>12mm) + 1mm".into()),
+        (
+            cadmpeg_core::nonblank_literal!("D1"),
+            "(<MOD-DIAM>12mm) + 1mm".into(),
+        ),
         (cadmpeg_core::nonblank_literal!("MOD"), "MOD + 1".into()),
     ]);
-    let histories = [FeatureHistory { id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(), configurations: Vec::new(), features: vec![owner] }];
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
-    assert_eq!(parameters[0].value, Some(ParameterValue::Length(Length::new(13.0).unwrap())));
+    let histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![owner],
+    }];
+    let parameters =
+        project_parameters(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+    assert_eq!(
+        parameters[0].value,
+        Some(ParameterValue::Length(Length::new(13.0).unwrap()))
+    );
     assert_eq!(parameters[1].value, None);
 }

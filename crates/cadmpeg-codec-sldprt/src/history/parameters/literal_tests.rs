@@ -1,7 +1,7 @@
 //! Parameter literal, unit and expression-evaluation tests.
 
 use super::super::literals::{
-    dimension_display, format_f64_literal, parse_length_mm, parse_parameter_literal,
+    dimension_display, format_parameter_value, parse_length_mm, parse_parameter_literal,
 };
 use super::super::write::parameters::rewrite_parameter_expression;
 use super::eval;
@@ -28,13 +28,16 @@ fn native_scalar_literals_are_compact_and_bit_exact() {
         7.745_183_829_698_638e-127,
         -5.486_124_068_793_69e307,
     ] {
-        let literal = format_f64_literal(real(value));
+        let literal = format_parameter_value(&ParameterValue::Real(real(value)));
         let parsed = literal.parse::<f64>().expect("required invariant");
         assert_eq!(parsed.to_bits(), value.to_bits(), "{literal}");
     }
-    assert_eq!(format_f64_literal(real(0.125)), "0.125");
     assert_eq!(
-        format_f64_literal(real(7.745_183_829_698_638e-127)),
+        format_parameter_value(&ParameterValue::Real(real(0.125))),
+        "0.125"
+    );
+    assert_eq!(
+        format_parameter_value(&ParameterValue::Real(real(7.745_183_829_698_638e-127))),
         "7.745183829698638e-127"
     );
 }
@@ -267,7 +270,9 @@ fn formatted_text_dimensions_are_strings_only_for_txd_parameters() {
 fn solidworks_sign_function_is_three_way() {
     for (argument, expected) in [(-2, -1), (0, 0), (2, 1)] {
         assert_eq!(
-            eval::ParameterFunction::Sgn.apply(vec![Cow::Owned(ParameterValue::Integer(argument))]).map(Cow::into_owned),
+            eval::ParameterFunction::Sgn
+                .apply(vec![Cow::Owned(ParameterValue::Integer(argument))])
+                .map(Cow::into_owned),
             Some(ParameterValue::Integer(expected))
         );
     }
@@ -277,14 +282,18 @@ fn solidworks_sign_function_is_three_way() {
 fn integer_function_preserves_discrete_integer_values() {
     for value in [i64::MIN, -(1_i64 << 53) - 1, (1_i64 << 53) + 1, i64::MAX] {
         assert_eq!(
-            eval::ParameterFunction::Int.apply(vec![Cow::Owned(ParameterValue::Integer(value))]).map(Cow::into_owned),
+            eval::ParameterFunction::Int
+                .apply(vec![Cow::Owned(ParameterValue::Integer(value))])
+                .map(Cow::into_owned),
             Some(ParameterValue::Integer(value))
         );
     }
     assert_eq!(
-        eval::ParameterFunction::Int.apply(vec![Cow::Owned(ParameterValue::Real(
-            cadmpeg_ir::scalar::FiniteReal::new(-3.75).unwrap()
-        ))]).map(Cow::into_owned),
+        eval::ParameterFunction::Int
+            .apply(vec![Cow::Owned(ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(-3.75).unwrap()
+            ))])
+            .map(Cow::into_owned),
         Some(ParameterValue::Integer(-3))
     );
 }
@@ -358,28 +367,49 @@ fn mixed_numeric_comparisons_preserve_integer_identity() {
     let rounded_real =
         ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(2_f64.powi(53)).unwrap());
     assert_eq!(
-        compare_parameter_values(&cadmpeg_test_support::service_decode_context(), &integer, &rounded_real, "=").unwrap(),
+        compare_parameter_values(
+            &cadmpeg_test_support::service_decode_context(),
+            &integer,
+            &rounded_real,
+            "="
+        )
+        .unwrap(),
         Some(false)
     );
     assert_eq!(
-        compare_parameter_values(&cadmpeg_test_support::service_decode_context(), &integer, &rounded_real, ">").unwrap(),
+        compare_parameter_values(
+            &cadmpeg_test_support::service_decode_context(),
+            &integer,
+            &rounded_real,
+            ">"
+        )
+        .unwrap(),
         Some(true)
     );
     assert_eq!(
-        compare_parameter_values(&cadmpeg_test_support::service_decode_context(), &rounded_real, &integer, "<").unwrap(),
+        compare_parameter_values(
+            &cadmpeg_test_support::service_decode_context(),
+            &rounded_real,
+            &integer,
+            "<"
+        )
+        .unwrap(),
         Some(true)
     );
 
     assert_eq!(
-        compare_parameter_values(&cadmpeg_test_support::service_decode_context(),
+        compare_parameter_values(
+            &cadmpeg_test_support::service_decode_context(),
             &ParameterValue::Integer(-3),
             &ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(-3.5).unwrap()),
             ">",
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(true)
     );
     assert_eq!(
-        compare_parameter_values(&cadmpeg_test_support::service_decode_context(),
+        compare_parameter_values(
+            &cadmpeg_test_support::service_decode_context(),
             &ParameterValue::Integer(i64::MAX),
             &ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(
@@ -388,7 +418,8 @@ fn mixed_numeric_comparisons_preserve_integer_identity() {
                 .unwrap()
             ),
             "<",
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(true)
     );
 }
@@ -430,12 +461,17 @@ fn parameter_text_comparison_admits_both_operands() {
     let left = ParameterValue::String("abcdefgh".repeat(256));
     let right = left.clone();
     let ctx = cadmpeg_test_support::service_decode_context();
-    assert_eq!(compare_parameter_values(&ctx, &left, &right, "=").unwrap(), Some(true));
+    assert_eq!(
+        compare_parameter_values(&ctx, &left, &right, "=").unwrap(),
+        Some(true)
+    );
     let error = crate::test_support::work_refusal_at("compare SLDPRT parameter text", |ctx| {
         compare_parameter_values(ctx, &left, &right, "=")
     });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "compare SLDPRT parameter text"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "compare SLDPRT parameter text")
+    );
 }
 
 #[test]
@@ -446,11 +482,22 @@ fn parameter_identifier_storage_is_scoped_and_quotes_match() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 64 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (tokens, storage) = super::expression_identifier_tokens(&ctx, "Width + \"D1@a\" + \"a\"\"b\"").unwrap();
+    let (tokens, storage) =
+        super::expression_identifier_tokens(&ctx, "Width + \"D1@a\" + \"a\"\"b\"").unwrap();
     let tokens = tokens.unwrap();
-    assert_eq!(tokens.iter().map(super::ExpressionIdentifier::value).collect::<Vec<_>>(), ["Width", "D1@a", "a\"b"]);
+    assert_eq!(
+        tokens
+            .iter()
+            .map(super::ExpressionIdentifier::value)
+            .collect::<Vec<_>>(),
+        ["Width", "D1@a", "a\"b"]
+    );
     drop((tokens, storage));
-    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released token storage").unwrap();
+    ctx.reserve_scoped(
+        policy.limits.max_materialized_bytes,
+        "released token storage",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -472,8 +519,14 @@ fn string_operands() -> (
     let text = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#text").unwrap();
     let other = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#other").unwrap();
     (
-        std::collections::HashMap::from([("Text".into(), Some(text.clone())), ("Other".into(), Some(other.clone()))]),
-        std::collections::HashMap::from([(text, ParameterValue::String("a".repeat(4096))), (other, ParameterValue::String("b".repeat(8192)))]),
+        std::collections::HashMap::from([
+            ("Text".into(), Some(text.clone())),
+            ("Other".into(), Some(other.clone())),
+        ]),
+        std::collections::HashMap::from([
+            (text, ParameterValue::String("a".repeat(4096))),
+            (other, ParameterValue::String("b".repeat(8192))),
+        ]),
     )
 }
 
@@ -485,8 +538,18 @@ fn failed_string_expression_does_not_retain_operands() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(ParameterExpressionParser::new_flat(&ctx, "Text + 1", &aliases, &values).parse().unwrap(), None);
-    assert_eq!(ParameterExpressionParser::new_flat(&ctx, "Iif(true,Text,Other) + 1", &aliases, &values).parse().unwrap(), None);
+    assert_eq!(
+        ParameterExpressionParser::new_flat(&ctx, "Text + 1", &aliases, &values)
+            .parse()
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        ParameterExpressionParser::new_flat(&ctx, "Iif(true,Text,Other) + 1", &aliases, &values)
+            .parse()
+            .unwrap(),
+        None
+    );
     assert!(ctx.resource_refusal().is_none());
 }
 
@@ -498,7 +561,12 @@ fn string_comparison_retains_only_boolean_result() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(ParameterExpressionParser::new_flat(&ctx, "Text = Text", &aliases, &values).parse().unwrap(), Some(ParameterValue::Boolean(true)));
+    assert_eq!(
+        ParameterExpressionParser::new_flat(&ctx, "Text = Text", &aliases, &values)
+            .parse()
+            .unwrap(),
+        Some(ParameterValue::Boolean(true))
+    );
     assert!(ctx.resource_refusal().is_none());
 }
 
@@ -510,10 +578,14 @@ fn conditional_string_retains_only_selected_value() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(ParameterExpressionParser::new_flat(&ctx, "Iif(true,Text,Other)", &aliases, &values).parse().unwrap(), Some(ParameterValue::String("a".repeat(4096))));
+    assert_eq!(
+        ParameterExpressionParser::new_flat(&ctx, "Iif(true,Text,Other)", &aliases, &values)
+            .parse()
+            .unwrap(),
+        Some(ParameterValue::String("a".repeat(4096)))
+    );
     assert!(ctx.resource_refusal().is_none());
 }
-
 
 #[test]
 fn evaluation_value_index_borrows_large_stated_text() {
@@ -521,12 +593,23 @@ fn evaluation_value_index_borrows_large_stated_text() {
     use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
     let parameter = |name: &str, expression: &str, value| DesignParameter {
         id: ParameterId::mint(format!("synthetic:test:parameter#{name}")).unwrap(),
-        owner: None, ordinal: 0, name: name.into(), expression: expression.into(),
-        display: None, value, dependencies: DistinctMembers::default(),
-        properties: std::collections::BTreeMap::new(), pmi: None, native_ref: None,
+        owner: None,
+        ordinal: 0,
+        name: name.into(),
+        expression: expression.into(),
+        display: None,
+        value,
+        dependencies: DistinctMembers::default(),
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
     };
     let mut parameters = [
-        parameter("Text", "stated", Some(ParameterValue::String("a".repeat(128 * 1024)))),
+        parameter(
+            "Text",
+            "stated",
+            Some(ParameterValue::String("a".repeat(128 * 1024))),
+        ),
         parameter("Comparison", "Text = Text", None),
     ];
     let arena = DecodeArena::new();
@@ -534,8 +617,17 @@ fn evaluation_value_index_borrows_large_stated_text() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 64 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::evaluate_parameter_expressions(&ctx, &mut parameters, &std::collections::HashMap::new(), &std::collections::HashSet::new()).unwrap();
-    assert_eq!(parameters[0].value, Some(ParameterValue::String("a".repeat(128 * 1024))));
+    super::evaluate_parameter_expressions(
+        &ctx,
+        &mut parameters,
+        &std::collections::HashMap::new(),
+        &std::collections::HashSet::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        parameters[0].value,
+        Some(ParameterValue::String("a".repeat(128 * 1024)))
+    );
     assert_eq!(parameters[1].value, Some(ParameterValue::Boolean(true)));
     assert!(ctx.resource_refusal().is_none());
 }

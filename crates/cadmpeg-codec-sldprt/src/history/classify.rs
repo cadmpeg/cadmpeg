@@ -808,7 +808,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 128;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(unnumbered_principal_planes(&ctx, &features).unwrap().is_none());
+        assert!(unnumbered_principal_planes(&ctx, &features)
+            .unwrap()
+            .is_none());
         assert!(ctx.resource_refusal().is_none());
     }
 }

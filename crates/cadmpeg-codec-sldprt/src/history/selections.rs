@@ -108,7 +108,9 @@ fn surface_selection_face_bindings<'a>(
     }
     let mut bindings = SurfaceSelectionFaceBindings::new();
     let mut selections = selections.into_iter();
-    while let Some(selection) = ctx.next_charged(&mut selections, "bind SLDPRT topology selections")? {
+    while let Some(selection) =
+        ctx.next_charged(&mut selections, "bind SLDPRT topology selections")?
+    {
         let candidate = selection
             .components
             .last()
@@ -189,6 +191,7 @@ pub(crate) fn bind_topology_selections(
     histories: &[FeatureHistory],
     inputs: &TopologySelectionInputs<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "bind SLDPRT topology selections";
     let bodies = inputs.bodies;
     let faces = inputs.faces;
     let surfaces = inputs.surfaces;
@@ -196,7 +199,6 @@ pub(crate) fn bind_topology_selections(
     let curves = inputs.curves;
     let lanes = inputs.lanes;
     let face_identities = inputs.face_identities;
-    const OPERATION: &str = "bind SLDPRT topology selections";
     let mut scratch = ctx.reserve_scoped(0, "index SLDPRT topology selections")?;
     let (body_ids, face_ids, edge_ids, curve_ids, surfaces_by_id, records) =
         scratch.with_storage(|| {
@@ -242,7 +244,8 @@ pub(crate) fn bind_topology_selections(
         let feature_sources = history_feature_sources(ctx, histories, lanes)?;
         surface_selection_face_bindings(
             ctx,
-            ctx.admit_iter(lanes, OPERATION)?.flat_map(|lane| lane.surface_selections.iter()),
+            ctx.admit_iter(lanes, OPERATION)?
+                .flat_map(|lane| lane.surface_selections.iter()),
             &feature_sources,
             face_identities,
         )
@@ -806,9 +809,11 @@ fn resolve_ids<Id>(
     let mut candidates = Vec::new();
     let mut rest = native;
     loop {
-        let end = ctx.find_map(rest.char_indices(), |(at, character)| {
-            Ok((character == ',').then_some(at))
-        }, OPERATION)?;
+        let end = ctx.find_map(
+            rest.char_indices(),
+            |(at, character)| Ok((character == ',').then_some(at)),
+            OPERATION,
+        )?;
         let (token, tail) = match end {
             Some(end) => (&rest[..end], Some(&rest[end + 1..])),
             None => (rest, None),
@@ -820,13 +825,19 @@ fn resolve_ids<Id>(
             };
             ctx.push_scoped_vec(&mut storage, &mut candidates, *id, OPERATION)?;
         }
-        let Some(tail) = tail else { break; };
+        let Some(tail) = tail else {
+            break;
+        };
         rest = tail;
     }
     if candidates.is_empty() {
         return Ok(None);
     }
-    Ok(Some(ctx.try_collect_retained_with(candidates, "collect SLDPRT topology selection identities", clone)?))
+    Ok(Some(ctx.try_collect_retained_with(
+        candidates,
+        "collect SLDPRT topology selection identities",
+        clone,
+    )?))
 }
 
 fn resolve_face_selection(
@@ -883,15 +894,17 @@ fn history_feature_sources<'a>(
             if source.is_none() {
                 let mut first = None;
                 let mut lanes = lanes.iter().enumerate();
-                while let Some((index, lane)) = ctx.next_charged(
-                    &mut lanes, "resolve SLDPRT topology source candidates",
-                )? {
+                while let Some((index, lane)) =
+                    ctx.next_charged(&mut lanes, "resolve SLDPRT topology source candidates")?
+                {
                     if index == lane_names.len() {
                         let names = crate::resolved_features::scalars::ObjectNames::new(ctx, lane)?;
                         ctx.push_scoped_vec(&mut name_storage, &mut lane_names, names, OPERATION)?;
                     }
-                    let Some(candidate) = lane_names[index].of(ctx, feature)?
-                        .and_then(|name| name.object_id?.value()) else {
+                    let Some(candidate) = lane_names[index]
+                        .of(ctx, feature)?
+                        .and_then(|name| name.object_id?.value())
+                    else {
                         continue;
                     };
                     if first.is_some_and(|known| known != candidate) {
@@ -1132,20 +1145,44 @@ mod source_index_tests {
         let mut first = feature_input_lane("first", None);
         let mut second = feature_input_lane("second", None);
         let name = |value: &str, source| FeatureInputName {
-            id: value.into(), parent: "lane".into(), ordinal: 0, offset: 0,
-            object_id: ObjectId::from_value(source), value: value.into(),
+            id: value.into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(source),
+            value: value.into(),
         };
-        first.names = vec![name("unique", 10), name("repeated", 11), name("repeated", 12), name("conflict", 13)];
+        first.names = vec![
+            name("unique", 10),
+            name("repeated", 11),
+            name("repeated", 12),
+            name("conflict", 13),
+        ];
         second.names = vec![name("unique", 10), name("conflict", 14)];
         let history = FeatureHistory {
-            id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(), configurations: Vec::new(),
-            features: vec![feature("unique", None, 0), feature("repeated", None, 1), feature("conflict", None, 2), feature("explicit", Some("15"), 3)],
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                feature("unique", None, 0),
+                feature("repeated", None, 1),
+                feature("conflict", None, 2),
+                feature("explicit", Some("15"), 3),
+            ],
         };
         let histories = [history];
         let lanes = [first, second];
         let ctx = cadmpeg_test_support::service_decode_context();
         let sources = history_feature_sources(&ctx, &histories, &lanes).unwrap();
-        let source = |name| sources.get(name).copied().flatten().map(super::FeatureSourceId::value);
+        let source = |name| {
+            sources
+                .get(name)
+                .copied()
+                .flatten()
+                .map(super::FeatureSourceId::value)
+        };
         assert_eq!(source("unique"), Some(10));
         assert_eq!(source("repeated"), None);
         assert_eq!(source("conflict"), None);
@@ -1156,8 +1193,12 @@ mod source_index_tests {
     fn source_conflict_leaves_unvisited_lane_names_unindexed() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let name = |source| FeatureInputName {
-            id: "conflict".into(), parent: "lane".into(), ordinal: 0, offset: 0,
-            object_id: ObjectId::from_value(source), value: "conflict".into(),
+            id: "conflict".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(source),
+            value: "conflict".into(),
         };
         let mut first = feature_input_lane("first", None);
         first.names.push(name(10));
@@ -1166,7 +1207,11 @@ mod source_index_tests {
         let mut tail = feature_input_lane("unvisited", None);
         tail.names.extend(std::iter::repeat_n(name(12), 4096));
         let history = FeatureHistory {
-            id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(), configurations: Vec::new(),
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
             features: vec![feature("conflict", None, 0)],
         };
         let histories = [history];
@@ -1180,5 +1225,4 @@ mod source_index_tests {
         assert_eq!(sources.get("conflict"), Some(&None));
         assert!(ctx.resource_refusal().is_none());
     }
-
 }

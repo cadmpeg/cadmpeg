@@ -193,17 +193,11 @@ pub(crate) fn bind_unique_sketch_feature(
         let matches = |candidate: &usize| {
             sketch_alias_matches(ctx, &native_features, alias, &features[*candidate])
         };
-        let Some(first) =
-            ctx.position_by(candidates, matches, BIND_OPERATION)?
-        else {
+        let Some(first) = ctx.position_by(candidates, matches, BIND_OPERATION)? else {
             continue;
         };
         if ctx
-            .position_by(
-                &candidates[first + 1..],
-                matches,
-                BIND_OPERATION,
-            )?
+            .position_by(&candidates[first + 1..], matches, BIND_OPERATION)?
             .is_some()
         {
             continue;
@@ -626,9 +620,24 @@ fn regeneration_order<'ctx>(
     if let Some(model) = model {
         const CONFIGURATIONS: &str = "index SLDPRT configuration feature dependencies";
         for configuration in ctx.admit_iter(&model.configurations, CONFIGURATIONS)? {
-            for (feature_id, state) in ctx.admit_iter(&configuration.feature_states, CONFIGURATIONS)? {
-                if ctx.get_hash_map(&by_id, feature_id, CONFIGURATIONS)?.is_none() { continue; }
-                scratch.with_storage(|| ctx.push_hash_group(&mut configuration_predecessors, feature_id, state.dependencies.as_slice(), CONFIGURATIONS, CONFIGURATIONS))?;
+            for (feature_id, state) in
+                ctx.admit_iter(&configuration.feature_states, CONFIGURATIONS)?
+            {
+                if ctx
+                    .get_hash_map(&by_id, feature_id, CONFIGURATIONS)?
+                    .is_none()
+                {
+                    continue;
+                }
+                scratch.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut configuration_predecessors,
+                        feature_id,
+                        state.dependencies.as_slice(),
+                        CONFIGURATIONS,
+                        CONFIGURATIONS,
+                    )
+                })?;
             }
         }
     }
@@ -664,9 +673,18 @@ fn regeneration_order<'ctx>(
                     }
                 }
             }
-            if let Some(dependencies) = ctx.get_hash_map(&configuration_predecessors, &feature.id, "look up SLDPRT configuration feature dependencies")? {
-                for group in ctx.admit_iter(dependencies, "scan SLDPRT configuration feature dependencies")? {
-                    for dependency in ctx.admit_iter(*group, "scan SLDPRT configuration feature dependencies")? {
+            if let Some(dependencies) = ctx.get_hash_map(
+                &configuration_predecessors,
+                &feature.id,
+                "look up SLDPRT configuration feature dependencies",
+            )? {
+                for group in ctx.admit_iter(
+                    dependencies,
+                    "scan SLDPRT configuration feature dependencies",
+                )? {
+                    for dependency in
+                        ctx.admit_iter(*group, "scan SLDPRT configuration feature dependencies")?
+                    {
                         add(dependency)?;
                     }
                 }
@@ -1137,16 +1155,37 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.features = features;
         for (ordinal, consumer, source) in [(0, 0, 1), (1, 1, 2), (2, 0, 1)] {
-            let mut configuration = crate::history::tests::design_configuration(&format!("dependencies-{ordinal}"), ordinal, None, None);
-            configuration.feature_states.insert(ir.model.features[consumer].id.clone(), ConfigurationFeatureState {
-                definition: ir.model.features[consumer].evaluation.definition().clone(),
-                dependencies: DistinctMembers::try_from(vec![ir.model.features[source].id.clone()], &ctx).unwrap(),
-                evaluation: ConfigurationEvaluation::Active { outputs: DistinctMembers::default() },
-            });
+            let mut configuration = crate::history::tests::design_configuration(
+                &format!("dependencies-{ordinal}"),
+                ordinal,
+                None,
+                None,
+            );
+            configuration.feature_states.insert(
+                ir.model.features[consumer].id.clone(),
+                ConfigurationFeatureState {
+                    definition: ir.model.features[consumer].evaluation.definition().clone(),
+                    dependencies: DistinctMembers::try_from(
+                        vec![ir.model.features[source].id.clone()],
+                        &ctx,
+                    )
+                    .unwrap(),
+                    evaluation: ConfigurationEvaluation::Active {
+                        outputs: DistinctMembers::default(),
+                    },
+                },
+            );
             ir.model.configurations.push(configuration);
         }
         assert!(order_model_features_for_regeneration(&ctx, &mut ir).unwrap());
-        assert_eq!(ir.model.features.iter().map(|feature| feature.ordinal).collect::<Vec<_>>(), [2, 1, 0]);
+        assert_eq!(
+            ir.model
+                .features
+                .iter()
+                .map(|feature| feature.ordinal)
+                .collect::<Vec<_>>(),
+            [2, 1, 0]
+        );
     }
 
     fn feature_output_error(
@@ -1272,7 +1311,7 @@ mod tests {
                     ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
                     ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
                     ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap
+                        policy.limits.max_materialized_bytes = cap;
                     }
                     ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
                     _ => panic!("sketch binding dimension"),

@@ -12,7 +12,7 @@ use cadmpeg_ir::{
         FaceMotion, FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3,
         ParameterValue,
     },
-    scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength},
+    scalar::{Angle, InteriorAngle, Length, PositiveAngle, PositiveLength},
 };
 
 const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
@@ -149,10 +149,6 @@ pub(crate) fn parse_bounded_angle_rad(value: &str) -> Option<InteriorAngle> {
 
 pub(crate) fn format_angle_rad(value: Angle) -> String {
     format!("{}rad", finite_literal(value.get()))
-}
-
-pub(super) fn format_f64_literal(value: FiniteReal) -> String {
-    finite_literal(value.get())
 }
 
 /// The literal of a finite value. Every caller passes the value of a checked
