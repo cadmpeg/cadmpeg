@@ -343,10 +343,13 @@ pub(crate) fn compact_edge_reference_list_for_feature(
     let Some(count) = count else {
         return Ok(None);
     };
-    Ok(
-        compact_component_reference_list(ctx, payload, offset, false)?
-            .filter(|references| references.len() == count),
-    )
+    let (references, storage) = ctx.with_scoped_storage(
+        "decode SLDPRT variable fillet references",
+        || compact_component_reference_list(ctx, payload, offset, false),
+    )?;
+    let references = references.filter(|references| references.len() == count);
+    if references.is_some() { storage.commit()?; }
+    Ok(references)
 }
 
 pub(super) fn compact_edge_selections(
@@ -2065,9 +2068,15 @@ fn compact_surface_selection_at(
 
 fn flatten_surface_references(
     ctx: &DecodeContext<'_>,
-    references: Option<Vec<Vec<FeatureInputComponentPathEntry>>>,
+    payload: &[u8],
+    marker: usize,
+    counted: bool,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
     const OPERATION: &str = "flatten SLDPRT surface references";
+    let (references, _references_storage) = ctx.with_scoped_storage(OPERATION, || {
+        if counted { compact_component_reference_list_at(ctx, payload, marker) }
+        else { compact_component_reference_list(ctx, payload, marker, false) }
+    })?;
     let Some(references) = references else {
         return Ok(None);
     };
@@ -2091,16 +2100,10 @@ fn compact_surface_reference_at(
     {
         return Ok(Some(path));
     }
-    if let Some(path) = flatten_surface_references(
-        ctx,
-        compact_component_reference_list_at(ctx, payload, marker)?,
-    )? {
+    if let Some(path) = flatten_surface_references(ctx, payload, marker, true)? {
         return Ok(Some(path));
     }
-    if let Some(path) = flatten_surface_references(
-        ctx,
-        compact_component_reference_list(ctx, payload, marker, false)?,
-    )? {
+    if let Some(path) = flatten_surface_references(ctx, payload, marker, false)? {
         return Ok(Some(path));
     }
     if let Some(path) = counted_surface_component_path_at(ctx, payload, marker)? {
@@ -2126,8 +2129,8 @@ pub(crate) fn surface_reference_matches_at(
         let (components, _storage) = ctx.with_scoped_storage(OPERATION, || match kind {
             0 => compact_surface_selection_at(ctx, payload, marker),
             1 => component_vector_path_at(ctx, payload, marker, "decode SLDPRT component vector path"),
-            2 => flatten_surface_references(ctx, compact_component_reference_list_at(ctx, payload, marker)?),
-            3 => flatten_surface_references(ctx, compact_component_reference_list(ctx, payload, marker, false)?),
+            2 => flatten_surface_references(ctx, payload, marker, true),
+            3 => flatten_surface_references(ctx, payload, marker, false),
             4 => counted_surface_component_path_at(ctx, payload, marker),
             5 => compact_termination_reference_path_at(ctx, payload, marker),
             6 => compact_sketch_surface_component_path_at(ctx, payload, marker),

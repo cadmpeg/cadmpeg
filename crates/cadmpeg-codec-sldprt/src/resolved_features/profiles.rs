@@ -3109,6 +3109,7 @@ struct AssembledSketchBlockProfile<'a> {
     sketch: Sketch,
     entities: Vec<SketchEntity>,
     _entities_storage: ScopedReservation<'a>,
+    output_storage: ScopedReservation<'a>,
 }
 
 struct SketchBlockProfileInput<'a> {
@@ -3336,13 +3337,12 @@ pub(crate) fn project_sketch_block_profiles(
                     ctx.reserve_scoped(0, "index SLDPRT sketch block feature identities")?;
                 let mut block_feature_ids = HashMap::<u32, String>::new();
                 let mut definitions_complete = true;
-                for (_, native_definition, _) in ctx
-                    .admit_iter(intervening, "scan SLDPRT sketch block definitions")?
-                    .filter(|(_, feature, _)| {
-                        native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                            == NativeClassKind::SketchBlockDefinition
-                    })
-                {
+                let mut visited = intervening.iter();
+                while let Some((_, native_definition, _)) = ctx.next_charged(
+                    &mut visited, "scan SLDPRT sketch block definitions",
+                )? {
+                    if native_object_class(native_definition.input_class.as_deref().unwrap_or_default())
+                        != NativeClassKind::SketchBlockDefinition { continue; }
                     let Some(source) = native_definition.source_value() else {
                         definitions_complete = false;
                         break;
@@ -3429,13 +3429,12 @@ pub(crate) fn project_sketch_block_profiles(
                     ctx.reserve_scoped(0, "collect SLDPRT sketch block instances")?;
                 let mut instances = Vec::new();
                 let mut instances_complete = true;
-                for (_, native_instance, _) in ctx
-                    .admit_iter(intervening, "scan SLDPRT sketch block instances")?
-                    .filter(|(_, feature, _)| {
-                        native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                            == NativeClassKind::SketchBlockInstance
-                    })
-                {
+                let mut visited = intervening.iter();
+                while let Some((_, native_instance, _)) = ctx.next_charged(
+                    &mut visited, "scan SLDPRT sketch block instances",
+                )? {
+                    if native_object_class(native_instance.input_class.as_deref().unwrap_or_default())
+                        != NativeClassKind::SketchBlockInstance { continue; }
                     let Some(instance_index) = first_model_feature(
                         ctx,
                         &features_by_native,
@@ -3572,6 +3571,7 @@ pub(crate) fn project_sketch_block_profiles(
                     sketch_id.as_str(),
                     "find SLDPRT assembled sketch",
                 )? {
+                    assembled.output_storage.commit()?;
                     let first_entity = sketch_entities.len();
                     ctx.extend_vec(
                         sketch_entities,
@@ -3616,19 +3616,13 @@ fn dissectable_child_sources(
     value: &str,
 ) -> Result<Option<HashSet<u32>>, CodecError> {
     const OPERATION: &str = "collect SLDPRT dissectable child sources";
+    let (result, storage) = ctx.with_scoped_storage(OPERATION, || {
     let mut values = HashSet::new();
     let mut parts = 0_usize;
     let mut start = 0_usize;
-    for (position, character) in ctx
-        .admit_iter(value, OPERATION)?
-        .map(Some)
-        .chain(std::iter::once(None))
-        .scan(0_usize, |position, character| {
-            let at = *position;
-            *position += character.map_or(0, char::len_utf8);
-            Some((at, character))
-        })
-    {
+    let mut visited = value.char_indices().map(|(at, ch)| (at, Some(ch)))
+        .chain(std::iter::once((value.len(), None)));
+    while let Some((position, character)) = ctx.next_charged(&mut visited, OPERATION)? {
         if character.is_some_and(|character| character != ',') {
             continue;
         }
@@ -3647,7 +3641,10 @@ fn dissectable_child_sources(
     if values.is_empty() || ctx.contains_hash_set(&values, &0, OPERATION)? {
         return Ok(None);
     }
-    Ok((values.len() == parts).then_some(values))
+    Ok::<_, CodecError>((values.len() == parts).then_some(values))
+    })?;
+    if result.is_some() { storage.commit()?; }
+    Ok(result)
 }
 
 fn is_sketch_block_object(feature: &crate::records::Feature) -> bool {
@@ -3661,6 +3658,9 @@ fn assemble_sketch_block_profile<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     input: &SketchBlockProfileInput<'_>,
 ) -> Result<Option<AssembledSketchBlockProfile<'ctx>>, CodecError> {
+    let (assembled, output_storage) = ctx.with_scoped_storage(
+        "build SLDPRT sketch block output",
+        || {
     let mut rotations_storage = ctx.reserve_scoped(0, "collect SLDPRT sketch block rotations")?;
     let Some((placement, rotations)) =
         rotations_storage.with_storage(|| sketch_block_assembly_frame(ctx, input.instances))?
@@ -3678,10 +3678,10 @@ fn assemble_sketch_block_profile<'ctx>(
             "read SLDPRT sketch identity key",
         )?
         .map_or(input.sketch_id.as_str(), |(_, key)| key);
-    for (instance, rotation) in ctx
-        .admit_iter(input.instances, "scan SLDPRT sketch block instances")?
-        .zip(ctx.admit_iter(&rotations, "scan SLDPRT sketch block rotations")?)
-    {
+    let mut visited = input.instances.iter().zip(&rotations);
+    while let Some((instance, rotation)) = ctx.next_charged(
+        &mut visited, "scan SLDPRT sketch block instances",
+    )? {
         let Some(source_sketch_id) = ctx.get_hash_map(
             input.block_sketches,
             &instance.block_source,
@@ -3719,7 +3719,8 @@ fn assemble_sketch_block_profile<'ctx>(
         let mut entity_ids_storage =
             ctx.reserve_scoped(0, "index SLDPRT sketch block entity identities")?;
         let mut entity_ids = HashMap::new();
-        for entity in ctx.admit_iter(&(source_entities)[..], "scan SLDPRT profiles records")? {
+        let mut visited = source_entities.iter();
+        while let Some(entity) = ctx.next_charged(&mut visited, "scan SLDPRT profiles records")? {
             let inserted = entity_ids_storage.with_storage(|| -> Result<bool, CodecError> {
                 let id_text = ctx.format_retained(
                     format_args!(
@@ -3752,9 +3753,8 @@ fn assemble_sketch_block_profile<'ctx>(
                 return Ok(None);
             }
         }
-        for source_entity in
-            ctx.admit_iter(&(source_entities)[..], "scan SLDPRT profiles records")?
-        {
+        let mut visited = source_entities.iter();
+        while let Some(source_entity) = ctx.next_charged(&mut visited, "scan SLDPRT profiles records")? {
             let Some(id) = ctx.get_hash_map(
                 &entity_ids,
                 source_entity.id(),
@@ -3824,10 +3824,12 @@ fn assemble_sketch_block_profile<'ctx>(
                 Ok::<(), CodecError>(())
             })?;
         }
+        let mut recovered_profiles_storage = ctx.reserve_scoped(
+            0, "recover SLDPRT sketch block source profiles",
+        )?;
         let recovered_profiles = if source_sketch.profiles.is_empty() {
-            Some(closed_marker_profiles_allowing_shared_endpoints(
-                ctx,
-                &source_entities,
+            Some(recovered_profiles_storage.with_storage(||
+                closed_marker_profiles_allowing_shared_endpoints(ctx, &source_entities)
             )?)
         } else {
             None
@@ -3835,9 +3837,11 @@ fn assemble_sketch_block_profile<'ctx>(
         let source_profiles = recovered_profiles
             .as_deref()
             .unwrap_or(source_sketch.profiles.as_slice());
-        for profile in ctx.admit_iter(source_profiles, "scan SLDPRT sketch block profiles")? {
+        let mut visited_profiles = source_profiles.iter();
+        while let Some(profile) = ctx.next_charged(&mut visited_profiles, "scan SLDPRT sketch block profiles")? {
             let mut assembled_profile = Vec::new();
-            for use_ in ctx.admit_iter(profile, "scan SLDPRT sketch block profile members")? {
+            let mut visited = profile.iter();
+            while let Some(use_) = ctx.next_charged(&mut visited, "scan SLDPRT sketch block profile members")? {
                 let Some(id) =
                     ctx.get_hash_map(&entity_ids, &use_.entity, "resolve SLDPRT profiles keys")?
                 else {
@@ -3893,8 +3897,7 @@ fn assemble_sketch_block_profile<'ctx>(
         &input.native_ref,
         "copy SLDPRT assembled sketch block native reference",
     )?;
-    Ok(Some(AssembledSketchBlockProfile {
-        sketch: Sketch {
+    Ok::<_, CodecError>(Some((Sketch {
             id: sketch_id,
             name: Some(name),
             configuration,
@@ -3902,9 +3905,10 @@ fn assemble_sketch_block_profile<'ctx>(
             placement,
             profiles,
             native_ref: Some(native_ref),
-        },
-        entities: assembled_entities,
-        _entities_storage: assembled_entities_storage,
+        }, assembled_entities, assembled_entities_storage)))
+    })?;
+    Ok(assembled.map(|(sketch, entities, entities_storage)| AssembledSketchBlockProfile {
+        sketch, entities, _entities_storage: entities_storage, output_storage,
     }))
 }
 
@@ -3942,7 +3946,8 @@ fn sketch_block_assembly_frame(
         u_axis,
     } = frame;
     let mut rotations = Vec::new();
-    for instance in ctx.admit_iter(instances, "scan SLDPRT profiles records")? {
+    let mut visited = instances.iter();
+    while let Some(instance) = ctx.next_charged(&mut visited, "scan SLDPRT profiles records")? {
         let placement = instance.transform;
         if !placement.is_proper_rigid() {
             return Ok(None);

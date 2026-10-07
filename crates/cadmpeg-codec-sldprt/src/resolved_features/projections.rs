@@ -2480,19 +2480,20 @@ pub(crate) fn project_draft_operands(
     const INDEX_OPERATION: &str = "index SLDPRT draft feature identities";
     const GROUP_OPERATION: &str = "group SLDPRT draft operand candidates";
     let mut candidates_storage = ctx.reserve_scoped(0, GROUP_OPERATION)?;
-    let mut candidates = HashMap::<String, Vec<DraftOperands>>::new();
+    let mut lane_candidates = Vec::new();
     for lane in ctx.admit_iter(lanes, GROUP_OPERATION)? {
-        for (feature, operands) in ctx.admit_iter(
-            draft_operand_candidates(ctx, histories, lane)?,
-            GROUP_OPERATION,
-        )? {
+        candidates_storage.with_storage(|| {
+            let records = draft_operand_candidates(ctx, histories, lane)?;
+            ctx.push_vec(&mut lane_candidates, records, GROUP_OPERATION)
+        })?;
+    }
+    let mut candidates = HashMap::<&str, Vec<&DraftOperands>>::new();
+    for records in ctx.admit_iter(&lane_candidates, GROUP_OPERATION)? {
+        for (feature, operands) in ctx.admit_iter(records, GROUP_OPERATION)? {
             candidates_storage.with_storage(|| {
                 ctx.push_hash_group(
-                    &mut candidates,
-                    feature,
-                    operands,
-                    GROUP_OPERATION,
-                    GROUP_OPERATION,
+                    &mut candidates, feature.as_str(), operands,
+                    GROUP_OPERATION, GROUP_OPERATION,
                 )
             })?;
         }
@@ -3006,7 +3007,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 let mut references_storage = ctx.reserve_scoped(0, REFERENCE_OPERATION)?;
                 let mut references = Vec::<(
                     String,
-                    Option<std::borrow::Cow<'_, [crate::records::FeatureInputComponentPathEntry]>>,
+                    Option<&[crate::records::FeatureInputComponentPathEntry]>,
                     Option<&str>,
                 )>::new();
                 for (lane_key, selection) in ctx.admit_iter(
@@ -3023,44 +3024,38 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             &mut references,
                             (
                                 key,
-                                Some(std::borrow::Cow::Borrowed(selection.components.as_slice())),
+                                Some(selection.components.as_slice()),
                                 selection.producer_feature_refs.first().map(String::as_str),
                             ),
                             REFERENCE_OPERATION,
                         )
                     })?;
                 }
+                let mut marker_references = Vec::new();
                 for (lane, lane_key, ranges, cylinder_tokens, diameter_index) in
                     ctx.admit_iter(&lane_contexts, TOKEN_OPERATION)?
                 {
                     let Some((_, start, end)) = ctx
                         .get_hash_map(ranges, native_feature.id.as_str(), TOKEN_OPERATION)?
                         .copied()
-                    else {
-                        continue;
-                    };
-                    for super::selections::CylinderMarkerReference(marker, components) in ctx
-                        .admit_iter(
-                            cosmetic_thread_cylinder_marker_reference(
-                                ctx,
-                                native_feature,
-                                lane,
-                                start,
-                                end,
-                                cylinder_tokens,
-                             diameter_index)?,
-                            REFERENCE_OPERATION,
-                        )?
+                    else { continue; };
+                    references_storage.with_storage(|| {
+                        let records = cosmetic_thread_cylinder_marker_reference(
+                            ctx, native_feature, lane, start, end, cylinder_tokens, diameter_index,
+                        )?;
+                        ctx.push_vec(&mut marker_references, (lane_key, records), REFERENCE_OPERATION)
+                    })?;
+                }
+                for (lane_key, records) in ctx.admit_iter(&marker_references, REFERENCE_OPERATION)? {
+                    for super::selections::CylinderMarkerReference(marker, components) in
+                        ctx.admit_iter(records, REFERENCE_OPERATION)?
                     {
                         references_storage.with_storage(|| {
                             let key = ctx.format_retained(
-                                format_args!("{lane_key}:{marker}"),
-                                REFERENCE_OPERATION,
+                                format_args!("{lane_key}:{marker}"), REFERENCE_OPERATION,
                             )?;
                             ctx.push_vec(
-                                &mut references,
-                                (key, components.map(std::borrow::Cow::Owned), None),
-                                REFERENCE_OPERATION,
+                                &mut references, (key, components.as_deref(), None), REFERENCE_OPERATION,
                             )
                         })?;
                     }
@@ -3096,8 +3091,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 };
                 let mut generated = None;
                 let mut complete = true;
-                for (_, components, explicit_producer) in
-                    ctx.admit_iter(&references, GENERATED_OPERATION)?
+                let mut visited = references.iter();
+                while let Some((_, components, explicit_producer)) =
+                    ctx.next_charged(&mut visited, GENERATED_OPERATION)?
                 {
                     let candidate = match components.as_deref() {
                         None => None,
@@ -3233,9 +3229,10 @@ impl<'a, 'ctx> FaceSurfaces<'a, 'ctx> {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         const OPERATION: &str = "index SLDPRT face surfaces";
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+        let mut by_id_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut by_id = HashMap::new();
         for surface in ctx.admit_iter(surfaces, OPERATION)? {
-            storage.with_storage(|| {
+            by_id_storage.with_storage(|| {
                 ctx.push_hash_group(&mut by_id, &surface.id, surface, OPERATION, OPERATION)
             })?;
         }
