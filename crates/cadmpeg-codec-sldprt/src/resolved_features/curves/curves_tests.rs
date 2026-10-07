@@ -344,21 +344,21 @@ fn closed_profile_refuses_collection_limit() {
 }
 
 #[test]
-fn closed_profile_refuses_retained_limit() {
+fn closed_profile_refuses_materialized_limit() {
     let entities = closed_profile_limit_entities();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy SLDPRT closed curve identity",
         |cap| {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             super::closed_marker_profiles(&ctx, &entities).map(|_| ())
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "copy SLDPRT closed curve identity"));
 }
 
@@ -1212,15 +1212,15 @@ fn linked_semicircle_refuses_collection_limit() {
 }
 
 #[test]
-fn linked_semicircle_refuses_retained_limit() {
+fn linked_semicircle_refuses_materialized_limit() {
     let (payload, records, entities) = linked_semicircle_fixture();
     let markers = records.iter().collect::<Vec<_>>();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy SLDPRT semicircle point identity",
         |cap| {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
             let mut entities = entities.clone();
@@ -1234,7 +1234,7 @@ fn linked_semicircle_refuses_retained_limit() {
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "copy SLDPRT semicircle point identity"));
 }
 

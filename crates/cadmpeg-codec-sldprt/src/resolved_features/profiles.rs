@@ -1737,8 +1737,7 @@ pub(crate) fn project_marker_backed_sketches(
         let mut marker_offsets_storage = ctx.reserve_scoped(0, "scan SLDPRT profiles records")?;
         let mut marker_offsets = marker_offsets_storage.with_storage(|| {
             ctx.collect_vec(
-                ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT profiles records")?
-                    .map(SketchInputEntity::offset),
+                lane.sketch_entities.iter().map(SketchInputEntity::offset),
                 "scan SLDPRT profiles records",
             )
         })?;
@@ -2100,6 +2099,7 @@ pub(crate) fn project_marker_backed_sketches(
             };
             let encoded_rectangle =
                 indexed_rectangle_from_line_cycle(ctx, &lane.native_payload, &object_markers)?;
+            let mut inferred_points_storage = ctx.reserve_scoped(0, "solve SLDPRT omitted point coordinates")?;
             let inferred_points = std::cell::OnceCell::new();
             let mut projected_storage =
                 ctx.reserve_scoped(0, "collect SLDPRT projected marker entities")?;
@@ -2278,11 +2278,11 @@ marker,
                                         let inferred = match inferred_points.get() {
                                             Some(inferred) => inferred,
                                             None => {
-                                                let inferred = inferred_point_coordinates_by_index(
+                                                let inferred = inferred_points_storage.with_storage(|| inferred_point_coordinates_by_index(
                                                     ctx,
                                                     lane,
                                                     native_feature.id.as_str(),
-                                                )?;
+                                                ))?;
                                                 inferred_points.get_or_init(|| inferred)
                                             }
                                         };
@@ -3702,16 +3702,12 @@ fn assemble_sketch_block_profile<'ctx>(
             ctx.reserve_scoped(0, "collect SLDPRT sketch block source entities")?;
         let source_entities = source_entities_storage.with_storage(|| {
             ctx.collect_vec(
-                ctx.admit_iter(
-                    owned_members(
+                owned_members(
                         ctx,
                         input.entity_groups,
                         source_sketch.id.as_str(),
                         "scan SLDPRT sketch block source entities",
-                    )?,
-                    "collect SLDPRT sketch block source entities",
-                )?
-                .map(|position| &input.sketch_entities[*position]),
+                )?.iter().map(|position| &input.sketch_entities[*position]),
                 "collect SLDPRT sketch block source entities",
             )
         })?;
@@ -4415,14 +4411,13 @@ fn legacy_config_hex_sketch(
     }
     let mut curves_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut curves = curves_storage.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(markers, OPERATION)?
-                .copied()
-                .filter(|marker| {
-                    marker.coordinates_m.is_none() && marker.kind() == SketchInputKind::LineOrCircle
-                }),
-            OPERATION,
-        )
+        let mut curves = Vec::new();
+        for &marker in ctx.admit_iter(markers, OPERATION)? {
+            if marker.coordinates_m.is_none() && marker.kind() == SketchInputKind::LineOrCircle {
+                ctx.push_vec(&mut curves, marker, OPERATION)?;
+            }
+        }
+        Ok::<_, CodecError>(curves)
     })?;
     ctx.sort_unstable_by_key(
         &mut curves,
@@ -4676,14 +4671,13 @@ fn legacy_config_collinear_sketch(
     const OPERATION: &str = "project SLDPRT legacy collinear sketch";
     let mut curves_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut curves = curves_storage.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(markers, OPERATION)?
-                .copied()
-                .filter(|marker| {
-                    marker.coordinates_m.is_none() && marker.kind() == SketchInputKind::LineOrCircle
-                }),
-            OPERATION,
-        )
+        let mut curves = Vec::new();
+        for &marker in ctx.admit_iter(markers, OPERATION)? {
+            if marker.coordinates_m.is_none() && marker.kind() == SketchInputKind::LineOrCircle {
+                ctx.push_vec(&mut curves, marker, OPERATION)?;
+            }
+        }
+        Ok::<_, CodecError>(curves)
     })?;
     ctx.sort_unstable_by_key(
         &mut curves,
@@ -4721,15 +4715,14 @@ fn legacy_config_collinear_sketch(
     };
     let mut chain_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut chain = chain_storage.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(markers, OPERATION)?
-                .copied()
-                .filter(|marker| matches!(marker.object_index(), Some(18 | 19 | 21)))
-                .filter_map(|marker| Some((marker, marker.coordinates_m?.get())))
-                .enumerate()
-                .map(|(ordinal, (marker, coordinates))| (marker, coordinates, ordinal)),
-            OPERATION,
-        )
+        let mut chain = Vec::new();
+        for &marker in ctx.admit_iter(markers, OPERATION)? {
+            if !matches!(marker.object_index(), Some(18 | 19 | 21)) { continue; }
+            let Some(coordinates) = marker.coordinates_m else { continue; };
+            let ordinal = chain.len();
+            ctx.push_vec(&mut chain, (marker, coordinates.get(), ordinal), OPERATION)?;
+        }
+        Ok::<_, CodecError>(chain)
     })?;
     let Some(origin) = ctx
         .admit_iter(markers, OPERATION)?
@@ -4818,15 +4811,15 @@ fn legacy_config_collinear_sketch(
     }
     let mut points_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut points = points_storage.with_storage(|| {
-        ctx.collect_vec(
-            ctx.admit_iter(markers, OPERATION)?
-                .copied()
-                .filter_map(|marker| Some((Some(marker), marker.coordinates_m?.get())))
-                .chain(std::iter::once((None, negative)))
-                .enumerate()
-                .map(|(ordinal, (marker, coordinates))| (marker, coordinates, ordinal)),
-            OPERATION,
-        )
+        let mut points = Vec::new();
+        for &marker in ctx.admit_iter(markers, OPERATION)? {
+            let Some(coordinates) = marker.coordinates_m else { continue; };
+            let ordinal = points.len();
+            ctx.push_vec(&mut points, (Some(marker), coordinates.get(), ordinal), OPERATION)?;
+        }
+        let ordinal = points.len();
+        ctx.push_vec(&mut points, (None, negative, ordinal), OPERATION)?;
+        Ok::<_, CodecError>(points)
     })?;
     ctx.sort_unstable_by_key(
         &mut points,
