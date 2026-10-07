@@ -44,10 +44,14 @@ fn point(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Point3>, CodecError> {
     let mut storage = [0_u8; 64];
-    let Some(id) = crate::ids::directory_lookup_key("iges:model:point#D", sequence, &mut storage, ctx)? else {
+    let Some(id) =
+        crate::ids::directory_lookup_key("iges:model:point#D", sequence, &mut storage, ctx)?
+    else {
         return Ok(None);
     };
-    Ok(ctx.get_btree_map(points, id, "iges analytic location lookup")?.copied())
+    Ok(ctx
+        .get_btree_map(points, id, "iges analytic location lookup")?
+        .copied())
 }
 
 #[derive(Debug)]
@@ -216,7 +220,10 @@ fn form_reference_direction(
 impl AnalyticDirectionError {
     fn non_resource(self) -> Result<Self, CodecError> {
         match self {
-            Self::Pointed { reason: DirectionError::Decode(error), .. } => Err(error),
+            Self::Pointed {
+                reason: DirectionError::Decode(error),
+                ..
+            } => Err(error),
             message => Ok(message),
         }
     }
@@ -289,16 +296,23 @@ pub(super) fn project(
     let mut transform_storage = ctx.reserve_scoped(0, "iges analytic-surface transform indexes")?;
     let (records, entries) = transform_storage.with_storage(|| {
         let mut records = BTreeMap::new();
-        for record in ctx.admit_iter(parameters, "iges analytic-surface parameter index traversal")? {
+        for record in ctx.admit_iter(
+            parameters,
+            "iges analytic-surface parameter index traversal",
+        )? {
             ctx.insert_btree_map(
-                &mut records, record.directory_sequence, record,
+                &mut records,
+                record.directory_sequence,
+                record,
                 "iges analytic-surface parameter index",
             )?;
         }
         let mut entries = BTreeMap::new();
         for entry in ctx.admit_iter(directory, "iges analytic-surface directory index traversal")? {
             ctx.insert_btree_map(
-                &mut entries, entry.sequence, entry,
+                &mut entries,
+                entry.sequence,
+                entry,
                 "iges analytic-surface directory index",
             )?;
         }
@@ -309,11 +323,15 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
-    for entry in ctx.admit_iter(directory, "iges analytic-surface directory pass")?.filter(|entry| {
-        matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
-    }) {
+    for entry in ctx
+        .admit_iter(directory, "iges analytic-surface directory pass")?
+        .filter(|entry| {
+            matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
+        })
+    {
         let factor = global.length_factor_mm();
-        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
+        else {
             push_entity_loss(
                 ctx,
                 &mut losses,
@@ -323,7 +341,9 @@ pub(super) fn project(
             continue;
         };
         let mut placement_storage = ctx.reserve_scoped(0, "iges analytic placement scratch")?;
-        let transform = match placement_storage.with_storage(|| surface_transform(entry, &entries, &records, global, ctx)) {
+        let transform = match placement_storage
+            .with_storage(|| surface_transform(entry, &entries, &records, global, ctx))
+        {
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
@@ -337,10 +357,21 @@ pub(super) fn project(
                 if point_index.is_none() {
                     point_index = Some(point_storage.with_storage(|| {
                         let mut points = BTreeMap::new();
-                        for point in ctx.admit_iter(&ir.model.points, "iges analytic point index traversal")? {
+                        for point in
+                            ctx.admit_iter(&ir.model.points, "iges analytic point index traversal")?
+                        {
                             // Location lookup uses the first occurrence of an identity.
-                            if !ctx.contains_key_btree_map(&points, point.id.as_str(), "iges analytic point index lookup")? {
-                                ctx.insert_btree_map(&mut points, point.id.as_str(), point.position().get(), "iges analytic point index nodes")?;
+                            if !ctx.contains_key_btree_map(
+                                &points,
+                                point.id.as_str(),
+                                "iges analytic point index lookup",
+                            )? {
+                                ctx.insert_btree_map(
+                                    &mut points,
+                                    point.id.as_str(),
+                                    point.position().get(),
+                                    "iges analytic point index nodes",
+                                )?;
                             }
                         }
                         Ok::<_, CodecError>(points)
@@ -350,7 +381,7 @@ pub(super) fn project(
                     Some(points) => point(points, sequence, ctx)?,
                     None => None,
                 }
-            },
+            }
             None => None,
         };
         let Some(location) = location else {
@@ -596,7 +627,15 @@ pub(super) fn project(
                     continue;
                 };
                 let axis = if entry.form == 1 {
-                    transformed_direction(record, 3, "sphere axis", transform, directory, parameters, ctx)
+                    transformed_direction(
+                        record,
+                        3,
+                        "sphere axis",
+                        transform,
+                        directory,
+                        parameters,
+                        ctx,
+                    )
                 } else {
                     transform
                         .apply_vector(Vector3::new(0.0, 0.0, 1.0))

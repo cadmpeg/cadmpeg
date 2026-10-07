@@ -3,8 +3,8 @@
 
 use super::composite::{bounded_parameter_range_for_curve, curve_carrier_id, CompositeIndex};
 use super::geometry::{
-    declared_affine_progression, declared_unit_vector, resolve_transform, source_object, unit_vector, DeclaredInterval,
-    ProjectionOutcome,
+    declared_affine_progression, declared_unit_vector, resolve_transform, source_object,
+    unit_vector, DeclaredInterval, ProjectionOutcome,
 };
 
 use crate::directory::DirectoryEntry;
@@ -99,7 +99,9 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     }
     let mut paired = ctx.collection_vec(rows.len(), outer_operation)?;
     let mut row_pairs = rows.into_iter().zip(weights);
-    while let Some((row, weight_row)) = ctx.next_charged(&mut row_pairs, "iges surface weighted row traversal")? {
+    while let Some((row, weight_row)) =
+        ctx.next_charged(&mut row_pairs, "iges surface weighted row traversal")?
+    {
         if row.len() != weight_row.len() {
             return Ok(Err(NurbsError::WeightLaneLength {
                 field: ctx.format_retained(
@@ -112,7 +114,9 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
         }
         let mut paired_row = ctx.collection_vec(row.len(), inner_operation)?;
         let mut poles = row.into_iter().zip(weight_row).enumerate();
-        while let Some((index, (point, weight))) = ctx.next_charged(&mut poles, "iges surface weighted pole traversal")? {
+        while let Some((index, (point, weight))) =
+            ctx.next_charged(&mut poles, "iges surface weighted pole traversal")?
+        {
             let weight = match weight.admit(index, ctx)? {
                 Ok(weight) => weight,
                 Err(error) => return Ok(Err(error)),
@@ -288,8 +292,16 @@ fn interval_certified_linear_bezier(
         return Ok(false);
     };
     if lower >= upper
-        || ctx.any_by(&geometry.knots()[..control_count], |knot| Ok(*knot != lower), "iges ruled lower knots")?
-        || ctx.any_by(&geometry.knots()[control_count..], |knot| Ok(*knot != upper), "iges ruled upper knots")?
+        || ctx.any_by(
+            &geometry.knots()[..control_count],
+            |knot| Ok(*knot != lower),
+            "iges ruled lower knots",
+        )?
+        || ctx.any_by(
+            &geometry.knots()[control_count..],
+            |knot| Ok(*knot != upper),
+            "iges ruled upper knots",
+        )?
         || geometry
             .pole_rows()
             .point_at(0)
@@ -328,15 +340,20 @@ fn interval_certified_linear_bezier(
     };
     let precision = global.real_precision();
     let source_coordinate = |control: usize, coordinate: usize| {
-        let index = pole_start.checked_add(control.checked_mul(3)?)?.checked_add(coordinate)?;
+        let index = pole_start
+            .checked_add(control.checked_mul(3)?)?
+            .checked_add(coordinate)?;
         let value = record.number(index)?;
         let uncertainty = record.number_uncertainty(index, value, precision);
         if !value.is_finite() || !uncertainty.is_finite() || uncertainty < 0.0 {
             return None;
         }
         let interval = DeclaredInterval::around(value, uncertainty);
-        (interval.lower_bound().is_finite() && interval.upper_bound().is_finite())
-            .then_some((value, uncertainty, interval))
+        (interval.lower_bound().is_finite() && interval.upper_bound().is_finite()).then_some((
+            value,
+            uncertainty,
+            interval,
+        ))
     };
     if control_count == 3 {
         for coordinate in 0..3 {
@@ -355,7 +372,8 @@ fn interval_certified_linear_bezier(
         }
         return Ok(true);
     }
-    let (mut intervals, _interval_storage) = ctx.temporary_vec(control_count, "iges ruled linear interval controls")?;
+    let (mut intervals, _interval_storage) =
+        ctx.temporary_vec(control_count, "iges ruled linear interval controls")?;
     let mut controls = 0..control_count;
     while let Some(control) = ctx.next_charged(&mut controls, "iges ruled linear intervals")? {
         let mut coordinates = [DeclaredInterval::around(0.0, 0.0); 3];
@@ -367,24 +385,36 @@ fn interval_certified_linear_bezier(
         }
         intervals.push(coordinates);
     }
-    for coordinate in 0..3 {
+    for coordinate in [0, 1, 2] {
         let mut lower = f64::NEG_INFINITY;
         let mut upper = f64::INFINITY;
         let mut first_controls = 0..control_count;
-        while let Some(first) = ctx.next_charged(&mut first_controls, "iges ruled linear first controls")? {
+        while let Some(first) =
+            ctx.next_charged(&mut first_controls, "iges ruled linear first controls")?
+        {
             let first_interval = intervals[first][coordinate];
             let mut second_controls = first + 1..control_count;
-            while let Some(second) = ctx.next_charged(&mut second_controls, "iges ruled linear second controls")? {
+            while let Some(second) =
+                ctx.next_charged(&mut second_controls, "iges ruled linear second controls")?
+            {
                 let second_interval = intervals[second][coordinate];
-                let Some(span) = cadmpeg_core::convert::f64_from_index(second - first) else { return Ok(false) };
-                let pair_lower = (second_interval.lower_bound() - first_interval.upper_bound()) / span;
-                let pair_upper = (second_interval.upper_bound() - first_interval.lower_bound()) / span;
-                if !pair_lower.is_finite() || !pair_upper.is_finite() { return Ok(false) }
+                let Some(span) = cadmpeg_core::convert::f64_from_index(second - first) else {
+                    return Ok(false);
+                };
+                let pair_lower =
+                    (second_interval.lower_bound() - first_interval.upper_bound()) / span;
+                let pair_upper =
+                    (second_interval.upper_bound() - first_interval.lower_bound()) / span;
+                if !pair_lower.is_finite() || !pair_upper.is_finite() {
+                    return Ok(false);
+                }
                 lower = lower.max(pair_lower);
                 upper = upper.min(pair_upper);
             }
         }
-        if lower > upper { return Ok(false) }
+        if lower > upper {
+            return Ok(false);
+        }
     }
     Ok(true)
 }
@@ -478,15 +508,26 @@ fn source_parameter_interval(
                 SolvedCurveGeometry::Transformed(placed) => Some(placed.basis()),
                 _ => None,
             });
-            ctx.find_map(bases, |basis| Ok(match basis {
-                SolvedCurveGeometry::Line(_) => Some(true),
-                SolvedCurveGeometry::Transformed(_) => None,
-                _ => Some(false),
-            }), "iges source placed curve classification")?.unwrap_or(false)
+            ctx.find_map(
+                bases,
+                |basis| {
+                    Ok(match basis {
+                        SolvedCurveGeometry::Line(_) => Some(true),
+                        SolvedCurveGeometry::Transformed(_) => None,
+                        _ => Some(false),
+                    })
+                },
+                "iges source placed curve classification",
+            )?
+            .unwrap_or(false)
         }
         _ => false,
     };
-    Ok(if is_line { [0.0, 1.0] } else { carrier_interval })
+    Ok(if is_line {
+        [0.0, 1.0]
+    } else {
+        carrier_interval
+    })
 }
 
 fn homogeneous_bezier_spans<'ctx>(
@@ -499,17 +540,34 @@ fn homogeneous_bezier_spans<'ctx>(
     let count = curve.pole_count();
     let mut scratch = ctx.reserve_scoped(0, "iges surface closure lanes")?;
     let weights = if curve.pole_rows().weight_at(0).is_some() {
-        let mut weights = scratch.with_storage(|| ctx.collection_vec(count, "iges_surface_closure_weights"))?;
+        let mut weights =
+            scratch.with_storage(|| ctx.collection_vec(count, "iges_surface_closure_weights"))?;
         let mut indices = 0..count;
-        while let Some(index) = ctx.next_charged(&mut indices, "iges surface closure weight traversal")? {
-            let Some(weight) = curve.pole_rows().weight_at(index).filter(|weight| *weight > 0.0) else { return Ok(None) };
+        while let Some(index) =
+            ctx.next_charged(&mut indices, "iges surface closure weight traversal")?
+        {
+            let Some(weight) = curve
+                .pole_rows()
+                .weight_at(index)
+                .filter(|weight| *weight > 0.0)
+            else {
+                return Ok(None);
+            };
             weights.push(weight);
         }
         Some(weights)
-    } else { None };
-    let mut points = scratch.with_storage(|| ctx.collection_vec(count, "iges_surface_closure_points"))?;
+    } else {
+        None
+    };
+    let mut points =
+        scratch.with_storage(|| ctx.collection_vec(count, "iges_surface_closure_points"))?;
     for index in ctx.admit_iter(0..count, "iges surface closure pole traversal")? {
-        points.push(curve.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?);
+        points.push(
+            curve
+                .pole_rows()
+                .point_at(index)
+                .ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?,
+        );
     }
     let Some(controls) = positive_controls(
         ctx,
@@ -523,8 +581,14 @@ fn homogeneous_bezier_spans<'ctx>(
     Ok(homogeneous_spans(ctx, degree, curve.knots(), &controls)?)
 }
 
-fn bernstein_binomial(n: usize, k: usize, ctx: &DecodeContext<'_>) -> Result<Option<f64>, CodecError> {
-    if k > n { return Ok(None) }
+fn bernstein_binomial(
+    n: usize,
+    k: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    if k > n {
+        return Ok(None);
+    }
     let k = k.min(n - k);
     let mut value = 1.0;
     let mut factors = 1..=k;
@@ -532,9 +596,13 @@ fn bernstein_binomial(n: usize, k: usize, ctx: &DecodeContext<'_>) -> Result<Opt
         let (Some(numerator), Some(denominator)) = (
             cadmpeg_core::convert::f64_from_index(n - k + factor),
             cadmpeg_core::convert::f64_from_index(factor),
-        ) else { return Ok(None) };
+        ) else {
+            return Ok(None);
+        };
         value = value * numerator / denominator;
-        if !value.is_finite() { return Ok(None) }
+        if !value.is_finite() {
+            return Ok(None);
+        }
     }
     Ok(Some(value))
 }
@@ -546,18 +614,35 @@ fn homogeneous_product_control(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[f64; 4]>, CodecError> {
     // C1=A/a and C2=B/b blend as ((1-v)A*b + v*B*a)/(a*b).
-    let (Some(vector_degree), Some(scalar_degree)) = (vector_controls.len().checked_sub(1), scalar_controls.len().checked_sub(1)) else { return Ok(None) };
-    let Some(degree) = vector_degree.checked_add(scalar_degree) else { return Ok(None) };
-    let Some(denominator) = bernstein_binomial(degree, index, ctx)? else { return Ok(None) };
+    let (Some(vector_degree), Some(scalar_degree)) = (
+        vector_controls.len().checked_sub(1),
+        scalar_controls.len().checked_sub(1),
+    ) else {
+        return Ok(None);
+    };
+    let Some(degree) = vector_degree.checked_add(scalar_degree) else {
+        return Ok(None);
+    };
+    let Some(denominator) = bernstein_binomial(degree, index, ctx)? else {
+        return Ok(None);
+    };
     let upper = index.min(vector_degree);
     let lower = index.saturating_sub(scalar_degree);
     let mut control = [0.0; 4];
     if lower <= upper {
         let mut indices = lower..=upper;
-        while let Some(vector_index) = ctx.next_charged(&mut indices, "iges Bernstein product controls")? {
+        while let Some(vector_index) =
+            ctx.next_charged(&mut indices, "iges Bernstein product controls")?
+        {
             let scalar_index = index - vector_index;
-            let Some(vector_coefficient) = bernstein_binomial(vector_degree, vector_index, ctx)? else { return Ok(None) };
-            let Some(scalar_coefficient) = bernstein_binomial(scalar_degree, scalar_index, ctx)? else { return Ok(None) };
+            let Some(vector_coefficient) = bernstein_binomial(vector_degree, vector_index, ctx)?
+            else {
+                return Ok(None);
+            };
+            let Some(scalar_coefficient) = bernstein_binomial(scalar_degree, scalar_index, ctx)?
+            else {
+                return Ok(None);
+            };
             let coefficient = vector_coefficient * scalar_coefficient / denominator;
             let scalar = scalar_controls[scalar_index][3];
             for axis in 0..4 {
@@ -565,7 +650,10 @@ fn homogeneous_product_control(
             }
         }
     }
-    Ok(control.iter().all(|value| value.is_finite()).then_some(control))
+    Ok(control
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(control))
 }
 
 fn span_fraction(value: f64, domain: [f64; 2]) -> Option<f64> {
@@ -599,7 +687,8 @@ fn split_homogeneous_bezier_span(
     let Some(degree) = span.controls.len().checked_sub(1) else {
         return Ok(None);
     };
-    let (mut current, _level_storage) = ctx.copy_temporary_slice(&span.controls, "iges span split first controls")?;
+    let (mut current, _level_storage) =
+        ctx.copy_temporary_slice(&span.controls, "iges span split first controls")?;
     let mut left = ctx.collection_vec(degree + 1, "iges span split left controls")?;
     let mut right = ctx.collection_vec(degree + 1, "iges span split right controls")?;
     left.push(current[0]);
@@ -608,9 +697,15 @@ fn split_homogeneous_bezier_span(
     while let Some(level) = ctx.next_charged(&mut levels, "iges span split levels traversal")? {
         let remaining = degree + 1 - level;
         let mut indices = 0..remaining;
-        while let Some(index) = ctx.next_charged(&mut indices, "iges span split level controls traversal")? {
-            let control: [f64; 4] = std::array::from_fn(|axis| (1.0 - parameter) * current[index][axis] + parameter * current[index + 1][axis]);
-            if control.iter().any(|value| !value.is_finite()) { return Ok(None) }
+        while let Some(index) =
+            ctx.next_charged(&mut indices, "iges span split level controls traversal")?
+        {
+            let control: [f64; 4] = std::array::from_fn(|axis| {
+                (1.0 - parameter) * current[index][axis] + parameter * current[index + 1][axis]
+            });
+            if control.iter().any(|value| !value.is_finite()) {
+                return Ok(None);
+            }
             current[index] = control;
         }
         left.push(current[0]);
@@ -661,7 +756,11 @@ fn normalized_span_boundaries(
         f64::total_cmp,
         "iges span boundary sort",
     )?;
-    ctx.dedup_by(&mut boundaries, |left, right| Ok(left == right), "iges span boundary deduplication")?;
+    ctx.dedup_by(
+        &mut boundaries,
+        |left, right| Ok(left == right),
+        "iges span boundary deduplication",
+    )?;
     Ok((boundaries.first() == Some(&0.0) && boundaries.last() == Some(&1.0)).then_some(boundaries))
 }
 
@@ -683,15 +782,25 @@ fn partition_homogeneous_spans(
         if !start.is_finite() || !end.is_finite() || start >= end {
             return Ok(None);
         }
-        let first = ctx.partition_point(boundaries, |boundary| Ok(*boundary <= start), "iges span first interior boundary")?;
-        let last = ctx.partition_point(boundaries, |boundary| Ok(*boundary < end), "iges span last interior boundary")?;
+        let first = ctx.partition_point(
+            boundaries,
+            |boundary| Ok(*boundary <= start),
+            "iges span first interior boundary",
+        )?;
+        let last = ctx.partition_point(
+            boundaries,
+            |boundary| Ok(*boundary < end),
+            "iges span last interior boundary",
+        )?;
         let controls = ctx.copy_slice(&span.controls, "iges span partition controls")?;
         let mut current = HomogeneousBezierSpan {
             domain: span.domain,
             controls,
         };
         let mut interior = boundaries[first..last].iter().copied();
-        while let Some(boundary) = ctx.next_charged(&mut interior, "iges span interior boundaries")? {
+        while let Some(boundary) =
+            ctx.next_charged(&mut interior, "iges span interior boundaries")?
+        {
             let Some(cut) = cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary)
                 .map(cadmpeg_ir::scalar::FiniteReal::get)
             else {
@@ -748,7 +857,11 @@ fn aligned_homogeneous_spans(
         f64::total_cmp,
         "iges span boundary sort",
     )?;
-    ctx.dedup_by(&mut boundaries, |left, right| Ok(left == right), "iges span boundary deduplication")?;
+    ctx.dedup_by(
+        &mut boundaries,
+        |left, right| Ok(left == right),
+        "iges span boundary deduplication",
+    )?;
     let Some(first_spans) =
         partition_homogeneous_spans(first_spans, first_domain, &boundaries, ctx)?
     else {
@@ -763,7 +876,10 @@ fn aligned_homogeneous_spans(
         return Ok(None);
     }
     let mut pairs = ctx.collection_vec(first_spans.len(), "iges span aligned pairs")?;
-    pairs.extend(ctx.admit_iter(first_spans, "iges span first pair traversal")?.zip(ctx.admit_iter(second_spans, "iges span second pair traversal")?));
+    pairs.extend(
+        ctx.admit_iter(first_spans, "iges span first pair traversal")?
+            .zip(ctx.admit_iter(second_spans, "iges span second pair traversal")?),
+    );
     Ok(Some(pairs))
 }
 
@@ -780,11 +896,17 @@ fn projectively_shared_weights(
     let scale = weight_at(second, 0) / weight_at(first, 0);
     if !scale.is_finite()
         || scale <= 0.0
-        || ctx.any_by(0..count, |index| {
-            let first_weight = weight_at(first, index);
-            let second_weight = weight_at(second, index);
-            Ok(first_weight <= 0.0 || second_weight <= 0.0 || first_weight * scale != second_weight)
-        }, "iges ruled shared weight equality")?
+        || ctx.any_by(
+            0..count,
+            |index| {
+                let first_weight = weight_at(first, index);
+                let second_weight = weight_at(second, index);
+                Ok(first_weight <= 0.0
+                    || second_weight <= 0.0
+                    || first_weight * scale != second_weight)
+            },
+            "iges ruled shared weight equality",
+        )?
     {
         return Ok(None);
     }
@@ -803,14 +925,23 @@ fn same_basis_ruled_surface(
     weights: &[NonZeroReal],
     ctx: &DecodeContext<'_>,
 ) -> Result<NurbsSurface, CodecError> {
-    let polynomial = ctx.all_by(weights, |weight| Ok(weight.get() == 1.0), "iges ruled unit weights")?;
+    let polynomial = ctx.all_by(
+        weights,
+        |weight| Ok(weight.get() == 1.0),
+        "iges ruled unit weights",
+    )?;
     let mut lane_storage = ctx.reserve_scoped(0, "iges ruled same-basis lane scratch")?;
     let mut pole_rows = if polynomial {
         ctx.collection_vec(first.pole_count(), "iges ruled same-basis pole rows")?
     } else {
-        lane_storage.with_storage(|| ctx.collection_vec(first.pole_count(), "iges ruled same-basis pole rows"))?
+        lane_storage.with_storage(|| {
+            ctx.collection_vec(first.pole_count(), "iges ruled same-basis pole rows")
+        })?
     };
-    for index in ctx.admit_iter(0..first.pole_count(), "iges ruled same-basis pole traversal")? {
+    for index in ctx.admit_iter(
+        0..first.pole_count(),
+        "iges ruled same-basis pole traversal",
+    )? {
         let first_point = first
             .pole_rows()
             .point_at(index)
@@ -819,16 +950,25 @@ fn same_basis_ruled_surface(
             .pole_rows()
             .point_at(index)
             .ok_or_else(|| CodecError::malformed("ruled second rail pole is missing"))?;
-        let mut row = if polynomial { ctx.collection_vec(2, "iges ruled same-basis pole row controls")? } else { lane_storage.with_storage(|| ctx.collection_vec(2, "iges ruled same-basis pole row controls"))? };
+        let mut row = if polynomial {
+            ctx.collection_vec(2, "iges ruled same-basis pole row controls")?
+        } else {
+            lane_storage
+                .with_storage(|| ctx.collection_vec(2, "iges ruled same-basis pole row controls"))?
+        };
         row.extend([first_point, second_point]);
         pole_rows.push(row);
     }
     let weight_rows = if polynomial {
         None
     } else {
-        let mut rows = lane_storage.with_storage(|| ctx.collection_vec(weights.len(), "iges ruled same-basis weight rows"))?;
+        let mut rows = lane_storage.with_storage(|| {
+            ctx.collection_vec(weights.len(), "iges ruled same-basis weight rows")
+        })?;
         for weight in ctx.admit_iter(weights, "iges ruled weight row traversal")? {
-            let mut row = lane_storage.with_storage(|| ctx.collection_vec(2, "iges ruled same-basis weight row controls"))?;
+            let mut row = lane_storage.with_storage(|| {
+                ctx.collection_vec(2, "iges ruled same-basis weight row controls")
+            })?;
             row.extend([*weight, *weight]);
             rows.push(row);
         }
@@ -883,11 +1023,17 @@ fn ruled_surface_carrier(
 ) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
     if first.degree() == second.degree()
         && first.knots().len() == second.knots().len()
-        && ctx.all_by(first.knots().iter().zip(second.knots()), |(left, right)| Ok(left == right), "iges ruled knot equality")?
+        && ctx.all_by(
+            first.knots().iter().zip(second.knots()),
+            |(left, right)| Ok(left == right),
+            "iges ruled knot equality",
+        )?
         && first.pole_count() == second.pole_count()
     {
         let mut weight_storage = ctx.reserve_scoped(0, "iges ruled shared weight storage")?;
-        if let Some(weights) = weight_storage.with_storage(|| projectively_shared_weights(first, second, ctx))? {
+        if let Some(weights) =
+            weight_storage.with_storage(|| projectively_shared_weights(first, second, ctx))?
+        {
             let Some(pole_count) = first.pole_count().checked_mul(2) else {
                 return Ok(None);
             };
@@ -901,21 +1047,47 @@ fn ruled_surface_carrier(
     };
     let mut row_storage = ctx.reserve_scoped(0, "iges ruled span row scratch")?;
     let pole_rows = if weights.is_some() {
-        row_storage.with_storage(|| ctx.copy_rows(&control_points, 2, "iges ruled span pole rows", "iges ruled span pole row controls"))?
+        row_storage.with_storage(|| {
+            ctx.copy_rows(
+                &control_points,
+                2,
+                "iges ruled span pole rows",
+                "iges ruled span pole row controls",
+            )
+        })?
     } else {
-        ctx.copy_rows(&control_points, 2, "iges ruled span pole rows", "iges ruled span pole row controls")?
+        ctx.copy_rows(
+            &control_points,
+            2,
+            "iges ruled span pole rows",
+            "iges ruled span pole row controls",
+        )?
     };
     let weight_rows = if let Some(weights) = weights {
         Some(row_storage.with_storage(|| {
-            let mut rows = ctx.collection_vec(weights.len().div_ceil(2), "iges ruled span weight rows")?;
-            for weights in ctx.admit_iter(&weights, "iges ruled span weight row traversal")?.chunks(std::num::NonZeroUsize::new(2).ok_or_else(|| CodecError::malformed("zero row width"))?) {
-                let mut row = ctx.collection_vec(weights.len(), "iges ruled span weight row controls")?;
-                row.extend(ctx.admit_iter(weights, "iges ruled span weight copy")?.copied().map(NonZeroReal::from));
+            let mut rows =
+                ctx.collection_vec(weights.len().div_ceil(2), "iges ruled span weight rows")?;
+            for weights in ctx
+                .admit_iter(&weights, "iges ruled span weight row traversal")?
+                .chunks(
+                    std::num::NonZeroUsize::new(2)
+                        .ok_or_else(|| CodecError::malformed("zero row width"))?,
+                )
+            {
+                let mut row =
+                    ctx.collection_vec(weights.len(), "iges ruled span weight row controls")?;
+                row.extend(
+                    ctx.admit_iter(weights, "iges ruled span weight copy")?
+                        .copied()
+                        .map(NonZeroReal::from),
+                );
                 rows.push(row);
             }
             Ok::<_, CodecError>(rows)
         })?)
-    } else { None };
+    } else {
+        None
+    };
     let mut v_knots = ctx.collection_vec(4, "iges ruled span v knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
     let poles = pair_admitted_surface_poles(
@@ -962,7 +1134,9 @@ fn ruled_surface_span_lanes<'ctx>(
         return Ok(None);
     }
     let mut span_storage = ctx.reserve_scoped(0, "iges aligned span storage")?;
-    let Some(spans) = span_storage.with_storage(|| aligned_homogeneous_spans(ctx, first, second))? else {
+    let Some(spans) =
+        span_storage.with_storage(|| aligned_homogeneous_spans(ctx, first, second))?
+    else {
         return Ok(None);
     };
     let Some(u_count) = spans
@@ -976,7 +1150,8 @@ fn ruled_surface_span_lanes<'ctx>(
         return Ok(None);
     };
     admit_surface_pole_count(ctx, pole_count)?;
-    let (mut homogeneous, _homogeneous_storage) = ctx.temporary_vec(pole_count, "iges ruled homogeneous controls")?;
+    let (mut homogeneous, _homogeneous_storage) =
+        ctx.temporary_vec(pole_count, "iges ruled homogeneous controls")?;
     let Some(knot_count) = u_count
         .checked_add(degree)
         .and_then(|count| count.checked_add(1))
@@ -990,44 +1165,67 @@ fn ruled_surface_span_lanes<'ctx>(
     };
     let mut u_knots = ctx.collection_vec(knot_count, "iges ruled homogeneous knots")?;
     let mut span_pairs = spans.iter().enumerate();
-    while let Some((span_index, (first_span, second_span))) = ctx.next_charged(&mut span_pairs, "iges ruled span traversal")? {
+    while let Some((span_index, (first_span, second_span))) =
+        ctx.next_charged(&mut span_pairs, "iges ruled span traversal")?
+    {
         if first_span.controls.len() != first_control_count
             || second_span.controls.len() != second_control_count
         {
             return Ok(None);
         }
         if span_index == 0 {
-            u_knots.extend(ctx.admit_iter(0..degree + 1, "iges ruled first span knots")?.map(|_| first_span.domain[0]));
+            u_knots.extend(
+                ctx.admit_iter(0..degree + 1, "iges ruled first span knots")?
+                    .map(|_| first_span.domain[0]),
+            );
         } else {
-            u_knots.extend(ctx.admit_iter(0..degree, "iges ruled interior span knots")?.map(|_| first_span.domain[0]));
+            u_knots.extend(
+                ctx.admit_iter(0..degree, "iges ruled interior span knots")?
+                    .map(|_| first_span.domain[0]),
+            );
         }
         let start = usize::from(span_index > 0);
         let mut products = start..=degree;
         while let Some(index) = ctx.next_charged(&mut products, "iges ruled product traversal")? {
-            let Some(first_times_second) =
-                homogeneous_product_control(&first_span.controls, &second_span.controls, index, ctx)?
+            let Some(first_times_second) = homogeneous_product_control(
+                &first_span.controls,
+                &second_span.controls,
+                index,
+                ctx,
+            )?
             else {
                 return Ok(None);
             };
-            let Some(second_times_first) =
-                homogeneous_product_control(&second_span.controls, &first_span.controls, index, ctx)?
+            let Some(second_times_first) = homogeneous_product_control(
+                &second_span.controls,
+                &first_span.controls,
+                index,
+                ctx,
+            )?
             else {
                 return Ok(None);
             };
             homogeneous.extend([first_times_second, second_times_first]);
         }
         if span_index + 1 == spans.len() {
-            u_knots.extend(ctx.admit_iter(0..degree + 1, "iges ruled last span knots")?.map(|_| first_span.domain[1]));
+            u_knots.extend(
+                ctx.admit_iter(0..degree + 1, "iges ruled last span knots")?
+                    .map(|_| first_span.domain[1]),
+            );
         }
     }
     if homogeneous.len() != pole_count || u_knots.len() != u_count + degree + 1 {
         return Ok(None);
     }
     let mut lane_storage = ctx.reserve_scoped(0, "iges ruled surface lane scratch")?;
-    let mut control_points = lane_storage.with_storage(|| ctx.collection_vec(pole_count, "iges ruled surface controls"))?;
-    let mut weights = lane_storage.with_storage(|| ctx.collection_vec(pole_count, "iges ruled surface weights"))?;
+    let mut control_points = lane_storage
+        .with_storage(|| ctx.collection_vec(pole_count, "iges ruled surface controls"))?;
+    let mut weights = lane_storage
+        .with_storage(|| ctx.collection_vec(pole_count, "iges ruled surface weights"))?;
     let mut homogeneous = homogeneous.into_iter();
-    while let Some(control) = ctx.next_charged(&mut homogeneous, "iges ruled Euclidean pole traversal")? {
+    while let Some(control) =
+        ctx.next_charged(&mut homogeneous, "iges ruled Euclidean pole traversal")?
+    {
         let weight = control[3];
         let Some(weight) = PositiveReal::new(weight) else {
             return Ok(None);
@@ -1043,7 +1241,11 @@ fn ruled_surface_span_lanes<'ctx>(
         control_points.push(point);
         weights.push(weight);
     }
-    let weights = if ctx.all_by(&weights, |weight| Ok(weight.get() == 1.0), "iges ruled unit weights")? {
+    let weights = if ctx.all_by(
+        &weights,
+        |weight| Ok(weight.get() == 1.0),
+        "iges ruled unit weights",
+    )? {
         None
     } else {
         Some(weights)
@@ -1051,7 +1253,10 @@ fn ruled_surface_span_lanes<'ctx>(
     let Ok(degree) = u32::try_from(degree) else {
         return Ok(None);
     };
-    Ok(Some(((degree, u_knots, control_points, weights), lane_storage)))
+    Ok(Some((
+        (degree, u_knots, control_points, weights),
+        lane_storage,
+    )))
 }
 
 fn homogeneous_curve_boundary_matches(
@@ -1079,13 +1284,19 @@ fn homogeneous_curve_boundary_matches(
     let second_spans = &*second_extraction;
     if first.degree() != second.degree()
         || (first.knots().len() != second.knots().len()
-        || !ctx.all_by(first.knots().iter().zip(second.knots()), |(left, right)| Ok(left == right), "iges surface closure knot equality")?)
+            || !ctx.all_by(
+                first.knots().iter().zip(second.knots()),
+                |(left, right)| Ok(left == right),
+                "iges surface closure knot equality",
+            )?)
         || first_spans.len() != second_spans.len()
     {
         return Ok(None);
     }
     let mut span_pairs = first_spans.iter().zip(second_spans);
-    while let Some((first_span, second_span)) = ctx.next_charged(&mut span_pairs, "iges surface closure spans")? {
+    while let Some((first_span, second_span)) =
+        ctx.next_charged(&mut span_pairs, "iges surface closure spans")?
+    {
         if first_span.domain[1] <= range[0] || first_span.domain[0] >= range[1] {
             continue;
         }
@@ -1117,13 +1328,15 @@ fn surface_boundary_is_closed(
     resolution: f64,
 ) -> Result<Option<bool>, CodecError> {
     let mut curve_storage = ctx.reserve_scoped(0, "iges surface boundary curve scratch")?;
-    let Some(first) =
-        curve_storage.with_storage_limit(|| cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed_range[0]))?
+    let Some(first) = curve_storage.with_storage_limit(|| {
+        cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed_range[0])
+    })?
     else {
         return Ok(None);
     };
-    let Some(second) =
-        curve_storage.with_storage_limit(|| cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed_range[1]))?
+    let Some(second) = curve_storage.with_storage_limit(|| {
+        cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, surface, fixed_axis, fixed_range[1])
+    })?
     else {
         return Ok(None);
     };
@@ -1157,7 +1370,6 @@ fn angular_span_count(start: f64, end: f64) -> Option<(usize, f64, f64)> {
     let end = start + sweep;
     let segment_count = super::curve_conversion::quarter_turn_spans(sweep)?;
     Some((segment_count, sweep, end))
-
 }
 
 fn angular_basis<'ctx>(
@@ -1165,14 +1377,17 @@ fn angular_basis<'ctx>(
     end: f64,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<AngularBasis<'ctx>>, CodecError> {
-    let Some((segment_count, sweep, end)) = angular_span_count(start, end) else { return Ok(None) };
+    let Some((segment_count, sweep, end)) = angular_span_count(start, end) else {
+        return Ok(None);
+    };
     let Some(segment_count_real) = cadmpeg_core::convert::f64_from_index(segment_count) else {
         return Ok(None);
     };
     let segment_angle = sweep / segment_count_real;
     let mut knots = ctx.collection_vec(segment_count * 2 + 4, "iges revolution angular knots")?;
     knots.extend([start; 3]);
-    let (mut controls, controls_storage) = ctx.temporary_vec(segment_count * 2 + 1, "iges revolution angular controls")?;
+    let (mut controls, controls_storage) =
+        ctx.temporary_vec(segment_count * 2 + 1, "iges revolution angular controls")?;
     controls.push((start, 1.0));
     for segment in ctx.admit_iter(0..segment_count, "iges revolution angular spans")? {
         let Some(segment_real) = cadmpeg_core::convert::f64_from_index(segment) else {
@@ -1188,7 +1403,11 @@ fn angular_basis<'ctx>(
         }
     }
     knots.extend([end; 3]);
-    Ok(Some(AngularBasis { knots, controls, _controls_storage: controls_storage }))
+    Ok(Some(AngularBasis {
+        knots,
+        controls,
+        _controls_storage: controls_storage,
+    }))
 }
 
 fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceGeometry> {
@@ -1275,30 +1494,72 @@ struct OffsetLookups {
 impl OffsetLookups {
     fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let mut surfaces = BTreeMap::new();
-        for (position, surface) in ctx.admit_iter(&ir.model.surfaces, "iges offset surface index traversal")?.enumerate() {
-            if let Some(positions) = ctx.get_mut_btree_map(&mut surfaces, &surface.id, "iges offset surface index lookup")? {
+        for (position, surface) in ctx
+            .admit_iter(&ir.model.surfaces, "iges offset surface index traversal")?
+            .enumerate()
+        {
+            if let Some(positions) = ctx.get_mut_btree_map(
+                &mut surfaces,
+                &surface.id,
+                "iges offset surface index lookup",
+            )? {
                 let positions: &mut (usize, usize) = positions;
                 positions.1 = position;
             } else {
-                let key = surface.id.try_clone_for_decode(ctx, "iges offset surface index keys")?;
-                ctx.insert_btree_map(&mut surfaces, key, (position, position), "iges offset surface index nodes")?;
+                let key = surface
+                    .id
+                    .try_clone_for_decode(ctx, "iges offset surface index keys")?;
+                ctx.insert_btree_map(
+                    &mut surfaces,
+                    key,
+                    (position, position),
+                    "iges offset surface index nodes",
+                )?;
             }
         }
         let (owners, _owner_storage) = ctx.unique_index(
             ctx.admit_iter(&ir.model.surfaces, "iges offset owner traversal")?
-                .filter_map(|surface| surface.geometry.procedural_construction().map(|construction| (construction.as_str(), &surface.id))),
+                .filter_map(|surface| {
+                    surface
+                        .geometry
+                        .procedural_construction()
+                        .map(|construction| (construction.as_str(), &surface.id))
+                }),
             "iges offset unique owners",
         )?;
         let mut procedural = BTreeMap::new();
-        for (position, surface) in ctx.admit_iter(&ir.model.procedural_surfaces, "iges offset procedural index traversal")?.enumerate() {
-            if let Some(owner) = ctx.get_hash_map(&owners, surface.id.as_str(), "iges offset owner lookup")?.and_then(Option::as_ref).copied() {
-                if !ctx.contains_key_btree_map(&procedural, owner, "iges offset procedural index lookup")? {
-                    let key = owner.try_clone_for_decode(ctx, "iges offset procedural index keys")?;
-                    ctx.insert_btree_map(&mut procedural, key, position, "iges offset procedural index nodes")?;
+        for (position, surface) in ctx
+            .admit_iter(
+                &ir.model.procedural_surfaces,
+                "iges offset procedural index traversal",
+            )?
+            .enumerate()
+        {
+            if let Some(owner) = ctx
+                .get_hash_map(&owners, surface.id.as_str(), "iges offset owner lookup")?
+                .and_then(Option::as_ref)
+                .copied()
+            {
+                if !ctx.contains_key_btree_map(
+                    &procedural,
+                    owner,
+                    "iges offset procedural index lookup",
+                )? {
+                    let key =
+                        owner.try_clone_for_decode(ctx, "iges offset procedural index keys")?;
+                    ctx.insert_btree_map(
+                        &mut procedural,
+                        key,
+                        position,
+                        "iges offset procedural index nodes",
+                    )?;
                 }
             }
         }
-        Ok(Self { surfaces, procedural })
+        Ok(Self {
+            surfaces,
+            procedural,
+        })
     }
 }
 
@@ -1308,7 +1569,12 @@ fn indicator_normal(
     lookups: &OffsetLookups,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vector3>, CodecError> {
-    let procedural = ctx.get_btree_map(&lookups.procedural, surface, "iges offset procedural lookup")?
+    let procedural = ctx
+        .get_btree_map(
+            &lookups.procedural,
+            surface,
+            "iges offset procedural lookup",
+        )?
         .and_then(|position| ir.model.procedural_surfaces.get(*position));
     let parameters =
         procedural.map(|procedural| offset_indicator_parameters(procedural.record_bounds()));
@@ -1327,8 +1593,12 @@ fn indicator_normal(
         None => {
             // Direct evaluation uses the last carrier with a repeated identity,
             // as ModelIndex does. Support admission uses the first carrier.
-            let Some(carrier) = ctx.get_btree_map(&lookups.surfaces, surface, "iges offset carrier lookup")?
-                .and_then(|positions| ir.model.surfaces.get(positions.1)) else { return Ok(None) };
+            let Some(carrier) = ctx
+                .get_btree_map(&lookups.surfaces, surface, "iges offset carrier lookup")?
+                .and_then(|positions| ir.model.surfaces.get(positions.1))
+            else {
+                return Ok(None);
+            };
             finite_or_refusal(cadmpeg_ir::eval::surface_partials(
                 ctx,
                 &carrier.geometry,
@@ -1383,14 +1653,18 @@ pub(super) fn project(
         let mut records = BTreeMap::new();
         for record in ctx.admit_iter(parameters, "iges surfaces parameter index traversal")? {
             ctx.insert_btree_map(
-                &mut records, record.directory_sequence, record,
+                &mut records,
+                record.directory_sequence,
+                record,
                 "iges surfaces parameter index",
             )?;
         }
         let mut entries = BTreeMap::new();
         for entry in ctx.admit_iter(directory, "iges surfaces directory index traversal")? {
             ctx.insert_btree_map(
-                &mut entries, entry.sequence, entry,
+                &mut entries,
+                entry.sequence,
+                entry,
                 "iges surfaces directory index",
             )?;
         }
@@ -1401,11 +1675,13 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
-    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
+    for entry in ctx
+        .admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1..=1))
     {
         let factor = global.length_factor_mm();
-        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -1453,7 +1729,11 @@ pub(super) fn project(
             .ok()
             .filter(|sequence| sequence % 2 == 1);
         let boundary_sequence = match boundary_sequence {
-            Some(sequence) if crate::directory::entry_by_sequence(directory, sequence, ctx)?.is_some() => Some(sequence),
+            Some(sequence)
+                if crate::directory::entry_by_sequence(directory, sequence, ctx)?.is_some() =>
+            {
+                Some(sequence)
+            }
             _ => None,
         };
         if (entry.form == 0 && boundary != 0) || (entry.form != 0 && boundary_sequence.is_none()) {
@@ -1488,15 +1768,17 @@ pub(super) fn project(
             c * d / normal_squared * factor,
         );
         let mut placement_storage = ctx.reserve_scoped(0, "iges surfaces placement scratch")?;
-        let transform = match placement_storage.with_storage(|| resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            factor,
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            ctx,
-        )) {
+        let transform = match placement_storage.with_storage(|| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                global.real_precision(),
+                &mut BTreeSet::new(),
+                ctx,
+            )
+        }) {
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
@@ -1570,10 +1852,12 @@ pub(super) fn project(
         )?;
     }
 
-    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
+    for entry in ctx
+        .admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
     {
-        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -1638,19 +1922,23 @@ pub(super) fn project(
             continue;
         }
         let mut rail_storage = ctx.reserve_scoped(0, "iges ruled rail lookup keys")?;
-        let (first_id, second_id) = rail_storage.with_storage(|| Ok::<_, CodecError>((
-            crate::ids::curve_admitted(&crate::ids::Stem::directory(first_sequence), ctx)?,
-            crate::ids::curve_admitted(&crate::ids::Stem::directory(second_sequence), ctx)?,
-        )))?;
+        let (first_id, second_id) = rail_storage.with_storage(|| {
+            Ok::<_, CodecError>((
+                crate::ids::curve_admitted(&crate::ids::Stem::directory(first_sequence), ctx)?,
+                crate::ids::curve_admitted(&crate::ids::Stem::directory(second_sequence), ctx)?,
+            ))
+        })?;
         let first_curve = composite_index.curve_by_id(ir, &first_id);
         let second_curve = composite_index.curve_by_id(ir, &second_id);
         let rails = (
             match first_curve {
-                Some(curve) => rail_storage.with_storage(|| bounded_nurbs(ir, &curve.id, ctx, &composite_index)),
+                Some(curve) => rail_storage
+                    .with_storage(|| bounded_nurbs(ir, &curve.id, ctx, &composite_index)),
                 None => Ok(None),
             },
             match second_curve {
-                Some(curve) => rail_storage.with_storage(|| bounded_nurbs(ir, &curve.id, ctx, &composite_index)),
+                Some(curve) => rail_storage
+                    .with_storage(|| bounded_nurbs(ir, &curve.id, ctx, &composite_index)),
                 None => Ok(None),
             },
         );
@@ -1682,8 +1970,18 @@ pub(super) fn project(
         if entry.form == 0
             && !equal_arc_length_parameterization(
                 [
-                    (&first_curve.ok_or_else(|| CodecError::malformed("ruled first rail is missing"))?.geometry, first_sequence),
-                    (&second_curve.ok_or_else(|| CodecError::malformed("ruled second rail is missing"))?.geometry, second_sequence),
+                    (
+                        &first_curve
+                            .ok_or_else(|| CodecError::malformed("ruled first rail is missing"))?
+                            .geometry,
+                        first_sequence,
+                    ),
+                    (
+                        &second_curve
+                            .ok_or_else(|| CodecError::malformed("ruled second rail is missing"))?
+                            .geometry,
+                        second_sequence,
+                    ),
                 ],
                 first_interval,
                 second_interval,
@@ -1706,11 +2004,14 @@ pub(super) fn project(
         if direction_flag == 1 {
             let knot_sum = second.knots()[0] + second.knots()[second.knots().len() - 1];
             rail_storage.with_storage(|| second.reverse_parameterization(ctx))?;
-            if rail_storage.with_storage(|| second.edit_knots(ctx, |knots| {
-                    for knot in knots {
-                        *knot += knot_sum;
-                    }
-                }))?
+            if rail_storage
+                .with_storage(|| {
+                    second.edit_knots(ctx, |knots| {
+                        for knot in knots {
+                            *knot += knot_sum;
+                        }
+                    })
+                })?
                 .is_err()
             {
                 super::push_attributed_loss(
@@ -1810,11 +2111,13 @@ pub(super) fn project(
         )?;
     }
 
-    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
+    for entry in ctx
+        .admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 122 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
-        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -1835,7 +2138,9 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(directrix_entry) = crate::directory::entry_by_sequence(directory, directrix_sequence, ctx)? else {
+        let Some(directrix_entry) =
+            crate::directory::entry_by_sequence(directory, directrix_sequence, ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -1871,15 +2176,17 @@ pub(super) fn project(
             continue;
         };
         let mut placement_storage = ctx.reserve_scoped(0, "iges surfaces placement scratch")?;
-        let transform = match placement_storage.with_storage(|| resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            factor,
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            ctx,
-        )) {
+        let transform = match placement_storage.with_storage(|| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                global.real_precision(),
+                &mut BTreeSet::new(),
+                ctx,
+            )
+        }) {
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
@@ -1939,7 +2246,8 @@ pub(super) fn project(
             let Some(directrix_solved) = directrix_geometry.solved() else {
                 continue;
             };
-            let source_interval = source_parameter_interval(directrix_geometry, carrier_interval, ctx)?;
+            let source_interval =
+                source_parameter_interval(directrix_geometry, carrier_interval, ctx)?;
             let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
                 cadmpeg_ir::eval::decode::curve_point(ctx, directrix_geometry, carrier_interval[0]),
             )?)?
@@ -2086,9 +2394,12 @@ pub(super) fn project(
             ctx,
         )?
         .unwrap_or(cached_interval);
-        let source_interval = composite_index.curve_by_id(ir, &directrix_id).map(|curve| &curve.geometry)
+        let source_interval = composite_index
+            .curve_by_id(ir, &directrix_id)
+            .map(|curve| &curve.geometry)
             .map(|geometry| source_parameter_interval(geometry, cached_interval, ctx))
-            .transpose()?.unwrap_or(cached_interval);
+            .transpose()?
+            .unwrap_or(cached_interval);
         let mut directrix = directrix;
         let placed_directrix = if entry.transform == 0 {
             directrix
@@ -2162,7 +2473,12 @@ pub(super) fn project(
         };
         let rational = placed_directrix.pole_rows().weight_at(0).is_some();
         let mut row_storage = ctx.reserve_scoped(0, "iges tabulated row scratch")?;
-        let mut pole_rows = if rational { row_storage.with_storage(|| ctx.collection_vec(pole_count, "iges tabulated pole rows"))? } else { ctx.collection_vec(pole_count, "iges tabulated pole rows")? };
+        let mut pole_rows = if rational {
+            row_storage
+                .with_storage(|| ctx.collection_vec(pole_count, "iges tabulated pole rows"))?
+        } else {
+            ctx.collection_vec(pole_count, "iges tabulated pole rows")?
+        };
         let mut finite_poles = true;
         let mut indices = 0..pole_count;
         while let Some(index) = ctx.next_charged(&mut indices, "iges tabulated pole traversal")? {
@@ -2170,7 +2486,12 @@ pub(super) fn project(
                 .pole_rows()
                 .point_at(index)
                 .ok_or_else(|| CodecError::malformed("tabulated directrix pole is missing"))?;
-            let mut row = if rational { row_storage.with_storage(|| ctx.collection_vec(2, "iges tabulated pole row controls"))? } else { ctx.collection_vec(2, "iges tabulated pole row controls")? };
+            let mut row = if rational {
+                row_storage
+                    .with_storage(|| ctx.collection_vec(2, "iges tabulated pole row controls"))?
+            } else {
+                ctx.collection_vec(2, "iges tabulated pole row controls")?
+            };
             let Some(translated) = FinitePoint3::new(point.get().translated(direction.get(), 1.0))
             else {
                 finite_poles = false;
@@ -2192,7 +2513,8 @@ pub(super) fn project(
             continue;
         }
         let weights = if rational {
-            let mut rows = row_storage.with_storage(|| ctx.collection_vec(pole_count, "iges tabulated weight rows"))?;
+            let mut rows = row_storage
+                .with_storage(|| ctx.collection_vec(pole_count, "iges tabulated weight rows"))?;
             for index in ctx.admit_iter(0..pole_count, "iges tabulated weight traversal")? {
                 let weight = placed_directrix
                     .pole_rows()
@@ -2201,7 +2523,8 @@ pub(super) fn project(
                     .ok_or_else(|| {
                         CodecError::malformed("tabulated directrix weight is missing")
                     })?;
-                let mut row = row_storage.with_storage(|| ctx.collection_vec(2, "iges tabulated weight row controls"))?;
+                let mut row = row_storage
+                    .with_storage(|| ctx.collection_vec(2, "iges tabulated weight row controls"))?;
                 row.extend([weight, weight]);
                 rows.push(row);
             }
@@ -2330,11 +2653,13 @@ pub(super) fn project(
         )?;
     }
 
-    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
+    for entry in ctx
+        .admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 120 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
-        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2377,19 +2702,26 @@ pub(super) fn project(
             continue;
         };
         if angular_span_count(start_angle, end_angle).is_none() {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("revolution angular interval is not in (0, 2*pi]"))?;
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("revolution angular interval is not in (0, 2*pi]"),
+            )?;
             continue;
         }
         let mut placement_storage = ctx.reserve_scoped(0, "iges surfaces placement scratch")?;
-        let transform = match placement_storage.with_storage(|| resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            factor,
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            ctx,
-        )) {
+        let transform = match placement_storage.with_storage(|| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                global.real_precision(),
+                &mut BTreeSet::new(),
+                ctx,
+            )
+        }) {
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
@@ -2398,7 +2730,9 @@ pub(super) fn project(
             }
         };
         let mut axis_storage = ctx.reserve_scoped(0, "iges revolution axis lookup key")?;
-        let axis_id = axis_storage.with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(axis_sequence), ctx))?;
+        let axis_id = axis_storage.with_storage(|| {
+            crate::ids::curve_admitted(&crate::ids::Stem::directory(axis_sequence), ctx)
+        })?;
         let Some(axis_curve) = composite_index.curve_by_id(ir, &axis_id) else {
             super::push_entity_loss(
                 ctx,
@@ -2432,7 +2766,8 @@ pub(super) fn project(
         };
         let mut carrier_storage = ctx.reserve_scoped(0, "iges surface carrier scratch")?;
         let carrier_result = if entry.transform == 0 {
-            carrier_storage.with_storage(|| bounded_nurbs(ir, &generatrix_id, ctx, &composite_index))
+            carrier_storage
+                .with_storage(|| bounded_nurbs(ir, &generatrix_id, ctx, &composite_index))
         } else {
             bounded_nurbs(ir, &generatrix_id, ctx, &composite_index)
         };
@@ -2472,7 +2807,8 @@ pub(super) fn project(
             let Some(directrix_solved) = directrix_geometry.solved() else {
                 continue;
             };
-            let source_interval = source_parameter_interval(directrix_geometry, carrier_interval, ctx)?;
+            let source_interval =
+                source_parameter_interval(directrix_geometry, carrier_interval, ctx)?;
             let mut procedural_directrix =
                 generatrix_id.try_clone_for_decode(ctx, "iges surface identity copy")?;
             let mut procedural_axis = admitted_axis;
@@ -2612,9 +2948,12 @@ pub(super) fn project(
             ctx,
         )?
         .unwrap_or(cached_interval);
-        let source_interval = composite_index.curve_by_id(ir, &generatrix_id).map(|curve| &curve.geometry)
+        let source_interval = composite_index
+            .curve_by_id(ir, &generatrix_id)
+            .map(|curve| &curve.geometry)
             .map(|geometry| source_parameter_interval(geometry, cached_interval, ctx))
-            .transpose()?.unwrap_or(cached_interval);
+            .transpose()?
+            .unwrap_or(cached_interval);
         let Some(AngularBasis {
             knots: v_knots,
             controls: angular_controls,
@@ -2663,24 +3002,53 @@ pub(super) fn project(
             ));
         }
         let mut lane_storage = ctx.reserve_scoped(0, "iges revolution lane scratch")?;
-        let mut control_points = lane_storage.with_storage(|| ctx.collection_vec(surface_pole_count, "iges revolution surface controls"))?;
-        let mut weights = lane_storage.with_storage(|| ctx.collection_vec(surface_pole_count, "iges revolution surface weights"))?;
+        let mut control_points = lane_storage.with_storage(|| {
+            ctx.collection_vec(surface_pole_count, "iges revolution surface controls")
+        })?;
+        let mut weights = lane_storage.with_storage(|| {
+            ctx.collection_vec(surface_pole_count, "iges revolution surface weights")
+        })?;
         for u_index in ctx.admit_iter(0..generatrix_count, "iges revolution generatrix poles")? {
-            let point = generatrix.pole_rows().point_at(u_index).ok_or_else(|| CodecError::malformed("generatrix pole is missing"))?;
+            let point = generatrix
+                .pole_rows()
+                .point_at(u_index)
+                .ok_or_else(|| CodecError::malformed("generatrix pole is missing"))?;
             let delta = point.vector_from(axis_origin);
             let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
             let radial = point.vector_from(axis_point);
             let u_weight = generatrix.pole_rows().weight_at(u_index).unwrap_or(1.0);
-            for (angle, angular_weight) in ctx.admit_iter(&angular_controls, "iges revolution angular pole traversal")? {
+            for (angle, angular_weight) in
+                ctx.admit_iter(&angular_controls, "iges revolution angular pole traversal")?
+            {
                 let rotated = rotate(radial, axis_direction, *angle);
                 let radial_control = rotated.scale(1.0 / angular_weight);
-                control_points.push(transform.apply_point(axis_point.translated(radial_control, 1.0)).ok_or_else(|| CodecError::malformed("placement produces a non-finite revolution pole"))?);
+                control_points.push(
+                    transform
+                        .apply_point(axis_point.translated(radial_control, 1.0))
+                        .ok_or_else(|| {
+                            CodecError::malformed("placement produces a non-finite revolution pole")
+                        })?,
+                );
                 weights.push(u_weight * angular_weight);
             }
         }
         let u_knots = ctx.copy_slice(generatrix.knots(), "iges revolution surface u knots")?;
-        let pole_rows = lane_storage.with_storage(|| ctx.copy_rows(&control_points, angular_controls.len(), "iges revolution pole rows", "iges revolution pole row controls"))?;
-        let weight_rows = lane_storage.with_storage(|| ctx.copy_rows(&weights, angular_controls.len(), "iges revolution weight rows", "iges revolution weight row controls"))?;
+        let pole_rows = lane_storage.with_storage(|| {
+            ctx.copy_rows(
+                &control_points,
+                angular_controls.len(),
+                "iges revolution pole rows",
+                "iges revolution pole row controls",
+            )
+        })?;
+        let weight_rows = lane_storage.with_storage(|| {
+            ctx.copy_rows(
+                &weights,
+                angular_controls.len(),
+                "iges revolution weight rows",
+                "iges revolution weight row controls",
+            )
+        })?;
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         let paired = pair_admitted_surface_poles(
@@ -2842,11 +3210,13 @@ pub(super) fn project(
         )?;
     }
 
-    'surface: for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
+    'surface: for entry in ctx
+        .admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 128 && (0..=9).contains(&entry.form))
     {
         let factor = global.length_factor_mm();
-        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -3087,9 +3457,12 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let u_domain = [finite_u_knots[u_degree_usize], finite_u_knots[u_count]].map(FiniteReal::new);
-        let v_domain = [finite_v_knots[v_degree_usize], finite_v_knots[v_count]].map(FiniteReal::new);
-        let ([Some(u_lower), Some(u_upper)], [Some(v_lower), Some(v_upper)]) = (u_domain, v_domain) else {
+        let u_domain =
+            [finite_u_knots[u_degree_usize], finite_u_knots[u_count]].map(FiniteReal::new);
+        let v_domain =
+            [finite_v_knots[v_degree_usize], finite_v_knots[v_count]].map(FiniteReal::new);
+        let ([Some(u_lower), Some(u_upper)], [Some(v_lower), Some(v_upper)]) = (u_domain, v_domain)
+        else {
             return Err(CodecError::malformed("surface knot domain is non-finite"));
         };
         let u_domain = [u_lower, u_upper];
@@ -3106,10 +3479,15 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut native_weight_storage = ctx.reserve_scoped(0, "iges NURBS surface weight scratch")?;
-        let Some(native_weights) = native_weight_storage.with_storage(|| collect_numbers(
-            weight_start, pole_count, "iges NURBS surface source weights",
-        ))?
+        let mut native_weight_storage =
+            ctx.reserve_scoped(0, "iges NURBS surface weight scratch")?;
+        let Some(native_weights) = native_weight_storage.with_storage(|| {
+            collect_numbers(
+                weight_start,
+                pole_count,
+                "iges NURBS surface source weights",
+            )
+        })?
         else {
             super::push_entity_loss(
                 ctx,
@@ -3119,8 +3497,17 @@ pub(super) fn project(
             )?;
             continue;
         };
-        if !ctx.all_by(&native_weights, |weight| Ok(PositiveReal::new(*weight).is_some()), "iges NURBS surface weight positivity")? {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("surface weights are not strictly positive"))?;
+        if !ctx.all_by(
+            &native_weights,
+            |weight| Ok(PositiveReal::new(*weight).is_some()),
+            "iges NURBS surface weight positivity",
+        )? {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("surface weights are not strictly positive"),
+            )?;
             continue;
         }
         let precision = global.real_precision();
@@ -3128,15 +3515,20 @@ pub(super) fn project(
             |index: usize, value: f64| record.number_uncertainty(index, value, precision);
         let mut first_uncertainty = None;
         let equal_weights = match native_weights.first() {
-            Some(first) => ctx.all_by(native_weights.iter().enumerate(), |(offset, weight)| {
-                let first_uncertainty = *first_uncertainty.get_or_insert_with(|| uncertainty(weight_start, *first));
-                let current_uncertainty = if offset == 0 {
-                    first_uncertainty
-                } else {
-                    uncertainty(weight_start + offset, *weight)
-                };
-                Ok((*first - *weight).abs() <= first_uncertainty + current_uncertainty)
-            }, "iges NURBS surface weight equality")?,
+            Some(first) => ctx.all_by(
+                native_weights.iter().enumerate(),
+                |(offset, weight)| {
+                    let first_uncertainty =
+                        *first_uncertainty.get_or_insert_with(|| uncertainty(weight_start, *first));
+                    let current_uncertainty = if offset == 0 {
+                        first_uncertainty
+                    } else {
+                        uncertainty(weight_start + offset, *weight)
+                    };
+                    Ok((*first - *weight).abs() <= first_uncertainty + current_uncertainty)
+                },
+                "iges NURBS surface weight equality",
+            )?,
             None => false,
         };
         let polynomial = flags[2] == Some(1);
@@ -3161,13 +3553,31 @@ pub(super) fn project(
             )?;
             continue;
         }
-        if !ctx.all_by(pole_start..range_start, |index| Ok(record.number(index).and_then(FiniteReal::new).is_some()), "iges NURBS surface source poles")? {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("surface poles are truncated or non-finite"))?;
+        if !ctx.all_by(
+            pole_start..range_start,
+            |index| Ok(record.number(index).and_then(FiniteReal::new).is_some()),
+            "iges NURBS surface source poles",
+        )? {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("surface poles are truncated or non-finite"),
+            )?;
             continue;
         }
-        let ranges: [Option<FiniteReal>; 4] = std::array::from_fn(|offset| record.number(range_start + offset).and_then(FiniteReal::new));
+        let ranges: [Option<FiniteReal>; 4] = std::array::from_fn(|offset| {
+            record
+                .number(range_start + offset)
+                .and_then(FiniteReal::new)
+        });
         let [Some(u_start), Some(u_end), Some(v_start), Some(v_end)] = ranges else {
-            super::push_entity_loss(ctx, &mut losses, entry, format_args!("surface parameter ranges are missing"))?;
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("surface parameter ranges are missing"),
+            )?;
             continue;
         };
         let ranges = [u_start, u_end, v_start, v_end];
@@ -3220,15 +3630,17 @@ pub(super) fn project(
             continue;
         };
         let mut placement_storage = ctx.reserve_scoped(0, "iges surfaces placement scratch")?;
-        let transform = match placement_storage.with_storage(|| resolve_transform(
-            entry.transform,
-            &entries,
-            &records,
-            factor,
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            ctx,
-        )) {
+        let transform = match placement_storage.with_storage(|| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                global.real_precision(),
+                &mut BTreeSet::new(),
+                ctx,
+            )
+        }) {
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
@@ -3238,26 +3650,42 @@ pub(super) fn project(
         };
         let point_at = |u: usize, v: usize| -> Result<FinitePoint3, CodecError> {
             let start = pole_start + (v * u_count + u) * 3;
-            let [Some(x), Some(y), Some(z)] = [record.number(start), record.number(start + 1), record.number(start + 2)] else {
+            let [Some(x), Some(y), Some(z)] = [
+                record.number(start),
+                record.number(start + 1),
+                record.number(start + 2),
+            ] else {
                 return Err(CodecError::malformed("surface pole is missing"));
             };
-            transform.apply_point(Point3::new(x * factor, y * factor, z * factor)).ok_or_else(|| CodecError::malformed("placement produces a non-finite surface pole"))
+            transform
+                .apply_point(Point3::new(x * factor, y * factor, z * factor))
+                .ok_or_else(|| {
+                    CodecError::malformed("placement produces a non-finite surface pole")
+                })
         };
         let poles = if polynomial {
             let mut rows = ctx.collection_vec(u_count, "iges NURBS surface pole rows")?;
             for u in ctx.admit_iter(0..u_count, "iges NURBS surface u poles")? {
-                let mut row = ctx.collection_vec(v_count, "iges NURBS surface pole row controls")?;
-                for v in ctx.admit_iter(0..v_count, "iges NURBS surface v poles")? { row.push(point_at(u, v)?); }
+                let mut row =
+                    ctx.collection_vec(v_count, "iges NURBS surface pole row controls")?;
+                for v in ctx.admit_iter(0..v_count, "iges NURBS surface v poles")? {
+                    row.push(point_at(u, v)?);
+                }
                 rows.push(row);
             }
             NurbsPoleGrid::Polynomial { rows }
         } else {
             let mut rows = ctx.collection_vec(u_count, "iges NURBS surface weighted rows")?;
             for u in ctx.admit_iter(0..u_count, "iges NURBS surface u poles")? {
-                let mut row = ctx.collection_vec(v_count, "iges NURBS surface weighted row controls")?;
+                let mut row =
+                    ctx.collection_vec(v_count, "iges NURBS surface weighted row controls")?;
                 for v in ctx.admit_iter(0..v_count, "iges NURBS surface v poles")? {
-                    let weight = PositiveReal::new(native_weights[v * u_count + u]).ok_or_else(|| CodecError::malformed("surface weight is not positive"))?;
-                    row.push(WeightedPole3 { point: point_at(u, v)?, weight: NonZeroReal::from(weight) });
+                    let weight = PositiveReal::new(native_weights[v * u_count + u])
+                        .ok_or_else(|| CodecError::malformed("surface weight is not positive"))?;
+                    row.push(WeightedPole3 {
+                        point: point_at(u, v)?,
+                        weight: NonZeroReal::from(weight),
+                    });
                 }
                 rows.push(row);
             }
@@ -3267,7 +3695,8 @@ pub(super) fn project(
             ctx,
             NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
             NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
-            poles, false,
+            poles,
+            false,
         )?;
         let surface = match construction {
             Ok(nurbs) => nurbs,
@@ -3364,11 +3793,13 @@ pub(super) fn project(
     // needed for procedural evaluation cannot borrow across a model append.
     let mut offset_storage = ctx.reserve_scoped(0, "iges offset lookup storage")?;
     let mut offset_lookups = None;
-    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
+    for entry in ctx
+        .admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 140 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
-        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)?
+        else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -3439,8 +3870,11 @@ pub(super) fn project(
         if offset_lookups.is_none() {
             offset_lookups = Some(offset_storage.with_storage(|| OffsetLookups::from_ir(ir, ctx))?);
         }
-        let lookups = offset_lookups.as_mut().ok_or_else(|| CodecError::malformed("offset lookup index is missing"))?;
-        let Some(support) = ctx.get_btree_map(&lookups.surfaces, &support_id, "iges offset support lookup")?
+        let lookups = offset_lookups
+            .as_mut()
+            .ok_or_else(|| CodecError::malformed("offset lookup index is missing"))?;
+        let Some(support) = ctx
+            .get_btree_map(&lookups.surfaces, &support_id, "iges offset support lookup")?
             .and_then(|positions| ir.model.surfaces.get(positions.0))
         else {
             super::push_entity_loss(
@@ -3560,15 +3994,36 @@ pub(super) fn project(
             .add_procedural_surface(ctx, &surface_id, procedural)?;
         offset_storage.with_storage(|| {
             let position = ir.model.surfaces.len() - 1;
-            if let Some(positions) = ctx.get_mut_btree_map(&mut lookups.surfaces, &surface_id, "iges offset surface index lookup")? {
+            if let Some(positions) = ctx.get_mut_btree_map(
+                &mut lookups.surfaces,
+                &surface_id,
+                "iges offset surface index lookup",
+            )? {
                 positions.1 = position;
             } else {
                 let key = surface_id.try_clone_for_decode(ctx, "iges offset surface index keys")?;
-                ctx.insert_btree_map(&mut lookups.surfaces, key, (position, position), "iges offset surface index nodes")?;
+                ctx.insert_btree_map(
+                    &mut lookups.surfaces,
+                    key,
+                    (position, position),
+                    "iges offset surface index nodes",
+                )?;
             }
-            if ir.model.procedural_surfaces.len() > procedural_position && !ctx.contains_key_btree_map(&lookups.procedural, &surface_id, "iges offset procedural index lookup")? {
-                let key = surface_id.try_clone_for_decode(ctx, "iges offset procedural index keys")?;
-                ctx.insert_btree_map(&mut lookups.procedural, key, procedural_position, "iges offset procedural index nodes")?;
+            if ir.model.procedural_surfaces.len() > procedural_position
+                && !ctx.contains_key_btree_map(
+                    &lookups.procedural,
+                    &surface_id,
+                    "iges offset procedural index lookup",
+                )?
+            {
+                let key =
+                    surface_id.try_clone_for_decode(ctx, "iges offset procedural index keys")?;
+                ctx.insert_btree_map(
+                    &mut lookups.procedural,
+                    key,
+                    procedural_position,
+                    "iges offset procedural index nodes",
+                )?;
             }
             Ok::<_, CodecError>(())
         })?;
