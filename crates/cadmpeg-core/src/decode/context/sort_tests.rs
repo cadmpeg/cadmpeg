@@ -28,7 +28,7 @@ fn charged_stable_sort_scoped_refusal_preserves_input() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes =
-        3 * 32 * u64::try_from(std::mem::size_of::<usize>()).expect("admitted test operation") - 1;
+        2 * 32 * u64::try_from(std::mem::size_of::<usize>()).expect("admitted test operation") - 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
     assert!(matches!(ctx.stable_sort_by(&mut values,

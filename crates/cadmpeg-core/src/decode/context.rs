@@ -529,26 +529,22 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         }
         // Larger runs sort an index array by the values' keys, so the sort
-        // admits its comparisons and index moves once. Each destination then
-        // takes its value with one swap, tracking where every original value
-        // sits and which original value every position holds, so the moves
-        // depend only on the length.
+        // admits its comparisons and index moves once; the values themselves
+        // move only along the permutation's cycles, each swap moving two.
         let count = super::u64_from_index(values.len());
         self.charge_collection_items(
             count
-                .checked_mul(3)
+                .checked_mul(2)
                 .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
             operation,
         )?;
         let (mut order, _order_storage) = self.scoped_vector_storage(values.len(), operation)?;
-        let (mut position_of, _position_storage) =
+        let (mut destinations, _destination_storage) =
             self.scoped_vector_storage(values.len(), operation)?;
-        let (mut held_at, _held_storage) = self.scoped_vector_storage(values.len(), operation)?;
         for index in 0..values.len() {
-            self.charge_work(3, operation)?;
+            self.charge_work(2, operation)?;
             order.push(index);
-            position_of.push(index);
-            held_at.push(index);
+            destinations.push(0usize);
         }
         let ordering = super::sort::CopiedKey {
             key: |&index: &usize| (projection.project(&values[index]), index),
@@ -558,23 +554,33 @@ impl<'a> DecodeContext<'a> {
         order.sort_unstable_by(|left, right| {
             compare(&values[*left], &values[*right]).then_with(|| left.cmp(right))
         });
-        // One swap per destination, each moving two values.
+        for (destination, source) in order.into_iter().enumerate() {
+            self.charge_work(1, operation)?;
+            destinations[source] = destination;
+        }
+        // The cycles take at most one swap per value, each moving two values.
         let moved = super::u64_from_index(std::mem::size_of::<T>())
             .checked_mul(2)
             .and_then(|bytes| bytes.checked_mul(count))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         self.charge_work(moved, operation)?;
-        for (destination, source) in order.into_iter().enumerate() {
+        let mut swaps = 0;
+        for index in 0..values.len() {
             self.charge_work(1, operation)?;
-            // Destinations before this one already hold their values, so the
-            // source value sits at this destination or after it.
-            let current = position_of[source];
-            let displaced = held_at[destination];
-            values.swap(destination, current);
-            position_of[displaced] = current;
-            held_at[current] = displaced;
-            position_of[source] = destination;
-            held_at[destination] = source;
+            while destinations[index] != index {
+                self.charge_work(1, operation)?;
+                let destination = destinations[index];
+                values.swap(index, destination);
+                destinations.swap(index, destination);
+                swaps += 1;
+            }
+        }
+        // The swaps number the values less the cycles, which depends on the
+        // input's order. One unit per value not swapped tops the swap charges
+        // up to one per value, so the total and every refusal, each at a
+        // one-unit charge, depend only on the length.
+        for _ in swaps..values.len() {
+            self.charge_work(1, operation)?;
         }
         Ok(())
     }
