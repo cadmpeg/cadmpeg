@@ -194,18 +194,18 @@ pub(super) fn operation_state_group_end_at(
     end: usize,
     base_offset: usize,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
-        let (_, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
-        let member_count = count.member_row_count();
-        for _ in propagate_resource!(ctx
-            .admit_iter(&(0..member_count), "NX operation-state group validation")
-            .map_err(cadmpeg_core::CodecError::from))
-        {
-            cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
-        }
-        ((cursor <= end).then_some(cursor)).map(Ok)
-    })();
-    parsed.transpose()
+    let Some((_, count, mut cursor)) = operation_state_group_header_at(bytes, at) else {
+        return Ok(None);
+    };
+    let mut members = 0..count.member_row_count();
+    while !members.is_empty() {
+        ctx.next_charged(&mut members, "NX operation-state group validation")?;
+        let Some((_, end)) = operation_state_group_row_at(bytes, cursor, base_offset) else {
+            return Ok(None);
+        };
+        cursor = end;
+    }
+    Ok((cursor <= end).then_some(cursor))
 }
 
 pub(super) fn operation_state_group_at(
@@ -218,35 +218,33 @@ pub(super) fn operation_state_group_at(
     let Some((opener, count, mut cursor)) = operation_state_group_header_at(bytes, at) else {
         return Ok(None);
     };
-    let Some(group_end) = operation_state_group_end_at(ctx, bytes, at, end, base_offset)? else {
-        return Ok(None);
-    };
     let Some(offset) = base_offset.checked_add(at) else {
         return Ok(None);
     };
-    if base_offset.checked_add(group_end).is_none() {
-        return Ok(None);
-    }
-    let member_count = count.member_row_count();
-    let operation = "NX operation-state group rows";
-    let mut rows = ctx.collection_vec(member_count, operation)?;
-    for _ in ctx.admit_iter(&(0..member_count), operation)? {
+    let mut storage = ctx.reserve_scoped(0, "NX roll-forward candidate storage")?;
+    let mut rows = Vec::new();
+    let mut members = 0..count.member_row_count();
+    while !members.is_empty() {
+        ctx.next_charged(&mut members, "NX operation-state group validation")?;
         let Some((row, row_end)) = operation_state_group_row_at(bytes, cursor, base_offset) else {
             return Ok(None);
         };
-        rows.push(row);
+        storage.with_storage(|| ctx.push_vec(&mut rows, row, "NX operation-state group rows"))?;
         cursor = row_end;
     }
-    if cursor != group_end {
+    if cursor > end || base_offset.checked_add(cursor).is_none() {
         return Ok(None);
     }
     let Some(members) = StateGroupMembers::new(count, rows).ok() else {
         return Ok(None);
     };
-    let byte_len = OperationStateGroup::<usize>::extent(&members, |rows| {
-        ctx.admit_iter(rows, "NX roll-forward row widths")
-    })?
-    .ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward extent", u64::MAX, u64::MAX))?;
+    let Some(byte_len) = cursor
+        .checked_sub(at)
+        .and_then(|width| u16::try_from(width).ok())
+    else {
+        return Ok(None);
+    };
+    storage.commit()?;
     Ok(Some(OperationStateGroup {
         offset,
         byte_len,
@@ -294,29 +292,34 @@ impl OperationStateGroupTable {
         groups: Vec<OperationStateGroup>,
         trailing_bytes: &[u8],
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        (|| {
-            let footer = GroupTableFooter::try_from(trailing_bytes).ok()?;
-            let groups = super::nonempty::NonEmpty::from_admitted_vec(groups)?;
-            let mut end = groups.first().offset();
-            for group in propagate_resource!(ctx
-                .admit_iter(groups.initial(), "NX roll-forward group continuity")
-                .map_err(cadmpeg_core::CodecError::from))
-            .chain(propagate_resource!(ctx
-                .admit_iter(
-                    std::slice::from_ref(groups.last()),
-                    "NX roll-forward group continuity"
-                )
-                .map_err(cadmpeg_core::CodecError::from)))
-            {
-                if group.offset() != end {
-                    return None;
-                }
-                end = group.end_offset();
+        let Some(footer) = GroupTableFooter::try_from(trailing_bytes).ok() else {
+            return Ok(None);
+        };
+        let Some(groups) = super::nonempty::NonEmpty::from_admitted_vec(groups) else {
+            return Ok(None);
+        };
+        let mut end = groups.first().offset();
+        let mut initial = groups.initial().iter();
+        while initial.len() > 0 {
+            let Some(group) = ctx.next_charged(&mut initial, "NX roll-forward group continuity")?
+            else {
+                break;
+            };
+            if group.offset() != end {
+                return Ok(None);
             }
-            end.checked_add(trailing_bytes.len())?;
-            Some(Ok(Self { groups, footer }))
-        })()
-        .transpose()
+            end = group.end_offset();
+        }
+        if groups.last().offset() != end
+            || groups
+                .last()
+                .end_offset()
+                .checked_add(trailing_bytes.len())
+                .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(Self { groups, footer }))
     }
     pub(super) fn offset(&self) -> usize {
         self.groups.first().offset()

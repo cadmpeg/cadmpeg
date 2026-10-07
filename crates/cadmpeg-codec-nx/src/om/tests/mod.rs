@@ -24,6 +24,7 @@ pub(super) fn message_bytes(text: &[u8], value: &[u8], count_or_severity: [u8; 2
     bytes
 }
 
+mod budget_admission;
 mod control_lanes;
 mod index_and_lanes;
 mod instances_and_stores;

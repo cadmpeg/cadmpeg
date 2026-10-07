@@ -77,30 +77,32 @@ impl<'a> ProductRecord<'a> {
         bytes: &'a [u8],
         form: ProductRecordForm,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        (|| {
-            let (length_offset, text_start): (usize, usize) = match form {
-                ProductRecordForm::Modern
-                    if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) =>
-                {
-                    (2, 3)
-                }
-                ProductRecordForm::LegacyFeature if bytes.first() == Some(&0x01) => (1, 2),
-                _ => return None,
-            };
-            let text_length = usize::from(*bytes.get(length_offset)?).checked_sub(2)?;
-            let text_end = text_start.checked_add(text_length)?;
-            let text = propagate_resource!(ProductText::from_wire(
-                ctx,
-                propagate_resource!(ctx.validate_utf8(
-                    bytes.get(text_start..text_end)?,
-                    "NX product text UTF-8 validation",
-                ))
-                .ok()?,
-            ))
-            .ok()?;
-            (bytes.get(text_end) == Some(&0)).then_some(Ok(Self { form, text }))
-        })()
-        .transpose()
+        let (length_offset, text_start): (usize, usize) = match form {
+            ProductRecordForm::Modern if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) => {
+                (2, 3)
+            }
+            ProductRecordForm::LegacyFeature if bytes.first() == Some(&1) => (1, 2),
+            _ => return Ok(None),
+        };
+        let Some(text_length) = bytes
+            .get(length_offset)
+            .and_then(|length| usize::from(*length).checked_sub(2))
+        else {
+            return Ok(None);
+        };
+        let Some(text_end) = text_start.checked_add(text_length) else {
+            return Ok(None);
+        };
+        let Some(raw) = bytes.get(text_start..text_end) else {
+            return Ok(None);
+        };
+        let Ok(value) = ctx.validate_utf8(raw, "NX product text UTF-8 validation")? else {
+            return Ok(None);
+        };
+        let Ok(text) = ProductText::from_wire(ctx, value)? else {
+            return Ok(None);
+        };
+        Ok((bytes.get(text_end) == Some(&0)).then_some(Self { form, text }))
     }
 
     pub(super) fn text(self) -> ProductText<&'a str> {

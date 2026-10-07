@@ -62,7 +62,16 @@ fn operation_body_members_for_test(
 use crate::om::pattern_references::PatternReferences;
 use crate::om::point_feature_payload_header;
 use crate::om::point_feature_scalar_lane;
-use crate::om::product_record_count_within;
+fn product_record_count_within(
+    ranges: &[crate::om::ProductRecordRange],
+    lower: usize,
+    upper: usize,
+) -> usize {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::product_record_count_within(ctx, ranges, lower, upper)
+    })
+    .unwrap()
+}
 use crate::om::store_version;
 fn swp104_payload_leading_branch(
     record: crate::om::operation_record::OperationPayload<'_>,
@@ -1879,7 +1888,7 @@ fn om_offset_store_class_lane_reports_collection_limit() {
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "nx offset-store suffix minima")
+            && limit.operation == "NX offset-store suffix minima")
             );
         },
     );
@@ -1923,7 +1932,7 @@ fn om_offset_store_class_lane_refuses_suffix_scratch_bytes() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "nx offset-store suffix minima"
+                        && limit.operation == "NX offset-store suffix minima"
             ));
         },
     );
@@ -1945,7 +1954,7 @@ fn om_offset_store_class_lane_refuses_identity_index_collection_limit() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                        && limit.operation == "nx offset-store class identities"
+                        && limit.operation == "NX offset-store class identity insertion"
             ));
         },
     );

@@ -95,46 +95,54 @@ impl<'a> OperationStateStatus<'a> {
 }
 
 pub(super) fn operation_state_opaque_lane_end_at(
+    ctx: &DecodeContext<'_>,
     lane_starts: &[usize],
     at: usize,
     end: usize,
-) -> Option<usize> {
-    let index = lane_starts.binary_search(&at).unwrap_or_else(|index| index);
-    let lane_start = *lane_starts.get(index)?;
-    let lane_end = lane_start.checked_add(2)?;
-    (lane_end <= end).then_some(lane_end)
+) -> Result<Option<usize>, CodecError> {
+    let index = ctx
+        .binary_search_by(
+            lane_starts,
+            |start| Ok(start.cmp(&at)),
+            "NX opaque state lane lookup",
+        )?
+        .unwrap_or_else(|index| index);
+    let Some(lane_end) = lane_starts
+        .get(index)
+        .and_then(|start| start.checked_add(2))
+    else {
+        return Ok(None);
+    };
+    Ok((lane_end <= end).then_some(lane_end))
 }
 
 fn operation_state_opaque_payload_end(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
     end: usize,
-) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let parsed: Option<Result<_, cadmpeg_core::CodecError>> = (|| {
-        const MAX_OPAQUE_STATUS_BYTES: usize = 64 * 1024;
-        let first = *bytes.get(at)?;
-        if !matches!(first, 0x02 | 0x1e | 0xff) {
-            return None;
-        }
-        if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-            return (Some(at + 3)).map(Ok);
-        }
-        let search_end = end.min(at.checked_add(MAX_OPAQUE_STATUS_BYTES)?);
-        for cursor in propagate_resource!(ctx
-            .admit_iter(
-                &(at..search_end.checked_sub(1)?),
-                "NX opaque status boundary search"
-            )
-            .map_err(cadmpeg_core::CodecError::from))
-        {
-            if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
-                return (Some(cursor + 2)).map(Ok);
-            }
-        }
-        (None).map(Ok)
-    })();
-    parsed.transpose()
+) -> Result<Option<usize>, CodecError> {
+    const MAX_OPAQUE_STATUS_BYTES: usize = 64 * 1024;
+    let Some(first) = bytes.get(at) else {
+        return Ok(None);
+    };
+    if !matches!(first, 0x02 | 0x1e | 0xff) {
+        return Ok(None);
+    }
+    if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+        return Ok(Some(at + 3));
+    }
+    let Some(limit) = at.checked_add(MAX_OPAQUE_STATUS_BYTES) else {
+        return Ok(None);
+    };
+    let Some(search_end) = end.min(limit).checked_sub(1) else {
+        return Ok(None);
+    };
+    ctx.find_map(
+        at..search_end,
+        |cursor| Ok((bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11])).then_some(cursor + 2)),
+        "NX opaque status boundary search",
+    )
 }
 
 fn operation_state_link_payload(
@@ -171,55 +179,80 @@ pub(super) fn operation_state_status_row_at<'a>(
     base_offset: usize,
     opaque_lane_starts: Option<&[usize]>,
 ) -> Result<Option<OperationStateStatus<'a>>, cadmpeg_core::CodecError> {
-    (|| {
-        let status_code = OperationStateIndex::read_at(bytes, at, base_offset)?.token()?;
-        let object_at = at.checked_add(status_code.raw().len())?;
-        let object_index = OperationStateIndex::read_at(bytes, object_at, base_offset)?.token()?;
-        let payload_at = object_at.checked_add(object_index.raw().len())?;
-        if payload_at >= end {
-            return None;
+    let Some(status_code) =
+        OperationStateIndex::read_at(bytes, at, base_offset).and_then(|index| index.token())
+    else {
+        return Ok(None);
+    };
+    let Some(object_at) = at.checked_add(status_code.raw().len()) else {
+        return Ok(None);
+    };
+    let Some(object_index) =
+        OperationStateIndex::read_at(bytes, object_at, base_offset).and_then(|index| index.token())
+    else {
+        return Ok(None);
+    };
+    let Some(payload_at) = object_at.checked_add(object_index.raw().len()) else {
+        return Ok(None);
+    };
+    if payload_at >= end {
+        return Ok(None);
+    }
+    let (payload, payload_end) = match bytes[payload_at] {
+        0x3f => (StateStatusPayload::Plain, payload_at + 1),
+        0x03 => {
+            let Some(message) = OperationStateMessage::read(ctx, bytes, payload_at, base_offset)?
+            else {
+                return Ok(None);
+            };
+            (
+                StateStatusPayload::Diagnostic(message.body()),
+                message.end_offset() - base_offset,
+            )
         }
-        let (payload, payload_end) = match bytes[payload_at] {
-            0x3f => (StateStatusPayload::Plain, payload_at + 1),
-            0x03 => {
-                let message = propagate_resource!(OperationStateMessage::read(
-                    ctx,
-                    bytes,
-                    payload_at,
-                    base_offset
-                ))?;
-                let payload_end = message.end_offset() - base_offset;
-                (StateStatusPayload::Diagnostic(message.body()), payload_end)
-            }
-            0x02 | 0x1e | 0xff => {
-                let precomputed_end = opaque_lane_starts
-                    .and_then(|starts| operation_state_opaque_lane_end_at(starts, payload_at, end));
-                let payload_end = match precomputed_end {
-                    Some(end) => end,
-                    None => propagate_resource!(operation_state_opaque_payload_end(
-                        ctx, bytes, payload_at, end
-                    ))?,
-                };
-                (
-                    StateStatusPayload::Opaque {
-                        raw: bytes.get(payload_at..payload_end)?,
-                    },
-                    payload_end,
-                )
-            }
-            _ => operation_state_link_payload(bytes, payload_at, end, base_offset)?,
-        };
-        base_offset.checked_add(payload_end)?;
-        (payload_end <= end).then_some(Ok(OperationStateStatus {
-            offset: base_offset.checked_add(at)?,
-            body: StateStatus {
-                status_code,
-                object_index,
-                payload,
-            },
-        }))
-    })()
-    .transpose()
+        0x02 | 0x1e | 0xff => {
+            let precomputed_end = match opaque_lane_starts {
+                Some(starts) => operation_state_opaque_lane_end_at(ctx, starts, payload_at, end)?,
+                None => None,
+            };
+            let payload_end = match precomputed_end {
+                Some(end) => end,
+                None => {
+                    let Some(end) =
+                        operation_state_opaque_payload_end(ctx, bytes, payload_at, end)?
+                    else {
+                        return Ok(None);
+                    };
+                    end
+                }
+            };
+            let Some(raw) = bytes.get(payload_at..payload_end) else {
+                return Ok(None);
+            };
+            (StateStatusPayload::Opaque { raw }, payload_end)
+        }
+        _ => {
+            let Some(payload) = operation_state_link_payload(bytes, payload_at, end, base_offset)
+            else {
+                return Ok(None);
+            };
+            payload
+        }
+    };
+    if payload_end > end || base_offset.checked_add(payload_end).is_none() {
+        return Ok(None);
+    }
+    let Some(offset) = base_offset.checked_add(at) else {
+        return Ok(None);
+    };
+    Ok(Some(OperationStateStatus {
+        offset,
+        body: StateStatus {
+            status_code,
+            object_index,
+            payload,
+        },
+    }))
 }
 
 #[cfg(test)]
