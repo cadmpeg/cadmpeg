@@ -66,10 +66,7 @@ impl VersionDeclaration {
         }
     }
 
-    fn effective_version(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<VersionFlag, CodecError> {
+    fn effective_version(&self, ctx: &DecodeContext<'_>) -> Result<VersionFlag, CodecError> {
         Ok(match self {
             Self::Exact(version) => *version,
             Self::Unreadable(_) => VersionFlag::V2_0,
@@ -724,14 +721,15 @@ fn delimited_value(
 }
 
 fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
-    let card_count = scan.section(Section::Global).count();
-    let length = card_count
+    let cards = scan.section(Section::Global);
+    let length = cards
+        .len()
         .checked_mul(72)
         .ok_or_else(|| CodecError::NotImplemented("IGES Global stream exceeds usize".into()))?;
     let mut bytes = ctx.vector_storage(length, "iges_global_stream")?;
 
-    for (_, line) in scan.section(Section::Global) {
-        bytes.extend_from_slice(&line.payload[..72]);
+    for card in ctx.admit_iter(cards, "iges_global_stream")? {
+        bytes.extend_from_slice(&card.line.payload[..72]);
     }
     Ok(bytes)
 }
@@ -1741,17 +1739,11 @@ impl ResolvedGlobal {
         self.declaration.recovery()
     }
 
-    pub(crate) fn version_name(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<&'static str, CodecError> {
+    pub(crate) fn version_name(&self, ctx: &DecodeContext<'_>) -> Result<&'static str, CodecError> {
         Ok(self.declaration.effective_version(ctx)?.name())
     }
 
-    pub(crate) fn global_table(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<GlobalTable, CodecError> {
+    pub(crate) fn global_table(&self, ctx: &DecodeContext<'_>) -> Result<GlobalTable, CodecError> {
         Ok(self.declaration.effective_version(ctx)?.global_table())
     }
 

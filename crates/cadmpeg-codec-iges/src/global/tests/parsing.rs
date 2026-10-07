@@ -93,12 +93,15 @@ fn global_hollerith_count_refuses_utf8_work() {
 fn global_field_scan_refuses_work_before_value() {
     let bytes = fixed_ascii_with_global(b"1H,,1H;,;");
     let scan = crate::test_support::scan(&bytes).unwrap();
-    // The two delimiter counts each admit digit probes, UTF-8 validation and scalar parsing; then the
-    // record delimiter copy, 26 indexed defaults, and parameter delimiter copy are admitted.
-    let preceding_work = 4 + 4 + 1 + 26 + 1;
-    let error = with_work_limit(&bytes, preceding_work, |ctx| {
-        crate::global::parse_raw(&scan, ctx).unwrap_err()
-    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges global fields",
+        |cap| {
+            with_work_limit(&bytes, cap, |ctx| {
+                crate::global::parse_raw(&scan, ctx).map(|_| ())
+            })
+        },
+    );
     assert_work_limit(error, "iges global fields", 1);
 }
 
@@ -322,7 +325,7 @@ fn global_field_source_locations_follow_72_byte_card_boundaries() {
         crate::test_support::scan(&bytes)
             .unwrap()
             .section(crate::card::Section::Global)
-            .count(),
+            .len(),
         2
     );
     assert!(!crate::global::source_span_crosses_card(
@@ -344,7 +347,7 @@ fn global_stream_refuses_retained_limit_before_copy() {
     let global = format!("{};", valid_global_fields().join(","));
     let bytes = fixed_ascii_with_global(global.as_bytes());
     let scan = crate::test_support::scan(&bytes).unwrap();
-    let card_bytes = scan.section(crate::card::Section::Global).count() * CARD_DATA_COLUMNS;
+    let card_bytes = scan.section(crate::card::Section::Global).len() * CARD_DATA_COLUMNS;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(card_bytes - 1).unwrap();

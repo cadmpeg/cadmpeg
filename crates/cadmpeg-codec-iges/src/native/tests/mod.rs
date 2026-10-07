@@ -175,7 +175,8 @@ fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx).unwrap();
+        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+            .unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
@@ -207,7 +208,7 @@ fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items =
-            cadmpeg_core::decode::u64_from_index(scan.lines.len() + 3);
+            cadmpeg_core::decode::u64_from_index((scan.cards().len() + scan.trailing().len()) + 3);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::store(
             &mut cadmpeg_ir::CadIr::empty(),
@@ -269,7 +270,8 @@ fn native_required_back_pointer_member_refuses_node_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx).unwrap();
+        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+            .unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
@@ -285,7 +287,8 @@ fn native_required_back_pointer_member_refuses_node_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(scan.lines.len() + 6);
+    policy.limits.max_collection_items =
+        cadmpeg_core::decode::u64_from_index((scan.cards().len() + scan.trailing().len()) + 6);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::store(
         &mut cadmpeg_ir::CadIr::empty(),
@@ -331,7 +334,8 @@ fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx).unwrap();
+        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+            .unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
@@ -350,11 +354,13 @@ fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
     for (cap, operation) in [
         (0, "iges native card slots"),
         (
-            cadmpeg_core::decode::u64_from_index(scan.lines.len()),
+            cadmpeg_core::decode::u64_from_index(scan.cards().len() + scan.trailing().len()),
             "iges native parameter index",
         ),
         (
-            cadmpeg_core::decode::u64_from_index(scan.lines.len() + assembly.records.len()),
+            cadmpeg_core::decode::u64_from_index(
+                (scan.cards().len() + scan.trailing().len()) + assembly.records.len(),
+            ),
             "iges native directory index",
         ),
     ] {
@@ -374,7 +380,10 @@ fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
     let indexes =
         super::index_native_inputs(&scan, &directory, &assembly.records, quarantine(), &ctx)
             .unwrap();
-    assert_eq!(indexes.cards.len(), scan.lines.len());
+    assert_eq!(
+        indexes.cards.len(),
+        (scan.cards().len() + scan.trailing().len())
+    );
     assert_eq!(indexes.by_directory.len(), 1);
     assert_eq!(indexes.entries.len(), 1);
 }
@@ -397,7 +406,8 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, parsed_quarantine) =
-        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx).unwrap();
+        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+            .unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,

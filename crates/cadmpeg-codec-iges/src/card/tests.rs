@@ -192,8 +192,11 @@ fn card_summary_refuses_entry_attribute_and_text_limits_before_allocation() {
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.used == 0
-                && limit.additional == cadmpeg_core::decode::u64_from_index(scan.lines.len()) * 5
-                && limit.operation == "iges card summary section scans"
+                && limit.additional
+                    == cadmpeg_core::decode::u64_from_index(
+                        scan.section(super::Section::Start).len()
+                    )
+                && limit.operation == "iges card summary section cards"
     ));
 
     for (cap, operation) in [
@@ -237,30 +240,6 @@ fn card_summary_refuses_entry_attribute_and_text_limits_before_allocation() {
     assert_eq!(summary.entries[0].name, "start");
     assert_eq!(summary.entries[0].attributes["cards"], "1");
     assert_eq!(summary.notes, [format!("source_bytes={}", bytes.len())]);
-}
-
-#[test]
-fn physical_card_payload_refuses_retained_limit_before_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let bytes = point_file();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 79;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let result = super::scan_with_context(&bytes, &ctx);
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.used == 0
-                && limit.additional == 80
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::scan_with_context(&bytes, &ctx).is_ok());
 }
 
 #[test]
@@ -519,9 +498,11 @@ fn physical_line_traversal_refuses_work_before_scanning() {
     let Err(error) = result else {
         panic!("physical line traversal must refuse work");
     };
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-        && limit.operation == "iges physical line traversal"));
+        && limit.operation == "iges physical line endings")
+    );
 }
 
 #[test]
@@ -531,11 +512,19 @@ fn terminate_count_utf8_refusal_reaches_the_caller() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let error = crate::test_support::with_policy_context(&[], &policy, |ctx| {
-        super::terminate_counts(&scan.lines, &mut super::FramingRecoveries::default(), ctx)
-    }).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        super::terminate_counts(
+            &scan.cards,
+            &scan.sections,
+            &mut super::FramingRecoveries::default(),
+            ctx,
+        )
+    })
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-        && limit.operation == "iges terminate count text"));
+        && limit.operation == "iges terminate count text")
+    );
 }
 
 #[test]
@@ -546,10 +535,18 @@ fn terminate_integer_parse_refusal_reaches_the_caller() {
     // The first field validates seven UTF-8 bytes before parsing its seven-digit count.
     policy.limits.max_work_units = 7;
     let error = crate::test_support::with_policy_context(&[], &policy, |ctx| {
-        super::terminate_counts(&scan.lines, &mut super::FramingRecoveries::default(), ctx)
-    }).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        super::terminate_counts(
+            &scan.cards,
+            &scan.sections,
+            &mut super::FramingRecoveries::default(),
+            ctx,
+        )
+    })
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
         && limit.used == 7 && limit.additional == 7
-        && limit.operation == "iges terminate count integer"));
+        && limit.operation == "iges terminate count integer")
+    );
 }

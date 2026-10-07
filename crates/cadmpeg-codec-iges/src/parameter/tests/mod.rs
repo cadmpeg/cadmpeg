@@ -214,7 +214,11 @@ fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
 
     let bytes = crate::test_support::test_curves_and_surfaces::point_file();
     let scan = scan(&bytes).unwrap();
-    let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
+    let lines = scan
+        .section(Section::Parameter)
+        .iter()
+        .map(|card| (card.sequence, &card.line))
+        .collect::<BTreeMap<_, _>>();
     let cards = [*lines.keys().next().unwrap()];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -243,7 +247,11 @@ fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
 
         let bytes = crate::test_support::test_curves_and_surfaces::point_file();
         let scan = scan(&bytes).unwrap();
-        let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
+        let lines = scan
+            .section(Section::Parameter)
+            .iter()
+            .map(|card| (card.sequence, &card.line))
+            .collect::<BTreeMap<_, _>>();
         let cards = [*lines.keys().next().unwrap()];
         let (directory, _) =
             crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx)
@@ -295,7 +303,11 @@ fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
         let (directory, _) =
             crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx)
                 .unwrap();
-        let lines = scan.section(Section::Parameter).collect::<BTreeMap<_, _>>();
+        let lines = scan
+            .section(Section::Parameter)
+            .iter()
+            .map(|card| (card.sequence, &card.line))
+            .collect::<BTreeMap<_, _>>();
         let back_pointers = lines
             .iter()
             .map(|(sequence, line)| (*sequence, super::back_pointer(line)))
@@ -349,12 +361,11 @@ fn parameter_owner(field: [u8; 8]) -> Option<u32> {
     let card_start = marker - 72;
     bytes[card_start + 64..card_start + 72].copy_from_slice(&field);
     let scan = scan(&bytes).unwrap();
-    let line = scan
+    let card = scan
         .section(Section::Parameter)
-        .map(|(_, line)| line)
-        .next()
+        .first()
         .expect("Parameter Data line");
-    super::back_pointer(line)
+    super::back_pointer(&card.line)
 }
 
 impl From<i64> for TokenValue {

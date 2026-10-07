@@ -156,7 +156,7 @@ impl CodecBackend for IgesCodec {
             cadmpeg_core::decode::u64_from_index(prefix.len()),
             "detect input",
         )?;
-        Ok(representation::confidence(prefix))
+        representation::confidence(prefix, ctx)
     }
 
     fn inspect_impl(

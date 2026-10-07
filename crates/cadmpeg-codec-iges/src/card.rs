@@ -13,8 +13,10 @@ use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::ops::Range;
 
 pub(crate) const CARD_WIDTH: usize = 80;
+const SECTION_COUNT: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -54,6 +56,16 @@ impl Section {
         }
     }
 
+    const fn index(self) -> usize {
+        match self {
+            Self::Start => 0,
+            Self::Global => 1,
+            Self::Directory => 2,
+            Self::Parameter => 3,
+            Self::Terminate => 4,
+        }
+    }
+
     fn name(self) -> &'static str {
         match self {
             Self::Start => "start",
@@ -84,48 +96,48 @@ impl LineEnding {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct PhysicalLine {
+/// One physical card or trailing record, borrowing its bytes from the source.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PhysicalLine<'a> {
     pub(crate) offset: u64,
-    pub(crate) payload: Vec<u8>,
+    pub(crate) payload: &'a [u8],
     ending: LineEnding,
 }
 
-impl PhysicalLine {
+impl PhysicalLine<'_> {
     pub(crate) fn line_ending(&self) -> &'static [u8] {
         self.ending.bytes()
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) enum ScannedLine {
-    Card {
-        section: Section,
-        sequence: u32,
-        line: PhysicalLine,
-    },
-    Trailing(PhysicalLine),
+/// One card of the Start through Terminate sections.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Card<'a> {
+    pub(crate) section: Section,
+    /// The card's position in its section, which framing makes its sequence.
+    pub(crate) sequence: u32,
+    pub(crate) line: PhysicalLine<'a>,
 }
 
-impl ScannedLine {
-    pub(crate) fn physical(&self) -> &PhysicalLine {
-        match self {
-            Self::Card { line, .. } | Self::Trailing(line) => line,
-        }
-    }
-}
-
-struct UnframedLine {
-    line: PhysicalLine,
+struct UnframedLine<'a> {
+    line: PhysicalLine<'a>,
     section: Option<Section>,
     sequence: Option<u32>,
     fused_cards: Option<usize>,
 }
 
+/// The contiguous run of `cards` each section occupies, indexed by
+/// [`Section::index`]. Framing admits sections only in order, so every card of
+/// a section lies in its run and nothing else does.
+type SectionRuns = [Range<usize>; SECTION_COUNT];
+
+/// Framed cards in file order, then the records after the Terminate card.
 #[derive(Debug, Clone)]
 pub(crate) struct CardScan<'a> {
     source: &'a [u8],
-    pub(crate) lines: Vec<ScannedLine>,
+    cards: Vec<Card<'a>>,
+    trailing: Vec<PhysicalLine<'a>>,
+    sections: SectionRuns,
     pub(crate) recoveries: FramingRecoveries,
 }
 
@@ -371,18 +383,22 @@ fn marker(card: &[u8]) -> Option<Section> {
 /// [IGES 5.3 §2.2](https://paulbourke.net/dataformats/iges/IGES.pdf) makes the
 /// line terminator a media convention, so a stride of marked card images is a
 /// Fixed ASCII file even with no terminator in it.
-fn detect_card_stride(prefix: &[u8]) -> Confidence {
+fn detect_card_stride(prefix: &[u8], ctx: &DecodeContext<'_>) -> Result<Confidence, CodecError> {
     let mut cards = prefix.chunks_exact(CARD_WIDTH);
     let (Some(first), Some(second)) = (cards.next(), cards.next()) else {
-        return Confidence::No;
+        return Ok(Confidence::No);
     };
     if header(first) != Some((b'S', 1)) || !matches!(header(second), Some((b'S', 2) | (b'G', 1))) {
-        return Confidence::No;
+        return Ok(Confidence::No);
     }
-    if cards.any(|card| marker(card).is_none()) {
-        return Confidence::No;
+    if ctx.any_by(
+        cards,
+        |card| Ok(marker(card).is_none()),
+        "iges card stride markers",
+    )? {
+        return Ok(Confidence::No);
     }
-    Confidence::High
+    Ok(Confidence::High)
 }
 
 /// The second card image of a stream whose first line is `first`.
@@ -391,42 +407,62 @@ fn detect_card_stride(prefix: &[u8]) -> Confidence {
 /// line terminator a media convention that separates card images, so the second
 /// card image is the second card of the first line when that line divides into
 /// cards, and the first card of the next line otherwise.
-fn second_card_image<'a>(first: &'a [u8], rest: &'a [u8]) -> Option<&'a [u8]> {
-    if fused_card_count(first).is_some_and(|count| count > 1) {
-        return first.get(CARD_WIDTH..CARD_WIDTH * 2);
+fn second_card_image<'a>(
+    first: &'a [u8],
+    rest: &'a [u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<&'a [u8]>, CodecError> {
+    if fused_card_count(first, ctx)?.is_some_and(|count| count > 1) {
+        return Ok(first.get(CARD_WIDTH..CARD_WIDTH * 2));
     }
-    take_line(rest).map(|(second, _)| second)
+    Ok(take_line(rest).map(|(second, _)| second))
 }
 
-pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {
+/// Confidence that `prefix` opens a Fixed ASCII file.
+///
+/// The caller pays one visit per prefix byte: the two line-ending searches read
+/// disjoint runs of the prefix.
+pub(crate) fn detect_fixed_ascii(
+    prefix: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<Confidence, CodecError> {
     let Some((first, rest)) = take_line(prefix) else {
-        return detect_card_stride(prefix);
+        return detect_card_stride(prefix, ctx);
     };
     if header(first) != Some((b'S', 1)) {
-        return Confidence::No;
+        return Ok(Confidence::No);
     }
-    let Some(second) = second_card_image(first, rest) else {
-        return Confidence::No;
+    let Some(second) = second_card_image(first, rest, ctx)? else {
+        return Ok(Confidence::No);
     };
-    match header(second) {
+    Ok(match header(second) {
         Some((b'S', 2) | (b'G', 1)) => Confidence::High,
         _ => Confidence::No,
-    }
+    })
 }
 
 /// The card count of a pre-Terminate line whose payload divides into cards.
-fn fused_card_count(payload: &[u8]) -> Option<usize> {
-    let count = payload
-        .len()
-        .is_multiple_of(CARD_WIDTH)
-        .then_some(payload.len() / CARD_WIDTH)?;
-    payload
-        .chunks_exact(CARD_WIDTH)
-        .all(|card| marker(card).is_some())
-        .then_some(count)
+fn fused_card_count(payload: &[u8], ctx: &DecodeContext<'_>) -> Result<Option<usize>, CodecError> {
+    if !payload.len().is_multiple_of(CARD_WIDTH) {
+        return Ok(None);
+    }
+    let count = payload.len() / CARD_WIDTH;
+    Ok(ctx
+        .all_by(
+            payload.chunks_exact(CARD_WIDTH),
+            |card| Ok(marker(card).is_some()),
+            "iges fused card markers",
+        )?
+        .then_some(count))
 }
 
-fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<UnframedLine>, CodecError> {
+fn physical_lines<'a>(
+    source: &'a [u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<UnframedLine<'a>>, CodecError> {
+    // Each line-ending search reads the bytes up to the next terminator once,
+    // so one visit per source byte pays for every search.
+    ctx.charge_work(u64_from_index(source.len()), "iges physical line endings")?;
     let mut lines = Vec::new();
     let mut start = 0_usize;
     let mut terminated = false;
@@ -461,7 +497,7 @@ fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Unframed
             if marker(fixed) == Some(Section::Terminate) {
                 1
             } else {
-                fused_card_count(&source[start..payload_end]).ok_or_else(|| {
+                fused_card_count(&source[start..payload_end], ctx)?.ok_or_else(|| {
                     CodecError::Malformed(
                         "IGES Fixed ASCII physical line exceeds 80 bytes before Terminate".into(),
                     )
@@ -471,17 +507,16 @@ fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Unframed
             1
         };
         let mut card_start = start;
-        for index in 0..cards {
+        for index in ctx.admit_iter(0..cards, "iges physical cards")? {
             let card_end = card_start
                 .checked_add(CARD_WIDTH)
                 .ok_or_else(|| CodecError::Malformed("IGES card offset overflow".into()))?
                 .min(payload_end);
 
-            let payload =
-                ctx.copy_retained(&source[card_start..card_end], "iges physical card payload")?;
+            let payload = &source[card_start..card_end];
             let marked = !terminated && payload.len() == CARD_WIDTH;
-            let section = marked.then(|| marker(&payload)).flatten();
-            let sequence = marked.then(|| sequence(&payload)).flatten();
+            let section = marked.then(|| marker(payload)).flatten();
+            let sequence = marked.then(|| sequence(payload)).flatten();
             let card_ending = if card_end == payload_end {
                 ending
             } else {
@@ -503,16 +538,11 @@ fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Unframed
             card_start = card_end;
         }
         if card_start != payload_end {
-            let payload = ctx.copy_retained(
-                &source[card_start..payload_end],
-                "iges physical card payload",
-            )?;
-
             ctx.reserve_vec(&mut lines, 1, "iges_cards")?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
                     offset: cadmpeg_core::decode::u64_from_index(card_start),
-                    payload,
+                    payload: &source[card_start..payload_end],
                     ending,
                 },
                 section: None,
@@ -525,21 +555,26 @@ fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<Unframed
     Ok(lines)
 }
 
+/// The framed cards, the records after Terminate, and each section's run.
+type Framed<'a> = (Vec<Card<'a>>, Vec<PhysicalLine<'a>>, SectionRuns);
+
 /// Order the sections and make each card's position inside its section its
 /// sequence, recording every declaration the position replaced.
-fn frame_sections(
-    lines: Vec<UnframedLine>,
+fn frame_sections<'a>(
+    lines: Vec<UnframedLine<'a>>,
     recoveries: &mut FramingRecoveries,
     ctx: &DecodeContext<'_>,
-) -> Result<Vec<ScannedLine>, CodecError> {
+) -> Result<Framed<'a>, CodecError> {
     let mut scanned = ctx.collection_vec(lines.len(), "iges framed cards")?;
+    let mut trailing = Vec::new();
+    let mut runs = SectionRuns::default();
 
     let mut section = None;
     let mut position = 1_usize;
     let mut terminated = false;
-    for raw in lines {
+    for raw in ctx.admit_iter(lines, "iges framed card traversal")? {
         if terminated {
-            scanned.push(ScannedLine::Trailing(raw.line));
+            ctx.push_vec(&mut trailing, raw.line, "iges post-Terminate records")?;
             continue;
         }
         let line = &raw.line;
@@ -558,6 +593,7 @@ fn frame_sections(
             }
             section = Some(current);
             position = 1;
+            runs[current.index()] = scanned.len()..scanned.len();
         }
         let recovered = u32::try_from(position)
             .map_err(|_| CodecError::Malformed("IGES section sequence overflow".into()))?;
@@ -588,41 +624,37 @@ fn frame_sections(
             .checked_add(1)
             .ok_or_else(|| CodecError::Malformed("IGES section sequence overflow".into()))?;
         terminated = current == Section::Terminate;
-        scanned.push(ScannedLine::Card {
+        scanned.push(Card {
             section: current,
             sequence: recovered,
             line: raw.line,
         });
+        runs[current.index()].end = scanned.len();
     }
-    if !matches!(
-        scanned.first(),
-        Some(ScannedLine::Card {
-            section: Section::Start,
-            ..
-        })
-    ) || !terminated
+    if !scanned
+        .first()
+        .is_some_and(|card| card.section == Section::Start)
+        || !terminated
     {
         return Err(CodecError::Malformed(
             "IGES Fixed ASCII requires Start through Terminate sections".into(),
         ));
     }
-    Ok(scanned)
+    Ok((scanned, trailing, runs))
 }
 
 /// Replace each Terminate count that disagrees with the card census.
 fn terminate_counts(
-    lines: &[ScannedLine],
+    cards: &[Card<'_>],
+    runs: &SectionRuns,
     recoveries: &mut FramingRecoveries,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let Some(terminate) = lines.iter().find_map(|line| match line {
-        ScannedLine::Card {
-            section: Section::Terminate,
-            line,
-            ..
-        } => Some(line),
-        _ => None,
-    }) else {
+    let Some(terminate) = cards
+        .get(runs[Section::Terminate.index()].clone())
+        .and_then(<[_]>::first)
+        .map(|card| &card.line)
+    else {
         return Ok(());
     };
     let Some(data) = terminate.payload.get(..32) else {
@@ -636,19 +668,20 @@ fn terminate_counts(
     ];
     for (field, (marker, section)) in data.chunks_exact(8).zip(expected) {
         let declared = if field[0] == marker {
-            ctx.validate_utf8(&field[1..], "iges terminate count text")?.ok().map(str::trim)
+            ctx.validate_utf8(&field[1..], "iges terminate count text")?
+                .ok()
+                .map(str::trim)
         } else {
             None
         }
-            .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()));
+        .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()));
         let declared = match declared {
-            Some(text) => ctx.parse_text::<usize>(text, "iges terminate count integer")?.ok(),
+            Some(text) => ctx
+                .parse_text::<usize>(text, "iges terminate count integer")?
+                .ok(),
             None => None,
         };
-        let census = lines
-            .iter()
-            .filter(|line| matches!(line, ScannedLine::Card { section: current, .. } if *current == section))
-            .count();
+        let census = runs[section.index()].len();
         if declared != Some(census) {
             recoveries.record(
                 ctx,
@@ -672,11 +705,13 @@ pub(crate) fn scan_with_context<'a>(
     }
     let lines = physical_lines(source, ctx)?;
     let mut recoveries = FramingRecoveries::default();
-    let lines = frame_sections(lines, &mut recoveries, ctx)?;
-    terminate_counts(&lines, &mut recoveries, ctx)?;
+    let (cards, trailing, sections) = frame_sections(lines, &mut recoveries, ctx)?;
+    terminate_counts(&cards, &sections, &mut recoveries, ctx)?;
     Ok(CardScan {
         source,
-        lines,
+        cards,
+        trailing,
+        sections,
         recoveries,
     })
 }
@@ -716,10 +751,6 @@ pub(crate) fn summarize(
     primary: cadmpeg_core::dialect::DialectMatch,
     ctx: &DecodeContext<'_>,
 ) -> Result<ContainerSummary, CodecError> {
-    let section_scan_work = u64_from_index(scan.lines.len())
-        .checked_mul(5)
-        .ok_or_else(|| refuse_local_limit("iges card summary section scans", u64::MAX, 1))?;
-    ctx.charge_work(section_scan_work, "iges card summary section scans")?;
     let sections = [
         Section::Start,
         Section::Global,
@@ -729,11 +760,14 @@ pub(crate) fn summarize(
     ];
     let mut entries = Vec::new();
     for section in sections {
-        let mut line_count = 0_usize;
+        let cards = scan.section(section);
+        if cards.is_empty() {
+            continue;
+        }
         let mut size = 0_u64;
         let mut endings = [0_usize; 4];
-        for (_, line) in scan.section(section) {
-            line_count += 1;
+        for card in ctx.admit_iter(cards, "iges card summary section cards")? {
+            let line = &card.line;
             size = size
                 .checked_add(u64_from_index(
                     line.payload.len() + line.ending.bytes().len(),
@@ -747,16 +781,16 @@ pub(crate) fn summarize(
             };
             endings[index] += 1;
         }
-        if line_count == 0 {
-            continue;
-        }
         ctx.reserve_vec(&mut entries, 1, "iges card summary entries")?;
         let mut attributes = BTreeMap::new();
         summary_attribute(
             ctx,
             &mut attributes,
             "cards",
-            ctx.format_retained(format_args!("{line_count}"), "iges card summary card count")?,
+            ctx.format_retained(
+                format_args!("{}", cards.len()),
+                "iges card summary card count",
+            )?,
         )?;
         summary_attribute(
             ctx,
@@ -777,30 +811,10 @@ pub(crate) fn summarize(
             attributes,
         });
     }
-    ctx.charge_work(
-        u64_from_index(scan.lines.len()),
-        "iges card summary terminate scan",
-    )?;
-    let terminate_index = scan.lines.iter().position(|line| {
-        matches!(
-            line,
-            ScannedLine::Card {
-                section: Section::Terminate,
-                ..
-            }
-        )
-    });
-    let post_terminate = terminate_index
-        .and_then(|index| scan.lines.get(index + 1..))
-        .unwrap_or_default();
+    let post_terminate = scan.trailing();
     if !post_terminate.is_empty() {
-        ctx.charge_work(
-            u64_from_index(post_terminate.len()),
-            "iges card summary trailing scan",
-        )?;
         let mut size = 0_u64;
-        for line in post_terminate {
-            let line = line.physical();
+        for line in ctx.admit_iter(post_terminate, "iges card summary trailing records")? {
             size = size
                 .checked_add(u64_from_index(
                     line.payload.len() + line.ending.bytes().len(),
@@ -846,31 +860,26 @@ pub(crate) fn summarize(
     ))
 }
 
-impl CardScan<'_> {
-    pub(crate) fn section(&self, section: Section) -> impl Iterator<Item = (u32, &PhysicalLine)> {
-        self.lines.iter().filter_map(move |line| match line {
-            ScannedLine::Card {
-                section: current,
-                sequence,
-                line,
-            } if *current == section => Some((*sequence, line)),
-            ScannedLine::Card { .. } | ScannedLine::Trailing(_) => None,
-        })
+impl<'a> CardScan<'a> {
+    /// Every framed card, in file order.
+    pub(crate) fn cards(&self) -> &[Card<'a>] {
+        &self.cards
+    }
+
+    /// The cards of one section, in sequence order.
+    pub(crate) fn section(&self, section: Section) -> &[Card<'a>] {
+        self.cards
+            .get(self.sections[section.index()].clone())
+            .unwrap_or_default()
+    }
+
+    /// The records that follow the Terminate card, in file order.
+    pub(crate) fn trailing(&self) -> &[PhysicalLine<'a>] {
+        &self.trailing
     }
 
     pub(crate) fn post_terminate_count(&self) -> usize {
-        self.lines
-            .iter()
-            .position(|line| {
-                matches!(
-                    line,
-                    ScannedLine::Card {
-                        section: Section::Terminate,
-                        ..
-                    }
-                )
-            })
-            .map_or(0, |index| self.lines.len() - (index + 1))
+        self.trailing.len()
     }
 }
 
