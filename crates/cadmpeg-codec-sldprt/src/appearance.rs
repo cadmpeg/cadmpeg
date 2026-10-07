@@ -299,11 +299,11 @@ fn display_assignments(
 
 /// The class interval whose content holds `offset`. Intervals are ordered by
 /// content start and do not overlap, so at most one holds it.
-fn containing_class<'a>(
+fn containing_class<'a, 'c>(
     ctx: &DecodeContext<'_>,
-    classes: &'a [crate::tessellation::ClassInterval],
+    classes: &'a [crate::tessellation::ClassInterval<'c>],
     offset: usize,
-) -> Result<Option<&'a crate::tessellation::ClassInterval>, cadmpeg_core::CodecError> {
+) -> Result<Option<&'a crate::tessellation::ClassInterval<'c>>, cadmpeg_core::CodecError> {
     let after = ctx.partition_point(
         classes,
         |class| Ok(class.content.start() <= offset),
