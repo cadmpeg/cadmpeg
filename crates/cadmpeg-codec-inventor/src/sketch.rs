@@ -1134,78 +1134,73 @@ pub(crate) fn project(
     parameters: &[DesignParameter],
 ) -> Result<SketchProjection, CodecError> {
     let (raw_sketches, _raw_sketches_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.sketches, "visit Inventor sketches")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+        inventory.sketches.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketches",
     )?;
     let (raw_entities, _raw_entities_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.entities, "visit Inventor sketch entities")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+        inventory.entities.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketch entities",
     )?;
     let (transforms, _transforms_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.transforms, "visit Inventor sketch transforms")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+        inventory.transforms.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketch transforms",
     )?;
     let (directions, _directions_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.directions, "visit Inventor sketch directions")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+        inventory.directions.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketch directions",
     )?;
     let (raw_constraints, _raw_constraints_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.constraints, "visit Inventor sketch constraints")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+        inventory.constraints.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor sketch constraints",
     )?;
     let mut parameter_index_storage = ctx.reserve_scoped(0, "index Inventor sketch parameter")?;
@@ -1225,6 +1220,30 @@ pub(crate) fn project(
                     native,
                     id,
                     "index Inventor sketch parameter",
+                )
+            })?;
+        }
+    }
+
+    // Which records each sketch lists, keyed by the sketch's identity and the
+    // listed one-based reference, so an entity or constraint finds its
+    // listing by lookup instead of scanning its sketch's list.
+    let mut sketch_listings_storage = ctx.reserve_scoped(0, "index Inventor sketch listings")?;
+    let mut sketch_listings = HashSet::new();
+    for sketch in ctx.admit_iter(&inventory.sketches, "index Inventor sketch listings")? {
+        for reference in ctx.admit_iter(
+            sketch.entities.references(),
+            "index Inventor sketch listings",
+        )? {
+            sketch_listings_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut sketch_listings,
+                    (
+                        sketch.identity.segment_token.as_str(),
+                        sketch.identity.record_ordinal,
+                        reference.index(),
+                    ),
+                    "index Inventor sketch listings",
                 )
             })?;
         }
@@ -1260,21 +1279,18 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
-        let entity_reference_found = ctx
-            .admit_iter(
-                sketch.entities.references(),
+        let entity_reference_found = match entity.identity.record_ordinal.checked_add(1) {
+            Some(listed) => ctx.contains_hash_set(
+                &sketch_listings,
+                &(
+                    sketch.identity.segment_token.as_str(),
+                    sketch.identity.record_ordinal,
+                    listed,
+                ),
                 "find Inventor sketch entity reference",
-            )?
-            .find_map(|reference| {
-                entity
-                    .identity
-                    .record_ordinal
-                    .checked_add(1)
-                    .is_some_and(|next| reference.index() == next)
-                    .then_some(Ok::<bool, CodecError>(true))
-            })
-            .transpose()?
-            .unwrap_or(false);
+            )?,
+            None => false,
+        };
         if !entity_reference_found {
             unresolved_entities += 1;
             continue;
@@ -1419,8 +1435,7 @@ pub(crate) fn project(
         ctx.reserve_scoped(0, "collect projected Inventor sketch ids")?;
     let projected_sketch_ids = projected_sketch_ids_storage.with_storage(|| {
         ctx.collect_hash_set(
-            ctx.admit_iter(&sketches, "collect projected Inventor sketch ids")?
-                .map(|sketch| &sketch.id),
+            sketches.iter().map(|sketch| &sketch.id),
             "collect projected Inventor sketch ids",
         )
     })?;
@@ -1532,11 +1547,7 @@ pub(crate) fn project(
         ctx.reserve_scoped(0, "index projected Inventor sketch entity closure keys")?;
     let projected_entity_keys = projected_entity_keys_storage.with_storage(|| {
         ctx.collect_hash_set(
-            ctx.admit_iter(
-                &projected_entity_by_key,
-                "index projected Inventor sketch entity closure keys",
-            )?
-            .map(|(key, _)| *key),
+            projected_entity_by_key.iter().map(|(key, _)| *key),
             "index projected Inventor sketch entity closure keys",
         )
     })?;
@@ -1573,41 +1584,30 @@ pub(crate) fn project(
             };
             let mut seen_storage = ctx.reserve_scoped(0, "access Inventor sketch records")?;
             let mut seen = HashSet::new();
-            let closed = ctx
-                .admit_iter(raw.entities.references(), "access Inventor sketch records")?
-                .find_map(|reference| {
-                    let resolved = (|| -> Result<bool, CodecError> {
-                        let Some(ordinal) = reference.index().checked_sub(1) else {
-                            return Ok(false);
-                        };
-                        if !seen_storage.with_storage(|| {
-                            ctx.insert_hash_set(
-                                &mut seen,
-                                ordinal,
-                                "access Inventor sketch records",
-                            )
-                        })? {
-                            return Ok(false);
-                        }
-                        let key = (raw.identity.segment_token.as_str(), ordinal);
-                        Ok(ctx.contains_hash_set(
-                            &projected_entity_keys,
-                            &key,
-                            "access Inventor sketch records",
-                        )? || ctx.contains_hash_set(
-                            &projected_constraint_keys,
-                            &key,
-                            "access Inventor sketch records",
-                        )?)
-                    })();
-                    match resolved {
-                        Ok(true) => None,
-                        Ok(false) => Some(Ok(false)),
-                        Err(error) => Some(Err(error)),
+            let closed = ctx.all_by(
+                raw.entities.references(),
+                |reference| {
+                    let Some(ordinal) = reference.index().checked_sub(1) else {
+                        return Ok(false);
+                    };
+                    if !seen_storage.with_storage(|| {
+                        ctx.insert_hash_set(&mut seen, ordinal, "access Inventor sketch records")
+                    })? {
+                        return Ok(false);
                     }
-                })
-                .transpose()?
-                .unwrap_or(true);
+                    let key = (raw.identity.segment_token.as_str(), ordinal);
+                    Ok(ctx.contains_hash_set(
+                        &projected_entity_keys,
+                        &key,
+                        "access Inventor sketch records",
+                    )? || ctx.contains_hash_set(
+                        &projected_constraint_keys,
+                        &key,
+                        "access Inventor sketch records",
+                    )?)
+                },
+                "access Inventor sketch records",
+            )?;
             Ok(closed)
         },
         "retain closed Inventor sketches",
@@ -1627,8 +1627,7 @@ pub(crate) fn project(
         ctx.reserve_scoped(0, "index closed Inventor sketch ids")?;
     let closed_sketch_ids = closed_sketch_ids_storage.with_storage(|| {
         ctx.collect_hash_set(
-            ctx.admit_iter(&sketches, "index closed Inventor sketch ids")?
-                .map(|sketch| &sketch.id),
+            sketches.iter().map(|sketch| &sketch.id),
             "index closed Inventor sketch ids",
         )
     })?;
@@ -1713,21 +1712,18 @@ pub(crate) fn project(
             else {
                 return Ok(false);
             };
-            Ok(ctx
-                .admit_iter(
-                    sketch.entities.references(),
+            match raw_constraint.identity.record_ordinal.checked_add(1) {
+                Some(listed) => ctx.contains_hash_set(
+                    &sketch_listings,
+                    &(
+                        sketch.identity.segment_token.as_str(),
+                        sketch.identity.record_ordinal,
+                        listed,
+                    ),
                     "access Inventor sketch records",
-                )?
-                .find_map(|reference| {
-                    raw_constraint
-                        .identity
-                        .record_ordinal
-                        .checked_add(1)
-                        .is_some_and(|next| reference.index() == next)
-                        .then_some(Ok::<bool, CodecError>(true))
-                })
-                .transpose()?
-                .unwrap_or(false))
+                ),
+                None => Ok(false),
+            }
         },
         "retain closed Inventor constraints",
     )?;
@@ -2483,7 +2479,8 @@ fn build_profiles(
         ctx.reserve_scoped(0, "index Inventor profile source positions")?;
     let source_positions = source_positions_storage.with_storage(|| {
         ctx.collect_hash_map(
-            ctx.admit_iter(entities, "index Inventor profile source positions")?
+            entities
+                .iter()
                 .enumerate()
                 .map(|(index, entity)| (entity.id().as_str(), index)),
             "index Inventor profile source positions",
@@ -2562,23 +2559,16 @@ fn build_profiles(
         let (component, _component_storage) = line_component(ctx, start_index, &lines, &adjacency)?;
         let mut open_component = false;
         for &index in ctx.admit_iter(&component, "visit Inventor line component")? {
-            let endpoint_has_wrong_degree = ctx
-                .admit_iter(
-                    &lines[index].endpoint_refs,
-                    "check Inventor profile endpoint degree",
-                )?
-                .find_map(|point| {
-                    match ctx
-                        .get_hash_map(&adjacency, point.as_str(), "access Inventor sketch records")
-                        .map(|indices| indices.map_or(0, Vec::len) != 2)
-                    {
-                        Ok(true) => Some(Ok(true)),
-                        Ok(false) => None,
-                        Err(error) => Some(Err(error)),
-                    }
-                })
-                .transpose()?
-                .unwrap_or(false);
+            let endpoint_has_wrong_degree = ctx.any_by(
+                &lines[index].endpoint_refs,
+                |point| {
+                    Ok(ctx
+                        .get_hash_map(&adjacency, point.as_str(), "access Inventor sketch records")?
+                        .map_or(0, Vec::len)
+                        != 2)
+                },
+                "check Inventor profile endpoint degree",
+            )?;
             if endpoint_has_wrong_degree {
                 open_component = true;
                 break;
@@ -2621,10 +2611,11 @@ fn build_profiles(
                 ctx.clear_vec(&mut loop_uses, "discard open Inventor profile loop")?;
                 break;
             };
-            let Some(next) = ctx
-                .admit_iter(indices, "find next Inventor profile line")?
-                .copied()
-                .find(|index| *index != current)
+            let Some(&next) = ctx.find_by(
+                indices,
+                |index| Ok(**index != current),
+                "find next Inventor profile line",
+            )?
             else {
                 ctx.clear_vec(&mut loop_uses, "discard open Inventor profile loop")?;
                 break;

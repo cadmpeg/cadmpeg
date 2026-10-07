@@ -470,48 +470,45 @@ pub(crate) fn project_parameters(
     admitted_entities: &mut u64,
 ) -> Result<(Vec<DesignParameter>, usize), CodecError> {
     let (expressions, _expressions_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.expressions, "index Inventor expressions")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+        inventory.expressions.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor expressions",
     )?;
     let (units, _units_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.units, "index Inventor units")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+        inventory.units.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor units",
     )?;
     let (parameters, _parameters_storage) = ctx.unique_index(
-        ctx.admit_iter(&inventory.parameters, "index Inventor parameters")?
-            .map(|record| {
-                (
-                    {
-                        (
-                            record.identity.segment_token.as_str(),
-                            record.identity.record_ordinal,
-                        )
-                    },
-                    record,
-                )
-            }),
+        inventory.parameters.iter().map(|record| {
+            (
+                {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                },
+                record,
+            )
+        }),
         "index Inventor parameters",
     )?;
     let mut projected = Vec::new();
@@ -627,7 +624,8 @@ fn close_parameter_graph(
     let mut scratch = ctx.reserve_scoped(0, "Inventor parameter closure storage")?;
     let indices = scratch.with_storage(|| {
         ctx.collect_hash_map(
-            ctx.admit_iter(&parameters, "index Inventor parameter closure")?
+            parameters
+                .iter()
                 .enumerate()
                 .map(|(index, parameter)| (&parameter.id, index)),
             "index Inventor parameter closure",
@@ -2621,14 +2619,15 @@ mod tests {
         let id_bytes =
             u64::try_from(parameters[0].id.as_str().len()).expect("identity byte length fits u64");
         // The index table's growth bound is four buckets of (&ParameterId, usize) slots with
-        // their control bytes, alignment and trailing controls. Indexing, dependency visits,
-        // closure flags, and the first queue step use the remaining units.
+        // their control bytes, alignment and trailing controls. Indexing (three steps and the
+        // end probe, two hashes of each id), dependency visits, closure flags, and the first
+        // queue step use the remaining units.
         let index_table =
             u64::try_from(4 * std::mem::size_of::<(&ParameterId, usize)>() + 15 + 4 + 16)
                 .expect("table bytes fit u64");
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units =
-            index_table + (3 + 4 + 6 * id_bytes) + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
+            index_table + (4 + 6 * id_bytes) + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
