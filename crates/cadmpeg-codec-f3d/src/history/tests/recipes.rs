@@ -881,7 +881,6 @@ fn body_recipe_history_refusal(operation: &'static str) -> cadmpeg_core::CodecEr
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(&history),
             )
-            .map(|_| ())
         },
     )
 }

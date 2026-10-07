@@ -285,13 +285,13 @@ fn valid_class_307_joint_origin_qualifier(
                     && target_scope.paired_byte_offset() == *paired_byte_offset
                     && target_scope.frame_length() == u64_from_index(class_307_joint_origin::LEN)
                     && target_scope.joint_origin_transform() == Some(frame.transform);
-                Ok::<_, CodecError>(count.checked_add(usize::from(matched)).ok_or_else(|| {
+                count.checked_add(usize::from(matched)).ok_or_else(|| {
                     decode.refuse_codec_limit(
                         "count F3D joint origin qualifiers",
                         u64::MAX - 1,
                         u64::MAX,
                     )
-                })?)
+                })
             })?
             == 1)
 }
@@ -596,7 +596,7 @@ fn valid_axial_assembly_targets(
                             None => false,
                             Some(construction) => decode.eq_ignore_ascii_case(&construction.neutron_role, selectors[0].occurrence_role.as_str(), "compare F3D axial component occurrence roles")?,
                         };
-                    Ok(count.checked_add(usize::from(matches)).ok_or_else(|| decode.refuse_codec_limit("count F3D axial component scopes", u64::MAX - 1, u64::MAX))?)
+                    count.checked_add(usize::from(matches)).ok_or_else(|| decode.refuse_codec_limit("count F3D axial component scopes", u64::MAX - 1, u64::MAX))
                 }, "scan F3D axial component scopes")?;
                 frame.reference_record_index == *construction_record_index
                     && decode.admit_iter(scope.reference_members().storage_slices().0, "count F3D axial construction references")?
@@ -648,7 +648,7 @@ fn valid_axial_assembly_targets(
                             && decode.equal(&target_scope.kind(), &crate::records::feature::scope::DesignFeatureKind::JointOrigin, "compare F3D axial document root scope kinds")?
                             && target_scope.record_index == *scope_record_index
                             && target_scope.joint_origin_transform() == Some(frame.transform);
-                        Ok(count.checked_add(usize::from(matches)).ok_or_else(|| decode.refuse_codec_limit("count F3D axial document root targets", u64::MAX - 1, u64::MAX))?)
+                        count.checked_add(usize::from(matches)).ok_or_else(|| decode.refuse_codec_limit("count F3D axial document root targets", u64::MAX - 1, u64::MAX))
                     }, "scan F3D axial document root scopes")? == 1
             }
             })
@@ -1058,7 +1058,7 @@ fn validate_loaded(
     validate_face_group_member_resolution(
         &ctx,
         &mut findings,
-        face_group_members,
+        &face_group_members,
         &face_operand_records,
         &native.design_entity_selection_operands,
     )?;
@@ -1650,14 +1650,14 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
                             let mut validation_storage = ctx
                                 .decode
                                 .reserve_scoped(0, "hold F3D timeline class tag validation")?;
-                            let valid = records::references::DesignClassTag::try_from(
+
+                            records::references::DesignClassTag::try_from(
                                 validation_storage.with_storage(|| {
                                     ctx.decode
                                         .copy_retained_text(tag, "copy F3D timeline type class tag")
                                 })?,
                             )
-                            .is_ok();
-                            valid
+                            .is_ok()
                         }
                         None => false,
                     };
@@ -7063,17 +7063,13 @@ fn validate_path_feature_operand_roles(
                                             },
                                             "validate F3D Sweep profile members",
                                         )?;
-                                    Ok::<_, CodecError>(
-                                        count.checked_add(usize::from(selected)).ok_or_else(
-                                            || {
-                                                ctx.decode.refuse_codec_limit(
-                                                    "count F3D Sweep selected profiles",
-                                                    u64::MAX - 1,
-                                                    u64::MAX,
-                                                )
-                                            },
-                                        )?,
-                                    )
+                                    count.checked_add(usize::from(selected)).ok_or_else(|| {
+                                        ctx.decode.refuse_codec_limit(
+                                            "count F3D Sweep selected profiles",
+                                            u64::MAX - 1,
+                                            u64::MAX,
+                                        )
+                                    })
                                 })?
                                 == 1
                     }
@@ -10695,7 +10691,7 @@ fn face_ids_match_refs(
 fn validate_face_group_member_resolution(
     ctx: &Ctx<'_, '_>,
     findings: &mut Vec<Finding>,
-    face_group_members: std::collections::BTreeSet<(&str, u32, u32)>,
+    face_group_members: &std::collections::BTreeSet<(&str, u32, u32)>,
     face_operand_records: &HashSet<(&str, u32, u32)>,
     entity_selection_operands: &[records::topology::entity_selection::DesignEntitySelectionOperand],
 ) -> Result<(), CodecError> {
@@ -10711,7 +10707,7 @@ fn validate_face_group_member_resolution(
     )?;
     for member in ctx
         .decode
-        .admit_iter(&face_group_members, "scan F3D face group members")?
+        .admit_iter(face_group_members, "scan F3D face group members")?
         .copied()
     {
         if !ctx.decode.contains_hash_set(

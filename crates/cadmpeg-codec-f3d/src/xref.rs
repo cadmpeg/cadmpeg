@@ -134,7 +134,7 @@ enum StringProperty {
 }
 
 impl ReferenceJson {
-    fn into_record(
+    fn take_record(
         &mut self,
         ctx: &DecodeContext<'_>,
         ordinal: usize,
@@ -451,7 +451,7 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
             CodecError::malformed("staged F3D xref reference position is out of bounds")
         })?;
         ctx.reserve_vec(&mut admitted_references, 1, "admit F3D xref references")?;
-        admitted_references.push(reference.into_record(ctx, ordinal)?);
+        admitted_references.push(reference.take_record(ctx, ordinal)?);
     }
     Ok(XrefTable {
         designs,
@@ -637,7 +637,7 @@ pub(crate) fn bind_component_insert_features(
         }
         if ambiguous {
             continue;
-        };
+        }
         let Some(reference) = selected else {
             continue;
         };
@@ -939,6 +939,9 @@ fn select_component_insert_transforms(
     Ok(transforms)
 }
 
+/// A legacy placement: its link name and optional transform.
+type LegacyPlacement<'a> = (Utf16View<'a>, Option<[[f64; 4]; 4]>);
+
 /// Use scope-bound carriers when present. Placement records are the fallback
 /// for a stream with no exact carrier for this role.
 fn occurrence_transforms_with_precedence(
@@ -953,7 +956,7 @@ fn occurrence_transforms_with_precedence(
         let mut selected =
             ctx.alloc_filled(direct.len(), None, "select F3D direct xref transforms")?;
         for (index, transform) in ctx
-            .admit_iter(&direct, "select F3D direct xref transforms")?
+            .admit_iter(direct, "select F3D direct xref transforms")?
             .enumerate()
         {
             let Some(slot) = selected.get_mut(index) else {
@@ -961,7 +964,7 @@ fn occurrence_transforms_with_precedence(
                     "F3D direct transform slot is out of bounds",
                 ));
             };
-            *slot = Some(*transform);
+            *slot = Some(transform);
         }
         Ok(selected)
     }
@@ -1771,7 +1774,7 @@ fn modern_occurrence_placement(
 fn legacy_occurrence_placement<'a>(
     ctx: &DecodeContext<'_>,
     body: &'a [u8],
-) -> Result<Option<(Utf16View<'a>, Option<[[f64; 4]; 4]>)>, CodecError> {
+) -> Result<Option<LegacyPlacement<'a>>, CodecError> {
     macro_rules! admitted_option {
         ($result:expr) => {
             match $result {

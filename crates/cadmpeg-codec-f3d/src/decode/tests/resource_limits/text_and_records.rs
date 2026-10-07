@@ -324,10 +324,10 @@ fn text_brep_error_format_preserves_messages_and_work_refusal() {
             .expect("text BREP framing returns an error");
         match error {
             cadmpeg_core::CodecError::NotImplemented(message) if unsupported => {
-                assert_eq!(message, "SAT parse failed at byte 7: synthetic reason")
+                assert_eq!(message, "SAT parse failed at byte 7: synthetic reason");
             }
             cadmpeg_core::CodecError::Malformed(message) if !unsupported => {
-                assert_eq!(message, "SAT parse failed at byte 7: synthetic reason")
+                assert_eq!(message, "SAT parse failed at byte 7: synthetic reason");
             }
             error => panic!("unexpected text BREP error: {error:?}"),
         }

@@ -3349,11 +3349,14 @@ fn decode_sketch_text_tail<'ctx>(
 /// Read the legacy class tail at `cursor`: the text-type enum, the placement
 /// it gates, the trailing run, and the owning-sketch reference that ends the
 /// record. Returns the placement and the owner.
+/// A closed text tail: the placement and the owning sketch record.
+type ClosedTextTail = (Option<TextPlacement<FinitePoint2>>, u32);
+
 fn close_sketch_text_tail(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     mut cursor: usize,
-) -> Result<Option<(Option<TextPlacement<FinitePoint2>>, u32)>, CodecError> {
+) -> Result<Option<ClosedTextTail>, CodecError> {
     // The class tail opens with the text-type enum, which gates the placement
     // transform: frame text stores a 4x4 transform, path text stores none. One
     // flag byte follows the enum and repeats it, so a slot form that has

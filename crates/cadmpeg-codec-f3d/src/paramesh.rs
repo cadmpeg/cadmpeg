@@ -2883,6 +2883,8 @@ mod tests {
 
     #[test]
     fn paramesh_lzma_output_refuses_work_limit() {
+        const PROBABILITY_COUNT: u64 = 8 * 0x300 + 4 * 64 + 16 + 2 * 512;
+        const FRAME_INITIAL_CAPACITY: usize = 8;
         let payload = [7; 1024];
         let descriptor = [0x80];
         let chunk = stream_chunk(&descriptor, &payload);
@@ -2893,7 +2895,6 @@ mod tests {
                 std::mem::size_of::<u16>() + descriptor.len() + std::mem::size_of::<u32>() + 2,
             )
             .expect("fixture has the fixed kind-4 header");
-        const PROBABILITY_COUNT: u64 = 8 * 0x300 + 4 * 64 + 16 + 2 * 512;
         let decoder_work = u64::from(u32::try_from(payload.len()).expect("fixture fits u32"))
             .checked_add(273)
             .and_then(|count| count.checked_mul(256))
@@ -2906,7 +2907,6 @@ mod tests {
             })
             .and_then(|count| count.checked_add(5))
             .expect("fixture LZMA work bound");
-        const FRAME_INITIAL_CAPACITY: usize = 8;
         let framed_prefix_len = std::mem::size_of::<u8>()
             .checked_add(std::mem::size_of::<u32>())
             .expect("fixture framed prefix length");

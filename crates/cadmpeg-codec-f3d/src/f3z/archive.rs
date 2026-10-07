@@ -219,10 +219,7 @@ pub(super) fn merge_member_layers(
     member_path: &str,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    let mut storage = ctx.reserve_scoped(0, "stage F3Z dialect layer references")?;
-    let matched_layers = storage
-        .with_storage(|| ctx.collect_vec(member.iter(), "stage F3Z dialect layer references"))?;
-    for matched in ctx.admit_iter(&matched_layers, "scan F3Z dialect layers")? {
+    for matched in ctx.admit_iter(member, "scan F3Z dialect layers")? {
         let matched = matched.try_clone_for_decode(ctx, "copy dialect layers")?;
         let instance = match matched.instance() {
             Some(nested) => ctx.format_retained(

@@ -23,7 +23,7 @@ fn xref_reference_text_refuses_retained_transition() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64_from_index("f3d:xref:reference#0".len());
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let error = reference.into_record(ctx, 0).unwrap_err();
+        let error = reference.take_record(ctx, 0).unwrap_err();
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("reference text must be admitted");
         };

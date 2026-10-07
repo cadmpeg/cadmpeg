@@ -3477,6 +3477,9 @@ fn take_counted_record_references(
 /// Read the legacy Move/RemoveBody tail whose two flag bytes have no
 /// terminating zero. The class and feature gates keep this admission separate
 /// from the terminated flag-block grammar used by other construction groups.
+/// A legacy body-group tail: the flag, the cursor after it and the class tag.
+type LegacyBodyGroupTail<'a> = (bool, usize, &'a [u8; 3]);
+
 fn legacy_body_group_tail<'a>(
     ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
@@ -3484,7 +3487,7 @@ fn legacy_body_group_tail<'a>(
     (record_index, class_code): (u32, u32),
     cursor: usize,
     opaque_index: u32,
-) -> Result<Option<(bool, usize, &'a [u8; 3])>, CodecError> {
+) -> Result<Option<LegacyBodyGroupTail<'a>>, CodecError> {
     let is_move = matches!(scope.payload(), DesignScopePayload::Move(_));
     let body_scope = is_move || matches!(scope.payload(), DesignScopePayload::RemoveBody);
     let legacy_move_class_328 = is_move && class_code == 328;

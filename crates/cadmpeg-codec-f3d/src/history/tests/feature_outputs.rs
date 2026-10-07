@@ -365,7 +365,6 @@ fn affected_history_body_scan_refuses_work() {
                 &[history],
                 &[body],
             )
-            .map(|_| ())
         },
     );
     assert!(matches!(

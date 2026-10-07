@@ -48,7 +48,7 @@ fn unique_asset_identity_search_preserves_work_refusal() {
     crate::test_support::with_decode_context(|ctx| {
         let mut assets = vec![asset.clone()];
         super::super::super::extend_unique_assets(ctx, &mut assets, vec![asset.clone()]).unwrap();
-        assert_eq!(assets, [asset.clone()]);
+        assert_eq!(assets, std::slice::from_ref(&asset));
     });
     for operation in [
         "find F3D embedded asset identity",

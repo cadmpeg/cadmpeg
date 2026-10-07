@@ -983,12 +983,12 @@ pub(crate) fn is_f3d_name(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, C
     let Some(extension) = std::path::Path::new(name).extension() else {
         return Ok(false);
     };
-    let extension = match ctx.validate_utf8(
+    let Ok(extension) = ctx.validate_utf8(
         extension.as_encoded_bytes(),
         "validate F3D document extension",
-    )? {
-        Ok(extension) => extension,
-        Err(_) => return Ok(false),
+    )?
+    else {
+        return Ok(false);
     };
     ctx.eq_ignore_ascii_case(extension, "f3d", "classify F3D document extension")
 }

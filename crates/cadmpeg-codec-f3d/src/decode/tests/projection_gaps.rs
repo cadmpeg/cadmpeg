@@ -1349,7 +1349,7 @@ fn appearance_attribute_guid_scan_preserves_work_refusal() {
             let mut ir = ir.borrow_mut();
             super::super::resolve_face_appearance_bindings(
                 ctx,
-                &mut *ir,
+                &mut ir,
                 std::slice::from_ref(&assignment),
             )
         },
