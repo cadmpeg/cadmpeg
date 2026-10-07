@@ -120,10 +120,11 @@ impl ReadPoles3 {
                     Ok(row) => row,
                     Err(error) => return Some(Err(error)),
                 };
-                let poles_to_read = match ctx.admit_iter(0..v_count, "transpose ASM NURBS row poles") {
-                    Ok(poles) => poles,
-                    Err(error) => return Some(Err(error.into())),
-                };
+                let poles_to_read =
+                    match ctx.admit_iter(0..v_count, "transpose ASM NURBS row poles") {
+                        Ok(poles) => poles,
+                        Err(error) => return Some(Err(error.into())),
+                    };
                 for v in poles_to_read {
                     row.push(flat.get(v.checked_mul(u_count)?.checked_add(u)?)?.clone());
                 }
@@ -313,14 +314,19 @@ pub(super) fn construction_marker_positions(
                     current.0.clear();
                     current_has_marker = false;
                     construction = if matches!(b.get(pos + 1), Some(0x0d | 0x0e)) {
-                        b.get(pos + 2).and_then(|length| b.get(pos + 3..pos + 3 + usize::from(*length)))
+                        b.get(pos + 2)
+                            .and_then(|length| b.get(pos + 3..pos + 3 + usize::from(*length)))
                             .is_some_and(|name| name != b"ref")
-                    } else { false };
+                    } else {
+                        false
+                    };
                 }
                 depth += 1;
             }
             0x10 => {
-                let Some(next) = depth.checked_sub(1) else { return Ok(None); };
+                let Some(next) = depth.checked_sub(1) else {
+                    return Ok(None);
+                };
                 depth = next;
                 if depth == 0 {
                     leading_scope = false;
@@ -328,8 +334,13 @@ pub(super) fn construction_marker_positions(
                         candidates += 1;
                         fallback = None;
                         candidate = if candidates == 1 {
-                            Some(std::mem::replace(&mut current, ctx.temporary_vec(0, "ASM construction byte spline markers")?))
-                        } else { None };
+                            Some(std::mem::replace(
+                                &mut current,
+                                ctx.temporary_vec(0, "ASM construction byte spline markers")?,
+                            ))
+                        } else {
+                            None
+                        };
                     }
                     construction = false;
                 }
@@ -337,13 +348,23 @@ pub(super) fn construction_marker_positions(
             _ if marker_at(b, pos).is_some() => {
                 if !construction && depth == usize::from(leading_scope) {
                     if let Some((markers, storage)) = &mut fallback {
-                        ctx.push_scoped_vec(storage, markers, pos, "ASM fallback byte spline markers")?;
+                        ctx.push_scoped_vec(
+                            storage,
+                            markers,
+                            pos,
+                            "ASM fallback byte spline markers",
+                        )?;
                     }
                 }
                 if depth == 1 && construction {
                     current_has_marker = true;
                     if candidates == 0 {
-                        ctx.push_scoped_vec(&mut current.1, &mut current.0, pos, "ASM construction byte spline markers")?;
+                        ctx.push_scoped_vec(
+                            &mut current.1,
+                            &mut current.0,
+                            pos,
+                            "ASM construction byte spline markers",
+                        )?;
                     }
                 }
             }
@@ -361,7 +382,11 @@ pub(super) fn construction_marker_positions(
         1 => candidate,
         _ => return Ok(Some(Vec::new())),
     };
-    selected.map(|(positions, _storage)| ctx.collect_retained_vec(positions, "retain ASM construction markers")).transpose()
+    selected
+        .map(|(positions, _storage)| {
+            ctx.collect_retained_vec(positions, "retain ASM construction markers")
+        })
+        .transpose()
 }
 
 /// Bounds for the shared ASM NURBS knot expansion check.
@@ -404,13 +429,26 @@ pub(super) fn checked_knot_layout(
 }
 
 /// Check counts gathered while the knot pairs were read.
-pub(super) fn finish_knot_layout(sum: usize, expanded_len: usize, degree: i64) -> Option<KnotExpansionLayout> {
-    let degree = usize::try_from(degree).ok().filter(|degree| (1..=MAX_NURBS_DEGREE).contains(degree))?;
-    if expanded_len > MAX_EXPANDED_NURBS_KNOTS { return None; }
+pub(super) fn finish_knot_layout(
+    sum: usize,
+    expanded_len: usize,
+    degree: i64,
+) -> Option<KnotExpansionLayout> {
+    let degree = usize::try_from(degree)
+        .ok()
+        .filter(|degree| (1..=MAX_NURBS_DEGREE).contains(degree))?;
+    if expanded_len > MAX_EXPANDED_NURBS_KNOTS {
+        return None;
+    }
     let n_poles = sum.checked_sub(degree - 1)?;
-    if !(2..=MAX_NURBS_POLES).contains(&n_poles) { return None; }
+    if !(2..=MAX_NURBS_POLES).contains(&n_poles) {
+        return None;
+    }
     let derived_max = n_poles.checked_add(degree)?.checked_add(1)?;
-    (expanded_len <= derived_max).then_some(KnotExpansionLayout { n_poles, expanded_len })
+    (expanded_len <= derived_max).then_some(KnotExpansionLayout {
+        n_poles,
+        expanded_len,
+    })
 }
 
 /// Unique native knot payload offsets.
@@ -558,10 +596,7 @@ pub(super) fn take_native_ident<'ctx>(
     let length = usize::from(*bytes.get(*position + 1)?);
     let start = *position + 2;
     let end = start.checked_add(length)?;
-    let text = match ctx.validate_utf8(
-        bytes.get(start..end)?,
-        "ASM native identifier UTF-8",
-    ) {
+    let text = match ctx.validate_utf8(bytes.get(start..end)?, "ASM native identifier UTF-8") {
         Ok(Ok(text)) => text,
         Ok(Err(_)) => return None,
         Err(error) => return Some(Err(error)),
@@ -652,9 +687,9 @@ pub(super) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> O
 #[cfg(test)]
 mod marker_ownership_tests {
     use super::{walk_owned_markers, NUBS_MARKER};
-    use cadmpeg_core::CodecError;
     use crate::kernel_header::RefWidth;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
     fn owned_marker_positions(
         ctx: &DecodeContext<'_>,
@@ -676,7 +711,10 @@ mod marker_ownership_tests {
         policy.limits.max_collection_items = 1;
         policy.limits.max_retained_bytes = 0;
         let ctx = DecodeContext::new(&arena, &policy, false);
-        assert_eq!(super::construction_marker_positions(&ctx, &bytes, RefWidth::Four).unwrap(), Some(Vec::new()));
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &bytes, RefWidth::Four).unwrap(),
+            Some(Vec::new())
+        );
     }
 
     #[test]
@@ -684,26 +722,48 @@ mod marker_ownership_tests {
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut fallback = vec![0x0f, 0x0d, 1, b'x', 0x10];
         fallback.extend_from_slice(NUBS_MARKER);
-        assert_eq!(super::construction_marker_positions(&ctx, &fallback, RefWidth::Four).unwrap(), Some(vec![5]));
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &fallback, RefWidth::Four).unwrap(),
+            Some(vec![5])
+        );
         let mut cache = vec![0x0f, 0x0d, 1, b'x'];
         cache.extend_from_slice(NUBS_MARKER);
         cache.push(0x10);
-        assert_eq!(super::construction_marker_positions(&ctx, &cache, RefWidth::Four).unwrap(), Some(vec![4]));
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &cache, RefWidth::Four).unwrap(),
+            Some(vec![4])
+        );
         let mut incomplete = cache.clone();
         incomplete.extend([0x0f, 0x0d, 1, b'y', 0x06]);
-        assert_eq!(super::construction_marker_positions(&ctx, &incomplete, RefWidth::Four).unwrap(), Some(vec![4]));
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &incomplete, RefWidth::Four).unwrap(),
+            Some(vec![4])
+        );
         let mut ambiguous = cache.clone();
         ambiguous.extend_from_slice(&cache);
-        assert_eq!(super::construction_marker_positions(&ctx, &ambiguous, RefWidth::Four).unwrap(), Some(vec![]));
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &ambiguous, RefWidth::Four).unwrap(),
+            Some(vec![])
+        );
         cache.push(0x10);
-        assert_eq!(super::construction_marker_positions(&ctx, &cache, RefWidth::Four).unwrap(), None);
-        assert_eq!(super::construction_marker_positions(&ctx, &[0x0f, 0x06], RefWidth::Four).unwrap(), None);
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &cache, RefWidth::Four).unwrap(),
+            None
+        );
+        assert_eq!(
+            super::construction_marker_positions(&ctx, &[0x0f, 0x06], RefWidth::Four).unwrap(),
+            None
+        );
     }
 
     #[test]
     fn byte_marker_output_growth_refuses_its_collection_boundary() {
-        let limit = crate::test_support::resource_limit_at(NUBS_MARKER, ResourceDimension::CollectionItems,
-            "ASM owned byte spline markers", |ctx| owned_marker_positions(ctx, NUBS_MARKER, RefWidth::Four));
+        let limit = crate::test_support::resource_limit_at(
+            NUBS_MARKER,
+            ResourceDimension::CollectionItems,
+            "ASM owned byte spline markers",
+            |ctx| owned_marker_positions(ctx, NUBS_MARKER, RefWidth::Four),
+        );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "ASM owned byte spline markers");
     }
@@ -734,10 +794,12 @@ mod marker_ownership_tests {
     #[test]
     fn owned_marker_walk_refuses_unadmitted_work_before_first_token() {
         let bytes = [0x0f, 0x10];
-        let limit = crate::test_support::resource_limit_at(&bytes, ResourceDimension::WorkUnits,
-            "scan ASM owned marker token", |ctx| {
-                owned_marker_positions(ctx, &bytes, RefWidth::Four)
-            });
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::WorkUnits,
+            "scan ASM owned marker token",
+            |ctx| owned_marker_positions(ctx, &bytes, RefWidth::Four),
+        );
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "scan ASM owned marker token");
     }
@@ -753,11 +815,19 @@ mod string_width_tests {
     #[test]
     fn token_surface_grid_rows_refuse_collection_limit() {
         use cadmpeg_core::decode::ResourceDimension;
-        let limit = crate::test_support::resource_limit_at(&[], ResourceDimension::CollectionItems,
-            "ASM NURBS grid row poles", |ctx| {
-                let points = (0..4).map(|index| Point3::new(f64::from(index), 0.0, 0.0)).collect();
-                ReadPoles3::Polynomial(points).into_counted_transposed_grid(ctx, 2, 2).expect("valid grid")
-            });
+        let limit = crate::test_support::resource_limit_at(
+            &[],
+            ResourceDimension::CollectionItems,
+            "ASM NURBS grid row poles",
+            |ctx| {
+                let points = (0..4)
+                    .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
+                    .collect();
+                ReadPoles3::Polynomial(points)
+                    .into_counted_transposed_grid(ctx, 2, 2)
+                    .expect("valid grid")
+            },
+        );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     }
 
@@ -809,11 +879,17 @@ mod string_width_tests {
 
         let bytes = [0x0d, 1, b'x'];
         let mut position = 0;
-        let limit = crate::test_support::resource_limit_at(&bytes, ResourceDimension::WorkUnits,
-            "ASM native identifier UTF-8", |ctx| {
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::WorkUnits,
+            "ASM native identifier UTF-8",
+            |ctx| {
                 position = 0;
-                super::take_native_ident(ctx, &bytes, &mut position).expect("identifier").map(|(text, _storage)| text)
-            });
+                super::take_native_ident(ctx, &bytes, &mut position)
+                    .expect("identifier")
+                    .map(|(text, _storage)| text)
+            },
+        );
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "ASM native identifier UTF-8");
         assert_eq!(limit.used, 0);
@@ -827,11 +903,17 @@ mod string_width_tests {
 
         let bytes = [0x0d, 1, b'x'];
         let mut position = 0;
-        let limit = crate::test_support::resource_limit_at(&bytes, ResourceDimension::MaterializedBytes,
-            "ASM native identifier text", |ctx| {
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::MaterializedBytes,
+            "ASM native identifier text",
+            |ctx| {
                 position = 0;
-                super::take_native_ident(ctx, &bytes, &mut position).expect("identifier").map(|(text, _storage)| text)
-            });
+                super::take_native_ident(ctx, &bytes, &mut position)
+                    .expect("identifier")
+                    .map(|(text, _storage)| text)
+            },
+        );
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(limit.operation, "ASM native identifier text");
         assert_eq!(limit.used, 0);
@@ -845,11 +927,17 @@ mod string_width_tests {
 
         let bytes = [0x07, 1, b'x'];
         let mut position = 0;
-        let limit = crate::test_support::resource_limit_at(&bytes, ResourceDimension::WorkUnits,
-            "ASM native string UTF-8", |ctx| {
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::WorkUnits,
+            "ASM native string UTF-8",
+            |ctx| {
                 position = 0;
-                take_native_string(ctx, &bytes, &mut position, RefWidth::Four).expect("string").map(|(text, _storage)| text)
-            });
+                take_native_string(ctx, &bytes, &mut position, RefWidth::Four)
+                    .expect("string")
+                    .map(|(text, _storage)| text)
+            },
+        );
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "ASM native string UTF-8");
         assert_eq!(limit.used, 0);
@@ -863,11 +951,17 @@ mod string_width_tests {
 
         let bytes = [0x07, 1, b'x'];
         let mut position = 0;
-        let limit = crate::test_support::resource_limit_at(&bytes, ResourceDimension::MaterializedBytes,
-            "ASM native string text", |ctx| {
+        let limit = crate::test_support::resource_limit_at(
+            &bytes,
+            ResourceDimension::MaterializedBytes,
+            "ASM native string text",
+            |ctx| {
                 position = 0;
-                take_native_string(ctx, &bytes, &mut position, RefWidth::Four).expect("string").map(|(text, _storage)| text)
-            });
+                take_native_string(ctx, &bytes, &mut position, RefWidth::Four)
+                    .expect("string")
+                    .map(|(text, _storage)| text)
+            },
+        );
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(limit.operation, "ASM native string text");
         assert_eq!(limit.used, 0);

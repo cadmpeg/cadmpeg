@@ -65,8 +65,16 @@ pub fn classify(
             if let Some(key) =
                 cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
             {
-                let value = ctx.format_retained(format_args!("{value}"), "retain kernel dialect declarations")?;
-                ctx.insert_btree_map(&mut declared, key, value, "retain kernel dialect declarations")?;
+                let value = ctx.format_retained(
+                    format_args!("{value}"),
+                    "retain kernel dialect declarations",
+                )?;
+                ctx.insert_btree_map(
+                    &mut declared,
+                    key,
+                    value,
+                    "retain kernel dialect declarations",
+                )?;
             }
         }
     }
@@ -146,13 +154,17 @@ pub fn classify_layer(
     )?
     .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty kernel carrier key"))?;
     let value = ctx.copy_retained_text(carrier, "retain kernel carrier declaration")?;
-    ctx.insert_btree_map(&mut declared, key, value, "index kernel carrier declaration")?;
+    ctx.insert_btree_map(
+        &mut declared,
+        key,
+        value,
+        "index kernel carrier declaration",
+    )?;
     let matched = match_header(ctx, header)?.with_declared(declared);
     match instance {
         LayerInstance::Sole => Ok(matched),
-        LayerInstance::Tagged => {
-            Ok(matched.with_instance(ctx.copy_retained_text(carrier, "retain kernel carrier instance")?))
-        }
+        LayerInstance::Tagged => Ok(matched
+            .with_instance(ctx.copy_retained_text(carrier, "retain kernel carrier instance")?)),
     }
 }
 
@@ -220,13 +232,31 @@ pub fn unverified_message(
         Admission::Admitted | Admission::Refused => return Ok(None),
     };
     let mut scratch = ctx.reserve_scoped(0, "kernel recovery declaration text")?;
-    let declared = scratch.with_storage(|| match (
-        ctx.get_btree_map(matched.declared(), DECLARED_SAVE_FORMAT_MAJOR, "read kernel recovery declarations")?,
-        ctx.get_btree_map(matched.declared(), DECLARED_SAVE_FORMAT_MINOR, "read kernel recovery declarations")?,
-    ) {
-        (Some(major), Some(minor)) => ctx.format_retained(format_args!("save format {major}.{minor}"), "kernel recovery declaration text"),
-        (Some(major), None) => ctx.format_retained(format_args!("save format major {major}"), "kernel recovery declaration text"),
-        (None, _) => ctx.copy_retained_text("no save format", "kernel recovery declaration text"),
+    let declared = scratch.with_storage(|| {
+        match (
+            ctx.get_btree_map(
+                matched.declared(),
+                DECLARED_SAVE_FORMAT_MAJOR,
+                "read kernel recovery declarations",
+            )?,
+            ctx.get_btree_map(
+                matched.declared(),
+                DECLARED_SAVE_FORMAT_MINOR,
+                "read kernel recovery declarations",
+            )?,
+        ) {
+            (Some(major), Some(minor)) => ctx.format_retained(
+                format_args!("save format {major}.{minor}"),
+                "kernel recovery declaration text",
+            ),
+            (Some(major), None) => ctx.format_retained(
+                format_args!("save format major {major}"),
+                "kernel recovery declaration text",
+            ),
+            (None, _) => {
+                ctx.copy_retained_text("no save format", "kernel recovery declaration text")
+            }
+        }
     })?;
     let message = match using.as_ref() {
         None => ctx.format_retained(format_args!("{subject} declares {declared}; its recovery names no declared save-band grammar as a substitute"), "retain kernel recovery message")?,
@@ -337,14 +367,22 @@ mod tests {
 
     #[test]
     fn recovery_message_retains_only_the_final_text() {
-        let matched = classify(&cadmpeg_test_support::service_decode_context(),
-            KernelHeaderRef::Acis(&header(RefWidth::Four, Some(70_001)))).unwrap();
+        let matched = classify(
+            &cadmpeg_test_support::service_decode_context(),
+            KernelHeaderRef::Acis(&header(RefWidth::Four, Some(70_001))),
+        )
+        .unwrap();
         let expected = "the carrier declares save format 700.1, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-218` declares, and what they decoded is reported as it decoded";
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
         let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
-        assert_eq!(unverified_message(&ctx, "the carrier", &matched).unwrap().as_deref(), Some(expected));
+        assert_eq!(
+            unverified_message(&ctx, "the carrier", &matched)
+                .unwrap()
+                .as_deref(),
+            Some(expected)
+        );
     }
 
     #[test]
@@ -550,14 +588,35 @@ mod tests {
     fn kernel_layer_preserves_declaration_and_carrier_refusals() {
         use cadmpeg_core::decode::ResourceDimension;
         for (dimension, operation) in [
-            (ResourceDimension::RetainedBytes, "retain kernel dialect declarations"),
-            (ResourceDimension::CollectionItems, "index kernel carrier declaration"),
-            (ResourceDimension::RetainedBytes, "retain kernel carrier declaration"),
-            (ResourceDimension::RetainedBytes, "index kernel carrier declaration"),
-            (ResourceDimension::RetainedBytes, "retain kernel carrier instance"),
+            (
+                ResourceDimension::RetainedBytes,
+                "retain kernel dialect declarations",
+            ),
+            (
+                ResourceDimension::CollectionItems,
+                "index kernel carrier declaration",
+            ),
+            (
+                ResourceDimension::RetainedBytes,
+                "retain kernel carrier declaration",
+            ),
+            (
+                ResourceDimension::RetainedBytes,
+                "index kernel carrier declaration",
+            ),
+            (
+                ResourceDimension::RetainedBytes,
+                "retain kernel carrier instance",
+            ),
         ] {
-            let limit = crate::test_support::resource_limit_at(&[], dimension, operation,
-                |ctx| classify_layer(ctx, KernelHeaderRef::Unknown, "stream@12", LayerInstance::Tagged));
+            let limit = crate::test_support::resource_limit_at(&[], dimension, operation, |ctx| {
+                classify_layer(
+                    ctx,
+                    KernelHeaderRef::Unknown,
+                    "stream@12",
+                    LayerInstance::Tagged,
+                )
+            });
             assert_eq!(limit.dimension, dimension);
             assert_eq!(limit.operation, operation);
         }

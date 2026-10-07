@@ -168,18 +168,23 @@ impl<'a> Cur<'a> {
             Ok(scratch) => scratch,
             Err(error) => return Some(Err(error)),
         };
-        let mut values = match scratch.with_storage(|| ctx.collection_vec(count, "ASM counted float array")) {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
-        let parsed = ctx.find_map(0..count, |_| {
-            let Some(value) = self.take_f64() else {
-                self.pos = mark;
-                return Ok(Some(()));
+        let mut values =
+            match scratch.with_storage(|| ctx.collection_vec(count, "ASM counted float array")) {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
             };
-            values.push(value);
-            Ok(None)
-        }, "scan ASM counted float array");
+        let parsed = ctx.find_map(
+            0..count,
+            |_| {
+                let Some(value) = self.take_f64() else {
+                    self.pos = mark;
+                    return Ok(Some(()));
+                };
+                values.push(value);
+                Ok(None)
+            },
+            "scan ASM counted float array",
+        );
         match parsed {
             Err(error) => Some(Err(error)),
             Ok(Some(())) => None,
@@ -251,18 +256,26 @@ pub(super) fn take_knot_table(
     };
     let mut sum = Some(0usize);
     let mut expanded_len = Some(0usize);
-    let parsed = ctx.find_map(0..n, |index| {
-        let Some(value) = cur.take_f64() else { return Ok(Some(())); };
-        let Some(multiplicity) = cur.take_long() else { return Ok(Some(())); };
-        let count = usize::try_from(multiplicity).ok();
-        sum = sum.and_then(|sum| sum.checked_add(count?));
-        expanded_len = expanded_len.and_then(|length| {
-            length.checked_add(count?.checked_add(usize::from(index == 0 || index + 1 == n))?)
-        });
-        values.push(value);
-        mults.push(multiplicity);
-        Ok(None)
-    }, "scan ASM knot pairs");
+    let parsed = ctx.find_map(
+        0..n,
+        |index| {
+            let Some(value) = cur.take_f64() else {
+                return Ok(Some(()));
+            };
+            let Some(multiplicity) = cur.take_long() else {
+                return Ok(Some(()));
+            };
+            let count = usize::try_from(multiplicity).ok();
+            sum = sum.and_then(|sum| sum.checked_add(count?));
+            expanded_len = expanded_len.and_then(|length| {
+                length.checked_add(count?.checked_add(usize::from(index == 0 || index + 1 == n))?)
+            });
+            values.push(value);
+            mults.push(multiplicity);
+            Ok(None)
+        },
+        "scan ASM knot pairs",
+    );
     match parsed {
         Err(error) => return Some(Err(error)),
         Ok(Some(())) => return None,
@@ -288,7 +301,9 @@ pub(super) fn take_knot_table(
             Ok(runs) => runs,
             Err(error) => return Some(Err(error.into())),
         };
-        for _ in runs { expanded.push(*value); }
+        for _ in runs {
+            expanded.push(*value);
+        }
     }
     Some(Ok((expanded, expansion.n_poles)))
 }
@@ -335,25 +350,29 @@ fn walk_owned_markers(
     // matches it is the one close this walk admits at depth zero.
     let mut outer = usize::from(matches!(toks.first(), Some(Token::SubtypeOpen)));
     let start = outer;
-    let malformed = ctx.find_map(toks[start..].iter().enumerate(), |(index, token)| {
-        let pos = start + index;
-        match token {
-            Token::SubtypeOpen => depth += 1,
-            Token::SubtypeClose => match depth.checked_sub(1) {
-                Some(next) => depth = next,
-                None => match outer.checked_sub(1) {
-                    Some(next) => outer = next,
-                    None => return Ok(Some(false)),
+    let malformed = ctx.find_map(
+        toks[start..].iter().enumerate(),
+        |(index, token)| {
+            let pos = start + index;
+            match token {
+                Token::SubtypeOpen => depth += 1,
+                Token::SubtypeClose => match depth.checked_sub(1) {
+                    Some(next) => depth = next,
+                    None => match outer.checked_sub(1) {
+                        Some(next) => outer = next,
+                        None => return Ok(Some(false)),
+                    },
                 },
-            },
-            _ => {
-                if depth == 0 && marker_at(toks, pos).is_some() {
-                    ctx.push_vec(&mut out, pos, "ASM owned spline markers")?;
+                _ => {
+                    if depth == 0 && marker_at(toks, pos).is_some() {
+                        ctx.push_vec(&mut out, pos, "ASM owned spline markers")?;
+                    }
                 }
             }
-        }
-        Ok(None)
-    }, "scan ASM owned spline markers")?;
+            Ok(None)
+        },
+        "scan ASM owned spline markers",
+    )?;
     Ok((out, malformed.is_none()))
 }
 
@@ -370,24 +389,35 @@ pub(super) fn owned_subtype_defs<'a>(
 ) -> Option<Result<Vec<(usize, &'a str)>, cadmpeg_core::CodecError>> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
-    let walked = ctx.find_map(toks.iter().enumerate(), |(pos, token)| {
-        match token {
-            Token::SubtypeOpen => {
-                if depth == 0 {
-                    if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1) {
-                        ctx.push_vec(&mut owned, (pos, name.as_str()), "ASM owned subtype definitions")?;
+    let walked = ctx.find_map(
+        toks.iter().enumerate(),
+        |(pos, token)| {
+            match token {
+                Token::SubtypeOpen => {
+                    if depth == 0 {
+                        if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1)
+                        {
+                            ctx.push_vec(
+                                &mut owned,
+                                (pos, name.as_str()),
+                                "ASM owned subtype definitions",
+                            )?;
+                        }
                     }
+                    depth += 1;
                 }
-                depth += 1;
+                Token::SubtypeClose => {
+                    let Some(next) = depth.checked_sub(1) else {
+                        return Ok(Some(false));
+                    };
+                    depth = next;
+                }
+                _ => {}
             }
-            Token::SubtypeClose => {
-                let Some(next) = depth.checked_sub(1) else { return Ok(Some(false)); };
-                depth = next;
-            }
-            _ => {}
-        }
-        Ok(None)
-    }, "scan ASM owned subtype definitions");
+            Ok(None)
+        },
+        "scan ASM owned subtype definitions",
+    );
     match walked {
         Err(error) => Some(Err(error)),
         Ok(Some(false)) => None,
@@ -407,30 +437,49 @@ pub(super) fn find_owned_subtype_marker<'n>(
     toks: &[Token],
     names: &[&'n str],
 ) -> Option<Result<(usize, &'n str), cadmpeg_core::CodecError>> {
-    if names.is_empty() { return None; }
+    if names.is_empty() {
+        return None;
+    }
     let mut depth = 0usize;
     let mut best = None;
-    let walked = ctx.find_map(toks.iter().enumerate(), |(pos, token)| {
-        match token {
-            Token::SubtypeOpen => {
-                if depth == 0 && best.is_none_or(|(rank, _, _)| rank != 0) {
-                    let priorities = &names[..best.map_or(names.len(), |(rank, _, _)| rank)];
-                    if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1) {
-                        if let Some(rank) = ctx.position_by(priorities, |candidate| ctx.equal_bytes(candidate.as_bytes(), name.as_bytes(), "match ASM construction name"), "find ASM construction priority")? {
-                            best = Some((rank, pos, names[rank]));
+    let walked = ctx.find_map(
+        toks.iter().enumerate(),
+        |(pos, token)| {
+            match token {
+                Token::SubtypeOpen => {
+                    if depth == 0 && best.is_none_or(|(rank, _, _)| rank != 0) {
+                        let priorities = &names[..best.map_or(names.len(), |(rank, _, _)| rank)];
+                        if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1)
+                        {
+                            if let Some(rank) = ctx.position_by(
+                                priorities,
+                                |candidate| {
+                                    ctx.equal_bytes(
+                                        candidate.as_bytes(),
+                                        name.as_bytes(),
+                                        "match ASM construction name",
+                                    )
+                                },
+                                "find ASM construction priority",
+                            )? {
+                                best = Some((rank, pos, names[rank]));
+                            }
                         }
                     }
+                    depth += 1;
                 }
-                depth += 1;
+                Token::SubtypeClose => {
+                    let Some(next) = depth.checked_sub(1) else {
+                        return Ok(Some(false));
+                    };
+                    depth = next;
+                }
+                _ => {}
             }
-            Token::SubtypeClose => {
-                let Some(next) = depth.checked_sub(1) else { return Ok(Some(false)); };
-                depth = next;
-            }
-            _ => {}
-        }
-        Ok(None)
-    }, "scan ASM owned construction markers");
+            Ok(None)
+        },
+        "scan ASM owned construction markers",
+    );
     match walked {
         Err(error) => Some(Err(error)),
         Ok(Some(false)) => None,
@@ -446,28 +495,42 @@ pub fn owned_construction_subtype(
 ) -> Option<Result<String, cadmpeg_core::CodecError>> {
     let mut depth = 0usize;
     let mut first = None;
-    let walked = ctx.find_map(toks.iter().enumerate(), |(pos, token)| {
-        match token {
-            Token::SubtypeOpen => {
-                if depth == 0 && first.is_none() {
-                    if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1) {
-                        if name != "ref" { first = Some(name.as_str()); }
+    let walked = ctx.find_map(
+        toks.iter().enumerate(),
+        |(pos, token)| {
+            match token {
+                Token::SubtypeOpen => {
+                    if depth == 0 && first.is_none() {
+                        if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1)
+                        {
+                            if name != "ref" {
+                                first = Some(name.as_str());
+                            }
+                        }
                     }
+                    depth += 1;
                 }
-                depth += 1;
+                Token::SubtypeClose => {
+                    let Some(next) = depth.checked_sub(1) else {
+                        return Ok(Some(false));
+                    };
+                    depth = next;
+                }
+                _ => {}
             }
-            Token::SubtypeClose => {
-                let Some(next) = depth.checked_sub(1) else { return Ok(Some(false)); };
-                depth = next;
-            }
-            _ => {}
-        }
-        Ok(None)
-    }, "scan ASM construction name");
+            Ok(None)
+        },
+        "scan ASM construction name",
+    );
     match walked {
         Err(error) => Some(Err(error)),
         Ok(Some(false)) => None,
-        Ok(_) => first.map(|name| ctx.copy_retained_text(canonical_intcurve_kind(name), "ASM construction subtype name")),
+        Ok(_) => first.map(|name| {
+            ctx.copy_retained_text(
+                canonical_intcurve_kind(name),
+                "ASM construction subtype name",
+            )
+        }),
     }
 }
 
@@ -729,18 +792,34 @@ impl SubtypeTable {
         for record in ctx.admit_iter(records, "index ASM subtype records")? {
             let mut stack = Vec::new();
             let mut scratch = ctx.reserve_scoped(0, "index ASM subtype boundaries")?;
-            for (pos, token) in ctx.admit_iter(record.tokens.as_ref(), "index ASM subtype tokens")?.enumerate() {
+            for (pos, token) in ctx
+                .admit_iter(record.tokens.as_ref(), "index ASM subtype tokens")?
+                .enumerate()
+            {
                 match token {
                     Token::SubtypeOpen => {
                         let definition = match record.tokens.get(pos + 1) {
                             Some(Token::Ident(name) | Token::SubIdent(name)) if name != "ref" => {
                                 let index = defs.len();
-                                ctx.push_vec(&mut defs, SubtypeDefinition { tokens: record.tokens.clone(), start: pos, end: None }, "index ASM subtype definitions")?;
+                                ctx.push_vec(
+                                    &mut defs,
+                                    SubtypeDefinition {
+                                        tokens: record.tokens.clone(),
+                                        start: pos,
+                                        end: None,
+                                    },
+                                    "index ASM subtype definitions",
+                                )?;
                                 Some(index)
                             }
                             _ => None,
                         };
-                        ctx.push_scoped_vec(&mut scratch, &mut stack, definition, "index ASM subtype boundary stack")?;
+                        ctx.push_scoped_vec(
+                            &mut scratch,
+                            &mut stack,
+                            definition,
+                            "index ASM subtype boundary stack",
+                        )?;
                     }
                     Token::SubtypeClose => {
                         if let Some(Some(index)) = stack.pop() {
@@ -772,7 +851,9 @@ impl SubtypeTable {
     /// The balanced scope of definition `index`, sliced from its owning record.
     pub(super) fn span(&self, index: usize) -> Option<SubtypeScope<'_>> {
         let definition = self.defs.get(index)?;
-        Some(SubtypeScope { tokens: &definition.tokens[definition.start..definition.end?] })
+        Some(SubtypeScope {
+            tokens: &definition.tokens[definition.start..definition.end?],
+        })
     }
 }
 
@@ -797,15 +878,34 @@ pub(crate) fn admit_subtype_references(
             };
             let pos = *position;
             *position += 1;
-            if !matches!(token, Token::SubtypeOpen) { continue; }
+            if !matches!(token, Token::SubtypeOpen) {
+                continue;
+            }
             let index = match (tokens.get(pos + 1), tokens.get(pos + 2)) {
-                (Some(Token::Ident(name)), Some(Token::Long(index))) if name == "ref" && *index >= 0 => usize::try_from(*index).ok(),
-                (Some(Token::Long(index)), Some(Token::SubtypeClose)) if *index >= 0 => usize::try_from(*index).ok(),
+                (Some(Token::Ident(name)), Some(Token::Long(index)))
+                    if name == "ref" && *index >= 0 =>
+                {
+                    usize::try_from(*index).ok()
+                }
+                (Some(Token::Long(index)), Some(Token::SubtypeClose)) if *index >= 0 => {
+                    usize::try_from(*index).ok()
+                }
                 _ => None,
             };
-            let Some(index) = index else { continue; };
-            if !ctx.insert_scoped_btree_value(&mut scratch, &mut visited, index, "visit ASM subtype reference")? { continue; }
-            let Some(target) = table.span(index) else { continue; };
+            let Some(index) = index else {
+                continue;
+            };
+            if !ctx.insert_scoped_btree_value(
+                &mut scratch,
+                &mut visited,
+                index,
+                "visit ASM subtype reference",
+            )? {
+                continue;
+            }
+            let Some(target) = table.span(index) else {
+                continue;
+            };
             let guard = ctx.enter_nested("follow ASM subtype reference")?;
             let frame = (target.tokens(), 0usize, Some(guard));
             ctx.push_scoped_vec(&mut scratch, &mut pending, frame, "walk ASM subtype stack")?;
@@ -916,13 +1016,15 @@ mod tests {
             Token::Ident("arbitrary".into()),
             Token::SubtypeClose,
         ];
-        let limit = crate::test_support::resource_limit_at(&[], ResourceDimension::RetainedBytes,
-            "ASM construction subtype name", |ctx| owned_construction_subtype_ctx(ctx, &tokens).expect("subtype exists"));
+        let limit = crate::test_support::resource_limit_at(
+            &[],
+            ResourceDimension::RetainedBytes,
+            "ASM construction subtype name",
+            |ctx| owned_construction_subtype_ctx(ctx, &tokens).expect("subtype exists"),
+        );
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(limit.operation, "ASM construction subtype name");
     }
-
-
 
     fn cache_scope(toks: &[Token]) -> Option<&[Token]> {
         with_ctx(|ctx| cache_scope_ctx(ctx, toks).transpose().unwrap())
@@ -936,13 +1038,15 @@ mod tests {
             Token::Ident("nubs".into()),
             Token::SubtypeClose,
         ];
-        let limit = crate::test_support::resource_limit_at(&[], ResourceDimension::CollectionItems,
-            "ASM owned spline markers", |ctx| owned_marker_positions_ctx(ctx, &tokens).expect("owned markers"));
+        let limit = crate::test_support::resource_limit_at(
+            &[],
+            ResourceDimension::CollectionItems,
+            "ASM owned spline markers",
+            |ctx| owned_marker_positions_ctx(ctx, &tokens).expect("owned markers"),
+        );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "ASM owned spline markers");
     }
-
-
 
     #[test]
     fn owned_subtype_vector_refuses_collection_limit() {
@@ -952,13 +1056,15 @@ mod tests {
             Token::Ident("exactcur".into()),
             Token::SubtypeClose,
         ];
-        let limit = crate::test_support::resource_limit_at(&[], ResourceDimension::CollectionItems,
-            "ASM owned subtype definitions", |ctx| owned_subtype_defs_ctx(ctx, &tokens).expect("owned definitions"));
+        let limit = crate::test_support::resource_limit_at(
+            &[],
+            ResourceDimension::CollectionItems,
+            "ASM owned subtype definitions",
+            |ctx| owned_subtype_defs_ctx(ctx, &tokens).expect("owned definitions"),
+        );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "ASM owned subtype definitions");
     }
-
-
 
     #[test]
     fn subtype_table_vector_refuses_collection_limit() {
@@ -975,13 +1081,15 @@ mod tests {
             offset: 0,
             len: 0,
         };
-        let limit = crate::test_support::resource_limit_at(&[], ResourceDimension::CollectionItems,
-            "index ASM subtype definitions", |ctx| super::SubtypeTable::from_records(ctx, std::slice::from_ref(&record)));
+        let limit = crate::test_support::resource_limit_at(
+            &[],
+            ResourceDimension::CollectionItems,
+            "index ASM subtype definitions",
+            |ctx| super::SubtypeTable::from_records(ctx, std::slice::from_ref(&record)),
+        );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "index ASM subtype definitions");
     }
-
-
 
     #[test]
     fn subtype_reference_walk_refuses_depth_before_following_next_definition() {
@@ -1052,27 +1160,50 @@ mod tests {
         };
         let records = [record];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
-        let limit = crate::test_support::resource_limit_at(&[0], ResourceDimension::WorkUnits,
-            "scan ASM subtype references", |ctx| super::admit_subtype_references(ctx, &records, &table));
+        let limit = crate::test_support::resource_limit_at(
+            &[0],
+            ResourceDimension::WorkUnits,
+            "scan ASM subtype references",
+            |ctx| super::admit_subtype_references(ctx, &records, &table),
+        );
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "scan ASM subtype references");
     }
 
     #[test]
     fn indexed_spans_preserve_nested_and_incomplete_definition_boundaries() {
-        let tokens = vec![Token::SubtypeClose, Token::SubtypeOpen, ident("outer"),
-            Token::SubtypeOpen, ident("child"), Token::SubtypeClose,
-            Token::SubtypeOpen, ident("ref"), Token::Long(1), Token::SubtypeClose];
-        let records = [crate::sab::Record { index: 0, name: "spline".into(),
-            tokens: tokens.clone().into(), offset: 0, len: 0 }];
+        let tokens = vec![
+            Token::SubtypeClose,
+            Token::SubtypeOpen,
+            ident("outer"),
+            Token::SubtypeOpen,
+            ident("child"),
+            Token::SubtypeClose,
+            Token::SubtypeOpen,
+            ident("ref"),
+            Token::Long(1),
+            Token::SubtypeClose,
+        ];
+        let records = [crate::sab::Record {
+            index: 0,
+            name: "spline".into(),
+            tokens: tokens.clone().into(),
+            offset: 0,
+            len: 0,
+        }];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         assert!(table.span(0).is_none());
         assert_eq!(table.span(1).unwrap().tokens(), &tokens[3..6]);
         assert!(table.span(2).is_none());
         let mut complete = tokens;
         complete.push(Token::SubtypeClose);
-        let records = [crate::sab::Record { index: 0, name: "spline".into(),
-            tokens: complete.clone().into(), offset: 0, len: 0 }];
+        let records = [crate::sab::Record {
+            index: 0,
+            name: "spline".into(),
+            tokens: complete.clone().into(),
+            offset: 0,
+            len: 0,
+        }];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         assert_eq!(table.span(0).unwrap().tokens(), &complete[1..]);
         assert_eq!(table.span(1).unwrap().interior(), &[ident("child")]);
@@ -1181,13 +1312,17 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         let toks = [Token::Long(2), Token::Double(1.0), Token::Double(2.0)];
         let mut position = 0;
-        let limit = crate::test_support::resource_limit_at(&[], ResourceDimension::CollectionItems,
-            "ASM counted float array", |ctx| {
+        let limit = crate::test_support::resource_limit_at(
+            &[],
+            ResourceDimension::CollectionItems,
+            "ASM counted float array",
+            |ctx| {
                 let mut cur = Cur::at(&toks, 0);
                 let result = cur.take_float_array(ctx).expect("counted float array");
                 position = cur.pos();
                 result
-            });
+            },
+        );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(position, 1);
     }
