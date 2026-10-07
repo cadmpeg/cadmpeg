@@ -756,7 +756,9 @@ impl<T: CloneForDecode> CloneForDecode for [T; 3] {
     }
 }
 
-impl<K: CloneForDecode + Ord + cadmpeg_core::decode::cost::DecodeCost, V: CloneForDecode> CloneForDecode for BTreeMap<K, V> {
+impl<K: CloneForDecode + Ord + cadmpeg_core::decode::cost::DecodeCost, V: CloneForDecode>
+    CloneForDecode for BTreeMap<K, V>
+{
     fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,

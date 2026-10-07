@@ -631,7 +631,13 @@ impl AnnotationState {
         let stream = StreamName::try_from(stream)
             .map_err(|_| CodecError::malformed("annotation stream name is empty"))?;
         let stream = StreamHandle::new(ctx, stream, "annotation stream handles")?;
-        self.insert_provenance(ctx, std::borrow::Cow::Borrowed(&id), &stream, offset, Some(tag))?;
+        self.insert_provenance(
+            ctx,
+            std::borrow::Cow::Borrowed(&id),
+            &stream,
+            offset,
+            Some(tag),
+        )?;
         self.exactness(ctx, &id, exactness)?;
         Ok(())
     }
@@ -663,7 +669,11 @@ impl AnnotationState {
         offset: u64,
         tag: Option<&str>,
     ) -> Result<(), CodecError> {
-        if !ctx.contains_key_btree_map(&self.annotations.provenance, id.as_ref(), "collect source provenance")? {
+        if !ctx.contains_key_btree_map(
+            &self.annotations.provenance,
+            id.as_ref(),
+            "collect source provenance",
+        )? {
             if let std::borrow::Cow::Borrowed(text) = id {
                 id = std::borrow::Cow::Owned(
                     ctx.copy_retained_text(text, "retain source provenance identity")?,
@@ -676,10 +686,19 @@ impl AnnotationState {
         let provenance = AnnotationProvenance::annotation(stream.0.clone(), offset, tag);
         match id {
             std::borrow::Cow::Owned(id) => {
-                ctx.insert_btree_map(&mut self.annotations.provenance, id, provenance, "collect source provenance")?;
+                ctx.insert_btree_map(
+                    &mut self.annotations.provenance,
+                    id,
+                    provenance,
+                    "collect source provenance",
+                )?;
             }
             std::borrow::Cow::Borrowed(id) => {
-                if let Some(previous) = ctx.get_mut_btree_map(&mut self.annotations.provenance, id, "collect source provenance")? {
+                if let Some(previous) = ctx.get_mut_btree_map(
+                    &mut self.annotations.provenance,
+                    id,
+                    "collect source provenance",
+                )? {
                     *previous = provenance;
                 }
             }
@@ -941,8 +960,12 @@ pub(crate) fn admit_btree_append<K: Ord, V>(
         return Ok(());
     }
     let mut longest = 0;
-    for (len, key) in ctx.admit_iter(left, operation)?.map(|(key, _)| key)
-        .chain(ctx.admit_iter(right, operation)?.map(|(key, _)| key)).enumerate() {
+    for (len, key) in ctx
+        .admit_iter(left, operation)?
+        .map(|(key, _)| key)
+        .chain(ctx.admit_iter(right, operation)?.map(|(key, _)| key))
+        .enumerate()
+    {
         longest = longest.max(key_len(key));
         ctx.admit_btree_node_storage::<K, V>(len, operation)?;
         ctx.charge_collection_items(1, operation)?;
@@ -974,7 +997,9 @@ impl Annotations {
         for (id, source) in ctx.admit_iter(&self.provenance, operation)? {
             let id = storage.with_storage(|| ctx.copy_retained_text(id, operation))?;
             let source = storage.with_storage(|| source.try_clone_for_decode(ctx, operation))?;
-            storage.with_storage(|| ctx.insert_btree_map(&mut annotations.provenance, id, source, operation))?;
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut annotations.provenance, id, source, operation)
+            })?;
         }
         for (id, note) in ctx.admit_iter(&self.exactness, operation)? {
             let id = storage.with_storage(|| ctx.copy_retained_text(id, operation))?;
@@ -983,7 +1008,9 @@ impl Annotations {
                 let field = FieldName(
                     storage.with_storage(|| ctx.copy_retained_text(field.as_str(), operation))?,
                 );
-                storage.with_storage(|| ctx.insert_btree_map(&mut fields, field, *exactness, operation))?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(&mut fields, field, *exactness, operation)
+                })?;
             }
             let note = match note {
                 ExactnessNote::Entity { entity, .. } => ExactnessNote::Entity {
@@ -994,7 +1021,9 @@ impl Annotations {
                     fields: NonEmptyMap(fields),
                 },
             };
-            storage.with_storage(|| ctx.insert_btree_map(&mut annotations.exactness, id, note, operation))?;
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut annotations.exactness, id, note, operation)
+            })?;
         }
         Ok(AnnotationTransaction {
             annotations,
@@ -1038,8 +1067,14 @@ impl Annotations {
         }
         let mut scratch = ctx.reserve_scoped(0, operation)?;
         let mut ids = std::collections::BTreeSet::new();
-        for id in ctx.admit_iter(&self.provenance, operation)?.map(|(id, _)| id)
-            .chain(ctx.admit_iter(&self.exactness, operation)?.map(|(id, _)| id)) {
+        for id in ctx
+            .admit_iter(&self.provenance, operation)?
+            .map(|(id, _)| id)
+            .chain(
+                ctx.admit_iter(&self.exactness, operation)?
+                    .map(|(id, _)| id),
+            )
+        {
             ctx.insert_scoped_btree_value(&mut scratch, &mut ids, id, operation)?;
         }
         let mut targets = std::collections::BTreeSet::new();
@@ -1174,9 +1209,11 @@ impl Annotations {
         if let Some(id) = ctx.find_map(
             other.provenance.keys().chain(other.exactness.keys()),
             |id| {
-                Ok((ctx.contains_key_btree_map(&self.provenance, id, operation)?
-                    || ctx.contains_key_btree_map(&self.exactness, id, operation)?)
-                    .then_some(id))
+                Ok(
+                    (ctx.contains_key_btree_map(&self.provenance, id, operation)?
+                        || ctx.contains_key_btree_map(&self.exactness, id, operation)?)
+                    .then_some(id),
+                )
             },
             operation,
         )? {

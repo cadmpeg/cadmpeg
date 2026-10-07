@@ -16,7 +16,8 @@ fn committed_native_identity_cache_borrows_text_from_document() {
     );
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "committed native cache live", |cap| {
+        "committed native cache live",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = 0;
@@ -24,13 +25,22 @@ fn committed_native_identity_cache_borrows_text_from_document() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let probe_id = "test:native:record#short";
             let mut candidate = CadIr::empty();
-            candidate.native.namespace_mut("test").arenas_mut().insert("records".into(),
-                vec![NativeRecord::new(Identity::new(probe_id).unwrap(), serde_json::Map::new()).unwrap()]);
+            candidate.native.namespace_mut("test").arenas_mut().insert(
+                "records".into(),
+                vec![
+                    NativeRecord::new(Identity::new(probe_id).unwrap(), serde_json::Map::new())
+                        .unwrap(),
+                ],
+            );
             let mut session = CommitSession::new(&mut candidate, &ctx, None)?;
             assert!(session.contains(probe_id)?);
-            ctx.reserve_scoped(1, "committed native cache live").map(drop)
-        });
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("live cache boundary"); };
+            ctx.reserve_scoped(1, "committed native cache live")
+                .map(drop)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("live cache boundary");
+    };
     let bytes = limit.used;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -153,19 +163,32 @@ fn committed_native_cache_admits_map_key_hashes_before_lookup() {
         }],
     )]);
     for arena_lookup in [false, true] {
-        let operation = if arena_lookup { "find committed native arena" } else { "find committed native namespace" };
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = crate::draft::committed_identity_contains(&ir, &[], &index, target, &ctx);
-            if let Err(CodecError::ResourceLimit(limit)) = &result {
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
-            }
-            result
-        });
-        let CodecError::ResourceLimit(limit) = error else { panic!("native map-key hash must refuse"); };
+        let operation = if arena_lookup {
+            "find committed native arena"
+        } else {
+            "find committed native namespace"
+        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result =
+                    crate::draft::committed_identity_contains(&ir, &[], &index, target, &ctx);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                    );
+                }
+                result
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("native map-key hash must refuse");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(
             limit.operation,
@@ -175,6 +198,5 @@ fn committed_native_cache_admits_map_key_hashes_before_lookup() {
                 "find committed native namespace"
             }
         );
-
     }
 }

@@ -629,10 +629,16 @@ mod tests {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_work_units = cap;
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                    let result = make(1.0, rational).scaled_lengths_owned_for_decode(&ctx, PositiveReal::new(2.0).expect("scale"));
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = make(1.0, rational).scaled_lengths_owned_for_decode(
+                        &ctx,
+                        PositiveReal::new(2.0).expect("scale"),
+                    );
                     if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                        assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                        assert!(
+                            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                        );
                     }
                     result
                 },

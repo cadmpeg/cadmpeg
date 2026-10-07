@@ -13,29 +13,29 @@ fn stream_handle_constructor_preserves_the_original_refusal() {
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, "source handle", |cap| {
             let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-            _ => unreachable!(),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let create = || StreamHandle::new(&ctx, crate::stream_name!("source"), "source handle");
-        let result = if dimension == ResourceDimension::MaterializedBytes {
-            ctx.with_scoped_storage("temporary source handle", create)
-                .map(|_| ())
-        } else {
-            create().map(|_| ())
-        };
-        if let Err(CodecError::ResourceLimit(limit)) = &result {
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(limit.operation, "source handle");
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
-        );
-        }
-        result
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let create = || StreamHandle::new(&ctx, crate::stream_name!("source"), "source handle");
+            let result = if dimension == ResourceDimension::MaterializedBytes {
+                ctx.with_scoped_storage("temporary source handle", create)
+                    .map(|_| ())
+            } else {
+                create().map(|_| ())
+            };
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(limit.dimension, dimension);
+                assert_eq!(limit.operation, "source handle");
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit)
+                );
+            }
+            result
         });
     }
 }

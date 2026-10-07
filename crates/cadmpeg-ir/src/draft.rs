@@ -198,12 +198,16 @@ fn identity_index_contains(
     let Some(slots) = ctx.get_btree_map(index, &hash, "draft identity bucket lookup")? else {
         return Ok(false);
     };
-    ctx.any_by(slots, |slot| {
-        match model.identity_at(slot.kind, slot.index) {
-            Some(candidate) => identities_equal(ctx, candidate, identity, "compare draft identities"),
+    ctx.any_by(
+        slots,
+        |slot| match model.identity_at(slot.kind, slot.index) {
+            Some(candidate) => {
+                identities_equal(ctx, candidate, identity, "compare draft identities")
+            }
             None => Ok(false),
-        }
-    }, "draft identity collision scan")
+        },
+        "draft identity collision scan",
+    )
 }
 
 fn identities_equal(
@@ -442,14 +446,27 @@ impl ModelDraft<DraftAccounting> {
             "draft exactness lookup",
         )?;
         if exactness == Exactness::ByteExact {
-            ctx.remove_btree_map(&mut self.accounting.exactness, &identity, "draft exactness comparisons")?;
+            ctx.remove_btree_map(
+                &mut self.accounting.exactness,
+                &identity,
+                "draft exactness comparisons",
+            )?;
         } else {
-            let identity = if ctx.contains_key_btree_map(&self.accounting.exactness, &identity, "draft exactness comparisons")? {
+            let identity = if ctx.contains_key_btree_map(
+                &self.accounting.exactness,
+                &identity,
+                "draft exactness comparisons",
+            )? {
                 identity
             } else {
                 ctx.copy_retained_text(&identity, "draft exactness identity")?
             };
-            ctx.insert_btree_map(&mut self.accounting.exactness, identity, exactness, "draft exactness records")?;
+            ctx.insert_btree_map(
+                &mut self.accounting.exactness,
+                identity,
+                exactness,
+                "draft exactness records",
+            )?;
         }
         Ok(())
     }
@@ -618,9 +635,17 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         self.ctx
             .reserve_vec(&mut self.state.unknowns, 1, "staged unknown record slots")?;
         if let Some(index) = &mut self.state.identities {
-            let hash = self.ctx.hash_value(record.id().as_str(), "hash staged unknown identity")?;
+            let hash = self
+                .ctx
+                .hash_value(record.id().as_str(), "hash staged unknown identity")?;
             self.storage.with_storage(|| {
-                self.ctx.push_btree_group(index, hash, CommittedIdentity::StagedUnknown(self.state.unknowns.len()), "committed identity slots", "committed identity slots")
+                self.ctx.push_btree_group(
+                    index,
+                    hash,
+                    CommittedIdentity::StagedUnknown(self.state.unknowns.len()),
+                    "committed identity slots",
+                    "committed identity slots",
+                )
             })?;
         }
         self.state.unknowns.push(record);
@@ -647,7 +672,9 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         let ModelDraft { model, accounting } = draft;
         let ((), transaction) = transaction.update(|annotations| {
             let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-            for (identity, exactness) in ctx.admit_iter(accounting.exactness, "draft exactness transfer scan")? {
+            for (identity, exactness) in
+                ctx.admit_iter(accounting.exactness, "draft exactness transfer scan")?
+            {
                 builder.exactness_owned(ctx, identity, exactness)?;
             }
             *annotations = builder.build();
@@ -680,26 +707,41 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         let ctx = self.ctx;
         let unknowns = &self.state.unknowns;
         let Some(index) = &mut self.state.identities else {
-            return self.state.base.borrow_mut().try_append(ctx, model, native,
-                |combined| admit(combined, unknowns));
+            return self
+                .state
+                .base
+                .borrow_mut()
+                .try_append(ctx, model, native, |combined| admit(combined, unknowns));
         };
         let staged = ctx.with_scoped_storage("candidate committed identity staging", || {
-            stage_committed_identities(self.state.base.borrow(), &model, Some(&native),
-                self.state.unknown_namespace, ctx)
+            stage_committed_identities(
+                self.state.base.borrow(),
+                &model,
+                Some(&native),
+                self.state.unknown_namespace,
+                ctx,
+            )
         })?;
         let cache = &mut self.storage;
-        self.state.base.borrow_mut().try_append(ctx, model, native, |combined| {
-            let result = admit(combined, unknowns)?;
-            if result.is_ok() {
-                for (hash, mut group) in ctx.admit_iter(staged.0, "committed identity transfer scan")? {
-                    cache.with_storage(|| {
-                        let target = ctx.entry_btree_map(index, hash, "committed identity slots")?.or_default();
-                        ctx.append_vec(target, &mut group, "committed identity transfer moves")
-                    })?;
+        self.state
+            .base
+            .borrow_mut()
+            .try_append(ctx, model, native, |combined| {
+                let result = admit(combined, unknowns)?;
+                if result.is_ok() {
+                    for (hash, mut group) in
+                        ctx.admit_iter(staged.0, "committed identity transfer scan")?
+                    {
+                        cache.with_storage(|| {
+                            let target = ctx
+                                .entry_btree_map(index, hash, "committed identity slots")?
+                                .or_default();
+                            ctx.append_vec(target, &mut group, "committed identity transfer moves")
+                        })?;
+                    }
                 }
-            }
-            Ok(result)
-        })
+                Ok(result)
+            })
     }
 
     /// Look up an identity through the live caller-accounted cache.
@@ -727,28 +769,53 @@ fn index_committed_identities(
     crate::document::arena_registry!(collect_model_identities);
     for (format, records) in ctx.admit_iter(&base.native.0, "committed native namespace scan")? {
         let replaces_unknowns = match unknown_namespace {
-            Some(replacement) => identities_equal(ctx, format, replacement, "compare committed unknown namespace")?,
+            Some(replacement) => identities_equal(
+                ctx,
+                format,
+                replacement,
+                "compare committed unknown namespace",
+            )?,
             None => false,
         };
         let namespace = ctx.hash_value(format, "hash committed native namespace")?;
         for (arena, records) in ctx.admit_iter(records.arenas(), "committed native arena scan")? {
-            if replaces_unknowns && identities_equal(ctx, arena, "unknowns", "compare committed unknown arena")? {
+            if replaces_unknowns
+                && identities_equal(ctx, arena, "unknowns", "compare committed unknown arena")?
+            {
                 continue;
             }
             let arena = ctx.hash_value(arena, "hash committed native arena")?;
-            for (record, value) in ctx.admit_iter(records, "committed native identity scan")?.enumerate() {
+            for (record, value) in ctx
+                .admit_iter(records, "committed native identity scan")?
+                .enumerate()
+            {
                 let hash = ctx.hash_value(value.id(), "committed native identity scan")?;
-                ctx.push_btree_group(&mut identities, hash, CommittedIdentity::Native {
+                ctx.push_btree_group(
+                    &mut identities,
+                    hash,
+                    CommittedIdentity::Native {
                         namespace_hash: namespace,
                         arena_hash: arena,
                         record,
-                    }, "committed identity slots", "committed identity slots")?;
+                    },
+                    "committed identity slots",
+                    "committed identity slots",
+                )?;
             }
         }
     }
-    for (index, record) in ctx.admit_iter(unknowns, "committed unknown identity scan")?.enumerate() {
+    for (index, record) in ctx
+        .admit_iter(unknowns, "committed unknown identity scan")?
+        .enumerate()
+    {
         let hash = ctx.hash_value(record.id().as_str(), "committed unknown identity scan")?;
-        ctx.push_btree_group(&mut identities, hash, CommittedIdentity::StagedUnknown(index), "committed identity slots", "committed identity slots")?;
+        ctx.push_btree_group(
+            &mut identities,
+            hash,
+            CommittedIdentity::StagedUnknown(index),
+            "committed identity slots",
+            "committed identity slots",
+        )?;
     }
     Ok(identities)
 }
@@ -765,31 +832,65 @@ fn committed_identity_contains(
         return Ok(false);
     }
     let hash = ctx.hash_value(identity, "committed identity lookup")?;
-    let Some(owners) = ctx.get_btree_map(identities, &hash, "committed identity bucket lookup")? else {
+    let Some(owners) = ctx.get_btree_map(identities, &hash, "committed identity bucket lookup")?
+    else {
         return Ok(false);
     };
-    ctx.any_by(owners, |owner| {
-        let candidate = match owner {
-            CommittedIdentity::Neutral(slot) => base.model.identity_at(slot.kind, slot.index),
-            CommittedIdentity::StagedUnknown(index) => unknowns.get(*index).map(|record| record.id().as_str()),
-            CommittedIdentity::Native { namespace_hash, arena_hash, record } => {
-                return ctx.any_by(&base.native.0, |(format, native)| {
-                    if ctx.hash_value(format, "find committed native namespace")? != *namespace_hash { return Ok(false); }
-                    ctx.any_by(native.arenas(), |(name, records)| {
-                        if ctx.hash_value(name, "find committed native arena")? != *arena_hash { return Ok(false); }
-                        match records.get(*record) {
-                            Some(candidate) => identities_equal(ctx, candidate.id(), identity, "compare committed identities"),
-                            None => Ok(false),
-                        }
-                    }, "committed native arena scan")
-                }, "committed native namespace scan");
+    ctx.any_by(
+        owners,
+        |owner| {
+            let candidate = match owner {
+                CommittedIdentity::Neutral(slot) => base.model.identity_at(slot.kind, slot.index),
+                CommittedIdentity::StagedUnknown(index) => {
+                    unknowns.get(*index).map(|record| record.id().as_str())
+                }
+                CommittedIdentity::Native {
+                    namespace_hash,
+                    arena_hash,
+                    record,
+                } => {
+                    return ctx.any_by(
+                        &base.native.0,
+                        |(format, native)| {
+                            if ctx.hash_value(format, "find committed native namespace")?
+                                != *namespace_hash
+                            {
+                                return Ok(false);
+                            }
+                            ctx.any_by(
+                                native.arenas(),
+                                |(name, records)| {
+                                    if ctx.hash_value(name, "find committed native arena")?
+                                        != *arena_hash
+                                    {
+                                        return Ok(false);
+                                    }
+                                    match records.get(*record) {
+                                        Some(candidate) => identities_equal(
+                                            ctx,
+                                            candidate.id(),
+                                            identity,
+                                            "compare committed identities",
+                                        ),
+                                        None => Ok(false),
+                                    }
+                                },
+                                "committed native arena scan",
+                            )
+                        },
+                        "committed native namespace scan",
+                    );
+                }
+            };
+            match candidate {
+                Some(candidate) => {
+                    identities_equal(ctx, candidate, identity, "compare committed identities")
+                }
+                None => Ok(false),
             }
-        };
-        match candidate {
-            Some(candidate) => identities_equal(ctx, candidate, identity, "compare committed identities"),
-            None => Ok(false),
-        }
-    }, "committed identity collision scan")
+        },
+        "committed identity collision scan",
+    )
 }
 
 fn stage_committed_identities(
@@ -814,28 +915,51 @@ fn stage_committed_identities(
         for (format, namespace) in ctx.admit_iter(&native.0, "staged native namespace scan")? {
             let namespace_hash = ctx.hash_value(format, "hash staged native namespace")?;
             let replaces_unknowns = match unknown_namespace {
-                Some(replacement) => identities_equal(ctx, format, replacement, "compare staged unknown namespace")?,
+                Some(replacement) => {
+                    identities_equal(ctx, format, replacement, "compare staged unknown namespace")?
+                }
                 None => false,
             };
-            let existing_namespace = ctx.get_btree_map(&base.native.0, format, "find staged native namespace")?;
-            for (arena, records) in ctx.admit_iter(namespace.arenas(), "staged native arena scan")? {
-                if replaces_unknowns && identities_equal(ctx, arena, "unknowns", "compare staged unknown arena")? {
+            let existing_namespace =
+                ctx.get_btree_map(&base.native.0, format, "find staged native namespace")?;
+            for (arena, records) in
+                ctx.admit_iter(namespace.arenas(), "staged native arena scan")?
+            {
+                if replaces_unknowns
+                    && identities_equal(ctx, arena, "unknowns", "compare staged unknown arena")?
+                {
                     continue;
                 }
                 let arena_hash = ctx.hash_value(arena, "hash staged native arena")?;
                 let start = match existing_namespace {
-                    Some(namespace) => ctx.get_btree_map(namespace.arenas(), arena, "find staged native arena")?
+                    Some(namespace) => ctx
+                        .get_btree_map(namespace.arenas(), arena, "find staged native arena")?
                         .map_or(0, Vec::len),
                     None => 0,
                 };
-                for (offset, record) in ctx.admit_iter(records, "staged native identity scan")?.enumerate() {
+                for (offset, record) in ctx
+                    .admit_iter(records, "staged native identity scan")?
+                    .enumerate()
+                {
                     let hash = ctx.hash_value(record.id(), "hash staged native identity")?;
                     let position = start.checked_add(offset).ok_or_else(|| {
-                        ctx.refuse_codec_limit("staged native identity position", u64::MAX - 1, u64::MAX)
+                        ctx.refuse_codec_limit(
+                            "staged native identity position",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
                     })?;
-                    ctx.push_btree_group(&mut staged, hash, CommittedIdentity::Native {
-                        namespace_hash, arena_hash, record: position,
-                    }, "draft committed identity slots", "draft committed identity slots")?;
+                    ctx.push_btree_group(
+                        &mut staged,
+                        hash,
+                        CommittedIdentity::Native {
+                            namespace_hash,
+                            arena_hash,
+                            record: position,
+                        },
+                        "draft committed identity slots",
+                        "draft committed identity slots",
+                    )?;
                 }
             }
         }
@@ -915,7 +1039,9 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
         })?;
         for (hash, mut group) in ctx.admit_iter(staged.0, "committed identity transfer scan")? {
             cache.with_storage(|| {
-                let target = ctx.entry_btree_map(identities, hash, "committed identity slots")?.or_default();
+                let target = ctx
+                    .entry_btree_map(identities, hash, "committed identity slots")?
+                    .or_default();
                 ctx.append_vec(target, &mut group, "committed identity transfer moves")
             })?;
         }
@@ -989,7 +1115,11 @@ mod tests {
             };
             let error = cadmpeg_test_support::refusal::resource_limit_at(
                 ResourceDimension::WorkUnits,
-                if committed { "compare committed identities" } else { "compare draft identities" },
+                if committed {
+                    "compare committed identities"
+                } else {
+                    "compare draft identities"
+                },
                 |cap| {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::service();
@@ -997,14 +1127,25 @@ mod tests {
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                     let hash = crate::index::identity_hash(target);
                     let result = if committed {
-                        let index = std::collections::BTreeMap::from([(hash, vec![super::CommittedIdentity::Neutral(slot)])]);
+                        let index = std::collections::BTreeMap::from([(
+                            hash,
+                            vec![super::CommittedIdentity::Neutral(slot)],
+                        )]);
                         super::committed_identity_contains(&ir, &[], &index, target, &ctx)
                     } else {
                         let index = std::collections::BTreeMap::from([(hash, vec![slot])]);
-                        super::identity_index_contains(&ir.model, &index, ctx.hash_value(target, "hash draft identity lookup")?, target, &ctx)
+                        super::identity_index_contains(
+                            &ir.model,
+                            &index,
+                            ctx.hash_value(target, "hash draft identity lookup")?,
+                            target,
+                            &ctx,
+                        )
                     };
                     if let Err(CodecError::ResourceLimit(limit)) = &result {
-                        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                        assert!(
+                            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                        );
                     }
                     result
                 },
@@ -1022,7 +1163,6 @@ mod tests {
                     "compare draft identities"
                 }
             );
-
         }
     }
 
@@ -1031,26 +1171,50 @@ mod tests {
         let target = "test:model:point#target";
         let mut ir = CadIr::empty();
         ir.model.points.push(point(target));
-        let slot = super::IdentitySlot { kind: crate::schema::EntityKind::Point, index: 0 };
+        let slot = super::IdentitySlot {
+            kind: crate::schema::EntityKind::Point,
+            index: 0,
+        };
         let index = std::collections::BTreeMap::from([(
-            crate::index::identity_hash(target), vec![slot; 128],
+            crate::index::identity_hash(target),
+            vec![slot; 128],
         )]);
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits,
-            "draft search completed", |cap| {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "draft search completed",
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                assert!(super::identity_index_contains(&ir.model, &index, ctx.hash_value(target, "hash draft identity lookup")?, target, &ctx)?);
+                assert!(super::identity_index_contains(
+                    &ir.model,
+                    &index,
+                    ctx.hash_value(target, "hash draft identity lookup")?,
+                    target,
+                    &ctx
+                )?);
                 ctx.charge_work(1, "draft search completed")
-            });
-        let CodecError::ResourceLimit(limit) = error else { panic!("completion boundary"); };
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("completion boundary");
+        };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = limit.used;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let single = std::collections::BTreeMap::from([(crate::index::identity_hash(target), vec![slot])]);
-        assert!(super::identity_index_contains(&ir.model, &single, ctx.hash_value(target, "hash draft identity lookup").unwrap(), target, &ctx).unwrap());
+        let single =
+            std::collections::BTreeMap::from([(crate::index::identity_hash(target), vec![slot])]);
+        assert!(super::identity_index_contains(
+            &ir.model,
+            &single,
+            ctx.hash_value(target, "hash draft identity lookup")
+                .unwrap(),
+            target,
+            &ctx
+        )
+        .unwrap());
         ctx.finish_session().unwrap();
     }
 

@@ -11,84 +11,135 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let _depth = ctx.enter_nested("walk native attribute target")?;
         let kind = match value.as_object() {
-            Some(fields) => ctx.find_map(fields.iter(), |(name, value)| {
-                Ok(ctx.equal_bytes(name.as_bytes(), b"kind", "find native attribute kind")?
-                    .then(|| value.as_str()))
-            }, "find native attribute kind")?.flatten(),
+            Some(fields) => ctx
+                .find_map(
+                    fields.iter(),
+                    |(name, value)| {
+                        Ok(ctx
+                            .equal_bytes(name.as_bytes(), b"kind", "find native attribute kind")?
+                            .then(|| value.as_str()))
+                    },
+                    "find native attribute kind",
+                )?
+                .flatten(),
             None => None,
         };
         match kind {
-            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"body", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
-                ctx,
-                value,
-                "id",
-                map,
-                |owner: &Self| match owner {
-                    Self::Body(id) => Some(id),
-                    _ => None,
-                },
-            ),
-            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"face", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
-                ctx,
-                value,
-                "id",
-                map,
-                |owner: &Self| match owner {
-                    Self::Face(id) => Some(id),
-                    _ => None,
-                },
-            ),
-            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"shell", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
-                ctx,
-                value,
-                "id",
-                map,
-                |owner: &Self| match owner {
-                    Self::Shell(id) => Some(id),
-                    _ => None,
-                },
-            ),
-            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"loop", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
-                ctx,
-                value,
-                "id",
-                map,
-                |owner: &Self| match owner {
-                    Self::Loop(id) => Some(id),
-                    _ => None,
-                },
-            ),
-            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"coedge", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
-                ctx,
-                value,
-                "id",
-                map,
-                |owner: &Self| match owner {
-                    Self::Coedge(id) => Some(id),
-                    _ => None,
-                },
-            ),
-            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"edge", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
-                ctx,
-                value,
-                "id",
-                map,
-                |owner: &Self| match owner {
-                    Self::Edge(id) => Some(id),
-                    _ => None,
-                },
-            ),
-            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"vertex", "match native attribute kind")? => crate::schema::rewrite::typed::native_fields::rewrite_field(
-                ctx,
-                value,
-                "id",
-                map,
-                |owner: &Self| match owner {
-                    Self::Vertex(id) => Some(id),
-                    _ => None,
-                },
-            ),
-            Some(kind) if ctx.equal_bytes(kind.as_bytes(), b"document", "match native attribute kind")? => Ok(()),
+            Some(kind)
+                if ctx.equal_bytes(kind.as_bytes(), b"body", "match native attribute kind")? =>
+            {
+                crate::schema::rewrite::typed::native_fields::rewrite_field(
+                    ctx,
+                    value,
+                    "id",
+                    map,
+                    |owner: &Self| match owner {
+                        Self::Body(id) => Some(id),
+                        _ => None,
+                    },
+                )
+            }
+            Some(kind)
+                if ctx.equal_bytes(kind.as_bytes(), b"face", "match native attribute kind")? =>
+            {
+                crate::schema::rewrite::typed::native_fields::rewrite_field(
+                    ctx,
+                    value,
+                    "id",
+                    map,
+                    |owner: &Self| match owner {
+                        Self::Face(id) => Some(id),
+                        _ => None,
+                    },
+                )
+            }
+            Some(kind)
+                if ctx.equal_bytes(kind.as_bytes(), b"shell", "match native attribute kind")? =>
+            {
+                crate::schema::rewrite::typed::native_fields::rewrite_field(
+                    ctx,
+                    value,
+                    "id",
+                    map,
+                    |owner: &Self| match owner {
+                        Self::Shell(id) => Some(id),
+                        _ => None,
+                    },
+                )
+            }
+            Some(kind)
+                if ctx.equal_bytes(kind.as_bytes(), b"loop", "match native attribute kind")? =>
+            {
+                crate::schema::rewrite::typed::native_fields::rewrite_field(
+                    ctx,
+                    value,
+                    "id",
+                    map,
+                    |owner: &Self| match owner {
+                        Self::Loop(id) => Some(id),
+                        _ => None,
+                    },
+                )
+            }
+            Some(kind)
+                if ctx.equal_bytes(
+                    kind.as_bytes(),
+                    b"coedge",
+                    "match native attribute kind",
+                )? =>
+            {
+                crate::schema::rewrite::typed::native_fields::rewrite_field(
+                    ctx,
+                    value,
+                    "id",
+                    map,
+                    |owner: &Self| match owner {
+                        Self::Coedge(id) => Some(id),
+                        _ => None,
+                    },
+                )
+            }
+            Some(kind)
+                if ctx.equal_bytes(kind.as_bytes(), b"edge", "match native attribute kind")? =>
+            {
+                crate::schema::rewrite::typed::native_fields::rewrite_field(
+                    ctx,
+                    value,
+                    "id",
+                    map,
+                    |owner: &Self| match owner {
+                        Self::Edge(id) => Some(id),
+                        _ => None,
+                    },
+                )
+            }
+            Some(kind)
+                if ctx.equal_bytes(
+                    kind.as_bytes(),
+                    b"vertex",
+                    "match native attribute kind",
+                )? =>
+            {
+                crate::schema::rewrite::typed::native_fields::rewrite_field(
+                    ctx,
+                    value,
+                    "id",
+                    map,
+                    |owner: &Self| match owner {
+                        Self::Vertex(id) => Some(id),
+                        _ => None,
+                    },
+                )
+            }
+            Some(kind)
+                if ctx.equal_bytes(
+                    kind.as_bytes(),
+                    b"document",
+                    "match native attribute kind",
+                )? =>
+            {
+                Ok(())
+            }
             _ => Err(cadmpeg_core::CodecError::malformed(
                 "native attribute target has an invalid kind",
             )),
@@ -151,31 +202,47 @@ mod tests {
 
     #[test]
     fn native_attribute_kind_admission_preserves_wire_and_refusals() {
-        for kind in ["body", "face", "shell", "loop", "coedge", "edge", "vertex", "document"] {
+        for kind in [
+            "body", "face", "shell", "loop", "coedge", "edge", "vertex", "document",
+        ] {
             let ctx = cadmpeg_test_support::service_decode_context();
             let mut value = serde_json::json!({"kind": kind, "unrelated": "雪".repeat(1024)});
             let before = value.clone();
-            let mut mapping = IdentityMap::new(&ctx, "attribute test mapping", |id: &str| ctx.copy_retained_text(id, "attribute test identity")).unwrap();
+            let mut mapping = IdentityMap::new(&ctx, "attribute test mapping", |id: &str| {
+                ctx.copy_retained_text(id, "attribute test identity")
+            })
+            .unwrap();
             AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut mapping).unwrap();
             assert_eq!(value, before);
         }
         for operation in ["find native attribute kind", "match native attribute kind"] {
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let mut value = serde_json::json!({"kind": "document", "unrelated": "雪".repeat(1024)});
-                let before = value.clone();
-                let mut mapping = IdentityMap::new(&ctx, "attribute test mapping", |id: &str| ctx.copy_retained_text(id, "attribute test identity"))?;
-                let result = AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut mapping);
-                if let Err(CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(value, before);
-                    drop(mapping);
-                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
-                }
-                result
-            });
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    let mut value =
+                        serde_json::json!({"kind": "document", "unrelated": "雪".repeat(1024)});
+                    let before = value.clone();
+                    let mut mapping =
+                        IdentityMap::new(&ctx, "attribute test mapping", |id: &str| {
+                            ctx.copy_retained_text(id, "attribute test identity")
+                        })?;
+                    let result =
+                        AttributeTarget::rewrite_native_value(&ctx, &mut value, &mut mapping);
+                    if let Err(CodecError::ResourceLimit(limit)) = &result {
+                        assert_eq!(value, before);
+                        drop(mapping);
+                        assert!(
+                            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                        );
+                    }
+                    result
+                },
+            );
         }
     }
 }

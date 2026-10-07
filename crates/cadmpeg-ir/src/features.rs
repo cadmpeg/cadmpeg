@@ -2144,16 +2144,32 @@ impl FeatureContent {
         operation: &'static str,
     ) -> Result<(), FeatureCollectionError> {
         if !matches!(value, FeatureSourceContent::Text(_)) {
-            let distinct = ctx.all_by_limit(&self.0, |member| {
-                let equal = match (member, &value) {
-                    (FeatureSourceContent::Parameter(left), FeatureSourceContent::Parameter(right)) =>
-                        ctx.equal_bytes_limit(left.as_str().as_bytes(), right.as_str().as_bytes(), operation)?,
-                    (FeatureSourceContent::Feature(left), FeatureSourceContent::Feature(right)) =>
-                        ctx.equal_bytes_limit(left.as_str().as_bytes(), right.as_str().as_bytes(), operation)?,
-                    _ => false,
-                };
-                Ok(!equal)
-            }, operation)?;
+            let distinct = ctx.all_by_limit(
+                &self.0,
+                |member| {
+                    let equal = match (member, &value) {
+                        (
+                            FeatureSourceContent::Parameter(left),
+                            FeatureSourceContent::Parameter(right),
+                        ) => ctx.equal_bytes_limit(
+                            left.as_str().as_bytes(),
+                            right.as_str().as_bytes(),
+                            operation,
+                        )?,
+                        (
+                            FeatureSourceContent::Feature(left),
+                            FeatureSourceContent::Feature(right),
+                        ) => ctx.equal_bytes_limit(
+                            left.as_str().as_bytes(),
+                            right.as_str().as_bytes(),
+                            operation,
+                        )?,
+                        _ => false,
+                    };
+                    Ok(!equal)
+                },
+                operation,
+            )?;
             if !distinct {
                 return Err(FeatureCollectionError::Invalid(
                     "source_content repeats a parameter or child-feature reference",
@@ -6601,12 +6617,16 @@ impl GeneratedVertexRef {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct SelectionReference(#[cfg_attr(feature = "schema", schemars(with = "String"))] NonBlankString);
+pub struct SelectionReference(
+    #[cfg_attr(feature = "schema", schemars(with = "String"))] NonBlankString,
+);
 impl_feature_decode_cost_record!(SelectionReference; (0));
 impl TryFrom<String> for SelectionReference {
     type Error = BodySelectionError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        NonBlankString::try_from(value).map(Self).map_err(|_| BodySelectionError::BlankNativeMember)
+        NonBlankString::try_from(value)
+            .map(Self)
+            .map_err(|_| BodySelectionError::BlankNativeMember)
     }
 }
 
@@ -6618,7 +6638,8 @@ impl SelectionReference {
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
         const OPERATION: &str = "validate persistent selection reference";
         ctx.charge_work_limit(0, OPERATION)?;
-        Ok(NonBlankString::for_decode(ctx, value, OPERATION)?.map(Self)
+        Ok(NonBlankString::for_decode(ctx, value, OPERATION)?
+            .map(Self)
             .ok_or(BodySelectionError::BlankNativeMember))
     }
 
@@ -8412,7 +8433,11 @@ impl SketchProfileLoops {
             Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
             Err(FeatureCollectionError::Invalid(_)) => return Ok(Err("holes must be distinct")),
         };
-        if !ctx.all_by_limit(holes.as_slice(), |hole| Ok(hole != &outer), "validate sketch profile outer loop")? {
+        if !ctx.all_by_limit(
+            holes.as_slice(),
+            |hole| Ok(hole != &outer),
+            "validate sketch profile outer loop",
+        )? {
             return Ok(Err("holes must not contain outer"));
         }
         Ok(Ok(Self { outer, holes }))

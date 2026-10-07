@@ -749,10 +749,32 @@ fn edge_admission_diagnostics_use_caller_storage_and_valid_controls_allocate_not
     assert_eq!(edge.sharpness.map(NonNegativeReal::get), [0.0, 1.0]);
     assert_eq!(edge.knot_interval.map(PositiveReal::get), Some(2.0));
     assert_eq!(edge.sector_coefficients.map(FiniteReal::get), [-2.0, 3.0]);
-    assert_eq!(SubdEdge::from_parts([1, 0], [0.0, 1.0], SubdEdgeTag::SmoothX,
-        Some(PositiveReal::new(2.0).unwrap()), [-2.0, 3.0], &ctx).unwrap().unwrap(), edge);
-    assert_eq!(SubdEdge::from_controls(edge.vertices, edge.sharpness, edge.tag,
-        edge.knot_interval, edge.sector_coefficients, &ctx).unwrap().unwrap(), edge);
+    assert_eq!(
+        SubdEdge::from_parts(
+            [1, 0],
+            [0.0, 1.0],
+            SubdEdgeTag::SmoothX,
+            Some(PositiveReal::new(2.0).unwrap()),
+            [-2.0, 3.0],
+            &ctx
+        )
+        .unwrap()
+        .unwrap(),
+        edge
+    );
+    assert_eq!(
+        SubdEdge::from_controls(
+            edge.vertices,
+            edge.sharpness,
+            edge.tag,
+            edge.knot_interval,
+            edge.sector_coefficients,
+            &ctx
+        )
+        .unwrap()
+        .unwrap(),
+        edge
+    );
     ctx.finish_session().unwrap();
     let wire = serde_json::to_value(&edge).unwrap();
     assert_eq!(serde_json::from_value::<SubdEdge>(wire).unwrap(), edge);
