@@ -61,6 +61,38 @@ impl DeclaredEnd {
     }
 }
 
+/// One lane's classes of one name, in offset order.
+fn sorted_classes<'l>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    lane: &'l crate::records::FeatureInputLane,
+    name: &str,
+    operation: &'static str,
+) -> Result<Vec<&'l crate::records::FeatureInputClass>, cadmpeg_core::CodecError> {
+    let mut classes = storage.with_storage(|| {
+        ctx.collect_vec(
+            ctx.admit_iter(&lane.classes, operation)?
+                .filter(|class| class.name == name),
+            operation,
+        )
+    })?;
+    ctx.stable_sort_by(&mut classes, |class| &class.offset, Ord::cmp, operation)?;
+    Ok(classes)
+}
+
+/// The classes of an offset-sorted list declared in `start..end`.
+fn classes_within<'c, 'l>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    classes: &'c [&'l crate::records::FeatureInputClass],
+    start: u64,
+    end: u64,
+    operation: &'static str,
+) -> Result<&'c [&'l crate::records::FeatureInputClass], cadmpeg_core::CodecError> {
+    let first = ctx.partition_point(classes, |class| Ok(class.offset < start), operation)?;
+    let last = ctx.partition_point(classes, |class| Ok(class.offset < end), operation)?;
+    Ok(classes.get(first..last).unwrap_or_default())
+}
+
 pub(crate) mod assembly;
 
 pub(crate) mod axes;
