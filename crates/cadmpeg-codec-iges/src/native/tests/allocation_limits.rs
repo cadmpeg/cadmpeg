@@ -42,13 +42,18 @@ fn assert_collection_refusal_at(bytes: &[u8], operation: &str) {
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
-            IgesCodec.decode(
-                &mut Cursor::new(bytes),
-                &DecodeOptions { policy, ..DecodeOptions::default() },
-            ).map_err(|failure| match failure {
-                DecodeFailure::Codec(error) => error,
-                other => panic!("unexpected decode failure: {other:?}"),
-            })
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -62,13 +67,18 @@ fn assert_retained_refusal_at(bytes: &[u8], operation: &str) {
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            IgesCodec.decode(
-                &mut Cursor::new(bytes),
-                &DecodeOptions { policy, ..DecodeOptions::default() },
-            ).map_err(|failure| match failure {
-                DecodeFailure::Codec(error) => error,
-                other => panic!("unexpected decode failure: {other:?}"),
-            })
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -294,17 +304,26 @@ fn native_display_definition_refuses_retained_limit() {
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
-    let (directory, _) = crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx).unwrap();
+    let (directory, _) =
+        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+            .unwrap();
     let graph = crate::graph::build(&directory, &parse_ctx).unwrap();
 
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "iges native display definition", |cap| {
+        ResourceDimension::RetainedBytes,
+        "iges native display definition",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             super::super::resolve_display_ref(
-                &ctx, &graph, 1, -3, crate::graph::ReferenceKind::Color, "color",
+                &ctx,
+                &graph,
+                1,
+                -3,
+                crate::graph::ReferenceKind::Color,
+                "color",
             )
         },
     );
