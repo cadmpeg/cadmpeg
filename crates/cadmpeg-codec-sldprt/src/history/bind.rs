@@ -11,9 +11,9 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::sketches::{Sketch, SketchId};
 use cadmpeg_ir::topology::Face;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use crate::history::classify::is_history_metadata_record;
+use crate::history::classify::HistoryIndex;
 
 const BIND_OPERATION: &str = "bind SLDPRT feature sketches";
 
@@ -555,93 +555,110 @@ pub(crate) fn order_features_for_regeneration(
     Ok(true)
 }
 
-fn add_regeneration_predecessor<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    predecessors: &mut HashSet<&'a FeatureId>,
-    predecessor: &'a FeatureId,
-) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.insert_hash_set(
-        predecessors,
-        predecessor,
-        "collect SLDPRT feature predecessors",
-    )?;
-    Ok(())
-}
-
-fn regeneration_order<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-    features: &[cadmpeg_ir::features::Feature],
-    model: Option<&cadmpeg_ir::document::Model>,
-) -> Result<
-    Option<(Vec<usize>, cadmpeg_core::decode::ScopedReservation<'ctx>)>,
-    cadmpeg_core::CodecError,
-> {
-    let mut outgoing = ctx.collect_indexed_vec(
-        features.len(),
-        "sldprt feature regeneration adjacency",
-        |_| Ok(Vec::<usize>::new()),
-    )?;
-    let mut indegree = ctx.alloc_filled(
-        features.len(),
-        0usize,
-        "sldprt feature regeneration indegree",
-    )?;
-    let mut tree_parent_by_child = HashMap::new();
+/// The structural parents a tree node names for each child: the first and
+/// the last tree node, in feature order, listing it.
+fn tree_parents<'f>(
+    ctx: &DecodeContext<'_>,
+    scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    features: &'f [cadmpeg_ir::features::Feature],
+) -> Result<HashMap<&'f FeatureId, (&'f FeatureId, &'f FeatureId)>, CodecError> {
+    const OPERATION: &str = "index SLDPRT feature tree parents";
+    let mut parents = HashMap::new();
     for feature in ctx.admit_iter(features, "scan SLDPRT regeneration_order values")? {
         let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
             feature.evaluation.definition()
         else {
             continue;
         };
-        for child in ctx.admit_iter(&children[..], "index SLDPRT feature tree parents")? {
-            ctx.insert_hash_map(
-                &mut tree_parent_by_child,
-                child,
-                &feature.id,
-                "index SLDPRT feature tree parents",
-            )?;
+        for child in ctx.admit_iter(&children[..], OPERATION)? {
+            if let Some((_, last)) = ctx.get_mut_hash_map(&mut parents, child, OPERATION)? {
+                *last = &feature.id;
+                continue;
+            }
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(&mut parents, child, (&feature.id, &feature.id), OPERATION)
+            })?;
         }
     }
-    let mut by_id = HashMap::new();
-    for (index, feature) in features.iter().enumerate() {
-        ctx.charge_work(1, "index SLDPRT feature regeneration IDs")?;
-        ctx.insert_hash_map(
-            &mut by_id,
-            &feature.id,
-            index,
-            "index SLDPRT feature regeneration IDs",
+    Ok(parents)
+}
+
+fn regeneration_order<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    features: &[cadmpeg_ir::features::Feature],
+    model: Option<&cadmpeg_ir::document::Model>,
+) -> Result<Option<(Vec<usize>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+    const PREDECESSORS: &str = "collect SLDPRT feature predecessors";
+    let mut scratch = ctx.reserve_scoped(0, "SLDPRT feature regeneration graph")?;
+    let (mut outgoing, mut indegree) = scratch.with_storage(|| {
+        let outgoing = ctx.collect_indexed_vec(
+            features.len(),
+            "sldprt feature regeneration adjacency",
+            |_| Ok(Vec::<usize>::new()),
         )?;
+        let indegree = ctx.alloc_filled(
+            features.len(),
+            0usize,
+            "sldprt feature regeneration indegree",
+        )?;
+        Ok::<_, CodecError>((outgoing, indegree))
+    })?;
+    let tree_parents = tree_parents(ctx, &mut scratch, features)?;
+    let mut by_id = HashMap::new();
+    for (index, feature) in ctx
+        .admit_iter(features, "index SLDPRT feature regeneration IDs")?
+        .enumerate()
+    {
+        scratch.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut by_id,
+                &feature.id,
+                index,
+                "index SLDPRT feature regeneration IDs",
+            )
+        })?;
     }
+    let mut predecessors = Vec::new();
     for (consumer, feature) in ctx
         .admit_iter(features, "scan SLDPRT regeneration_order values")?
         .enumerate()
     {
-        let mut predecessors = HashSet::new();
-        for predecessor in ctx.admit_iter(
-            feature.dependencies.as_slice(),
-            "collect SLDPRT feature predecessors",
-        )? {
-            add_regeneration_predecessor(ctx, &mut predecessors, predecessor)?;
+        predecessors.clear();
+        let mut add = |predecessor: &FeatureId| -> Result<(), CodecError> {
+            if let Some(&source) = ctx.get_hash_map(&by_id, predecessor, PREDECESSORS)? {
+                ctx.push_scoped_vec(&mut scratch, &mut predecessors, source, PREDECESSORS)?;
+            }
+            Ok(())
+        };
+        for predecessor in ctx.admit_iter(feature.dependencies.as_slice(), PREDECESSORS)? {
+            add(predecessor)?;
         }
-        if let Some(parent) = ctx.get_hash_map(
-            &(tree_parent_by_child),
-            &feature.id,
-            "look up SLDPRT hash key",
-        )? {
-            add_regeneration_predecessor(ctx, &mut predecessors, parent)?;
+        let tree_parent = ctx
+            .get_hash_map(&tree_parents, &feature.id, "look up SLDPRT hash key")?
+            .copied();
+        if let Some((_, last)) = tree_parent {
+            add(last)?;
         }
         if let Some(model) = model {
-            let scan_units = u64::try_from(features.len()).map_err(|_| {
-                ctx.refuse_codec_limit("scan SLDPRT feature parents", u64::MAX - 1, u64::MAX)
-            })?;
-            ctx.charge_work(scan_units, "scan SLDPRT feature parents")?;
-            if let Some(parent) = model.feature_parent(&feature.id) {
-                add_regeneration_predecessor(ctx, &mut predecessors, parent)?;
+            // The model's structural owner: the first tree node listing the
+            // feature, or its regeneration predecessor when no tree owns it.
+            match ctx
+                .get_hash_map(&tree_parents, &feature.id, "scan SLDPRT feature parents")?
+                .copied()
+            {
+                Some((first, _)) => add(first)?,
+                None => {
+                    if let Some(parent) = model.feature_regeneration_parent(&feature.id) {
+                        add(parent)?;
+                    }
+                }
             }
-            for configuration in &model.configurations {
-                ctx.charge_work(1, "scan SLDPRT configuration feature dependencies")?;
+            for configuration in ctx.admit_iter(
+                &model.configurations,
+                "scan SLDPRT configuration feature dependencies",
+            )? {
                 if let Some(state) = ctx.get_btree_map(
-                    &(configuration.feature_states),
+                    &configuration.feature_states,
                     &feature.id,
                     "look up SLDPRT ordered key",
                 )? {
@@ -649,24 +666,21 @@ fn regeneration_order<'ctx>(
                         state.dependencies.as_slice(),
                         "scan SLDPRT configuration feature dependencies",
                     )? {
-                        add_regeneration_predecessor(ctx, &mut predecessors, dependency)?;
+                        add(dependency)?;
                     }
                 }
             }
         }
-        for predecessor in predecessors {
-            ctx.charge_work(1, "build SLDPRT feature regeneration graph")?;
-            let Some(&source) =
-                ctx.get_hash_map(&(by_id), predecessor, "look up SLDPRT hash key")?
-            else {
-                continue;
-            };
-            ctx.reserve_vec(
-                &mut outgoing[source],
-                1,
-                "collect SLDPRT feature regeneration edges",
-            )?;
-            outgoing[source].push(consumer);
+        ctx.sort_unstable_by(&mut predecessors, |source| source, Ord::cmp, PREDECESSORS)?;
+        ctx.dedup_vec(&mut predecessors, PREDECESSORS)?;
+        for &source in ctx.admit_iter(&predecessors, "build SLDPRT feature regeneration graph")? {
+            scratch.with_storage(|| {
+                ctx.push_vec(
+                    &mut outgoing[source],
+                    consumer,
+                    "collect SLDPRT feature regeneration edges",
+                )
+            })?;
             indegree[consumer] += 1;
         }
     }
@@ -676,11 +690,13 @@ fn regeneration_order<'ctx>(
         .enumerate()
     {
         if indegree[index] == 0 {
-            ctx.insert_btree_set(
-                &mut ready,
-                (feature.ordinal, &feature.id, index),
-                "queue SLDPRT feature regeneration order",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut ready,
+                    (feature.ordinal, &feature.id, index),
+                    "queue SLDPRT feature regeneration order",
+                )
+            })?;
         }
     }
     let mut order_storage = ctx.reserve_scoped(0, "SLDPRT temporary vector storage")?;
@@ -697,7 +713,7 @@ fn regeneration_order<'ctx>(
         let index = item.2;
         order_storage.with_storage(|| {
             ctx.push_vec(
-                &mut (order),
+                &mut order,
                 index,
                 "collect SLDPRT feature regeneration order",
             )
@@ -708,11 +724,13 @@ fn regeneration_order<'ctx>(
             indegree[consumer] -= 1;
             if indegree[consumer] == 0 {
                 let feature = &features[consumer];
-                ctx.insert_btree_set(
-                    &mut ready,
-                    (feature.ordinal, &feature.id, consumer),
-                    "queue SLDPRT feature regeneration order",
-                )?;
+                scratch.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut ready,
+                        (feature.ordinal, &feature.id, consumer),
+                        "queue SLDPRT feature regeneration order",
+                    )
+                })?;
             }
         }
     }
@@ -759,69 +777,81 @@ pub(crate) fn order_model_features_for_regeneration(
 }
 
 /// Bind each decoded face to the body owning it.
-fn face_owner_bodies<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn face_owner_bodies<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     faces: &'a [Face],
     shells: &'a [cadmpeg_ir::topology::Shell],
     regions: &'a [cadmpeg_ir::topology::Region],
-) -> Result<HashMap<&'a str, &'a BodyId>, cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        HashMap<&'a str, &'a BodyId>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    let mut storage = ctx.reserve_scoped(0, "index SLDPRT face owner bodies")?;
     let mut region_bodies = HashMap::new();
-    for region in regions {
-        ctx.charge_work(1, "index SLDPRT face owner regions")?;
-        ctx.insert_hash_map(
-            &mut region_bodies,
-            region.id.as_str(),
-            &region.body,
-            "index SLDPRT face owner regions",
-        )?;
+    for region in ctx.admit_iter(regions, "index SLDPRT face owner regions")? {
+        storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut region_bodies,
+                region.id.as_str(),
+                &region.body,
+                "index SLDPRT face owner regions",
+            )
+        })?;
     }
     let mut shell_bodies = HashMap::new();
-    for shell in shells {
-        ctx.charge_work(1, "index SLDPRT face owner shells")?;
+    for shell in ctx.admit_iter(shells, "index SLDPRT face owner shells")? {
         let Some(&body) = ctx.get_hash_map(
-            &(region_bodies),
+            &region_bodies,
             shell.region.as_str(),
             "look up SLDPRT hash key",
         )?
         else {
             continue;
         };
-        ctx.insert_hash_map(
-            &mut shell_bodies,
-            shell.id.as_str(),
-            body,
-            "index SLDPRT face owner shells",
-        )?;
+        storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut shell_bodies,
+                shell.id.as_str(),
+                body,
+                "index SLDPRT face owner shells",
+            )
+        })?;
     }
     let mut owners = HashMap::new();
-    for face in faces {
-        ctx.charge_work(1, "index SLDPRT face owner bodies")?;
+    for face in ctx.admit_iter(faces, "index SLDPRT face owner bodies")? {
         let Some(&body) = ctx.get_hash_map(
-            &(shell_bodies),
+            &shell_bodies,
             face.shell.as_str(),
             "look up SLDPRT hash key",
         )?
         else {
             continue;
         };
-        ctx.insert_hash_map(
-            &mut owners,
-            face.id.as_str(),
-            body,
-            "index SLDPRT face owner bodies",
-        )?;
+        storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut owners,
+                face.id.as_str(),
+                body,
+                "index SLDPRT face owner bodies",
+            )
+        })?;
     }
-    Ok(owners)
+    Ok((owners, storage))
 }
 
-fn copy_output_body_id(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    id: &str,
-) -> Result<BodyId, cadmpeg_core::CodecError> {
-    let mut text = String::new();
-    ctx.try_reserve_retained_text(&mut text, id.len(), "retain SLDPRT feature output body")?;
-    text.push_str(id);
-    BodyId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+/// A body identity from its emitted text, or `None` when the text is not an
+/// identity. The validation scan is admitted with the copy.
+fn output_body_id(ctx: &DecodeContext<'_>, id: &str) -> Result<Option<BodyId>, CodecError> {
+    const OPERATION: &str = "retain SLDPRT feature output body";
+    let text = ctx.copy_retained_text(id, OPERATION)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), OPERATION)?;
+    match BodyId::mint(text) {
+        Ok(body) => Ok(Some(body)),
+        Err(_) => Ok(None),
+    }
 }
 
 /// Derive feature output bodies from the producing-feature identity the
@@ -851,18 +881,21 @@ pub(crate) fn derive_feature_outputs(
     shells: &[cadmpeg_ir::topology::Shell],
     regions: &[cadmpeg_ir::topology::Region],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const MODIFIERS: &str = "match SLDPRT body modifiers";
+    const OUTPUTS: &str = "collect SLDPRT body modifier outputs";
     let FeatureOutputSources {
         face_producers,
         body_modifiers,
     } = sources;
+    let mut scratch = ctx.reserve_scoped(0, "index SLDPRT body modifier ordinals")?;
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
     for history in ctx.admit_iter(histories, "scan SLDPRT derive_feature_outputs values")? {
+        let index = HistoryIndex::new(ctx, &history.features)?;
         let mut ordinal = 0_u32;
         for record in ctx.admit_iter(&history.features, "classify SLDPRT body modifier ordinals")? {
-            if is_history_metadata_record(ctx, record, &history.features)? {
+            if index.is_metadata(ctx, record)? {
                 continue;
             }
-            ctx.charge_work(1, "index SLDPRT body modifier ordinals")?;
             ordinal = ordinal.checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "index SLDPRT body modifier ordinals",
@@ -870,127 +903,156 @@ pub(crate) fn derive_feature_outputs(
                     u64::MAX,
                 )
             })?;
-            ctx.admit_hash_map_entry(
+            if let Some(previous) = ctx.get_mut_hash_map(
                 &mut feature_ids_by_ordinal,
                 &ordinal,
                 "index SLDPRT body modifier ordinals",
-            )?;
-            match feature_ids_by_ordinal.entry(ordinal) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(record.id.as_str()));
-                }
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    *entry.get_mut() = None;
-                }
+            )? {
+                *previous = None;
+                continue;
             }
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut feature_ids_by_ordinal,
+                    ordinal,
+                    Some(record.id.as_str()),
+                    "index SLDPRT body modifier ordinals",
+                )
+            })?;
         }
     }
-    for (body, ordinal) in ctx.admit_iter(body_modifiers, "scan SLDPRT body_modifiers values")? {
-        let Some(Some(native_ref)) = feature_ids_by_ordinal.get(ordinal) else {
-            continue;
-        };
-        ctx.charge_work(
-            u64::try_from(features.len()).map_err(|_| {
-                ctx.refuse_codec_limit("match SLDPRT body modifiers", u64::MAX - 1, u64::MAX)
-            })?,
-            "match SLDPRT body modifiers",
-        )?;
-        for feature in features
-            .iter_mut()
-            .filter(|feature| feature.native_ref.as_deref() == Some(native_ref))
-        {
-            let body = match copy_output_body_id(ctx, body) {
-                Ok(body) => body,
-                Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
-                Err(error) => return Err(error),
+    if !body_modifiers.is_empty() {
+        // Each modified body, paired with every projected feature of its record.
+        let mut features_by_native = HashMap::new();
+        for (position, feature) in ctx.admit_iter(&*features, MODIFIERS)?.enumerate() {
+            let Some(native) = feature.native_ref.as_deref() else {
+                continue;
             };
-            if !feature.evaluation.outputs().contains(&body) {
-                let mut outputs = Vec::new();
-                let count = feature
-                    .evaluation
-                    .outputs()
-                    .len()
-                    .checked_add(1)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit(
-                            "collect SLDPRT body modifier outputs",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?;
-                ctx.reserve_capacity(&mut outputs, count, "collect SLDPRT body modifier outputs")?;
-                for output in
-                    ctx.admit_iter(feature.evaluation.outputs(), "scan SLDPRT topology members")?
-                {
-                    ctx.push_vec(
-                        &mut (outputs),
-                        copy_output_body_id(ctx, output.as_str())?,
-                        "collect SLDPRT body modifier outputs",
-                    )?;
-                }
-                ctx.push_vec(&mut (outputs), body, "collect SLDPRT body modifier outputs")?;
-                feature
-                    .evaluation
-                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
-                        outputs, ctx,
-                    )?);
+            scratch.with_storage(|| {
+                ctx.push_hash_group(
+                    &mut features_by_native,
+                    native,
+                    position,
+                    MODIFIERS,
+                    MODIFIERS,
+                )
+            })?;
+        }
+        let mut modified = Vec::new();
+        for (body, ordinal) in
+            ctx.admit_iter(body_modifiers, "scan SLDPRT body_modifiers values")?
+        {
+            let Some(Some(native_ref)) =
+                ctx.get_hash_map(&feature_ids_by_ordinal, ordinal, MODIFIERS)?
+            else {
+                continue;
+            };
+            let Some(positions) = ctx.get_hash_map(&features_by_native, *native_ref, MODIFIERS)?
+            else {
+                continue;
+            };
+            for &position in ctx.admit_iter(positions, MODIFIERS)? {
+                scratch.with_storage(|| {
+                    ctx.push_vec(&mut modified, (position, body.as_str()), MODIFIERS)
+                })?;
             }
+        }
+        drop(features_by_native);
+        for (position, body) in ctx.admit_iter(modified, MODIFIERS)? {
+            let Some(body) = output_body_id(ctx, body)? else {
+                continue;
+            };
+            let feature = &mut features[position];
+            if ctx.contains(feature.evaluation.outputs(), &body, OUTPUTS)? {
+                continue;
+            }
+            let mut inserted = Ok(false);
+            feature.evaluation.edit(|_, outputs| {
+                inserted = outputs.insert(ctx, body, OUTPUTS);
+            });
+            inserted?;
         }
     }
     if face_producers.is_empty() {
         return Ok(());
     }
-    let owners = face_owner_bodies(ctx, faces, shells, regions)?;
+    let (owners, _owners_storage) = face_owner_bodies(ctx, faces, shells, regions)?;
     let mut produced: HashMap<u32, Vec<&BodyId>> = HashMap::new();
+    let mut seen = std::collections::HashSet::new();
     for (face, source_id) in ctx.admit_iter(face_producers, "collect SLDPRT produced bodies")? {
-        let Some(body) = ctx.get_hash_map(&(owners), face.as_str(), "look up SLDPRT hash key")?
+        let Some(&body) = ctx.get_hash_map(&owners, face.as_str(), "look up SLDPRT hash key")?
         else {
             continue;
         };
-        ctx.admit_hash_map_entry(&mut produced, source_id, "index SLDPRT produced bodies")?;
-        let bodies = produced.entry(*source_id).or_default();
-        if !bodies.contains(body) {
-            ctx.reserve_vec(bodies, 1, "collect SLDPRT produced bodies")?;
-            bodies.push(body);
+        if ctx.contains_hash_set(&seen, &(*source_id, body), "collect SLDPRT produced bodies")? {
+            continue;
+        }
+        scratch.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut seen,
+                (*source_id, body),
+                "collect SLDPRT produced bodies",
+            )?;
+            ctx.push_hash_group(
+                &mut produced,
+                *source_id,
+                body,
+                "index SLDPRT produced bodies",
+                "collect SLDPRT produced bodies",
+            )
+        })?;
+    }
+    // The source identifier of the first native record bearing each identity.
+    let mut sources_by_record = HashMap::new();
+    for history in ctx.admit_iter(histories, "scan SLDPRT feature output histories")? {
+        for record in ctx.admit_iter(&history.features, "match SLDPRT feature output source")? {
+            if ctx.contains_key_hash_map(
+                &sources_by_record,
+                record.id.as_str(),
+                "match SLDPRT feature output source",
+            )? {
+                continue;
+            }
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut sources_by_record,
+                    record.id.as_str(),
+                    record.source_value(),
+                    "match SLDPRT feature output source",
+                )
+            })?;
         }
     }
-    for feature in features {
+    for feature in ctx.admit_iter(features, "derive SLDPRT feature outputs")? {
         if !feature.evaluation.outputs().is_empty() {
             continue;
         }
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
-        let mut source_id = None;
-        'histories: for history in
-            ctx.admit_iter(histories, "scan SLDPRT feature output histories")?
-        {
-            for record in ctx.admit_iter(&history.features, "match SLDPRT feature output source")? {
-                if record.id == native_ref {
-                    source_id = record.source_value();
-                    break 'histories;
-                }
-            }
-        }
-        let Some(source_id) = source_id else {
+        let Some(&Some(source_id)) = ctx.get_hash_map(
+            &sources_by_record,
+            native_ref,
+            "match SLDPRT feature output source",
+        )?
+        else {
             continue;
         };
-        if let Some(bodies) = produced.get(&source_id) {
-            let mut outputs = Vec::new();
-            ctx.reserve_capacity(&mut outputs, bodies.len(), "collect SLDPRT feature outputs")?;
-            for body in ctx.admit_iter(bodies, "scan SLDPRT bodies values")? {
-                ctx.push_vec(
-                    &mut (outputs),
-                    copy_output_body_id(ctx, body.as_str())?,
-                    "collect SLDPRT feature outputs",
-                )?;
-            }
-            feature
-                .evaluation
-                .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
-                    outputs, ctx,
-                )?);
+        let Some(bodies) =
+            ctx.get_hash_map(&produced, &source_id, "look up SLDPRT produced bodies")?
+        else {
+            continue;
+        };
+        let mut outputs = Vec::new();
+        ctx.reserve_capacity(&mut outputs, bodies.len(), "collect SLDPRT feature outputs")?;
+        for body in ctx.admit_iter(bodies, "scan SLDPRT bodies values")? {
+            outputs.push(body.try_clone_for_decode(ctx, "retain SLDPRT feature output body")?);
         }
+        feature
+            .evaluation
+            .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(
+                outputs, ctx,
+            )?);
     }
     Ok(())
 }
@@ -1130,8 +1192,15 @@ mod tests {
 
     #[test]
     fn feature_outputs_refuse_work_limit() {
-        // One history visit precedes the record-classification admission.
-        let error = feature_output_error(|limits| limits.max_work_units = 1);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "classify SLDPRT body modifier ordinals",
+            |cap| {
+                Err::<(), cadmpeg_core::CodecError>(feature_output_error(|limits| {
+                    limits.max_work_units = cap;
+                }))
+            },
+        );
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)

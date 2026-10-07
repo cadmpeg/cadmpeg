@@ -35,7 +35,7 @@ pub(super) struct HelixDefinition<'a> {
     pub(super) construction_style: Option<&'a HelixConstructionStyle>,
 }
 
-impl NeutralFeatureEncoder<'_, '_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_tree_node(
         &self,
         role: FeatureTreeNodeRole,

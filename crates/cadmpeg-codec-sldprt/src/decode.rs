@@ -907,19 +907,24 @@ fn append_design_losses_with(
                     }),
             )
         })?;
-    let unresolved_parameter_references =
-        crate::history::parameters::parameters_with_unresolved_references(
+    let (parameter_aliases, _parameter_aliases_storage) =
+        crate::history::parameters::ParameterAliases::scoped(
             ctx,
             &ir.model.parameters,
             &feature_names,
             &global_parameter_owners,
         )?;
+    let unresolved_parameter_references =
+        crate::history::parameters::parameters_with_unresolved_references(
+            ctx,
+            &ir.model.parameters,
+            &parameter_aliases,
+        )?;
     let unevaluable_parameter_expressions =
         crate::history::parameters::parameters_with_unevaluable_expressions(
             ctx,
             &ir.model.parameters,
-            &feature_names,
-            &global_parameter_owners,
+            &parameter_aliases,
             &ir.model.configurations,
         )?;
     let feature_ordinals = charged_map(
@@ -994,15 +999,13 @@ fn append_design_losses_with(
         crate::history::parameters::parameters_with_incoherent_dependencies(
             ctx,
             &ir.model.parameters,
-            &feature_names,
-            &global_parameter_owners,
+            &parameter_aliases,
         )?;
     let incoherent_parameter_values =
         crate::history::parameters::parameters_with_incoherent_evaluated_values(
             ctx,
             &ir.model.parameters,
-            &feature_names,
-            &global_parameter_owners,
+            &parameter_aliases,
             &ir.model.configurations,
         )?;
     if incomplete_parameters > 0
