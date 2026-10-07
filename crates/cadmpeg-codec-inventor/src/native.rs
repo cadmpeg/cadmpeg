@@ -16,19 +16,6 @@ use std::fmt::{Display, Formatter};
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::presentation::RenderingStyleExtension;
 
-fn retained_digest(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(64, operation)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "hash Inventor native record bytes",
-    )?;
-    Ok(cadmpeg_ir::hash::sha256_hex(bytes))
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
     pub(crate) revision: u8,
@@ -507,11 +494,11 @@ impl AssemblyPlacementRecordWire {
             graphics_index: placement.graphics_index,
             object_reference: placement.object_reference,
             suffix_len: cadmpeg_core::decode::u64_from_index(placement.suffix.window().len()),
-            suffix_sha256: retained_digest(
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                 ctx,
                 placement.suffix.window(),
                 "retain Inventor assembly placement suffix digest",
-            )?,
+            )?.into(),
         })
     }
 }
@@ -1360,18 +1347,18 @@ impl RseRecordRecord {
             )?,
             payload_offset: frame.payload_offset,
             payload_len: u64::from(frame.payload_len()?),
-            payload_sha256: retained_digest(
+            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                 ctx,
                 frame.payload.window(),
                 "retain Inventor RSe payload digest",
-            )?,
+            )?.into(),
             trailing_payload_len: frame.trailing_payload_len()?,
             trailer_len: cadmpeg_core::decode::u64_from_index(frame.trailer.window().len()),
-            trailer_sha256: retained_digest(
+            trailer_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                 ctx,
                 frame.trailer.window(),
                 "retain Inventor RSe trailer digest",
-            )?,
+            )?.into(),
         })
     }
     pub(crate) fn type_index(&self) -> u8 {
@@ -1728,11 +1715,11 @@ impl ActiveCarrierRecord {
                 schema: carrier.schema,
                 carrier_len: carrier.carrier_len,
                 carrier_offset: carrier.carrier_offset,
-                carrier_sha256: retained_digest(
+                carrier_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                     ctx,
                     carrier.bytes.window(),
                     "retain Inventor active carrier digest",
-                )?,
+                )?.into(),
                 selected_key: carrier.selected_key,
                 enabled: carrier.enabled,
                 delta_state: carrier.delta_state,
@@ -1814,6 +1801,39 @@ mod tests {
             .map_err(|error| error.to_string())?;
         wire.into_record(&super::test_ctx())
             .map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn placement_digest_uses_ir_sha256_admission() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
+        use cadmpeg_core::CodecError;
+        let suffix = b"abc";
+        let placement = crate::assembly::AssemblyPlacement {
+            segment_token: "segment".into(), record_ordinal: 1, header_id: 0,
+            owner_reference: 0, attribute_reference: 0, state: 0, transform_prefix: false,
+            transform: crate::compact_matrix::CompactMatrix::try_new(
+                &super::test_ctx(), 0, 0, |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO),
+            ).expect("finite matrix"),
+            branch: 0, graphics_state: 0, occurrence_id: 0, graphics_index: 0,
+            object_reference: 0, suffix: View::over_retained(suffix),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The id is measured and written once each, the token is copied once,
+        // and three suffix bytes are hashed. Hex encoding then admits 64 units.
+        let prior = 2 * "inventor:assembly:placement#segment-1".len() + "segment".len() + suffix.len();
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(prior + 63);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(matches!(
+            AssemblyPlacementRecordWire::from_placement(&ctx, &placement),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "retain Inventor assembly placement suffix digest"
+                    && limit.used == cadmpeg_core::decode::u64_from_index(prior)
+                    && limit.additional == 64
+        ));
+        let wire = AssemblyPlacementRecordWire::from_placement(&super::test_ctx(), &placement).expect("digest admitted");
+        assert_eq!(wire.suffix_sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     }
 
     #[test]
