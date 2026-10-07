@@ -271,8 +271,10 @@ fn unavailable<'a>(
     ctx: &DecodeContext<'_>,
     detail: std::fmt::Arguments<'_>,
 ) -> Result<ActiveCarrierState<'a>, CodecError> {
-    ctx.charge_formatted_retained(detail, "retain Inventor carrier unavailable detail")?;
-    Ok(ActiveCarrierState::Unavailable(detail.to_string()))
+    Ok(ActiveCarrierState::Unavailable(ctx.format_retained(
+        detail,
+        "retain Inventor carrier unavailable detail",
+    )?))
 }
 
 fn parse_carrier<'a>(
