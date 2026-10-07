@@ -739,9 +739,10 @@ pub(crate) fn enrich_history_split_lines(
     let mut storage = ctx.reserve_scoped(0, "SLDPRT split-line workspace")?;
     let mut observations = HashMap::<String, (bool, bool)>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT split-line lanes")? {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT split-line lane workspace")?;
         let project_classes = sorted_classes(
             ctx,
-            &mut storage,
+            &mut lane_storage,
             lane,
             "moPLineProject_c",
             "index SLDPRT split-line projection classes",
@@ -751,7 +752,7 @@ pub(crate) fn enrich_history_split_lines(
         for history in ctx.admit_iter(&*histories, "scan SLDPRT split-line objects")? {
             for feature in ctx.admit_iter(&history.features, "scan SLDPRT split-line objects")? {
                 if let Some(name) = object_names.of(ctx, feature)? {
-                    storage.with_storage(|| {
+                    lane_storage.with_storage(|| {
                         ctx.push_vec(
                             &mut objects,
                             (name.offset, feature),

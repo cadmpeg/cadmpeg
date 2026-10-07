@@ -41,9 +41,10 @@ pub(crate) fn enrich_history_parameters<'a>(
 
     let mut candidates = BTreeMap::<(usize, usize, &'a str), Vec<(f64, ScalarUnit)>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT parameter lanes")? {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT parameter lane workspace")?;
         let mut names_by_id = HashMap::new();
         for name in ctx.admit_iter(&lane.names, "index SLDPRT parameter names")? {
-            temporary_storage.with_storage(|| {
+            lane_storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut names_by_id,
                     name.id.as_str(),
@@ -53,7 +54,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             })?;
         }
         let scalar_units =
-            temporary_storage.with_storage(|| scalar_units(ctx, lane, &names_by_id))?;
+            lane_storage.with_storage(|| scalar_units(ctx, lane, &names_by_id))?;
         let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::<(u64, usize, usize)>::new();
         for (history_index, history) in ctx
@@ -67,7 +68,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = object_names.of(ctx, feature)? else {
                     continue;
                 };
-                temporary_storage.with_storage(|| {
+                lane_storage.with_storage(|| {
                     ctx.push_vec(
                         &mut starts,
                         (name.offset, history_index, feature_index),
@@ -89,7 +90,7 @@ pub(crate) fn enrich_history_parameters<'a>(
         let mut unowned = Vec::<&FeatureInputScalar>::new();
         for scalar in ctx.admit_iter(&lane.scalars, "index SLDPRT scalar owners")? {
             match scalar.feature_ref.as_deref() {
-                Some(owner) => temporary_storage.with_storage(|| {
+                Some(owner) => lane_storage.with_storage(|| {
                     ctx.push_hash_group(
                         &mut scalars_by_owner,
                         owner,
@@ -98,7 +99,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                         "index SLDPRT scalar owners",
                     )
                 })?,
-                None => temporary_storage.with_storage(|| {
+                None => lane_storage.with_storage(|| {
                     ctx.push_vec(&mut unowned, scalar, "index SLDPRT scalar owners")
                 })?,
             }
@@ -136,6 +137,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                 None => unowned.len(),
             };
             let following = unowned.get(first..last).unwrap_or_default();
+            let mut feature_storage = ctx.reserve_scoped(0, "SLDPRT owned parameter workspace")?;
             let mut owned = BTreeMap::<&'a str, Vec<&FeatureInputScalar>>::new();
             for &scalar in ctx
                 .admit_iter(named, "collect SLDPRT owned scalars")?
@@ -149,7 +151,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                 else {
                     continue;
                 };
-                temporary_storage.with_storage(|| {
+                feature_storage.with_storage(|| {
                     ctx.push_btree_group(
                         &mut owned,
                         name.value.as_str(),
@@ -337,17 +339,18 @@ fn scalar_units<'a>(
     };
     // The parameter class of a scalar is the last class declared before its
     // name with no other name between them.
-    let mut classes = ctx.collect_vec(lane.classes.iter(), "sort SLDPRT parameter classes")?;
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT parameter class workspace")?;
+    let mut classes = storage.with_storage(|| ctx.collect_vec(lane.classes.iter(), "sort SLDPRT parameter classes"))?;
     ctx.stable_sort_by(
         &mut classes,
         |class| &class.offset,
         Ord::cmp,
         "sort SLDPRT parameter classes",
     )?;
-    let mut name_offsets = ctx.collect_vec(
+    let mut name_offsets = storage.with_storage(|| ctx.collect_vec(
         lane.names.iter().map(|name| name.offset),
         "sort SLDPRT parameter name offsets",
-    )?;
+    ))?;
     ctx.sort_unstable_by(
         &mut name_offsets,
         |offset| offset,

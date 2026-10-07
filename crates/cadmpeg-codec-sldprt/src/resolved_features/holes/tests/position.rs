@@ -29,7 +29,7 @@ use crate::resolved_features::holes::hole_position_feature;
 use crate::resolved_features::holes::hole_position_sketch_source;
 use crate::resolved_features::holes::hole_temporary_axis;
 use crate::resolved_features::holes::marker_pattern_bore_axes;
-use crate::resolved_features::holes::paired_object_locus_markers;
+use crate::resolved_features::holes::{HoleLaneNames, HoleMarkers, PositionSketches};
 use crate::resolved_features::holes::project_hole_axes;
 use crate::resolved_features::holes::project_hole_position_sketches;
 use crate::resolved_features::holes::project_spatial_hole_position_sketches;
@@ -59,21 +59,13 @@ fn spatial_hole_position_route_refuses_collection_growth() {
 
 #[test]
 fn spatial_hole_position_route_refuses_lookup_work() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    // Admit the history and its single feature before refusing index-key work.
-    policy.limits.max_work_units = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_spatial_hole_position_sketches(
-        &ctx,
-        &mut [],
-        &[],
-        &[],
-        &[],
-        &[native_history()],
-        &[],
-    )
-    .expect_err("native feature scan requires work");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "index SLDPRT spatial position features", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        project_spatial_hole_position_sketches(&ctx, &mut [], &[], &[], &[], &[native_history()], &[])
+    });
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT spatial position features"));
@@ -173,7 +165,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     };
     let mut surfaces = vec![surface(0, -9.0), surface(1, 13.0), surface(2, 100.0)];
 
-    let placements = marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None)
+    let placements = marker_pattern_bore_axes(&ctx, &HoleMarkers::new(&ctx, &lane).unwrap(), "position", 2.1, &surfaces, None)
         .unwrap()
         .expect("required invariant");
     assert_eq!(placements.len(), 2);
@@ -217,7 +209,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         },
     ]);
     assert_eq!(
-        marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None)
+        marker_pattern_bore_axes(&ctx, &HoleMarkers::new(&ctx, &lane).unwrap(), "position", 2.1, &surfaces, None)
             .unwrap()
             .expect("object-indexed arc centers form the exact position roster")
             .len(),
@@ -239,14 +231,14 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     };
     surfaces.extend([opposite_side(3, -9.0), opposite_side(4, 13.0)]);
     assert!(
-        marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None)
+        marker_pattern_bore_axes(&ctx, &HoleMarkers::new(&ctx, &lane).unwrap(), "position", 2.1, &surfaces, None)
             .unwrap()
             .is_none()
     );
     assert_eq!(
         marker_pattern_bore_axes(
             &ctx,
-            &lane,
+            &HoleMarkers::new(&ctx, &lane).unwrap(),
             "position",
             2.1,
             &surfaces,
@@ -280,7 +272,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     assert_eq!(
         marker_pattern_bore_axes(
             &ctx,
-            &lane,
+            &HoleMarkers::new(&ctx, &lane).unwrap(),
             "position",
             2.1,
             &surfaces,
@@ -342,7 +334,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        marker_pattern_bore_axes(&ctx, &lane, "position", 3.0, &surfaces, None).unwrap(),
+        marker_pattern_bore_axes(&ctx, &HoleMarkers::new(&ctx, &lane).unwrap(), "position", 3.0, &surfaces, None).unwrap(),
         Some(vec![
             HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-70.0, 11.0, 0.0))
@@ -435,16 +427,12 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         ),
     ];
 
-    let mut paired = Vec::new();
-    paired_object_locus_markers(&ctx, &lane, "position", |marker, _| {
-        paired.push(marker.id());
-        Ok(())
-    })
-    .unwrap();
+    let markers = HoleMarkers::new(&ctx, &lane).unwrap();
+    let paired = ctx.get_hash_map(&markers.paired, "position", "test paired roster").unwrap().unwrap().iter().map(|(marker, _)| marker.id()).collect::<Vec<_>>();
     assert_eq!(paired, ["first", "second", "paired-duplicate"]);
 
     let mut surfaces = vec![cylinder(0, -9.0), cylinder(1, 13.0), cylinder(2, 100.0)];
-    let placements = marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None)
+    let placements = marker_pattern_bore_axes(&ctx, &HoleMarkers::new(&ctx, &lane).unwrap(), "position", 2.0, &surfaces, None)
         .unwrap()
         .expect("unique congruent pattern");
     assert_eq!(placements.len(), 2);
@@ -480,7 +468,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         .collect::<Vec<_>>();
     surfaces.extend(opposite);
     assert_eq!(
-        marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None)
+        marker_pattern_bore_axes(&ctx, &HoleMarkers::new(&ctx, &lane).unwrap(), "position", 2.0, &surfaces, None)
             .unwrap()
             .expect("unoriented coincident axes")
             .len(),
@@ -501,7 +489,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         source_object: None,
     });
     assert_eq!(
-        marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None)
+        marker_pattern_bore_axes(&ctx, &HoleMarkers::new(&ctx, &lane).unwrap(), "position", 2.0, &surfaces, None)
             .unwrap()
             .expect("complete paired roster takes precedence")
             .len(),
@@ -580,7 +568,7 @@ fn an_absent_object_name_trailer_sources_no_hole_position() {
     lane.native_payload[child_trailer + 8..child_trailer + 12].copy_from_slice(&6u32.to_le_bytes());
 
     assert_eq!(
-        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &crate::resolved_features::holes::HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
+        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
         .unwrap(),
         None
     );
@@ -590,7 +578,7 @@ fn an_absent_object_name_trailer_sources_no_hole_position() {
     lane.names[0].object_id = ObjectId::from_value(7);
     lane.native_payload[hole_trailer + 8..hole_trailer + 12].copy_from_slice(&7u32.to_le_bytes());
     assert_eq!(
-        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &crate::resolved_features::holes::HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
+        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
         .unwrap(),
         Some(6)
     );
@@ -631,28 +619,28 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
     lane.native_payload[child_trailer + 8..child_trailer + 12].copy_from_slice(&6u32.to_le_bytes());
 
     assert_eq!(
-        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &crate::resolved_features::holes::HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
+        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
         .unwrap(),
         Some(6)
     );
     let mut classless_history = history.clone();
     classless_history.features[0].input_class = None;
     assert_eq!(
-        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &classless_history.features[0], &lane, &crate::resolved_features::holes::HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
+        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &classless_history.features[0], &lane, &HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
         .unwrap(),
         Some(6)
     );
     lane.native_payload[hole_trailer + 16..hole_trailer + 18].copy_from_slice(&[0, 0xc0]);
     lane.native_payload[hole_trailer + 18..hole_trailer + 22].copy_from_slice(&5u32.to_le_bytes());
     assert_eq!(
-        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &crate::resolved_features::holes::HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
+        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
         .unwrap(),
         None
     );
     lane.native_payload[hole_trailer + 16..hole_trailer + 28].fill(0);
     lane.native_payload[child_trailer + 8] = 5;
     assert_eq!(
-        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &crate::resolved_features::holes::HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
+        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
         .unwrap(),
         None
     );
@@ -682,11 +670,12 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
     let position_lanes = [lane];
     let mut names_storage = ctx.reserve_scoped(0, "test hole names").unwrap();
     let names = crate::resolved_features::holes::hole_lane_names(&ctx, &mut names_storage, &position_lanes).unwrap();
+    let positions = PositionSketches::new(&ctx, std::slice::from_ref(&legacy_history), &names).unwrap();
     assert_eq!(
         hole_position_feature(
             &ctx,
             &legacy_history.features[0],
-            std::slice::from_ref(&legacy_history),
+            &positions,
             &position_lanes,
             &names,
         )
@@ -742,13 +731,13 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let mut lane = lane_with_position_reference(6);
     let trailer = 6 + "Hole".encode_utf16().count() * 2;
     assert_eq!(
-        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &crate::resolved_features::holes::HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
+        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
         .unwrap(),
         Some(6)
     );
     lane.native_payload[trailer + 58..trailer + 60].copy_from_slice(&[0xff, 0xfe]);
     assert_eq!(
-        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &crate::resolved_features::holes::HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
+        hole_position_sketch_source(&cadmpeg_test_support::service_decode_context(), &history.features[0], &lane, &HoleLaneNames::new(&cadmpeg_test_support::service_decode_context(), &lane).unwrap())
         .unwrap(),
         Some(6)
     );

@@ -1848,9 +1848,7 @@ pub(crate) fn enrich_history_sketch_block_references(
                     continue;
                 };
                 let origin = sketch_block_record_origin(ctx, &lane.native_payload, start, end)?;
-                let origin = origin.or_else(|| {
-                    sketch_block_identity_normalization_origin(&lane.native_payload, start, end)
-                });
+                let origin = match origin { Some(origin) => Some(origin), None => sketch_block_identity_normalization_origin(ctx, &lane.native_payload, start, end)? };
                 if let Some(origin) = origin {
                     temporary_storage.with_storage(|| {
                         ctx.push_btree_group(&mut placement_candidates, *instance_index, origin, "collect SLDPRT sketch block placements", "collect SLDPRT sketch block placements")
@@ -2039,29 +2037,28 @@ fn sketch_block_record_origin(
 }
 
 fn sketch_block_identity_normalization_origin(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<Point3> {
+) -> Result<Option<Point3>, CodecError> {
     const CLASS: &[u8] = b"sgBlock";
     const NATIVE_TO_IR: f64 = 1000.0;
 
-    let bytes = payload.get(start..end)?;
+    let Some(bytes) = payload.get(start..end) else { return Ok(None); };
     let record_len = CLASS_MARKER.len() + 2 + CLASS.len();
-    let class_len = u16::try_from(CLASS.len()).ok()?.to_le_bytes();
-    let mut records = bytes
-        .windows(record_len)
-        .enumerate()
-        .filter_map(|(relative, record)| {
-            (record.get(..CLASS_MARKER.len()) == Some(CLASS_MARKER)
-                && record.get(CLASS_MARKER.len()..CLASS_MARKER.len() + 2) == Some(&class_len)
-                && record.get(CLASS_MARKER.len() + 2..) == Some(CLASS))
-            .then_some(start + relative + record_len)
-        });
-    let body = records.next()?;
-    if records.next().is_some() {
-        return None;
-    }
+    let class_len = u16::try_from(CLASS.len()).map_err(|_| CodecError::malformed("SLDPRT sketch block class is too long"))?.to_le_bytes();
+    let mut records = bytes.windows(record_len).enumerate();
+    let matches = |(relative, record): (usize, &[u8])| {
+        Ok((record.get(..CLASS_MARKER.len()) == Some(CLASS_MARKER)
+            && record.get(CLASS_MARKER.len()..CLASS_MARKER.len() + 2) == Some(&class_len)
+            && record.get(CLASS_MARKER.len() + 2..) == Some(CLASS))
+            .then_some(start + relative + record_len))
+    };
+    const OPERATION: &str = "scan SLDPRT sketch block identity placement";
+    let Some(body) = ctx.find_map(&mut records, matches, OPERATION)? else { return Ok(None); };
+    if ctx.find_map(&mut records, matches, OPERATION)?.is_some() { return Ok(None); }
+    Ok((|| {
     let scalar = |relative: usize| {
         let value = View::f64_le_at(payload, body + relative)?;
         value.is_finite().then_some(value)
@@ -2091,6 +2088,7 @@ fn sketch_block_identity_normalization_origin(
             -translation[2] * NATIVE_TO_IR,
         )
     })
+    })())
 }
 
 fn sketch_block_compact_local_id(
@@ -2398,7 +2396,7 @@ pub(crate) fn enrich_history_reference_axes(
                 let direction = crate::history::literals::named_literal(ctx, &feature.properties, "Direction", "parse SLDPRT reference axis direction")?.and_then(crate::history::literals::parse_vector3);
                 frames[slot] = direction.map(|direction| (origin.get(), direction));
             }
-            let Some(completion) = complete_reference_axis_triad(ctx, frames)? else {
+            let Some(completion) = complete_reference_axis_triad(frames) else {
                 continue;
             };
             let completion = (
@@ -2436,9 +2434,8 @@ struct ReferenceAxisCompletion {
 }
 
 fn complete_reference_axis_triad(
-    ctx: &DecodeContext<'_>,
     frames: [Option<(Point3, Vector3)>; 3],
-) -> Result<Option<ReferenceAxisCompletion>, CodecError> {
+) -> Option<ReferenceAxisCompletion> {
     const ANGULAR_TOLERANCE: f64 = 1e-9;
     const POSITION_TOLERANCE_MM: f64 = 1e-8;
 
@@ -2446,10 +2443,7 @@ fn complete_reference_axis_triad(
     let mut missing_count = 0usize;
     let mut present = [None, None];
     let mut present_count = 0usize;
-    for (index, frame) in ctx
-        .admit_iter(&frames, "complete SLDPRT reference axis triad")?
-        .enumerate()
-    {
+    for (index, frame) in frames.iter().enumerate() {
         if let Some(frame) = frame {
             if present_count < present.len() {
                 present[present_count] = Some((index, frame));
@@ -2461,15 +2455,15 @@ fn complete_reference_axis_triad(
         }
     }
     if missing_count != 1 {
-        return Ok(None);
+        return None;
     }
     let Some(missing) = missing else {
-        return Ok(None);
+        return None;
     };
     let [Some((_, (first_origin, first_direction))), Some((_, (second_origin, second_direction)))] =
         &present
     else {
-        return Ok(None);
+        return None;
     };
     let completed = (|| {
         let normalize = |direction: Vector3| {
@@ -2543,7 +2537,7 @@ fn complete_reference_axis_triad(
             direction: normalize(direction)?,
         })
     })();
-    Ok(completed)
+    completed
 }
 
 fn explicit_reference_axis_frame(
@@ -3068,7 +3062,7 @@ pub(super) fn explicit_reference_plane_frame(
         return Ok(Err(()));
     }
     for_each_angled_reference_plane_frame(ctx, payload, |offset, frame| {
-        if strong_reference_plane_overlap(ctx, payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN)? {
+        if strong_reference_plane_overlap(payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN) {
             return Ok(true);
         }
         if include_reference_plane_frame(&mut first, frame) {
@@ -3093,7 +3087,7 @@ pub(super) fn explicit_reference_plane_frame(
         return Ok(Err(()));
     }
     for_each_compact_reference_plane_frame(ctx, payload, |offset, frame| {
-        if strong_reference_plane_overlap(ctx, payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN)?
+        if strong_reference_plane_overlap(payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN)
         {
             return Ok(true);
         }
@@ -3111,31 +3105,23 @@ pub(super) fn explicit_reference_plane_frame(
 }
 
 fn strong_reference_plane_overlap(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: usize,
     len: usize,
-) -> Result<bool, CodecError> {
+) -> bool {
+    // Callers supply a literal frame width, so the overlap search is bounded.
     let preceding_bytes = matrix_plane::LEN.max(fixed_plane::LEN) - 1;
     let start = offset
         .checked_sub(preceding_bytes)
         .map_or(0, std::convert::identity);
     let end = offset
         .checked_add(len)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "scan SLDPRT strong reference plane overlap",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?
+        .unwrap_or(payload.len())
         .min(payload.len());
     let Some(strong_starts) = payload.get(start..end) else {
-        return Ok(false);
+        return false;
     };
-    for (relative, _) in ctx
-        .admit_iter(strong_starts, "scan SLDPRT strong reference plane overlap")?
-        .enumerate()
+    for (relative, _) in strong_starts.iter().enumerate()
     {
         let strong_offset = start + relative;
         let matrix = strong_offset
@@ -3146,7 +3132,7 @@ fn strong_reference_plane_overlap(
                 .and_then(matrix_reference_plane_frame_record)
                 .is_some()
         {
-            return Ok(true);
+            return true;
         }
         let fixed = strong_offset
             .checked_add(fixed_plane::LEN)
@@ -3159,37 +3145,29 @@ fn strong_reference_plane_overlap(
                 })
                 .is_some()
         {
-            return Ok(true);
+            return true;
         }
     }
-    Ok(false)
+    false
 }
 
 fn fixed_reference_plane_overlap(
-    ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: usize,
     len: usize,
-) -> Result<bool, CodecError> {
+) -> bool {
+    // The caller supplies the angled-frame width.
     let start = offset
         .checked_sub(fixed_plane::LEN - 1)
         .map_or(0, std::convert::identity);
     let end = offset
         .checked_add(len)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "scan SLDPRT fixed reference plane overlap",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?
+        .unwrap_or(payload.len())
         .min(payload.len());
     let Some(fixed_starts) = payload.get(start..end) else {
-        return Ok(false);
+        return false;
     };
-    for (relative, _) in ctx
-        .admit_iter(fixed_starts, "scan SLDPRT fixed reference plane overlap")?
-        .enumerate()
+    for (relative, _) in fixed_starts.iter().enumerate()
     {
         let fixed_offset = start + relative;
         let fixed = fixed_offset
@@ -3203,10 +3181,10 @@ fn fixed_reference_plane_overlap(
                 })
                 .is_some()
         {
-            return Ok(true);
+            return true;
         }
     }
-    Ok(false)
+    false
 }
 
 fn constraint_reference_plane_frame(
@@ -3462,31 +3440,26 @@ fn offset_reference_plane_frame_pair(
         }
     }
     let mut unique_pair = None;
-    let mut ambiguous = false;
-    for (result_index, (result_offset, result)) in ctx
-        .admit_iter(&frames, "match SLDPRT offset plane frame pairs")?
-        .enumerate()
-    {
+    let mut results = frames.iter().enumerate();
+    while let Some((result_index, (result_offset, result))) = ctx.next_charged(&mut results, "match SLDPRT offset plane frame pairs")? {
         let Some(reference_candidates) = frames.get(result_index + 1..) else {
             continue;
         };
-        for (reference_offset, reference) in ctx.admit_iter(
-            reference_candidates,
-            "match SLDPRT offset plane frame pairs",
-        )? {
+        let mut references = reference_candidates.iter();
+        while let Some((reference_offset, reference)) = ctx.next_charged(&mut references, "match SLDPRT offset plane frame pairs")? {
             if result_offset >= reference_offset {
                 continue;
             }
             if let Some(pair) = valid_pair(*result, *reference) {
                 match unique_pair {
                     None => unique_pair = Some(pair),
-                    Some(previous) if previous != pair => ambiguous = true,
+                    Some(previous) if previous != pair => return Ok(None),
                     Some(_) => {}
                 }
             }
         }
     }
-    Ok(if ambiguous { None } else { unique_pair })
+    Ok(unique_pair)
 }
 
 fn constraint_midplane_frame(
@@ -3500,7 +3473,6 @@ fn constraint_midplane_frame(
         .map_err(|_| CodecError::malformed("SLDPRT midplane constraint class name is too long"))?
         .to_le_bytes();
     let mut unique = None;
-    let mut ambiguous = false;
     let mut source_items = payload.windows(record_len).enumerate().into_iter();
     while let Some((offset, bytes)) = ctx.next_charged(&mut source_items, "scan SLDPRT midplane constraints")? {
         if bytes.get(..CLASS_MARKER.len()) != Some(CLASS_MARKER)
@@ -3560,12 +3532,12 @@ fn constraint_midplane_frame(
         if let Some(frame) = frame {
             match unique {
                 None => unique = Some(frame),
-                Some(previous) if previous != frame => ambiguous = true,
+                Some(previous) if previous != frame => return Ok(None),
                 Some(_) => {}
             }
         }
     }
-    Ok(if ambiguous { None } else { unique })
+    Ok(unique)
 }
 
 fn for_each_angled_reference_plane_frame(
@@ -3626,12 +3598,7 @@ fn for_each_angled_reference_plane_frame(
             || u_axis.dot(normal).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
             || u_axis.dot(v_axis).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
             || normal.dot(v_axis).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
-            || fixed_reference_plane_overlap(
-                ctx,
-                payload,
-                offset,
-                ANGLED_REFERENCE_PLANE_FRAME_LEN,
-            )?
+            || fixed_reference_plane_overlap(payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN)
         {
             continue;
         }
@@ -3883,16 +3850,12 @@ fn for_each_compact_reference_plane_frame(
         let Some(mut pair) = candidates else {
             continue;
         };
-        ctx.stable_sort_by_key(
-            &mut pair,
-            |value| {
-                value
-                    .as_ref()
-                    .map_or([u64::MAX; 9], |(_, frame)| reference_plane_frame_key(frame))
-            },
-            Ord::cmp,
-            "sldprt compact reference plane frame pair sort",
-        )?;
+        let key = |value: &Option<(usize, ReferencePlaneFrame)>| {
+            value.as_ref().map_or([u64::MAX; 9], |(_, frame)| reference_plane_frame_key(frame))
+        };
+        if key(&pair[1]) < key(&pair[0]) {
+            pair.swap(0, 1);
+        }
         for candidate in pair.into_iter().flatten() {
             if !visit(candidate.0, candidate.1)? {
                 return Ok(());

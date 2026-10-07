@@ -679,16 +679,10 @@ fn unique_scored_transform(
     if maximum < 2 {
         return Ok(None);
     }
-    let mut candidates = ctx
-        .admit_iter(translations, OPERATION)?
-        .filter_map(|(translation, count)| (count == maximum).then_some(translation));
-    let Some(translation) = candidates.next() else {
-        return Ok(None);
-    };
-    Ok(candidates.next().is_none().then_some(MarkerTransform {
-        translation,
-        ..axes
-    }))
+    let mut remaining = translations.into_iter();
+    let Some(translation) = ctx.find_map(&mut remaining, |(translation, count)| Ok((count == maximum).then_some(translation)), OPERATION)? else { return Ok(None); };
+    Ok((!ctx.any_by(remaining, |(_, count)| Ok(count == maximum), OPERATION)?).then_some(MarkerTransform { translation, ..axes }))
+
 }
 
 #[cfg(test)]
