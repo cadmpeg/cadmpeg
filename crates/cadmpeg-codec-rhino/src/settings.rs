@@ -1091,7 +1091,7 @@ pub(crate) fn utf16_retained(
     decode_utf16_retained(ctx, bytes, reader.position(), operation)
 }
 
-fn decode_utf16_retained(
+pub(crate) fn decode_utf16_retained(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     error_offset: usize,

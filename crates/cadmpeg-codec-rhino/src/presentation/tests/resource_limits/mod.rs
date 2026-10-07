@@ -1788,3 +1788,29 @@ fn unbound_presentation_record_refuses_opaque_collection_limit() {
 }
 
 mod projections;
+
+#[test]
+fn image_fingerprints_admit_hashing_work_through_the_parser() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let image = embedded_bitmap_payload(1, Uuid::from_canonical([0x44; 16]), 0);
+    let pixels = [0x11; 24];
+    let bitmap = windows_bitmap_payload(crate::presentation::WINDOWS_BITMAP, 0, "", bitmap_header(3, 2, 24, 24, 0), &[stored_bitmap_buffer(&pixels)], &[]);
+    for (bytes, windows, operation) in [(&image, false, "Rhino image SHA-256"), (&bitmap, true, "Rhino Windows bitmap SHA-256")] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+            let result = if windows {
+                crate::presentation::parse_windows_bitmap(&ctx, bytes, 0..bytes.len(), crate::presentation::WINDOWS_BITMAP, ArchiveVersion::V8, 72).map(|value| value.pixel_buffer_sha256)
+            } else {
+                crate::presentation::parse_embedded_image(&ctx, bytes, 0..bytes.len(), ArchiveVersion::V8, 42).map(|value| value.buffer_sha256)
+            }.map_err(|error| match error {
+                FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
+                other => panic!("valid image failed: {other:?}"),
+            });
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(limit)); }
+            result
+        });
+    }
+}

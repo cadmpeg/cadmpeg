@@ -720,13 +720,28 @@ pub(crate) fn parse_userdata(
     }))
 }
 
+/// Selects entries while validating every source string.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum UserStringSelection {
+    All,
+    ExcludeFirstTempObject,
+    ValidateOnly,
+}
+
+/// Output strings with scoped storage for their intermediate tuple vector.
+pub(crate) struct UserStrings<'ctx> {
+    pub(crate) entries: Vec<(String, String)>,
+    _workspace: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 /// Reads the built-in `ON_UserStringList` payload from its outer userdata child.
-pub(crate) fn parse_user_string_list(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(crate) fn parse_user_string_list<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     payload_range: Range<usize>,
     archive: ArchiveVersion,
-) -> Result<Vec<(String, String)>, FramingError> {
+    selection: UserStringSelection,
+) -> Result<UserStrings<'ctx>, FramingError> {
     let list = chunk_at(
         bytes,
         payload_range.start,
@@ -746,9 +761,11 @@ pub(crate) fn parse_user_string_list(
     }
     let count = reader.i32()?;
     let count_bytes = bounded_count(&reader, count, 1)?;
-    let mut values = ctx
-        .collection_vec(count_bytes, "Rhino user-string entries")
-        .map_err(crate::chunks::FramingError::from)?;
+    let (mut values, mut workspace) = ctx.temporary_vec(
+        if matches!(selection, UserStringSelection::All) { count_bytes } else { 0 },
+        "Rhino user-string entries",
+    )?;
+    let mut omit_temporary = matches!(selection, UserStringSelection::ExcludeFirstTempObject);
     for _ in 0..count_bytes {
         ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let entry = chunk_at(bytes, reader.position(), list.body().end, archive, false)?;
@@ -762,14 +779,35 @@ pub(crate) fn parse_user_string_list(
                 "user-string entry version is unsupported",
             ));
         }
-        let key = settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string key")?;
-        let value = settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string value")?;
+        if matches!(selection, UserStringSelection::ValidateOnly) {
+            settings::utf16_deferred(ctx, &mut entry_reader)?;
+            settings::utf16_deferred(ctx, &mut entry_reader)?;
+        } else {
+            let key_bytes = settings::utf16_payload(&mut entry_reader)?;
+            const TEMP_OBJECT_KEY: &[u8; 13] = b"$temp_object$";
+            let temporary = omit_temporary && key_bytes.len() == TEMP_OBJECT_KEY.len() * 2
+                && TEMP_OBJECT_KEY.iter().enumerate().all(|(index, expected)| {
+                    cadmpeg_core::decode::View::u16_le_at(key_bytes, index * 2)
+                        .and_then(|unit| u8::try_from(unit).ok())
+                        .is_some_and(|unit| unit.eq_ignore_ascii_case(expected))
+                });
+            if temporary {
+                omit_temporary = false;
+                settings::utf16_deferred(ctx, &mut entry_reader)?;
+            } else {
+                let key = settings::decode_utf16_retained(ctx, key_bytes, entry_reader.position(), "Rhino user-string key")?;
+                let value = settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string value")?;
+                if !matches!(selection, UserStringSelection::All) {
+                    workspace.with_storage(|| ctx.reserve_vec(&mut values, 1, "Rhino user-string entries"))?;
+                }
+                values.push((key, value));
+            }
+        }
         entry_reader.skip_remaining()?;
-        values.push((key, value));
         reader.skip(entry.next_offset() - reader.position())?;
     }
     reader.skip_remaining()?;
-    Ok(values)
+    Ok(UserStrings { entries: values, _workspace: workspace })
 }
 
 fn parse_history(
