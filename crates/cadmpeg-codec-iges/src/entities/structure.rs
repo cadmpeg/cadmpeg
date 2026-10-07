@@ -2097,9 +2097,9 @@ fn plane_face_draft(
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
         if boundary_index == 0 {
-            outer_loop = Some(loop_id)
+            outer_loop = Some(loop_id);
         } else {
-            loop_ids.push(loop_id)
+            loop_ids.push(loop_id);
         }
     }
     let face_loops = match outer_loop {
@@ -2380,7 +2380,7 @@ fn read_flow_required_pointers(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, operation)?;
     let mut input = 0..count;
-    while let Some(_) = ctx.next_charged(&mut input, operation)? {
+    while ctx.next_charged(&mut input, operation)?.is_some() {
         let Some(FlowPointer::Sequence(sequence)) =
             read_flow_pointer(record, entries, cursor, false)
         else {
@@ -2400,7 +2400,10 @@ fn read_flow_optional_pointers(
 ) -> Result<Option<Vec<Option<u32>>>, CodecError> {
     let mut pointers = ctx.collection_vec(count, "iges flow continuation pointers")?;
     let mut input = 0..count;
-    while let Some(_) = ctx.next_charged(&mut input, "iges structure list traversal")? {
+    while ctx
+        .next_charged(&mut input, "iges structure list traversal")?
+        .is_some()
+    {
         let Some(pointer) = read_flow_pointer(record, entries, cursor, true) else {
             return Ok(None);
         };
@@ -2515,7 +2518,10 @@ fn flow_associativity(
         return Ok(None);
     };
     let mut input = 0..counts[3];
-    while let Some(_) = ctx.next_charged(&mut input, "iges structure list traversal")? {
+    while ctx
+        .next_charged(&mut input, "iges structure list traversal")?
+        .is_some()
+    {
         if record.string(cursor).is_none_or(<[u8]>::is_empty) {
             return Ok(None);
         }
@@ -2834,8 +2840,7 @@ pub(super) fn project(
         };
         let owners = property_owners
             .get(&entry.sequence)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
+            .map_or(&[][..], Vec::as_slice);
         let fields_valid =
             property_fields_valid(entry, record, record.parameter_end(), entries, ctx)?;
         let attachment_valid =
@@ -3286,7 +3291,7 @@ Ok(record
             "iges structure list traversal",
         )? {
             for (data_type, count) in ctx.admit_iter(
-                shape.map(Vec::as_slice).unwrap_or(&[]),
+                shape.map_or(&[][..], Vec::as_slice),
                 "iges attribute shape traversal",
             )? {
                 for _ in ctx.admit_iter(0..*count, "iges structure list traversal")? {

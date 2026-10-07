@@ -441,8 +441,7 @@ pub(super) fn project(
         };
         let edges = ctx
             .get_btree_map(&groups.0, &profile_id, "iges solid profile edge lookup")?
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
+            .map_or(&[][..], Vec::as_slice);
         let Some(closed) = profile_closed(index, edges, global.minimum_resolution_mm(), ctx)?
         else {
             super::push_entity_loss(

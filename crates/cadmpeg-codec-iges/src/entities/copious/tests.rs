@@ -737,8 +737,7 @@ fn copious_tuple_diagnostics_precede_failed_placement() {
         assert_eq!(projection_losses.len(), 1);
         assert!(
             projection_losses[0].message.contains(expected),
-            "{:#?}",
-            projection_losses
+            "{projection_losses:#?}"
         );
     }
 }
