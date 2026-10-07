@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Design feature history and scalar admission tests.
+//! Design history, constraints and scalar admission tests.
 
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
@@ -303,4 +303,32 @@ fn feature_ordering_releases_scratch_identity_indexes() {
         limit.used
     };
     assert_eq!(used(1), used(4096));
+}
+
+#[test]
+fn empty_constraint_operands_release_integer_lane_storage() {
+    let xml = roxmltree::Document::parse(
+        "<Constrain ElementIds=\"-2000 -2000 -2000 -2000\" ElementPositions=\"0 0 0 0\"/>",
+    )
+    .expect("constraint XML");
+    let marker = "probe".repeat(4096);
+    let operation = "test after constraint integer lanes";
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        &[],
+        operation,
+        |ctx| {
+            let (operands, _storage) = ctx
+                .with_scoped_storage("test constraint operand results", || {
+                    super::super::constraint_operands(ctx, xml.root_element())
+                })?;
+            assert!(operands.is_empty());
+            ctx.format_scoped(format_args!("{marker}"), operation)
+                .map(|(text, _storage)| text)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("materialized refusal required");
+    };
+    assert_eq!(limit.used, 0, "empty operands hold no integer lane storage");
 }
