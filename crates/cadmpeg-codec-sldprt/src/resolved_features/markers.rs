@@ -16,7 +16,7 @@ use super::endpoints::{
 };
 use super::relation_loci::same_dimension_length;
 use super::relation_records::unique_relation_declaration_candidates_charged;
-use super::scalars::{feature_object_name, operand_kind};
+use super::scalars::{operand_kind, ObjectNames};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
     is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
@@ -71,7 +71,7 @@ pub(crate) fn spatial_sketches(
         }
     }
     // The lane indexes serve every sketch feature; they are built for the first one.
-    let mut lane_indexes: Option<Vec<SpatialLaneIndex<'_>>> = None;
+    let mut lane_indexes: Option<Vec<SpatialLaneIndex<'_, '_>>> = None;
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     for feature in ctx.admit_iter(&mut *model_features, "scan SLDPRT spatial features")? {
@@ -282,7 +282,7 @@ pub(crate) fn spatial_sketches(
         let mut candidates = Vec::new();
         for index in ctx.admit_iter(&mut *lane_indexes, "scan SLDPRT spatial feature lanes")? {
             let lane = index.lane;
-            let Some(name) = feature_object_name(record, lane) else {
+            let Some(name) = index.object_name(ctx, record)? else {
                 continue;
             };
             let Some(start) = usize::try_from(name.offset).ok() else {
@@ -395,8 +395,10 @@ pub(crate) fn spatial_sketches(
 }
 
 /// What spatial sketch projection looks up in one lane for every sketch feature.
-struct SpatialLaneIndex<'a> {
+struct SpatialLaneIndex<'a, 'ctx> {
     lane: &'a FeatureInputLane,
+    /// The lane's object names, indexed when a projection first needs one.
+    names: Option<ObjectNames<'a, 'ctx>>,
     /// Relation-manager ranges of the lane, sorted and deduplicated.
     relation_ranges: Vec<(u64, u64)>,
     /// Offsets of the scalars each feature owns. A lane without relation
@@ -409,7 +411,7 @@ struct SpatialLaneIndex<'a> {
     feature_offsets: Option<Vec<u64>>,
 }
 
-impl<'a> SpatialLaneIndex<'a> {
+impl<'a, 'ctx> SpatialLaneIndex<'a, 'ctx> {
     fn new(ctx: &DecodeContext<'_>, lane: &'a FeatureInputLane) -> Result<Self, CodecError> {
         const SCALARS: &str = "index SLDPRT spatial scalars";
         const MARKERS: &str = "index SLDPRT spatial sketch markers";
@@ -438,6 +440,7 @@ impl<'a> SpatialLaneIndex<'a> {
         }
         Ok(Self {
             lane,
+            names: None,
             relation_ranges,
             scalar_offsets,
             markers,
@@ -517,22 +520,36 @@ impl<'a> SpatialLaneIndex<'a> {
         Ok(points)
     }
 
+    /// The lane name that serializes the feature's object.
+    fn object_name(
+        &mut self,
+        ctx: &'ctx DecodeContext<'_>,
+        feature: &crate::records::Feature,
+    ) -> Result<Option<&'a crate::records::FeatureInputName>, CodecError> {
+        if self.names.is_none() {
+            self.names = Some(ObjectNames::new(ctx, self.lane)?);
+        }
+        match &self.names {
+            Some(names) => names.of(ctx, feature),
+            None => Ok(None),
+        }
+    }
+
     /// The first history feature object in this lane that starts after `after_offset`.
     fn next_feature_offset(
         &mut self,
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
         histories: &[crate::records::FeatureHistory],
         after_offset: u64,
     ) -> Result<Option<u64>, CodecError> {
         const OPERATION: &str = "find next SLDPRT spatial feature object";
         if self.feature_offsets.is_none() {
-            let lane = self.lane;
             let offsets = storage.with_storage(|| {
                 let mut offsets = Vec::new();
                 for history in ctx.admit_iter(histories, OPERATION)? {
                     for candidate in ctx.admit_iter(&history.features, OPERATION)? {
-                        if let Some(name) = feature_object_name(candidate, lane) {
+                        if let Some(name) = self.object_name(ctx, candidate)? {
                             ctx.push_vec(&mut offsets, name.offset, OPERATION)?;
                         }
                     }
@@ -581,15 +598,15 @@ fn spatial_sketch_id_charged(
 #[derive(Debug, Default)]
 struct SpatialLineVertices(usize, Vec<usize>, Vec<FinitePoint3>);
 
-fn spatial_line_vertices_charged(
-    ctx: &DecodeContext<'_>,
+fn spatial_line_vertices_charged<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     histories: &[crate::records::FeatureHistory],
     record: &crate::records::Feature,
-    index: &mut SpatialLaneIndex<'_>,
+    index: &mut SpatialLaneIndex<'_, 'ctx>,
 ) -> Result<Option<SpatialLineVertices>, CodecError> {
     let lane = index.lane;
-    let Some(name) = feature_object_name(record, lane) else {
+    let Some(name) = index.object_name(ctx, record)? else {
         return Ok(None);
     };
     let Ok(start) = usize::try_from(name.offset) else {

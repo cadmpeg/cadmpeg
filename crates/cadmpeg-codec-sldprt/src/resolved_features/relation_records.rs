@@ -1,6 +1,6 @@
 //! Relation instance records and scalar roles.
 
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::SKETCH_POINT_TOLERANCE;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::classify::is_history_metadata_record;
@@ -58,13 +58,14 @@ pub(super) fn feature_intervals(
     lane: &FeatureInputLane,
 ) -> Result<Vec<(u64, Option<u64>, String)>, CodecError> {
     let mut starts_storage = ctx.reserve_scoped(0, "SLDPRT feature interval starts")?;
+    let names = ObjectNames::new(ctx, lane)?;
     let mut starts = Vec::<(u64, &str)>::new();
     for history in ctx.admit_iter(histories, "scan SLDPRT feature interval histories")? {
         for feature in ctx.admit_iter(&history.features, "scan SLDPRT feature intervals")? {
             if is_history_metadata_record(ctx, feature, &history.features)? {
                 continue;
             }
-            if let Some(name) = feature_object_name(feature, lane) {
+            if let Some(name) = names.of(ctx, feature)? {
                 starts_storage.with_storage(|| {
                     ctx.push_vec(
                         &mut starts,
