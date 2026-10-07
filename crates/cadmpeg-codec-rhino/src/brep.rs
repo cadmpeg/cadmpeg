@@ -1281,10 +1281,9 @@ fn parse_legacy_major2(
     let _outer_flag = reader.i32()?;
     let bounds = bbox(ctx, &mut reader)?;
 
+    let mut legacy_storage = ctx.reserve_scoped(0, "Rhino legacy Brep topology scratch")?;
     let c2_start = reader.position();
-    let mut c2_meta = ctx
-        .collection_vec(trim_count, "Rhino legacy Brep C2 metadata")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut c2_meta = legacy_storage.with_storage(|| ctx.collection_vec(trim_count, "Rhino legacy Brep C2 metadata"))?;
     for _ in 0..trim_count {
         ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
         let start = reader.position();
@@ -1295,7 +1294,7 @@ fn parse_legacy_major2(
                 .map(|curve| crate::curves::DecodedGeometry::Curve { curve })
         })?;
         let curve_range = start..reader.position();
-        let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
+        let (domain, endpoints) = legacy_curve_shape(ctx, &decoded, curve_range.start)?;
         c2_meta.push(LegacyCurveMeta {
             range: curve_range,
             domain,
@@ -1305,9 +1304,7 @@ fn parse_legacy_major2(
     let c2_range = c2_start..reader.position();
 
     let c3_start = reader.position();
-    let mut c3_meta = ctx
-        .collection_vec(edge_count, "Rhino legacy Brep C3 metadata")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut c3_meta = legacy_storage.with_storage(|| ctx.collection_vec(edge_count, "Rhino legacy Brep C3 metadata"))?;
     for _ in 0..edge_count {
         ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
         let start = reader.position();
@@ -1318,7 +1315,7 @@ fn parse_legacy_major2(
                 .map(|curve| crate::curves::DecodedGeometry::Curve { curve })
         })?;
         let curve_range = start..reader.position();
-        let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
+        let (domain, endpoints) = legacy_curve_shape(ctx, &decoded, curve_range.start)?;
         c3_meta.push(LegacyCurveMeta {
             range: curve_range,
             domain,
@@ -1334,11 +1331,8 @@ fn parse_legacy_major2(
     for _ in 0..face_count {
         ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
         let start = reader.position();
-        let _surface = crate::surfaces::read_nurbs_surface_prefix(
-            ctx,
-            &mut reader,
-            crate::settings::MillimeterScale::IDENTITY,
-        )?;
+        let mut surface_storage = ctx.reserve_scoped(0, "Rhino legacy Brep surface scratch")?;
+        let _surface = surface_storage.with_storage(|| crate::surfaces::read_nurbs_surface_prefix(ctx, &mut reader, crate::settings::MillimeterScale::IDENTITY))?;
         let surface_range = start..reader.position();
         surface_slots.push(Some(RawBrepChild {
             class_uuid: crate::surfaces::NURBS_SURFACE,
@@ -1493,10 +1487,7 @@ fn parse_legacy_major2(
         ));
     }
 
-    let mut edge_trim_indexes =
-        ctx.collect_indexed_vec(edge_count, "Rhino legacy Brep edge-trim groups", |_| {
-            Ok(Vec::<usize>::new())
-        })?;
+    let mut edge_trim_indexes = legacy_storage.with_storage(|| ctx.collect_indexed_vec(edge_count, "Rhino legacy Brep edge-trim groups", |_| Ok(Vec::<usize>::new())))?;
     for (trim_index, trim) in ctx
         .admit_iter(&trims[..], "Rhino parse legacy major2 traversal")
         .map_err(cadmpeg_core::CodecError::from)?
@@ -1504,7 +1495,7 @@ fn parse_legacy_major2(
     {
         if let Some(edge_index) = position(trim.edge).filter(|index| *index < edge_count) {
             let group = &mut edge_trim_indexes[edge_index];
-            ctx.reserve_vec(group, 1, "Rhino legacy Brep edge-trim indexes")?;
+            legacy_storage.with_storage(|| ctx.reserve_vec(group, 1, "Rhino legacy Brep edge-trim indexes"))?;
             group.push(trim_index);
         }
     }
@@ -1584,11 +1575,9 @@ fn parse_legacy_major2(
         }
     }
     let mut root_vertices =
-        ctx.alloc_filled(endpoint_count, None, "Rhino legacy Brep root vertices")?;
+        legacy_storage.with_storage(|| ctx.alloc_filled(endpoint_count, None, "Rhino legacy Brep root vertices"))?;
     let mut vertices = Vec::new();
-    let mut endpoint_vertices = ctx
-        .collection_vec(endpoint_count, "Rhino legacy Brep endpoint vertices")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut endpoint_vertices = legacy_storage.with_storage(|| ctx.collection_vec(endpoint_count, "Rhino legacy Brep endpoint vertices"))?;
     for endpoint in 0..endpoint_count {
         ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
         let root = legacy_find(ctx, &mut endpoint_parent, endpoint)?;
@@ -1598,7 +1587,7 @@ fn parse_legacy_major2(
                 let position_in_array = vertices.len();
                 let index = i32::try_from(position_in_array)
                     .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?;
-                ctx.reserve_vec(&mut vertices, 1, "Rhino legacy Brep vertices")?;
+                legacy_storage.with_storage(|| ctx.reserve_vec(&mut vertices, 1, "Rhino legacy Brep vertices"))?;
                 root_vertices[root] = Some(position_in_array);
                 vertices.push(LegacyVertex {
                     vertex: RawBrepVertex {
@@ -1617,6 +1606,8 @@ fn parse_legacy_major2(
         };
         endpoint_vertices.push(index);
     }
+    let mut vertex_index = None;
+    let mut vertex_index_storage = ctx.reserve_scoped(0, "Rhino legacy Brep vertex index")?;
     let mut edges = ctx
         .collection_vec(edge_count, "Rhino legacy Brep edges")
         .map_err(crate::curves::GeometryError::from)?;
@@ -1632,8 +1623,8 @@ fn parse_legacy_major2(
                 endpoint_vertices[legacy_trim_endpoint_for_edge(trim, *trim_index, 1)],
             ]
         } else {
-            let start = legacy_vertex(ctx, &mut vertices, curve.endpoints[0], curve.range.start)?;
-            let end = legacy_vertex(ctx, &mut vertices, curve.endpoints[1], curve.range.start)?;
+            let start = legacy_storage.with_storage(|| legacy_vertex(ctx, &mut vertices, &mut vertex_index, &mut vertex_index_storage, curve.endpoints[0], curve.range.start))?;
+            let end = legacy_storage.with_storage(|| legacy_vertex(ctx, &mut vertices, &mut vertex_index, &mut vertex_index_storage, curve.endpoints[1], curve.range.start))?;
             [start, end]
         };
         for (vertex, point) in endpoints
@@ -1834,6 +1825,7 @@ fn parse_legacy_major2(
 }
 
 fn legacy_curve_shape(
+    ctx: &DecodeContext<'_>,
     decoded: &crate::curves::DecodedGeometry,
     offset: usize,
 ) -> Result<(Interval, [[f64; 3]; 2]), GeometryError> {
@@ -1858,36 +1850,37 @@ fn legacy_curve_shape(
             ));
         }
     };
-    let endpoints = legacy_decoded_curve_endpoints(curve, offset)?;
+    let endpoints = legacy_decoded_curve_endpoints(ctx, curve, offset)?;
     Ok((domain, endpoints))
 }
 
 fn legacy_decoded_curve_endpoints(
+    ctx: &DecodeContext<'_>,
     curve: &crate::curves::DecodedCurve,
     offset: usize,
 ) -> Result<[[f64; 3]; 2], GeometryError> {
-    let geometry = match curve {
-        crate::curves::DecodedCurve::Compound { children, .. } => {
-            let first = children
-                .first()
-                .ok_or_else(|| error(offset, "legacy Brep polycurve has no first segment"))?;
-            let last = children
-                .last()
-                .ok_or_else(|| error(offset, "legacy Brep polycurve has no last segment"))?;
-            return Ok([
-                legacy_decoded_curve_endpoints(&first.1, offset)?[0],
-                legacy_decoded_curve_endpoints(&last.1, offset)?[1],
-            ]);
-        }
-        crate::curves::DecodedCurve::Leaf { geometry, .. } => geometry,
-    };
-    match geometry {
+    let mut endpoints = [[0.0; 3]; 2];
+    for (side, endpoint) in endpoints.iter_mut().enumerate() {
+        let mut cursor = curve;
+        let geometry = loop {
+            ctx.charge_work(1, "Rhino legacy Brep endpoint path")?;
+            match cursor {
+                crate::curves::DecodedCurve::Compound { children, .. } => {
+                    cursor = if side == 0 {
+                        &children.first().ok_or_else(|| error(offset, "legacy Brep polycurve has no first segment"))?.1
+                    } else {
+                        &children.last().ok_or_else(|| error(offset, "legacy Brep polycurve has no last segment"))?.1
+                    };
+                }
+                crate::curves::DecodedCurve::Leaf { geometry, .. } => break geometry,
+            }
+        };
+        *endpoint = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            let first = nurbs.pole_rows().point_at(0)
-                .ok_or_else(|| error(offset, "legacy Brep curve has no first pole"))?;
-            let last = nurbs.pole_rows().point_at(nurbs.pole_count().saturating_sub(1))
-                .ok_or_else(|| error(offset, "legacy Brep curve has no last pole"))?;
-            Ok([[first.x, first.y, first.z], [last.x, last.y, last.z]])
+            let index = if side == 0 { 0 } else { nurbs.pole_count().saturating_sub(1) };
+            let message = if side == 0 { "legacy Brep curve has no first pole" } else { "legacy Brep curve has no last pole" };
+            let point = nurbs.pole_rows().point_at(index).ok_or_else(|| error(offset, message))?;
+            [point.x, point.y, point.z]
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
@@ -1898,15 +1891,17 @@ fn legacy_decoded_curve_endpoints(
                 center.y + ref_direction.y * radius,
                 center.z + ref_direction.z * radius,
             ];
-            Ok([endpoint, endpoint])
+            endpoint
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = degenerate_curve.point().get();
             let point = [point.x, point.y, point.z];
-            Ok([point, point])
+            point
         }
-        _ => Err(error(offset, "legacy Brep curve has no finite endpoints")),
+        _ => return Err(error(offset, "legacy Brep curve has no finite endpoints")),
+        };
     }
+    Ok(endpoints)
 }
 
 fn legacy_trim_endpoint(trim_index: usize, endpoint: usize) -> usize {
@@ -1942,6 +1937,13 @@ fn legacy_union(ctx: &DecodeContext<'_>, parent: &mut [usize], left: usize, righ
     Ok(())
 }
 
+fn legacy_point_key(point: [f64; 3]) -> Option<[u64; 3]> {
+    if point.into_iter().any(f64::is_nan) {
+        return None;
+    }
+    Some(point.map(|value| if value == 0.0 { 0 } else { value.to_bits() }))
+}
+
 /// The index of the legacy Brep vertex at `point`, adding it when the archive
 /// states no vertex there yet.
 ///
@@ -1954,15 +1956,28 @@ fn legacy_union(ctx: &DecodeContext<'_>, parent: &mut [usize], left: usize, righ
 fn legacy_vertex(
     ctx: &DecodeContext<'_>,
     vertices: &mut Vec<LegacyVertex>,
+    point_index: &mut Option<BTreeMap<[u64; 3], usize>>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     point: [f64; 3],
     position: usize,
 ) -> Result<usize, GeometryError> {
-    if let Some((index, _)) = ctx.find_by(
-        vertices[..].iter().enumerate(),
-        |(_, value)| Ok(value.vertex.point.get() == point),
-        "Rhino legacy vertex traversal",
-    )? {
-        return Ok(index);
+    if point_index.is_none() {
+        let mut points = BTreeMap::new();
+        for (position, vertex) in ctx.admit_iter(&vertices[..], "Rhino legacy Brep vertex indexing").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+            if let Some(key) = legacy_point_key(vertex.vertex.point.get()) {
+                storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+                    ctx.entry_btree_map(&mut points, key, "Rhino legacy Brep vertex index")?.or_insert(position);
+                    Ok(())
+                })?;
+            }
+        }
+        *point_index = Some(points);
+    }
+    let key = legacy_point_key(point);
+    if let (Some(key), Some(points)) = (key.as_ref(), point_index.as_ref()) {
+        if let Some(position) = ctx.get_btree_map(points, key, "Rhino legacy Brep vertex index")? {
+            return Ok(*position);
+        }
     }
     let index = vertices.len();
     let stored_index =
@@ -1980,6 +1995,9 @@ fn legacy_vertex(
         point_scale: [0.0; 3],
         point_count: 0,
     });
+    if let (Some(key), Some(points)) = (key, point_index.as_mut()) {
+        storage.with_storage(|| ctx.insert_btree_map(points, key, index, "Rhino legacy Brep vertex index"))?;
+    }
     Ok(index)
 }
 
@@ -1992,9 +2010,8 @@ fn read_legacy_mesh_sides(
     warnings: &mut Diagnostics,
 ) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let start = reader.position();
-    let mut slots = ctx
-        .collection_vec(face_count, "Rhino legacy Brep mesh slots")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut slot_storage = ctx.reserve_scoped(0, "Rhino legacy Brep mesh slot scratch")?;
+    let mut slots = slot_storage.with_storage(|| ctx.collection_vec(face_count, "Rhino legacy Brep mesh slots"))?;
     for _ in 0..face_count {
         ctx.charge_work(1, "Rhino brep read_legacy_mesh_sides records")?;
         let present = match reader.u8() {
@@ -2071,6 +2088,7 @@ fn read_legacy_mesh_sides(
         };
         slots.push(mesh);
     }
+    slot_storage.commit()?;
     Ok((slots, start..reader.position()))
 }
 
@@ -2109,9 +2127,8 @@ fn read_children(
         ));
     }
     let count = count(&mut child_reader, MAX_BREP_ITEMS)?;
-    let mut direct_ranges = ctx
-        .collection_vec(count + 1, "Rhino Brep child ranges")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut range_storage = ctx.reserve_scoped(0, "Rhino Brep child ranges")?;
+    let mut direct_ranges = range_storage.with_storage(|| ctx.collection_vec(count + 1, "Rhino Brep child ranges"))?;
     direct_ranges.push(version_offset..child_reader.position());
     let mut slots = ctx
         .collection_vec(count, "Rhino Brep child slots")
@@ -2475,16 +2492,18 @@ fn read_mesh_sides(
 ) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
+    let mut slot_storage = ctx.reserve_scoped(0, "Rhino Brep mesh slot scratch")?;
     let parsed: Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> = (|| {
-        let mut result =
-            ctx.collect_indexed_vec(face_count, "Rhino Brep mesh cache slots", |_| Ok(None))?;
+        let mut result = slot_storage.with_storage(|| ctx.collection_vec(face_count, "Rhino Brep mesh cache slots"))?;
         let mut children = Vec::new();
-        for slot in ctx.admit_iter(&mut result[..], "Rhino Brep mesh-side traversal").map_err(cadmpeg_core::CodecError::from)? {
+        let mut range_storage = ctx.reserve_scoped(0, "Rhino Brep mesh cache child ranges")?;
+        for _ in 0..face_count {
+            ctx.charge_work(1, "Rhino Brep mesh-side traversal")?;
             let present = child.bool()?;
             let mesh = if present {
                 let start = child.position();
                 let object = chunk_at(bytes, start, child.end(), archive, false)?;
-                ctx.reserve_vec(&mut children, 1, "Rhino Brep mesh cache child ranges")?;
+                range_storage.with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino Brep mesh cache child ranges"))?;
                 children.push(object.range());
                 let class = parse_class_wrapper_with_userdata(
                     ctx,
@@ -2530,13 +2549,13 @@ fn read_mesh_sides(
             } else {
                 None
             };
-            *slot = mesh;
+            result.push(mesh);
         }
         finish_anonymous_children(ctx, bytes, reader, &chunk, child, &children, warnings)?;
         Ok((result, chunk.range()))
     })();
     match parsed {
-        Ok(result) => Ok(result),
+        Ok(result) => { slot_storage.commit()?; Ok(result) },
         Err(error @ GeometryError::Codec(_)) => Err(error),
         Err(error) => {
             let degraded =
@@ -2699,9 +2718,8 @@ fn read_region_sides<'a>(
     let mut result = ctx
         .collection_vec(count, "Rhino Brep region face sides")
         .map_err(crate::curves::GeometryError::from)?;
-    let mut children = ctx
-        .collection_vec(count, "Rhino Brep region side ranges")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut range_storage = ctx.reserve_scoped(0, "Rhino Brep region side ranges")?;
+    let mut children = range_storage.with_storage(|| ctx.collection_vec(count, "Rhino Brep region side ranges"))?;
     for _ in 0..count {
         ctx.charge_work(1, "Rhino brep read_region_sides records")?;
         let (body, source) = region_element(ctx, bytes, &mut child, archive, ON_BREP_FACE_SIDE)?;
@@ -2731,9 +2749,8 @@ fn read_region_records<'a>(
     let mut result = ctx
         .collection_vec(count, "Rhino Brep region records")
         .map_err(crate::curves::GeometryError::from)?;
-    let mut children = ctx
-        .collection_vec(count, "Rhino Brep region record ranges")
-        .map_err(crate::curves::GeometryError::from)?;
+    let mut range_storage = ctx.reserve_scoped(0, "Rhino Brep region record ranges")?;
+    let mut children = range_storage.with_storage(|| ctx.collection_vec(count, "Rhino Brep region record ranges"))?;
     let mut index_mismatch = false;
     for position in 0..count {
         ctx.charge_work(1, "Rhino brep read_region_records records")?;
@@ -3355,7 +3372,8 @@ fn finish_anonymous_children(
     children: &[Range<usize>],
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
-    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
+    let mut ranges = ctx.reserve_scoped(0, "Rhino brep checksum ranges")?;
+    let direct = ranges.with_storage(|| crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children))?;
     finish_anonymous_ranges(ctx, bytes, parent, chunk, child, &direct, warnings)
 }
 
@@ -3422,7 +3440,9 @@ mod tests {
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                     .expect("empty root fits service profile");
-            super::legacy_vertex(&ctx, &mut vertices, [endpoints[0], 0., 0.], 0).unwrap();
+            let mut point_index = None;
+            let mut index_storage = ctx.reserve_scoped(0, "Rhino legacy Brep vertex index").unwrap();
+            super::legacy_vertex(&ctx, &mut vertices, &mut point_index, &mut index_storage, [endpoints[0], 0., 0.], 0).unwrap();
             for x in endpoints {
                 vertices[0].add_point([x, 0., 0.]);
             }
@@ -4132,6 +4152,50 @@ mod tests {
     }
 
     #[test]
+    fn legacy_endpoint_paths_visit_single_child_chains_once_per_end() {
+        let mut curve = crate::curves::DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(cadmpeg_ir::math::Point3::new(4., 5., 6.)).unwrap(),
+            )), Diagnostics::new(),
+        );
+        for _ in 0..32 {
+            curve = crate::curves::DecodedCurve::Compound {
+                children: vec![(cadmpeg_ir::scalar::FiniteReal::ZERO, curve)],
+                end_parameter: cadmpeg_ir::scalar::FiniteReal::ONE,
+                warnings: Diagnostics::new(),
+            };
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        // Each end visits 32 compound nodes and one leaf.
+        policy.limits.max_work_units = 66;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(legacy_decoded_curve_endpoints(&ctx, &curve, 0).unwrap(), [[4., 5., 6.]; 2]);
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits, "Rhino legacy Brep endpoint path", |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                legacy_decoded_curve_endpoints(&ctx, &curve, 0).map_err(|error| match error {
+                    GeometryError::Codec(error) => error, error => panic!("unexpected endpoint failure: {error:?}"),
+                })
+            },
+        );
+    }
+
+    #[test]
+    fn legacy_vertex_index_preserves_the_first_signed_zero_match() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut vertices = Vec::new();
+        let mut point_index = None;
+        let mut storage = ctx.reserve_scoped(0, "Rhino legacy Brep vertex index").unwrap();
+        assert_eq!(super::legacy_vertex(&ctx, &mut vertices, &mut point_index, &mut storage, [-0., 2., 3.], 0).unwrap(), 0);
+        assert_eq!(super::legacy_vertex(&ctx, &mut vertices, &mut point_index, &mut storage, [0., 2., 3.], 0).unwrap(), 0);
+        assert_eq!(vertices.len(), 1);
+        assert_eq!(super::legacy_vertex(&ctx, &mut vertices, &mut point_index, &mut storage, [1., 2., 3.], 0).unwrap(), 1);
+    }
+
+    #[test]
     fn legacy_curve_endpoints_cover_analytic_and_degenerate_children() {
         let circle = crate::curves::DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -4146,7 +4210,7 @@ mod tests {
             Diagnostics::new(),
         );
         assert_eq!(
-            legacy_decoded_curve_endpoints(&circle, 0).expect("circle endpoints"),
+            legacy_decoded_curve_endpoints(&cadmpeg_test_support::service_decode_context(), &circle, 0).expect("circle endpoints"),
             [[3.0, 2.0, 3.0]; 2]
         );
         let point = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
@@ -4157,7 +4221,7 @@ mod tests {
             Diagnostics::new(),
         );
         assert_eq!(
-            legacy_decoded_curve_endpoints(&degenerate, 0).expect("degenerate endpoints"),
+            legacy_decoded_curve_endpoints(&cadmpeg_test_support::service_decode_context(), &degenerate, 0).expect("degenerate endpoints"),
             [[4.0, 5.0, 6.0]; 2]
         );
     }
@@ -4182,7 +4246,7 @@ mod tests {
             warnings: Diagnostics::new(),
         };
         let polycurve = crate::curves::DecodedGeometry::Curve { curve: polycurve };
-        let (domain, endpoints) = legacy_curve_shape(&polycurve, 0).expect("polycurve shape");
+        let (domain, endpoints) = legacy_curve_shape(&cadmpeg_test_support::service_decode_context(), &polycurve, 0).expect("polycurve shape");
         assert_eq!(domain, finite_interval([-1.5, 6.25]));
         assert_eq!(endpoints, [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]);
     }

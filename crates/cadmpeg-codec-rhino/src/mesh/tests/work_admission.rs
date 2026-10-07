@@ -75,29 +75,22 @@ fn mesh_proxy_fingerprint_refuses_hash_work_before_hashing() {
 #[test]
 fn mesh_buffer_crc_refuses_its_own_scan_work() {
     let bytes = buffer(&[1, 2, 3, 4], 0);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 4;
-    with_expand_policy(&bytes, policy, |expand| {
-        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-        let error = read_buffer(
-            expand,
-            &mut reader,
-            MeshBufferSpec {
-                expected: 4,
-                name: "fixture",
-            },
-            &mut Diagnostics::new(),
-            &mut MeshBudget::new(),
-            ArchiveVersion::V5,
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, GeometryError::Codec(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "Rhino mesh buffer checksum bytes"
-                && limit.used == 4 && limit.additional == 4)
-        );
-        assert!(expand.ctx().resource_refusal().is_some());
+    // Four checksum bytes are visited before any retained copy is made.
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits,
+        "Rhino mesh buffer checksum bytes", |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        with_expand_policy(&bytes, policy, |expand| {
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+            let result = read_buffer(expand, &mut reader, MeshBufferSpec { expected: 4, name: "fixture" },
+                &mut Diagnostics::new(), &mut MeshBudget::new(), ArchiveVersion::V5, None).map_err(codec_error);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(limit.used, 0);
+                assert_eq!(limit.additional, 4);
+                assert!(expand.ctx().resource_refusal().is_some());
+            }
+            result.map(|_| ())
+        })
     });
 }
 
@@ -122,7 +115,7 @@ fn compressed_mesh_chunk_crc_propagates_work_refusal() {
                     &mut Diagnostics::new(),
                     &mut MeshBudget::new(),
                     ArchiveVersion::V5,
-                )
+                 None)
                 .map(|_| ())
                 .map_err(codec_error)
             })
@@ -202,7 +195,7 @@ fn compressed_mesh_source_equality_preserves_work_refusal() {
                     &mut Diagnostics::new(),
                     &mut MeshBudget::new(),
                     ArchiveVersion::V5,
-                )
+                 None)
                 .map(|_| ())
                 .map_err(codec_error);
                 if let Err(CodecError::ResourceLimit(refusal)) = &result {
