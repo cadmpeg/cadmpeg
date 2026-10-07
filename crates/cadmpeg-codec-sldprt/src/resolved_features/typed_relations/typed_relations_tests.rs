@@ -530,6 +530,17 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
         &[&terminal],
     )
     .unwrap());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let roster = [&sibling, &terminal];
+    let (index, _storage) = super::LegacyTerminalLines::new(&ctx, &payload, &roster).unwrap();
+    assert!(super::legacy_terminal_indexed_profile_line_in(&ctx, &payload, &terminal, &index).unwrap());
+    assert!(!super::legacy_terminal_indexed_profile_line_in(&ctx, &payload, &sibling, &index).unwrap());
+    let mut foreign = terminal.clone();
+    foreign.feature_ref = Some("other".into());
+    assert!(!super::legacy_terminal_indexed_profile_line_in(&ctx, &payload, &foreign, &index).unwrap());
+    crate::test_support::work_refusal_at("index SLDPRT legacy terminal profile lines", |ctx| {
+        super::LegacyTerminalLines::new(ctx, &payload, &roster).map(|_| ())
+    });
 }
 
 #[test]
@@ -651,3 +662,5 @@ fn numerical_followup_membership_preserves_large_finite_geometry() {
 }
 
 mod deduplication;
+
+mod indexes;

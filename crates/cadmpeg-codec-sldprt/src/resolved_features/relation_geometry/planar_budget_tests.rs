@@ -381,16 +381,15 @@ fn solved_line_projection_refuses_operand_vector_materialized_bytes() {
     let (_, _, lane, _) = two_solver_line_fixture();
     let operand_count = lane.relation_instances[0].operands.len();
     assert_eq!(operand_count, TWO_SOLVER_LINE_OPERANDS);
-    let requested_bytes = u64::try_from(
-        operand_count
-            .checked_mul(std::mem::size_of::<(
-                &FeatureInputOperand,
-                [&crate::records::SketchInputEntity; 2],
-                cadmpeg_ir::sketches::SketchEntity,
-            )>())
-            .expect("fixture operand vector bytes fit usize"),
-    )
-    .expect("fixture operand vector bytes fit u64");
+    let slot_bytes = std::mem::size_of::<(
+        &FeatureInputOperand,
+        [&crate::records::SketchInputEntity; 2],
+        cadmpeg_ir::sketches::SketchEntity,
+    )>();
+    // Core amortized growth starts an empty vector at its inline-size minimum.
+    let capacity = match slot_bytes { 1 => 8, 2..=1024 => 4, _ => 1 };
+    let requested_bytes = u64::try_from(slot_bytes * capacity)
+        .expect("fixture operand vector bytes fit u64");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::MaterializedBytes,
         "collect SLDPRT relation operand lines",
@@ -411,7 +410,7 @@ fn solved_line_projection_refuses_operand_vector_collection_items() {
     let (_, _, lane, _) = two_solver_line_fixture();
     let operand_count = lane.relation_instances[0].operands.len();
     assert_eq!(operand_count, TWO_SOLVER_LINE_OPERANDS);
-    let requested_slots = u64::try_from(operand_count).expect("fixture operand slots fit u64");
+    let requested_slots = 1;
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
         "collect SLDPRT relation operand lines",
