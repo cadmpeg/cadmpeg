@@ -148,10 +148,11 @@ impl DraftIdentityFrame {
         let Some(tail) = bytes.get(start..) else {
             return Ok(None);
         };
-        let len = ctx
-            .admit_iter(tail, "NX draft identity hexadecimal run")?
-            .take_while(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
-            .count();
+        let len = ctx.position_by(
+            tail,
+            |byte| Ok(!byte.is_ascii_digit() && !(b'a'..=b'f').contains(byte)),
+            "NX draft identity hexadecimal run",
+        )?.unwrap_or(tail.len());
         if len == 0 || tail.get(len) != Some(&b'?') {
             return Ok(None);
         }
@@ -223,6 +224,26 @@ impl DraftIdentityFrame {
 #[cfg(test)]
 mod tests {
     use super::{DraftIdentityForm, DraftIdentityFrame};
+
+    #[test]
+    fn draft_identity_scan_stops_at_the_first_non_hexadecimal_byte() {
+        let mut bytes = b"A\xf0\x27\xff\x02\x01abc123?".to_vec();
+        bytes.resize(4096, 0);
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| policy.limits.max_work_units = 25,
+            |ctx| {
+                let frame = DraftIdentityFrame::read(ctx, &bytes, 0).unwrap().unwrap();
+                assert_eq!(frame.identity(), "abc123");
+            },
+        );
+        crate::test_support::resource_refusal_at(
+            &bytes,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX draft identity hexadecimal run",
+            |ctx| DraftIdentityFrame::read(ctx, &bytes, 0),
+        );
+    }
 
     #[test]
     fn draft_identity_text_refuses_retained_limit() {
