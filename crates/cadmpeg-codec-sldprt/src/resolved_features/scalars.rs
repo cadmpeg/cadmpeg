@@ -370,6 +370,21 @@ impl<'lane, 'ctx> ObjectNames<'lane, 'ctx> {
     }
 }
 
+/// The object-name index of each lane, in lane order.
+pub(crate) fn lane_object_names<'lane, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    lanes: &'lane [FeatureInputLane],
+) -> Result<Vec<ObjectNames<'lane, 'ctx>>, CodecError> {
+    const OPERATION: &str = "index SLDPRT lane object names";
+    let mut indexes = Vec::new();
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        let names = ObjectNames::new(ctx, lane)?;
+        storage.with_storage(|| ctx.push_vec(&mut indexes, names, OPERATION))?;
+    }
+    Ok(indexes)
+}
+
 /// How many lane names could serialize one feature's object.
 pub(crate) enum NameLookup<'lane> {
     Absent,

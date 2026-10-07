@@ -6,7 +6,7 @@ use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchLocus};
 use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
 const EPS_TRANSFORMS_AFFINE_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
@@ -300,16 +300,12 @@ pub(super) fn dimensioned_circle_surface_transforms(
         normal.z * u_axis.x - normal.x * u_axis.z,
         normal.x * u_axis.y - normal.y * u_axis.x,
     );
-    let mut targets_by_radius = HashMap::<GridCoordinate, HashSet<GridPoint>>::new();
-    for surface in surfaces {
-        ctx.charge_work(
-            u64::try_from(circles.len())
-                .ok()
-                .and_then(|count| count.checked_add(1))
-                .and_then(|work| work.checked_mul(64))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let radii = storage.with_storage(|| {
+        ctx.collect_btree_set(circles.iter().map(|(_, radius)| *radius), OPERATION)
+    })?;
+    let mut targets_by_radius = BTreeMap::<GridCoordinate, BTreeSet<GridPoint>>::new();
+    for surface in ctx.admit_iter(surfaces, OPERATION)? {
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
         else {
             continue;
@@ -325,10 +321,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
             continue;
         }
         let radius_key = GridCoordinate::new(radius, quantum);
-        if !circles
-            .iter()
-            .any(|(_, candidate)| *candidate == radius_key)
-        {
+        if !ctx.contains_btree_set(&radii, &radius_key, OPERATION)? {
             continue;
         }
         let delta = cadmpeg_ir::math::Vector3::new(
@@ -340,51 +333,53 @@ pub(super) fn dimensioned_circle_surface_transforms(
             delta.x * u_axis.x + delta.y * u_axis.y + delta.z * u_axis.z,
             delta.x * v_axis.x + delta.y * v_axis.y + delta.z * v_axis.z,
         );
-        ctx.charge_work(64, OPERATION)?;
-        ctx.admit_hash_map_entry(&mut targets_by_radius, &radius_key, OPERATION)?;
-        let targets = targets_by_radius.entry(radius_key).or_default();
-        let point = quantize(center, quantum);
-        ctx.insert_hash_set(targets, point, OPERATION)?;
+        storage.with_storage(|| {
+            ctx.insert_btree_group_set(
+                &mut targets_by_radius,
+                radius_key,
+                quantize(center, quantum),
+                OPERATION,
+                OPERATION,
+            )
+        })?;
     }
-    let mut compatible = HashMap::new();
-    for (center, radius) in circles {
-        ctx.charge_work(64, OPERATION)?;
-        let Some(targets) = targets_by_radius.get(radius) else {
+    let mut compatible = BTreeMap::new();
+    for (center, radius) in ctx.admit_iter(circles, OPERATION)? {
+        let Some(targets) = ctx.get_btree_map(&targets_by_radius, radius, OPERATION)? else {
             continue;
         };
         let center = (*center).into();
-        ctx.insert_hash_map(&mut compatible, center, targets, OPERATION)?;
+        storage
+            .with_storage(|| ctx.insert_btree_map(&mut compatible, center, targets, OPERATION))?;
     }
     if compatible.len() != circles.len() {
         return Ok(Vec::new());
     }
     let candidates = compatible_marker_transform_candidates(ctx, &compatible)?;
     let mut result = Vec::new();
-    for transform in candidates {
+    for transform in ctx.admit_iter(candidates, OPERATION)? {
         let mut used = HashSet::new();
-        let mut complete = true;
-        for (center, radius) in circles {
-            ctx.charge_work(64, OPERATION)?;
-            let Some(center) = transform.apply(*center) else {
-                complete = false;
-                break;
-            };
-            if !targets_by_radius
-                .get(radius)
-                .is_some_and(|targets| targets.contains(&GridPoint::from(center)))
-            {
-                complete = false;
-                break;
-            }
-            if used.contains(&(*radius, center)) {
-                complete = false;
-                break;
-            }
-            ctx.insert_hash_set(&mut used, (*radius, center), OPERATION)?;
-        }
+        let complete = ctx.all_by(
+            circles,
+            |(center, radius)| {
+                let Some(center) = transform.apply(*center) else {
+                    return Ok(false);
+                };
+                let hit = match ctx.get_btree_map(&targets_by_radius, radius, OPERATION)? {
+                    Some(targets) => {
+                        ctx.contains_btree_set(targets, &GridPoint::from(center), OPERATION)?
+                    }
+                    None => false,
+                };
+                Ok(hit
+                    && storage.with_storage(|| {
+                        ctx.insert_hash_set(&mut used, (*radius, center), OPERATION)
+                    })?)
+            },
+            OPERATION,
+        )?;
         if complete {
-            ctx.reserve_vec(&mut result, 1, OPERATION)?;
-            result.push(transform);
+            ctx.push_vec(&mut result, transform, OPERATION)?;
         }
     }
     Ok(result)
@@ -396,13 +391,13 @@ pub(super) fn dimensioned_circle_transform(
     circles: &[(impl Copy + Into<GridPoint>, GridCoordinate)],
 ) -> Result<Option<MarkerTransform>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "select SLDPRT dimensioned circle transform";
-    let count = u64::try_from(circles.len())
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    let signature =
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut signature =
         |transform: MarkerTransform| -> Result<Option<Vec<_>>, cadmpeg_core::CodecError> {
-            let mut transformed = Vec::new();
-            ctx.reserve_vec(&mut transformed, circles.len(), OPERATION)?;
-            for (center, radius) in circles {
+            let mut transformed = storage.with_storage(|| {
+                ctx.collection_vec::<(i64, i64, GridCoordinate)>(circles.len(), OPERATION)
+            })?;
+            for (center, radius) in ctx.admit_iter(circles, OPERATION)? {
                 let Some(center) = transform.apply(*center) else {
                     continue;
                 };
@@ -414,39 +409,34 @@ pub(super) fn dimensioned_circle_transform(
                     .then_some(transformed),
             )
         };
-    let Some(first) = candidates.first() else {
+    let Some((first, rest)) = candidates.split_first() else {
         return Ok(None);
     };
     let Some(first_signature) = signature(*first)? else {
         return Ok(None);
     };
-    for transform in candidates.iter().skip(1) {
-        let other = signature(*transform)?;
-        ctx.charge_work(
-            count
-                .checked_add(1)
-                .and_then(|count| count.checked_mul(8))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        if other.as_ref() != Some(&first_signature) {
+    for transform in ctx.admit_iter(rest, OPERATION)? {
+        let Some(other) = signature(*transform)? else {
+            return Ok(None);
+        };
+        if !ctx.equal(&other, &first_signature, OPERATION)? {
             return Ok(None);
         }
     }
-    ctx.charge_work(
-        u64::try_from(candidates.len())
-            .ok()
-            .and_then(|count| count.checked_mul(32))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    Ok(candidates.iter().copied().min_by_key(|transform| {
-        let (swap, u, v, matrix) = match transform.axes {
-            Axes::Aligned { swap, u, v } => (swap, u.value(), v.value(), None),
-            Axes::Affine(matrix) => (false, 1, 1, Some(matrix)),
-        };
-        (swap, u, v, matrix, transform.translation)
-    }))
+    Ok(ctx
+        .min_by_key(
+            candidates,
+            |transform| {
+                let (swap, u, v, matrix) = match transform.axes {
+                    Axes::Aligned { swap, u, v } => (swap, u.value(), v.value(), None),
+                    Axes::Affine(matrix) => (false, 1, 1, Some(matrix)),
+                };
+                Ok((swap, u, v, matrix, transform.translation))
+            },
+            |left, right| Ok(left.cmp(right)),
+            OPERATION,
+        )?
+        .copied())
 }
 
 #[cfg(test)]
@@ -544,7 +534,7 @@ fn unique_compatible_marker_transform(
                     loci.iter()
                         .copied()
                         .map(GridPoint::from)
-                        .collect::<HashSet<_>>(),
+                        .collect::<BTreeSet<_>>(),
                 )
             })
             .collect(),
@@ -557,22 +547,21 @@ fn unique_compatible_marker_transform(
 
 pub(super) fn compatible_marker_transform_candidates<V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    compatible_locus_points: &HashMap<GridPoint, V>,
+    compatible_locus_points: &BTreeMap<GridPoint, V>,
 ) -> Result<Vec<MarkerTransform>, cadmpeg_core::CodecError>
 where
-    V: Borrow<HashSet<GridPoint>>,
+    V: Borrow<BTreeSet<GridPoint>>,
 {
     const OPERATION: &str = "score SLDPRT compatible marker transforms";
-    let score =
-        |axes: MarkerTransform| -> Result<HashMap<(i64, i64), usize>, cadmpeg_core::CodecError> {
-            let mut translations = HashMap::<(i64, i64), usize>::new();
-            for (marker, loci) in compatible_locus_points {
-                ctx.charge_work(16, OPERATION)?;
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut score =
+        |axes: MarkerTransform| -> Result<BTreeMap<(i64, i64), usize>, cadmpeg_core::CodecError> {
+            let mut translations = BTreeMap::<(i64, i64), usize>::new();
+            for (marker, loci) in ctx.admit_iter(compatible_locus_points, OPERATION)? {
                 let Some(marker) = axes.apply_axes(*marker) else {
                     continue;
                 };
-                for locus in loci.borrow() {
-                    ctx.charge_work(64, OPERATION)?;
+                for locus in ctx.admit_iter(loci.borrow(), OPERATION)? {
                     let Some(locus) = locus.cells() else {
                         continue;
                     };
@@ -583,11 +572,12 @@ where
                     else {
                         continue;
                     };
-                    ctx.admit_hash_map_entry(&mut translations, &translation, OPERATION)?;
-                    let count = translations.entry(translation).or_default();
-                    *count = count
-                        .checked_add(1)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    let count = storage.with_storage(|| {
+                        ctx.entry_btree_map(&mut translations, translation, OPERATION)
+                            .map(|entry| entry.or_insert(0_usize))
+                    })?;
+                    // A count never exceeds the number of compatible pairs.
+                    *count += 1;
                 }
             }
             Ok(translations)
@@ -601,17 +591,9 @@ where
         translation: (0, 0),
     };
     let translations = score(identity)?;
-    ctx.charge_work(
-        u64::try_from(translations.len())
-            .ok()
-            .and_then(|count| count.checked_mul(4))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    if let Some(transform) = unique_scored_transform(identity, translations) {
+    if let Some(transform) = unique_scored_transform(ctx, identity, translations)? {
         let mut result = Vec::new();
-        ctx.reserve_vec(&mut result, 1, OPERATION)?;
-        result.push(transform);
+        ctx.push_vec(&mut result, transform, OPERATION)?;
         return Ok(result);
     }
     let mut scored = Vec::new();
@@ -629,77 +611,83 @@ where
                     },
                     translation: (0, 0),
                 };
-                let translations = score(axes)?;
-                ctx.charge_work(
-                    u64::try_from(translations.len())
-                        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                ctx.reserve_vec(&mut scored, translations.len(), OPERATION)?;
-                scored.extend(translations.into_iter().map(|(translation, count)| {
-                    (
-                        MarkerTransform {
-                            translation,
-                            ..axes
-                        },
-                        count,
-                    )
-                }));
+                for (translation, count) in ctx.admit_iter(score(axes)?, OPERATION)? {
+                    ctx.push_vec(
+                        &mut scored,
+                        (
+                            MarkerTransform {
+                                translation,
+                                ..axes
+                            },
+                            count,
+                        ),
+                        OPERATION,
+                    )?;
+                }
             }
         }
     }
-    ctx.charge_work(
-        u64::try_from(scored.len())
-            .ok()
-            .and_then(|count| count.checked_mul(8))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    let Some(maximum) = scored
-        .iter()
+    let Some(maximum) = ctx
+        .max_by_key(
+            &scored,
+            |(_, count)| Ok(*count),
+            |left, right| Ok(left.cmp(right)),
+            OPERATION,
+        )?
         .map(|(_, count)| *count)
-        .max()
         .filter(|count| *count >= 2)
     else {
         return Ok(Vec::new());
     };
     let mut candidates = Vec::new();
-    for (transform, count) in scored {
-        if count != maximum {
-            continue;
+    for (transform, count) in ctx.admit_iter(scored, OPERATION)? {
+        if count == maximum {
+            ctx.push_vec(&mut candidates, transform, OPERATION)?;
         }
-        ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
-        candidates.push(transform);
     }
     if candidates.len() == 1 {
         return Ok(candidates);
     }
-    if candidates
-        .iter()
-        .any(|transform| transform.translation == (0, 0))
-    {
-        candidates.retain(|transform| transform.translation == (0, 0));
+    if ctx.any_by(
+        &candidates,
+        |transform| Ok(transform.translation == (0, 0)),
+        OPERATION,
+    )? {
+        ctx.retain_vec(
+            &mut candidates,
+            |transform| Ok(transform.translation == (0, 0)),
+            OPERATION,
+        )?;
     }
     Ok(candidates)
 }
 
 fn unique_scored_transform(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     axes: MarkerTransform,
-    translations: HashMap<(i64, i64), usize>,
-) -> Option<MarkerTransform> {
-    let maximum = translations
-        .values()
-        .copied()
-        .max()
-        .filter(|count| *count >= 2)?;
-    let mut candidates = translations
-        .into_iter()
+    translations: BTreeMap<(i64, i64), usize>,
+) -> Result<Option<MarkerTransform>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "score SLDPRT compatible marker transforms";
+    let mut maximum = 0;
+    for count in ctx
+        .admit_iter(&translations, OPERATION)?
+        .map(|(_, count)| *count)
+    {
+        maximum = maximum.max(count);
+    }
+    if maximum < 2 {
+        return Ok(None);
+    }
+    let mut candidates = ctx
+        .admit_iter(translations, OPERATION)?
         .filter_map(|(translation, count)| (count == maximum).then_some(translation));
-    let translation = candidates.next()?;
-    candidates.next().is_none().then_some(MarkerTransform {
+    let Some(translation) = candidates.next() else {
+        return Ok(None);
+    };
+    Ok(candidates.next().is_none().then_some(MarkerTransform {
         translation,
         ..axes
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -809,20 +797,7 @@ pub(super) fn copy_sketch_entity_identity(
     entity: &SketchEntityId,
     operation: &'static str,
 ) -> Result<SketchEntityId, cadmpeg_core::CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(entity.as_str().len())
-            .checked_mul(4)
-            .and_then(|work| work.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )?;
-    let text = ctx.format_retained(format_args!("{}", entity.as_str()), operation)?;
-    let entity = SketchEntityId::mint(text).map_err(|error| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "invalid decoded sketch entity identity: {error}"
-        ))
-    })?;
-    Ok(entity)
+    entity.try_clone_for_decode(ctx, operation)
 }
 
 pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
@@ -1008,6 +983,7 @@ pub(super) enum MarkerEntityFilter<'a> {
     Lines(&'a [SketchEntity]),
 }
 
+/// The sketch entities a marker resolves to, in identity order.
 pub(super) fn marker_entities<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     marker_id: &'a str,
@@ -1016,10 +992,10 @@ pub(super) fn marker_entities<'a>(
     filter: MarkerEntityFilter<'_>,
 ) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker entities";
-    charge_profile_marker_lookup(ctx, marker_id, markers_by_id, loci_by_marker, OPERATION)?;
-    let sort = matches!(filter, MarkerEntityFilter::All) && markers_by_id.contains_key(marker_id);
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let identities = marker_entities_inner(
         ctx,
+        &mut storage,
         marker_id,
         markers_by_id,
         loci_by_marker,
@@ -1027,40 +1003,28 @@ pub(super) fn marker_entities<'a>(
         &mut HashSet::new(),
     )?;
     let mut result = Vec::new();
-    ctx.reserve_vec(&mut result, identities.len(), OPERATION)?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(identities.len())
-            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                SketchEntityId,
-            >()))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    for identity in identities {
-        result.push(copy_sketch_entity_identity(ctx, identity, OPERATION)?);
-    }
-    if sort {
-        sort_marker_entity_ids(ctx, &mut result, OPERATION)?;
+    for identity in ctx.admit_iter(identities, OPERATION)? {
+        let identity = copy_sketch_entity_identity(ctx, identity, OPERATION)?;
+        ctx.push_vec(&mut result, identity, OPERATION)?;
     }
     Ok(result)
 }
 
 fn marker_entities_inner<'a, 'loci>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     marker_id: &'a str,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     loci_by_marker: &'loci HashMap<String, Vec<SketchLocus>>,
     filter: MarkerEntityFilter<'_>,
     visited: &mut HashSet<&'a str>,
-) -> Result<HashSet<&'loci SketchEntityId>, cadmpeg_core::CodecError> {
+) -> Result<BTreeSet<&'loci SketchEntityId>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "resolve SLDPRT linked marker entities";
     let _nesting = ctx.enter_nested(OPERATION)?;
-    charge_profile_marker_lookup(ctx, marker_id, markers_by_id, loci_by_marker, OPERATION)?;
     let mut direct = None;
-    if let Some(loci) = loci_by_marker.get(marker_id) {
-        let mut identities = HashSet::new();
-        for locus in loci {
-            ctx.charge_work(16, OPERATION)?;
+    if let Some(loci) = ctx.get_hash_map(loci_by_marker, marker_id, OPERATION)? {
+        let mut identities = BTreeSet::new();
+        for locus in ctx.admit_iter(loci, OPERATION)? {
             let identity = locus_entity(locus);
             if let MarkerEntityFilter::Lines(entities) = filter {
                 let Some(entity) =
@@ -1075,37 +1039,20 @@ fn marker_entities_inner<'a, 'loci>(
                     continue;
                 }
             }
-            insert_marker_identity(
-                ctx,
-                &mut identities,
-                identity,
-                |identity| identity.as_str(),
-                OPERATION,
-            )?;
+            storage.with_storage(|| ctx.insert_btree_set(&mut identities, identity, OPERATION))?;
         }
         if matches!(filter, MarkerEntityFilter::Lines(_)) || identities.len() == 1 {
             return Ok(identities);
         }
         direct = Some(identities);
     }
-    if !insert_marker_identity(ctx, visited, marker_id, |identity| identity, OPERATION)? {
-        return Ok(HashSet::new());
+    if !storage.with_storage(|| ctx.insert_hash_set(visited, marker_id, OPERATION))? {
+        return Ok(BTreeSet::new());
     }
-    let result = (|| -> Result<HashSet<&'loci SketchEntityId>, cadmpeg_core::CodecError> {
-        let Some(marker) = markers_by_id.get(marker_id) else {
-            return Ok(direct.unwrap_or_default());
-        };
-        let mut selected = direct;
-        for link in marker.links() {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(link.entity_ref.len())
-                    .checked_add(cadmpeg_core::decode::u64_from_index(marker_id.len()))
-                    .and_then(|bytes| bytes.checked_mul(8))
-                    .and_then(|work| work.checked_add(64))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            if link.entity_ref == marker_id
+    let mut selected = direct;
+    if let Some(marker) = ctx.get_hash_map(markers_by_id, marker_id, OPERATION)? {
+        for link in ctx.admit_iter(marker.links(), OPERATION)? {
+            if ctx.equal(link.entity_ref.as_str(), marker_id, OPERATION)?
                 || (matches!(filter, MarkerEntityFilter::Lines(_))
                     && matches!(marker.kind(), SketchInputKind::Relation(_))
                     && super::typed_relations::relation_link_identifies_owner(marker, link))
@@ -1114,6 +1061,7 @@ fn marker_entities_inner<'a, 'loci>(
             }
             let candidates = marker_entities_inner(
                 ctx,
+                storage,
                 &link.entity_ref,
                 markers_by_id,
                 loci_by_marker,
@@ -1127,127 +1075,29 @@ fn marker_entities_inner<'a, 'loci>(
                 selected = Some(candidates);
                 continue;
             };
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(entities.len())
-                    .checked_add(cadmpeg_core::decode::u64_from_index(candidates.len()))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+            ctx.retain_btree_set(
+                entities,
+                |identity| ctx.contains_btree_set(&candidates, identity, OPERATION),
                 OPERATION,
             )?;
-            let candidate_bytes = candidates
-                .iter()
-                .try_fold(0u64, |bytes, id| {
-                    bytes.checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
-                })
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            let entity_bytes = entities
-                .iter()
-                .try_fold(0u64, |bytes, id| {
-                    bytes.checked_add(cadmpeg_core::decode::u64_from_index(id.as_str().len()))
-                })
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(
-                candidate_bytes
-                    .checked_mul(cadmpeg_core::decode::u64_from_index(entities.len()))
-                    .and_then(|bytes| bytes.checked_add(entity_bytes))
-                    .and_then(|bytes| bytes.checked_mul(8))
-                    .and_then(|work| {
-                        work.checked_add(
-                            cadmpeg_core::decode::u64_from_index(entities.len()).checked_mul(64)?,
-                        )
-                    })
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            entities.retain(|identity| candidates.contains(identity));
         }
-        Ok(selected.unwrap_or_default())
-    })()?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(visited.len()),
-        OPERATION,
-    )?;
-    let bytes = visited
-        .iter()
-        .try_fold(
-            cadmpeg_core::decode::u64_from_index(marker_id.len()),
-            |bytes, id| bytes.checked_add(cadmpeg_core::decode::u64_from_index(id.len())),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(
-        bytes
-            .checked_mul(8)
-            .and_then(|work| work.checked_add(64))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    visited.remove(marker_id);
-    Ok(result)
+    }
+    ctx.remove_hash_set(visited, marker_id, OPERATION)?;
+    Ok(selected.unwrap_or_default())
 }
 
-fn insert_marker_identity<'a, K>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    identities: &mut HashSet<&'a K>,
-    identity: &'a K,
-    text: impl Fn(&'a K) -> &'a str,
-    operation: &'static str,
-) -> Result<bool, cadmpeg_core::CodecError>
-where
-    K: ?Sized + Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost,
-{
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(identities.len()),
-        operation,
-    )?;
-    let bytes = identities
-        .iter()
-        .try_fold(
-            cadmpeg_core::decode::u64_from_index(text(identity).len()),
-            |bytes, id| bytes.checked_add(cadmpeg_core::decode::u64_from_index(text(id).len())),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(
-        bytes
-            .checked_mul(8)
-            .and_then(|work| {
-                work.checked_add(
-                    cadmpeg_core::decode::u64_from_index(identities.len())
-                        .checked_add(1)?
-                        .checked_mul(64)?,
-                )
-            })
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )?;
-    ctx.insert_hash_set(identities, identity, operation)
-}
-
+/// Charges the two keyed lookups of `marker_id` that follow: one in the
+/// marker table and one in the locus table.
 pub(super) fn charge_profile_marker_lookup(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     marker_id: &str,
-    markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    _markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    _loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let count = markers_by_id
-        .len()
-        .checked_add(loci_by_marker.len())
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)?;
-    let bytes = markers_by_id
-        .keys()
-        .map(|key| key.len())
-        .chain(loci_by_marker.keys().map(String::len))
-        .try_fold(
-            cadmpeg_core::decode::u64_from_index(marker_id.len()),
-            |bytes, length| bytes.checked_add(cadmpeg_core::decode::u64_from_index(length)),
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    let key = cadmpeg_core::decode::u64_from_index(marker_id.len());
     ctx.charge_work(
-        bytes
-            .checked_mul(8)
-            .and_then(|work| {
-                work.checked_add(cadmpeg_core::decode::u64_from_index(count).checked_mul(64)?)
-            })
+        key.checked_mul(2)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
         operation,
     )

@@ -1,7 +1,7 @@
 //! Direct face and body edit inputs.
 
 use super::axes::{compact_line_reference_directions, declared_line_reference_directions};
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::{classes_within, sorted_classes};
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
@@ -194,6 +194,7 @@ pub(crate) fn enrich_history_move_face_translations(
             "moLineRef_w",
             "index SLDPRT move-face line references",
         )?;
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT direct-edit histories")?
@@ -203,7 +204,7 @@ pub(crate) fn enrich_history_move_face_translations(
                 .admit_iter(&history.features, "scan SLDPRT move-face feature starts")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = object_names.of(ctx, feature)? {
                     storage.with_storage(|| {
                         ctx.push_vec(
                             &mut starts,
@@ -417,6 +418,7 @@ pub(crate) fn enrich_history_move_body_translations(
             "moMoveCopyBodyData_c",
             "index SLDPRT move-body data classes",
         )?;
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts = Vec::new();
         for (history_index, history) in ctx
             .admit_iter(&*histories, "scan SLDPRT direct-edit histories")?
@@ -426,7 +428,7 @@ pub(crate) fn enrich_history_move_body_translations(
                 .admit_iter(&history.features, "scan SLDPRT move-body feature starts")?
                 .enumerate()
             {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = object_names.of(ctx, feature)? {
                     storage.with_storage(|| {
                         ctx.push_vec(
                             &mut starts,

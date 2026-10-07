@@ -2,7 +2,7 @@
 use cadmpeg_ir::features::PlanarProfileRef;
 
 use super::operations::feature_inline_operation_fields;
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     Feature, FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane,
@@ -61,6 +61,34 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied())
     }
 
+    /// The feature that carries a native source: `None` when none does,
+    /// `Some(None)` when more than one does.
+    pub(super) fn source(
+        &self,
+        ctx: &DecodeContext<'_>,
+        source: u32,
+        operation: &'static str,
+    ) -> Result<Option<Option<&'a Feature>>, CodecError> {
+        Ok(ctx.get_hash_map(&self.table, &source, operation)?.copied())
+    }
+
+    /// The feature the last resolvable component names, if one feature
+    /// carries its source.
+    pub(super) fn terminal_feature(
+        &self,
+        ctx: &DecodeContext<'_>,
+        components: &[FeatureInputComponentPathEntry],
+    ) -> Result<Option<&'a Feature>, CodecError> {
+        const OPERATION: &str = "resolve SLDPRT component path terminal";
+        Ok(ctx
+            .find_map(
+                components.iter().rev(),
+                |component| self.component(ctx, component, OPERATION),
+                OPERATION,
+            )?
+            .flatten())
+    }
+
     /// The distinct features the components name, in component order.
     pub(super) fn features(
         &self,
@@ -93,13 +121,7 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         components: &[FeatureInputComponentPathEntry],
     ) -> Result<Option<String>, CodecError> {
         const OPERATION: &str = "resolve SLDPRT component path terminal";
-        let terminal = ctx.find_map(
-            components.iter().rev(),
-            |component| self.component(ctx, component, OPERATION),
-            OPERATION,
-        )?;
-        terminal
-            .flatten()
+        self.terminal_feature(ctx, components)?
             .map(|feature| ctx.copy_retained_text(&feature.id, OPERATION))
             .transpose()
     }
@@ -317,12 +339,13 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     }
     let mut profiles = BTreeMap::<&str, Vec<ProfileVote<'_>>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT adjacent profile objects")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut objects = Vec::new();
         for (index, feature) in ctx
             .admit_iter(&indexed_features, "scan SLDPRT adjacent profile objects")?
             .enumerate()
         {
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = object_names.of(ctx, feature)? else {
                 continue;
             };
             let metadata = match ctx.get_hash_map(

@@ -93,6 +93,55 @@ fn classes_within<'c, 'l>(
     Ok(classes.get(first..last).unwrap_or_default())
 }
 
+/// Whether each history feature, in history order, carries a name that no
+/// other feature repeats. An empty name counts only with `count_empty`.
+fn unique_feature_names(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    temporary: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    histories: &[crate::records::FeatureHistory],
+    count_empty: bool,
+) -> Result<Vec<bool>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "count SLDPRT history feature names";
+    let mut once = std::collections::HashMap::<&str, bool>::new();
+    for history in ctx.admit_iter(histories, OPERATION)? {
+        for feature in ctx.admit_iter(&history.features, OPERATION)? {
+            if feature.name.is_empty() && !count_empty {
+                continue;
+            }
+            if let Some(single) =
+                ctx.get_mut_hash_map(&mut once, feature.name.as_str(), OPERATION)?
+            {
+                *single = false;
+                continue;
+            }
+            temporary.with_storage(|| {
+                ctx.insert_hash_map(&mut once, feature.name.as_str(), true, OPERATION)
+            })?;
+        }
+    }
+    let mut unique = Vec::new();
+    for history in ctx.admit_iter(histories, "mark SLDPRT unique history feature names")? {
+        for feature in ctx.admit_iter(
+            &history.features,
+            "mark SLDPRT unique history feature names",
+        )? {
+            let single = ctx.get_hash_map(
+                &once,
+                feature.name.as_str(),
+                "find SLDPRT history feature-name count",
+            )? == Some(&true);
+            temporary.with_storage(|| {
+                ctx.push_vec(
+                    &mut unique,
+                    single,
+                    "mark SLDPRT unique history feature names",
+                )
+            })?;
+        }
+    }
+    Ok(unique)
+}
+
 pub(crate) mod assembly;
 
 pub(crate) mod axes;

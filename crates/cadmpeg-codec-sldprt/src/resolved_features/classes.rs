@@ -67,61 +67,6 @@ fn idless_legacy_startup_shape(
         .all(|pair| pair[1].ordinal == pair[0].ordinal + 1))
 }
 
-/// Whether each history feature, in history order, carries a nonempty name
-/// that no other feature repeats.
-fn unique_feature_names(
-    ctx: &DecodeContext<'_>,
-    temporary: &mut ScopedReservation<'_>,
-    histories: &[FeatureHistory],
-) -> Result<Vec<bool>, CodecError> {
-    let mut once = HashMap::<&str, bool>::new();
-    for history in ctx.admit_iter(histories, "count SLDPRT history feature names")? {
-        for feature in ctx.admit_iter(&history.features, "count SLDPRT history feature names")? {
-            if feature.name.is_empty() {
-                continue;
-            }
-            if let Some(single) = ctx.get_mut_hash_map(
-                &mut once,
-                feature.name.as_str(),
-                "count SLDPRT history feature names",
-            )? {
-                *single = false;
-                continue;
-            }
-            temporary.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut once,
-                    feature.name.as_str(),
-                    true,
-                    "count SLDPRT history feature names",
-                )
-            })?;
-        }
-    }
-    let mut unique = Vec::new();
-    for history in ctx.admit_iter(histories, "mark SLDPRT unique history feature names")? {
-        for feature in ctx.admit_iter(
-            &history.features,
-            "mark SLDPRT unique history feature names",
-        )? {
-            let single = !feature.name.is_empty()
-                && ctx.get_hash_map(
-                    &once,
-                    feature.name.as_str(),
-                    "find SLDPRT history feature-name count",
-                )? == Some(&true);
-            temporary.with_storage(|| {
-                ctx.push_vec(
-                    &mut unique,
-                    single,
-                    "mark SLDPRT unique history feature names",
-                )
-            })?;
-        }
-    }
-    Ok(unique)
-}
-
 /// Lane names that carry a repeated class token, indexed by the object id
 /// and by the text that bind a history feature to them.
 struct TokenNames<'lanes> {
@@ -361,7 +306,7 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         )?;
         ctx.dedup_vec(classes, "deduplicate SLDPRT history class names")?;
     }
-    let unique_names = unique_feature_names(ctx, &mut temporary, histories)?;
+    let unique_names = super::unique_feature_names(ctx, &mut temporary, histories, false)?;
     let mut unique = unique_names.iter();
     for history in ctx.admit_iter(&mut *histories, "bind SLDPRT unique history feature names")? {
         for feature in ctx.admit_iter(
