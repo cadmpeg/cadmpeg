@@ -18,7 +18,13 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
     pub(crate) fn new(spelling: S) -> Self {
         let (index, qualifier_start) = match canonical_parts(
             spelling.as_ref(),
-            |text| Ok::<_, Infallible>(text.chars()),
+            |text| Ok::<_, Infallible>(text.bytes().take_while(u8::is_ascii_digit).count()),
+            |text| {
+                Ok::<_, Infallible>(
+                    text.bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
+                )
+            },
             |text| Ok::<_, Infallible>(text.parse::<u32>()),
         ) {
             Ok(parts) => parts,
@@ -35,8 +41,20 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
         let (index, qualifier_start) = canonical_parts(
             spelling.as_ref(),
             |text| {
-                ctx.admit_iter(text, "NX parameter name syntax")
-                    .map_err(CodecError::from)
+                Ok(ctx
+                    .position_by(
+                        text.bytes(),
+                        |byte| Ok(!byte.is_ascii_digit()),
+                        "NX parameter name syntax",
+                    )?
+                    .unwrap_or(text.len()))
+            },
+            |text| {
+                ctx.all_by(
+                    text.bytes(),
+                    |byte| Ok(byte.is_ascii_alphanumeric() || byte == b'_'),
+                    "NX parameter qualifier syntax",
+                )
             },
             |text| ctx.parse_text::<u32>(text, "NX parameter index decimal parse"),
         )?
@@ -53,7 +71,13 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S, u32> {
     pub(crate) fn parse(spelling: S) -> Option<Self> {
         let (index, qualifier_start) = match canonical_parts(
             spelling.as_ref(),
-            |text| Ok::<_, Infallible>(text.chars()),
+            |text| Ok::<_, Infallible>(text.bytes().take_while(u8::is_ascii_digit).count()),
+            |text| {
+                Ok::<_, Infallible>(
+                    text.bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
+                )
+            },
             |text| Ok::<_, Infallible>(text.parse::<u32>()),
         ) {
             Ok(parts) => parts?,
@@ -72,8 +96,20 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S, u32> {
         let Some((index, qualifier_start)) = canonical_parts(
             spelling.as_ref(),
             |text| {
-                ctx.admit_iter(text, "NX canonical parameter name syntax")
-                    .map_err(CodecError::from)
+                Ok(ctx
+                    .position_by(
+                        text.bytes(),
+                        |byte| Ok(!byte.is_ascii_digit()),
+                        "NX canonical parameter name syntax",
+                    )?
+                    .unwrap_or(text.len()))
+            },
+            |text| {
+                ctx.all_by(
+                    text.bytes(),
+                    |byte| Ok(byte.is_ascii_alphanumeric() || byte == b'_'),
+                    "NX parameter qualifier syntax",
+                )
             },
             |text| ctx.parse_text::<u32>(text, "NX parameter index decimal parse"),
         )?
@@ -108,15 +144,16 @@ impl<S: crate::immutable_text::ImmutableText, I: Copy> ParameterName<S, I> {
     }
 }
 
-fn canonical_parts<'a, E, I: Iterator<Item = char>>(
-    name: &'a str,
-    mut admit: impl FnMut(&'a str) -> Result<I, E>,
+fn canonical_parts<E>(
+    name: &str,
+    mut count_digits: impl FnMut(&str) -> Result<usize, E>,
+    mut valid_qualifier: impl FnMut(&str) -> Result<bool, E>,
     mut parse_decimal: impl FnMut(&str) -> Result<Result<u32, std::num::ParseIntError>, E>,
 ) -> Result<Option<(u32, Option<usize>)>, E> {
     let Some(tail) = name.strip_prefix('p') else {
         return Ok(None);
     };
-    let digit_count = admit(tail)?.take_while(char::is_ascii_digit).count();
+    let digit_count = count_digits(tail)?;
     if digit_count == 0 {
         return Ok(None);
     }
@@ -129,9 +166,7 @@ fn canonical_parts<'a, E, I: Iterator<Item = char>>(
             let Some(qualifier) = suffix.strip_prefix('_') else {
                 return Ok(None);
             };
-            if qualifier.is_empty()
-                || !admit(qualifier)?.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-            {
+            if qualifier.is_empty() || !valid_qualifier(qualifier)? {
                 return Ok(None);
             }
             Ok(Some((index, Some(name.len() - qualifier.len()))))

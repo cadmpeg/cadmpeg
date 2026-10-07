@@ -59,18 +59,19 @@ impl<T> NonEmpty<T> {
         }
     }
 
+    pub(super) fn into_parts(self) -> (Vec<T>, T) {
+        (self.initial, self.last)
+    }
+
     pub(crate) fn map_charged<U>(
         self,
         ctx: &DecodeContext<'_>,
         mut map: impl FnMut(T) -> U,
     ) -> Result<NonEmpty<U>, CodecError> {
-        let mut initial = Vec::new();
-        for value in self.initial {
-            ctx.charge_work(1, "NX nonempty mapped entries")?;
-            ctx.reserve_vec(&mut initial, 1, "nx nonempty mapped entries")?;
+        let mut initial = ctx.collection_vec(self.initial.len(), "NX nonempty mapped entries")?;
+        for value in ctx.admit_iter(self.initial, "NX nonempty mapping traversal")? {
             initial.push(map(value));
         }
-        ctx.charge_work(1, "NX nonempty mapped entries")?;
         ctx.charge_collection_items(1, "NX nonempty mapped entries")?;
         Ok(NonEmpty {
             initial,
@@ -83,30 +84,27 @@ impl<T> NonEmpty<T> {
         ctx: &DecodeContext<'_>,
         mut map: impl FnMut(T) -> Result<Option<U>, CodecError>,
     ) -> Result<Option<NonEmpty<U>>, CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "NX nonempty candidate storage")?;
+        let mut source = self.initial.into_iter();
         let mut initial = Vec::new();
-        for value in self.initial {
-            ctx.charge_work(1, "NX nonempty mapped entries")?;
-            let Some(value) = map(value)? else {
+        while source.len() > 0 {
+            let Some(value) =
+                ctx.next_charged(&mut source, "NX nonempty fallible mapping traversal")?
+            else {
+                break;
+            };
+            let Some(value) = storage.with_storage(|| map(value))? else {
                 return Ok(None);
             };
-            ctx.reserve_vec(&mut initial, 1, "NX nonempty mapped entries")?;
-            initial.push(value);
+            storage
+                .with_storage(|| ctx.push_vec(&mut initial, value, "NX nonempty mapped entries"))?;
         }
-        ctx.charge_work(1, "NX nonempty mapped entries")?;
-        ctx.charge_collection_items(1, "NX nonempty mapped entries")?;
-        let Some(last) = map(self.last)? else {
+        let Some(last) = storage.with_storage(|| map(self.last))? else {
             return Ok(None);
         };
+        ctx.charge_collection_items(1, "NX nonempty mapped entries")?;
+        storage.commit()?;
         Ok(Some(NonEmpty { initial, last }))
-    }
-}
-
-impl<T> NonEmpty<Option<T>> {
-    pub(super) fn transpose_charged(
-        self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Option<NonEmpty<T>>, CodecError> {
-        self.try_map_charged(ctx, Ok)
     }
 }
 
