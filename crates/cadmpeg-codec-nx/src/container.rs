@@ -203,6 +203,21 @@ impl<'a> SegmentIndex<'a> {
     }
 }
 
+/// Location of the segment index within the `UG_PART` entry payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SegmentIndexSpan {
+    /// Directory entry holding the index.
+    entry: usize,
+    /// Absolute offset of the entry payload.
+    payload_start: usize,
+    /// Entry payload length.
+    payload_len: usize,
+    /// Bytes of complete 12-byte rows.
+    complete_len: usize,
+    /// Declared table length, rows plus padding.
+    byte_len: usize,
+}
+
 /// One segment-index word whose target frames a compressed stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SegmentStreamWrapper {
@@ -343,83 +358,131 @@ impl<'a> Container<'a> {
         Ok(bytes)
     }
 
-    /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
+    /// The self-bounded segment index in `/Root/UG_PART/UG_PART`.
     pub(crate) fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
-        let entry = self
-            .entries
-            .iter()
-            .find(|entry| entry.name == "/Root/UG_PART/UG_PART" && entry.file_span().is_some())?;
-        let (offset, size) = entry.file_span()?;
-        let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-        let payload = self.data.get(offset..offset.checked_add(size)?)?;
-        let row_one = payload.get(index_row::LEN..index_row::LEN * 2)?;
-        let type_code = View::u32_le_at(row_one, index_row::TYPE_CODE)?;
-        let subtype_code = View::u32_le_at(row_one, index_row::SUBTYPE_CODE)?;
-        let byte_len = usize::try_from(View::u32_le_at(row_one, index_row::VALUE)?).ok()?;
-        if type_code != 1
-            || subtype_code != 1
-            || !(index_row::LEN * 2..=payload.len()).contains(&byte_len)
-        {
-            return None;
-        }
-        let complete_len = byte_len / index_row::LEN * index_row::LEN;
-        let rows = &payload[..complete_len];
-        rows.chunks_exact(index_row::LEN)
-            .try_for_each(|row| SegmentIndex::parse_row(row).map(|_| ()))?;
+        let span = self.segment_index.as_ref()?;
+        let entry = self.entries.get(span.entry)?;
+        let payload = self.data.get(span.payload_start..)?;
         Some((
             entry,
             SegmentIndex {
-                rows,
-                padding: &payload[complete_len..byte_len],
+                rows: payload.get(..span.complete_len)?,
+                padding: payload.get(span.complete_len..span.byte_len)?,
             },
         ))
     }
 
-    /// Resolve every in-bounds compressed-stream wrapper addressed by the
-    /// canonical segment index, preserving row and word order.
+    /// Every in-bounds compressed-stream wrapper addressed by the canonical
+    /// segment index, in row and word order.
     pub(crate) fn segment_stream_wrappers(
         &self,
     ) -> impl Iterator<Item = SegmentStreamWrapper> + '_ {
-        let source = (|| {
-            let (entry, index) = self.segment_index()?;
-            let (entry_offset, entry_size) = entry.file_span()?;
-            let entry_start = usize::try_from(entry_offset).ok()?;
-            let entry_size = usize::try_from(entry_size).ok()?;
-            let entry_end = entry_start.checked_add(entry_size)?;
-            let payload = self.data.get(entry_start..entry_end)?;
-            Some((index, payload, entry_start))
-        })();
-        source
-            .into_iter()
-            .flat_map(|(index, payload, entry_start)| {
-                index
-                    .rows()
-                    .enumerate()
-                    .flat_map(move |(row_ordinal, row)| {
-                        [row.type_code, row.subtype_code, row.value]
-                            .into_iter()
-                            .enumerate()
-                            .filter_map(move |(word_ordinal, relative)| {
-                                let relative = usize::try_from(relative).ok()?;
-                                let wrapper = payload.get(relative..)?;
-                                let wrapper_word = View::u32_le_at(wrapper, 0)?;
-                                let extension = usize::try_from(wrapper_word & 0x3fff_ffff).ok()?;
-                                let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
-                                    0x8000_0000 => 8usize.checked_add(extension),
-                                    0xc000_0000 => 33usize.checked_add(extension),
-                                    _ => None,
-                                }?;
-                                let zlib_relative = relative.checked_add(wrapper_byte_len)?;
-                                (zlib_relative < payload.len()).then_some(SegmentStreamWrapper {
-                                    row_ordinal,
-                                    word_ordinal,
-                                    wrapper_offset: entry_start.checked_add(relative)?,
-                                    wrapper_byte_len,
-                                    zlib_offset: entry_start.checked_add(zlib_relative)?,
-                                })
-                            })
-                    })
+        self.segment_wrappers.iter().copied()
+    }
+
+    /// Locate the segment index once, when the container is opened.
+    fn locate_segment_index(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<SegmentIndexSpan>, CodecError> {
+        // The name test compares against a fixed 21-byte path.
+        let Some(entry) = ctx.position_by(
+            &self.entries,
+            |entry| Ok(entry.name == "/Root/UG_PART/UG_PART" && entry.file_span().is_some()),
+            "locate NX segment index",
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok((|| {
+            let (offset, size) = self.entries[entry].file_span()?;
+            let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+            let payload = self.data.get(offset..offset.checked_add(size)?)?;
+            let row_one = payload.get(index_row::LEN..index_row::LEN * 2)?;
+            let type_code = View::u32_le_at(row_one, index_row::TYPE_CODE)?;
+            let subtype_code = View::u32_le_at(row_one, index_row::SUBTYPE_CODE)?;
+            let byte_len = usize::try_from(View::u32_le_at(row_one, index_row::VALUE)?).ok()?;
+            if type_code != 1
+                || subtype_code != 1
+                || !(index_row::LEN * 2..=payload.len()).contains(&byte_len)
+            {
+                return None;
+            }
+            Some(SegmentIndexSpan {
+                entry,
+                payload_start: offset,
+                payload_len: size,
+                complete_len: byte_len / index_row::LEN * index_row::LEN,
+                byte_len,
             })
+        })())
+    }
+
+    /// Resolve the compressed-stream wrapper each index word addresses.
+    fn segment_stream_wrapper_list(
+        &self,
+        ctx: &DecodeContext<'_>,
+        span: &SegmentIndexSpan,
+    ) -> Result<Vec<SegmentStreamWrapper>, CodecError> {
+        const OPERATION: &str = "NX segment stream wrappers";
+        let mut wrappers = Vec::new();
+        let Some(payload) = span
+            .payload_start
+            .checked_add(span.payload_len)
+            .and_then(|end| self.data.get(span.payload_start..end))
+        else {
+            return Ok(wrappers);
+        };
+        let rows = payload.get(..span.complete_len).unwrap_or_default();
+        for (row_ordinal, row) in ctx
+            .admit_iter(0..rows.len() / index_row::LEN, OPERATION)?
+            .filter_map(|ordinal| {
+                let start = ordinal * index_row::LEN;
+                Some((
+                    ordinal,
+                    SegmentIndex::parse_row(rows.get(start..start + index_row::LEN)?)?,
+                ))
+            })
+        {
+            for (word_ordinal, relative) in [row.type_code, row.subtype_code, row.value]
+                .into_iter()
+                .enumerate()
+            {
+                let wrapper = (|| {
+                    let relative = usize::try_from(relative).ok()?;
+                    let wrapper = payload.get(relative..)?;
+                    let wrapper_word = View::u32_le_at(wrapper, 0)?;
+                    let extension = usize::try_from(wrapper_word & 0x3fff_ffff).ok()?;
+                    let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
+                        0x8000_0000 => 8usize.checked_add(extension),
+                        0xc000_0000 => 33usize.checked_add(extension),
+                        _ => None,
+                    }?;
+                    let zlib_relative = relative.checked_add(wrapper_byte_len)?;
+                    (zlib_relative < payload.len()).then_some(SegmentStreamWrapper {
+                        row_ordinal,
+                        word_ordinal,
+                        wrapper_offset: span.payload_start.checked_add(relative)?,
+                        wrapper_byte_len,
+                        zlib_offset: span.payload_start.checked_add(zlib_relative)?,
+                    })
+                })();
+                if let Some(wrapper) = wrapper {
+                    ctx.push_vec(&mut wrappers, wrapper, OPERATION)?;
+                }
+            }
+        }
+        Ok(wrappers)
+    }
+
+    /// Index the container's segment table and FastLoad object table.
+    fn index_tables(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        self.fastload_table = self.parse_rmfastload_object_id_table(ctx)?;
+        self.segment_index = self.locate_segment_index(ctx)?;
+        if let Some(span) = &self.segment_index {
+            self.segment_wrappers = self.segment_stream_wrapper_list(ctx, span)?;
+        }
+        Ok(())
     }
 
     /// Locate independently size-framed NX object-model sections.
@@ -1182,6 +1245,10 @@ pub(crate) struct Container<'a> {
     pub(crate) entries: Vec<DirEntry>,
     /// Admitted active-object table, shared by selection and native extraction.
     pub(crate) fastload_table: Option<(usize, RmFastLoadObjectIdTable)>,
+    /// Location of the canonical segment index, found when the container opens.
+    pub(crate) segment_index: Option<SegmentIndexSpan>,
+    /// Compressed-stream wrappers the segment index addresses, in row and word order.
+    pub(crate) segment_wrappers: Vec<SegmentStreamWrapper>,
     /// Cached source ranges for indexed object-model sections.
     pub(crate) indexed_section_layouts: OnceLock<IndexedSectionCache<'a>>,
     /// Cached size-framed object-model sections when the container borrows its input.
@@ -1507,10 +1574,12 @@ pub(crate) fn scan_bytes<'a>(
         },
         entries,
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     };
-    container.fastload_table = container.parse_rmfastload_object_id_table(ctx)?;
+    container.index_tables(ctx)?;
     Ok(container)
 }
 
@@ -1604,10 +1673,12 @@ pub(crate) fn scan_legacy<'a>(
         layout: ContainerLayout::LegacyCfb { version },
         entries,
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     };
-    container.fastload_table = container.parse_rmfastload_object_id_table(ctx)?;
+    container.index_tables(ctx)?;
     Ok((container, part_view))
 }
 

@@ -242,6 +242,8 @@ mod tests {
                 },
             }],
             fastload_table: None,
+            segment_index: None,
+            segment_wrappers: Vec::new(),
             indexed_section_layouts,
             om_section_cache: OnceLock::new(),
         }
