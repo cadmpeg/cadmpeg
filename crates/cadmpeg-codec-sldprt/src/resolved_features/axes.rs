@@ -569,16 +569,14 @@ pub(super) fn compact_line_reference_directions(
                         )
                     })?;
                 }
-            } else {
-                if let Some(direction) = direction_at(56) {
-                    direction_storage.with_storage(|| {
-                        ctx.push_vec(
-                            &mut directions,
-                            direction,
-                            "hold SLDPRT compact line directions",
-                        )
-                    })?;
-                }
+            } else if let Some(direction) = direction_at(56) {
+                direction_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut directions,
+                        direction,
+                        "hold SLDPRT compact line directions",
+                    )
+                })?;
             }
         }
         // A record is usable only when every matching layout agrees.  Never
@@ -1683,17 +1681,9 @@ fn profile_roster_construction_axis_in(
         })
     };
     let mut remaining = owned.iter();
-    let first_axis = ctx.find_map(
-        &mut remaining,
-        |marker| construction_axis(marker),
-        OPERATION,
-    )?;
+    let first_axis = ctx.find_map(&mut remaining, &construction_axis, OPERATION)?;
     let second_axis = match first_axis {
-        Some(_) => ctx.find_map(
-            &mut remaining,
-            |marker| construction_axis(marker),
-            OPERATION,
-        )?,
+        Some(_) => ctx.find_map(&mut remaining, construction_axis, OPERATION)?,
         None => None,
     };
     let native_endpoints = match (first_axis, second_axis) {
@@ -1730,7 +1720,7 @@ fn profile_roster_construction_axis_in(
     };
     let Some([native_start, native_end]) = native_endpoints else {
         return profile_generated_surface_axis(
-            ctx, lane, &owned, markers, sketch, &transform, surfaces,
+            ctx, lane, owned, markers, sketch, &transform, surfaces,
         );
     };
     let project = |point: [f64; 2]| {
@@ -2080,7 +2070,7 @@ fn profile_roster_origin_axis_endpoints(
         )?
         .map_or(&[][..], Vec::as_slice);
     let curve_endpoints =
-        profile_curve_endpoint_ids(ctx, &mut storage, lane, &owned, markers, true)?;
+        profile_curve_endpoint_ids(ctx, &mut storage, lane, owned, markers, true)?;
     let unreferenced = |marker: &&&SketchInputEntity| {
         Ok(matches!(
             marker.kind(),
@@ -2104,7 +2094,7 @@ fn profile_roster_origin_axis_endpoints(
     {
         return Ok(None);
     }
-    let bounding = profile_bounding_points(ctx, &mut storage, &owned, &curve_endpoints)?;
+    let bounding = profile_bounding_points(ctx, &mut storage, owned, &curve_endpoints)?;
     let endpoint_points = curve_endpoint_points(ctx, &mut storage, roster, &curve_endpoints)?;
     let mut candidates = Vec::new();
     for &(end, indexed) in ctx.admit_iter(&endpoint_points, OPERATION)? {
@@ -2179,8 +2169,8 @@ fn profile_roster_principal_axis_endpoints(
         )?
         .map_or(&[][..], Vec::as_slice);
     let curve_endpoints =
-        profile_curve_endpoint_ids(ctx, &mut storage, lane, &owned, markers, true)?;
-    let bounding = profile_bounding_points(ctx, &mut storage, &owned, &curve_endpoints)?;
+        profile_curve_endpoint_ids(ctx, &mut storage, lane, owned, markers, true)?;
+    let bounding = profile_bounding_points(ctx, &mut storage, owned, &curve_endpoints)?;
     let endpoint_points = curve_endpoint_points(ctx, &mut storage, roster, &curve_endpoints)?;
     let mut best: Option<(usize, [[f64; 2]; 2], bool)> = None;
     for axis in [[[0.0, 0.0], [1.0, 0.0]], [[0.0, 0.0], [0.0, 1.0]]] {
@@ -2246,8 +2236,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         None => None,
     };
     let curve_endpoints =
-        profile_curve_endpoint_ids(ctx, &mut storage, lane, &owned, markers, false)?;
-    let bounding = profile_bounding_points(ctx, &mut storage, &owned, &curve_endpoints)?;
+        profile_curve_endpoint_ids(ctx, &mut storage, lane, owned, markers, false)?;
+    let bounding = profile_bounding_points(ctx, &mut storage, owned, &curve_endpoints)?;
     let bounded = |endpoints: [&SketchInputEntity; 2]| {
         let [Some(start), Some(end)] = endpoints.map(|endpoint| {
             endpoint
@@ -2412,7 +2402,7 @@ fn bounded_profile_axis_endpoints(
         )
         .unwrap()
         .map_or(&[][..], Vec::as_slice);
-    let bounding = profile_bounding_points(&ctx, &mut storage, &owned, curve_endpoints).unwrap();
+    let bounding = profile_bounding_points(&ctx, &mut storage, owned, curve_endpoints).unwrap();
     let [Some(start), Some(end)] = endpoints.map(|endpoint| {
         endpoint
             .coordinates_m

@@ -20,6 +20,12 @@ pub(crate) struct FeaturesBySource<'a, 'ctx> {
     _storage: ScopedReservation<'ctx>,
 }
 
+#[derive(Debug)]
+enum ComponentProducer<'a> {
+    Ambiguous,
+    Feature(&'a Feature),
+}
+
 impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
     pub(crate) fn new(
         ctx: &'ctx DecodeContext<'_>,
@@ -47,18 +53,23 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         })
     }
 
-    /// The feature a component's type signature names: `None` when no feature
-    /// carries its source, `Some(None)` when more than one does.
+    /// The producer named by a component signature. An absent source returns
+    /// `None`; a repeated source returns `Ambiguous`.
     fn component(
         &self,
         ctx: &DecodeContext<'_>,
         component: &FeatureInputComponentPathEntry,
         operation: &'static str,
-    ) -> Result<Option<&Option<&'a Feature>>, CodecError> {
+    ) -> Result<Option<ComponentProducer<'a>>, CodecError> {
         let Some(source) = View::u32_le_at(&component.type_signature, 4) else {
             return Ok(None);
         };
-        Ok(ctx.get_hash_map(&self.table, &source, operation)?)
+        Ok(ctx
+            .get_hash_map(&self.table, &source, operation)?
+            .map(|producer| match producer {
+                Some(feature) => ComponentProducer::Feature(feature),
+                None => ComponentProducer::Ambiguous,
+            }))
     }
 
     /// The unique feature that carries a native source.
@@ -88,8 +99,10 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
                 |component| self.component(ctx, component, OPERATION),
                 OPERATION,
             )?
-            .copied()
-            .flatten())
+            .and_then(|producer| match producer {
+                ComponentProducer::Feature(feature) => Some(feature),
+                ComponentProducer::Ambiguous => None,
+            }))
     }
 
     /// The distinct features the components name, in component order.
@@ -103,7 +116,9 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         let mut seen = HashSet::new();
         let mut result = Vec::new();
         for component in ctx.admit_iter(components, OPERATION)? {
-            let Some(Some(feature)) = self.component(ctx, component, OPERATION)? else {
+            let Some(ComponentProducer::Feature(feature)) =
+                self.component(ctx, component, OPERATION)?
+            else {
                 continue;
             };
             if !storage
@@ -269,9 +284,10 @@ pub(super) fn component_path_feature<'a>(
         }
         Ok(by_source
             .component(ctx, component, OPERATION)?
-            .copied()
-            .flatten()
-            .map(|feature| (component, feature)))
+            .and_then(|producer| match producer {
+                ComponentProducer::Feature(feature) => Some((component, feature)),
+                ComponentProducer::Ambiguous => None,
+            }))
     };
     match end {
         ComponentPathEnd::Leading => ctx.find_map(components, candidate, OPERATION),

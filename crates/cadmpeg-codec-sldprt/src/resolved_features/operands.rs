@@ -21,7 +21,7 @@ struct OperandCandidates<'a, 'ctx> {
     first_by_id: HashMap<&'a str, &'a SketchInputEntity>,
     compatible: [Vec<&'a SketchInputEntity>; 5],
     coordinate_points: Vec<&'a SketchInputEntity>,
-    _storage: ScopedReservation<'ctx>,
+    storage: ScopedReservation<'ctx>,
 }
 
 fn compatibility_family(kind: FeatureInputOperandKind) -> usize {
@@ -98,13 +98,13 @@ impl<'a, 'ctx> OperandCandidates<'a, 'ctx> {
             first_by_id: HashMap::new(),
             compatible: std::array::from_fn(|_| Vec::new()),
             coordinate_points: Vec::new(),
-            _storage: ctx.reserve_scoped(0, OPERATION)?,
+            storage: ctx.reserve_scoped(0, OPERATION)?,
         };
         if !needs_object && !needs_coordinate_points {
             return Ok(result);
         }
         for &entity in ctx.admit_iter(entities, OPERATION)? {
-            result._storage.with_storage(|| {
+            result.storage.with_storage(|| {
                 if let Some(index) = entity.object_index().filter(|_| needs_object) {
                     ctx.push_hash_group(
                         &mut result.by_object,

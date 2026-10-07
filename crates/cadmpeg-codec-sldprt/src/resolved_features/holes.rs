@@ -101,7 +101,7 @@ pub(crate) fn project_helix_axes(
             )
         })?;
     }
-    let mut source_items = model_features.into_iter();
+    let mut source_items = model_features.iter_mut();
     while let Some(model_feature) =
         ctx.next_charged(&mut source_items, "scan SLDPRT helix features")?
     {
@@ -389,7 +389,7 @@ pub(crate) fn enrich_history_hole_constructions(
     const OPERATION: &str = "enrich SLDPRT hole profile ownership";
     let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
     let object_names = hole_lane_names(ctx, &mut names_storage, lanes)?;
-    let mut source_items = histories.into_iter();
+    let mut source_items = histories.iter_mut();
     while let Some(history) = ctx.next_charged(&mut source_items, OPERATION)? {
         let mut object_storage = ctx.reserve_scoped(0, "SLDPRT hole object order workspace")?;
         let mut object_orders = Vec::new();
@@ -408,7 +408,7 @@ pub(crate) fn enrich_history_hole_constructions(
         let records = HoleHistoryIndex::new(ctx, history)?;
         let mut addition_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut additions = Vec::new();
-        let mut source_items = history.features.iter().enumerate().into_iter();
+        let mut source_items = history.features.iter().enumerate();
         while let Some((feature_index, feature)) = ctx.next_charged(&mut source_items, OPERATION)? {
             if classify(feature) != Some(FeatureClass::Hole)
                 || ctx.contains_key_btree_map(
@@ -528,7 +528,7 @@ pub(crate) fn enrich_history_hole_constructions(
         ctx.sort_unstable_by(&mut hole_sources, |value| value, Ord::cmp, OPERATION)?;
         ctx.sort_unstable_by(&mut profiles_by_source, |value| value, Ord::cmp, OPERATION)?;
         let mut interval_additions = Vec::new();
-        let mut source_items = history.features.iter().enumerate().into_iter();
+        let mut source_items = history.features.iter().enumerate();
         while let Some((feature_index, feature)) = ctx.next_charged(&mut source_items, OPERATION)? {
             if classify(feature) != Some(FeatureClass::Hole)
                 || ctx.contains_key_btree_map(
@@ -666,17 +666,14 @@ fn copy_hole_profile_source(
 fn hole_child_tokens<'value, 'ctx, 'arena>(
     ctx: &'ctx DecodeContext<'arena>,
     value: &'value str,
-) -> Result<
-    impl Iterator<Item = Result<&'value str, CodecError>> + use<'value, 'ctx, 'arena>,
-    CodecError,
-> {
+) -> impl Iterator<Item = Result<&'value str, CodecError>> + use<'value, 'ctx, 'arena> {
     const OPERATION: &str = "scan SLDPRT hole child references";
     let mut start = 0usize;
     let mut characters = value
         .char_indices()
         .chain(std::iter::once((value.len(), ',')));
     let mut done = false;
-    Ok(std::iter::from_fn(move || {
+    std::iter::from_fn(move || {
         if done {
             return None;
         }
@@ -700,7 +697,7 @@ fn hole_child_tokens<'value, 'ctx, 'arena>(
             done = true;
         }
         token.transpose()
-    }))
+    })
 }
 
 struct HoleHistoryIndex<'history, 'ctx> {
@@ -793,7 +790,7 @@ fn claimed_hole_profiles<'a>(
 ) -> Result<HashSet<&'a str>, CodecError> {
     const OPERATION: &str = "index SLDPRT claimed hole profiles";
     let mut claims = HashSet::new();
-    let mut source_items = features.into_iter();
+    let mut source_items = features.iter();
     while let Some(feature) = ctx.next_charged(&mut source_items, OPERATION)? {
         let Some(children) = ctx.get_btree_map(
             &feature.properties,
@@ -803,7 +800,7 @@ fn claimed_hole_profiles<'a>(
         else {
             continue;
         };
-        for child in hole_child_tokens(ctx, children)? {
+        for child in hole_child_tokens(ctx, children) {
             let child = ctx.trim_text(child?, OPERATION)?;
             if child.is_empty() {
                 continue;
@@ -1088,7 +1085,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "enrich SLDPRT cosmetic thread diameters";
-    let mut source_items = histories.into_iter();
+    let mut source_items = histories.iter_mut();
     while let Some(history) = ctx.next_charged(&mut source_items, OPERATION)? {
         let mut history_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut features_by_id = HashMap::new();
@@ -1106,7 +1103,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
         }
         let mut candidates_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut candidates = HashMap::<String, Option<f64>>::new();
-        let mut source_items = lanes.into_iter();
+        let mut source_items = lanes.iter();
         while let Some(lane) = ctx.next_charged(&mut source_items, OPERATION)? {
             let mut source_items = lane.surface_selections.iter();
             while let Some(selection) = ctx.next_charged(&mut source_items, OPERATION)? {
@@ -1461,7 +1458,7 @@ fn profiled_hole_construction_with_evidence(
     }
     let mut lines = Vec::new();
     let mut points = Vec::new();
-    let mut source_items = entities.into_iter();
+    let mut source_items = entities.iter();
     while let Some(entity) = ctx.next_charged(&mut source_items, OPERATION)? {
         if !ctx.equal(&(entity.sketch), sketch, "compare SLDPRT holes records")?
             || entity.construction
@@ -2100,7 +2097,7 @@ pub(crate) fn project_profiled_hole_constructions(
             }
         }
         let mut profiles = Vec::new();
-        let mut source_items = history.features.iter().enumerate().into_iter();
+        let mut source_items = history.features.iter().enumerate();
         while let Some((index, profile)) = ctx.next_charged(&mut source_items, OPERATION)? {
             if ctx.contains_hash_set(
                 &claimed_profiles,
@@ -2152,7 +2149,7 @@ pub(crate) fn project_profiled_hole_constructions(
         if holes.len() != profiles.len() {
             continue;
         }
-        let mut source_items = holes.iter().zip(profiles).into_iter();
+        let mut source_items = holes.iter().zip(profiles);
         while let Some(((hole, _), (_, _, construction))) =
             ctx.next_charged(&mut source_items, OPERATION)?
         {
@@ -2193,7 +2190,7 @@ pub(crate) fn project_profiled_hole_constructions(
         if let Some(children) =
             ctx.get_btree_map(&native.properties, "DissectableChildren", OPERATION)?
         {
-            for source in hole_child_tokens(ctx, children)? {
+            for source in hole_child_tokens(ctx, children) {
                 let source = ctx.trim_text(source?, OPERATION)?;
                 let Some(profile) = records[history_index].child(ctx, source)? else {
                     continue;
@@ -2277,7 +2274,7 @@ fn collect_claimed_hole_profiles<'a>(
     profiles: &mut HashSet<&'a str>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "index SLDPRT claimed axial hole profiles";
-    for child in hole_child_tokens(ctx, children)? {
+    for child in hole_child_tokens(ctx, children) {
         let child = ctx.trim_text(child?, OPERATION)?;
         if child.is_empty() {
             continue;
@@ -3155,7 +3152,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                         "SLDPRT spatial marker workspace",
                         || -> Result<_, CodecError> {
                             let mut axes = Vec::new();
-                            let mut source_items = surfaces.into_iter();
+                            let mut source_items = surfaces.iter();
                             while let Some(surface) = ctx.next_charged(
                                 &mut source_items,
                                 "scan SLDPRT spatial bore surfaces",
@@ -3190,7 +3187,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                             }
                             if axes.is_empty() {
                                 let mut support_axes = Vec::new();
-                                let mut source_items = surfaces.into_iter();
+                                let mut source_items = surfaces.iter();
                                 while let Some(surface) = ctx.next_charged(
                                     &mut source_items,
                                     "scan SLDPRT spatial support surfaces",
@@ -3460,7 +3457,7 @@ pub(crate) fn project_generated_hole_axes(
         }
     }
     let mut faces_by_id = HashMap::new();
-    let mut source_items = faces.into_iter();
+    let mut source_items = faces.iter();
     while let Some(face) =
         ctx.next_charged(&mut source_items, "index SLDPRT generated hole faces")?
     {
@@ -3475,7 +3472,7 @@ pub(crate) fn project_generated_hole_axes(
         })?;
     }
     let mut surfaces_by_id = HashMap::new();
-    let mut source_items = surfaces.into_iter();
+    let mut source_items = surfaces.iter();
     while let Some(surface) =
         ctx.next_charged(&mut source_items, "index SLDPRT generated hole surfaces")?
     {
@@ -3733,7 +3730,7 @@ pub(crate) fn project_hole_topology_axes(
     let mut diameter_counts = HashMap::<u64, usize>::new();
     let mut storage = ctx.reserve_scoped(0, "SLDPRT hole topology lookup workspace")?;
     let mut unresolved = Vec::new();
-    let mut source_items = features.iter().enumerate().into_iter();
+    let mut source_items = features.iter().enumerate();
     while let Some((index, feature)) = ctx.next_charged(&mut source_items, DIAMETER_LOOKUP)? {
         if feature.suppressed == Some(true) {
             continue;
@@ -3789,7 +3786,7 @@ pub(crate) fn project_hole_topology_axes(
                 }
 
                 let mut siblings = Vec::new();
-                let mut source_items = features.iter().enumerate().into_iter();
+                let mut source_items = features.iter().enumerate();
                 while let Some((index, feature)) =
                     ctx.next_charged(&mut source_items, "scan SLDPRT counterbore siblings")?
                 {
@@ -4089,7 +4086,7 @@ fn drilled_hole_topology_candidates(
     let length_tolerance = (length.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_POSITION);
     let mut storage = ctx.reserve_scoped(0, "SLDPRT drilled hole candidate workspace")?;
     let mut cone_keys = HashSet::new();
-    let mut source_items = surfaces.into_iter();
+    let mut source_items = surfaces.iter();
     while let Some(surface) =
         ctx.next_charged(&mut source_items, "scan SLDPRT drilled hole cone surfaces")?
     {
@@ -4210,7 +4207,7 @@ fn expand_seeded_drilled_hole_topology_axes(
         }
         let mut sibling_storage = ctx.reserve_scoped(0, "SLDPRT seeded hole sibling workspace")?;
         let mut siblings = Vec::new();
-        let mut source_items = features.iter().enumerate().into_iter();
+        let mut source_items = features.iter().enumerate();
         while let Some((sibling, feature)) =
             ctx.next_charged(&mut source_items, "scan SLDPRT seeded hole siblings")?
         {
@@ -4328,7 +4325,7 @@ fn unclaimed_seeded_hole_candidates(
         let Some(placements) = placements.as_deref() else {
             return Ok(None);
         };
-        let mut source_items = placements.into_iter();
+        let mut source_items = placements.iter();
         while let Some(placement) = ctx.next_charged(&mut source_items, OPERATION)? {
             let Some(key) = hole_axis_key(placement) else {
                 return Ok(None);
@@ -4520,6 +4517,7 @@ fn counterbore_topology_candidates(
     definition: &FeatureDefinition,
     topology: &HoleTopology<'_>,
 ) -> Result<Option<Vec<HolePlacement>>, CodecError> {
+    const OPERATION: &str = "SLDPRT counterbore placement workspace";
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = definition else {
         return Ok(None);
     };
@@ -4544,7 +4542,6 @@ fn counterbore_topology_candidates(
     let diameter = diameter.get();
     let counterbore_diameter = counterbore_diameter.get();
 
-    const OPERATION: &str = "SLDPRT counterbore placement workspace";
     let (solution, _solution_storage) =
         ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
             let Some(primary) =
@@ -4754,7 +4751,7 @@ fn direct_hole_position_feature<'a, 's>(
         "DissectableChildren",
         "find SLDPRT hole property",
     )? {
-        for source in hole_child_tokens(ctx, children)? {
+        for source in hole_child_tokens(ctx, children) {
             let source = ctx.trim_text(source?, OPERATION)?;
             if source.is_empty() {
                 continue;
@@ -4918,7 +4915,7 @@ pub(crate) fn project_hole_axes(
                 &records,
                 |id| {
                     ctx.get_hash_map(&model_sketches, id, INDEX_OPERATION)
-                        .map(|sketch| sketch.copied())
+                        .map(Option::<&_>::copied)
                 },
                 sketch_entities,
             )?,
@@ -4951,7 +4948,7 @@ pub(crate) fn project_hole_axes(
     }
     let mut feature_ranges_storage = ctx.reserve_scoped(0, INDEX_OPERATION)?;
     let mut feature_ranges = HashMap::new();
-    let mut source_items = lanes.into_iter();
+    let mut source_items = lanes.iter();
     while let Some(lane) = ctx.next_charged(&mut source_items, INDEX_OPERATION)? {
         feature_ranges_storage.with_storage(|| {
             ctx.insert_hash_map(
@@ -4963,7 +4960,7 @@ pub(crate) fn project_hole_axes(
         })?;
     }
     let mut feature_frames = HashMap::new();
-    let mut source_items = lanes.into_iter();
+    let mut source_items = lanes.iter();
     while let Some(lane) = ctx.next_charged(&mut source_items, INDEX_OPERATION)? {
         let Some(ranges) = ctx.get_hash_map(
             &feature_ranges,
@@ -5037,7 +5034,7 @@ pub(crate) fn project_hole_axes(
         })?;
     }
 
-    let mut source_items = model_features.into_iter();
+    let mut source_items = model_features.iter_mut();
     while let Some(feature) =
         ctx.next_charged(&mut source_items, "project SLDPRT hole positions")?
     {
@@ -5135,7 +5132,7 @@ pub(crate) fn project_hole_axes(
                     }
                 }
                 let mut solutions = Vec::new();
-                let mut source_items = lanes.into_iter();
+                let mut source_items = lanes.iter();
                 while let Some(lane) =
                     ctx.next_charged(&mut source_items, "scan SLDPRT hole position lanes")?
                 {
@@ -5260,7 +5257,7 @@ fn cylindrical_bore_axes(
         .with_storage(|| topology_index(ctx, topology.surfaces, |surface| &surface.id))?;
     let tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let mut axes = Vec::new();
-    let mut source_items = topology.faces.into_iter();
+    let mut source_items = topology.faces.iter();
     while let Some(face) = ctx.next_charged(&mut source_items, "scan SLDPRT bore carrier faces")? {
         if face.sense != Sense::Reversed {
             continue;
@@ -5467,7 +5464,7 @@ fn cylindrical_bore_face_spans(
     let points =
         index_storage.with_storage(|| topology_index(ctx, topology.points, |point| &point.id))?;
     let mut spans = Vec::new();
-    let mut source_items = topology.faces.into_iter();
+    let mut source_items = topology.faces.iter();
     while let Some(face) = ctx.next_charged(&mut source_items, "scan SLDPRT hole bore faces")? {
         let Some(surface) =
             ctx.get_hash_map(&surfaces, &face.surface, "resolve SLDPRT holes keys")?
@@ -5604,7 +5601,7 @@ pub(crate) fn project_topological_hole_constructions(
                 }
                 let mut common =
                     None::<(Vec<(f64, f64)>, cadmpeg_core::decode::ScopedReservation<'_>)>;
-                let mut source_items = placements.into_iter();
+                let mut source_items = placements.iter();
                 while let Some(placement) =
                     ctx.next_charged(&mut source_items, "scan SLDPRT hole placements")?
                 {
@@ -6234,7 +6231,7 @@ fn match_marker_loci_to_bore_axes(
         [GridCoordinate; 3],
         BTreeMap<[GridCoordinate; 3], Vec<(FinitePoint3, FeatureDirection3)>>,
     >::new();
-    let mut source_items = surfaces.into_iter();
+    let mut source_items = surfaces.iter();
     while let Some(surface) = ctx.next_charged(&mut source_items, OPERATION)? {
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
         else {
@@ -6956,7 +6953,7 @@ fn constrained_bore_axes(
     let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut axes = Vec::new();
-    let mut source_items = surfaces.into_iter();
+    let mut source_items = surfaces.iter();
     while let Some(surface) = ctx.next_charged(&mut source_items, OPERATION)? {
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
             surface.geometry
@@ -7040,7 +7037,7 @@ fn compact_position_loci(
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let selected = storage.with_storage(|| -> Result<Option<Vec<usize>>, CodecError> {
         let mut nodes = Vec::new();
-        let mut source_items = relations.into_iter();
+        let mut source_items = relations.iter();
         while let Some((_, first, second, _)) = ctx.next_charged(&mut source_items, OPERATION)? {
             ctx.extend_vec(&mut nodes, [*first, *second], OPERATION)?;
         }
