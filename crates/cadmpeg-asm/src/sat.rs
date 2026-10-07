@@ -261,11 +261,10 @@ impl FieldReader<'_> {
 // ---------------------------------------------------------------------------
 
 /// Split one header line into whitespace-separated fields.
-fn header_line<'a>(bytes: &'a [u8], pos: &mut usize, what: &str) -> Result<&'a [u8], StreamError> {
+fn header_line<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], pos: &mut usize, what: &str) -> Result<&'a [u8], StreamFailure> {
     let start = *pos;
-    let end = bytes[start..]
-        .iter()
-        .position(|b| *b == b'\n')
+    let end = ctx.position_by(&bytes[start..], |b| Ok(*b == b'\n'), "scan SAT header line")
+        .map_err(StreamFailure::from_operation)?
         .map(|off| start + off)
         .ok_or_else(|| StreamError {
             format: StreamFormat::Text,
@@ -274,6 +273,27 @@ fn header_line<'a>(bytes: &'a [u8], pos: &mut usize, what: &str) -> Result<&'a [
         })?;
     *pos = end + 1;
     Ok(&bytes[start..end])
+}
+
+/// Read the required fields and detect a surplus field without scanning its tail.
+fn header_fields<'a, const N: usize>(
+    ctx: &DecodeContext<'_>,
+    line: &'a [u8],
+) -> Result<([Option<&'a [u8]>; N], bool), StreamFailure> {
+    let mut fields = [None; N];
+    let mut pos = 0;
+    for field in &mut fields {
+        let Some(start) = ctx.position_by(&line[pos..], |byte| Ok(!is_ws(*byte)), "scan SAT header fields")
+            .map_err(StreamFailure::from_operation)? else { break; };
+        pos += start;
+        let end = ctx.position_by(&line[pos..], |byte| Ok(is_ws(*byte)), "scan SAT header fields")
+            .map_err(StreamFailure::from_operation)?.map_or(line.len(), |end| pos + end);
+        *field = Some(&line[pos..end]);
+        pos = end;
+    }
+    let surplus = ctx.any_by(&line[pos..], |byte| Ok(!is_ws(*byte)), "scan SAT header suffix")
+        .map_err(StreamFailure::from_operation)?;
+    Ok((fields, surplus))
 }
 
 fn header_int<T: cadmpeg_core::decode::text::TextScalar>(
@@ -399,10 +419,9 @@ fn parse_header(
     pos: &mut usize,
 ) -> Result<TextHeader, StreamFailure> {
     let at = *pos;
-    let line1 = header_line(bytes, pos, "save-format")?;
-    let mut fields = line1.split(|b| is_ws(*b)).filter(|field| !field.is_empty());
-    let line1: [Option<&[u8]>; 4] = std::array::from_fn(|_| fields.next());
-    if line1.iter().any(Option::is_none) || fields.next().is_some() {
+    let line1 = header_line(ctx, bytes, pos, "save-format")?;
+    let (line1, surplus) = header_fields::<4>(ctx, line1)?;
+    if line1.iter().any(Option::is_none) || surplus {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
@@ -416,23 +435,13 @@ fn parse_header(
     let flags = header_int(ctx, line1[3], at, "flags")?;
 
     let at = *pos;
-    let line2_start = *pos;
-    let line2_end = bytes[line2_start..]
-        .iter()
-        .position(|b| *b == b'\n')
-        .map(|off| line2_start + off)
-        .ok_or_else(|| StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "missing product line".to_string(),
-        })?;
-    let line2 = &bytes[line2_start..line2_end];
-    *pos = line2_end + 1;
+    let line2 = header_line(ctx, bytes, pos, "product")?;
     let mut cursor = 0usize;
     let product_family = counted_string(ctx, line2, &mut cursor, at, "product family")?;
     let product_version = counted_string(ctx, line2, &mut cursor, at, "product version")?;
     let save_date = counted_string(ctx, line2, &mut cursor, at, "save date")?;
-    if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
+    if ctx.any_by(&line2[cursor..], |byte| Ok(!is_ws(*byte)), "scan SAT product header suffix")
+        .map_err(StreamFailure::from_operation)? {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
@@ -442,10 +451,9 @@ fn parse_header(
     }
 
     let at = *pos;
-    let line3 = header_line(bytes, pos, "tolerance")?;
-    let mut fields = line3.split(|b| is_ws(*b)).filter(|field| !field.is_empty());
-    let line3: [Option<&[u8]>; 3] = std::array::from_fn(|_| fields.next());
-    if line3.iter().any(Option::is_none) || fields.next().is_some() {
+    let line3 = header_line(ctx, bytes, pos, "tolerance")?;
+    let (line3, surplus) = header_fields::<3>(ctx, line3)?;
+    if line3.iter().any(Option::is_none) || surplus {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
@@ -522,18 +530,14 @@ pub fn parse_container(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(TextHeader, Terminator), StreamFailure> {
-    // The final-marker trim and search each admit the whole text container.
-    for _ in 0..2 {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "SAT container framing",
-        )
-        .map_err(StreamFailure::from_operation)?;
-    }
     let mut position = 0;
     let header = parse_header(ctx, bytes, &mut position)?;
-    let tail = bytes.trim_ascii_end();
-    let marker = tail.rsplit(|byte| is_ws(*byte)).next();
+    let end = ctx.rposition_by(bytes, |byte| Ok(!byte.is_ascii_whitespace()), "scan SAT container trailing whitespace")
+        .map_err(StreamFailure::from_operation)?.map_or(0, |end| end + 1);
+    let tail = &bytes[..end];
+    let start = ctx.rposition_by(tail, |byte| Ok(is_ws(*byte)), "scan SAT container final marker")
+        .map_err(StreamFailure::from_operation)?.map_or(0, |start| start + 1);
+    let marker = Some(&tail[start..]);
     let branch = match marker {
         Some(b"End-of-ASM-data") => Terminator::Asm,
         Some(b"End-of-ACIS-data") => Terminator::Acis,
@@ -2097,20 +2101,14 @@ mod tests {
         assert_eq!(refusal.additional, additional);
     }
 
-    fn assert_lex_prim_work_refusal(
-        field: &str,
-        limit: u64,
-        operation: &str,
-        additional: u64,
-    ) {
-        let source = format!(
-            "0 0 0 0\n0 0 0 \n1 0 0\naudit {field} #\nEnd-of-ASM-data \n"
-        )
-        .into_bytes();
-        let error = with_work_limit(&source, limit, |ctx| super::parse(ctx, &source))
-            .expect("test context")
-            .expect_err("primitive text parsing must refuse");
-        assert_work_refusal(error, operation, limit, additional);
+    fn assert_lex_prim_work_refusal(field: &str, operation: &str, additional: u64) {
+        let source = format!("0 0 0 0\n0 0 0 \n1 0 0\naudit {field} #\nEnd-of-ASM-data \n").into_bytes();
+        let refusal = crate::test_support::resource_limit_at(&source, ResourceDimension::WorkUnits,
+            operation, |ctx| super::parse(ctx, &source)
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, operation);
+        assert_eq!(refusal.additional, additional);
     }
 
     fn lex_prim_with_work_limit(field: &str, max_work: u64) -> Result<Prim, StreamFailure> {
@@ -2127,28 +2125,19 @@ mod tests {
     #[test]
     fn sat_container_framing_admits_work_before_header_scan() {
         let source = asm_stream("");
-        crate::test_support::with_service_context(&source, |service| {
-            let mut policy = *service.policy();
-            policy.limits.max_work_units = 0;
-            policy.limits.max_retained_bytes = 0;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
-                .expect("source fits input limit");
-            let error =
-                super::parse_container(&ctx, &source).expect_err("scan work must refuse first");
-            let StreamFailure::Resource(refusal) = error else {
-                panic!("resource refusal: {error:?}");
-            };
-            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(refusal.operation, "SAT container framing");
-            assert_eq!(refusal.used, 0);
-            // The first marker-pass admission covers the whole source.
-            assert_eq!(
-                refusal.additional,
-                cadmpeg_core::decode::u64_from_index(source.len())
-            );
-        })
-        .expect("service test context");
+        let refusal = crate::test_support::resource_limit_at(&source, ResourceDimension::WorkUnits,
+            "scan SAT header line", |ctx| super::parse_container(ctx, &source)
+                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
+        assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(refusal.operation, "scan SAT header line");
+    }
+
+    #[test]
+    fn sat_container_marker_search_does_not_scan_records() {
+        let source = asm_stream(&format!("{} #\n", "x".repeat(100_000)));
+        let result = with_work_limit(&source, 1_000, |ctx| super::parse_container(ctx, &source))
+            .expect("test context").expect("header and suffix fit the work limit");
+        assert_eq!(result.1, super::Terminator::Asm);
     }
 
     #[test]
@@ -2287,17 +2276,12 @@ mod tests {
     #[test]
     fn sat_framing_refuses_record_and_payload_field_loop_work() {
         let source = b"0 0 0 0\n0 0 0 \n1 0 0\nx #\nEnd-of-ASM-data \n";
-        for (limit, operation) in [(29, "frame SAT record"), (35, "frame SAT field")] {
-            let error = with_work_limit(source, limit, |ctx| super::parse(ctx, source))
-                .expect("test context")
-                .expect_err("SAT scanner loop work must refuse");
-            let StreamFailure::Resource(refusal) = error else {
-                panic!("expected SAT scanner loop refusal");
-            };
+        for operation in ["frame SAT record", "frame SAT field"] {
+            let refusal = crate::test_support::resource_limit_at(source, ResourceDimension::WorkUnits,
+                operation, |ctx| super::parse(ctx, source)
+                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed)));
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
             assert_eq!(refusal.operation, operation);
-            // Header work is 29 after scalar parsing; record/name framing adds six more.
-            assert_eq!(refusal.used, limit);
         }
     }
 
@@ -2329,13 +2313,10 @@ mod tests {
 
     #[test]
     fn sat_primitive_text_scalar_parses_refuse_after_header_and_field_work() {
-        // Compact header work is 29: 19 scan/UTF-8 units plus ten one-byte scalar parses.
-        // Record/name framing adds 18. Field framing adds 13 for three-byte fields
-        // and 10 for the two-byte field, including both whitespace probes.
-        assert_lex_prim_work_refusal("$12", 60, "parse SAT reference index", 2);
-        assert_lex_prim_work_refusal("@12", 60, "parse SAT string byte count", 2);
-        assert_lex_prim_work_refusal("12", 57, "parse SAT integer field", 2);
-        assert_lex_prim_work_refusal("1.5", 60, "parse SAT real field", 3);
+        assert_lex_prim_work_refusal("$12", "parse SAT reference index", 2);
+        assert_lex_prim_work_refusal("@12", "parse SAT string byte count", 2);
+        assert_lex_prim_work_refusal("12", "parse SAT integer field", 2);
+        assert_lex_prim_work_refusal("1.5", "parse SAT real field", 3);
     }
 
     #[test]

@@ -129,7 +129,6 @@ pub(crate) fn scan_string_region(
     let mut cur = start;
     let mut strings = 0;
     while strings < 3 {
-        ctx.charge_work(1, "scan kernel header product string slots")?;
         let Some((_, next)) = read_u8_string_span(ctx, bytes, cur)? else {
             break;
         };
@@ -138,7 +137,6 @@ pub(crate) fn scan_string_region(
     }
     let mut doubles = 0;
     while doubles < 3 {
-        ctx.charge_work(1, "scan kernel header tolerance slots")?;
         let Some((_, next)) = read_tagged_f64(bytes, cur) else {
             break;
         };
@@ -206,25 +204,6 @@ mod tests {
     }
 
     #[test]
-    fn binary_header_scan_refuses_string_slot_work() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        use cadmpeg_core::CodecError;
-
-        let bytes = [0x07, 0];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("source fits input limit");
-        let Err(CodecError::ResourceLimit(refusal)) =
-            super::scan_string_region(&ctx, &bytes, 0)
-        else {
-            panic!("string slot scan must exceed work limit");
-        };
-        assert_eq!(refusal.operation, "scan kernel header product string slots");
-    }
-
-    #[test]
     fn binary_header_scan_refuses_utf8_validation_work() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         use cadmpeg_core::CodecError;
@@ -241,25 +220,6 @@ mod tests {
             panic!("UTF-8 validation must exceed work limit");
         };
         assert_eq!(refusal.operation, "validate kernel header product string");
-    }
-
-    #[test]
-    fn binary_header_scan_refuses_tolerance_slot_work() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        use cadmpeg_core::CodecError;
-
-        let bytes = [0x07, 0, 0x07, 0, 0x07, 0, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("source fits input limit");
-        let Err(CodecError::ResourceLimit(refusal)) =
-            super::scan_string_region(&ctx, &bytes, 0)
-        else {
-            panic!("tolerance slot scan must exceed work limit");
-        };
-        assert_eq!(refusal.operation, "scan kernel header tolerance slots");
     }
 
     #[test]
