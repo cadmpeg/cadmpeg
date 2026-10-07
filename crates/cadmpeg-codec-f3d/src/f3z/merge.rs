@@ -440,7 +440,11 @@ fn rescope_fidelity(
     for (id_text, record) in ctx.admit_iter(records, "rescope F3Z retained records")? {
         let id = match rescope_charged(ctx, id_text.as_str(), occurrence)? {
             Some(text) => UnknownId::mint(text).map_err(|error| {
-                CodecError::malformed(format_args!("F3Z retained record {id_text}: {error}"))
+                ctx.format_retained(
+                    format_args!("F3Z retained record {id_text}: {error}"),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed)
             })?,
             None => id_text,
         };

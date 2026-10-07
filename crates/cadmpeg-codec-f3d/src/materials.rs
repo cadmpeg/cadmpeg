@@ -976,8 +976,10 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 None => None,
             };
             if let Some((schema, category)) = matched {
-                appearance.schema =
-                    Some(ctx.copy_retained_text(schema, "copy F3D catalog schema")?);
+                if appearance.schema.is_none() {
+                    appearance.schema =
+                        Some(ctx.copy_retained_text(schema, "copy F3D catalog schema")?);
+                }
                 appearance.category = (category.as_deref())
                     .map(|text| ctx.copy_retained_text(text, "copy F3D catalog category"))
                     .transpose()?;
@@ -1004,10 +1006,15 @@ pub(crate) fn decode_with_body_bindings<'a>(
         if ctx.equal(&pair[0].id, &pair[1].id, "compare F3D appearance IDs")?
             && !appearance_equal(ctx, &pair[0], &pair[1])?
         {
-            return Err(CodecError::malformed(format_args!(
-                "F3D appearance asset {} has conflicting payloads",
-                pair[0].id
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!(
+                        "F3D appearance asset {} has conflicting payloads",
+                        pair[0].id
+                    ),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         }
     }
     ctx.dedup_by(
@@ -1264,10 +1271,15 @@ fn appearances_from_schema_records<'ctx>(
             }
             Some(existing) => {
                 if !ctx.equal(&existing.0, &texture, "compare F3D texture asset payloads")? {
-                    return Err(CodecError::malformed(format_args!(
-                        "Protein texture asset {} has conflicting payloads",
-                        texture.asset_guid
-                    )));
+                    return Err(ctx
+                        .format_retained(
+                            format_args!(
+                                "Protein texture asset {} has conflicting payloads",
+                                texture.asset_guid
+                            ),
+                            "retain F3D malformed diagnostic",
+                        )
+                        .map_or_else(std::convert::identity, CodecError::Malformed));
                 }
             }
         }
@@ -2450,9 +2462,11 @@ impl<'a, 'ctx> BodyPairIndex<'a, 'ctx> {
         entity_suffix_offset: u64,
     ) -> Result<Option<&'a BodyId>, CodecError> {
         let owner_stream = crate::ids::native_stream(owner_id).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D material owner has no native stream: {owner_id}"
-            ))
+            ctx.format_retained(
+                format_args!("F3D material owner has no native stream: {owner_id}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
         let key = Some((
             owner_stream,
@@ -2466,9 +2480,14 @@ impl<'a, 'ctx> BodyPairIndex<'a, 'ctx> {
                 None => return Ok(None),
                 Some(Some(binding)) => *binding,
                 Some(None) => {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(ctx
+                        .format_retained(
+                            format_args!(
                         "F3D material owner {owner_id} matches multiple exact body-map pairs"
-                    )))
+                    ),
+                            "retain F3D malformed diagnostic",
+                        )
+                        .map_or_else(std::convert::identity, CodecError::Malformed))
                 }
             };
         Ok(binding.body.as_ref())

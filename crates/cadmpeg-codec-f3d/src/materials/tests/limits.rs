@@ -287,7 +287,7 @@ fn schema_texture_index_refuses_collection_limit() {
 }
 
 #[test]
-fn schema_texture_key_refuses_retained_limit() {
+fn schema_texture_key_refuses_materialized_limit() {
     let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     let path = "textures/a.png";
     let record = texture_record(guid, path);
@@ -875,4 +875,58 @@ fn schema_scalar_aliases_copy_only_the_final_neutral_name() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "retain F3D native record ID")
     );
+}
+
+#[test]
+fn texture_asset_conflict_diagnostic_refuses_retained_storage() {
+    let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let records = [
+        texture_record(guid, "textures/a.png"),
+        texture_record(guid, "textures/b.png"),
+    ];
+    crate::test_support::with_decode_context(|normal| {
+        let error = super::super::appearances_from_schema_records(normal, &records)
+            .expect_err("conflicting payloads");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::Malformed(message) if message == format!("Protein texture asset {guid} has conflicting payloads"))
+        );
+    });
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D malformed diagnostic",
+        0,
+        |ctx| super::super::appearances_from_schema_records(ctx, &records).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "retain F3D malformed diagnostic")
+    );
+}
+
+#[test]
+fn catalog_matching_schema_reuses_the_decoded_name() {
+    let bytes = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    );
+    crate::test_support::zip_test::with_scan(&bytes, |scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::MAX;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            // Catalog binding keeps the schema that selected its entry.
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                "copy F3D catalog schema",
+                None,
+            );
+            let decoded = super::super::decode(ctx, scan).unwrap();
+            assert_eq!(decoded.appearances.len(), 1);
+            assert_eq!(
+                decoded.appearances[0].schema.as_deref(),
+                Some("GenericSchema")
+            );
+            assert_eq!(
+                decoded.appearances[0].category.as_deref(),
+                Some("Plastic/Thermoplastic")
+            );
+        });
+    });
 }

@@ -77,12 +77,18 @@ impl ArchiveSession<'_, '_> {
     ) -> Result<&ContainerScan<'_>, CodecError> {
         match ctx.get_btree_map(&self.members, path, "look up F3Z member scan")? {
             Some(ClassifiedMember::Scanned(scan)) => Ok(scan),
-            Some(ClassifiedMember::Unreadable(message)) => Err(CodecError::malformed(
-                format_args!("f3z document member {path} could not be scanned: {message}"),
-            )),
-            None => Err(CodecError::malformed(format_args!(
-                "f3z document member {path} is not present in the archive"
-            ))),
+            Some(ClassifiedMember::Unreadable(message)) => Err(ctx
+                .format_retained(
+                    format_args!("f3z document member {path} could not be scanned: {message}"),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed)),
+            None => Err(ctx
+                .format_retained(
+                    format_args!("f3z document member {path} is not present in the archive"),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed)),
         }
     }
 }
@@ -121,7 +127,11 @@ pub(super) fn model_root<'ctx>(
     let text = ctx
         .validate_utf8(manifest_bytes, "validate F3Z JSON UTF-8")?
         .map_err(|error| {
-            CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
+            ctx.format_retained(
+                format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
     let manifest: ManifestJson =
         ctx.parse_json(text, "parse F3Z manifest JSON")
@@ -129,7 +139,11 @@ pub(super) fn model_root<'ctx>(
                 let CodecError::Malformed(error) = error else {
                     return error;
                 };
-                CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
+                ctx.format_retained(
+                    format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed)
             })?;
     let mut names_storage = ctx.reserve_scoped(0, "stage F3Z selected root names")?;
     let names = model_root_member(ctx, scan, &manifest.root, &mut names_storage)?;
@@ -155,9 +169,11 @@ pub(super) fn classify_members<'a, 'ctx>(
             continue;
         }
         let member_view = scan.entry_view(ctx, member_path)?.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "f3z document member {member_path} is not readable"
-            ))
+            ctx.format_retained(
+                format_args!("f3z document member {member_path} is not readable"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
         let member_scan = match crate::container::scan(ctx, member_view) {
             Ok(member_scan) => member_scan,
@@ -297,9 +313,11 @@ fn model_root_member(
     let text = ctx
         .validate_utf8(description_bytes, "validate F3Z design description UTF-8")?
         .map_err(|error| {
-            CodecError::malformed(format_args!(
-                "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
-            ))
+            ctx.format_retained(
+                format_args!("{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
     let description: DesignDescriptionJson = ctx
         .parse_json(text, "match F3Z derived model reference")
@@ -307,9 +325,11 @@ fn model_root_member(
             let CodecError::Malformed(error) = error else {
                 return error;
             };
-            CodecError::malformed(format_args!(
-                "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
-            ))
+            ctx.format_retained(
+                format_args!("{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
     let mut candidate_storage = ctx.reserve_scoped(0, "collect F3Z model candidates")?;
     let mut candidates = std::collections::BTreeSet::new();
@@ -400,10 +420,10 @@ fn model_root_member(
             })?),
         ))
     } else {
-        Err(CodecError::malformed(format_args!(
+        Err(ctx.format_retained(format_args!(
             "f3z root member {archive_root} is not an f3d document and has {} unambiguous derived f3d model members",
             candidates.len()
-        )))
+        ), "retain F3D malformed diagnostic").map_or_else(std::convert::identity, CodecError::Malformed))
     }
 }
 
@@ -551,6 +571,33 @@ mod tests {
             assert_eq!(names, ("model.f3d".to_owned(), None));
             drop(storage);
             ctx.finish_session().unwrap();
+        });
+    }
+
+    #[test]
+    fn missing_derived_root_diagnostic_refuses_retained_storage() {
+        let bytes = crate::test_support::assembly_test::f3z_archive_with_design_description(
+            "drawing.f2d",
+            &[("drawing.f2d", b"drawing"), ("model.f3d", b"model")],
+            br#"{"designDescription":{"designGraphs":[]}}"#,
+        );
+        crate::test_support::with_decode_context(|normal| {
+            let scan =
+                crate::container::scan(normal, cadmpeg_core::decode::View::over_retained(&bytes))
+                    .unwrap();
+            let error = super::model_root(normal, &scan).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::Malformed(message) if message == "f3z root member drawing.f2d is not an f3d document and has 0 unambiguous derived f3d model members")
+            );
+            let error = crate::test_support::resource_refusal_at(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                "retain F3D malformed diagnostic",
+                0,
+                |ctx| super::model_root(ctx, &scan).map(|_| ()),
+            );
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "retain F3D malformed diagnostic")
+            );
         });
     }
 }
