@@ -98,6 +98,7 @@ fn declared_draft_operands(
     let Some(final_record_start) = end.checked_sub(draft_plane::LEN) else {
         return Ok(None);
     };
+    let mut records_storage = ctx.reserve_scoped(0, "SLDPRT declared draft reference workspace")?;
     let mut records = Vec::new();
     for offset in ctx.admit_iter(
         &(object_start..=final_record_start),
@@ -106,8 +107,8 @@ fn declared_draft_operands(
         if lane.native_payload.get(offset..offset + 2) != Some(token.as_slice()) {
             continue;
         }
-        if let Some(record) = draft_plane_reference_at(ctx, &lane.native_payload, offset, end)? {
-            ctx.push_vec(&mut records, record, OPERATION)?;
+        if let Some(record) = records_storage.with_storage(|| draft_plane_reference_at(ctx, &lane.native_payload, offset, end))? {
+            records_storage.with_storage(|| ctx.push_vec(&mut records, record, OPERATION))?;
         }
     }
     let mut records = records.into_iter();
@@ -124,14 +125,16 @@ fn declared_draft_operands(
         return Ok(None);
     };
     let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
-    for (_, path, _) in records {
-        push_distinct_face(ctx, &mut faces, path, "collect SLDPRT declared draft faces")?;
+    while let Some((_, path, _)) = ctx.next_charged(&mut records, OPERATION)? {
+        records_storage.with_storage(|| push_distinct_face(ctx, &mut faces, path, "collect SLDPRT declared draft faces"))?;
     }
-    Ok((!faces.is_empty()).then_some(DraftOperands {
-        anchor: DraftAnchor::NeutralPlane(neutral_plane),
-        faces,
-        pull_direction,
-    }))
+    if faces.is_empty() { return Ok(None); }
+    let neutral_plane = ctx.collect_vec(neutral_plane.iter().cloned(), OPERATION)?;
+    let mut retained_faces = Vec::new();
+    for face in ctx.admit_iter(&faces, OPERATION)? {
+        ctx.push_vec(&mut retained_faces, ctx.collect_vec(face.iter().cloned(), OPERATION)?, OPERATION)?;
+    }
+    Ok(Some(DraftOperands { anchor: DraftAnchor::NeutralPlane(neutral_plane), faces: retained_faces, pull_direction }))
 }
 
 fn compact_parting_line_draft_operands(

@@ -370,18 +370,18 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             Ord::cmp,
             "sort SLDPRT component path objects",
         )?;
-        let object_kind = |name: &FeatureInputName, feature: &Feature| {
+        let object_kind = |name: &FeatureInputName, feature: &Feature| -> Result<NativeClassKind, CodecError> {
             let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default());
-            if is_profile_feature_object(feature) {
+            Ok(if is_profile_feature_object(feature) {
                 NativeClassKind::ProfileFeature
             } else if kind == NativeClassKind::Unknown
                 && (matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
-                    || feature_inline_operation_fields(lane, name).is_some())
+                    || feature_inline_operation_fields(ctx, lane, name)?.is_some())
             {
                 NativeClassKind::Extrusion
             } else {
                 kind
-            }
+            })
         };
         let is_dissectable = |feature: &Feature| -> Result<bool, CodecError> {
             const OPERATION: &str = "find SLDPRT dissectable profile properties";
@@ -394,7 +394,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             )
         };
         for (_, (name, feature)) in ctx.admit_iter(&objects, INDEX)? {
-            if object_kind(name, feature) == NativeClassKind::Extrusion {
+            if object_kind(name, feature)? == NativeClassKind::Extrusion {
                 storage.with_storage(|| {
                     ctx.push_btree_group(
                         &mut profiles,
@@ -414,8 +414,8 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             let [(_, (first_name, first)), (_, (second_name, second))] = pair else {
                 continue;
             };
-            let first_kind = object_kind(first_name, first);
-            let second_kind = object_kind(second_name, second);
+            let first_kind = object_kind(first_name, first)?;
+            let second_kind = object_kind(second_name, second)?;
             let association = match (first_kind, second_kind) {
                 (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion) => {
                     Some((*first, *second, 0))
@@ -441,7 +441,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             .admit_iter(&objects, "match SLDPRT adjacent profile owners")?
             .enumerate()
         {
-            if object_kind(extrusion_name, extrusion) != NativeClassKind::Extrusion {
+            if object_kind(extrusion_name, extrusion)? != NativeClassKind::Extrusion {
                 continue;
             }
             // A profile owns the objects between it and the extrusion only
@@ -451,7 +451,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             for profile_index in (0..extrusion_index).rev() {
                 ctx.charge_work(1, "match SLDPRT adjacent profile owners")?;
                 let (_, (profile_name, profile)) = objects[profile_index];
-                if object_kind(profile_name, profile) == NativeClassKind::ProfileFeature
+                if object_kind(profile_name, profile)? == NativeClassKind::ProfileFeature
                     && profile_owns_intervening_sketch_blocks(
                         ctx,
                         profile,

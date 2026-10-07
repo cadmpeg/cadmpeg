@@ -904,6 +904,38 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
 }
 
 #[test]
+fn dimensioned_circle_comparison_releases_each_candidate_signature() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 16 * 1024;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let identity = MarkerTransform {
+        axes: Axes::Aligned { swap: false, u: Sign::Positive, v: Sign::Positive },
+        translation: (0, 0),
+    };
+    let candidates = [identity; 512];
+    let circles = [((10_i64, 20_i64), crate::resolved_features::grid::GridCoordinate::Cell(5)); 64];
+    assert_eq!(dimensioned_circle_transform(&ctx, &candidates, &circles).unwrap(), Some(identity));
+}
+
+#[test]
+fn failed_dimensioned_circle_transform_does_not_visit_remaining_circles() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 32;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let transform = MarkerTransform {
+        axes: Axes::Aligned { swap: false, u: Sign::Negative, v: Sign::Positive },
+        translation: (0, 0),
+    };
+    let mut circles = [((10_i64, 20_i64), crate::resolved_features::grid::GridCoordinate::Cell(5)); 4096];
+    circles[0].0 = (i64::MIN, 0);
+    assert_eq!(dimensioned_circle_transform(&ctx, &[transform], &circles).unwrap(), None);
+}
+
+#[test]
 fn cylinder_centers_resolve_dimensioned_circle_frame() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(

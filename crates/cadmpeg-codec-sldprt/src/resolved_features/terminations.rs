@@ -1347,7 +1347,6 @@ fn compact_body_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
-    ctx.charge_work(32, "decode SLDPRT body component path")?;
     let count = (|| {
         if marker < 12
             || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
@@ -1399,14 +1398,8 @@ fn compact_body_component_entries_at(
         else {
             return Ok(None);
         };
-        ctx.charge_work(
-            u64_from_index(components.len()),
-            "decode SLDPRT body mixed path",
-        )?;
-        Ok(components
-            .iter()
-            .any(|component| component.instance.is_none() || component.local_id.is_none())
-            .then_some((components, end)))
+        let mixed = ctx.any_by(&components, |component| Ok(component.instance.is_none() || component.local_id.is_none()), "decode SLDPRT body mixed path")?;
+        Ok(mixed.then_some((components, end)))
     };
     if let Some((components, _)) = parse(count)? {
         return Ok(Some(components));
@@ -2034,14 +2027,17 @@ fn compact_termination_reference_offsets(
 ) -> Result<ReferenceOffsets, cadmpeg_core::CodecError> {
     let end = super::DeclaredEnd::of(end, payload.len()).map_or(start, super::DeclaredEnd::get);
     let mut candidates = ReferenceOffsets::Empty;
-    for marker in ctx.admit_iter(&(start..end), "scan SLDPRT termination reference offsets")? {
+    let mut markers = start..end;
+    while let Some(marker) = ctx.next_charged(&mut markers, "scan SLDPRT termination reference offsets")? {
         let present = if require_path {
-            compact_termination_reference_path_at(ctx, payload, marker)?.is_some()
+            let (path, _storage) = ctx.with_scoped_storage("SLDPRT termination reference candidate", || compact_termination_reference_path_at(ctx, payload, marker))?;
+            path.is_some()
         } else {
             compact_termination_reference_frame_at(payload, marker).is_some()
         };
         if present {
             candidates.insert(marker);
+            if matches!(candidates, ReferenceOffsets::Ambiguous) { break; }
         }
     }
     Ok(candidates)
@@ -2194,7 +2190,7 @@ impl LegacyFacePathSearch<'_, '_> {
         }
         let ctx = self.ctx;
         let _depth = ctx.enter_nested(OPERATION)?;
-        ctx.charge_work(256, OPERATION)?;
+        ctx.charge_work(1, OPERATION)?;
         if remaining == 0 {
             if !self.terminal_at(cursor) {
                 return Ok(());
@@ -2204,10 +2200,7 @@ impl LegacyFacePathSearch<'_, '_> {
                     self.ambiguous = true;
                 }
             } else {
-                let mut complete = Vec::new();
-                ctx.reserve_vec(&mut complete, self.entries.len(), OPERATION)?;
-                complete.extend_from_slice(&self.entries);
-                self.complete = Some(complete);
+                self.complete = Some(ctx.collect_vec(self.entries.iter().cloned(), OPERATION)?);
             }
             return Ok(());
         }
@@ -2226,8 +2219,7 @@ impl LegacyFacePathSearch<'_, '_> {
                 cursor + 16
             };
             let entry_count = self.entries.len();
-            ctx.reserve_vec(&mut self.entries, 1, OPERATION)?;
-            self.entries.push(entry);
+            ctx.push_vec(&mut self.entries, entry, OPERATION)?;
             for slot_bytes in [0usize, 4] {
                 if slot_bytes == 4
                     && (!has_path_slots
@@ -2256,7 +2248,6 @@ fn legacy_single_face_reference_path_at(
     payload: &[u8],
     body: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
-    ctx.charge_work(32, "decode SLDPRT legacy face header")?;
     let header_valid = (|| {
         let header = payload.get(body..body + 19)?;
         let class_token = View::u16_le_at(header, 0)?;
@@ -2277,6 +2268,7 @@ fn legacy_single_face_reference_path_at(
     if header_valid.is_none() {
         return Ok(None);
     }
+    let (selected, _storage) = ctx.with_scoped_storage("SLDPRT legacy face path workspace", || -> Result<_, cadmpeg_core::CodecError> {
     let mut search = LegacyFacePathSearch {
         ctx,
         payload,
@@ -2329,11 +2321,9 @@ fn legacy_single_face_reference_path_at(
             search.visit(control + 40, entry_count, prefix[15] == 3)?;
         }
     }
-    Ok(if search.ambiguous {
-        None
-    } else {
-        search.complete
-    })
+    Ok(if search.ambiguous { None } else { search.complete })
+    })?;
+    selected.map(|entries| ctx.collect_vec(entries.iter().cloned(), "retain SLDPRT legacy face path")).transpose()
 }
 
 pub(super) fn compact_single_face_reference_record_at(
@@ -2341,7 +2331,6 @@ pub(super) fn compact_single_face_reference_record_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<super::selections::ComponentPathReference>, cadmpeg_core::CodecError> {
-    ctx.charge_work(32, "decode SLDPRT single face record")?;
     let count = (|| {
         let count = marker
             .checked_sub(12)
@@ -2387,7 +2376,6 @@ pub(super) fn compact_single_face_reference_record_at(
         else {
             continue;
         };
-        ctx.charge_work(128, "decode SLDPRT single face terminal")?;
         let source = [0usize, 4, 8].into_iter().find_map(|gap| {
             let filler = match gap {
                 0 => true,
@@ -2471,7 +2459,7 @@ pub(super) fn compact_termination_reference_path_at(
     }
     let mut entries = Vec::new();
     while entries.len() < count {
-        ctx.charge_work(128, OPERATION)?;
+        ctx.charge_work(1, OPERATION)?;
         let ordinal_gap = payload
             .get(cursor..cursor + 4)
             .and_then(|bytes| {
@@ -2485,8 +2473,7 @@ pub(super) fn compact_termination_reference_path_at(
             continue;
         }
         if let Some(entry) = entry_at(cursor) {
-            ctx.reserve_vec(&mut entries, 1, OPERATION)?;
-            entries.push(entry);
+            ctx.push_vec(&mut entries, entry, OPERATION)?;
             cursor += 20;
             continue;
         }
