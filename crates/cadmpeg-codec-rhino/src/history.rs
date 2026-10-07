@@ -824,21 +824,10 @@ where
     }
 }
 
-struct ReferenceList<'a>(&'a [ObjectReference]);
-
-impl fmt::Display for ReferenceList<'_> {
+struct ReferenceText<'a>(&'a ObjectReference);
+impl fmt::Display for ReferenceText<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (index, value) in self.0.iter().enumerate() {
-            if index != 0 {
-                f.write_str(",")?;
-            }
-            write!(
-                f,
-                "{}@{}:{}",
-                value.object_id, value.component[0], value.component[1]
-            )?;
-        }
-        Ok(())
+        write!(f, "{}@{}:{}", self.0.object_id, self.0.component[0], self.0.component[1])
     }
 }
 
@@ -890,64 +879,20 @@ fn admitted_named_properties(
 }
 
 fn value_text(ctx: &DecodeContext<'_>, value: &Value) -> Result<Option<String>, CodecError> {
+    let operation = "Rhino history value text";
     let text = match value {
-        Value::None => ctx.format_retained(format_args!(""), "Rhino history value text")?,
-        Value::Booleans(values) => ctx.format_retained(
-            format_args!("{}", Joined(values.iter(), ",")),
-            "Rhino history value text",
-        )?,
-        Value::Integers(values) => ctx.format_retained(
-            format_args!("{}", Joined(values.iter(), ",")),
-            "Rhino history value text",
-        )?,
-        Value::Doubles(values) => ctx.format_retained(
-            format_args!("{}", Joined(values.iter(), ",")),
-            "Rhino history value text",
-        )?,
-        Value::Colors(values) => ctx.format_retained(
-            format_args!(
-                "{}",
-                Joined(values.iter().map(|value| Joined(value.iter(), ",")), ";")
-            ),
-            "Rhino history value text",
-        )?,
-        Value::Points(values) => ctx.format_retained(
-            format_args!(
-                "{}",
-                Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
-            ),
-            "Rhino history value text",
-        )?,
-        Value::Vectors(values) => ctx.format_retained(
-            format_args!(
-                "{}",
-                Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
-            ),
-            "Rhino history value text",
-        )?,
-        Value::Transforms(values) => ctx.format_retained(
-            format_args!(
-                "{}",
-                Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
-            ),
-            "Rhino history value text",
-        )?,
-        Value::Strings(values) => ctx.format_retained(
-            format_args!("{}", Joined(values.iter(), "\u{1f}")),
-            "Rhino history value text",
-        )?,
-        Value::ObjectReferences(values) => ctx.format_retained(
-            format_args!("{}", ReferenceList(values)),
-            "Rhino history value text",
-        )?,
-        Value::Geometries(values) => ctx.format_retained(
-            format_args!("{}", Joined(values.iter().map(|value| value.class_id), ",")),
-            "Rhino history value text",
-        )?,
-        Value::Uuids(values) => ctx.format_retained(
-            format_args!("{}", Joined(values.iter(), ",")),
-            "Rhino history value text",
-        )?,
+        Value::None => String::new(),
+        Value::Booleans(values) => ctx.join_display_retained(values, ",", operation)?,
+        Value::Integers(values) => ctx.join_display_retained(values, ",", operation)?,
+        Value::Doubles(values) => ctx.join_display_retained(values, ",", operation)?,
+        Value::Colors(values) => ctx.join_display_retained(values.iter().map(|value| Joined(value.iter(), ",")), ";", operation)?,
+        Value::Points(values) => ctx.join_display_retained(values.iter().map(|value| Joined(value.0.iter(), ",")), ";", operation)?,
+        Value::Vectors(values) => ctx.join_display_retained(values.iter().map(|value| Joined(value.0.iter(), ",")), ";", operation)?,
+        Value::Transforms(values) => ctx.join_display_retained(values.iter().map(|value| Joined(value.0.iter(), ",")), ";", operation)?,
+        Value::Strings(values) => ctx.join_display_retained(values, "\u{1f}", operation)?,
+        Value::ObjectReferences(values) => ctx.join_display_retained(values.iter().map(ReferenceText), ",", operation)?,
+        Value::Geometries(values) => ctx.join_display_retained(values.iter().map(|value| value.class_id), ",", operation)?,
+        Value::Uuids(values) => ctx.join_display_retained(values, ",", operation)?,
         Value::PolyEdges(_) | Value::SubdEdgeChains(_) | Value::Opaque { .. } => return Ok(None),
     };
     Ok(Some(text))
