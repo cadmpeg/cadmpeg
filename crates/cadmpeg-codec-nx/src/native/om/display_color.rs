@@ -286,9 +286,19 @@ mod admission_tests {
 
     #[test]
     fn display_color_finalization_refuses_scoped_limit() {
-        // The stable sort reserves scratch only above 20 values.
+        // Twenty-one descending offsets require the stable sort's index scratch.
         let rows: Vec<RmDisplayColorAssignment> = (0..21)
-            .map(|_| serde_json::from_str(ROW).unwrap())
+            .rev()
+            .map(|index| {
+                let mut wire: serde_json::Value = serde_json::from_str(ROW).unwrap();
+                wire["source_offset"] = serde_json::json!(100 * index + 8);
+                wire["row_source_offset"] = serde_json::json!(100 * index + 10);
+                wire["encoding"]["target_index_source_offset"] =
+                    serde_json::json!(100 * index + 15);
+                wire["encoding"]["index_source_offsets"] =
+                    serde_json::json!([100 * index + 20, 100 * index + 21, 100 * index + 22]);
+                serde_json::from_value(wire).unwrap()
+            })
             .collect();
         let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
             policy.limits.max_materialized_bytes = 0;

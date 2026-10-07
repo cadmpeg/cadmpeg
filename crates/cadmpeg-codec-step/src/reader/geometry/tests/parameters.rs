@@ -136,6 +136,7 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
     if with_edge {
         let curve = CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 3));
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
@@ -603,6 +604,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     let mut ir = CadIr::empty();
     let directrix = CurveId::mint("test:model:curve#line").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -776,12 +778,14 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
     let mut ir = CadIr::empty();
     let child = CurveId::mint("test:model:curve#unknown-child").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: child.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     let directrix = CurveId::mint("test:model:curve#composite").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
@@ -846,6 +850,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
     let directrix = CurveId::mint("test:model:curve#directrix").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(

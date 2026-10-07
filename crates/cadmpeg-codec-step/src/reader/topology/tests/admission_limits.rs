@@ -727,7 +727,7 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
         exchange.records().get(&3).expect("model"),
         super::super::BuildSources {
             exchange: &exchange,
-            ir: &cadmpeg_ir::CadIr::empty(),
+            index: None,
             vdefs: &BTreeMap::new(),
             edefs: &BTreeMap::new(),
             odefs: &BTreeMap::new(),
@@ -994,8 +994,11 @@ fn selected_pcurve_id_refuses_retained_limit() {
         .expect("empty carrier index fits policy");
     let candidate =
         cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#1").expect("valid pcurve identity");
+    let ir = cadmpeg_ir::CadIr::empty();
+    let index =
+        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
     assert!(matches!(super::super::select_associated_pcurve(
-        &cadmpeg_ir::CadIr::empty(), &exchange, 1,
+        &index, &exchange, 1,
         &super::super::EdgeDef::Bare { start: 1, end: 2 },
         super::super::PcurveAssociationSources {
             vdefs: &BTreeMap::new(), point_positions: &carriers, candidates: &[candidate],

@@ -1268,6 +1268,7 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
             source_object: None,
         });
         out.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::mint("f3d:brep:entity#existing-curve").unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,

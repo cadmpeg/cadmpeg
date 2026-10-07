@@ -714,6 +714,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let generated_curve_id = cadmpeg_ir::ids::CurveId::mint("generated:test:tolerant-use-curve#0")
         .expect("identity grammar");
     source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
         id: generated_curve_id.clone(),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             expected.clone(),

@@ -1240,6 +1240,7 @@ pub(super) fn project(
             ctx.reserve_vec(&mut ir.model.curves, 1, "iges offset source curve slots")?;
             ctx.charge_entities(1, "iges_geometry_offsets")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: offset_source_id
                     .try_clone_for_decode(ctx, "iges offset placed source identity")?,
                 geometry: CurveGeometry::Solved(placed_geometry),
@@ -1293,6 +1294,7 @@ pub(super) fn project(
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges offset neutral curve slots")?;
         ctx.charge_entities(1, "iges_geometry_offsets")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "iges offset curve identity")?,
             geometry,
             source_object: Some(match source_object(entry, ctx) {

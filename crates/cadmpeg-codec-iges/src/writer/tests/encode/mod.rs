@@ -912,6 +912,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     for index in 0..4 {
         let end = (index + 1) % 4;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(

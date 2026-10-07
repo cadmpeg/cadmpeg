@@ -266,6 +266,7 @@ fn add_face(
             .expect("identity grammar");
         let direction = corners[next].vector_from(origin).unit().unwrap();
         model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).unwrap(),
@@ -549,6 +550,7 @@ fn add_cylindrical_patch_face(
         let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
             .expect("identity grammar");
         model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry,
             source_object: None,

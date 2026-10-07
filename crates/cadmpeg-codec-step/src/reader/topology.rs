@@ -81,7 +81,7 @@ mod admissions;
 
 pub(super) struct TopologyData {
     pub(super) body_by_root: BTreeMap<u64, Vec<BodyId>>,
-    shape_representation_relationships: BTreeMap<u64, Vec<u64>>,
+    pub(super) shape_representation_relationships: BTreeMap<u64, Vec<u64>>,
     pub(super) body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
     pub(super) faces_by_source: BTreeMap<u64, Vec<FaceId>>,
     pub(super) edges_by_source: BTreeMap<u64, Vec<EdgeId>>,
@@ -383,7 +383,7 @@ fn shape_representation_relationships(
     Ok(related)
 }
 
-fn representation_item_values(record: &RawRecord) -> Option<&[Value]> {
+pub(super) fn representation_item_values(record: &RawRecord) -> Option<&[Value]> {
     if record.partials.len() == 1 {
         return entity_parameter(record, "REPRESENTATION", 1)
             .and_then(reference_values)
@@ -422,7 +422,7 @@ fn reference_values(value: &Value) -> Option<&[Value]> {
         .filter(|items| items.iter().all(|item| item.reference().is_some()))
 }
 
-fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
+pub(super) fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
     let map = named_reference(record, "MAPPED_ITEM", 1, 0)?;
     exchange
         .records()
@@ -736,23 +736,31 @@ pub(super) fn decode(
         // scope when more than one root is present. This preserves each root
         // without making the result depend on source record order.
         let scope_root = scope_distinct_roots;
-        let outcome = build(
-            id,
-            record,
-            BuildSources {
-                exchange,
-                ir: commit_session.document(),
-                vdefs: &vertices,
-                edefs: &edges,
-                odefs: &oriented,
-                shell_definitions: &shells,
-                decoded_pcurves: &decoded_pcurves,
-                point_positions,
-                ctx,
-            },
-            scope_root,
-            &mut losses,
-        )?;
+        // Pcurve evaluation reads the geometry that is stable while this
+        // root is drafted. Share its index across all shells and coedges;
+        // release the borrow before committing new topology.
+        let outcome = {
+            let index = (!decoded_pcurves.is_empty())
+                .then(|| ModelIndex::new_model_only(commit_session.document(), ctx))
+                .transpose()?;
+            build(
+                id,
+                record,
+                BuildSources {
+                    exchange,
+                    index: index.as_deref(),
+                    vdefs: &vertices,
+                    edefs: &edges,
+                    odefs: &oriented,
+                    shell_definitions: &shells,
+                    decoded_pcurves: &decoded_pcurves,
+                    point_positions,
+                    ctx,
+                },
+                scope_root,
+                &mut losses,
+            )?
+        };
         let (built, failures) = outcome.into_parts();
         let failure_message = failures
             .as_ref()
@@ -2751,7 +2759,7 @@ fn root_key(
 #[derive(Clone, Copy)]
 struct BuildSources<'a, 'b> {
     exchange: &'a Exchange,
-    ir: &'a CadIr,
+    index: Option<&'a ModelIndex<'a>>,
     vdefs: &'a BTreeMap<u64, VertexDef>,
     edefs: &'a BTreeMap<u64, Rc<EdgeDef>>,
     odefs: &'a BTreeMap<u64, OrientedDef>,
@@ -2919,7 +2927,7 @@ fn build_one(
 ) -> Result<Built, BuildError> {
     let BuildSources {
         exchange,
-        ir,
+        index,
         vdefs,
         edefs,
         odefs,
@@ -3513,18 +3521,22 @@ fn build_one(
                         if associated.is_empty() {
                             Vec::new()
                         } else {
-                            match select_associated_pcurve(
-                                ir,
-                                exchange,
-                                surface,
-                                edge,
-                                PcurveAssociationSources {
-                                    vdefs,
-                                    point_positions,
-                                    candidates: &associated,
-                                },
-                                ctx,
-                            ) {
+                            match index
+                                .ok_or(PcurveSelectionFailure::Carrier)
+                                .and_then(|index| {
+                                    select_associated_pcurve(
+                                        index,
+                                        exchange,
+                                        surface,
+                                        edge,
+                                        PcurveAssociationSources {
+                                            vdefs,
+                                            point_positions,
+                                            candidates: &associated,
+                                        },
+                                        ctx,
+                                    )
+                                }) {
                                 Ok(selected) => {
                                     ctx.push_vec(
                                         &mut admissions,
@@ -4595,7 +4607,7 @@ struct PcurveAssociationSources<'a> {
 }
 
 fn select_associated_pcurve(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     exchange: &Exchange,
     surface_step: u64,
     edge: &EdgeDef,
@@ -4614,23 +4626,16 @@ fn select_associated_pcurve(
     };
     let candidate = candidate.try_clone_for_decode(ctx, "step_selected_pcurve_id")?;
     let surface_identity = ids::data(kind!("surface"), surface_step);
-    let surface = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id.as_str() == surface_identity.as_str())
-        .map(|surface| &surface.geometry)
-        .ok_or(PcurveSelectionFailure::Carrier)?;
+    let surface = &index
+        .surfaces(surface_identity.as_str(), ctx)?
+        .ok_or(PcurveSelectionFailure::Carrier)?
+        .geometry;
     let surface_id = SurfaceId::from(surface_identity);
-    let index = ModelIndex::build(ir, ctx)?;
-    let pcurve = ir
-        .model
-        .pcurves
-        .iter()
-        .find(|pcurve| pcurve.id == candidate)
+    let pcurve = index
+        .pcurves(candidate.as_str(), ctx)?
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
-    let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear.get());
+    let bound = COINCIDENCE_TOLERANCE.max(index.ir().tolerances.linear.get());
     let start = vdefs
         .get(&edge.vertices().0)
         .and_then(|vertex| point_positions.get(vertex.point))
@@ -4647,7 +4652,7 @@ fn select_associated_pcurve(
         (end, start)
     };
     let endpoint = pcurve_endpoint_fit(
-        &index,
+        index,
         &surface_id,
         geometry,
         surface,
@@ -4660,7 +4665,7 @@ fn select_associated_pcurve(
         return Err(PcurveSelectionFailure::Endpoint);
     }
     if !pcurve_locus_witness(
-        &index,
+        index,
         exchange,
         edge,
         &surface_id,
@@ -4678,7 +4683,7 @@ fn select_associated_pcurve(
     let parameter_range = if let Some(range) = pcurve_declared_parameter_range(geometry) {
         let declared = pcurve_declared_endpoint_fit_directed(
             ctx,
-            &index,
+            index,
             &surface_id,
             geometry,
             range,
@@ -4691,7 +4696,6 @@ fn select_associated_pcurve(
     } else {
         None
     };
-    drop(index);
     Ok(SelectedPcurve {
         id: candidate,
         parameter_range,
@@ -4803,13 +4807,13 @@ fn pcurve_locus_witness(
         let curve_seed =
             curve_start_parameter.mul_add(1.0 - fraction, curve_end_parameter * fraction);
         let seeds = [
+            curve_seed,
             curve_seeds[0],
             curve_seeds[1],
             curve_seeds[2],
             curve_seeds[3],
             curve_seeds[4],
             curve_seeds[5],
-            curve_seed,
         ];
         let Some(curve_parameter) =
             curve_parameter_near_point(ctx, index, &curve_id, mapped, &seeds, bound)?
@@ -4846,7 +4850,9 @@ fn curve_parameter_near_point(
     seeds: &[f64],
     tolerance: f64,
 ) -> Result<Option<f64>, CodecError> {
-    let mut best: Option<(f64, f64)> = None;
+    // This is an existence witness: the inversion admits a parameter only
+    // after its evaluated point meets the tolerance. Stop once that witness
+    // exists rather than repeating successful inversions from other seeds.
     for &seed in seeds.iter().filter(|seed| seed.is_finite()) {
         let Some(parameter) = model_curve_parameter_near_point_in_index_with_tolerance(
             ctx, index, curve_id, point, seed, tolerance,
@@ -4854,12 +4860,9 @@ fn curve_parameter_near_point(
         else {
             continue;
         };
-        let candidate = ((parameter.get() - seed).abs(), parameter.get());
-        if best.is_none_or(|current| candidate.0.total_cmp(&current.0).is_lt()) {
-            best = Some(candidate);
-        }
+        return Ok(Some(parameter.get()));
     }
-    Ok(best.map(|(_, parameter)| parameter))
+    Ok(None)
 }
 
 fn pcurve_endpoint_fit(
@@ -5084,9 +5087,9 @@ fn pcurve_surface_closest(
     seeds: &[f64],
 ) -> Result<Option<(f64, f64)>, ResourceLimit> {
     ctx.charge_work_limit(0, "geometry helper boundary")?;
-    // The minimum is only over the finite seed set. The caller treats the
-    // directly evaluated result as a witness and omits the optional relation
-    // when no witness meets the tolerance.
+    // A directly evaluated result within the shared coincidence tolerance is
+    // sufficient for every caller's admission bound. Stop at that witness;
+    // otherwise retain the best residual over the finite seed set.
     let mut best: Option<(f64, f64)> = None;
     for &seed in seeds {
         ctx.charge_work_limit(1, "step pcurve seed visit")?;
@@ -5095,6 +5098,9 @@ fn pcurve_surface_closest(
         else {
             continue;
         };
+        if candidate.0 <= COINCIDENCE_TOLERANCE {
+            return Ok(Some(candidate));
+        }
         if best.is_none_or(|current| candidate.0.total_cmp(&current.0).is_lt()) {
             best = Some(candidate);
         }
@@ -5167,6 +5173,9 @@ fn mapped_pcurve_closest(
         let error = point.distance(target);
         if !error.is_finite() {
             return Ok(None);
+        }
+        if error <= COINCIDENCE_TOLERANCE {
+            return Ok(Some((error, parameter)));
         }
         if error < best {
             best = error;
@@ -5482,13 +5491,7 @@ fn surface_selection_parameter_domains(
 ) -> Result<[Option<[f64; 2]>; 2], ResourceLimit> {
     let _depth = ctx.enter_nested_limit("STEP surface selection domain depth")?;
     let definition = index
-        .ir()
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| {
-            index.ir().model.procedural_surface_owner(&procedural.id) == Some(surface_id)
-        })
+        .procedural_surface_for_surface(surface_id.as_str(), ctx)?
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
     Ok(match definition {
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {

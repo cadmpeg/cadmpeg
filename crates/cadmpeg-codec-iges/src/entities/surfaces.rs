@@ -2021,6 +2021,7 @@ pub(super) fn project(
                 )?;
                 ctx.charge_entities(1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: placed_id.try_clone_for_decode(ctx, "iges surface identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
                         cadmpeg_ir::geometry::PlacedCurve::try_new(
@@ -2285,6 +2286,7 @@ pub(super) fn project(
             )?;
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: procedural_directrix.try_clone_for_decode(ctx, "iges surface identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
                 source_object: Some(source_object(entry, ctx)?),
@@ -2525,6 +2527,7 @@ pub(super) fn project(
                 )?;
                 ctx.charge_entities(1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: procedural_directrix
                         .try_clone_for_decode(ctx, "iges surface identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -2799,6 +2802,7 @@ pub(super) fn project(
             )?;
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: procedural_directrix.try_clone_for_decode(ctx, "iges surface identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
                 source_object: Some(source_object(entry, ctx)?),

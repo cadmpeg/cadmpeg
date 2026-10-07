@@ -70,6 +70,8 @@ enum EntityStatus {
     Independent,
     Definition,
     PhysicallyDependent,
+    LogicallyDependent,
+    BothDependent,
     PhysicallyDependentEdgeList,
     ParameterCurve,
 }
@@ -80,6 +82,8 @@ impl EntityStatus {
             Self::Independent => "00000000",
             Self::Definition => "00000200",
             Self::PhysicallyDependent => "00010000",
+            Self::LogicallyDependent => "00020000",
+            Self::BothDependent => "00030000",
             Self::PhysicallyDependentEdgeList => "00010001",
             Self::ParameterCurve => "00010500",
         }
@@ -473,6 +477,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             consumed_points.insert(vertex_point_id(ir, &edge.end)?);
         }
 
+        let ownership = ownership::SourceCurveOwnership::build(ctx, ir)?;
         let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
         curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for curve in curves {
@@ -482,6 +487,10 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
             })?)?;
+            let span = curve
+                .parameter_range
+                .map(|_| curve_reference_span(ir, &curve.id, &geometry))
+                .transpose()?;
             append_curve_entity(
                 ctx,
                 &mut entities,
@@ -490,9 +499,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                     version,
                     curve_id: &curve.id,
                     geometry: &geometry,
-                    span: None,
+                    span: span.as_ref(),
                     sense: Sense::Forward,
-                    status: EntityStatus::Independent,
+                    status: ownership.status(curve),
                     reference_offset: 0,
                 },
             )?;
@@ -1676,6 +1685,7 @@ fn brep_entities(
         mark_curve_descendants(ir, curve_id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
     }
 
+    let ownership = ownership::SourceCurveOwnership::build(ctx, ir)?;
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut curves,
@@ -1692,6 +1702,10 @@ fn brep_entities(
         let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
             CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
         })?)?;
+        let span = curve
+            .parameter_range
+            .map(|_| curve_reference_span(ir, &curve.id, &geometry))
+            .transpose()?;
         append_curve_entity(
             ctx,
             &mut entities,
@@ -1700,9 +1714,9 @@ fn brep_entities(
                 version,
                 curve_id: &curve.id,
                 geometry: &geometry,
-                span: None,
+                span: span.as_ref(),
                 sense: Sense::Forward,
-                status: EntityStatus::Independent,
+                status: ownership.status(curve),
                 reference_offset: 0,
             },
         )?;
@@ -2534,6 +2548,7 @@ fn topology_entities(
         consumed_points.insert(vertex_point_id(ir, &edge.end)?.as_str().to_owned());
     }
 
+    let ownership = ownership::SourceCurveOwnership::build(ctx, ir)?;
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     ctx.stable_sort_by(
         &mut curves,
@@ -2550,6 +2565,10 @@ fn topology_entities(
         let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
             CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
         })?)?;
+        let span = curve
+            .parameter_range
+            .map(|_| curve_reference_span(ir, &curve.id, &geometry))
+            .transpose()?;
         append_curve_entity(
             ctx,
             &mut entities,
@@ -2558,9 +2577,9 @@ fn topology_entities(
                 version,
                 curve_id: &curve.id,
                 geometry: &geometry,
-                span: None,
+                span: span.as_ref(),
                 sense: Sense::Forward,
-                status: EntityStatus::Independent,
+                status: ownership.status(curve),
                 reference_offset: 0,
             },
         )?;
@@ -5030,6 +5049,15 @@ fn construction_carrier_interval(
         .map(cadmpeg_ir::geometry::RecordBounds::get)
     {
         None => {
+            if let Some(range) = ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *directrix)
+                .and_then(|curve| curve.parameter_range)
+            {
+                return Ok(range.endpoints());
+            }
             if matches!(
                 geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
@@ -6240,9 +6268,18 @@ fn curve_reference_span_inner(
                 .collect::<Vec<_>>();
             match matching_edges.split_first() {
                 None => {
-                    let range = default_range(geometry.solved().ok_or_else(|| {
-                        CodecError::NotImplemented("IGES carrier has no solved geometry".into())
-                    })?)?;
+                    let range = match ir
+                        .model
+                        .curves
+                        .iter()
+                        .find(|curve| curve.id == *curve_id)
+                        .and_then(|curve| curve.parameter_range)
+                    {
+                        Some(range) => range.into(),
+                        None => default_range(geometry.solved().ok_or_else(|| {
+                            CodecError::NotImplemented("IGES carrier has no solved geometry".into())
+                        })?)?,
+                    };
                     let start = cadmpeg_ir::eval::decode::curve_point(
                         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                         geometry,
@@ -7758,3 +7795,5 @@ fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
 
 #[cfg(test)]
 mod tests;
+
+mod ownership;

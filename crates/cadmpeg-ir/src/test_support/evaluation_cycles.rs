@@ -40,6 +40,7 @@ pub(crate) fn cyclic_model() -> (CadIr, CurveId, SurfaceId) {
         });
     }
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::analytic::LineCurve::try_new(

@@ -626,6 +626,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
@@ -726,6 +727,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {

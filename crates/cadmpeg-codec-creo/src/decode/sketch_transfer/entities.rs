@@ -1002,6 +1002,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry,
                     source_object: Some(placed_source_object(
@@ -1052,6 +1053,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry,
                     source_object: Some(placed_source_object(
@@ -1102,6 +1104,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry,
                     source_object: Some(placed_source_object(
@@ -1135,6 +1138,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry,
                     source_object: Some(match external_id {

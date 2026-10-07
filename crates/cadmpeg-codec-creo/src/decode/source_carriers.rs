@@ -795,6 +795,7 @@ mod tests {
     #[test]
     fn replacement_curve_refuses_source_node_and_id_copy_limits() {
         let mut curve = Curve {
+            parameter_range: None,
             id: CurveId::mint("creo:test:replacement-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -844,6 +845,7 @@ mod tests {
             ),
         });
         let mut curve = Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry: geometry.clone(),
             source_object: None,
@@ -949,6 +951,7 @@ mod tests {
     #[test]
     fn source_curve_admission_refuses_each_outer_boundary() {
         let curve = Curve {
+            parameter_range: None,
             id: CurveId::mint("creo:test:source-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -1006,6 +1009,7 @@ mod tests {
             ),
         });
         let curve = Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry: geometry.clone(),
             source_object: None,
@@ -1891,6 +1895,7 @@ mod tests {
         )
         .expect("finite source line");
         let curve = Curve {
+            parameter_range: None,
             id: CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(geometry)),
             source_object: None,
@@ -2040,6 +2045,7 @@ mod tests {
         );
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -2075,6 +2081,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                     source_object: None,
@@ -2144,6 +2151,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -2193,6 +2201,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -2277,6 +2286,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Curve {
+                        parameter_range: None,
                         id: curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                             cadmpeg_ir::geometry::analytic::LineCurve::try_new(

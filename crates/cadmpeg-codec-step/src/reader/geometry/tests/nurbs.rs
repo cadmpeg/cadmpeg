@@ -296,11 +296,13 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
 
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("test:model:curve#composite").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![

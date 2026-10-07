@@ -90,11 +90,17 @@ fn stored_curve_derivatives_admit_actual_scratch_and_work() {
 #[test]
 fn stored_surface_partial_entries_admit_actual_scratch_and_work() {
     let fixture = cadmpeg_test_support::service_decode_context();
-    let axis = || NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false);
-    let poles = [0.0, 0.5, 1.0]
+    let axis = || {
+        NurbsSurfaceAxis::new(
+            4,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            false,
+        )
+    };
+    let poles = [0.0, 0.25, 0.5, 0.75, 1.0]
         .into_iter()
         .map(|x| {
-            [0.0, 0.5, 1.0]
+            [0.0, 0.25, 0.5, 0.75, 1.0]
                 .into_iter()
                 .map(|y| Point3::new(x, y, 0.0))
                 .collect()

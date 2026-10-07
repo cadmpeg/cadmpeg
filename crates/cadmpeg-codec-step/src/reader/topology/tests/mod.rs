@@ -7,6 +7,7 @@ pub(crate) mod sheets;
 pub(crate) mod shells;
 mod wires;
 
+mod indexing;
 mod numerical_range;
 mod representation_bodies;
 

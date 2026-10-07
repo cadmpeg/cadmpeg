@@ -270,6 +270,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
         },
     ]);
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(

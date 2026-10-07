@@ -1057,6 +1057,7 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
         let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1161,6 +1162,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
     let base_id = CurveId::mint("test:model:curve#base").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: base_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
             1,
@@ -1210,6 +1212,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
         let composite_id =
             CurveId::mint(format!("test:model:curve#composite-{level}")).expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: composite_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                 segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
@@ -1251,6 +1254,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
         let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1355,6 +1359,7 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1436,6 +1441,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         let mut ir = CadIr::empty();
         for id in [bounded.clone(), edgeless.clone()] {
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(

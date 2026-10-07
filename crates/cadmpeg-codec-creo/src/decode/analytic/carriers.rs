@@ -362,6 +362,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: geometry_section_record(ctx, scan, row.offset)?,

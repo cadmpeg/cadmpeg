@@ -364,6 +364,7 @@ fn composite_coplanarity_refuses_segment_work_active_nodes_and_depth() {
 
     let child_id = CurveId::mint("iges:model:curve#D1").unwrap();
     let child = Curve {
+        parameter_range: None,
         id: child_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1975,3 +1976,5 @@ fn decode_reports_transform_translation_overflow_after_inch_scaling() {
         .message
         .contains("non-finite coefficients after length scaling")));
 }
+
+mod ownership;

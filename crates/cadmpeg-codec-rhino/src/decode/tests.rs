@@ -1507,6 +1507,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                     .try_into()
                     .expect("valid identity");
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         boundary.start_nurbs.clone(),

@@ -1061,6 +1061,7 @@ pub(super) fn transfer_curve_expression_features(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id: crate::identity::copy_checked_id(
                         ctx,
                         curve_id.as_str(),

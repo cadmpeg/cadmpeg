@@ -989,7 +989,7 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
-        let mut topology_losses = Vec::new();
+        let mut transfer_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
@@ -1118,9 +1118,9 @@ impl CodecBackend for FcstdCodec {
                 &mut ir,
                 &shape_payloads,
                 &graph.properties,
-                &mut topology_losses,
+                &mut transfer_losses,
             )?;
-            cycle_affected_design_objects = design::transfer(
+            let (cycle_affected, design_losses) = design::transfer(
                 ctx,
                 &mut ir,
                 &graph.objects,
@@ -1129,6 +1129,13 @@ impl CodecBackend for FcstdCodec {
                 &entry_records,
                 scan.document.program_version.as_deref(),
             )?;
+            cycle_affected_design_objects = cycle_affected;
+            ctx.reserve_vec(
+                &mut transfer_losses,
+                design_losses.len(),
+                "fcstd transfer losses",
+            )?;
+            transfer_losses.extend(design_losses);
             let (product_definitions, occurrences) = product::transfer_neutral(
                 ctx,
                 &product_nodes,
@@ -1268,10 +1275,10 @@ impl CodecBackend for FcstdCodec {
         // not conditioned on the branch.
         ctx.reserve_vec(
             &mut losses,
-            topology_losses.len(),
+            transfer_losses.len(),
             "FCStd topology loss output",
         )?;
-        losses.extend(topology_losses);
+        losses.extend(transfer_losses);
         ctx.reserve_vec(
             &mut losses,
             scan.losses.len(),

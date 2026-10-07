@@ -292,6 +292,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     let source_id = CurveId::mint("test:model:curve#source").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: source_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(

@@ -4698,6 +4698,7 @@ fn stage_extrusion_caps(
                     })
                 }?;
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         boundary
@@ -6359,6 +6360,7 @@ fn stage_curve_tree(
         })
     }?;
     staged.draft.model_mut().curves.push(Curve {
+        parameter_range: None,
         id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
         geometry,
         source_object: Some(
@@ -6995,6 +6997,7 @@ fn commit_curve_tree(
         })
     }?;
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: id.try_clone_for_decode(ctx, "Rhino typed identity copy")?,
         geometry,
         source_object: Some(
@@ -7115,6 +7118,7 @@ fn transform_decoded_curve(
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             );
             let mut carrier = Curve {
+                parameter_range: None,
                 id: cadmpeg_ir::ids::CurveId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "hatch", "curve"),
                     cadmpeg_ir::identity_key!("placement"),

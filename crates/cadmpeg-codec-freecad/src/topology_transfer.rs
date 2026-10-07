@@ -1562,6 +1562,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         self.ctx
             .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::mint(
                 self.ctx
                     .copy_retained_text(id.as_str(), "FreeCAD polygon curve record identity")?,
@@ -1587,6 +1588,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             self.ctx
                 .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: self.polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     place_polyline_samples(&mut samples, carrier_transform, self.ctx)?;
@@ -1825,6 +1827,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             self.ctx
                 .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(self.ctx, "FreeCAD located curve record identity")?,
                 geometry,
                 source_object,

@@ -55,6 +55,7 @@ fn curve_coverage_with_limit(
     };
     let curves = [
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:entity#coverage-known".to_string()).expect("identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -66,6 +67,7 @@ fn curve_coverage_with_limit(
             source_object: Some(source(41)),
         },
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:entity#coverage-unknown".to_string()).expect("identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: Some(source(42)),
@@ -419,6 +421,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     };
     let curves = vec![
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -430,6 +433,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
             source_object: Some(source(41)),
         },
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:entity#opaque".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: Some(source(42)),

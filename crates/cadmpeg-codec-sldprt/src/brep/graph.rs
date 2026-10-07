@@ -2175,6 +2175,7 @@ fn decode_graph(
                         admit_brep_entity(ctx)?;
                         ctx.reserve_vec(&mut out.curves, 1, "collect unknown Parasolid curves")?;
                         out.curves.push(Curve {
+                            parameter_range: None,
                             id: id_curve(curve_attr),
                             source_object: None,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -7135,6 +7136,7 @@ fn synthesize_cylinder_seams(
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid cylinder seam curves")?;
         out.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -7395,6 +7397,7 @@ fn synthesize_sphere_seams(
             "collect repaired Parasolid sphere seam curves",
         )?;
         out.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
@@ -7656,6 +7659,7 @@ fn synthesize_sphere_seams(
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid sphere seam curves")?;
         out.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "SLDPRT decoded identity copy")?,
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
@@ -7740,6 +7744,7 @@ fn emit_curve(
     admit_brep_entity(ctx)?;
     ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid curves")?;
     out.curves.push(Curve {
+        parameter_range: None,
         id: id_curve(carrier.attr),
         source_object: None,
         geometry: carrier
@@ -9012,6 +9017,7 @@ mod tests {
         let spine = CurveId::mint("test:model:entity#spine").expect("identity grammar");
         let mut brep = super::Brep {
             curves: vec![Curve {
+                parameter_range: None,
                 id: spine.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -9598,6 +9604,7 @@ mod tests {
                 source_object: None,
             }],
             curves: vec![Curve {
+                parameter_range: None,
                 id: curve_id.clone(),
                 geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                     test_nurbs_curve(

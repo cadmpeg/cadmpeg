@@ -6345,6 +6345,7 @@ fn append_text_curve(
     };
     ctx.reserve_vec(&mut transfer.curves, 1, "FreeCAD transferred curves")?;
     transfer.curves.push(Curve {
+        parameter_range: None,
         id,
         geometry: geometry.try_clone_for_decode(ctx, "FreeCAD curve geometry copy")?,
         source_object: Some(

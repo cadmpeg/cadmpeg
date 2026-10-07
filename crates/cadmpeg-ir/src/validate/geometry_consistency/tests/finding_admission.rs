@@ -48,7 +48,10 @@ fn support_side_finding_preserves_output_refusals() {
     let ir = super::mapped_surface_curve([3.0, 2.0]);
     refuses(
         &ir,
-        super::super::check_procedural_support_consistency,
+        |ctx, ir, findings| {
+            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            super::super::check_procedural_support_consistency(ctx, &index, findings)
+        },
         "procedural support side 0 misses",
     );
 }
@@ -65,7 +68,10 @@ fn surface_offset_distance_finding_preserves_output_refusals() {
     ));
     refuses(
         &ir,
-        super::super::check_procedural_support_consistency,
+        |ctx, ir, findings| {
+            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            super::super::check_procedural_support_consistency(ctx, &index, findings)
+        },
         "surface-offset solved curve misses",
     );
 }
@@ -135,7 +141,10 @@ fn mapped_pcurve_finding_preserves_output_refusals() {
     );
     refuses(
         &ir,
-        super::super::check_pcurve_surface_consistency,
+        |ctx, ir, findings| {
+            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            super::super::check_pcurve_surface_consistency(ctx, &index, findings)
+        },
         "pcurve mapped through the face surface misses",
     );
 }
@@ -168,6 +177,7 @@ fn charted(with_supports: bool) -> CadIr {
     }
     let curve: crate::ids::CurveId = "test:model:curve#charted".try_into().unwrap();
     ir.model.curves.push(crate::geometry::Curve {
+        parameter_range: None,
         id: curve.clone(),
         source_object: None,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -218,7 +228,10 @@ fn charted(with_supports: bool) -> CadIr {
 fn charted_intersection_missing_evaluation_finding_preserves_output_refusals() {
     refuses(
         &charted(false),
-        super::super::check_procedural_support_consistency,
+        |ctx, ir, findings| {
+            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            super::super::check_procedural_support_consistency(ctx, &index, findings)
+        },
         "charted tolerant intersection does not evaluate",
     );
 }
@@ -227,7 +240,10 @@ fn charted_intersection_missing_evaluation_finding_preserves_output_refusals() {
 fn charted_intersection_witness_finding_preserves_output_refusals() {
     refuses(
         &charted(true),
-        super::super::check_procedural_support_consistency,
+        |ctx, ir, findings| {
+            let index = crate::index::ModelIndex::new_model_only(ir, ctx)?;
+            super::super::check_procedural_support_consistency(ctx, &index, findings)
+        },
         "charted tolerant intersection misses its endpoint witnesses",
     );
 }

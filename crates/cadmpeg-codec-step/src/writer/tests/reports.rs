@@ -1035,6 +1035,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
     let curve_id =
         CurveId::mint("step:test:curve#standalone-unsupported").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
             construction: ProceduralCurveId::mint("step:test:construction#standalone-unsupported")
@@ -1294,6 +1295,7 @@ fn edge_without_curve_is_reported_and_omitted() {
     )
     .unwrap();
     let curve = Curve {
+        parameter_range: None,
         id: CurveId::mint("test:model:curve#unused").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1536,6 +1538,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     let construction_id = ProceduralCurveId::mint("step:test:construction-curve#unsupported")
         .expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction_id.clone(),

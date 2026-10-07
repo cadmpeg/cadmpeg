@@ -39,6 +39,10 @@ pub(crate) enum FreecadLossCode {
     FeatureNativeKindRetained,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
+    /// Cached sketch geometry has no matching live external reference.
+    SketchExternalReferenceUnresolved,
+    /// Optional external sketch cache cannot be projected; live links remain authoritative.
+    SketchExternalCacheUnresolved,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
     /// Topology color values were retained because their count did not match mapped topology.
@@ -79,6 +83,8 @@ impl FreecadLossCode {
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
+        Self::SketchExternalReferenceUnresolved,
+        Self::SketchExternalCacheUnresolved,
         Self::AppearanceTopologyColorCountMismatch,
         Self::AppearancePrimitiveSizeNotTransferred,
         Self::SourceDialectUnverified,
@@ -105,6 +111,8 @@ impl FreecadLossCode {
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNativeConstraint => "sketch.native-constraint",
+            Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
+            Self::SketchExternalCacheUnresolved => "sketch.external-cache-unresolved",
             Self::AppearanceTopologyColorCountMismatch => {
                 "appearance.topology-color-count-mismatch"
             }
@@ -132,7 +140,9 @@ impl FreecadLossCode {
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
-            Self::ArchiveEntryUnreadable
+            Self::SketchExternalCacheUnresolved
+            | Self::SketchExternalReferenceUnresolved
+            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -159,7 +169,9 @@ impl FreecadLossCode {
             Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
                 LossTaxonomy::FeatureHistoryRetained
             }
-            Self::SketchNativeGeometry
+            Self::SketchExternalCacheUnresolved
+            | Self::SketchExternalReferenceUnresolved
+            | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
@@ -220,6 +232,8 @@ mod tests {
                 "feature.native-kind-retained",
                 "sketch.native-geometry",
                 "sketch.native-constraint",
+                "sketch.external-reference-unresolved",
+                "sketch.external-cache-unresolved",
                 "appearance.topology-color-count-mismatch",
                 "appearance.primitive-size-not-transferred",
                 "source.dialect-unverified",

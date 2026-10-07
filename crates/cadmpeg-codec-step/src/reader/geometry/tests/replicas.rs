@@ -406,6 +406,7 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     );
     let mut source = CadIr::empty();
     source.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
         geometry: CurveGeometry::Solved(curve_geometry.clone()),
         source_object: None,

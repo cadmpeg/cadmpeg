@@ -375,6 +375,7 @@ mod tests {
         let curve = crate::ids::CurveId::mint("test:model:curve#unknown").unwrap();
         let surface = crate::ids::SurfaceId::mint("test:model:surface#unknown").unwrap();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -454,6 +455,7 @@ mod tests {
         let curve = crate::ids::CurveId::mint("test:model:curve#line").unwrap();
         let surface = crate::ids::SurfaceId::mint("test:model:surface#plane").unwrap();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 crate::geometry::analytic::LineCurve::try_new(
@@ -574,15 +576,18 @@ mod tests {
         let curve = crate::ids::CurveId::mint("test:model:curve#directrix").unwrap();
         let surface = crate::ids::SurfaceId::mint("test:model:surface#sweep").unwrap();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
                     &cadmpeg_test_support::service_decode_context(),
-                    2,
-                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    4,
+                    vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
                     vec![
                         Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.25, 0.0, 0.0),
                         Point3::new(0.5, 0.0, 0.0),
+                        Point3::new(0.75, 0.0, 0.0),
                         Point3::new(1.0, 0.0, 0.0),
                     ],
                     None,
@@ -651,10 +656,10 @@ mod tests {
         assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(first.limit, 3 * frame_bytes);
         assert_eq!(first.used, 3 * frame_bytes);
-        // The core amortized reservation starts the three-value basis at four slots.
+        // The five-value heap basis must be admitted before allocation.
         assert_eq!(
             first.additional,
-            cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<f64>())
+            cadmpeg_core::decode::u64_from_index(5 * std::mem::size_of::<f64>())
         );
         assert_eq!(evaluate(), Err(EvaluationFailure::ResourceLimit(first)));
         assert!(
@@ -670,6 +675,7 @@ mod tests {
         let mut ir = crate::CadIr::empty();
         let id = crate::ids::CurveId::mint("test:model:curve#cycle").unwrap();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,

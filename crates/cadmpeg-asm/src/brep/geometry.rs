@@ -1429,6 +1429,7 @@ mod tests {
         };
         let mut out = super::AsmBrep {
             curves: vec![Curve {
+                parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,

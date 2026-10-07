@@ -711,6 +711,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx geometry curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(ctx, "nx geometry curve identity")?,
                 geometry,
                 source_object: None,
@@ -731,6 +732,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(ctx, id.as_str(), "geometry")?;
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx NURBS curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(ctx, "nx NURBS curve identity")?,
                 geometry: crv.geometry,
                 source_object: None,
@@ -967,6 +969,7 @@ pub(super) fn try_decode_geometry(
             }
             ctx.reserve_vec(&mut ir.model.curves, 1, "nx intersection curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: curve_id.try_clone_for_decode(ctx, "nx intersection curve identity")?,
                 geometry: if let Some(charted) = charted {
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(

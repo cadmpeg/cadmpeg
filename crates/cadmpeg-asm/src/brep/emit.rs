@@ -348,6 +348,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: reference_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(reference)),
                         source_object: None,
@@ -407,6 +408,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: first_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)),
                         source_object: None,
@@ -416,6 +418,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: second_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)),
                         source_object: None,
@@ -449,6 +452,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: first_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: first,
                         source_object: None,
@@ -458,6 +462,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: second_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: second,
                         source_object: None,
@@ -491,6 +496,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: directrix_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: directrix,
                         source_object: None,
@@ -578,6 +584,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: directrix_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                         source_object: None,
@@ -771,6 +778,7 @@ fn emit_deformable_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -830,6 +838,7 @@ fn emit_deformable_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -988,6 +997,7 @@ fn emit_loft_path_curve(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
             source_object: None,
@@ -1051,6 +1061,7 @@ fn emit_loft_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
+                                            parameter_range: None,
                                             id: curve.try_clone_for_decode(
                                                 ctx,
                                                 "ASM emitted identity copy"
@@ -1106,6 +1117,7 @@ fn emit_loft_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
+                                            parameter_range: None,
                                             id: id.try_clone_for_decode(
                                                 ctx,
                                                 "ASM emitted identity copy"
@@ -1216,6 +1228,7 @@ fn emit_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     member.curve
@@ -1275,6 +1288,7 @@ fn emit_compound_loft_surface(
             ctx,
             out.curves,
             Curve {
+                parameter_range: None,
                 id: path.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
                 source_object: None,
@@ -1309,6 +1323,7 @@ fn emit_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     geometry
@@ -1362,6 +1377,7 @@ fn emit_compound_loft_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -1426,6 +1442,7 @@ fn emit_compound_loft_surface(
                         ctx,
                         out.curves,
                         Curve {
+                            parameter_range: None,
                             id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                             source_object: None,
@@ -1505,6 +1522,7 @@ fn emit_scaled_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     member.curve
@@ -1564,6 +1582,7 @@ fn emit_scaled_compound_loft_surface(
             ctx,
             out.curves,
             Curve {
+                parameter_range: None,
                 id: path.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
                 source_object: None,
@@ -1598,6 +1617,7 @@ fn emit_scaled_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     geometry
@@ -1648,6 +1668,7 @@ fn emit_scaled_compound_loft_surface(
                         ctx,
                         out.curves,
                         Curve {
+                            parameter_range: None,
                             id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                             source_object: None,
@@ -1697,6 +1718,7 @@ fn emit_scaled_compound_loft_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -1735,6 +1757,7 @@ fn emit_scaled_compound_loft_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: tail_curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.tail_curve)),
             source_object: None,
@@ -1854,6 +1877,7 @@ fn map_law_expression(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -1987,6 +2011,7 @@ fn emit_skin_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -2002,6 +2027,7 @@ fn emit_skin_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: secondary_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(secondary_curve)),
                     source_object: None,
@@ -2035,6 +2061,7 @@ fn emit_skin_surface(
                                 ctx,
                                 out.curves,
                                 Curve {
+                                    parameter_range: None,
                                     id: curve
                                         .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -2074,6 +2101,7 @@ fn emit_skin_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: path_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(path)),
                     source_object: None,
@@ -2096,6 +2124,7 @@ fn emit_skin_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: parameter_curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.parameter_curve)),
             source_object: None,
@@ -2193,6 +2222,7 @@ fn emit_net_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
+                                            parameter_range: None,
                                             id: curve.try_clone_for_decode(
                                                 ctx,
                                                 "ASM emitted identity copy"
@@ -2248,6 +2278,7 @@ fn emit_net_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
+                                            parameter_range: None,
                                             id: id.try_clone_for_decode(
                                                 ctx,
                                                 "ASM emitted identity copy"
@@ -2448,6 +2479,7 @@ fn emit_sweep_surface(
                         ctx,
                         out.curves,
                         Curve {
+                            parameter_range: None,
                             id: guide_curve_id
                                 .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -2510,6 +2542,7 @@ fn emit_sweep_surface(
                                     ctx,
                                     out.curves,
                                     Curve {
+                                        parameter_range: None,
                                         id: id.try_clone_for_decode(
                                             ctx,
                                             "ASM emitted identity copy"
@@ -2614,6 +2647,7 @@ fn emit_sweep_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: profile.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(profile_geometry)),
             source_object: None,
@@ -2629,6 +2663,7 @@ fn emit_sweep_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: spine.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spine_geometry)),
             source_object: None,
@@ -2697,6 +2732,7 @@ fn emit_g2_blend_surface(
             ctx,
             out.curves,
             Curve {
+                parameter_range: None,
                 id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(side.curve)),
                 source_object: None,
@@ -2788,6 +2824,7 @@ fn emit_g2_blend_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: center_curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.center_curve)),
             source_object: None,
@@ -2866,6 +2903,7 @@ fn emit_rolling_ball_side(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: support.curve,
                     source_object: None,
@@ -2927,6 +2965,7 @@ fn emit_variable_blend_surface(
             ctx,
             out.curves,
             Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 geometry,
                 source_object: None,
@@ -3026,6 +3065,7 @@ fn emit_revision_compound_loft_surface(
                                 ctx,
                                 out.curves,
                                 Curve {
+                                    parameter_range: None,
                                     id: curve
                                         .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -3110,6 +3150,7 @@ fn emit_revision_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     geometry
@@ -3170,6 +3211,7 @@ fn emit_revision_compound_loft_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -3202,6 +3244,7 @@ fn emit_revision_compound_loft_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -3264,6 +3307,7 @@ fn emit_revision_g2_blend_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: center_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: construction.center,
             source_object: None,
@@ -3335,6 +3379,7 @@ fn emit_vertex_blend_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: curve,
                         source_object: None,
@@ -3404,6 +3449,7 @@ fn emit_vertex_blend_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: curve,
                         source_object: None,
@@ -3498,6 +3544,7 @@ fn emit_blend_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: spine_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spine)),
                         source_object: None,
@@ -3551,6 +3598,7 @@ fn emit_blend_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: slice.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: native.slice,
                         source_object: None,
@@ -3598,6 +3646,7 @@ fn emit_blend_surface(
                                 ctx,
                                 out.curves,
                                 Curve {
+                                    parameter_range: None,
                                     id: curve
                                         .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -3730,6 +3779,7 @@ fn emit_carrier_curve(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: brep_id!(format, CurveId, "entity", brep_key!(i, ":reversed")),
                     geometry: reversed,
                     source_object: None,
@@ -3743,6 +3793,7 @@ fn emit_carrier_curve(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: <CurveId>::from(id(format, i)),
             geometry,
             source_object: None,
@@ -3770,6 +3821,7 @@ fn emit_carrier_curve(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: source_id
                                     .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
@@ -3794,6 +3846,7 @@ fn emit_carrier_curve(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: source_id
                                     .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
@@ -4018,6 +4071,7 @@ fn emit_carrier_curve(
                                 brep_key!(i, ":deformable_source")
                             );
                             charged_push!(ctx, out.curves, Curve {
+                                parameter_range: None,
                                 id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                                 source_object: None,
@@ -4107,6 +4161,7 @@ fn emit_carrier_curve(
                                             ctx,
                                             out.curves,
                                             Curve {
+                                                parameter_range: None,
                                                 id: id.try_clone_for_decode(
                                                     ctx,
                                                     "ASM emitted identity copy"
@@ -4410,6 +4465,7 @@ fn emit_surface_offset_curve(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: base.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.base)),
             source_object: None,
@@ -4598,6 +4654,7 @@ fn emit_projection_curve(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: source.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.source)),
             source_object: None,
@@ -5337,6 +5394,7 @@ pub(super) fn emit_coedges(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: curve_id
                                     .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),

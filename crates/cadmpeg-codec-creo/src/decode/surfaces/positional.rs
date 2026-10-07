@@ -400,6 +400,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id: curve_id.try_clone_for_decode(ctx, "creo construction curve identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
                 source_object: Some(SourceObjectAssociation {
@@ -655,6 +656,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id: curve_id.try_clone_for_decode(ctx, "creo construction curve identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                 source_object: Some(SourceObjectAssociation {

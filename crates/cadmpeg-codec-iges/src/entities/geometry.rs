@@ -1925,6 +1925,7 @@ pub(crate) fn project_geometry(
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges circle neutral curve slots")?;
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
@@ -2256,6 +2257,7 @@ pub(crate) fn project_geometry(
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges line neutral curve slots")?;
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(start, direction),
@@ -2828,6 +2830,7 @@ pub(crate) fn project_geometry(
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges NURBS neutral curve slots")?;
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.try_clone_for_decode(ctx, "iges geometry neutral identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, ctx)?),
@@ -2905,6 +2908,7 @@ pub(crate) fn project_geometry(
         ctx,
     )?;
 
+    let mut free_geometry_shell = None;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
         let body = crate::ids::body_admitted(
             &crate::ids::Stem::word(crate::ids::Word::FreeGeometry),
@@ -2951,6 +2955,11 @@ pub(crate) fn project_geometry(
                 )?))
             }
         };
+        free_geometry_shell = Some(
+            shell
+                .id
+                .try_clone_for_decode(ctx, "iges free geometry shell identity")?,
+        );
         ir.model.shells.push(shell);
     }
 
@@ -2986,6 +2995,9 @@ pub(crate) fn project_geometry(
         &mut sequences,
     )?;
     structure_projection.merge_into(&mut decoded, &mut losses, ctx)?;
+    if let Some(shell) = free_geometry_shell {
+        free_geometry::retain_independent(ir, &shell, &entries, &mut sequences, ctx)?;
+    }
 
     super::presentation::project(
         ir,
@@ -3037,6 +3049,8 @@ pub(crate) fn project_geometry(
         sequences,
     })
 }
+
+mod free_geometry;
 
 #[cfg(test)]
 mod tests;

@@ -1041,6 +1041,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), id)),
                     geometry,
                     source_object: None,
@@ -1068,6 +1069,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), id)),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                     source_object: None,
@@ -1173,6 +1175,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(geometry),
                     source_object: None,
@@ -1313,6 +1316,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(copied_geometry),
                     source_object: None,
@@ -1398,6 +1402,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                         segments,
@@ -1496,6 +1501,7 @@ pub(super) fn decode(
         ctx.push_vec(
             &mut ir.model.curves,
             Curve {
+                parameter_range: None,
                 id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                 geometry: CurveGeometry::Solved(copied_geometry),
                 source_object: None,
@@ -1542,6 +1548,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), id)),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: exchange
@@ -1617,6 +1624,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: exchange
@@ -2419,6 +2427,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), curve_step)),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: exchange
@@ -2809,6 +2818,7 @@ fn decode_tessellated_curve_sets(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), curve_key)),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
                     source_object: Some(super::step_source_association(id, source_name)),

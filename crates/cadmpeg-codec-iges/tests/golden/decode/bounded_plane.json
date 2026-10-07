@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -14,14 +14,6 @@
             "iges:model:region#D13"
           ],
           "visible": true
-        },
-        {
-          "id": "iges:model:body#free-geometry",
-          "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
         }
       ],
       "coedges": [
@@ -71,6 +63,10 @@
             }
           },
           "id": "iges:model:curve#D3",
+          "parameter_range": [
+            0.0,
+            1.0
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -94,6 +90,10 @@
             }
           },
           "id": "iges:model:curve#D5",
+          "parameter_range": [
+            0.0,
+            1.0
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -117,6 +117,10 @@
             }
           },
           "id": "iges:model:curve#D7",
+          "parameter_range": [
+            0.0,
+            1.0
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -140,6 +144,10 @@
             }
           },
           "id": "iges:model:curve#D9",
+          "parameter_range": [
+            0.0,
+            1.0
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -202,54 +210,6 @@
           "id": "iges:model:edge#D13:0:3",
           "start": "iges:model:vertex#D13:0:3",
           "tolerance": 0.001
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D3",
-            "param_range": [
-              0.0,
-              1.0
-            ]
-          },
-          "end": "iges:model:vertex#D3-end",
-          "id": "iges:model:edge#D3",
-          "start": "iges:model:vertex#D3-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D5",
-            "param_range": [
-              0.0,
-              1.0
-            ]
-          },
-          "end": "iges:model:vertex#D5-end",
-          "id": "iges:model:edge#D5",
-          "start": "iges:model:vertex#D5-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D7",
-            "param_range": [
-              0.0,
-              1.0
-            ]
-          },
-          "end": "iges:model:vertex#D7-end",
-          "id": "iges:model:edge#D7",
-          "start": "iges:model:vertex#D7-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D9",
-            "param_range": [
-              0.0,
-              1.0
-            ]
-          },
-          "end": "iges:model:vertex#D9-end",
-          "id": "iges:model:edge#D9",
-          "start": "iges:model:vertex#D9-start"
         }
       ],
       "faces": [
@@ -319,70 +279,6 @@
             "y": 1.0,
             "z": 0.0
           }
-        },
-        {
-          "id": "iges:model:point#D3-end",
-          "position": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D3-start",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D5-end",
-          "position": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D5-start",
-          "position": {
-            "x": 1.0,
-            "y": 1.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D7-end",
-          "position": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D7-start",
-          "position": {
-            "x": 1.0,
-            "y": 1.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D9-end",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D9-start",
-          "position": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
-          }
         }
       ],
       "presentation_documents": [],
@@ -397,13 +293,6 @@
           "shells": [
             "iges:model:shell#D13"
           ]
-        },
-        {
-          "body": "iges:model:body#free-geometry",
-          "id": "iges:model:region#free-geometry",
-          "shells": [
-            "iges:model:shell#free-geometry"
-          ]
         }
       ],
       "semantic_annotations": [],
@@ -417,28 +306,6 @@
             }
           ],
           "region": "iges:model:region#D13"
-        },
-        {
-          "id": "iges:model:shell#free-geometry",
-          "members": [
-            {
-              "id": "iges:model:edge#D3",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D5",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D7",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D9",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],
@@ -499,38 +366,6 @@
           "id": "iges:model:vertex#D13:0:3",
           "point": "iges:model:point#D13:0:3",
           "tolerance": 0.001
-        },
-        {
-          "id": "iges:model:vertex#D3-end",
-          "point": "iges:model:point#D3-end"
-        },
-        {
-          "id": "iges:model:vertex#D3-start",
-          "point": "iges:model:point#D3-start"
-        },
-        {
-          "id": "iges:model:vertex#D5-end",
-          "point": "iges:model:point#D5-end"
-        },
-        {
-          "id": "iges:model:vertex#D5-start",
-          "point": "iges:model:point#D5-start"
-        },
-        {
-          "id": "iges:model:vertex#D7-end",
-          "point": "iges:model:point#D7-end"
-        },
-        {
-          "id": "iges:model:vertex#D7-start",
-          "point": "iges:model:point#D7-start"
-        },
-        {
-          "id": "iges:model:vertex#D9-end",
-          "point": "iges:model:point#D9-end"
-        },
-        {
-          "id": "iges:model:vertex#D9-start",
-          "point": "iges:model:point#D9-start"
         }
       ],
       "view_presentations": []

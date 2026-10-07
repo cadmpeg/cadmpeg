@@ -20,10 +20,8 @@ fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
 }
 
 #[test]
-fn low_degree_second_derivative_basis_borrows_zeros() {
+fn low_degree_second_derivative_basis_keeps_zeros_inline() {
     crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
-        use std::borrow::Cow;
-
         let constant = crate::eval::basis::bspline_basis_second_derivative(
             &crate::eval::decode::Scratch::new(ctx),
             &[],
@@ -40,10 +38,16 @@ fn low_degree_second_derivative_basis_borrows_zeros() {
             0.0,
         )
         .expect("degree-one second derivative");
-        assert!(matches!(constant, Cow::Borrowed(_)));
-        assert!(matches!(linear, Cow::Borrowed(_)));
-        assert_eq!(constant.as_ref(), &[0.0]);
-        assert_eq!(linear.as_ref(), &[0.0, 0.0]);
+        assert!(matches!(
+            constant,
+            crate::eval::decode::SupportValues::Inline { .. }
+        ));
+        assert!(matches!(
+            linear,
+            crate::eval::decode::SupportValues::Inline { .. }
+        ));
+        assert_eq!(&*constant, &[0.0]);
+        assert_eq!(&*linear, &[0.0, 0.0]);
     });
 }
 
@@ -305,4 +309,31 @@ fn basis_leaf_boundaries_preserve_original_fused_refusal() {
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
+}
+
+#[test]
+fn cubic_basis_uses_fixed_storage_and_higher_degree_keeps_heap_admission() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    with_policy(policy, |ctx| {
+        let scratch = crate::eval::decode::Scratch::new(ctx);
+        let cubic_knots = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+        let cubic = super::bspline_basis(&scratch, &cubic_knots, 3, 3, 0.5).unwrap();
+        assert!(matches!(
+            cubic,
+            crate::eval::decode::SupportValues::Inline { .. }
+        ));
+        assert_eq!(&*cubic, &[0.125, 0.375, 0.375, 0.125]);
+        assert_eq!(
+            &*super::bspline_basis_derivative(&scratch, &cubic_knots, 3, 3, 0.5).unwrap(),
+            &[-0.75, -0.75, 0.75, 0.75]
+        );
+        assert_eq!(
+            &*super::bspline_basis_second_derivative(&scratch, &cubic_knots, 3, 3, 0.5).unwrap(),
+            &[3.0, -3.0, -3.0, 3.0]
+        );
+        let higher_knots = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        assert!(super::bspline_basis(&scratch, &higher_knots, 4, 4, 0.5).is_none());
+        assert_eq!(scratch.refused().unwrap().operation, "IR B-spline basis");
+    });
 }

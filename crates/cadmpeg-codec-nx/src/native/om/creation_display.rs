@@ -273,9 +273,21 @@ mod admission_tests {
 
     #[test]
     fn creation_display_finalization_refuses_scoped_limit() {
-        // The stable sort reserves scratch only above 20 values.
+        // Twenty-one descending offsets require the stable sort's index scratch.
         let rows: Vec<RmCreationDisplayDataRelation> = (0..21)
-            .map(|_| serde_json::from_str(ROW).unwrap())
+            .rev()
+            .map(|index| {
+                let mut wire: serde_json::Value = serde_json::from_str(ROW).unwrap();
+                wire["source_offset"] = serde_json::json!(100 * index + 5);
+                wire["first_index_source_offset"] = serde_json::json!(100 * index + 8);
+                wire["encoding"]["index_source_offsets"] = serde_json::json!([
+                    100 * index + 13,
+                    100 * index + 14,
+                    100 * index + 15,
+                    100 * index + 16
+                ]);
+                serde_json::from_value(wire).unwrap()
+            })
             .collect();
         let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
             policy.limits.max_materialized_bytes = 0;

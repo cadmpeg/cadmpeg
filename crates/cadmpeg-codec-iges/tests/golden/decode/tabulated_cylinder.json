@@ -1,21 +1,12 @@
 {
   "ir": {
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "iges:model:body#free-geometry",
-          "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "configurations": [],
       "curves": [
@@ -34,6 +25,10 @@
             }
           },
           "id": "iges:model:curve#D1",
+          "parameter_range": [
+            0.0,
+            1.0
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -44,20 +39,7 @@
         }
       ],
       "drawings": [],
-      "edges": [
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D1",
-            "param_range": [
-              0.0,
-              1.0
-            ]
-          },
-          "end": "iges:model:vertex#D1-end",
-          "id": "iges:model:edge#D1",
-          "start": "iges:model:vertex#D1-start"
-        }
-      ],
+      "edges": [],
       "faces": [],
       "features": [],
       "loops": [],
@@ -65,24 +47,7 @@
       "parameters": [],
       "pcurves": [],
       "pmi": [],
-      "points": [
-        {
-          "id": "iges:model:point#D1-end",
-          "position": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D1-start",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        }
-      ],
+      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
@@ -117,28 +82,9 @@
         }
       ],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "iges:model:body#free-geometry",
-          "id": "iges:model:region#free-geometry",
-          "shells": [
-            "iges:model:shell#free-geometry"
-          ]
-        }
-      ],
+      "regions": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "iges:model:shell#free-geometry",
-          "members": [
-            {
-              "id": "iges:model:edge#D1",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "iges:model:region#free-geometry"
-        }
-      ],
+      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -207,16 +153,7 @@
         }
       ],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "iges:model:vertex#D1-end",
-          "point": "iges:model:point#D1-end"
-        },
-        {
-          "id": "iges:model:vertex#D1-start",
-          "point": "iges:model:point#D1-start"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {

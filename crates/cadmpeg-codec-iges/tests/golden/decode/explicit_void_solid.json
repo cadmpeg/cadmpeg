@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -14,14 +14,6 @@
             "iges:model:region#D109"
           ],
           "visible": true
-        },
-        {
-          "id": "iges:model:body#free-geometry",
-          "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
         }
       ],
       "coedges": [
@@ -211,6 +203,10 @@
             }
           },
           "id": "iges:model:curve#D21",
+          "parameter_range": [
+            0.0,
+            4.0
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -234,6 +230,10 @@
             }
           },
           "id": "iges:model:curve#D23",
+          "parameter_range": [
+            0.0,
+            4.0
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -257,6 +257,10 @@
             }
           },
           "id": "iges:model:curve#D25",
+          "parameter_range": [
+            0.0,
+            4.0
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -280,6 +284,10 @@
             }
           },
           "id": "iges:model:curve#D27",
+          "parameter_range": [
+            0.0,
+            5.656854249492381
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -303,6 +311,10 @@
             }
           },
           "id": "iges:model:curve#D29",
+          "parameter_range": [
+            0.0,
+            5.656854249492381
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -326,6 +338,10 @@
             }
           },
           "id": "iges:model:curve#D31",
+          "parameter_range": [
+            0.0,
+            5.656854249492381
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -349,6 +365,10 @@
             }
           },
           "id": "iges:model:curve#D75",
+          "parameter_range": [
+            0.0,
+            0.5
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -372,6 +392,10 @@
             }
           },
           "id": "iges:model:curve#D77",
+          "parameter_range": [
+            0.0,
+            0.5
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -395,6 +419,10 @@
             }
           },
           "id": "iges:model:curve#D79",
+          "parameter_range": [
+            0.0,
+            0.5
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -418,6 +446,10 @@
             }
           },
           "id": "iges:model:curve#D81",
+          "parameter_range": [
+            0.0,
+            0.7071067811865476
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -441,6 +473,10 @@
             }
           },
           "id": "iges:model:curve#D83",
+          "parameter_range": [
+            0.0,
+            0.7071067811865476
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -464,6 +500,10 @@
             }
           },
           "id": "iges:model:curve#D85",
+          "parameter_range": [
+            0.0,
+            0.7071067811865476
+          ],
           "source_object": {
             "format": "iges",
             "layer": "0",
@@ -618,150 +658,6 @@
           "end": "iges:model:vertex#D109:D87:4",
           "id": "iges:model:edge#D109:D89:6",
           "start": "iges:model:vertex#D109:D87:3"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D21",
-            "param_range": [
-              0.0,
-              4.0
-            ]
-          },
-          "end": "iges:model:vertex#D21-end",
-          "id": "iges:model:edge#D21",
-          "start": "iges:model:vertex#D21-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D23",
-            "param_range": [
-              0.0,
-              4.0
-            ]
-          },
-          "end": "iges:model:vertex#D23-end",
-          "id": "iges:model:edge#D23",
-          "start": "iges:model:vertex#D23-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D25",
-            "param_range": [
-              0.0,
-              4.0
-            ]
-          },
-          "end": "iges:model:vertex#D25-end",
-          "id": "iges:model:edge#D25",
-          "start": "iges:model:vertex#D25-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D27",
-            "param_range": [
-              0.0,
-              5.656854249492381
-            ]
-          },
-          "end": "iges:model:vertex#D27-end",
-          "id": "iges:model:edge#D27",
-          "start": "iges:model:vertex#D27-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D29",
-            "param_range": [
-              0.0,
-              5.656854249492381
-            ]
-          },
-          "end": "iges:model:vertex#D29-end",
-          "id": "iges:model:edge#D29",
-          "start": "iges:model:vertex#D29-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D31",
-            "param_range": [
-              0.0,
-              5.656854249492381
-            ]
-          },
-          "end": "iges:model:vertex#D31-end",
-          "id": "iges:model:edge#D31",
-          "start": "iges:model:vertex#D31-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D75",
-            "param_range": [
-              0.0,
-              0.5
-            ]
-          },
-          "end": "iges:model:vertex#D75-end",
-          "id": "iges:model:edge#D75",
-          "start": "iges:model:vertex#D75-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D77",
-            "param_range": [
-              0.0,
-              0.5
-            ]
-          },
-          "end": "iges:model:vertex#D77-end",
-          "id": "iges:model:edge#D77",
-          "start": "iges:model:vertex#D77-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D79",
-            "param_range": [
-              0.0,
-              0.5
-            ]
-          },
-          "end": "iges:model:vertex#D79-end",
-          "id": "iges:model:edge#D79",
-          "start": "iges:model:vertex#D79-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D81",
-            "param_range": [
-              0.0,
-              0.7071067811865476
-            ]
-          },
-          "end": "iges:model:vertex#D81-end",
-          "id": "iges:model:edge#D81",
-          "start": "iges:model:vertex#D81-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D83",
-            "param_range": [
-              0.0,
-              0.7071067811865476
-            ]
-          },
-          "end": "iges:model:vertex#D83-end",
-          "id": "iges:model:edge#D83",
-          "start": "iges:model:vertex#D83-start"
-        },
-        {
-          "carrier": {
-            "curve": "iges:model:curve#D85",
-            "param_range": [
-              0.0,
-              0.7071067811865476
-            ]
-          },
-          "end": "iges:model:vertex#D85-end",
-          "id": "iges:model:edge#D85",
-          "start": "iges:model:vertex#D85-start"
         }
       ],
       "faces": [
@@ -1021,198 +917,6 @@
             "y": 0.5,
             "z": 1.0
           }
-        },
-        {
-          "id": "iges:model:point#D21-end",
-          "position": {
-            "x": 4.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D21-start",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D23-end",
-          "position": {
-            "x": 0.0,
-            "y": 4.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D23-start",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D25-end",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 4.0
-          }
-        },
-        {
-          "id": "iges:model:point#D25-start",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D27-end",
-          "position": {
-            "x": 0.0,
-            "y": 4.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D27-start",
-          "position": {
-            "x": 4.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D29-end",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 4.0
-          }
-        },
-        {
-          "id": "iges:model:point#D29-start",
-          "position": {
-            "x": 4.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D31-end",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 4.0
-          }
-        },
-        {
-          "id": "iges:model:point#D31-start",
-          "position": {
-            "x": 0.0,
-            "y": 4.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D75-end",
-          "position": {
-            "x": 1.0,
-            "y": 0.5,
-            "z": 0.5
-          }
-        },
-        {
-          "id": "iges:model:point#D75-start",
-          "position": {
-            "x": 0.5,
-            "y": 0.5,
-            "z": 0.5
-          }
-        },
-        {
-          "id": "iges:model:point#D77-end",
-          "position": {
-            "x": 0.5,
-            "y": 1.0,
-            "z": 0.5
-          }
-        },
-        {
-          "id": "iges:model:point#D77-start",
-          "position": {
-            "x": 0.5,
-            "y": 0.5,
-            "z": 0.5
-          }
-        },
-        {
-          "id": "iges:model:point#D79-end",
-          "position": {
-            "x": 0.5,
-            "y": 0.5,
-            "z": 1.0
-          }
-        },
-        {
-          "id": "iges:model:point#D79-start",
-          "position": {
-            "x": 0.5,
-            "y": 0.5,
-            "z": 0.5
-          }
-        },
-        {
-          "id": "iges:model:point#D81-end",
-          "position": {
-            "x": 0.5,
-            "y": 1.0,
-            "z": 0.5
-          }
-        },
-        {
-          "id": "iges:model:point#D81-start",
-          "position": {
-            "x": 1.0,
-            "y": 0.5,
-            "z": 0.5
-          }
-        },
-        {
-          "id": "iges:model:point#D83-end",
-          "position": {
-            "x": 0.5,
-            "y": 0.5,
-            "z": 1.0
-          }
-        },
-        {
-          "id": "iges:model:point#D83-start",
-          "position": {
-            "x": 1.0,
-            "y": 0.5,
-            "z": 0.5
-          }
-        },
-        {
-          "id": "iges:model:point#D85-end",
-          "position": {
-            "x": 0.5,
-            "y": 0.5,
-            "z": 1.0
-          }
-        },
-        {
-          "id": "iges:model:point#D85-start",
-          "position": {
-            "x": 0.5,
-            "y": 1.0,
-            "z": 0.5
-          }
         }
       ],
       "presentation_documents": [],
@@ -1227,13 +931,6 @@
           "shells": [
             "iges:model:shell#D109:D53",
             "iges:model:shell#D109:D107"
-          ]
-        },
-        {
-          "body": "iges:model:body#free-geometry",
-          "id": "iges:model:region#free-geometry",
-          "shells": [
-            "iges:model:shell#free-geometry"
           ]
         }
       ],
@@ -1282,60 +979,6 @@
             }
           ],
           "region": "iges:model:region#D109"
-        },
-        {
-          "id": "iges:model:shell#free-geometry",
-          "members": [
-            {
-              "id": "iges:model:edge#D21",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D23",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D25",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D27",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D29",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D31",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D75",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D77",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D79",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D81",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D83",
-              "kind": "wire_edge"
-            },
-            {
-              "id": "iges:model:edge#D85",
-              "kind": "wire_edge"
-            }
-          ],
-          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],
@@ -1434,9 +1077,9 @@
           "geometry": {
             "kind": "plane",
             "normal": {
-              "x": 0.5773502691896258,
-              "y": 0.5773502691896258,
-              "z": 0.5773502691896258
+              "x": 0.5773502691896257,
+              "y": 0.5773502691896257,
+              "z": 0.5773502691896257
             },
             "origin": {
               "x": 4.0,
@@ -1444,9 +1087,9 @@
               "z": 0.0
             },
             "u_axis": {
-              "x": 0.8164965809277258,
-              "y": -0.40824829046386313,
-              "z": -0.40824829046386313
+              "x": 0.816496580927726,
+              "y": -0.40824829046386296,
+              "z": -0.40824829046386296
             }
           },
           "id": "iges:model:surface#D19",
@@ -1546,9 +1189,9 @@
           "geometry": {
             "kind": "plane",
             "normal": {
-              "x": 0.5773502691896258,
-              "y": 0.5773502691896258,
-              "z": 0.5773502691896258
+              "x": 0.5773502691896257,
+              "y": 0.5773502691896257,
+              "z": 0.5773502691896257
             },
             "origin": {
               "x": 1.0,
@@ -1556,9 +1199,9 @@
               "z": 0.5
             },
             "u_axis": {
-              "x": 0.8164965809277258,
-              "y": -0.40824829046386313,
-              "z": -0.40824829046386313
+              "x": 0.816496580927726,
+              "y": -0.40824829046386296,
+              "z": -0.40824829046386296
             }
           },
           "id": "iges:model:surface#D73",
@@ -1604,102 +1247,6 @@
         {
           "id": "iges:model:vertex#D109:D87:4",
           "point": "iges:model:point#D109:D87:4"
-        },
-        {
-          "id": "iges:model:vertex#D21-end",
-          "point": "iges:model:point#D21-end"
-        },
-        {
-          "id": "iges:model:vertex#D21-start",
-          "point": "iges:model:point#D21-start"
-        },
-        {
-          "id": "iges:model:vertex#D23-end",
-          "point": "iges:model:point#D23-end"
-        },
-        {
-          "id": "iges:model:vertex#D23-start",
-          "point": "iges:model:point#D23-start"
-        },
-        {
-          "id": "iges:model:vertex#D25-end",
-          "point": "iges:model:point#D25-end"
-        },
-        {
-          "id": "iges:model:vertex#D25-start",
-          "point": "iges:model:point#D25-start"
-        },
-        {
-          "id": "iges:model:vertex#D27-end",
-          "point": "iges:model:point#D27-end"
-        },
-        {
-          "id": "iges:model:vertex#D27-start",
-          "point": "iges:model:point#D27-start"
-        },
-        {
-          "id": "iges:model:vertex#D29-end",
-          "point": "iges:model:point#D29-end"
-        },
-        {
-          "id": "iges:model:vertex#D29-start",
-          "point": "iges:model:point#D29-start"
-        },
-        {
-          "id": "iges:model:vertex#D31-end",
-          "point": "iges:model:point#D31-end"
-        },
-        {
-          "id": "iges:model:vertex#D31-start",
-          "point": "iges:model:point#D31-start"
-        },
-        {
-          "id": "iges:model:vertex#D75-end",
-          "point": "iges:model:point#D75-end"
-        },
-        {
-          "id": "iges:model:vertex#D75-start",
-          "point": "iges:model:point#D75-start"
-        },
-        {
-          "id": "iges:model:vertex#D77-end",
-          "point": "iges:model:point#D77-end"
-        },
-        {
-          "id": "iges:model:vertex#D77-start",
-          "point": "iges:model:point#D77-start"
-        },
-        {
-          "id": "iges:model:vertex#D79-end",
-          "point": "iges:model:point#D79-end"
-        },
-        {
-          "id": "iges:model:vertex#D79-start",
-          "point": "iges:model:point#D79-start"
-        },
-        {
-          "id": "iges:model:vertex#D81-end",
-          "point": "iges:model:point#D81-end"
-        },
-        {
-          "id": "iges:model:vertex#D81-start",
-          "point": "iges:model:point#D81-start"
-        },
-        {
-          "id": "iges:model:vertex#D83-end",
-          "point": "iges:model:point#D83-end"
-        },
-        {
-          "id": "iges:model:vertex#D83-start",
-          "point": "iges:model:point#D83-start"
-        },
-        {
-          "id": "iges:model:vertex#D85-end",
-          "point": "iges:model:point#D85-end"
-        },
-        {
-          "id": "iges:model:vertex#D85-start",
-          "point": "iges:model:point#D85-start"
         }
       ],
       "view_presentations": []

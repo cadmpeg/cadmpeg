@@ -352,6 +352,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id: curve_id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
                     source_object: Some(SourceObjectAssociation {
@@ -856,6 +857,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ctx,
                     ir,
                     Curve {
+                        parameter_range: None,
                         id: curve_id
                             .try_clone_for_decode(ctx, "creo construction curve identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),

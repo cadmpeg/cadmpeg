@@ -611,6 +611,7 @@ fn cylinder_plane_transfer_fixture(
     let construction = ProceduralCurveId::mint("test:model:entity#synthetic:intersection")
         .expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction.clone(),
@@ -737,6 +738,7 @@ fn blend_contact_transfer_fixture(
     let spine =
         CurveId::mint("test:model:entity#synthetic:blend-contact-spine").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: spine.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -822,6 +824,7 @@ fn blend_contact_transfer_fixture(
         ))
         .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -924,6 +927,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         let spine =
             CurveId::mint("test:model:entity#synthetic:target-spine").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -964,6 +968,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             ProceduralCurveId::mint("test:model:entity#synthetic:boundary-intersection")
                 .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1111,6 +1116,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             ProceduralCurveId::mint("test:model:entity#synthetic:boundary-intersection")
                 .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -1326,6 +1332,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         let curve =
             CurveId::mint("test:model:entity#nx:test:boundary-line").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(

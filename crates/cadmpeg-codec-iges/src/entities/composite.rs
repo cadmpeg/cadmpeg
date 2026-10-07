@@ -2184,6 +2184,7 @@ fn project_native_composite(
     ctx.reserve_vec(&mut ir.model.curves, 1, "iges composite native curve slots")?;
     ctx.charge_entities(1, "iges_geometry_composites")?;
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments,
@@ -2800,6 +2801,7 @@ fn project_with_type_130_policy(
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges composite solved curve slots")?;
         ctx.charge_entities(1, "iges_geometry_composites")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, ctx)?),

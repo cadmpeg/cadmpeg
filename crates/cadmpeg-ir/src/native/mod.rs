@@ -15,6 +15,7 @@ use serde_json::{Map, Value};
 
 mod canon;
 pub mod catalogue;
+mod compare;
 mod copy;
 mod replay;
 pub(crate) mod view;
@@ -507,6 +508,16 @@ impl NativeRecord {
             }),
         }
     }
+
+    /// Compare a typed serialization against this record without copying its payload.
+    /// Finite-number, distinct-key, depth and caller resource admission still apply.
+    pub fn matches_typed_for_decode<T: Serialize + ?Sized>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        expected: &T,
+    ) -> Result<bool, NativeConvertError> {
+        compare::matches(ctx, self, expected)
+    }
 }
 
 #[derive(Serialize)]
@@ -904,26 +915,6 @@ impl Native {
         for namespace in self.0.values_mut() {
             for records in namespace.arenas.values_mut() {
                 let operation = "finalize native arena";
-                ctx.charge_work(u64_from_index(records.len()), operation)?;
-                let mut ordered = true;
-                for pair in records.windows(2) {
-                    let work = pair[0]
-                        .id()
-                        .len()
-                        .checked_add(pair[1].id().len())
-                        .map(u64_from_index)
-                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-                    ctx.charge_work(work, operation)?;
-                    if pair[0].id() > pair[1].id() {
-                        ordered = false;
-                        break;
-                    }
-                }
-                // Typed arena storage already orders its records. Validate
-                // that order without reserving another sort permutation.
-                if ordered {
-                    continue;
-                }
                 ctx.stable_sort_by(
                     records,
                     |left, right| left.id().cmp(right.id()),

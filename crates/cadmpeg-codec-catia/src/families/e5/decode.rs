@@ -235,6 +235,7 @@ pub(in crate::families) fn try_decode_e5(
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
+parameter_range: None,
                 id,
                 geometry: admitted!(circle.geometry.try_clone_for_decode(ctx, "catia_e5_model_curve_geometry")),
                 source_object: None,
@@ -2104,6 +2105,7 @@ fn emit_e5_curves_and_edges(
         )?;
         admission.reserve_entity(&mut ir.model.curves, "catia_e5_model_curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id,
             geometry: (geometry).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
             source_object: None,

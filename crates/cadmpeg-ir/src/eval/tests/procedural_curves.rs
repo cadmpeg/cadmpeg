@@ -31,6 +31,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         let mut ir = CadIr::empty();
         for id in [&source, &subset] {
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: id.clone(),
                 geometry: line.clone(),
                 source_object: None,
@@ -115,6 +116,7 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
     let mut ir = CadIr::empty();
     for id in [&source, &subset] {
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 crate::geometry::analytic::LineCurve::try_new(

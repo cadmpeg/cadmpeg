@@ -1851,3 +1851,61 @@ fn preserves_unknown_numeric_copy_on_change_index() {
         .expect("product nodes");
     assert_eq!(restored_records[0].copy_on_change(), Some("99"));
 }
+
+#[test]
+fn ordinary_group_membership_does_not_compete_with_a_part_placement_parent() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="App::Part" name="Part"/><Object type="App::DocumentObjectGroup" name="Group"/><Object type="Part::Feature" name="Shape"/></Objects>
+<ObjectData Count="3"><Object name="Part"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Group"/><Link value="Shape"/></LinkList></Property></Properties></Object>
+<Object name="Group"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Shape"/></LinkList></Property></Properties></Object>
+<Object name="Shape"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("dual membership");
+    let part = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|o| {
+            o.native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("#Part"))
+        })
+        .expect("part occurrence");
+    let shape = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|o| {
+            o.native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("#Shape"))
+        })
+        .expect("shape occurrence");
+    assert_eq!(
+        shape.parent,
+        cadmpeg_ir::products::OccurrenceParent::Occurrence {
+            occurrence: part.id.clone()
+        }
+    );
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .filter(|o| o
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("#Shape")))
+            .count(),
+        1
+    );
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+    assert_valid_document(decoded.ir());
+}

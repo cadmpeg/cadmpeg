@@ -683,6 +683,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     source_object: Some(SourceObjectAssociation {

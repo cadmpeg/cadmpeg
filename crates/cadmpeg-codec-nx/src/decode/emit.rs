@@ -548,6 +548,7 @@ pub(super) fn emit_topology(
                 annotations.derived(ctx, carrier.as_str(), "geometry")?;
                 ctx.reserve_vec(&mut ir.model.curves, 1, "nx parametric edge curves")?;
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: carrier.try_clone_for_decode(ctx, "nx parametric edge carrier")?,
                     geometry: CurveGeometry::Procedural {
                         construction: construction
@@ -1423,6 +1424,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         annotations.exactness(ctx, id.as_str(), Exactness::Unknown)?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "nx unresolved curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: id.try_clone_for_decode(ctx, "nx unresolved curve identity")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(unknown.try_clone_for_decode(ctx, "nx unresolved curve record")?),

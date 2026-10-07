@@ -313,44 +313,46 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         assert_eq!(scan(&ctx, &bytes, &carriers).unwrap().len(), 1);
 
-        let quadratic = NurbsCurve::from_lanes(
+        let quartic = NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
-            2,
-            vec![0.0, 0.0, 0.0, 0.005, 0.005, 0.005],
+            4,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.005, 0.005, 0.005, 0.005],
             vec![
                 Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.25, 0.0),
                 Point3::new(0.0, 2.5, 0.0),
+                Point3::new(0.0, 3.75, 0.0),
                 Point3::new(0.0, 5.0, 0.0),
             ],
             None,
             false,
         )
         .expect("service storage")
-        .expect("quadratic version of the same line");
-        let mut quadratic_carriers = CarrierIndex::default();
-        quadratic_carriers
+        .expect("quartic version of the same line");
+        let mut quartic_carriers = CarrierIndex::default();
+        quartic_carriers
             .insert(
                 &cadmpeg_test_support::service_decode_context(),
                 super::super::Carrier::Curve(CurveCarrier {
                     attr: 10,
                     offset: 100,
                     end: 120,
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(quadratic)),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(quartic)),
                     parameter_range: None,
                 }),
             )
             .unwrap();
-        policy.limits.max_materialized_bytes = 31;
+        policy.limits.max_materialized_bytes = 39;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = scan(&ctx, &bytes, &quadratic_carriers).unwrap_err();
+        let error = scan(&ctx, &bytes, &quartic_carriers).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "IR B-spline basis")
         );
-        policy.limits.max_materialized_bytes = 32;
+        policy.limits.max_materialized_bytes = 40;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        assert_eq!(scan(&ctx, &bytes, &quadratic_carriers).unwrap().len(), 1);
+        assert_eq!(scan(&ctx, &bytes, &quartic_carriers).unwrap().len(), 1);
     }
 
     #[test]

@@ -50,6 +50,34 @@ fn surface_derivatives_use_the_existing_scratch_context() {
             .map(|row| row.map(crate::scalar::FiniteReal::get)),
         [[0.0, 0.0, 2.0], [0.0, 0.0, 0.0], [0.0, 0.0, 2.0]]
     );
+    let heap_surface = NurbsSurface::from_lanes(
+        &source,
+        NurbsSurfaceAxis::new(
+            4,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            false,
+        ),
+        NurbsSurfaceAxis::new(
+            4,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            false,
+        ),
+        NurbsSurfaceLanes::new(
+            (0..5)
+                .map(|i| {
+                    (0..5)
+                        .map(|j| Point3::new(f64::from(i) / 4.0, f64::from(j) / 4.0, 0.0))
+                        .collect()
+                })
+                .collect(),
+            None,
+        ),
+        false,
+    )
+    .unwrap()
+    .unwrap();
+    let heap_local = nurbs_surface_local(&source_scratch, &heap_surface, 0.25, 0.75).unwrap();
+    let heap_first = heap_local.first(&source_scratch).unwrap();
     for second in [false, true] {
         for dimension in [
             ResourceDimension::MaterializedBytes,
@@ -67,9 +95,9 @@ fn surface_derivatives_use_the_existing_scratch_context() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let scratch = Scratch::new(&ctx);
             let result = if second {
-                local.second(&scratch, &first).map(|_| ())
+                heap_local.second(&scratch, &heap_first).map(|_| ())
             } else {
-                local.first(&scratch).map(|_| ())
+                heap_local.first(&scratch).map(|_| ())
             };
             let Err(EvaluationFailure::ResourceLimit(limit)) = result else {
                 panic!("caller refusal was not returned");

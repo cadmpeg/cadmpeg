@@ -2592,6 +2592,7 @@ pub(in super::super) fn transfer_native_brep(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id: curve,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: geometry_section_record(ctx, scan, offset)?,
@@ -3288,6 +3289,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     source_object: Some(SourceObjectAssociation {

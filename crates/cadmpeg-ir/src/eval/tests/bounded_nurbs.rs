@@ -1,6 +1,67 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
+fn matching_polynomial_seed_avoids_full_control_and_interval_scratch() {
+    use crate::geometry::nurbs::NurbsCurve;
+    use crate::math::Point3;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let preparation = cadmpeg_test_support::service_decode_context();
+    let mut knots = vec![0.0; 4];
+    knots.extend((1..1_021).map(|ordinal| f64::from(ordinal) / 1_021.0));
+    knots.extend([1.0; 4]);
+    let curve = NurbsCurve::from_lanes(
+        &preparation,
+        3,
+        knots,
+        (0..1_024)
+            .map(|ordinal| Point3::new(f64::from(ordinal), 0.0, 0.0))
+            .collect(),
+        None,
+        false,
+    )
+    .expect("admitted authored spline")
+    .expect("valid authored spline");
+    let point = crate::eval::decode::nurbs_curve_point_at(&preparation, &curve, 0.5)
+        .expect("seed evaluation")
+        .get();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_work_units = 1_000;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
+    assert_eq!(
+        super::super::nurbs_curve_parameter_near_point(&ctx, &curve, point, 0.0, 0.5)
+            .expect("matching witness needs no population-sized scratch"),
+        Some(crate::scalar::FiniteReal::HALF)
+    );
+    ctx.finish_session().expect("all work remains admitted");
+}
+
+#[test]
+fn matching_rational_seed_keeps_positive_weight_search_admission() {
+    use crate::geometry::nurbs::NurbsCurve;
+    use crate::math::Point3;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let point = Point3::new(0.0, 0.0, 0.0);
+    let curve = NurbsCurve::from_lanes(
+        &ctx,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![point, Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![-1.0, 1.0]),
+        false,
+    )
+    .expect("admitted signed-weight fixture")
+    .expect("valid signed-weight carrier");
+    assert_eq!(
+        super::super::nurbs_curve_parameter_near_point(&ctx, &curve, point, 0.0, 0.0)
+            .expect("signed weights have no certified search"),
+        None
+    );
+}
+
+#[test]
 fn bounded_nurbs_interval_search_keeps_a_fixed_working_set() {
     let boundaries = (0..=10_000)
         .map(|index| crate::scalar::FiniteReal::from_index(index).expect("test index is exact"))

@@ -10,11 +10,13 @@ fn line(periodic: bool) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
             &cadmpeg_test_support::service_decode_context(),
-            2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            4,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             vec![
                 Point3::new(0.0, 0.0, 0.0),
+                Point3::new(if periodic { 0.0 } else { 0.25 }, 0.0, 0.0),
                 Point3::new(if periodic { 0.0 } else { 0.5 }, 0.0, 0.0),
+                Point3::new(if periodic { 0.0 } else { 0.75 }, 0.0, 0.0),
                 Point3::new(if periodic { 0.0 } else { 1.0 }, 0.0, 0.0),
             ],
             None,

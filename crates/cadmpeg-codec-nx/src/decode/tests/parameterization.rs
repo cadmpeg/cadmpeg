@@ -958,6 +958,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     let last = Point3::new(4.0, 5.0, 6.0);
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -1210,6 +1211,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                 source_object: None,
             });
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1410,6 +1412,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         let carrier =
             CurveId::mint("test:model:entity#synthetic:coupled-carrier").expect("identity grammar");
         ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+            parameter_range: None,
             id: carrier.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,

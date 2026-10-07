@@ -261,7 +261,7 @@ fn expected_counts(name: &str) -> (usize, usize, usize) {
         | "explicit_open_shell"
         | "explicit_non_manifold_open_shell"
         | "explicit_void_solid"
-        | "explicit_cylinder_seam" => (1, 2, 1),
+        | "explicit_cylinder_seam" => (1, 1, 1),
         "explicit_multi_pcurve_loop" => (1, 2, 2),
         // Type 141 output identities are rooted at the owning Type 143.
         "multi_pcurve_boundary" => (1, 1, 0),

@@ -607,6 +607,7 @@ mod consolidated_revolution_binding_tests {
         let curve_id =
             CurveId::mint("catia:test:curve#wide-torus-witness").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -771,6 +772,7 @@ mod consolidated_revolution_binding_tests {
         let curve_id =
             CurveId::mint("catia:test:curve#seam-curve".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -1454,6 +1456,7 @@ fn emit_standard_extrusion_definition(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_extrusion_directrix_curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: directrix_id.try_clone_for_decode(ctx, "catia_extrusion_directrix_curve_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source(ctx, "curve", extrusion.directrix_object_id)?),
@@ -1511,6 +1514,7 @@ fn emit_standard_extrusion_definition(
                 "catia_extrusion_surface_directrix_curves",
             )?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: directrix_id.try_clone_for_decode(ctx, "catia_extrusion_surface_curve_id")?,
                 geometry: curve,
                 source_object: Some(cgm_source(ctx, "curve", extrusion.directrix_object_id)?),
@@ -1540,6 +1544,7 @@ fn emit_standard_extrusion_definition(
             admission
                 .reserve_entity(&mut ir.model.curves, "catia_extrusion_offset_source_curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: source_id.try_clone_for_decode(ctx, "catia_extrusion_offset_source_id")?,
                 geometry: source_curve,
                 source_object: Some(cgm_source(ctx, "curve", source_object_id)?),
@@ -1558,6 +1563,7 @@ fn emit_standard_extrusion_definition(
                 "catia_extrusion_offset_directrix_curves",
             )?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: directrix_id
                     .try_clone_for_decode(ctx, "catia_extrusion_offset_directrix_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -2966,6 +2972,7 @@ fn try_decode_standard_population(
                     return Some(Err(error));
                 }
                 ir.model.curves.push(Curve {
+                    parameter_range: None,
                     id: admitted!(directrix_id.try_clone_for_decode(ctx, "catia_standard_revolution_curve_record_id")),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         revolution.directrix,

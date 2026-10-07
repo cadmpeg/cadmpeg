@@ -13,6 +13,7 @@ fn annotation_curve_index_refuses_collection_limit() {
 
     let mut out = AsmBrep {
         curves: vec![Curve {
+            parameter_range: None,
             id: CurveId::mint("f3d:brep:entity#1").unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -54,6 +55,7 @@ fn annotation_stream_refuses_retained_limit() {
     }];
     let mut out = AsmBrep {
         curves: vec![Curve {
+            parameter_range: None,
             id: CurveId::mint("f3d:brep:entity#1").unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,

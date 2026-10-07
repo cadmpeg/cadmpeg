@@ -227,6 +227,7 @@ fn add_edge(
     ctx.reserve_vec(&mut ir.model.curves, 1, "iges spline neutral curve slots")?;
     ctx.charge_entities(1, "iges_geometry_splines")?;
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve.try_clone_for_decode(ctx, "iges splines identity copy")?,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         source_object: Some(match source_object(entry, ctx) {

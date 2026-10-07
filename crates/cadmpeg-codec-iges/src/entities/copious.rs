@@ -627,6 +627,7 @@ pub(super) fn project(
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges copious neutral curves")?;
         ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.try_clone_for_decode(ctx, "iges copious identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
                 |error| CodecError::malformed(format_args!("copious-data curve: {error}")),

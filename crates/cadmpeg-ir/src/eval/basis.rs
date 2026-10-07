@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! B-spline span selection and basis recurrences.
 
-use std::borrow::Cow;
-
 use super::admission::EvaluationAdmission;
 use super::{decode, difference_quotient, finite_or_refusal};
 use crate::math::sum::scaled_ratio_products;
@@ -65,9 +63,9 @@ pub(super) fn bspline_basis(
     t: f64,
 ) -> Option<decode::SupportValues<f64>> {
     let support = degree.checked_add(1)?;
-    let mut values = if support <= 2 {
+    let mut values = if support <= 4 {
         decode::SupportValues::Inline {
-            values: [0.0; 2],
+            values: [0.0; 4],
             len: support,
         }
     } else {
@@ -202,11 +200,10 @@ pub(super) fn bspline_basis_derivative(
     degree: usize,
     span: usize,
     t: f64,
-) -> Option<Vec<f64>> {
+) -> Option<decode::SupportValues<f64>> {
     if degree == 0 {
-        return scratch.filled(
-            1,
-            0.0,
+        return scratch.support_values(
+            std::iter::once(Some(0.0)),
             "IR B-spline derivative basis",
             "IR B-spline derivative work",
         );
@@ -214,8 +211,8 @@ pub(super) fn bspline_basis_derivative(
     let degree_real = f64_from_index(degree)?;
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
-    scratch.collect(
-        (0..=degree).map(|local| {
+    scratch.support_values(
+        (0..degree.checked_add(1)?).map(|local| {
             let index = span - degree + local;
             let lower_at = |global: usize| {
                 global
@@ -261,25 +258,25 @@ pub(super) fn bspline_basis_derivative(
     )
 }
 
-/// The owned basis has `degree + 1` values, at most the admitted control count.
+/// The basis has `degree + 1` values, at most the admitted control count.
 pub(super) fn bspline_basis_second_derivative(
     scratch: &decode::Scratch<'_, '_>,
     knots: &[f64],
     degree: usize,
     span: usize,
     t: f64,
-) -> Option<Cow<'static, [f64]>> {
-    if degree == 0 {
-        return Some(Cow::Borrowed(&[0.0]));
-    }
-    if degree == 1 {
-        return Some(Cow::Borrowed(&[0.0, 0.0]));
+) -> Option<decode::SupportValues<f64>> {
+    if degree <= 1 {
+        return Some(decode::SupportValues::Inline {
+            values: [0.0; 4],
+            len: degree + 1,
+        });
     }
     let degree_real = f64_from_index(degree)?;
     let lower = bspline_basis_derivative(scratch, knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
-    let basis = scratch.collect(
-        (0..=degree).map(|local| {
+    scratch.support_values(
+        (0..degree.checked_add(1)?).map(|local| {
             let index = span - degree + local;
             let lower_at = |global: usize| {
                 global
@@ -322,8 +319,7 @@ pub(super) fn bspline_basis_second_derivative(
         }),
         "IR B-spline second derivative basis",
         "IR B-spline second derivative work",
-    )?;
-    Some(Cow::Owned(basis))
+    )
 }
 
 /// Basis derivatives with respect to a local coordinate whose unit is the

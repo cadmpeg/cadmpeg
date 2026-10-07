@@ -55,6 +55,7 @@ fn free_carrier(object_id: &str) -> SourceObjectAssociation {
 fn source_association_is_a_free_carrier_root() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("synthetic:source:curve#0").expect("valid identity"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: Some(SourceObjectAssociation {

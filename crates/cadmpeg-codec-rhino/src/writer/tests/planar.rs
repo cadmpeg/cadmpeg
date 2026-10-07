@@ -299,6 +299,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         None,
     ));
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(

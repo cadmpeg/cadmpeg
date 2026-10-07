@@ -1134,7 +1134,7 @@ fn canonical_native_finalization_uses_linear_work_without_sort_storage() {
     )]));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 100_000;
+    policy.limits.max_work_units = 200_000;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

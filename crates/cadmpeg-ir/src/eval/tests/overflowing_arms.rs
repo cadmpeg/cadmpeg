@@ -810,6 +810,7 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
         },
     ]);
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::analytic::LineCurve::try_new(
@@ -916,6 +917,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
     let mut ir = CadIr::empty();
     let mut source = CurveId::mint("test:model:curve#base").expect("valid identity");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: source.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::analytic::LineCurve::try_new(
@@ -930,6 +932,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
         let replica =
             CurveId::mint(format!("test:model:curve#replica-{ordinal}")).expect("valid identity");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: replica.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -981,6 +984,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     let surface = SurfaceId::mint("test:model:surface#ruled").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::analytic::LineCurve::try_new(

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "7",
+    "ir_version": "8",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -34,6 +34,10 @@
             }
           },
           "id": "iges:model:curve#D1",
+          "parameter_range": [
+            0.0,
+            5.0
+          ],
           "source_object": {
             "format": "iges",
             "layer": "4",

@@ -116,6 +116,7 @@ pub(super) fn append_consolidated_revolutions(
         )?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: directrix.try_clone_for_decode(admission.context(), "catia_revolution_curve_id")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
             source_object: Some(cgm_source(
@@ -806,6 +807,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: admitted!(id.try_clone_for_decode(ctx, "catia_freeform_b2_curve_record_id")),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
                 source_object: Some(admitted!(cgm_source_key(
@@ -844,6 +846,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: admitted!(id.try_clone_for_decode(ctx, "catia_freeform_a5_curve_record_id")),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
                 source_object: Some(admitted!(cgm_source_key(
@@ -890,6 +893,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: admitted!(id.try_clone_for_decode(ctx, "catia_freeform_b2_circle_record_id")),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(
@@ -1784,6 +1788,7 @@ fn consolidated_line_profiles(
             &mut profiles,
             ConsolidatedLineProfile {
                 curve: Curve {
+                    parameter_range: None,
                     id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
                     source_object: Some(cgm_source_key(
@@ -2046,6 +2051,7 @@ pub(super) fn append_freeform_surface_pools(
         )?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
             source_object: None,
@@ -2084,6 +2090,7 @@ pub(super) fn append_freeform_surface_pools(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
@@ -3537,6 +3544,7 @@ fn append_resolved_consolidated_surface_curves(
                 "catia_freeform_resolved_curve_owner_id",
             )?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: curve_owner_id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: None,
@@ -4314,6 +4322,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let curve_id = CurveId::mint("catia:test:curve#wire").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -4552,6 +4561,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let curve_id = CurveId::mint("catia:test:curve#0".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -4602,6 +4612,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -4633,6 +4644,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -4671,6 +4683,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -5266,6 +5279,7 @@ mod tests {
         let curve_id =
             CurveId::mint("catia:test:curve#standard-curve".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -5671,6 +5685,7 @@ mod tests {
         let curve_id = CurveId::mint("catia:test:curve#standard-plane-curve".to_string())
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,

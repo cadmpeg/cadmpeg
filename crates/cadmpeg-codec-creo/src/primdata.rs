@@ -548,10 +548,16 @@ mod tests {
     #[test]
     fn primitive_scalar_ordering_refuses_work_and_index_scratch_before_sorting() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        let bytes: Vec<_> = (0..21).flat_map(|_| named("p1", &[], 0)).collect();
+        let bytes: Vec<_> = (0..21)
+            .flat_map(|index| named(if index % 2 == 0 { "p2" } else { "p1" }, &[], 0))
+            .collect();
         let scratch = u64::try_from(21 * 2 * std::mem::size_of::<usize>()).expect("scratch bytes");
         let work = 5 * u64::try_from(bytes.len()).expect("scan work")
             + 21
+            // Ten comparisons reach the boundary between the discovered p1
+            // and p2 runs, where offsets are out of order.
+            + 10 * (2 * u64::try_from(std::mem::size_of::<PrimitiveScalarArray>())
+                .expect("record bytes") + 1)
             + 21 * u64::try_from(std::mem::size_of::<PrimitiveScalarArray>())
                 .expect("record bytes")
                 * 6

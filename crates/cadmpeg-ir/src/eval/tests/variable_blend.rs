@@ -62,6 +62,7 @@ fn variable_blend_eval_fixture(
     let slice = CurveId::mint("test:model:entity#blend-slice").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: slice.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             crate::geometry::analytic::LineCurve::try_new(

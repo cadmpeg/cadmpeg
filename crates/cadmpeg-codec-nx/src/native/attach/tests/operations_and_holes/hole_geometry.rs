@@ -541,6 +541,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
                 ))
                 .expect("identity grammar");
                 model.curves.push(Curve {
+                    parameter_range: None,
                     id: curve.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1192,6 +1193,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
                             ))
                             .expect("identity grammar");
                             chamfered.model.curves.push(Curve {
+                                parameter_range: None,
                                 id: curve.clone(),
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                                     cadmpeg_ir::geometry::analytic::CircleCurve::try_new(

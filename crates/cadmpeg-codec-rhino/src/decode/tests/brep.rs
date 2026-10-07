@@ -99,6 +99,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         ..BrepDraft::default()
     };
     staged.draft.model_mut().curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
@@ -141,6 +142,7 @@ fn brep_fallback_set_refuses_collection_limit_before_insertion() {
         .expect("valid identity");
     let mut staged = BrepDraft::default();
     staged.draft.model_mut().curves.push(Curve {
+        parameter_range: None,
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
@@ -179,6 +181,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         ..BrepDraft::default()
     };
     staged.draft.model_mut().curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,
@@ -215,6 +218,7 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
         .try_into()
         .expect("valid identity");
     let curve = Curve {
+        parameter_range: None,
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,

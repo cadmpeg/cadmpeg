@@ -203,6 +203,7 @@ mod tests {
         let curve = crate::ids::CurveId::mint("test:model:curve#line").unwrap();
         let surface = crate::ids::SurfaceId::mint("test:model:surface#plane").unwrap();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 crate::geometry::analytic::LineCurve::try_new(

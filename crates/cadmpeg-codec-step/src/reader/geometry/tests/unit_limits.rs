@@ -383,16 +383,17 @@ fn uncertainty_distinct_candidates_refuse_collection_limit() {
 
 #[test]
 fn shared_geometry_is_visited_once_per_unit_scope() {
+    use std::fmt::Write;
     let mut records = format!("{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));#3=CARTESIAN_POINT('',(1.,2.,3.));");
     for id in 10..1010 {
-        records.push_str(&format!("#{id}=GEOMETRIC_SET((#3));"));
+        write!(records, "#{id}=GEOMETRIC_SET((#3));").expect("write fixture");
     }
     records.push_str("#4=SHAPE_REPRESENTATION('',(");
     for id in 10..1010 {
         if id != 10 {
             records.push(',');
         }
-        records.push_str(&format!("#{id}"));
+        write!(records, "#{id}").expect("write fixture");
     }
     records.push_str("),#2);");
     let source = format!("{HEADER}{records}{TAIL}");

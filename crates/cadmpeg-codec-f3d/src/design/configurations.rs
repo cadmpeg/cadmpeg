@@ -1701,7 +1701,7 @@ mod tests {
     fn configuration_ordering_refuses_sort_scratch_limit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        let names: Vec<_> = (0..21).map(|index| format!("v{index:02}")).collect();
+        let names: Vec<_> = (0..21).rev().map(|index| format!("v{index:02}")).collect();
         let variants = names
             .iter()
             .map(|name| (name.clone(), serde_json::json!({})))

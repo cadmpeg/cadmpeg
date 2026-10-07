@@ -4846,6 +4846,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             .map_err(cadmpeg_core::CodecError::from)?;
         ctx.reserve_vec(&mut ir.model.curves, 1, "nx tolerant edge curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.try_clone_for_decode(ctx, "nx tolerant carrier identity")?,
             geometry: CurveGeometry::Procedural {
                 construction: procedural_id
@@ -5351,6 +5352,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Procedural {
                 construction: procedural_id.clone(),

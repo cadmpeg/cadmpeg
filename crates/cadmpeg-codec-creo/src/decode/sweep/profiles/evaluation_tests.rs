@@ -9,11 +9,13 @@ use cadmpeg_ir::math::Point3;
 fn profile_sampling_propagates_evaluator_refusal() {
     let nurbs = NurbsCurve::from_lanes(
         &cadmpeg_test_support::service_decode_context(),
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        4,
+        vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         vec![
             Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.25, 0.0, 0.0),
             Point3::new(0.5, 0.0, 0.0),
+            Point3::new(0.75, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
         ],
         None,

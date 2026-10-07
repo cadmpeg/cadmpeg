@@ -268,6 +268,7 @@ fn transformed_instance_identity_refuses_scoped_text_before_copy() {
             .model
             .curves
             .push(cadmpeg_ir::geometry::Curve {
+                parameter_range: None,
                 id: "rhino:test:curve#one".try_into().expect("id"),
                 geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
                     cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(super::line_nurbs(

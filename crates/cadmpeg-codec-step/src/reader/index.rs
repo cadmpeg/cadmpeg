@@ -93,6 +93,7 @@ mod tests {
     fn carriers() -> CadIr {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 1)),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))

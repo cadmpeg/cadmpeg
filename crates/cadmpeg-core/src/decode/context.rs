@@ -500,6 +500,9 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), CodecError> {
         let count = super::u64_from_index(values.len());
         self.charge_work(count, operation)?;
+        if super::sort::admit_ordered_run(self, values, &mut compare, &key_bytes, operation)? {
+            return Ok(());
+        }
         let bytes = values
             .iter()
             .try_fold(0u64, |bytes, value| {
@@ -515,7 +518,7 @@ impl<'a> DecodeContext<'a> {
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         self.charge_work(work, operation)?;
         // Small runs use adjacent swaps, so their stable order needs no scratch.
-        if values.len() <= 20 {
+        if values.len() <= super::sort::INLINE_SORT_LIMIT {
             for end in 1..values.len() {
                 let mut position = end;
                 while position > 0 && compare(&values[position], &values[position - 1]).is_lt() {
@@ -932,7 +935,7 @@ mod tests {
             .expect("byte allowance");
         assert_eq!(bytes.capacity(), 32);
         drop(reservation);
-        let (reservation, _) = ctx
+        let (reservation, ()) = ctx
             .try_materialized(32, "test bytes", || Ok(()))
             .expect("released allowance");
         assert!(

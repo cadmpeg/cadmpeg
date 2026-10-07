@@ -182,6 +182,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id: crate::identity::copy_checked_id(
                     ctx,
                     id.as_str(),
@@ -435,6 +436,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id: crate::identity::copy_checked_id(
                     ctx,
                     id.as_str(),

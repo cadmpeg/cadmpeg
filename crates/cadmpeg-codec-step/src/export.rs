@@ -32,6 +32,8 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+mod wire;
+
 const EPS_IDENTITY: f64 = 1.0e-12;
 
 /// Serializes an IR document as an ISO 10303-21 STEP Part 21 file declaring
@@ -1839,12 +1841,15 @@ impl<'a> Builder<'a> {
             let edges = shell
                 .wire_edges()
                 .iter()
-                .filter_map(|edge| self.emit_edge(edge.as_str()))
+                .filter_map(|id| {
+                    let emitted = self.emit_edge(id.as_str())?;
+                    self.edges.get(id.as_str()).map(|edge| (emitted, *edge))
+                })
                 .collect::<Vec<_>>();
-            if !edges.is_empty() {
+            for component in wire::connected_components(&edges) {
                 connected_sets.push(
                     self.emitter
-                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&edges))),
+                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&component))),
                 );
             }
         }
@@ -2175,17 +2180,10 @@ impl<'a> Builder<'a> {
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
         let surface_id = face.surface.as_str();
-        // A face resting on an unknown (opaque) surface cannot become an
-        // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
-        // loss rather than fabricate placeholder geometry.
-        if let Some(surf) = self.surfaces.get(surface_id) {
-            if !geometry::surface_is_supported(surf.geometry.solved()?) {
-                self.unknown_surface_faces.insert(face_id.to_string());
-                return None;
-            }
-        }
         let same_sense = matches!(face.sense, Sense::Forward);
 
+        // Surface emission admits either a writable construction or a solved
+        // carrier. An absent or opaque solved cache cannot veto a construction.
         let Some(surf_ref) = self.emit_surface(surface_id) else {
             self.unknown_surface_faces.insert(face_id.to_string());
             return None;
@@ -4685,3 +4683,6 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
     }
     true
 }
+
+#[cfg(test)]
+mod construction_tests;

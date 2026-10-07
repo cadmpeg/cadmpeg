@@ -2237,6 +2237,7 @@ fn append_legacy_brep(
             );
             let domain = curve_domain(&curve)?;
             model.curves.push(Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
@@ -3022,12 +3023,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let mut offset = header.start_offset + file_header::LEN;
     let comment = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
         .map_err(|error| malformed(&error))?;
-    if comment.typecode != TCODE_COMMENT || comment.short() {
-        return Err(CodecError::Malformed(
-            "V1 first post-header chunk is not the comment".to_string(),
-        ));
+    let comment_missing = comment.typecode != TCODE_COMMENT;
+    if !comment_missing {
+        if comment.short() {
+            return Err(CodecError::Malformed("V1 comment chunk is short".into()));
+        }
+        offset = comment.next_offset();
     }
-    offset = comment.next_offset();
 
     // The flat legacy grammar is the strategy `rhino:archive-1` declares, so
     // this path admits the document on its own row. It reads no properties
@@ -3352,6 +3354,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         let start = evaluate_nurbs(ctx, &segment, parameter_range[0])?;
                         let end = evaluate_nurbs(ctx, &segment, parameter_range[1])?;
                         ir.model.curves.push(Curve {
+                            parameter_range: None,
                             id: curve_id
                                 .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
@@ -3532,6 +3535,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         .filter(|record| record.data().is_some())
         .count();
     let mut losses = Vec::new();
+    if comment_missing {
+        ctx.reserve_vec(&mut losses, 1, "Rhino V1 report losses")?;
+        losses.push(admitted_loss(
+            ctx,
+            RhinoLossCode::ContainerScanDiagnostic,
+            format_args!("V1 archive has no leading comment chunk"),
+            "Rhino V1 report loss text",
+        )?);
+    }
     for (typecode, count) in omitted {
         ctx.reserve_vec(&mut losses, 1, "Rhino V1 report losses")?;
         losses.push(if is_v1_presentation_setting(typecode) {
@@ -4786,6 +4798,28 @@ mod tests {
             loss.code == RhinoLossCode::RedundantFieldRepaired.kind()
                 && loss.message.contains("angular tolerance 0")
         }));
+    }
+
+    #[test]
+    fn v1_geometry_decodes_without_optional_leading_comment() {
+        let original = archive(&[[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]]);
+        let comment =
+            chunk_at(&original, 32, original.len(), ArchiveVersion::V1, false).expect("comment");
+        let mut missing = original.clone();
+        missing.drain(32..comment.next_offset());
+        let expected = decode_v1(&original).expect("original");
+        let actual = decode_v1(&missing).expect("optional comment absent");
+        assert_eq!(actual.ir.model.points, expected.ir.model.points);
+        assert!(actual
+            .body
+            .losses
+            .iter()
+            .any(|loss| loss.code == RhinoLossCode::ContainerScanDiagnostic.kind()));
+        missing.truncate(35);
+        assert!(
+            decode_v1(&missing).is_err(),
+            "unbounded chunk is still refused"
+        );
     }
 
     #[test]

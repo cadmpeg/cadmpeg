@@ -270,6 +270,7 @@ fn transfer_reference_lines(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::new(line.start(), direction),
@@ -361,6 +362,7 @@ fn transfer_reference_circles(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(
@@ -449,6 +451,7 @@ fn transfer_reference_ellipses(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                     cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(

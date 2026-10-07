@@ -75,7 +75,7 @@ rewrite_enum!(CompoundLoftTail<R, V>, [R, V]; {
     Seven {first_flag, first_scale, second_flag, second_scale, selector, direction, trailing_flags},
     Zero {flags, direction, trailing_flags},
 });
-rewrite_record!(Curve, []; {id, geometry, source_object});
+rewrite_record!(Curve, []; {id, geometry, parameter_range, source_object});
 rewrite_enum!(CurveGeometry, []; {
     Procedural {construction, cache},
     Solved(field0),

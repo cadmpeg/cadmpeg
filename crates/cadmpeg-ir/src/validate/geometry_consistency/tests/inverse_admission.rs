@@ -125,11 +125,14 @@ fn geometric_checks_admit_model_index_with_live_context() {
             };
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut findings = Vec::new();
-            let result = if route == 0 {
-                super::super::check_procedural_support_consistency(&ctx, &ir, &mut findings)
-            } else {
-                super::super::check_pcurve_surface_consistency(&ctx, &ir, &mut findings)
-            };
+            let result = (|| {
+                let index = crate::index::ModelIndex::new_model_only(&ir, &ctx)?;
+                if route == 0 {
+                    super::super::check_procedural_support_consistency(&ctx, &index, &mut findings)
+                } else {
+                    super::super::check_pcurve_surface_consistency(&ctx, &index, &mut findings)
+                }
+            })();
             let cadmpeg_core::CodecError::ResourceLimit(first) = result.unwrap_err() else {
                 panic!("index refusal must remain a resource limit");
             };

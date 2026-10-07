@@ -242,11 +242,14 @@ impl Serialize for CurveWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Curve", 3)?;
+        let mut state = serializer.serialize_struct("Curve", 4)?;
         state.serialize_field("id", &self.0.id)?;
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", cache)?,
             None => state.serialize_field("geometry", &self.0.geometry)?,
+        }
+        if let Some(range) = &self.0.parameter_range {
+            state.serialize_field("parameter_range", range)?;
         }
         if let Some(source_object) = &self.0.source_object {
             state.serialize_field("source_object", source_object)?;
@@ -770,7 +773,7 @@ macro_rules! declare_arena_name {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "7";
+pub const IR_VERSION: &str = "8";
 
 /// The current IR wire version. Every value writes [`IR_VERSION`].
 /// Deserialization refuses any other version.

@@ -106,6 +106,7 @@ fn add_bounded_curve(
     ctx.reserve_vec(&mut ir.model.curves, 1, "iges conic neutral curves")?;
     ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve.try_clone_for_decode(ctx, "iges conics identity copy")?,
         geometry,
         source_object: Some(source_object(entry, ctx)?),
