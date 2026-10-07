@@ -6,7 +6,7 @@ use super::super::{
 };
 use crate::native::{self, ProductNodeRecord};
 use crate::test_support::assert_retained_refusal_at;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 fn occurrence(object: &str, count: Option<u64>) -> ProductNodeRecord {
     ProductNodeRecord {
@@ -55,14 +55,14 @@ fn product_parent_conflict_refuses_before_diagnostic_allocation() {
 fn nested_product_cycle_refuses_before_diagnostic_allocation() {
     let record = occurrence("Loop", None);
     let records = HashMap::from([(record.object.as_str(), &record)]);
-    let placements = HashMap::new();
+    let placements = BTreeMap::new();
     assert_retained_refusal_at(&[], "fcstd nested product cycle", |ctx| {
         linked_prototype_transform(
             ctx,
             &record,
             &records,
             &placements,
-            &mut vec![record.object.clone()],
+            &mut vec![record.object.as_str()],
         )
     });
 }

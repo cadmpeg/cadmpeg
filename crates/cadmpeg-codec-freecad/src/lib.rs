@@ -345,7 +345,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     let (cyclic_products, _cycle_storage) = ctx
         .with_scoped_storage("fcstd product cycle lookup", || {
-            product::product_cycle_nodes(ctx, &product_by_object)
+            product::product_cycle_nodes(ctx, &product_nodes)
         })?;
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
