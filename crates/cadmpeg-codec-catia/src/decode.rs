@@ -284,8 +284,13 @@ fn finish_decode(
             }
         }
     }
-    let design_feature_transfer =
-        design_feature::transfer_design_features(ctx, &mut ir, &native, &modeling_graph_scope)?;
+    let design_feature_sources = design_feature::DesignFeatureSources::new(ctx, &native)?;
+    let design_feature_transfer = design_feature::transfer_design_features(
+        ctx,
+        &mut ir,
+        &design_feature_sources,
+        &modeling_graph_scope,
+    )?;
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
         ctx,
         &mut ir,
@@ -321,7 +326,8 @@ fn finish_decode(
         &mut annotations,
         &modeling_graph_scope,
     )?;
-    design_feature_transfer.assign_parameter_owners(ctx, &mut ir, &native)?;
+    design_feature_transfer.assign_parameter_owners(ctx, &mut ir, &design_feature_sources)?;
+    drop(design_feature_sources);
     let appearance_transfer = crate::appearance::transfer(
         ctx,
         &mut ir,

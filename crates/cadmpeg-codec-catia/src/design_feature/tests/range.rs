@@ -93,7 +93,7 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
         transfer_design_features(
             ctx,
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
