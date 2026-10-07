@@ -659,8 +659,6 @@ fn source_image_copy_refuses_retained_limit() {
 
 #[test]
 fn unique_asset_append_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let ctx = context(&arena, 0);
     let asset = cadmpeg_ir::assets::Asset::try_new(
         &cadmpeg_test_support::service_decode_context(),
         cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
@@ -673,7 +671,17 @@ fn unique_asset_append_refuses_collection_limit() {
     )
     .unwrap();
     let mut assets = Vec::new();
-    let error = super::super::extend_unique_assets(&ctx, &mut assets, vec![asset]).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "append F3D unique assets",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                super::super::extend_unique_assets(ctx, &mut assets, vec![asset.clone()])
+            })
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "append F3D unique assets")
@@ -1424,15 +1432,21 @@ fn dimension_owner_index_refuses_collection_limit() {
 
 #[test]
 fn unresolved_dimension_loss_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let ctx = context(&arena, 2);
     let native = dimension_native();
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut report =
         cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
-    let error =
-        super::super::report_unresolved_dimension_companions(&ctx, &mut report, &native, &ir)
-            .unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "report unresolved F3D dimensions",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                super::super::report_unresolved_dimension_companions(ctx, &mut report, &native, &ir)
+            })
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

@@ -167,7 +167,7 @@ fn mesh_feature_tessellation_collection_refuses_limit() {
         crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature,
         10,
     );
-    let mut features = vec![Feature {
+    let features = vec![Feature {
         id: FeatureId::mint("test:model:feature#mesh-import-limit").unwrap(),
         ordinal: 0,
         name: None,
@@ -192,13 +192,22 @@ fn mesh_feature_tessellation_collection_refuses_limit() {
             vec!["tessellation:one".into()],
         )]),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_mesh_feature_definitions(&ctx, &mut features, &[scope], &projection).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D mesh feature tessellations",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            crate::test_support::with_decode_policy(&policy, |ctx| {
+                bind_mesh_feature_definitions(
+                    ctx,
+                    &mut features.clone(),
+                    std::slice::from_ref(&scope),
+                    &projection,
+                )
+            })
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D mesh feature tessellations")
@@ -1835,7 +1844,7 @@ fn mesh_feature_scope_search_and_tessellation_scan_preserve_work_refusal() {
     };
     for operation in [
         "find F3D mesh feature scope",
-        "compare F3D mesh feature scope identities",
+        "index F3D mesh feature scopes",
         "scan F3D mesh feature tessellations",
     ] {
         let error = crate::test_support::resource_refusal_at(
