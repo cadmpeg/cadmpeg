@@ -65,7 +65,7 @@ fn incidence_face_factor_allocations_refuse_collection_limits() {
     }
     for operation in [
         "catia_face_factor_domains",
-        "catia_face_config_neighbors",
+        "catia face configuration neighbors",
         "catia_face_config_present",
         "catia_face_config_matching",
         "catia_face_config_viable",
@@ -249,7 +249,7 @@ fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
 
 #[test]
 fn ordered_face_support_refuses_selection_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let use_ = |edge| MeshBoundaryEdgeCandidate {
@@ -274,19 +274,21 @@ fn ordered_face_support_refuses_selection_collection_limit() {
     )
     .expect("service budget"));
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
-        .expect("fixture fits the input limit");
-    let mut limited_choices = choices;
-    let error = prune_ordered_face_endpoint_support(
-        &ctx,
-        &domains,
-        &mut limited_choices,
-        &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
-    )
-    .expect_err("selection collection exceeds the limit");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "catia_ordered_face_selection",
+        |cap| {
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                let mut limited_choices = choices.clone();
+                prune_ordered_face_endpoint_support(
+                    ctx,
+                    &domains,
+                    &mut limited_choices,
+                    &WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS),
+                )
+            })
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "catia_ordered_face_selection"));

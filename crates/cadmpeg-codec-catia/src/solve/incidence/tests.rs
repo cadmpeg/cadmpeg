@@ -21,44 +21,47 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 #[test]
-fn incidence_factor_checkpoint_refuses_nested_mask_copies() {
+fn incidence_factor_refinement_restores_cleared_configurations() {
     use crate::solve::incidence::{FaceFactorRefinement, PreparedFaceFactors};
     use cadmpeg_core::CodecError;
-    use std::collections::BTreeSet;
 
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        let mut factors = PreparedFaceFactors {
-            domains: Vec::new(),
-            factor_faces: Vec::new(),
-            factor_by_face: Vec::new(),
-            factors_by_edge: Vec::new(),
-            active: Some(vec![vec![1u64, 2u64]]),
-        };
-        factors.refine_edges(ctx, &[])
+    let factors = || PreparedFaceFactors {
+        domains: vec![Some(vec![vec![(0, [0, 1])], vec![(0, [1, 2])]])],
+        factor_faces: vec![0],
+        factor_by_face: vec![Some(0)],
+        factors_by_edge: vec![vec![0]],
+        active: Some(vec![vec![0b11]]),
     };
     crate::test_support::with_service_context(|ctx| {
+        let mut refined = factors();
+        let FaceFactorRefinement::Tracked(undo) = refined
+            .refine_edges(ctx, &[(0, [1, 0])])
+            .expect("service budget")
+        else {
+            panic!("one configuration agrees with the pair")
+        };
+        assert_eq!(refined.active, Some(vec![vec![0b01]]));
+        refined.restore(Some(undo));
+        assert_eq!(refined.active, Some(vec![vec![0b11]]));
+
+        let mut rejected = factors();
         assert!(matches!(
-            run(ctx).expect("service budget"),
-            FaceFactorRefinement::Tracked(_)
+            rejected
+                .refine_edges(ctx, &[(0, [5, 6])])
+                .expect("service budget"),
+            FaceFactorRefinement::Rejected
         ));
+        assert_eq!(rejected.active, Some(vec![vec![0b11]]));
     });
-    let mut refusals = BTreeSet::new();
-    for cap in 0..=4 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(CodecError::ResourceLimit(limit)) => {
-                refusals.insert(limit.operation);
-            }
-            Ok(FaceFactorRefinement::Tracked(_)) => break,
-            _ => panic!("unexpected face factor checkpoint result"),
-        }
-    }
-    assert_eq!(
-        refusals,
-        BTreeSet::from([
-            "catia_face_factor_checkpoint_rows",
-            "catia_face_factor_checkpoint_words"
-        ])
-    );
+    crate::test_support::with_collection_limit(0, |ctx| {
+        let mut refused = factors();
+        let Err(CodecError::ResourceLimit(limit)) = refused.refine_edges(ctx, &[(0, [1, 0])])
+        else {
+            panic!("the undo record refuses its first entry")
+        };
+        assert_eq!(limit.operation, "catia face configuration mask undo");
+        assert_eq!(refused.active, Some(vec![vec![0b11]]));
+    });
 }
 
 fn sparse_degrees(faces: &[&[u8]]) -> Vec<BTreeMap<usize, u8>> {
@@ -857,7 +860,7 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -907,7 +910,7 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(vec![(0, [0, 2])])
     );
@@ -1100,7 +1103,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(vec![(1, [3, 4]), (1, [3, 5]), (1, [4, 5])])
     );
@@ -1161,7 +1164,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     assert_eq!(
         search
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(vec![(0, [0, 1]), (0, [0, 2])])
     );
@@ -1175,7 +1178,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     assert_eq!(
         independent
             .branch(None)
-            .map(|options| options.map(Iterator::collect))
+            .map(|options| options.map(|(branch, _storage)| branch.collect::<Vec<_>>()))
             .expect("service resource budget"),
         Some(Vec::new())
     );

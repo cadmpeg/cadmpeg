@@ -82,7 +82,6 @@ fn compact_boundary_advance_refuses_edge_point_collection_limit() {
     }
     for operation in [
         "catia compact boundary edges",
-        "catia compact boundary selected edges",
         "catia compact boundary edge points",
         "catia_compact_boundary_candidate_pair",
         "catia_compact_boundary_candidate_rows",
