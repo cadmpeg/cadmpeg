@@ -11,58 +11,27 @@ fn assert_gui_decode_limit_at(
     dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &str,
 ) {
-    let mut options = DecodeOptions::default();
-    let cap = |options: &DecodeOptions| match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            options.policy.limits.max_collection_items
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let mut options = DecodeOptions::default();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                options.policy.limits.max_collection_items = cap
+            }
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
+                options.policy.limits.max_retained_bytes = cap
+            }
+            _ => panic!("unsupported GUI test dimension"),
         }
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            options.policy.limits.max_retained_bytes
-        }
-        _ => panic!("unsupported GUI test dimension"),
-    };
-    let set_cap = |options: &mut DecodeOptions, value| match dimension {
-        cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-            options.policy.limits.max_collection_items = value;
-        }
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-            options.policy.limits.max_retained_bytes = value;
-        }
-        _ => panic!("unsupported GUI test dimension"),
-    };
-    set_cap(&mut options, 0);
-    for _ in 0..8192 {
-        let error = FcstdCodec
+        FcstdCodec
             .decode(&mut Cursor::new(bytes), &options)
-            .expect_err("GUI decode must reach a resource refusal");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
-            error
-        else {
-            panic!("expected resource refusal: {error:?}")
-        };
-        assert_eq!(refusal.dimension, dimension);
-        let threshold = refusal
-            .used
-            .checked_add(refusal.additional)
-            .expect("resource threshold fits u64");
-        assert!(threshold > cap(&options));
-        if refusal.operation == operation {
-            set_cap(&mut options, threshold - 1);
-            let exact = FcstdCodec
-                .decode(&mut Cursor::new(bytes), &options)
-                .expect_err("one below the GUI allocation must refuse");
-            assert!(
-                matches!(exact,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(ref failure))
-                    if failure.dimension == dimension && failure.operation == operation
-                        && failure.used + failure.additional == threshold),
-                "{exact:?}"
-            );
-            return;
-        }
-        set_cap(&mut options, threshold);
-    }
-    panic!("{operation} was not reached within 8192 admissions");
+            .map(|_| ())
+            .map_err(|error| {
+                let cadmpeg_ir::DecodeFailure::Codec(error) = error else {
+                    panic!("expected codec resource refusal: {error:?}");
+                };
+                error
+            })
+    });
 }
 
 #[test]
@@ -315,14 +284,16 @@ fn gui_cosmetic_vertex_fields_refuse_at_matching_collection_limit() {
     );
 }
 
-fn populated_appearance_plan() -> super::super::AppearancePlan {
+fn populated_appearance_plan<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+) -> super::super::AppearancePlan<'ctx> {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId};
     use cadmpeg_ir::presentation::{PresentationDocument, PresentationId, ViewPresentation};
 
     let appearance_id =
         AppearanceId::mint("fcstd:appearance:object#sample").expect("valid appearance identity");
-    let mut plan = super::super::AppearancePlan::default();
+    let mut plan = super::super::AppearancePlan::new(ctx).expect("plan storage");
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: None,
@@ -369,59 +340,53 @@ fn populated_appearance_plan() -> super::super::AppearancePlan {
     plan
 }
 
-fn assert_plan_application_refusal(limit: u64, operation: &str) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let error = populated_appearance_plan()
-        .apply(&ctx, &mut cadmpeg_ir::CadIr::empty())
-        .expect_err("plan application must charge its target collection");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && failure.operation == operation),
-        "{error:?}"
-    );
+fn assert_plan_application_refusal(operation: &str) {
+    crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+        populated_appearance_plan(ctx).apply(ctx, &mut cadmpeg_ir::CadIr::empty())
+    });
 }
 
 #[test]
 fn neutral_appearances_refuse_at_caller_limit() {
-    assert_plan_application_refusal(0, "FCStd neutral appearances");
+    assert_plan_application_refusal("FCStd neutral appearances");
 }
 
 #[test]
 fn neutral_appearance_bindings_refuse_at_caller_limit() {
-    assert_plan_application_refusal(1, "FCStd neutral appearance bindings");
+    assert_plan_application_refusal("FCStd neutral appearance bindings");
 }
 
 #[test]
 fn neutral_presentation_documents_refuse_at_caller_limit() {
-    assert_plan_application_refusal(2, "FCStd neutral presentation documents");
+    assert_plan_application_refusal("FCStd neutral presentation documents");
 }
 
 #[test]
 fn neutral_view_presentations_refuse_at_caller_limit() {
-    assert_plan_application_refusal(3, "FCStd neutral view presentations");
+    assert_plan_application_refusal("FCStd neutral view presentations");
 }
 
 #[test]
 fn gui_body_update_refuses_at_caller_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let id = cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#sample").expect("valid body identity");
-    let error = super::super::push_body_update(
-        &ctx,
-        &mut super::super::AppearancePlan::default(),
-        &id,
-        super::super::Assignment::Keep,
-        Ok(None),
-    )
-    .expect_err("body update must charge its collection slot");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd GUI body updates",
+        |ctx| {
+            let id = cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#sample")
+                .expect("valid body identity");
+            let error = super::super::push_body_update(
+                &ctx,
+                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                &id,
+                super::super::Assignment::Keep,
+                Ok(None),
+            )
+            .expect_err("body update must charge its collection slot");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -431,32 +396,28 @@ fn gui_body_update_refuses_at_caller_collection_limit() {
 }
 
 #[test]
-fn gui_body_update_identity_refuses_at_caller_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+fn gui_body_update_identity_refuses_at_caller_materialized_limit() {
     let id = cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#sample").expect("valid body identity");
-    let error = super::super::push_body_update(
-        &ctx,
-        &mut super::super::AppearancePlan::default(),
-        &id,
-        super::super::Assignment::Keep,
-        Ok(None),
-    )
-    .expect_err("body update must charge its identity copy");
+    let error =
+        crate::test_support::materialized_refusal_at("FCStd GUI body update identity", |ctx| {
+            super::super::push_body_update(
+                ctx,
+                &mut super::super::AppearancePlan::new(ctx)?,
+                &id,
+                super::super::Assignment::Keep,
+                Ok(None),
+            )
+        });
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && failure.operation == "FCStd GUI body update identity"),
-        "{error:?}"
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && limit.operation == "FCStd GUI body update identity")
     );
 }
 
 fn primitive_appearance_refusal(
-    collection_limit: u64,
-    retained_limit: u64,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
 ) -> cadmpeg_core::CodecError {
     use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
     use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
@@ -475,36 +436,34 @@ fn primitive_appearance_refusal(
         end: vertex,
         tolerance: None,
     });
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    super::super::transfer_primitive_appearance(
-        &ctx,
-        &ir,
-        &mut super::super::AppearancePlan::default(),
-        &mut Vec::new(),
-        super::super::PrimitiveAppearanceSource {
-            provider_name: "Model",
-            object_id: "shape",
-            packed_color: 0x1122_3344,
-            style: super::super::PrimitiveStyle::Line(super::super::PrimitiveSize::Absent),
-            payload_prefixes: &[String::from("shape:")],
-            provenance: cadmpeg_ir::SourceProvenance::in_stream(
-                "fcstd",
-                cadmpeg_ir::stream_name!("GuiDocument.xml"),
-                17,
-            ),
-        },
-    )
-    .expect_err("primitive appearance transfer must be admitted")
+    crate::test_support::refusal_at(dimension, &[], operation, |ctx| {
+        super::super::transfer_primitive_appearance(
+            &ctx,
+            &ir,
+            &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+            &mut Vec::new(),
+            super::super::PrimitiveAppearanceSource {
+                provider_name: "Model",
+                object_id: "shape",
+                packed_color: 0x1122_3344,
+                style: super::super::PrimitiveStyle::Line(super::super::PrimitiveSize::Absent),
+                payload_prefixes: &[String::from("shape:")],
+                provenance: cadmpeg_ir::SourceProvenance::in_stream(
+                    "fcstd",
+                    cadmpeg_ir::stream_name!("GuiDocument.xml"),
+                    17,
+                ),
+            },
+        )
+    })
 }
 
 #[test]
 fn gui_primitive_target_refuses_at_caller_collection_limit() {
-    let error = primitive_appearance_refusal(0, u64::MAX);
+    let error = primitive_appearance_refusal(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd GUI primitive targets",
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -515,7 +474,10 @@ fn gui_primitive_target_refuses_at_caller_collection_limit() {
 
 #[test]
 fn gui_primitive_target_identity_refuses_at_caller_retained_limit() {
-    let error = primitive_appearance_refusal(u64::MAX, 0);
+    let error = primitive_appearance_refusal(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd GUI primitive target identity",
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -525,23 +487,10 @@ fn gui_primitive_target_identity_refuses_at_caller_retained_limit() {
 }
 
 fn assert_primitive_retained_refusal(operation: &str) {
-    let mut admitted = 0;
-    for _ in 0..24 {
-        let error = primitive_appearance_refusal(u64::MAX, admitted);
-        let cadmpeg_core::CodecError::ResourceLimit(failure) = error else {
-            panic!("expected retained refusal for {operation}: {error:?}");
-        };
-        assert_eq!(
-            failure.dimension,
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        );
-        if failure.operation == operation {
-            assert!(failure.used + failure.additional > admitted);
-            return;
-        }
-        admitted = failure.used + failure.additional;
-    }
-    panic!("did not reach retained admission for {operation}");
+    primitive_appearance_refusal(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+    );
 }
 
 #[test]
@@ -569,38 +518,40 @@ fn gui_binding_source_identity_refuses_at_retained_limit() {
     assert_primitive_retained_refusal("FCStd GUI binding source identity");
 }
 
-fn material_appearance_refusal(limit: u64) -> cadmpeg_core::CodecError {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let zero = cadmpeg_ir::scalar::FiniteBinary32::new(0.0).expect("finite zero");
-    let material = super::super::GuiMaterial {
-        ambient: 0,
-        diffuse: 0,
-        specular: 0,
-        emissive: 0,
-        shininess: zero,
-        transparency: zero,
-        image: String::new(),
-        image_path: String::new(),
-        uuid: "material-guid".into(),
-    };
-    super::super::material_appearance(
-        &ctx,
-        cadmpeg_ir::ids::AppearanceId::mint("fcstd:appearance:shape-material#sample")
-            .expect("valid appearance identity"),
-        "Provider",
-        0,
-        &material,
+fn material_appearance_refusal(operation: &str) -> cadmpeg_core::CodecError {
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        &[],
+        operation,
+        |ctx| {
+            let zero = cadmpeg_ir::scalar::FiniteBinary32::new(0.0).expect("finite zero");
+            let material = super::super::GuiMaterial {
+                ambient: 0,
+                diffuse: 0,
+                specular: 0,
+                emissive: 0,
+                shininess: zero,
+                transparency: zero,
+                image: String::new(),
+                image_path: String::new(),
+                uuid: "material-guid".into(),
+            };
+            super::super::material_appearance(
+                ctx,
+                cadmpeg_ir::ids::AppearanceId::mint("fcstd:appearance:shape-material#sample")
+                    .expect("valid appearance identity"),
+                "Provider",
+                0,
+                &material,
+            )
+            .map(|_| ())
+        },
     )
-    .expect_err("material appearance retained text must be admitted")
 }
 
 #[test]
 fn gui_material_appearance_name_refuses_at_retained_limit() {
-    let error = material_appearance_refusal(0);
+    let error = material_appearance_refusal("FCStd GUI appearance name");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -611,8 +562,7 @@ fn gui_material_appearance_name_refuses_at_retained_limit() {
 
 #[test]
 fn gui_material_asset_guid_refuses_at_retained_limit() {
-    let name = "Provider face 1 material";
-    let error = material_appearance_refusal(cadmpeg_core::decode::u64_from_index(name.len()));
+    let error = material_appearance_refusal("FCStd GUI material asset GUID");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -623,7 +573,10 @@ fn gui_material_asset_guid_refuses_at_retained_limit() {
 
 #[test]
 fn gui_planned_appearance_refuses_at_caller_limit() {
-    let error = primitive_appearance_refusal(1, u64::MAX);
+    let error = primitive_appearance_refusal(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd GUI planned appearances",
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -634,7 +587,10 @@ fn gui_planned_appearance_refuses_at_caller_limit() {
 
 #[test]
 fn gui_planned_binding_refuses_at_caller_limit() {
-    let error = primitive_appearance_refusal(2, u64::MAX);
+    let error = primitive_appearance_refusal(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd GUI planned bindings",
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -645,21 +601,25 @@ fn gui_planned_binding_refuses_at_caller_limit() {
 
 #[test]
 fn gui_removed_appearance_refuses_at_caller_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let mut plan = super::super::AppearancePlan::default();
-    let id = cadmpeg_ir::ids::AppearanceId::mint("fcstd:appearance:object#sample")
-        .expect("valid appearance identity");
-    let error = &ctx
-        .insert_hash_set(
-            &mut plan.remove_appearances,
-            id,
-            "FCStd GUI removed appearances",
-        )
-        .expect_err("removed appearance must be admitted");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd GUI removed appearances",
+        |ctx| {
+            let mut plan = super::super::AppearancePlan::new(&ctx).expect("plan storage");
+            let id = cadmpeg_ir::ids::AppearanceId::mint("fcstd:appearance:object#sample")
+                .expect("valid appearance identity");
+            let error = ctx
+                .insert_hash_set(
+                    &mut plan.remove_appearances,
+                    id,
+                    "FCStd GUI removed appearances",
+                )
+                .expect_err("removed appearance must be admitted");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -670,13 +630,17 @@ fn gui_removed_appearance_refuses_at_caller_limit() {
 
 #[test]
 fn gui_shape_payload_prefix_refuses_at_caller_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let error = super::super::shape_payload_prefixes(&ctx, &["fcstd:payload#shape"])
-        .expect_err("prefix slot must be admitted");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd GUI payload prefixes",
+        |ctx| {
+            let error = super::super::shape_payload_prefixes(&ctx, &["fcstd:payload#shape"])
+                .expect_err("prefix slot must be admitted");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -687,14 +651,17 @@ fn gui_shape_payload_prefix_refuses_at_caller_collection_limit() {
 
 #[test]
 fn gui_shape_payload_prefix_text_refuses_at_caller_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<String>());
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let error = super::super::shape_payload_prefixes(&ctx, &["fcstd:payload#shape"])
-        .expect_err("prefix text must be admitted");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        &[],
+        "FCStd GUI payload prefix text",
+        |ctx| {
+            let error = super::super::shape_payload_prefixes(&ctx, &["fcstd:payload#shape"])
+                .expect_err("prefix text must be admitted");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -706,18 +673,22 @@ fn gui_shape_payload_prefix_text_refuses_at_caller_retained_limit() {
 #[test]
 fn gui_color_list_refuses_at_caller_limit() {
     let bytes = [1_u32.to_le_bytes(), 0x1122_3344_u32.to_le_bytes()].concat();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let error = super::super::parse_color_list(
-        &ctx,
-        cadmpeg_core::decode::View::over_retained(&bytes),
-        "colors.bin",
-        false,
-    )
-    .expect_err("color list must charge before retaining its entries");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd GUI color-list entries",
+        |ctx| {
+            let error = super::super::parse_color_list(
+                &ctx,
+                cadmpeg_core::decode::View::over_retained(&bytes),
+                "colors.bin",
+                false,
+            )
+            .expect_err("color list must charge before retaining its entries");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -728,61 +699,50 @@ fn gui_color_list_refuses_at_caller_limit() {
 
 fn assert_gui_binary_list_refusal(
     payload_len: usize,
-    limit: u64,
     operation: &str,
-    parse: impl FnOnce(
+    parse: impl Fn(
         &cadmpeg_core::decode::DecodeContext<'_>,
         cadmpeg_core::decode::View<'_>,
     ) -> Result<(), cadmpeg_core::CodecError>,
 ) {
     let mut bytes = 1_u32.to_le_bytes().to_vec();
     bytes.extend(std::iter::repeat_n(0_u8, payload_len));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let error = parse(&ctx, cadmpeg_core::decode::View::over_retained(&bytes))
-        .expect_err("binary list must charge before retaining its records");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && failure.operation == operation),
-        "{error:?}"
-    );
+    crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+        parse(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+    });
 }
 
 #[test]
 fn gui_float_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(8, 0, "FCStd GUI float-list entries", |ctx, view| {
+    assert_gui_binary_list_refusal(8, "FCStd GUI float-list entries", |ctx, view| {
         super::super::parse_float_list(ctx, view, "floats")
     });
 }
 
 #[test]
 fn gui_vector_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(24, 0, "FCStd GUI vector-list entries", |ctx, view| {
+    assert_gui_binary_list_refusal(24, "FCStd GUI vector-list entries", |ctx, view| {
         super::super::parse_vector_list(ctx, view, "vectors")
     });
 }
 
 #[test]
 fn gui_placement_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(56, 0, "FCStd GUI placement-list entries", |ctx, view| {
+    assert_gui_binary_list_refusal(56, "FCStd GUI placement-list entries", |ctx, view| {
         super::super::parse_placement_list(ctx, view, "placements")
     });
 }
 
 #[test]
 fn gui_fillet_edge_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(20, 0, "FCStd GUI fillet-edge entries", |ctx, view| {
+    assert_gui_binary_list_refusal(20, "FCStd GUI fillet-edge entries", |ctx, view| {
         super::super::parse_fillet_edges(ctx, view, "fillets")
     });
 }
 
 #[test]
 fn gui_raw_material_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(24, 0, "FCStd GUI raw material entries", |ctx, view| {
+    assert_gui_binary_list_refusal(24, "FCStd GUI raw material entries", |ctx, view| {
         super::super::parse_material_list(ctx, view, 2, "material", false).map(|_| ())
     });
 }
@@ -809,19 +769,23 @@ fn gui_material_list_map_refuses_at_matching_collection_limit() {
         "materials.bin".to_owned(),
         cadmpeg_core::decode::View::over_retained(&bytes),
     )]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
-    let error = super::super::validate_gui_list_payloads(
-        &ctx,
-        &[material_list_property()],
-        &entries,
-        false,
-    )
-    .err()
-    .expect("material-list map must be admitted");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd GUI material lists",
+        |ctx| {
+            let error = super::super::validate_gui_list_payloads(
+                &ctx,
+                &[material_list_property()],
+                &entries,
+                false,
+            )
+            .err()
+            .expect("material-list map must be admitted");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref limit)
         if limit.operation == "FCStd GUI material lists")
@@ -829,29 +793,29 @@ fn gui_material_list_map_refuses_at_matching_collection_limit() {
 }
 
 #[test]
-fn gui_material_list_property_identity_refuses_at_matching_retained_limit() {
+fn gui_material_list_index_refuses_at_matching_materialized_limit() {
     let bytes = 0_u32.to_le_bytes();
     let entries = std::collections::BTreeMap::from([(
         "materials.bin".to_owned(),
         cadmpeg_core::decode::View::over_retained(&bytes),
     )]);
-    crate::test_support::assert_retained_refusal_at(
-        &[],
-        "FCStd GUI material list property identity",
-        |ctx| {
+    crate::test_support::materialized_refusal_at("FCStd GUI material lists", |ctx| {
+        let (_value, _storage) = ctx.with_scoped_storage("FCStd GUI material lookup", || {
             super::super::validate_gui_list_payloads(
                 ctx,
                 &[material_list_property()],
                 &entries,
                 false,
             )
-        },
-    );
+            .map(|_| ())
+        })?;
+        Ok(())
+    });
 }
 
 #[test]
 fn gui_material_list_refuses_at_caller_limit() {
-    assert_gui_binary_list_refusal(24, 1, "FCStd GUI material entries", |ctx, view| {
+    assert_gui_binary_list_refusal(24, "FCStd GUI material entries", |ctx, view| {
         super::super::parse_material_list(ctx, view, 2, "material", false).map(|_| ())
     });
 }
@@ -864,21 +828,24 @@ fn gui_material_string_refuses_at_caller_limit() {
     bytes.push(b'x');
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::super::GuiMaterial>());
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let error = super::super::parse_material_list(
-        &ctx,
-        cadmpeg_core::decode::View::over_retained(&bytes),
-        3,
-        "material",
-        false,
-    )
-    .err()
-    .expect("material string must charge before retaining its bytes");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        &[],
+        "FCStd GUI material string",
+        |ctx| {
+            let error = super::super::parse_material_list(
+                &ctx,
+                cadmpeg_core::decode::View::over_retained(&bytes),
+                3,
+                "material",
+                false,
+            )
+            .err()
+            .expect("material string must charge before retaining its bytes");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -909,30 +876,32 @@ fn gui_property_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn gui_provider_identity_refuses_at_retained_limit() {
+fn gui_provider_identity_refuses_at_materialized_limit() {
     let text =
         r#"<ViewProvider name="Provider With Spaces"><Properties Count="0"/></ViewProvider>"#;
     let xml = roxmltree::Document::parse(text).expect("GUI provider XML");
-    let id_len = crate::native::native_id("gui-view-provider", "Provider With Spaces").len();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("identity length fits u64");
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy)
-            .expect("provider XML is within the root limit");
-    let error = super::super::append_native_provider(
-        &ctx,
-        text,
-        xml.root_element(),
-        0,
-        None,
-        &mut Vec::new(),
-        &mut Vec::new(),
-    )
-    .expect_err("provider identity must charge before construction");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        text.as_bytes(),
+        "FreeCAD native identity",
+        |ctx| {
+            let error = super::super::append_native_provider(
+                &ctx,
+                text,
+                xml.root_element(),
+                0,
+                None,
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )
+            .expect_err("provider identity must charge before construction");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
             && failure.operation == "FreeCAD native identity"),
         "{error:?}"
     );
@@ -983,19 +952,24 @@ fn gui_provider_object_identity_refuses_at_retained_limit() {
 
 #[test]
 fn gui_provider_key_refuses_before_encoding() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("A%20B%23".len()) - 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let error = super::super::provider_identity_key(&ctx, "A B#")
-        .expect_err("encoded provider key must be charged");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        &[],
+        "FCStd GUI provider key",
+        |ctx| {
+            let error = super::super::provider_identity_key(&ctx, "A B#")
+                .expect_err("encoded provider key must be charged");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
             && failure.operation == "FCStd GUI provider key"),
         "{error:?}"
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
@@ -1011,19 +985,24 @@ fn gui_provider_key_refuses_before_encoding() {
 fn gui_object_appearance_identity_refuses_at_retained_limit() {
     let key = cadmpeg_ir::ids::IdentityKey::encode_segment("A B#");
     let identity = format!("fcstd:appearance:object#{key}");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(identity.len()) - 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let error = super::super::object_appearance_id(&ctx, &key)
-        .expect_err("appearance identity must charge before construction");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        &[],
+        "FCStd GUI object appearance identity",
+        |ctx| {
+            let error = super::super::object_appearance_id(&ctx, &key)
+                .expect_err("appearance identity must charge before construction");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
             && failure.operation == "FCStd GUI object appearance identity"),
         "{error:?}"
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
@@ -1040,18 +1019,19 @@ fn assert_gui_identity_refusal(
     operation: &str,
     make: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<String, cadmpeg_core::CodecError>,
 ) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let error = make(&ctx).expect_err("identity must charge before construction");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        &[],
+        operation,
+        |ctx| make(ctx).map(|_| ()),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
             && failure.operation == operation),
         "{error:?}"
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
@@ -1133,40 +1113,24 @@ fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("service profile admits the GUI state");
 
-    let mut options = DecodeOptions::default();
-    // The ZIP snapshot retains four copies of each decoded central-directory name.
-    let zip_names = 4 * ("Document.xml".len() + "GuiDocument.xml".len());
-    options.policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(zip_names + document.len() + gui.len());
-    let mut error = None;
-    for _ in 0..512 {
-        let refused = FcstdCodec
-            .decode(&mut Cursor::new(&bytes), &options)
-            .expect_err("GUI text copy must be admitted");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            &refused
-        else {
-            panic!("expected retained refusal: {refused:?}");
-        };
-        assert_eq!(
-            limit.dimension,
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes
-        );
-        if limit.operation.starts_with("FCStd GUI ") {
-            let exact = limit.used + limit.additional - 1;
-            options.policy.limits.max_retained_bytes = exact;
-            error = Some(
-                FcstdCodec
-                    .decode(&mut Cursor::new(&bytes), &options)
-                    .expect_err("one byte below GUI text need refuses"),
-            );
-            break;
-        }
-        let next = limit.used + limit.additional;
-        assert!(next > options.policy.limits.max_retained_bytes);
-        options.policy.limits.max_retained_bytes = next;
-    }
-    let error = error.expect("GUI charge reached within fixture admissions");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd GUI state XML",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_retained_bytes = cap;
+            FcstdCodec
+                .decode(&mut Cursor::new(&bytes), &options)
+                .map(|_| ())
+                .map_err(|error| {
+                    let cadmpeg_ir::DecodeFailure::Codec(error) = error else {
+                        panic!("expected codec resource refusal: {error:?}");
+                    };
+                    error
+                })
+        },
+    );
+    let error = cadmpeg_ir::DecodeFailure::Codec(error.into());
     assert!(
         matches!(
             &error,
@@ -1200,25 +1164,27 @@ fn y4_2_gui_xml_tree_is_admitted_before_allocation() {
     )
     .expect("service profile admits the GUI document");
 
-    let mut limited = cadmpeg_core::decode::DecodePolicy::service();
-    limited.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(xml, &arena, &limited)
-        .expect("limited GUI context");
-    let error = super::super::transfer(
-        &ctx,
-        &mut cadmpeg_ir::CadIr::empty(),
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
         xml,
-        &super::super::GuiSources {
-            entries: &std::collections::BTreeMap::new(),
-            objects: &[],
-            properties: &[],
-            payloads: &[],
-            element_maps: &[],
-            requires_alpha_conversion: false,
+        "FreeCAD XML tree",
+        |ctx| {
+            super::super::transfer(
+                ctx,
+                &mut cadmpeg_ir::CadIr::empty(),
+                xml,
+                &super::super::GuiSources {
+                    entries: &std::collections::BTreeMap::new(),
+                    objects: &[],
+                    properties: &[],
+                    payloads: &[],
+                    element_maps: &[],
+                    requires_alpha_conversion: false,
+                },
+            )
+            .map(|_| ())
         },
-    )
-    .err()
-    .expect("GUI XML node count must be charged before parsing");
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1231,23 +1197,32 @@ fn y4_2_gui_xml_tree_is_admitted_before_allocation() {
 fn gui_state_records_refuse_at_caller_limit() {
     let text = "<Document><Camera/></Document>";
     let xml = roxmltree::Document::parse(text).expect("GUI document XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy)
-            .expect("GUI document context");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        text.as_bytes(),
+        "FCStd GUI state records",
+        |ctx| {
+            super::super::transfer_schema_one(
+                &ctx,
+                &cadmpeg_ir::CadIr::empty(),
+                text,
+                &xml,
+                None,
+                None,
+                &super::super::GuiSources {
+                    entries: &std::collections::BTreeMap::new(),
+                    objects: &[],
+                    properties: &[],
+                    payloads: &[],
+                    element_maps: &[],
+                    requires_alpha_conversion: false,
+                },
+            )
+            .map(|_| ())
+        },
+    );
     assert!(
-        matches!(super::super::transfer_schema_one(&ctx, &cadmpeg_ir::CadIr::empty(), text,
-        &xml, None, None, &super::super::GuiSources {
-            entries: &std::collections::BTreeMap::new(),
-            objects: &[],
-            properties: &[],
-            payloads: &[],
-            element_maps: &[],
-            requires_alpha_conversion: false,
-        }),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FCStd GUI state records")
     );
 }
@@ -1271,23 +1246,32 @@ fn gui_object_name_index_refuses_at_caller_limit() {
         order: 0,
         data: None,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy)
-            .expect("GUI document context");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        text.as_bytes(),
+        "FCStd GUI object names",
+        |ctx| {
+            super::super::transfer_schema_one(
+                &ctx,
+                &cadmpeg_ir::CadIr::empty(),
+                text,
+                &xml,
+                None,
+                None,
+                &super::super::GuiSources {
+                    entries: &std::collections::BTreeMap::new(),
+                    objects: std::slice::from_ref(&object),
+                    properties: &[],
+                    payloads: &[],
+                    element_maps: &[],
+                    requires_alpha_conversion: false,
+                },
+            )
+            .map(|_| ())
+        },
+    );
     assert!(
-        matches!(super::super::transfer_schema_one(&ctx, &cadmpeg_ir::CadIr::empty(), text,
-        &xml, None, None, &super::super::GuiSources {
-            entries: &std::collections::BTreeMap::new(),
-            objects: &[object],
-            properties: &[],
-            payloads: &[],
-            element_maps: &[],
-            requires_alpha_conversion: false,
-        }),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FCStd GUI object names")
     );
 }
@@ -1303,15 +1287,25 @@ fn gui_presentation_document_refuses_at_caller_limit() {
         }],
         ..Default::default()
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
-        &mut super::super::AppearancePlan::default(), &graph, None, &mut Vec::new()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FCStd presentation documents"));
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd presentation documents",
+        |ctx| {
+            super::super::transfer_neutral_presentation(
+                &ctx,
+                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                &graph,
+                None,
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "FCStd presentation documents")
+    );
 }
 
 fn view_provider_graph() -> super::super::Graph {
@@ -1337,7 +1331,7 @@ fn gui_view_object_identity_refuses_at_matching_retained_limit() {
     crate::test_support::assert_retained_refusal_at(&[], "FCStd view object identity", |ctx| {
         super::super::transfer_neutral_presentation(
             ctx,
-            &mut super::super::AppearancePlan::default(),
+            &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
             &graph,
             None,
             &mut Vec::new(),
@@ -1351,7 +1345,7 @@ fn gui_view_native_reference_refuses_at_matching_retained_limit() {
     crate::test_support::assert_retained_refusal_at(&[], "FCStd view native reference", |ctx| {
         super::super::transfer_neutral_presentation(
             ctx,
-            &mut super::super::AppearancePlan::default(),
+            &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
             &graph,
             None,
             &mut Vec::new(),
@@ -1378,7 +1372,7 @@ fn gui_view_presentation_identity_refuses_at_matching_retained_limit() {
         |ctx| {
             super::super::transfer_neutral_presentation(
                 ctx,
-                &mut super::super::AppearancePlan::default(),
+                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
                 &graph,
                 None,
                 &mut Vec::new(),
@@ -1400,15 +1394,25 @@ fn gui_view_presentation_refuses_at_caller_limit() {
         }],
         ..Default::default()
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
-        &mut super::super::AppearancePlan::default(), &graph, None, &mut Vec::new()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FCStd view presentations"));
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd view presentations",
+        |ctx| {
+            super::super::transfer_neutral_presentation(
+                &ctx,
+                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                &graph,
+                None,
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "FCStd view presentations")
+    );
 }
 
 #[test]
@@ -1430,15 +1434,25 @@ fn gui_presentation_states_refuse_at_caller_limit() {
         }],
         ..Default::default()
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
-        &mut super::super::AppearancePlan::default(), &graph, None, &mut Vec::new()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FCStd presentation states"));
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd presentation states",
+        |ctx| {
+            super::super::transfer_neutral_presentation(
+                &ctx,
+                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                &graph,
+                None,
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "FCStd presentation states")
+    );
 }
 
 #[test]
@@ -1460,15 +1474,25 @@ fn gui_presentation_assets_refuse_at_caller_limit() {
         }],
         ..Default::default()
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
-        &mut super::super::AppearancePlan::default(), &graph, None, &mut Vec::new()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FCStd presentation assets"));
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd presentation assets",
+        |ctx| {
+            super::super::transfer_neutral_presentation(
+                &ctx,
+                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                &graph,
+                None,
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "FCStd presentation assets")
+    );
 }
 
 #[test]
@@ -1491,89 +1515,96 @@ fn gui_asset_identity_refuses_at_retained_limit() {
         }],
         ..Default::default()
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        document_id.len()
-            + std::mem::size_of::<cadmpeg_ir::presentation::PresentationState>()
-            + "Other".len()
-            + std::mem::size_of::<String>()
-            + crate::native::native_id("entry", "asset").len()
-            - 1,
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        &[],
+        "FreeCAD native identity",
+        |ctx| {
+            super::super::transfer_neutral_presentation(
+                &ctx,
+                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                &graph,
+                None,
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        },
     );
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
-        &mut super::super::AppearancePlan::default(), &graph, None, &mut Vec::new()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD native identity"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "FreeCAD native identity")
+    );
 }
 
 #[test]
 fn gui_state_identity_refuses_at_retained_limit() {
     let xml = "<Camera/>";
     let document = roxmltree::Document::parse(xml).expect("GUI state XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        "Camera".len()
-            + xml.len()
-            + "Camera:0".len()
-            + crate::native::native_id("gui-state", "Camera:0").len()
-            - 1,
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        xml.as_bytes(),
+        "FreeCAD native identity",
+        |ctx| super::super::gui_state(&ctx, xml, 0, document.root_element()).map(|_| ()),
     );
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
-            .expect("GUI state context");
     assert!(
-        matches!(super::super::gui_state(&ctx, xml, 0, document.root_element()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FreeCAD native identity")
     );
 }
 
 #[test]
 fn gui_presentation_property_map_refuses_at_caller_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd GUI presentation property map",
+        |ctx| {
+            super::super::gui_named_entries(&ctx, || Ok("record".into()), [("key", "value")])
+                .map(|_| ())
+        },
+    );
     assert!(
-        matches!(super::super::gui_named_entries(&ctx, || Ok("record".into()), [("key", "value")]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FCStd GUI presentation property map")
     );
 }
 
 #[test]
 fn gui_refused_property_list_refuses_at_caller_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd GUI refused property keys",
+        |ctx| {
+            super::super::gui_named_entries(
+                &ctx,
+                || Ok("record".into()),
+                [("key", "first"), ("key", "second")],
+            )
+            .map(|_| ())
+        },
+    );
     assert!(
-        matches!(super::super::gui_named_entries(&ctx, || Ok("record".into()),
-        [("key", "first"), ("key", "second")]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FCStd GUI refused property keys")
     );
 }
 
 #[test]
 fn gui_refused_property_loss_refuses_at_caller_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    let refused = [cadmpeg_core::text::NamedEntryError::Blank {
-        record: "record".into(),
-    }];
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FCStd GUI refused property losses",
+        |ctx| {
+            let refused = [cadmpeg_core::text::NamedEntryError::Blank {
+                record: "record".into(),
+            }];
+            super::super::charge_refused_gui_keys(&ctx, &mut Vec::new(), &refused).map(|_| ())
+        },
+    );
     assert!(
-        matches!(super::super::charge_refused_gui_keys(&ctx, &mut Vec::new(), &refused),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FCStd GUI refused property losses")
     );
 }
@@ -1614,16 +1645,25 @@ fn assert_gui_provider_service(xml: &str) {
 fn gui_provider_record_refuses_at_caller_limit() {
     let xml = "<ViewProvider name=\"P\"><Properties Count=\"0\"/></ViewProvider>";
     let document = roxmltree::Document::parse(xml).expect("GUI provider XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
-            .expect("GUI provider context");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        xml.as_bytes(),
+        "FCStd GUI provider records",
+        |ctx| {
+            super::super::append_native_provider(
+                &ctx,
+                xml,
+                document.root_element(),
+                0,
+                None,
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        },
+    );
     assert!(
-        matches!(super::super::append_native_provider(&ctx, xml, document.root_element(), 0,
-        None, &mut Vec::new(), &mut Vec::new()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FCStd GUI provider records")
     );
 }
@@ -1632,16 +1672,25 @@ fn gui_provider_record_refuses_at_caller_limit() {
 fn gui_provider_property_nodes_refuse_at_caller_limit() {
     let xml = "<ViewProvider name=\"P\"><Properties Count=\"1\"><Property name=\"A\" type=\"T\"/></Properties></ViewProvider>";
     let document = roxmltree::Document::parse(xml).expect("GUI provider XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
-            .expect("GUI provider context");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        xml.as_bytes(),
+        "FCStd GUI provider property nodes",
+        |ctx| {
+            super::super::append_native_provider(
+                &ctx,
+                xml,
+                document.root_element(),
+                0,
+                None,
+                &mut Vec::new(),
+                &mut Vec::new(),
+            )
+            .map(|_| ())
+        },
+    );
     assert!(
-        matches!(super::super::append_native_provider(&ctx, xml, document.root_element(), 0,
-        None, &mut Vec::new(), &mut Vec::new()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FCStd GUI provider property nodes")
     );
 }
@@ -1673,14 +1722,17 @@ fn y4_2_gui_state_xml_copy_refuses_at_the_retained_byte_limit() {
     let xml = "<Camera/>";
     assert_gui_state_service(xml);
     let node = roxmltree::Document::parse(xml).expect("GUI state XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("Camera".len());
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
-            .expect("GUI state context");
-    let error = super::super::gui_state(&ctx, xml, 0, node.root_element())
-        .expect_err("GUI state raw XML copy must be charged");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        xml.as_bytes(),
+        "FCStd GUI state XML",
+        |ctx| {
+            let error = super::super::gui_state(&ctx, xml, 0, node.root_element())
+                .expect_err("GUI state raw XML copy must be charged");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1694,14 +1746,17 @@ fn y4_2_gui_state_values_are_admitted_before_allocation() {
     let xml = "<Camera><Settings/></Camera>";
     assert_gui_state_service(xml);
     let document = roxmltree::Document::parse(xml).expect("GUI state XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
-            .expect("GUI state context");
-    let error = super::super::gui_state(&ctx, xml, 0, document.root_element())
-        .expect_err("GUI state values must be charged before allocation");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        xml.as_bytes(),
+        "FCStd GUI state values",
+        |ctx| {
+            let error = super::super::gui_state(&ctx, xml, 0, document.root_element())
+                .expect_err("GUI state values must be charged before allocation");
+            Err::<(), cadmpeg_core::CodecError>(error)
+        },
+    );
+
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1715,15 +1770,14 @@ fn gui_state_side_entry_refuses_at_caller_limit() {
     let xml = "<Camera><Settings file=\"asset\"/></Camera>";
     assert_gui_state_service(xml);
     let document = roxmltree::Document::parse(xml).expect("GUI state XML");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
-            .expect("GUI state context");
+    let error = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        xml.as_bytes(),
+        "FCStd GUI side entry references",
+        |ctx| super::super::gui_state(&ctx, xml, 0, document.root_element()).map(|_| ()),
+    );
     assert!(
-        matches!(super::super::gui_state(&ctx, xml, 0, document.root_element()),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "FCStd GUI side entry references")
     );
 }
