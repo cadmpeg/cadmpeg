@@ -29,10 +29,11 @@ pub(super) fn merge_curve_plan(
     edge: u32,
     candidate: CurvePlan,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if conflicts.contains(&edge) {
+    const LOOKUP: &str = "catia_b5_edge_curve_plan_lookup";
+    if ctx.contains_hash_set(conflicts, &edge, LOOKUP)? {
         return Ok(());
     }
-    let Some(existing) = plans.get_mut(&edge) else {
+    let Some(existing) = ctx.get_mut_hash_map(plans, &edge, LOOKUP)? else {
         ctx.insert_hash_map(plans, edge, candidate, "catia_b5_edge_curve_plans")?;
         return Ok(());
     };
@@ -48,13 +49,13 @@ pub(super) fn merge_curve_plan(
         .cache_fit_tolerance
         .zip(candidate.cache_fit_tolerance)
         .is_some_and(|(left, right)| left != right);
-    if existing.geometry != candidate.geometry
+    if !curve_geometries_equal(ctx, &existing.geometry, &candidate.geometry)?
         || range_conflict
         || edge_tolerance_conflict
         || cache_tolerance_conflict
     {
         ctx.insert_hash_set(conflicts, edge, "catia_b5_conflicting_edge_curves")?;
-        plans.remove(&edge);
+        ctx.remove_hash_map(plans, &edge, LOOKUP)?;
         return Ok(());
     }
     if existing.parameter_range.is_none() {
@@ -67,6 +68,53 @@ pub(super) fn merge_curve_plan(
         existing.cache_fit_tolerance = candidate.cache_fit_tolerance;
     }
     Ok(())
+}
+
+/// Compares the lanes of two NURBS carriers without materializing poles.
+pub(super) fn nurbs_curves_equal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+    right: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
+    if left.degree() != right.degree() || left.periodic() != right.periodic() {
+        return Ok(false);
+    }
+    if !ctx.equal(left.knots().as_slice(), right.knots().as_slice(), operation)? {
+        return Ok(false);
+    }
+    match (left.pole_rows(), right.pole_rows()) {
+        (NurbsPoles3::Polynomial { points: left }, NurbsPoles3::Polynomial { points: right }) => {
+            if left.len() != right.len() { return Ok(false); }
+            ctx.all_by(left.iter().zip(right), |(left, right)| Ok(left == right), operation)
+        }
+        (NurbsPoles3::Rational { points: left }, NurbsPoles3::Rational { points: right }) => {
+            if left.len() != right.len() { return Ok(false); }
+            ctx.all_by(left.iter().zip(right), |(left, right)| Ok(left == right), operation)
+        }
+        _ => Ok(false),
+    }
+}
+
+/// B5 plans contain fixed-size analytic carriers or NURBS carriers.
+fn curve_geometries_equal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &CurveGeometry,
+    right: &CurveGeometry,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    match (left, right) {
+        (CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(left)),
+         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(right))) =>
+            nurbs_curves_equal(ctx, left, right, "catia_b5_edge_curve_plan_comparison"),
+        (CurveGeometry::Solved(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_)
+            | SolvedCurveGeometry::Ellipse(_) | SolvedCurveGeometry::Parabola(_)
+            | SolvedCurveGeometry::Hyperbola(_) | SolvedCurveGeometry::Degenerate(_)),
+         CurveGeometry::Solved(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_)
+            | SolvedCurveGeometry::Ellipse(_) | SolvedCurveGeometry::Parabola(_)
+            | SolvedCurveGeometry::Hyperbola(_) | SolvedCurveGeometry::Degenerate(_))) => Ok(left == right),
+        _ => Ok(false),
+    }
 }
 
 fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
@@ -111,23 +159,26 @@ pub(super) fn b5_edge_support_definition(
     let ([first] | [first, _]) = supports else {
         return Ok(None);
     };
-    if ctx
-        .admit_iter(supports, "catia_b5_edge_support_domain_scan")?
-        .any(|(_, pcurve, range)| {
-            pcurves
-                .get(pcurve)
-                .is_none_or(|(_, _, domain)| bounded_occurrence_range(*range, *domain).is_none())
-        })
-    {
+    const LOOKUP: &str = "catia_b5_edge_support_lookup";
+    if ctx.any_by(
+        supports,
+        |(_, pcurve, range)| {
+            Ok(ctx
+                .get_btree_map(pcurves, pcurve, LOOKUP)?
+                .is_none_or(|(_, _, domain)| bounded_occurrence_range(*range, *domain).is_none()))
+        },
+        "catia_b5_edge_support_domain_scan",
+    )? {
         return Ok(None);
     }
     let parameter_range = if let Some(parameter_range) = solved_parameter_range {
         parameter_range
     } else if first.2[0] < first.2[1]
-        && ctx
-            .admit_iter(supports, "catia_b5_edge_support_range_scan")?
-            .skip(1)
-            .all(|support| support.2 == first.2)
+        && ctx.all_by(
+            supports.iter().skip(1),
+            |support| Ok(support.2 == first.2),
+            "catia_b5_edge_support_range_scan",
+        )?
     {
         first.2.map(FiniteReal::get)
     } else {
@@ -142,7 +193,7 @@ pub(super) fn b5_edge_support_definition(
         .zip(sides.iter_mut())
     {
         let (surface, pcurve, support_range) = support;
-        let Some(surface_id) = surface_ids.get(surface) else {
+        let Some(surface_id) = ctx.get_btree_map(surface_ids, surface, LOOKUP)? else {
             return Ok(None);
         };
         side.surface =
@@ -151,7 +202,7 @@ pub(super) fn b5_edge_support_definition(
         let mapped_range = (support_range != parameter_range)
             .then(|| DirectedParameterRange::new(support_range).ok())
             .flatten();
-        let Some((geometry, _, _)) = pcurves.get(pcurve) else {
+        let Some((geometry, _, _)) = ctx.get_btree_map(pcurves, pcurve, LOOKUP)? else {
             return Ok(None);
         };
         side.pcurve = Some(SupportPcurve::new(
@@ -221,7 +272,7 @@ pub(super) fn orient_b5_supports_to_edge(
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for support in supports {
+    for support in ctx.admit_iter(supports, "catia_b5_edge_support_orientation")? {
         let Some([start, end]) = b5_support_endpoints(ctx, support, surfaces, pcurves)? else {
             continue;
         };
@@ -279,10 +330,11 @@ pub(super) fn b5_support_endpoints(
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> Result<Option<[[f64; 3]; 2]>, cadmpeg_core::CodecError> {
-    let Some(surface) = surfaces.get(surface) else {
+    const LOOKUP: &str = "catia_b5_support_endpoint_lookup";
+    let Some(surface) = ctx.get_btree_map(surfaces, surface, LOOKUP)? else {
         return Ok(None);
     };
-    let Some((pcurve, _, domain)) = pcurves.get(pcurve) else {
+    let Some((pcurve, _, domain)) = ctx.get_btree_map(pcurves, pcurve, LOOKUP)? else {
         return Ok(None);
     };
     if bounded_occurrence_range(*range, *domain).is_none() {
@@ -369,6 +421,7 @@ pub(super) fn emit_edges(
     surface_ids: &BTreeMap<u32, SurfaceId>,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<HashMap<u32, EdgeId>, cadmpeg_core::CodecError> {
+    const LOOKUP: &str = "catia_b5_emit_edge_plan_lookup";
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
     for &edge_id in admission
@@ -394,10 +447,17 @@ pub(super) fn emit_edges(
             CurveId::mint,
             "catia_b5_edge_curve_id",
         )?;
-        let endpoints = graph.vertices.edges()[&edge_id]
+        let endpoints = admission
+            .context()
+            .get_btree_map(graph.vertices.edges(), &edge_id, LOOKUP)?
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("planned B5 edge without vertices"))?
             .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len()));
         let curve_plan =
-            if let Some(plan) = plan.edge_curve_plan.remove(&edge_id) {
+            if let Some(plan) =
+                admission
+                    .context()
+                    .remove_hash_map(&mut plan.edge_curve_plan, &edge_id, LOOKUP)?
+            {
                 plan
             } else {
                 CurvePlan {
@@ -413,7 +473,10 @@ pub(super) fn emit_edges(
                 }
             };
 
-        let helix = plan.edge_helix_plan.remove(&edge_id);
+        let helix =
+            admission
+                .context()
+                .remove_hash_map(&mut plan.edge_helix_plan, &edge_id, LOOKUP)?;
         let edge_range = curve_plan.parameter_range;
         let support_curve_range = curve_plan_parameter_range(&curve_plan);
         let edge_tolerance = curve_plan.edge_tolerance;
@@ -460,10 +523,18 @@ pub(super) fn emit_edges(
                 "cylinder_parametric_helix",
                 helix.definition,
             ))
-        } else if plan.exact_support_edges.contains(&edge_id)
-            && plan.exact_support_curves.contains(&edge_id)
+        } else if admission
+            .context()
+            .contains_hash_set(&plan.exact_support_edges, &edge_id, LOOKUP)?
+            && admission
+                .context()
+                .contains_hash_set(&plan.exact_support_curves, &edge_id, LOOKUP)?
         {
-            if let Some(supports) = plan.edge_support_plan.get(&edge_id) {
+            if let Some(supports) =
+                admission
+                    .context()
+                    .get_btree_map(&plan.edge_support_plan, &edge_id, LOOKUP)?
+            {
                 b5_edge_support_definition(
                     admission.context(),
                     supports,
