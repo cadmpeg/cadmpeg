@@ -529,7 +529,10 @@ pub(crate) fn annotations(
         )?;
         let (mut positions, mut positions_storage) =
             ctx.scoped_vector_storage(0, "SWIFT provenance matches")?;
-        let mut remaining = indexed[start..].iter();
+        let mut remaining = indexed
+            .get(start..)
+            .ok_or_else(|| CodecError::malformed("invalid SWIFT provenance index"))?
+            .iter();
         while let Some(&(id, position)) =
             ctx.next_charged(&mut remaining, "scan SWIFT provenance matches")?
         {
@@ -551,7 +554,9 @@ pub(crate) fn annotations(
             "order SWIFT provenance matches",
         )?;
         for position in ctx.admit_iter(positions, "emit SWIFT annotation provenance")? {
-            let annotation = &projected[position];
+            let annotation = projected
+                .get(position)
+                .ok_or_else(|| CodecError::malformed("invalid SWIFT provenance position"))?;
             crate::annotations::note(
                 ctx,
                 annotations,
@@ -2437,7 +2442,7 @@ fn empty_pattern_hole_nominal(
     Ok(pattern_hole_nominals
         .map(|nominals| {
             Ok::<_, cadmpeg_core::CodecError>(
-                ctx.get_btree_map(&(nominals), name, "look up SLDPRT ordered key")?
+                ctx.get_btree_map(nominals, name, "look up SLDPRT ordered key")?
                     .copied(),
             )
         })
@@ -3180,7 +3185,10 @@ fn rendered_dimension_literals(
             |candidate| Ok(candidate == token.as_bytes()),
             "scan SWIFT rendered dimension tokens",
         )? {
-            let tail = remainder.get(at + token.len()..).unwrap_or_default();
+            let tail = remainder
+                .get(at..)
+                .and_then(|tail| tail.get(token.len()..))
+                .unwrap_or_default();
             // Only the leading whitespace and the literal are read, so each
             // occurrence pays for the bytes it visits.
             let start = ctx
@@ -3947,8 +3955,14 @@ fn direct_subfeature_ids<'a>(
     )? {
         return Ok(None);
     }
-    Ok(Some(collection.entity.related.iter().map(|applied| {
-        applied.entity.features.references[0].id.as_str()
+    // Every validated entry has one reference, so each entry yields once.
+    Ok(Some(collection.entity.related.iter().flat_map(|applied| {
+        applied
+            .entity
+            .features
+            .references
+            .iter()
+            .map(|reference| reference.id.as_str())
     })))
 }
 
@@ -4043,10 +4057,9 @@ fn integer_modifier(value: Option<i32>) -> Vec<String> {
     }
 }
 
-fn defined_area(
-    ctx: &DecodeContext<'_>,
-    entity: &Entity,
-) -> Result<(Option<PmiValue>, Option<String>, Option<PmiValue>), CodecError> {
+type DefinedArea = (Option<PmiValue>, Option<String>, Option<PmiValue>);
+
+fn defined_area(ctx: &DecodeContext<'_>, entity: &Entity) -> Result<DefinedArea, CodecError> {
     if ctx
         .get_btree_map(&entity.integers, "PerUnitArea", "look up SWIFT attribute")?
         .is_none_or(|value| *value == 0)

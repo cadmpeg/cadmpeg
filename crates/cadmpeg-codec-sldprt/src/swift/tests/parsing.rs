@@ -741,8 +741,14 @@ fn swift_provenance_index_preserves_overlapping_source_prefixes() {
     );
     for (id, index) in [("A:child", 1), ("A", 1), ("Aother", 2)] {
         assert_eq!(
-            provenance.provenance[pmi_id(id).unwrap().as_str()].offset,
-            cadmpeg_core::decode::u64_from_index(parsed.annotations.entities[index].offset)
+            provenance
+                .provenance
+                .get(pmi_id(id).unwrap().as_str())
+                .unwrap()
+                .offset,
+            cadmpeg_core::decode::u64_from_index(
+                parsed.annotations.entities.get(index).unwrap().offset
+            )
         );
     }
 }

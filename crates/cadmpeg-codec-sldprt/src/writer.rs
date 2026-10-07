@@ -561,19 +561,16 @@ fn remapped_partition_section(
         return Ok(None);
     };
     let native_id = configuration.id.as_str();
-    let new_index = match match ir
+    let Some(configuration) = ir
         .model
         .configurations
         .iter()
         .find(|configuration| configuration.native_ref.as_deref() == Some(native_id))
-    {
-        Some(value) => value,
-        None => return Ok(None),
-    }
-    .source_index
-    {
-        Some(value) => value,
-        None => return Ok(None),
+    else {
+        return Ok(None);
+    };
+    let Some(new_index) = configuration.source_index else {
+        return Ok(None);
     };
     Ok(Some(format!("Contents/Config-{new_index}-Partition")))
 }
