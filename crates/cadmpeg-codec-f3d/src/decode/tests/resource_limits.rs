@@ -1184,11 +1184,14 @@ fn geometry_loss_text_refuses_retained_limit() {
 
 #[test]
 fn geometry_kind_counts_keep_sorted_report_text() {
-    let counts = std::collections::BTreeMap::from([("plane".into(), 2), ("spline".into(), 3)]);
-    assert_eq!(
-        super::super::KindCounts(&counts).to_string(),
-        "plane=2, spline=3"
-    );
+    let counts = std::collections::BTreeMap::<String, usize>::from([
+        ("plane".into(), 2),
+        ("spline".into(), 3),
+    ]);
+    crate::test_support::with_decode_context(|ctx| {
+        let (text, _storage) = super::super::format_kind_counts(ctx, &counts).unwrap();
+        assert_eq!(text, "plane=2, spline=3");
+    });
 }
 
 #[test]
@@ -1569,3 +1572,23 @@ fn missing_geometry_loss_growth_preserves_collection_refusal() {
 
 mod searches;
 mod text_and_records;
+
+#[test]
+fn geometry_kind_counts_preserve_scan_and_storage_refusals() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let counts = std::collections::BTreeMap::<String, usize>::from([
+        ("plane".into(), 2),
+        ("spline".into(), 3),
+    ]);
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "scan F3D kind counts"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "format F3D kind counts",
+        ),
+    ] {
+        crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            super::super::format_kind_counts(ctx, &counts).map(|_| ())
+        });
+    }
+}

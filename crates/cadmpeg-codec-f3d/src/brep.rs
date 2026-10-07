@@ -48,7 +48,7 @@ fn merge_brep_counts(
     target: &mut BTreeMap<String, usize>,
     source: BTreeMap<String, usize>,
 ) -> Result<(), CodecError> {
-    for (kind, count) in source {
+    for (kind, count) in ctx.admit_iter(source, "scan F3D BREP statistic kinds")? {
         if let Some(total) =
             ctx.get_mut_btree_map(target, kind.as_str(), "merge F3D BREP statistic kinds")?
         {
@@ -468,24 +468,28 @@ fn sketch_link_payload(
     };
     Ok(match (*form, payload) {
         (3, [AttributeValue::String(field)]) => {
-            let mut fields = field.split_ascii_whitespace();
-            let (
-                Some(sketch_curve_id),
-                Some(ref_b),
-                Some(sense),
-                Some("0"),
-                Some(role),
-                Some(closure),
-                None,
-            ) = (
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-                fields.next(),
-            )
+            let mut bytes = field.as_bytes().iter().enumerate();
+            let mut fields = [None; 7];
+            for member in &mut fields {
+                let Some((start, _)) = ctx.find_by(
+                    &mut bytes,
+                    |(_, byte)| Ok(!byte.is_ascii_whitespace()),
+                    "scan F3D sketch link fields",
+                )?
+                else {
+                    continue;
+                };
+                let end = ctx
+                    .find_by(
+                        &mut bytes,
+                        |(_, byte)| Ok(byte.is_ascii_whitespace()),
+                        "scan F3D sketch link fields",
+                    )?
+                    .map_or(field.len(), |(end, _)| end);
+                *member = Some(&field[start..end]);
+            }
+            let [Some(sketch_curve_id), Some(ref_b), Some(sense), Some("0"), Some(role), Some(closure), None] =
+                fields
             else {
                 return Ok(None);
             };
@@ -602,7 +606,8 @@ fn persistent_design_links(
         return Ok(Vec::new());
     }
     let mut links = Vec::new();
-    for values in rest.chunks_exact(group_width) {
+    let mut groups = rest.chunks_exact(group_width);
+    while let Some(values) = ctx.next_charged(&mut groups, "scan F3D persistent design groups")? {
         let (entity_kind, design_id, design_reference) = match values {
             [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0)]
             | [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0), AttributeValue::Integer(0)] => {
@@ -696,7 +701,10 @@ fn persistent_subentity_tags(
             return Ok(Vec::new());
         };
         let mut design_references = Vec::new();
-        for value in reference_values {
+        let mut references = reference_values.iter();
+        while let Some(value) =
+            ctx.next_charged(&mut references, "scan F3D persistent subentity references")?
+        {
             let AttributeValue::Integer(value) = value else {
                 return Ok(Vec::new());
             };
@@ -772,11 +780,14 @@ fn generic_tag_payload<'a>(
     else {
         return Ok(None);
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(marker.len()),
-        "compare Fusion generic-tag marker",
-    )?;
-    if left_version != right_version || marker != "generic_tag_attrib_def " || *group_count < 0 {
+    if left_version != right_version
+        || !ctx.equal(
+            marker.as_str(),
+            "generic_tag_attrib_def ",
+            "compare Fusion generic-tag marker",
+        )?
+        || *group_count < 0
+    {
         return Ok(None);
     }
     let version = match *left_version {

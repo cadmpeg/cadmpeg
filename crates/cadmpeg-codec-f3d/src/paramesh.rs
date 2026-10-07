@@ -538,10 +538,7 @@ impl UniqueFaceGroups {
                 ));
             }
             let mut canonical = [0; 36];
-            for (target, source) in canonical.iter_mut().zip(
-                ctx.admit_iter(guid.as_bytes(), "canonicalize paramesh group GUID")?
-                    .copied(),
-            ) {
+            for (target, source) in canonical.iter_mut().zip(guid.as_bytes().iter().copied()) {
                 *target = source.to_ascii_lowercase();
             }
             if !keys.1.with_storage(|| {
@@ -968,20 +965,25 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
         }
     }
 
-    let fusion_uuid = match properties.remove("fusion_uuid") {
-        Some(RegistryProperty::Text(value)) => guid(ctx, value.as_bytes(), "fusion_uuid")?,
-        Some(RegistryProperty::Stream(_)) => {
-            return Err(CodecError::malformed(
-                "paramesh fusion_uuid property is not text",
-            ));
-        }
-        None => {
-            return Err(CodecError::malformed(
-                "paramesh registry has no fusion_uuid property",
-            ))
-        }
-    };
-    let attribute_name_stream = match properties.remove("attname.amt.autodesk") {
+    let fusion_uuid =
+        match ctx.remove_btree_map(&mut properties, "fusion_uuid", "select paramesh mesh UUID")? {
+            Some(RegistryProperty::Text(value)) => guid(ctx, value.as_bytes(), "fusion_uuid")?,
+            Some(RegistryProperty::Stream(_)) => {
+                return Err(CodecError::malformed(
+                    "paramesh fusion_uuid property is not text",
+                ));
+            }
+            None => {
+                return Err(CodecError::malformed(
+                    "paramesh registry has no fusion_uuid property",
+                ))
+            }
+        };
+    let attribute_name_stream = match ctx.remove_btree_map(
+        &mut properties,
+        "attname.amt.autodesk",
+        "select paramesh attribute-name stream",
+    )? {
         Some(RegistryProperty::Stream(value)) => Some(value),
         Some(RegistryProperty::Text(_)) => {
             return Err(CodecError::malformed(
@@ -1020,12 +1022,12 @@ fn message_pack_name_table(
             .get(*at)
             .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?;
         *at += 1;
-        let (width, value) = match tag {
+        let width = match tag {
             0x00..=0x7f => return Ok(u64::from(tag)),
-            0xcc => (1, 0),
-            0xcd => (2, 0),
-            0xce => (4, 0),
-            0xcf => (8, 0),
+            0xcc => 1,
+            0xcd => 2,
+            0xce => 4,
+            0xcf => 8,
             _ => {
                 return Err(CodecError::malformed(
                     "paramesh name table holds a non-integer stream id",
@@ -1036,10 +1038,16 @@ fn message_pack_name_table(
             .get(*at..*at + width)
             .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))?;
         *at += width;
-        // MessagePack integers are big-endian.
-        Ok(ctx
-            .admit_iter(raw, "parse paramesh name-table integer bytes")?
-            .fold(value, |total, byte| (total << 8) | u64::from(*byte)))
+        ctx.charge_work(0, "parse paramesh name-table integer bytes")?;
+        let mut view = View::over_retained(raw);
+        match width {
+            1 => view.u8().map(u64::from),
+            2 => view.u16_be().map(u64::from),
+            4 => view.u32_be().map(u64::from),
+            8 => view.u64_be(),
+            _ => None,
+        }
+        .ok_or_else(|| CodecError::malformed("paramesh name table is truncated"))
     }
 
     fn take_string(
@@ -1132,22 +1140,18 @@ enum StreamDescriptorValue {
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for StreamDescriptorValue {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
     fn decode_cost(
         &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
     ) -> Result<u64, CodecError> {
-        let value_bytes = match self {
-            Self::Integer(value) => {
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
-            }
-            Self::Boolean(value) => {
-                cadmpeg_core::decode::cost::DecodeCost::decode_cost(value, ctx, operation)?
-            }
-        };
-        1_u64
-            .checked_add(value_bytes)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
     }
 }
 
@@ -1183,10 +1187,17 @@ fn stream_descriptor(
             .get(*at..*at + width)
             .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
         *at += width;
-        Ok(StreamDescriptorValue::Integer(
-            ctx.admit_iter(raw, "parse paramesh descriptor scalar bytes")?
-                .fold(0, |value, byte| (value << 8) | u64::from(*byte)),
-        ))
+        ctx.charge_work(0, "parse paramesh descriptor scalar bytes")?;
+        let mut view = View::over_retained(raw);
+        let integer = match width {
+            1 => view.u8().map(u64::from),
+            2 => view.u16_be().map(u64::from),
+            4 => view.u32_be().map(u64::from),
+            8 => view.u64_be(),
+            _ => None,
+        }
+        .ok_or_else(|| CodecError::malformed("paramesh stream descriptor is truncated"))?;
+        Ok(StreamDescriptorValue::Integer(integer))
     }
 
     let mut at = 0usize;
@@ -1256,9 +1267,8 @@ fn stream_descriptor(
 fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, CodecError> {
     // LZMA1 uses 8 literal contexts, four 64-entry position trees, a
     // 16-entry alignment tree and two length decoders of 512 probabilities.
-    // The dictionary reservation also covers its old buffer during growth.
     const PROBABILITY_COUNT: u64 = 8 * 0x300 + 4 * 64 + 16 + 2 * 512;
-    const SCRATCH_BYTES: u64 = 2 * (1 << LZMA_DICTIONARY_LOG) + 2 * PROBABILITY_COUNT;
+    const SCRATCH_BYTES: u64 = 2 * PROBABILITY_COUNT;
 
     let descriptor_count = usize::from(
         View::u16_le_at(body, 0)
@@ -1307,22 +1317,6 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
         ));
     }
     let _decoder_storage = ctx.reserve_scoped(SCRATCH_BYTES, "paramesh LZMA scratch")?;
-    // Each symbol emits a byte or ends the stream. At most 256 range-bit,
-    // lookahead and dictionary steps are admitted per output byte, including
-    // a final 273-byte match that crosses the declared output boundary.
-    let work = u64::from(declared)
-        .checked_add(273)
-        .and_then(|count| count.checked_mul(256))
-        .and_then(|count| count.checked_add(PROBABILITY_COUNT))
-        .and_then(|count| count.checked_add(2 * (1 << LZMA_DICTIONARY_LOG)))
-        .and_then(|count| {
-            cadmpeg_core::decode::u64_from_index(payload.len())
-                .checked_mul(2)
-                .and_then(|bytes| count.checked_add(bytes))
-        })
-        .and_then(|count| count.checked_add(5))
-        .ok_or_else(|| ctx.refuse_codec_limit("paramesh LZMA work", 0, u64::MAX))?;
-    ctx.charge_work(work, "paramesh LZMA work")?;
     // `lzma-rs` reads the properties byte and the four-byte dictionary size
     // from the stream. The container stores a properties byte and a base-2
     // dictionary exponent.
@@ -1849,7 +1843,7 @@ fn decode_terminal_delta_values(
     let mut current = i64::from(*terminal)
         .checked_sub(delta_total)
         .ok_or_else(|| CodecError::malformed("paramesh terminal-delta start overflows"))?;
-    for word in deltas {
+    for word in ctx.admit_iter(deltas, "resolve paramesh terminal deltas")? {
         let delta = i64::from(word.cast_signed());
         *word = u32::try_from(current)
             .map_err(|_| CodecError::malformed("paramesh terminal-delta value is out of range"))?;
@@ -2607,9 +2601,11 @@ fn registry_triangle_groups(
         .admit_iter(values, "assign paramesh face groups")?
         .enumerate()
     {
-        let group_index = group_indices.get(key).ok_or_else(|| {
-            CodecError::malformed("paramesh triangle selects no face-group record")
-        })?;
+        let group_index = ctx
+            .get_btree_map(&group_indices, key, "find paramesh triangle group")?
+            .ok_or_else(|| {
+                CodecError::malformed("paramesh triangle selects no face-group record")
+            })?;
         let ordinal = u32::try_from(triangle)
             .map_err(|_| CodecError::malformed("paramesh triangle ordinal is out of range"))?;
         ctx.push_vec(
@@ -2875,80 +2871,19 @@ mod tests {
     }
 
     #[test]
-    fn paramesh_lzma_refuses_expansion_work_limit() {
-        let chunk = stream_chunk(&[0x80], &[7; 1024]);
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 1024;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = inflate_stream_charged(ctx, &chunk[12..])
-                .err()
-                .expect("work limit");
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "paramesh LZMA work"
-                    && ctx.resource_refusal() == Some(limit)));
-        });
-    }
-
-    #[test]
     fn paramesh_lzma_output_refuses_work_limit() {
-        const PROBABILITY_COUNT: u64 = 8 * 0x300 + 4 * 64 + 16 + 2 * 512;
-        const FRAME_INITIAL_CAPACITY: usize = 8;
         let payload = [7; 1024];
         let descriptor = [0x80];
         let chunk = stream_chunk(&descriptor, &payload);
-        let body = &chunk[12..];
-        let compressed_len = body
-            .len()
-            .checked_sub(
-                std::mem::size_of::<u16>() + descriptor.len() + std::mem::size_of::<u32>() + 2,
-            )
-            .expect("fixture has the fixed kind-4 header");
-        let decoder_work = u64::from(u32::try_from(payload.len()).expect("fixture fits u32"))
-            .checked_add(273)
-            .and_then(|count| count.checked_mul(256))
-            .and_then(|count| count.checked_add(PROBABILITY_COUNT))
-            .and_then(|count| count.checked_add(2 * (1 << super::LZMA_DICTIONARY_LOG)))
-            .and_then(|count| {
-                u64_from_index(compressed_len)
-                    .checked_mul(2)
-                    .and_then(|bytes| count.checked_add(bytes))
-            })
-            .and_then(|count| count.checked_add(5))
-            .expect("fixture LZMA work bound");
-        let framed_prefix_len = std::mem::size_of::<u8>()
-            .checked_add(std::mem::size_of::<u32>())
-            .expect("fixture framed prefix length");
-        let framed_len = framed_prefix_len
-            .checked_add(compressed_len)
-            .expect("fixture framed input length");
-        let framed_copy_work = u64_from_index(compressed_len)
-            .checked_add(u64_from_index(std::mem::size_of::<u32>()))
-            .and_then(|bytes| bytes.checked_mul(2))
-            .expect("fixture framed-input copy work");
-        let relocation_work = if framed_len > FRAME_INITIAL_CAPACITY {
-            u64_from_index(FRAME_INITIAL_CAPACITY)
-        } else {
-            0
-        };
-        let framed_input_work = framed_copy_work
-            .checked_add(relocation_work)
-            .expect("fixture framed-input growth work");
-        let work = decoder_work
-            .checked_add(framed_input_work)
-            .expect("fixture pre-output work total");
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        // Count decoder, framed input and any relocation; leave output-copy work refused.
-        policy.limits.max_work_units = work;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let error = inflate_stream_charged(ctx, body)
-                .err()
-                .expect("output work limit");
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "expand_write copy"
-                    && ctx.resource_refusal() == Some(limit)));
-        });
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "expand_write copy",
+            0,
+            |ctx| inflate_stream_charged(ctx, &chunk[12..]),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "expand_write copy"));
     }
 
     #[test]

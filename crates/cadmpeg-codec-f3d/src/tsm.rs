@@ -113,35 +113,25 @@ fn compact_half_edges(
             "collect T-spline compact half-edges",
         )?;
     }
-    for root in face_roots.iter_mut().flatten() {
+    for root in ctx
+        .admit_iter(face_roots, "remap T-spline face roots")?
+        .flatten()
+    {
         *root = remap(*root)?.index();
     }
-    for root in edge_roots.iter_mut().flatten() {
+    for root in ctx
+        .admit_iter(edge_roots, "remap T-spline edge roots")?
+        .flatten()
+    {
         *root = remap(*root)?.index();
     }
-    for root in vertex_roots.iter_mut().flatten() {
+    for root in ctx
+        .admit_iter(vertex_roots, "remap T-spline vertex roots")?
+        .flatten()
+    {
         root.0 = remap(root.0)?.index();
     }
     Ok(half_edges)
-}
-
-struct UntypedRecords<'a>(&'a BTreeMap<String, usize>);
-
-impl std::fmt::Display for UntypedRecords<'_> {
-    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let count = self.0.values().sum::<usize>();
-        write!(
-            out,
-            "{count} T-spline record(s) were retained without typed semantics: "
-        )?;
-        for (index, (kind, count)) in self.0.iter().enumerate() {
-            if index != 0 {
-                out.write_str(", ")?;
-            }
-            write!(out, "{kind}={count}")?;
-        }
-        out.write_str(".")
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -196,10 +186,33 @@ pub(crate) fn decode(
         match parse(ctx, &entry.name, scan.entry_bytes(ctx, &entry.name)?) {
             Ok(parsed) => {
                 if !parsed.unknown_record_kinds.is_empty() {
-                    let message = ctx.format_retained(
-                        format_args!("{}", UntypedRecords(&parsed.unknown_record_kinds)),
+                    let count = ctx
+                        .admit_iter(
+                            &parsed.unknown_record_kinds,
+                            "count untyped T-spline records",
+                        )?
+                        .map(|(_, count)| *count)
+                        .sum::<usize>();
+                    let mut message = ctx.format_retained(
+                        format_args!(
+                            "{count} T-spline record(s) were retained without typed semantics: "
+                        ),
                         "describe untyped T-spline records",
                     )?;
+                    for (index, (kind, count)) in ctx
+                        .admit_iter(
+                            &parsed.unknown_record_kinds,
+                            "describe untyped T-spline kinds",
+                        )?
+                        .enumerate()
+                    {
+                        ctx.append_formatted_retained(
+                            &mut message,
+                            format_args!("{}{kind}={count}", if index == 0 { "" } else { ", " }),
+                            "describe untyped T-spline records",
+                        )?;
+                    }
+                    ctx.append_retained(&mut message, ".", "describe untyped T-spline records")?;
                     ctx.push_vec(
                         &mut losses,
                         F3dLossCode::TsplineRecordUntyped.note(message),
@@ -396,12 +409,13 @@ fn compact(ctx: &DecodeContext<'_>, live: &[bool]) -> Result<Vec<Option<u32>>, C
 fn require_end(
     ctx: &DecodeContext<'_>,
     name: &str,
-    fields: &mut std::iter::Copied<
-        cadmpeg_core::decode::scan::AdmittedIter<std::slice::Iter<'_, &str>>,
-    >,
+    fields: &mut std::iter::Copied<std::slice::Iter<'_, &str>>,
     record: &str,
 ) -> Result<(), CodecError> {
-    if fields.next().is_some() {
+    if ctx
+        .next_charged(fields, "parse T-spline record fields")?
+        .is_some()
+    {
         return Err(malformed(
             ctx,
             name,
@@ -497,13 +511,11 @@ enum SymmetryKind {
 fn parse_pairs(
     ctx: &DecodeContext<'_>,
     name: &str,
-    fields: &mut std::iter::Copied<
-        cadmpeg_core::decode::scan::AdmittedIter<std::slice::Iter<'_, &str>>,
-    >,
+    fields: &mut std::iter::Copied<std::slice::Iter<'_, &str>>,
     record: &str,
 ) -> Result<BTreeMap<usize, usize>, CodecError> {
     let mut values = Vec::new();
-    for value in fields.by_ref() {
+    while let Some(value) = ctx.next_charged(fields, "parse T-spline record fields")? {
         ctx.push_vec(
             &mut values,
             parse_int::<usize>(ctx, name, Some(value), record)?,
@@ -554,12 +566,10 @@ fn parse_pairs(
 fn parse_radial_pairs(
     ctx: &DecodeContext<'_>,
     name: &str,
-    fields: &mut std::iter::Copied<
-        cadmpeg_core::decode::scan::AdmittedIter<std::slice::Iter<'_, &str>>,
-    >,
+    fields: &mut std::iter::Copied<std::slice::Iter<'_, &str>>,
 ) -> Result<Vec<[u64; 2]>, CodecError> {
     let mut values = Vec::new();
-    for value in fields.by_ref() {
+    while let Some(value) = ctx.next_charged(fields, "parse T-spline record fields")? {
         let index = ctx
             .parse_text::<u64>(value, "parse T-spline radial map index")?
             .map_err(|_| malformed(ctx, name, "invalid radial symmetry map index"))?;
@@ -835,24 +845,8 @@ fn build_fan(
         let phantom_count = if fan.len() < 4 { 4 - fan.len() } else { 0 };
 
         ctx.reserve_vec(&mut fan, phantom_count, "complete T-spline fan gaps")?;
-        for _ in ctx.admit_iter(&(0..phantom_count), "complete T-spline fan gaps")? {
-            let moved_slots = cadmpeg_core::decode::u64_from_index(fan.len() - gap - 1);
-            let slot_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FanSlot>());
-            let moved_bytes = moved_slots.checked_mul(slot_bytes).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "move T-spline fan slots",
-                    u64::MAX / slot_bytes,
-                    moved_slots,
-                )
-            })?;
-            let move_work = moved_bytes.checked_add(moved_slots).ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "move T-spline fan slots",
-                    u64::MAX - moved_slots,
-                    moved_bytes,
-                )
-            })?;
-            ctx.charge_work(move_work, "move T-spline fan slots")?;
+        // Completion grows a fan of fewer than four slots to exactly four.
+        for _ in 0..phantom_count {
             fan.insert(gap + 1, FanSlot::Phantom);
         }
     }
@@ -1142,10 +1136,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             continue;
         }
         let (_field_storage, field_views) = ascii_field_views(ctx, line)?;
-        let mut fields = ctx
-            .admit_iter(&field_views, "parse T-spline record fields")?
-            .copied();
-        let record_kind = fields.next();
+        let mut fields = field_views.iter().copied();
+        let record_kind = ctx.next_charged(&mut fields, "parse T-spline record fields")?;
         let selection = match record_kind {
             Some("100edges") => Some(EditorSelectionKind::Edges),
             Some("100verts") => Some(EditorSelectionKind::Vertices),
@@ -1168,7 +1160,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 ));
             }
             let mut values = BTreeSet::new();
-            for value in fields {
+            while let Some(value) = ctx.next_charged(&mut fields, "parse T-spline record fields")? {
                 let index = parse_int::<usize>(ctx, name, Some(value), label)?;
                 ctx.insert_btree_set(&mut values, index, "read T-spline editor selections")?;
             }
@@ -1190,16 +1182,24 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         match record_kind {
             Some("#TS0200") => require_end(ctx, name, &mut fields, "header")?,
             Some("degree") => {
-                if parse_int::<usize>(ctx, name, fields.next(), "degree")? != 3 {
+                if parse_int::<usize>(
+                    ctx,
+                    name,
+                    ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                    "degree",
+                )? != 3
+                {
                     return Err(malformed(ctx, name, "unsupported degree"));
                 }
                 require_end(ctx, name, &mut fields, "degree declaration")?;
                 ctx.insert_btree_set(&mut declarations, "degree", "index T-spline declarations")?;
             }
             Some(declaration @ ("cap-type" | "end-conditions" | "star-knot-rule")) => {
-                let value = fields.next().ok_or_else(|| {
-                    malformed(ctx, name, format_args!("missing {declaration} value"))
-                })?;
+                let value = ctx
+                    .next_charged(&mut fields, "parse T-spline record fields")?
+                    .ok_or_else(|| {
+                        malformed(ctx, name, format_args!("missing {declaration} value"))
+                    })?;
                 if declaration == "end-conditions" {
                     end_conditions = Some(value);
                 }
@@ -1211,7 +1211,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 )?;
             }
             Some("star-smoothness") => {
-                parse_f64(ctx, name, fields.next(), "star smoothness")?;
+                parse_f64(
+                    ctx,
+                    name,
+                    ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                    "star smoothness",
+                )?;
                 require_end(ctx, name, &mut fields, "star-smoothness declaration")?;
                 ctx.insert_btree_set(
                     &mut declarations,
@@ -1220,13 +1225,16 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 )?;
             }
             Some("units") => {
-                if fields.next() != Some("1") || fields.next() != Some("meters") {
+                if ctx.next_charged(&mut fields, "parse T-spline record fields")? != Some("1")
+                    || ctx.next_charged(&mut fields, "parse T-spline record fields")?
+                        != Some("meters")
+                {
                     return Err(malformed(ctx, name, "unsupported units declaration"));
                 }
                 require_end(ctx, name, &mut fields, "units declaration")?;
                 ctx.insert_btree_set(&mut declarations, "units", "index T-spline declarations")?;
             }
-            Some("f") => match fields.next() {
+            Some("f") => match ctx.next_charged(&mut fields, "parse T-spline record fields")? {
                 None => ctx.push_vec(&mut face_roots, None, "read T-spline face slots")?,
                 root => {
                     ctx.push_vec(
@@ -1234,11 +1242,16 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         Some(parse_int::<usize>(ctx, name, root, "face root")?),
                         "read T-spline face slots",
                     )?;
-                    parse_int::<i64>(ctx, name, fields.next(), "face flags")?;
+                    parse_int::<i64>(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "face flags",
+                    )?;
                     require_end(ctx, name, &mut fields, "face")?;
                 }
             },
-            Some("e") => match fields.next() {
+            Some("e") => match ctx.next_charged(&mut fields, "parse T-spline record fields")? {
                 None => {
                     ctx.push_vec(&mut edge_roots, None, "read T-spline edge slots")?;
                     ctx.push_vec(
@@ -1253,7 +1266,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         Some(parse_int::<usize>(ctx, name, root, "edge root")?),
                         "read T-spline edge slots",
                     )?;
-                    let knot_interval = parse_f64(ctx, name, fields.next(), "edge knot interval")?;
+                    let knot_interval = parse_f64(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "edge knot interval",
+                    )?;
                     let knot_interval =
                         PositiveReal::new(knot_interval.get()).ok_or_else(|| {
                             malformed(ctx, name, "edge knot interval is not positive")
@@ -1269,19 +1287,28 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             Some("106ek") => {
                 ctx.push_vec(
                     &mut edge_knot_records,
-                    parse_f64(ctx, name, fields.next(), "106ek value")?,
+                    parse_f64(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "106ek value",
+                    )?,
                     "read T-spline edge knot records",
                 )?;
                 require_end(ctx, name, &mut fields, "106ek")?;
             }
-            Some("v") => match fields.next() {
+            Some("v") => match ctx.next_charged(&mut fields, "parse T-spline record fields")? {
                 None => {
                     ctx.push_vec(&mut vertex_live, false, "read T-spline vertex live flags")?;
                     ctx.push_vec(&mut vertex_roots, None, "read T-spline vertex roots")?;
                 }
                 root => {
                     let root = parse_int::<usize>(ctx, name, root, "vertex root")?;
-                    let direction = parse_direction(ctx, name, fields.next())?;
+                    let direction = parse_direction(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                    )?;
                     require_end(ctx, name, &mut fields, "vertex")?;
                     ctx.push_vec(&mut vertex_live, true, "read T-spline vertex live flags")?;
                     ctx.push_vec(
@@ -1291,7 +1318,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     )?;
                 }
             },
-            Some("l") => match fields.next() {
+            Some("l") => match ctx.next_charged(&mut fields, "parse T-spline record fields")? {
                 None => ctx.push_vec(&mut half_edges, None, "read T-spline half-edge slots")?,
                 next => {
                     let half = ParsedHalfEdge {
@@ -1299,21 +1326,44 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         previous: parse_int::<usize>(
                             ctx,
                             name,
-                            fields.next(),
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?,
                             "half-edge previous index",
                         )?,
-                        mate: parse_int::<usize>(ctx, name, fields.next(), "half-edge mate index")?,
+                        mate: parse_int::<usize>(
+                            ctx,
+                            name,
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                            "half-edge mate index",
+                        )?,
                         vertex: parse_int::<usize>(
                             ctx,
                             name,
-                            fields.next(),
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?,
                             "half-edge vertex index",
                         )?,
-                        face: parse_int::<i64>(ctx, name, fields.next(), "half-edge face index")?,
+                        face: parse_int::<i64>(
+                            ctx,
+                            name,
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                            "half-edge face index",
+                        )?,
                     };
-                    parse_int::<i64>(ctx, name, fields.next(), "half-edge edge index")?;
-                    parse_int::<i64>(ctx, name, fields.next(), "half-edge flags")?;
-                    if fields.next().is_some() {
+                    parse_int::<i64>(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "half-edge edge index",
+                    )?;
+                    parse_int::<i64>(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "half-edge flags",
+                    )?;
+                    if ctx
+                        .next_charged(&mut fields, "parse T-spline record fields")?
+                        .is_some()
+                    {
                         return Err(malformed(ctx, name, "half-edge has trailing fields"));
                     }
                     ctx.push_vec(&mut half_edges, Some(half), "read T-spline half-edge slots")?;
@@ -1322,13 +1372,23 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             Some("ec") => {
                 ctx.insert_btree_set(
                     &mut crease_edges,
-                    parse_int::<usize>(ctx, name, fields.next(), "crease edge index")?,
+                    parse_int::<usize>(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "crease edge index",
+                    )?,
                     "read T-spline crease edges",
                 )?;
-                parse_int::<i64>(ctx, name, fields.next(), "crease flags")?;
+                parse_int::<i64>(
+                    ctx,
+                    name,
+                    ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                    "crease flags",
+                )?;
                 require_end(ctx, name, &mut fields, "crease")?;
             }
-            Some("0m") => match fields.next() {
+            Some("0m") => match ctx.next_charged(&mut fields, "parse T-spline record fields")? {
                 Some("odd-grip-map") => {
                     require_end(ctx, name, &mut fields, "odd-grip-map declaration")?;
                     in_grip_map = true;
@@ -1339,7 +1399,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         GripVertexMarker::Primary(parse_int::<usize>(
                             ctx,
                             name,
-                            fields.next(),
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?,
                             "grip vertex index",
                         )?),
                         "read T-spline grip vertex markers",
@@ -1347,8 +1407,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     require_end(ctx, name, &mut fields, "primary grip map")?;
                 }
                 Some("gv") if in_grip_map => {
-                    let vertex =
-                        parse_int::<i64>(ctx, name, fields.next(), "secondary grip vertex index")?;
+                    let vertex = parse_int::<i64>(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "secondary grip vertex index",
+                    )?;
                     if vertex < -1 {
                         return Err(malformed(ctx, name, "secondary grip vertex is below -1"));
                     }
@@ -1366,13 +1430,26 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     require_end(ctx, name, &mut fields, "secondary grip map")?;
                 }
                 Some("cg") if in_grip_map => {
-                    let vertex =
-                        parse_int::<usize>(ctx, name, fields.next(), "derived-grip vertex")?;
-                    let wedges =
-                        parse_int::<usize>(ctx, name, fields.next(), "derived-grip wedge count")?;
+                    let vertex = parse_int::<usize>(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "derived-grip vertex",
+                    )?;
+                    let wedges = parse_int::<usize>(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "derived-grip wedge count",
+                    )?;
                     let mut spoke_lengths = Vec::new();
                     let mut spoke_count_read = 0usize;
-                    for value in fields.by_ref().take(wedges) {
+                    while spoke_count_read < wedges {
+                        let Some(value) =
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?
+                        else {
+                            break;
+                        };
                         spoke_count_read += 1;
                         let length = parse_int::<usize>(
                             ctx,
@@ -1408,7 +1485,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         })?;
                     let mut grip_indices = Vec::new();
                     let mut grip_count_read = 0usize;
-                    for value in fields.by_ref().take(grip_count) {
+                    while grip_count_read < grip_count {
+                        let Some(value) =
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?
+                        else {
+                            break;
+                        };
                         grip_count_read += 1;
                         let index =
                             match parse_int::<i64>(ctx, name, Some(value), "derived-grip index")? {
@@ -1443,20 +1525,45 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
                 _ => return Err(malformed(ctx, name, "unknown odd-grip-map record")),
             },
-            Some("0g") => match fields.next() {
+            Some("0g") => match ctx.next_charged(&mut fields, "parse T-spline record fields")? {
                 None => ctx.push_vec(&mut grip_points, None, "read T-spline grip points")?,
                 x => {
                     let point = Point3::new(
                         parse_f64(ctx, name, x, "grip x")?.get() * CAGE_COORDINATE_SCALE,
-                        parse_f64(ctx, name, fields.next(), "grip y")?.get()
+                        parse_f64(
+                            ctx,
+                            name,
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                            "grip y",
+                        )?
+                        .get()
                             * CAGE_COORDINATE_SCALE,
-                        parse_f64(ctx, name, fields.next(), "grip z")?.get()
+                        parse_f64(
+                            ctx,
+                            name,
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                            "grip z",
+                        )?
+                        .get()
                             * CAGE_COORDINATE_SCALE,
                     );
-                    let weight = parse_f64(ctx, name, fields.next(), "grip weight")?;
-                    let weight = PositiveReal::new(weight.get())
-                        .filter(|_| fields.next().is_none())
-                        .ok_or_else(|| malformed(ctx, name, "grip weight is not positive"))?;
+                    let weight = parse_f64(
+                        ctx,
+                        name,
+                        ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                        "grip weight",
+                    )?;
+                    let weight = PositiveReal::new(weight.get());
+                    let weight = if weight.is_some()
+                        && ctx
+                            .next_charged(&mut fields, "parse T-spline record fields")?
+                            .is_none()
+                    {
+                        weight
+                    } else {
+                        None
+                    }
+                    .ok_or_else(|| malformed(ctx, name, "grip weight is not positive"))?;
                     ctx.push_vec(
                         &mut grip_points,
                         Some(GripPoint { point, weight }),
@@ -1465,7 +1572,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             },
             Some("105sym") => {
-                let mode = match parse_int::<i64>(ctx, name, fields.next(), "symmetry flags")? {
+                let mode = match parse_int::<i64>(
+                    ctx,
+                    name,
+                    ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                    "symmetry flags",
+                )? {
                     0 => SymmetryMode::Correspondence,
                     1 => SymmetryMode::Radial,
                     _ => return Err(malformed(ctx, name, "unsupported symmetry flags")),
@@ -1480,7 +1592,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     .as_mut()
                     .ok_or_else(|| malformed(ctx, name, "symmetry plane has no header"))?;
                 let mut values = Vec::new();
-                for value in fields {
+                while let Some(value) =
+                    ctx.next_charged(&mut fields, "parse T-spline record fields")?
+                {
                     ctx.push_vec(
                         &mut values,
                         parse_f64(ctx, name, Some(value), "symmetry plane coefficient")?,
@@ -1495,8 +1609,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             }
             Some("105a") => {
-                let kind = fields
-                    .next()
+                let kind = ctx
+                    .next_charged(&mut fields, "parse T-spline record fields")?
                     .ok_or_else(|| malformed(ctx, name, "missing symmetry map kind"))?;
                 let pairs = parse_pairs(ctx, name, &mut fields, "symmetry map")?;
                 let block = current_symmetry
@@ -1538,8 +1652,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 *target = pairs;
             }
             Some("105r") => {
-                let kind = fields
-                    .next()
+                let kind = ctx
+                    .next_charged(&mut fields, "parse T-spline record fields")?
                     .ok_or_else(|| malformed(ctx, name, "missing radial symmetry record kind"))?;
                 let block = current_symmetry
                     .as_mut()
@@ -1573,7 +1687,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         let segments = parse_int::<usize>(
                             ctx,
                             name,
-                            fields.next(),
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?,
                             "radial symmetry segments",
                         )?;
                         block.radial_segments = Some(
@@ -1590,7 +1704,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         block.radial_sweep = Some(parse_f64(
                             ctx,
                             name,
-                            fields.next(),
+                            ctx.next_charged(&mut fields, "parse T-spline record fields")?,
                             "radial symmetry sweep",
                         )?);
                         require_end(ctx, name, &mut fields, "radial symmetry sweep")?;
@@ -1621,7 +1735,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             }
             Some(declaration @ ("tol" | "geom-tol")) => {
-                let tolerance = parse_f64(ctx, name, fields.next(), declaration)?;
+                let tolerance = parse_f64(
+                    ctx,
+                    name,
+                    ctx.next_charged(&mut fields, "parse T-spline record fields")?,
+                    declaration,
+                )?;
                 if tolerance.get() <= 0.0 {
                     return Err(malformed(
                         ctx,
@@ -1643,7 +1762,10 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             }
             Some(declaration @ ("ver" | "behavior-version" | "compat-version")) => {
-                if fields.next().is_none() {
+                if ctx
+                    .next_charged(&mut fields, "parse T-spline record fields")?
+                    .is_none()
+                {
                     return Err(malformed(
                         ctx,
                         name,
@@ -2804,30 +2926,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     }
 
     #[test]
-    fn tsm_fan_gap_completion_refuses_work_limit() {
-        let half_edges = [super::HalfEdge {
-            next: super::HalfEdgeId(0),
-            previous: super::HalfEdgeId(0),
-            mate: super::HalfEdgeId(0),
-            vertex: 0,
-            face: None,
-        }];
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "complete T-spline fan gaps",
-            0,
-            |ctx| super::build_fan(ctx, "synthetic.tsm", 0, 0, &half_edges, &[]).map(|_| ()),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "complete T-spline fan gaps"
-        ));
-    }
-
-    #[test]
-    fn tsm_fan_phantom_moves_preserve_work_refusal() {
+    fn tsm_fan_completion_builds_four_slots() {
         let half_edges = [super::HalfEdge {
             next: super::HalfEdgeId(0),
             previous: super::HalfEdgeId(0),
@@ -2849,16 +2948,6 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
                 .iter()
                 .all(|slot| matches!(slot, super::FanSlot::Phantom)));
         });
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "move T-spline fan slots",
-            0,
-            |ctx| super::build_fan(ctx, "synthetic.tsm", 0, 0, &half_edges, &[]).map(|_| ()),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "move T-spline fan slots")
-        );
     }
 
     #[test]

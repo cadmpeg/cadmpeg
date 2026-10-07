@@ -1966,9 +1966,7 @@ fn design_projection_gaps(
                         }
                     }
                     DatumPointConstruction::ThreePlaneIntersection { planes } => {
-                        for reference in
-                            ctx.admit_iter(planes.as_ref(), "scan F3D datum point planes")?
-                        {
+                        for reference in planes.as_ref() {
                             plane(reference);
                         }
                     }
@@ -2140,18 +2138,25 @@ fn design_projection_gaps(
     Ok(gaps)
 }
 
-struct IncompleteFamilyCounts<'a>(&'a std::collections::BTreeMap<&'a str, usize>);
-
-impl std::fmt::Display for IncompleteFamilyCounts<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (index, (family, count)) in self.0.iter().enumerate() {
-            if index != 0 {
-                formatter.write_str(", ")?;
-            }
-            write!(formatter, "{family}={count}")?;
+fn format_kind_counts<'ctx, K: AsRef<str>>(
+    ctx: &'ctx DecodeContext<'_>,
+    counts: &std::collections::BTreeMap<K, usize>,
+) -> Result<(String, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("format F3D kind counts", || {
+        let mut text = String::new();
+        for (index, (kind, count)) in ctx.admit_iter(counts, "scan F3D kind counts")?.enumerate() {
+            ctx.append_formatted_retained(
+                &mut text,
+                format_args!(
+                    "{}{}={count}",
+                    if index == 0 { "" } else { ", " },
+                    kind.as_ref()
+                ),
+                "format F3D kind counts",
+            )?;
         }
-        Ok(())
-    }
+        Ok(text)
+    })
 }
 
 fn push_loss_vec(
@@ -2253,15 +2258,17 @@ fn report_design_projection_gaps(
         }
         Ok(())
     };
-    push(
-        F3dLossCode::FeatureDefinitionIncomplete,
-        gaps.incomplete_features,
-        format_args!(
-            "{} feature scope(s) have no complete neutral feature definition: {}.",
+    if gaps.incomplete_features != 0 {
+        let (families, _families_storage) = format_kind_counts(ctx, &incomplete_families)?;
+        push(
+            F3dLossCode::FeatureDefinitionIncomplete,
             gaps.incomplete_features,
-            IncompleteFamilyCounts(&incomplete_families)
-        ),
-    )?;
+            format_args!(
+                "{} feature scope(s) have no complete neutral feature definition: {}.",
+                gaps.incomplete_features, families
+            ),
+        )?;
+    }
     push(
         F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,
@@ -2600,7 +2607,7 @@ fn try_decode_text_model(
     }
     let qualify = parts.len() > 1;
     let mut merged: Option<(BrepFacts, Brep)> = None;
-    for (facts, mut part) in parts {
+    for (facts, mut part) in ctx.admit_iter(parts, "merge F3D text BREP parts")? {
         if qualify {
             let namespace = entry_basename(ctx, &facts.name)?;
             part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
@@ -4373,7 +4380,7 @@ fn project_mesh_bodies(
         Ok::<(), CodecError>(())
     })?;
     let mut bodies = Vec::new();
-    for outcome in decoded.outcomes {
+    for outcome in ctx.admit_iter(decoded.outcomes, "scan F3D mesh container outcomes")? {
         collect_mesh_outcome(ctx, &mut bodies, report, outcome)?;
     }
     let mut unresolved = std::collections::BTreeMap::new();
@@ -4381,7 +4388,7 @@ fn project_mesh_bodies(
         count: bodies.len(),
         tessellations_by_scope: std::collections::HashMap::new(),
     };
-    for mut body in bodies {
+    for mut body in ctx.admit_iter(bodies, "project F3D joined mesh bodies")? {
         let texture_table = ctx
             .remove_hash_map(
                 &mut texture_tables,
@@ -4398,14 +4405,16 @@ fn project_mesh_bodies(
             body.triangles.len(),
         )?;
         let triangle_groups = ctx.collect_vec(
-            std::mem::take(&mut body.triangle_groups)
-                .into_iter()
-                .map(
-                    |group| cadmpeg_ir::tessellation::TessellationTriangleGroup {
-                        source_id: Some(group.source_id),
-                        triangles: group.triangles,
-                    },
-                ),
+            ctx.admit_iter(
+                std::mem::take(&mut body.triangle_groups),
+                "scan F3D mesh triangle groups",
+            )?
+            .map(
+                |group| cadmpeg_ir::tessellation::TessellationTriangleGroup {
+                    source_id: Some(group.source_id),
+                    triangles: group.triangles,
+                },
+            ),
             "collect F3D mesh triangle groups",
         )?;
         let channels = mesh_attribute_channels(
@@ -4420,8 +4429,7 @@ fn project_mesh_bodies(
         let corner_normals = match body.corner_normals.take() {
             Some(normals) => Some(
                 ctx.collect_vec(
-                    normals
-                        .into_iter()
+                    ctx.admit_iter(normals, "scan F3D mesh corner normals")?
                         .map(cadmpeg_ir::features::FiniteVector3::from),
                     "collect F3D mesh corner normals",
                 )?,
@@ -4511,8 +4519,10 @@ fn mesh_texture_assignments(
         ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| {
             Ok(Vec::new())
         })?;
-    for (triangle, texture_id) in texture_ids.iter().enumerate() {
-        ctx.charge_work(1, "resolve F3D mesh texture triangle")?;
+    for (triangle, texture_id) in ctx
+        .admit_iter(texture_ids, "resolve F3D mesh texture triangle")?
+        .enumerate()
+    {
         if *texture_id == 0 {
             continue;
         }
@@ -4538,7 +4548,7 @@ fn mesh_texture_assignments(
     let mut assignments = Vec::new();
     for ((source_id, texture), triangles) in ctx
         .admit_iter(textures, "scan F3D mesh texture assignment rows")?
-        .zip(triangles)
+        .zip(ctx.admit_iter(triangles, "scan F3D mesh texture triangle groups")?)
     {
         if triangles.is_empty() {
             continue;
@@ -5021,7 +5031,7 @@ fn apply_assembly_classification(
         "retain F3D assembly classification loss",
     )?;
     for reference in ctx.admit_iter(&table.references, "scan F3D table references")? {
-        let property_note = XrefPropertyNote(reference);
+        let property_note = XrefPropertyNote::new(ctx, reference)?;
         match crate::xref::design_for(ctx, table, reference)? {
             Some(design) => ctx.push_formatted_retained(
                 &mut report.notes,
@@ -5051,13 +5061,34 @@ fn apply_assembly_classification(
     Ok(())
 }
 
-struct XrefPropertyNote<'a>(&'a crate::records::xref::XrefReference);
+struct XrefPropertyNote<'a> {
+    reference: &'a crate::records::xref::XrefReference,
+    include_data: bool,
+}
+
+impl<'a> XrefPropertyNote<'a> {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        reference: &'a crate::records::xref::XrefReference,
+    ) -> Result<Self, CodecError> {
+        let include_data = !reference.neutron_data.is_empty()
+            && !ctx.equal(
+                reference.neutron_data.as_str(),
+                reference.neutron_role.as_str(),
+                "compare F3D xref property note",
+            )?;
+        Ok(Self {
+            reference,
+            include_data,
+        })
+    }
+}
 
 impl std::fmt::Display for XrefPropertyNote<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "neutronRole {}", self.0.neutron_role)?;
-        if !self.0.neutron_data.is_empty() && self.0.neutron_data != self.0.neutron_role.as_str() {
-            write!(formatter, ", neutronData {}", self.0.neutron_data)?;
+        write!(formatter, "neutronRole {}", self.reference.neutron_role)?;
+        if self.include_data {
+            write!(formatter, ", neutronData {}", self.reference.neutron_data)?;
         }
         Ok(())
     }
@@ -5204,7 +5235,7 @@ fn populate_annotations(
     let mut annotations = AnnotationBuilder::new();
     if let Some((stream_name, records)) = brep {
         let stream = annotation_stream(ctx, stream_name)?;
-        for record in records {
+        for record in ctx.admit_iter(records, "scan F3D BREP annotation records")? {
             annotations.note(
                 ctx,
                 &record.id,
@@ -6725,20 +6756,6 @@ fn source_attributes_and_tolerances(
 }
 
 /// Loss report for a successful geometry decode.
-struct KindCounts<'a>(&'a std::collections::BTreeMap<String, usize>);
-
-impl std::fmt::Display for KindCounts<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (index, (name, count)) in self.0.iter().enumerate() {
-            if index != 0 {
-                formatter.write_str(", ")?;
-            }
-            write!(formatter, "{name}={count}")?;
-        }
-        Ok(())
-    }
-}
-
 fn geometry_losses(
     ctx: &DecodeContext<'_>,
     decoded: &Brep,
@@ -6774,28 +6791,35 @@ fn geometry_losses(
             "retain F3D geometry loss",
         )?;
     }
-    if s.missing_face_surfaces() > 0 {
-        push_loss_vec(ctx, &mut losses, F3dLossCode::FaceSurfaceReferenceDangling, format_args!(
-            "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
-            s.missing_face_surfaces(),
-            KindCounts(&s.missing_face_surface_kinds)
-        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
+    let missing_face_surfaces = ctx
+        .admit_iter(
+            &s.missing_face_surface_kinds,
+            "sum F3D geometry kind counts",
+        )?
+        .map(|(_, count)| *count)
+        .sum::<usize>();
+    if missing_face_surfaces > 0 {
+        let (kind_counts, _kind_counts_storage) =
+            format_kind_counts(ctx, &s.missing_face_surface_kinds)?;
+        push_loss_vec(ctx, &mut losses, F3dLossCode::FaceSurfaceReferenceDangling, format_args!("{missing_face_surfaces} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {kind_counts}."), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
-    if s.unknown_surface_faces() > 0 {
+    let unknown_surface_faces = ctx
+        .admit_iter(&s.unknown_surface_kinds, "sum F3D geometry kind counts")?
+        .map(|(_, count)| *count)
+        .sum::<usize>();
+    if unknown_surface_faces > 0 {
+        let (kind_counts, _kind_counts_storage) =
+            format_kind_counts(ctx, &s.unknown_surface_kinds)?;
         push_loss_vec(
             ctx,
             &mut losses,
             F3dLossCode::SurfaceShapeNotDecoded,
-            format_args!(
-                "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
+            format_args!("{unknown_surface_faces} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
              typed carrier (no inline cached B-spline block: the cache is reached through a \
              subtype reference, or the record is a procedural form this codec does not \
              evaluate); the face, its loops, and trims are emitted with an unknown-geometry \
              surface linking to the preserved record bytes. Topology is transferred; the \
-             underlying surface shape is not. Native kinds: {}.",
-                s.unknown_surface_faces(),
-                KindCounts(&s.unknown_surface_kinds)
-            ),
+             underlying surface shape is not. Native kinds: {kind_counts}."),
             "collect F3D geometry losses",
             "retain F3D geometry loss",
         )?;
@@ -6806,34 +6830,38 @@ fn geometry_losses(
             s.mesh_surface_faces
         ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
-    if s.procedural_curve_edges() > 0 {
+    let procedural_curve_edges = ctx
+        .admit_iter(&s.procedural_curve_kinds, "sum F3D geometry kind counts")?
+        .map(|(_, count)| *count)
+        .sum::<usize>();
+    if procedural_curve_edges > 0 {
+        let (kind_counts, _kind_counts_storage) =
+            format_kind_counts(ctx, &s.procedural_curve_kinds)?;
         push_loss_vec(
             ctx,
             &mut losses,
             F3dLossCode::ProceduralCurveUndecoded,
-            format_args!(
-            "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
+            format_args!("{procedural_curve_edges} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
              B-spline cache; the edge was emitted with its vertices and parameter range but no \
-             attributed curve carrier. Native kinds: {}.",
-            s.procedural_curve_edges(),
-            KindCounts(&s.procedural_curve_kinds)
-        ),
+             attributed curve carrier. Native kinds: {kind_counts}."),
             "collect F3D geometry losses",
             "retain F3D geometry loss",
         )?;
     }
-    if s.undecoded_pcurve_refs() > 0 {
+    let undecoded_pcurve_refs = ctx
+        .admit_iter(&s.undecoded_pcurve_kinds, "sum F3D geometry kind counts")?
+        .map(|(_, count)| *count)
+        .sum::<usize>();
+    if undecoded_pcurve_refs > 0 {
+        let (kind_counts, _kind_counts_storage) =
+            format_kind_counts(ctx, &s.undecoded_pcurve_kinds)?;
         push_loss_vec(
             ctx,
             &mut losses,
             F3dLossCode::PcurveUndecoded,
-            format_args!(
-                "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
+            format_args!("{undecoded_pcurve_refs} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
              carrier on the face surface's parameterization; those coedges were emitted \
-             without a pcurve. Native kinds: {}.",
-                s.undecoded_pcurve_refs(),
-                KindCounts(&s.undecoded_pcurve_kinds)
-            ),
+             without a pcurve. Native kinds: {kind_counts}."),
             "collect F3D geometry losses",
             "retain F3D geometry loss",
         )?;
@@ -6844,16 +6872,17 @@ fn geometry_losses(
             s.partial_procedural_supports
         ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
-    if s.other_records() > 0 {
+    let other_records = ctx
+        .admit_iter(&s.other_record_kinds, "sum F3D geometry kind counts")?
+        .map(|(_, count)| *count)
+        .sum::<usize>();
+    if other_records > 0 {
+        let (kind_counts, _kind_counts_storage) = format_kind_counts(ctx, &s.other_record_kinds)?;
         push_loss_vec(
             ctx,
             &mut losses,
             F3dLossCode::SolvedRecordUntyped,
-            format_args!(
-                "{} solved-record application/refinement record(s) were not transferred: {}.",
-                s.other_records(),
-                KindCounts(&s.other_record_kinds)
-            ),
+            format_args!("{other_records} solved-record application/refinement record(s) were not transferred: {kind_counts}."),
             "collect F3D geometry losses",
             "retain F3D geometry loss",
         )?;
