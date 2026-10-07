@@ -20,7 +20,7 @@ fn rejected_candidate_annotations_do_not_consume_retained_storage() {
         context.annotations = annotations.build();
         let original = context.annotations.clone();
         let session = expand.ctx();
-        let result = context.validate_candidate_fallible(|_, annotations| {
+        let result = context.validate_candidate_fallible(|_, annotations, _arena_storage| {
             assert_eq!(annotations, &original);
             let text =
                 session.copy_retained_text("candidate-only", "candidate annotation mutation")?;

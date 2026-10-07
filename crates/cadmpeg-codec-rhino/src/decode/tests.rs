@@ -1152,11 +1152,11 @@ fn candidate_rejections_distinguish_admission_from_validation() {
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("test transaction");
         let admission =
-            context.validate_candidate_fallible::<(), String>(|_, _| Err("admission".into()));
+            context.validate_candidate_fallible::<(), String>(|_, _, _arena_storage| Err("admission".into()));
         assert!(
             matches!(admission, Err(CandidateError::Admission(message)) if message == "admission")
         );
-        let validation = context.validate_candidate_fallible(|candidate, _| {
+        let validation = context.validate_candidate_fallible(|candidate, _, _arena_storage| {
             let point = Point::new(
                 "rhino:test:point#duplicate"
                     .try_into()
@@ -1185,7 +1185,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
             let before_ir = context.session.document().clone();
             let before_annotations = context.annotations.clone();
             let before_budget = context.expansion_budget.entities;
-            let result = context.validate_candidate_fallible(|candidate, annotations| {
+            let result = context.validate_candidate_fallible(|candidate, annotations, _arena_storage| {
                 candidate.model.assets.push(Asset {
                     id: "rhino:test:asset#rejected".try_into().unwrap(),
                     name: None,
@@ -1338,8 +1338,7 @@ fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
             directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
         }];
         let error = with_collection_limit(u64::MAX, |ctx| {
-            stage_extrusion_caps(
-                ctx,
+            stage_extrusion_caps((ctx, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch")),
                 &mut CadIr::empty(),
                 &mut cadmpeg_ir::Annotations::default(),
                 "caps",
@@ -1364,21 +1363,23 @@ fn extrusion_cap_loop_ids_refuse_collection_limit() {
         boundary: &extrusion.boundaries[0],
         directrix: "rhino:test:curve#cap".try_into().expect("curve identity"),
     }];
-    let error = with_collection_limit(0, |ctx| {
-        stage_extrusion_caps(
-            ctx,
-            &mut CadIr::empty(),
-            &mut cadmpeg_ir::Annotations::default(),
-            "caps",
-            &test_association(),
-            &extrusion,
-            &boundaries,
-        )
-        .expect_err("cap loop ID exceeds collection limit")
-    });
-    assert!(matches!(
+    // One staged surface arena entry precedes the loop-ID collection.
+let error = cadmpeg_test_support::refusal::resource_limit_at(
+cadmpeg_core::decode::ResourceDimension::CollectionItems,
+"Rhino extrusion cap loop IDs", |cap| {
+with_collection_limit(cap, |ctx| {
+stage_extrusion_caps((ctx, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch")),
+&mut CadIr::empty(), &mut cadmpeg_ir::Annotations::default(), "caps",
+&test_association(), &extrusion, &boundaries)
+.map_err(|error| match error {
+CandidateError::Codec(error) => error,
+error => panic!("unexpected cap staging error: {error}"),
+})
+})
+});
+assert!(matches!(
         error,
-        super::CandidateError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.operation == "Rhino extrusion cap loop IDs"
     ));
 }
@@ -1411,8 +1412,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             })
             .collect::<Vec<_>>();
         with_collection_limit(u64::MAX, |ctx| {
-            assert!(stage_extrusion_caps(
-                ctx,
+            assert!(stage_extrusion_caps((ctx, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch")),
                 &mut ir,
                 &mut cadmpeg_ir::Annotations::default(),
                 "caps",
