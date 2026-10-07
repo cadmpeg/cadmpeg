@@ -120,6 +120,7 @@ fn formula_legacy_candidates_transfer_under_service_profile() {
             &mut cadmpeg_ir::Annotations::default(),
             &crate::decode::ModelingGraphScope::Unscoped,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     })
     .expect("service profile admits three legacy candidates");
     assert_eq!(ir.model.parameters.len(), 3);
@@ -138,6 +139,7 @@ fn formula_legacy_indexes_refuse_collection_limits_before_growth() {
                 &mut cadmpeg_ir::Annotations::default(),
                 &crate::decode::ModelingGraphScope::Unscoped,
             )
+            .map(crate::formula::FormulaTransfer::detached)
         });
         match result {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
@@ -150,11 +152,8 @@ fn formula_legacy_indexes_refuse_collection_limits_before_growth() {
     for operation in [
         "catia_legacy_parameter_candidates",
         "catia_legacy_parameter_entity_index",
-        "catia_legacy_parameter_entity_members",
         "catia_legacy_parameter_name_index",
-        "catia_legacy_parameter_name_members",
         "catia_legacy_relation_index",
-        "catia_legacy_relation_members",
     ] {
         assert!(
             refused.contains(operation),
@@ -174,6 +173,7 @@ fn formula_legacy_parameter_identity_refuses_retained_limit() {
             &mut cadmpeg_ir::Annotations::default(),
             &crate::decode::ModelingGraphScope::Unscoped,
         )
+        .map(crate::formula::FormulaTransfer::detached)
     });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -194,6 +194,7 @@ fn formula_legacy_selector_chain_refuses_work_limit() {
                 &mut cadmpeg_ir::Annotations::default(),
                 &crate::decode::ModelingGraphScope::Unscoped,
             )
+            .map(crate::formula::FormulaTransfer::detached)
         });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
