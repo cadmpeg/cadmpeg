@@ -21,10 +21,10 @@ cadmpeg-ir.workspace = true
 flate2.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-zip.workspace = true
 
 [lints]
 workspace = true
