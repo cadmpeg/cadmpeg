@@ -1188,7 +1188,7 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let selections = operation_surface_selection_candidates(&identity_ctx, FeatureClass::CutWithSurface, &lane, &crate::resolved_features::selections::OperationSurfaceClasses::new(&identity_ctx, &lane).unwrap(), 0, payload.len(), None)
+    let selections = operation_surface_selection_candidates(&identity_ctx, FeatureClass::CutWithSurface, &lane, &crate::resolved_features::selections::OperationSurfaceClasses::new(&identity_ctx, &lane, &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap()).unwrap(), 0, payload.len(), None)
     .unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].0, marker);

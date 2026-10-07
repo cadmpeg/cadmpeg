@@ -1,5 +1,8 @@
 //! Compact body, edge and surface selection decoding.
 
+pub(super) mod diameter_index;
+use diameter_index::CosmeticDiameterIndex;
+
 use super::component_paths::{
     component_path_input_features, component_path_terminal_feature, feature_precedes_consumer,
     surface_selection_producer_features,
@@ -95,8 +98,7 @@ pub(super) fn compact_body_selections(
     let lane_key = ctx
         .rsplit_once(&lane.id, "#", "split SLDPRT feature-input lane key")?
         .map_or(lane.id.as_str(), |(_, key)| key);
-    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
-    let state_token = compact_body_state_token(lane);
+    let state_token = compact_body_state_token(ctx, lane)?;
     let (move_data_offsets, _move_data_storage) =
         super::profiles::class_offsets(ctx, lane, "moMoveCopyBodyData_c", OPERATION)?;
     let mut result = Vec::new();
@@ -185,17 +187,20 @@ pub(super) fn compact_body_selections(
     Ok(result)
 }
 
-fn compact_body_state_token(lane: &FeatureInputLane) -> Option<u16> {
-    let mut classes = lane
-        .classes
-        .iter()
-        .filter(|class| class.name == "moDeleteBodyData_c");
-    let class = classes.next()?;
-    if classes.next().is_some() {
-        return None;
-    }
-    let offset = usize::try_from(class.offset).ok()?;
-    View::u16_le_at(&lane.native_payload, offset + 8 + class.name.len())
+fn compact_body_state_token(ctx: &DecodeContext<'_>, lane: &FeatureInputLane) -> Result<Option<u16>, CodecError> {
+    const OPERATION: &str = "find SLDPRT unique body state class";
+    let mut selected = None;
+    let ambiguous = ctx.any_by(&lane.classes, |class| {
+        if class.name != "moDeleteBodyData_c" { return Ok(false); }
+        if selected.is_some() { return Ok(true); }
+        selected = Some(class);
+        Ok(false)
+    }, OPERATION)?;
+    if ambiguous { return Ok(None); }
+    Ok(selected.and_then(|class| {
+        let offset = usize::try_from(class.offset).ok()?;
+        View::u16_le_at(&lane.native_payload, offset + 8 + class.name.len())
+    }))
 }
 
 pub(crate) fn compact_body_state_ids_for_selection(
@@ -204,8 +209,7 @@ pub(crate) fn compact_body_state_ids_for_selection(
     selection: &FeatureInputBodySelection,
 ) -> Result<Vec<u32>, CodecError> {
     const OPERATION: &str = "decode SLDPRT body state identities";
-    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
-    let Some(token) = compact_body_state_token(lane) else {
+    let Some(token) = compact_body_state_token(ctx, lane)? else {
         return Ok(Vec::new());
     };
     let start = ctx
@@ -233,8 +237,7 @@ pub(crate) fn compact_body_retention_mode_for_selection(
     selection: &FeatureInputBodySelection,
 ) -> Result<Option<cadmpeg_ir::features::BodyRetentionMode>, CodecError> {
     const OPERATION: &str = "decode SLDPRT body retention mode";
-    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
-    let Some(token) = compact_body_state_token(lane) else {
+    let Some(token) = compact_body_state_token(ctx, lane)? else {
         return Ok(None);
     };
     let start = ctx
@@ -665,6 +668,7 @@ pub(super) fn compact_surface_selections(
     histories: &[crate::records::FeatureHistory],
     history_features: &[crate::records::Feature],
     lane: &FeatureInputLane,
+    identities: &[crate::records::FeatureInputGeneratedSurfaceIdentity],
 ) -> Result<Vec<FeatureInputSurfaceSelection>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact surface selections";
     let mut classes = lane
@@ -703,8 +707,9 @@ pub(super) fn compact_surface_selections(
         };
         ctx.insert_hash_set(&mut cylinder_reference_tokens, token, OPERATION)?;
     }
-    let mirror_surface_prefix = mirror_surface_type_prefix(lane);
-    let operation_classes = OperationSurfaceClasses::new(ctx, lane)?;
+    let mirror_surface_prefix = mirror_surface_type_prefix(ctx, lane)?;
+    let operation_classes = OperationSurfaceClasses::new(ctx, lane, identities)?;
+    let diameter_index = CosmeticDiameterIndex::new(ctx, lane)?;
     let face_classes = &operation_classes.faces;
     let reference_plane_classes = ClassObjects::new(ctx, lane, "moFaceRefPlnData_c")?;
     let objects = selection_objects(ctx, histories, lane, OPERATION)?;
@@ -824,7 +829,7 @@ pub(super) fn compact_surface_selections(
                     start,
                     end,
                     &cylinder_reference_tokens,
-                )?;
+                 &diameter_index)?;
                 let mut component_face_references = Vec::new();
                 for &offset in
                     ctx.admit_iter(face_classes.in_interval(ctx, start, end)?, OPERATION)?
@@ -1194,14 +1199,15 @@ fn order_surface_candidates(
     )
 }
 
-struct OperationSurfaceClasses<'ctx> {
+struct OperationSurfaceClasses<'identities, 'ctx> {
+identities: &'identities [crate::records::FeatureInputGeneratedSurfaceIdentity],
     surfaces: ClassObjects<'ctx>,
     faces: ClassObjects<'ctx>,
     split_classes: bool,
 }
 
-impl<'ctx> OperationSurfaceClasses<'ctx> {
-    fn new(ctx: &'ctx DecodeContext<'_>, lane: &FeatureInputLane) -> Result<Self, CodecError> {
+impl<'identities, 'ctx> OperationSurfaceClasses<'identities, 'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>, lane: &FeatureInputLane, identities: &'identities [crate::records::FeatureInputGeneratedSurfaceIdentity]) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT operation surface classes";
         let mut split_classes = true;
         for required in ["moPLineProjIdRep_c", "moPLineSurfIdRep_c"] {
@@ -1213,7 +1219,7 @@ impl<'ctx> OperationSurfaceClasses<'ctx> {
         Ok(Self {
             surfaces: ClassObjects::new(ctx, lane, "moCompSurfaceBody_c")?,
             faces: ClassObjects::new(ctx, lane, "moCompFace_c")?,
-            split_classes,
+            split_classes, identities,
         })
     }
 }
@@ -1222,7 +1228,7 @@ fn operation_surface_selection_candidates(
     ctx: &DecodeContext<'_>,
     operation: FeatureClass,
     lane: &FeatureInputLane,
-    classes: &OperationSurfaceClasses<'_>,
+    classes: &OperationSurfaceClasses<'_, '_>,
     start: usize,
     end: usize,
     object_source: Option<u32>,
@@ -1282,8 +1288,7 @@ fn operation_surface_selection_candidates(
             return Ok(Vec::new());
         };
         let mut candidates = Vec::new();
-        for identity in generated_surface_identities(ctx, lane)? {
-            ctx.charge_work(1, OPERATION)?;
+        for identity in ctx.admit_iter(classes.identities, OPERATION)? {
             let (Some(first), Some(last)) =
                 (identity.components.first(), identity.components.last())
             else {
@@ -1298,8 +1303,8 @@ fn operation_surface_selection_candidates(
             let Ok(offset) = usize::try_from(identity.offset) else {
                 continue;
             };
-            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
-            candidates.push((offset, identity.components));
+            let components = ctx.collect_vec(identity.components.iter().cloned(), OPERATION)?;
+            ctx.push_vec(&mut candidates, (offset, components), OPERATION)?;
         }
         return Ok(candidates);
     }
@@ -1497,21 +1502,25 @@ fn cosmetic_thread_cylinder_references(
     object_start: usize,
     object_end: usize,
     cylinder_reference_tokens: &HashSet<u16>,
+    diameter_index: &CosmeticDiameterIndex<'_, '_>,
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     const OPERATION: &str = "decode SLDPRT cosmetic cylinder references";
-    let diameter_tail = cosmetic_thread_diameter_child_tail(ctx, feature, lane)?;
+    let diameter_tail = diameter_index.tail(ctx, feature)?;
+    let ranges = match diameter_tail {
+        Some(tail) if object_start < object_end && tail.start <= object_end && object_start <= tail.end =>
+            [Some(object_start.min(tail.start)..object_end.max(tail.end)), None],
+        tail => [Some(object_start..object_end), tail],
+    };
+    let mut scan_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut offsets = Vec::new();
-    for offset in std::iter::once(object_start..object_end)
-        .chain(diameter_tail)
-        .flatten()
-    {
-        ctx.charge_work(2, OPERATION)?;
-        if View::u16_le_at(&lane.native_payload, offset)
-            .is_some_and(|token| cylinder_reference_tokens.contains(&token))
-        {
-            ctx.reserve_vec(&mut offsets, 1, OPERATION)?;
-            offsets.push(offset);
+    for range in ranges.into_iter().flatten() {
+    for offset in ctx.admit_iter(range, OPERATION)? {
+        if let Some(token) = View::u16_le_at(&lane.native_payload, offset) {
+        if ctx.contains_hash_set(cylinder_reference_tokens, &token, OPERATION)? {
+            scan_storage.with_storage(|| ctx.push_vec(&mut offsets, offset, OPERATION))?;
         }
+        }
+    }
     }
     ctx.sort_unstable_by(
         &mut offsets,
@@ -1524,15 +1533,8 @@ fn cosmetic_thread_cylinder_references(
         "deduplicate SLDPRT cosmetic thread cylinder offsets",
     )?;
     let mut references = Vec::new();
-    for offset in offsets {
-        ctx.charge_work(1, OPERATION)?;
-        if let Some(reference) =
-            cosmetic_thread_cylinder_reference_at(ctx, &lane.native_payload, offset)?
-        {
-            ctx.reserve_vec(&mut references, 1, OPERATION)?;
-            references.push(reference);
-            break;
-        }
+    if let Some(reference) = ctx.find_map(offsets, |offset| cosmetic_thread_cylinder_reference_at(ctx, &lane.native_payload, offset), OPERATION)? {
+        ctx.push_vec(&mut references, reference, OPERATION)?;
     }
     Ok(references)
 }
@@ -1748,27 +1750,28 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     object_start: usize,
     object_end: usize,
     cylinder_reference_tokens: &HashSet<u16>,
+    diameter_index: &CosmeticDiameterIndex<'_, '_>,
 ) -> Result<Vec<CylinderMarkerReference>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect SLDPRT cosmetic thread cylinder markers";
-    let diameter_tail = cosmetic_thread_diameter_child_tail(ctx, feature, lane)?;
+    let diameter_tail = diameter_index.tail(ctx, feature)?;
+    let ranges = match diameter_tail {
+        Some(tail) if object_start < object_end && tail.start <= object_end && object_start <= tail.end =>
+            [Some(object_start.min(tail.start)..object_end.max(tail.end)), None],
+        tail => [Some(object_start..object_end), tail],
+    };
+    let mut scan_storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut markers = Vec::new();
-    for body in std::iter::once(object_start..object_end)
-        .chain(diameter_tail)
-        .flatten()
-    {
-        ctx.charge_work(1, OPERATION)?;
-        if !View::u16_le_at(&lane.native_payload, body)
-            .is_some_and(|token| cylinder_reference_tokens.contains(&token))
-        {
-            continue;
-        }
+    for range in ranges.into_iter().flatten() {
+    for body in ctx.admit_iter(range, OPERATION)? {
+        let Some(token) = View::u16_le_at(&lane.native_payload, body) else { continue; };
+        if !ctx.contains_hash_set(cylinder_reference_tokens, &token, OPERATION)? { continue; }
         let Some(marker) =
             cosmetic_thread_cylinder_reference_marker_layout_at(&lane.native_payload, body)
         else {
             continue;
         };
-        ctx.reserve_vec(&mut markers, 1, OPERATION)?;
-        markers.push(marker);
+        scan_storage.with_storage(|| ctx.push_vec(&mut markers, marker, OPERATION))?;
+    }
     }
     ctx.sort_unstable_by(
         &mut markers,
@@ -1782,7 +1785,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     )?;
     let mut references = Vec::new();
     ctx.reserve_vec(&mut references, markers.len(), OPERATION)?;
-    for marker in markers {
+    for marker in ctx.admit_iter(markers, OPERATION)? {
         let path =
             match compact_sketch_surface_component_path_at(ctx, &lane.native_payload, marker)? {
                 Some(path) => Some(path),
@@ -1797,57 +1800,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     Ok(references)
 }
 
-fn cosmetic_thread_diameter_child_tail(
-    ctx: &DecodeContext<'_>,
-    feature: &crate::records::Feature,
-    lane: &FeatureInputLane,
-) -> Result<Option<std::ops::Range<usize>>, CodecError> {
-    const OPERATION: &str = "resolve SLDPRT cosmetic diameter interval";
-    for scalar in &lane.scalars {
-        ctx.charge_work(2, OPERATION)?;
-        for name in &lane.names {
-            let work = u64_from_index(name.id.len())
-                .checked_add(u64_from_index(scalar.name.len()))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
-        }
-    }
-    ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
-    Ok((|| {
-        let source_id = feature.source_value()?;
-        let diameter_id = source_id.checked_sub(1)?;
-        let mut diameters = lane.scalars.iter().filter(|scalar| {
-            scalar.object_id == diameter_id
-                && lane
-                    .names
-                    .iter()
-                    .rev()
-                    .find(|name| name.id == scalar.name)
-                    .is_some_and(|name| name.value == "D2")
-        });
-        let diameter = diameters.next()?;
-        if diameters.next().is_some() {
-            return None;
-        }
-        let start = usize::try_from(diameter.offset).ok()?.checked_add(8)?;
-        let end = lane
-            .scalars
-            .iter()
-            .map(|scalar| scalar.offset)
-            .chain(
-                lane.names
-                    .iter()
-                    .filter(|name| name.object_id != Some(ObjectId::Absent))
-                    .map(|name| name.offset),
-            )
-            .filter(|offset| *offset >= u64_from_index(start))
-            .min()
-            .and_then(|offset| usize::try_from(offset).ok())
-            .unwrap_or(lane.native_payload.len());
-        (start < end).then_some(start..end)
-    })())
-}
+
 
 fn cosmetic_thread_cylinder_reference_at(
     ctx: &DecodeContext<'_>,
@@ -2672,22 +2625,24 @@ fn counted_surface_component_path_at(
     .map(|(components, _)| components))
 }
 
-fn mirror_surface_type_prefix(lane: &FeatureInputLane) -> Option<[u8; 4]> {
-    let mut classes = lane
-        .classes
-        .iter()
-        .filter(|class| class.name == "moMirPatternSurfIdRep_c");
-    let class = classes.next().filter(|_| classes.next().is_none())?;
-    let offset = usize::try_from(class.offset).ok()?;
-    let signature = offset.checked_add(8 + class.name.len())?;
-    let prefix: [u8; 4] = lane
-        .native_payload
-        .get(signature..signature + 4)?
-        .try_into()
-        .ok()?;
-    let family = View::u16_le_at(&prefix, 0)?;
-    let variant = View::u16_le_at(&prefix, 2)?;
-    (is_class_token(family) && variant != 0).then_some(prefix)
+fn mirror_surface_type_prefix(ctx: &DecodeContext<'_>, lane: &FeatureInputLane) -> Result<Option<[u8; 4]>, CodecError> {
+    const OPERATION: &str = "find SLDPRT unique mirror surface class";
+    let mut selected = None;
+    let ambiguous = ctx.any_by(&lane.classes, |class| {
+        if class.name != "moMirPatternSurfIdRep_c" { return Ok(false); }
+        if selected.is_some() { return Ok(true); }
+        selected = Some(class);
+        Ok(false)
+    }, OPERATION)?;
+    if ambiguous { return Ok(None); }
+    Ok(selected.and_then(|class| {
+        let offset = usize::try_from(class.offset).ok()?;
+        let signature = offset.checked_add(8 + class.name.len())?;
+        let prefix: [u8; 4] = lane.native_payload.get(signature..signature + 4)?.try_into().ok()?;
+        let family = View::u16_le_at(&prefix, 0)?;
+        let variant = View::u16_le_at(&prefix, 2)?;
+        (is_class_token(family) && variant != 0).then_some(prefix)
+    }))
 }
 
 fn inline_mirror_surface_paths(

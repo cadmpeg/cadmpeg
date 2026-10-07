@@ -255,7 +255,7 @@ fn compact_surface_selections_refuses_legacy_path_nesting_limit() {
     let (service, _) =
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy::service())
             .unwrap();
-    let selections = crate::resolved_features::selections::compact_surface_selections(&service, &histories, crate::resolved_features::selections::SelectionHistory::new(&service, &histories).unwrap().for_lane(&service, &lane).unwrap(), &lane)
+    let selections = crate::resolved_features::selections::compact_surface_selections(&service, &histories, crate::resolved_features::selections::SelectionHistory::new(&service, &histories).unwrap().for_lane(&service, &lane).unwrap(), &lane, &crate::resolved_features::selections::generated_surface_identities(&service, &lane).unwrap())
     .unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].components.len(), 1);
@@ -264,7 +264,7 @@ fn compact_surface_selections_refuses_legacy_path_nesting_limit() {
     policy.limits.max_recursion_depth = 1;
     let (limited, _) =
         DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
-    let error = crate::resolved_features::selections::compact_surface_selections(&limited, &histories, crate::resolved_features::selections::SelectionHistory::new(&limited, &histories).unwrap().for_lane(&limited, &lane).unwrap(), &lane)
+    let error = crate::resolved_features::selections::compact_surface_selections(&limited, &histories, crate::resolved_features::selections::SelectionHistory::new(&limited, &histories).unwrap().for_lane(&limited, &lane).unwrap(), &lane, &crate::resolved_features::selections::generated_surface_identities(&limited, &lane).unwrap())
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
