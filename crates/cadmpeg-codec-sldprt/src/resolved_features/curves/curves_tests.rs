@@ -1203,8 +1203,9 @@ fn linked_semicircle_refuses_collection_limit() {
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
     let error =
-        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
+        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, &mut entities_storage, EPS_REFUSAL_GEOMETRY)
             .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -1224,11 +1225,13 @@ fn linked_semicircle_refuses_materialized_limit() {
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
             let mut entities = entities.clone();
+            let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
             resolve_two_center_semicircle_profile(
                 &ctx,
                 &payload,
                 &markers,
                 &mut entities,
+                &mut entities_storage,
                 EPS_REFUSAL_GEOMETRY,
             )
         },
@@ -1246,7 +1249,8 @@ fn linked_semicircle_records_close_a_two_center_profile() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
-    resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap();
+    let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
+    resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, &mut entities_storage, EPS_REFUSAL_GEOMETRY).unwrap();
 
     assert_eq!(
         entities
@@ -1770,11 +1774,13 @@ fn linked_semicircle_refuses_work_at_minimum_admission() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, policy).unwrap();
         let mut output = entities.clone();
+        let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
         resolve_two_center_semicircle_profile(
             &ctx,
             &payload,
             &markers,
             &mut output,
+            &mut entities_storage,
             EPS_SEMICIRCLE_TEST,
         )?;
         Ok::<_, CodecError>(output)
