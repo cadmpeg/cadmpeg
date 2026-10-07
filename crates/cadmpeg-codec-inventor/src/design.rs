@@ -2813,26 +2813,26 @@ mod tests {
             kinds.push(shared_add(ordinal));
         }
         let mut policy = DecodePolicy::service();
-        // A table's storage is its buckets' slots, one control byte per bucket, at most 15
-        // alignment bytes and 16 trailing controls.
-        let table = |slot: usize, buckets: usize| buckets * slot + 15 + buckets + 16;
-        // Growing a table to eight entries admits its 16-bucket bound at the fourth entry
-        // and its 32-bucket bound at the eighth, each net of the 4- or 8-bucket table
-        // already counted.
-        let grown = |slot: usize| table(slot, 16) + table(slot, 32) - table(slot, 8);
-        // Plan bytes count the eight-entry visiting and length maps, a 4-bucket set, and 12
-        // vector slots.
-        let plan_bytes = grown(std::mem::size_of::<u32>())
-            + table(std::mem::size_of::<u32>(), 4)
-            + grown(std::mem::size_of::<(u32, super::MeasuredExpression)>())
+        // Plan bytes count 16-bucket visiting/length maps, a 4-bucket set, and 12 vector slots.
+        let plan_bytes = 16 * std::mem::size_of::<u32>()
+            + 16
+            + 31
+            + 4 * std::mem::size_of::<u32>()
+            + 4
+            + 31
+            + 16 * std::mem::size_of::<(u32, super::MeasuredExpression)>()
+            + 16
+            + 31
             + 12 * std::mem::size_of::<u32>();
-        // Six rendered lengths total 462 bytes; their memo table admitted its 16-bucket
-        // bound at the fourth entry and holds no more than seven. Growing it to 16 buckets
-        // peaks at twice that bound (the table and its transient allocation), which the
-        // text of the seventh node, 2*249+7 bytes, exceeds with every earlier peak below it.
+        // Six rendered lengths total 462 bytes; their memo table has eight buckets.
+        // The shape memo's growth holds a transient bound above the sixth node's
+        // need, so the seventh shared-add node, needing 2*249+7 bytes, is the
+        // first render that exceeds every earlier peak.
         let live = plan_bytes
             + (1 + 9 + 25 + 57 + 121 + 249)
-            + table(std::mem::size_of::<(u32, String)>(), 16);
+            + 8 * std::mem::size_of::<(u32, String)>()
+            + 8
+            + 31;
         let next_length = 2 * 249 + 7;
         policy.limits.max_materialized_bytes =
             cadmpeg_core::decode::u64_from_index(live + next_length - 1);

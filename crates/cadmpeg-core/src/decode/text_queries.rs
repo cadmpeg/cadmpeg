@@ -102,32 +102,38 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
-    /// Finds a UTF-8 substring after admitting every candidate comparison.
+    /// Finds a UTF-8 substring after admitting the linear two-way search over
+    /// the text and the pattern.
     pub fn find_text(
         &self,
         text: &str,
         pattern: &str,
         operation: &'static str,
     ) -> Result<Option<usize>, CodecError> {
-        let positions = self.cost_sum(u64_from_index(text.len()), 1, operation)?;
-        let comparisons = self.cost_sum(u64_from_index(pattern.len()), 1, operation)?;
         self.charge_work(
-            self.cost_product(positions, comparisons, operation)?,
+            self.cost_sum(
+                u64_from_index(text.len()),
+                u64_from_index(pattern.len()),
+                operation,
+            )?,
             operation,
         )?;
         Ok(text.find(pattern))
     }
-    /// Finds the last UTF-8 substring after admitting every candidate comparison.
+    /// Finds the last UTF-8 substring after admitting the linear two-way search
+    /// over the text and the pattern.
     pub fn rfind_text(
         &self,
         text: &str,
         pattern: &str,
         operation: &'static str,
     ) -> Result<Option<usize>, CodecError> {
-        let positions = self.cost_sum(u64_from_index(text.len()), 1, operation)?;
-        let comparisons = self.cost_sum(u64_from_index(pattern.len()), 1, operation)?;
         self.charge_work(
-            self.cost_product(positions, comparisons, operation)?,
+            self.cost_sum(
+                u64_from_index(text.len()),
+                u64_from_index(pattern.len()),
+                operation,
+            )?,
             operation,
         )?;
         Ok(text.rfind(pattern))
@@ -595,14 +601,14 @@ mod tests {
         );
     }
     #[test]
-    fn text_search_admits_candidate_and_pattern_work_before_search() {
+    fn text_search_admits_text_and_pattern_work_before_search() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Four candidate positions times three pattern steps.
-        policy.limits.max_work_units = 12;
+        // The two-way search reads the three text bytes and two pattern bytes.
+        policy.limits.max_work_units = 5;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert_eq!(ctx.find_text("abc", "bc", "find").expect("search"), Some(1));
-        policy.limits.max_work_units = 11;
+        policy.limits.max_work_units = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let CodecError::ResourceLimit(first) =
             ctx.rfind_text("abc", "bc", "rfind").expect_err("refusal")
