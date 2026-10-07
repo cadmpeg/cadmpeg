@@ -5107,20 +5107,15 @@ pub(crate) fn indexed_sections<'a>(
             else {
                 continue;
             };
-            if ctx.contains_btree_set(
-                &seen_record_starts,
-                &table_end,
-                "NX fixed record start exclusion",
-            )? {
-                continue;
-            }
-            temporary.with_storage(|| {
+            if !temporary.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut seen_record_starts,
                     table_end,
                     "NX fixed record start insertion",
                 )
-            })?;
+            })? {
+                continue;
+            }
             ctx.reserve_scoped_vec(
                 &mut temporary,
                 &mut candidates,
@@ -5206,20 +5201,15 @@ pub(crate) fn indexed_sections<'a>(
             else {
                 continue;
             };
-            if ctx.contains_btree_set(
-                &seen_record_starts,
-                &second,
-                "NX offset record start exclusion",
-            )? {
-                continue;
-            }
-            temporary.with_storage(|| {
+            if !temporary.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut seen_record_starts,
                     second,
                     "NX offset record start insertion",
                 )
-            })?;
+            })? {
+                continue;
+            }
             ctx.reserve_scoped_vec(
                 &mut temporary,
                 &mut candidates,
@@ -5350,20 +5340,15 @@ pub(crate) fn offset_store_control_class_ordinals(
         let Some(identity) = value_at(index) else {
             return Ok(None);
         };
-        if ctx.contains_btree_set(
-            &identities,
-            &identity,
-            "NX offset-store identity repetition",
-        )? {
-            break;
-        }
-        scratch.with_storage(|| {
+        if !scratch.with_storage(|| {
             ctx.insert_btree_set(
                 &mut identities,
                 identity,
                 "NX offset-store class identity insertion",
             )
-        })?;
+        })? {
+            break;
+        }
         maximum_identity = maximum_identity.max(identity);
         if maximum_identity < minimum && boundary.replace(index + 1).is_some() {
             return Ok(None);
