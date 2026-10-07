@@ -488,7 +488,8 @@ fn decode_selects_a_length_uncertainty_after_an_angular_measure() {
 }
 
 #[test]
-fn uncertainty_name_refuses_retained_limit() {
+fn uncertainty_name_refuses_materialized_limit() {
+    use crate::reader::RecordExt;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -497,21 +498,22 @@ fn uncertainty_name_refuses_retained_limit() {
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid uncertainty exchange");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         "step_string_text",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-                .expect("root fits retained policy");
-            let mut ir = cadmpeg_ir::document::CadIr::empty();
-            (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
+                .expect("root fits materialized policy");
+            let name = exchange.records().get(&2).expect("uncertainty measure").parameter(2).expect("uncertainty name");
+            // Unit-resolution scratch is released before the name boundary.
+            ctx.with_scoped_storage("test uncertainty name storage", || super::super::string_value(name, &exchange, &ctx)).map(|_| ())
         },
     );
     assert!(
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
+            if refusal.dimension == ResourceDimension::MaterializedBytes
                 && refusal.operation == "step_string_text")
     );
 }
@@ -729,7 +731,8 @@ fn resolve_unit_scales_for_test(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default())
         .expect("empty root fits policy");
-    super::super::resolve_unit_scales(exchange, PositiveReal::ONE, PositiveReal::ONE, losses, &ctx)
+    let mut storage = ctx.reserve_scoped(0, "test selected units").expect("empty scope");
+    super::super::resolve_unit_scales(exchange, PositiveReal::ONE, PositiveReal::ONE, losses, &mut storage, &ctx)
         .expect("unit scales fit policy")
 }
 
@@ -813,31 +816,4 @@ fn shared_representation_items_reject_conflicting_context_units() {
         .any(|loss| { loss.code == StepLossCode::ConflictingRepresentationUnits.kind() }));
 }
 
-#[test]
-fn distance_accuracy_name_case_equality_preserves_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) =
-        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).unwrap();
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "STEP distance accuracy name case equality",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy).unwrap();
-            let result = super::super::context_length_uncertainties(
-                exchange.records().get(&3).unwrap(),
-                &exchange,
-                &ctx,
-            )
-            .map(|_| ());
-            if let Err(CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-}
+

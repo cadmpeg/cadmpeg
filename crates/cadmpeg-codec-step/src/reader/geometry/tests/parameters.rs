@@ -291,7 +291,7 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
         Some([0.0, 2.0])
     );
     assert_eq!(
-        surface_periodic_domains(&SolvedSurfaceGeometry::Nurbs(surface)),
+        surface_periodic_domains(&SolvedSurfaceGeometry::Nurbs(surface), &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
         [Some([0.0, 2.0]), Some([0.0, 1.0])]
     );
 }
@@ -332,7 +332,7 @@ fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
     let start = FiniteReal::new(max * 0.5).expect("finite start");
     let end = FiniteReal::new(-max).expect("finite end");
     assert_eq!(
-        edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end),
+        edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
         Some([max * 0.5, max])
     );
 }
@@ -353,7 +353,7 @@ fn periodic_pcurve_trim_shifts_a_wide_finite_seam_endpoint() {
     .expect("wide periodic pcurve");
     let geometry = PcurveGeometry::Nurbs { nurbs };
     assert_eq!(
-        trimmed_pcurve_parameterization(&geometry, max * 0.5, -max, true),
+        trimmed_pcurve_parameterization(&geometry, max * 0.5, -max, true, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
         ([max * 0.5, max], true)
     );
 }
@@ -369,15 +369,15 @@ fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
     ));
     let [two, five] = [2.0, 5.0].map(|value| FiniteReal::new(value).expect("finite parameter"));
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), two, five),
+        edge_parameter_range(line.solved().expect("solved carrier"), two, five, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
         Some([2.0, 5.0])
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), five, two),
+        edge_parameter_range(line.solved().expect("solved carrier"), five, two, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
         None
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), two, two),
+        edge_parameter_range(line.solved().expect("solved carrier"), two, two, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission"),
         None
     );
 }
@@ -398,7 +398,7 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
         0.5 - 20_000.0 * std::f64::consts::TAU,
     ]
     .map(|value| FiniteReal::new(value).expect("finite parameter"));
-    let range = edge_parameter_range(circle.solved().expect("solved carrier"), start, end)
+    let range = edge_parameter_range(circle.solved().expect("solved carrier"), start, end, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission")
         .expect("periodic interval");
     assert!((range[0] - 1.5).abs() < 1.0e-10);
     assert!((range[1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-10);
@@ -417,7 +417,7 @@ fn periodic_edge_range_reduces_finite_endpoints_separately_when_difference_overf
     );
     let start = FiniteReal::new(-f64::MAX).expect("finite start");
     let end = FiniteReal::new(f64::MAX).expect("finite end");
-    let range = edge_parameter_range(&circle, start, end).expect("finite cyclic sweep");
+    let range = edge_parameter_range(&circle, start, end, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission").expect("finite cyclic sweep");
     assert!(range[0].is_finite() && range[1].is_finite());
     assert!(range[1] > range[0]);
     assert!(range[1] - range[0] < std::f64::consts::TAU);
@@ -456,7 +456,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         1.0,
     )
     .expect("end point");
-    let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
+    let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission");
     let start = nurbs_curve_parameter_near_point(
         &cadmpeg_test_support::service_decode_context(),
         &nurbs,
@@ -478,7 +478,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     .expect("unanchored end witness")
     .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
-    let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start);
+    let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission");
     let end = nurbs_curve_parameter_near_point(
         &cadmpeg_test_support::service_decode_context(),
         &nurbs,
@@ -1140,7 +1140,7 @@ ENDSEC;END-ISO-10303-21;",
             angle_scale: 1.0
         },
         &mut losses,
-        &mut active,
+        &mut super::super::PcurveWalk { active: &mut active, workspace: &mut super::super::PcurveWorkspace { records: BTreeSet::new(), storage: ctx.reserve_scoped(0, "test pcurve workspace").expect("empty scope") } },
         0,
         &ctx
     )
@@ -1158,7 +1158,7 @@ ENDSEC;END-ISO-10303-21;",
             angle_scale: 1.0
         },
         &mut losses,
-        &mut active,
+        &mut super::super::PcurveWalk { active: &mut active, workspace: &mut super::super::PcurveWorkspace { records: BTreeSet::new(), storage: ctx.reserve_scoped(0, "test pcurve workspace").expect("empty scope") } },
         0,
         &ctx
     )
@@ -1234,7 +1234,7 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
         let [start, end] =
             [0.8 * d, 0.9 * d].map(|value| FiniteReal::new(value).expect("finite parameter"));
         let range =
-            super::super::edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end)
+            super::super::edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end, &cadmpeg_test_support::service_decode_context()).expect("parameter walk admission")
                 .unwrap();
         assert!((range[0] / d - 0.8).abs() < 16. * f64::EPSILON);
         assert!((range[1] / d - 0.9).abs() < 16. * f64::EPSILON);

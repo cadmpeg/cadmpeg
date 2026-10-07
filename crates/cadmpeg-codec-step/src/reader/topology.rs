@@ -5758,7 +5758,9 @@ fn pcurve_selection_seeds(
     if let Some((origin, direction)) = geometry.line_parameters(ctx)? {
         if let Some(domain) = surface
             .solved()
-            .and_then(|surface| surface_periodic_domains(surface)[0])
+            .map(|surface| surface_periodic_domains(surface, ctx).map(|domains| domains[0]))
+            .transpose()?
+            .flatten()
         {
             if direction.u != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
@@ -5774,7 +5776,9 @@ fn pcurve_selection_seeds(
         }
         if let Some(domain) = surface
             .solved()
-            .and_then(|surface| surface_periodic_domains(surface)[1])
+            .map(|surface| surface_periodic_domains(surface, ctx).map(|domains| domains[1]))
+            .transpose()?
+            .flatten()
         {
             if direction.v != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {

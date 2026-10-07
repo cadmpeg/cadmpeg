@@ -29,7 +29,7 @@ const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
 #[test]
-fn apll_point_name_refuses_retained_limit() {
+fn apll_point_name_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -38,27 +38,27 @@ fn apll_point_name_refuses_retained_limit() {
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid APLL exchange");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         "step_string_text",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-                .expect("root fits retained policy");
+                .expect("root fits materialized policy");
             let mut ir = cadmpeg_ir::document::CadIr::empty();
             (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
         },
     );
     assert!(
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
+            if refusal.dimension == ResourceDimension::MaterializedBytes
                 && refusal.operation == "step_string_text")
     );
 }
 
 #[test]
-fn tessellated_curve_name_refuses_retained_limit() {
+fn tessellated_curve_name_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -67,21 +67,28 @@ fn tessellated_curve_name_refuses_retained_limit() {
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid tessellation exchange");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         "step_string_text",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-                .expect("root fits retained policy");
+                .expect("root fits materialized policy");
             let mut ir = cadmpeg_ir::document::CadIr::empty();
-            (super::super::decode(&exchange, &mut ir, &ctx)).map(|_| ())
+            let units = super::super::UnitScales {
+                default_length: cadmpeg_ir::scalar::PositiveReal::ONE,
+                default_angle: cadmpeg_ir::scalar::PositiveReal::ONE,
+                length: std::collections::BTreeMap::new(),
+                angle: std::collections::BTreeMap::new(),
+            };
+            // The geometry-wide index peak does not define the local name boundary.
+            super::super::decode_tessellated_curve_sets(&exchange, &units, &mut ir, &mut std::collections::BTreeSet::new(), &mut Vec::new(), &ctx)
         },
     );
     assert!(
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
+            if refusal.dimension == ResourceDimension::MaterializedBytes
                 && refusal.operation == "step_string_text")
     );
 }

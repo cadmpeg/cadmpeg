@@ -121,7 +121,6 @@ pub(super) fn first_matching<'a>(
     for value in values {
         for reference in references(value, ctx) {
             let id = reference?;
-            ctx.charge_work(1, "step_reference_predicate")?;
             if predicate(id)? {
                 return Ok(Some(id));
             }
@@ -248,17 +247,21 @@ mod tests {
     }
     #[test]
     fn reference_matching_propagates_predicate_work_refusal() {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 2;
-        with_policy_context(b"", &policy, |_, ctx| {
-            let error = first_matching([&Value::Reference(9)], ctx, |_| {
-                Ok(ctx
-                    .admit_iter(&[1_u64, 2], "test reference predicate scan")?
-                    .any(|value| *value == 9))
-            })
-            .expect_err("predicate scan exceeds remaining work");
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.operation == "test reference predicate scan" && Some(limit) == ctx.resource_refusal()));
-        });
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, "test reference predicate scan", |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                with_policy_context(b"", &policy, |_, ctx| {
+                    let result = first_matching([&Value::Reference(9)], ctx, |_| {
+                        Ok(ctx.admit_iter(&[1_u64, 2], "test reference predicate scan")?.any(|value| *value == 9))
+                    });
+                    if let Err(CodecError::ResourceLimit(limit)) = &result {
+                        assert_eq!(Some(*limit), ctx.resource_refusal());
+                    }
+                    result
+                })
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "test reference predicate scan"));
     }
 }
