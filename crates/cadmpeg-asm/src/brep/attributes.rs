@@ -693,4 +693,6 @@ mod tests {
         assert!(decode_transform(&ctx, &transform_record(1.0, [f64::NAN, 0.0, 0.0]), 1.0).unwrap().is_none());
         assert!(decode_transform(&ctx, &identity, f64::INFINITY).unwrap().is_none());
     }
+    mod limits;
+
 }

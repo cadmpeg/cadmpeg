@@ -275,4 +275,27 @@ mod tests {
         assert_eq!(stats.unknown_surface_faces(&cadmpeg_test_support::service_decode_context()).unwrap(), 5);
     }
 
+    #[test]
+    fn stats_merge_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let mut whole = Stats::default();
+        let mut part = Stats::default();
+        part.unknown_surface_kinds.insert("unknown".into(), 1);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = whole
+            .merge(&ctx, part)
+            .expect_err("one kind exceeds zero items");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected collection refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "ASM merge loss kinds");
+    }
+
+
 }
