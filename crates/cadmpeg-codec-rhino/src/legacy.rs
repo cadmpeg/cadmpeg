@@ -310,7 +310,7 @@ fn malformed(
     Ok(match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(*limit),
         other => CodecError::Malformed(
-            ctx.format_retained(format_args!("{}", other), "Rhino malformed text")?,
+            ctx.format_retained(format_args!("{other}"), "Rhino malformed text")?,
         ),
     })
 }
@@ -322,7 +322,7 @@ fn geometry_error(
     Ok(match error {
         crate::curves::GeometryError::Codec(error) => error,
         other => CodecError::Malformed(
-            ctx.format_retained(format_args!("{}", other), "Rhino geometry_error text")?,
+            ctx.format_retained(format_args!("{other}"), "Rhino geometry_error text")?,
         ),
     })
 }
@@ -857,7 +857,7 @@ fn legacy_spline(
     )?
     .or_else(|error| {
         Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino legacy_spline text",
         )?))
     })
@@ -1741,7 +1741,7 @@ fn legacy_surface(
     )?
     .or_else(|error| {
         Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino legacy_surface text",
         )?))
     })
@@ -2669,7 +2669,7 @@ fn append_legacy_brep(
                             pcurve_weights,
                             trim.pcurve.periodic(),
                         )?
-                        .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{}", error), "Rhino append_legacy_brep text")?)))?,
+                        .or_else(|error| Err(CodecError::Malformed(ctx.format_retained(format_args!("{error}"), "Rhino append_legacy_brep text")?)))?,
                     },
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                         None,
@@ -2742,7 +2742,7 @@ fn append_legacy_brep(
                 .map_err(cadmpeg_core::CodecError::from)?
                 .or_else(|error| {
                     Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("{}", error),
+                        format_args!("{error}"),
                         "Rhino append_legacy_brep text",
                     )?))
                 })?;
@@ -2803,7 +2803,7 @@ fn append_legacy_brep(
         )
         .or_else(|message| {
             Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
-                format_args!("{}", message),
+                format_args!("{message}"),
                 "Rhino append_legacy_brep text",
             )?))
         })?,
@@ -3221,14 +3221,14 @@ fn legacy_mesh(
             Err(match error {
                 crate::curves::GeometryError::Codec(error) => error,
                 other => CodecError::Malformed(
-                    ctx.format_retained(format_args!("{}", other), "Rhino legacy_mesh text")?,
+                    ctx.format_retained(format_args!("{other}"), "Rhino legacy_mesh text")?,
                 ),
             })
         })?;
     Tessellation::new(
         cadmpeg_ir::tessellation::TessellationId::mint(id).or_else(|error| {
             Err(CodecError::Malformed(ctx.format_retained(
-                format_args!("{}", error),
+                format_args!("{error}"),
                 "Rhino legacy_mesh text",
             )?))
         })?,
@@ -3237,7 +3237,7 @@ fn legacy_mesh(
     )
     .or_else(|err| {
         Err(CodecError::Malformed(ctx.format_retained(
-            format_args!("{}", err),
+            format_args!("{err}"),
             "Rhino legacy_mesh text",
         )?))
     })
