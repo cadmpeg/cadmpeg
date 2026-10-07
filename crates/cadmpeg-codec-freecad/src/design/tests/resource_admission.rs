@@ -176,7 +176,12 @@ fn design_boolean_scalar_keeps_case_insensitive_values_without_copy() {
 fn design_spreadsheet_value_diagnostic_refuses_at_retained_limit() {
     let xml = roxmltree::Document::parse("<Property/>").expect("valid XML");
     crate::test_support::assert_retained_refusal_at(&[], "fcstd design diagnostic", |ctx| {
-        super::super::direct_spreadsheet_value(ctx, &xml, "Cells", "spreadsheet-property")
+        super::super::spreadsheets::direct_spreadsheet_value(
+            ctx,
+            &xml,
+            "Cells",
+            "spreadsheet-property",
+        )
     });
 }
 
@@ -216,7 +221,12 @@ fn design_spreadsheet_cell_properties_refuse_at_collection_limits() {
         "fcstd spreadsheet distinct addresses",
     ] {
         crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            super::super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property])
+            super::super::spreadsheets::append_spreadsheet(
+                ctx,
+                &mut Vec::new(),
+                &object,
+                &[&property],
+            )
         });
     }
 }
@@ -269,7 +279,7 @@ fn design_spreadsheet_dimensions_refuse_at_distinct_collection_limits() {
         "fcstd spreadsheet distinct row heights",
     ] {
         crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            super::super::append_spreadsheet(
+            super::super::spreadsheets::append_spreadsheet(
                 ctx,
                 &mut Vec::new(),
                 &object,

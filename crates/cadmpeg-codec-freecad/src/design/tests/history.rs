@@ -43,7 +43,7 @@ fn spreadsheet_cells_refuse_at_caller_limit() {
         .expect("valid XML span"),
     };
     crate::test_support::assert_collection_refusal_at(&[], "FreeCAD spreadsheet cells", |ctx| {
-        super::super::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property])
+        super::super::spreadsheets::append_spreadsheet(ctx, &mut Vec::new(), &object, &[&property])
     });
 }
 

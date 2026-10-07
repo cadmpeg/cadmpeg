@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of `FCStd` construction history into neutral design entities.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::text::NonBlankString;
@@ -11,12 +11,8 @@ use cadmpeg_ir::geometry::nurbs::KnotVector;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
-    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
-    SketchId, SketchLocus, SketchNativeOperand,
-};
-use cadmpeg_ir::spreadsheets::{
-    CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,
-    SpreadsheetRange,
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
+    SketchNativeOperand,
 };
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::{
@@ -43,7 +39,7 @@ use cadmpeg_ir::{
 };
 
 use crate::brep::ShapePayloadRecord;
-use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
+use crate::native::{EntryRecord, ObjectRecord, PropertyRecord};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
@@ -60,6 +56,9 @@ macro_rules! required {
         }
     };
 }
+
+mod profiles;
+mod spreadsheets;
 
 fn malformed_design(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
     crate::resource::malformed_charged(ctx, message, "fcstd design diagnostic")
@@ -265,7 +264,7 @@ pub(crate) fn transfer(
         let mut definition = if is_spreadsheet(&object.type_name) {
             ctx.push_vec(
                 &mut ir.model.spreadsheets,
-                append_spreadsheet(ctx, &mut ir.model.parameters, object, &owned)?,
+                spreadsheets::append_spreadsheet(ctx, &mut ir.model.parameters, object, &owned)?,
                 "fcstd design spreadsheets",
             )?;
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
@@ -1259,529 +1258,6 @@ fn unique_named_property<'a>(
     )
 }
 
-fn direct_spreadsheet_value<'a, 'input: 'a>(
-    ctx: &DecodeContext<'_>,
-    xml: &'a roxmltree::Document<'input>,
-    tag: &str,
-    property_id: &str,
-) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
-    let wrapper = ctx.xml_root_element(xml, "FreeCAD spreadsheet property root")?;
-    let mut found = None;
-    let mut nodes = xml.descendants();
-    while let Some(node) = ctx.next_charged(&mut nodes, "FreeCAD spreadsheet values")? {
-        if !ctx.xml_has_tag_name(node, tag, "FreeCAD spreadsheet value tag")? {
-            continue;
-        }
-        if found.is_some() {
-            return Err(malformed_design(
-                ctx,
-                format_args!("{property_id} has multiple {tag} values"),
-            ));
-        }
-        found = Some(node);
-    }
-    let Some(node) = found else {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{property_id} has no {tag} value"),
-        ));
-    };
-    if node.parent() != Some(wrapper) {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{property_id} has no direct {tag} value"),
-        ));
-    }
-    Ok(node)
-}
-
-fn append_spreadsheet(
-    ctx: &DecodeContext<'_>,
-    parameters: &mut Vec<DesignParameter>,
-    object: &ObjectRecord,
-    properties: &[&PropertyRecord],
-) -> Result<Spreadsheet, CodecError> {
-    let property = match crate::native::sole_property_matching(ctx, properties, |property| {
-        property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet"
-    })? {
-        Ok(Some(property)) => property,
-        Ok(None) => {
-            return Err(malformed_design(
-                ctx,
-                format_args!("spreadsheet {} has no cells property", object.id()),
-            ));
-        }
-        Err(_) => return Err(malformed("spreadsheet has multiple cells properties")),
-    };
-    let admitted_xml = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
-        .map_err(|error| {
-            let CodecError::Malformed(error) = error else {
-                return error;
-            };
-            malformed_design(
-                ctx,
-                format_args!("invalid spreadsheet {}: {error}", property.id),
-            )
-        })?;
-    let xml = admitted_xml.document();
-    let cells = direct_spreadsheet_value(ctx, xml, "Cells", &property.id)?;
-    let count_text = ctx
-        .xml_attribute(cells, "Count", "FreeCAD design XML attribute")?
-        .ok_or_else(|| {
-            malformed_design(ctx, format_args!("{} has invalid Cells Count", property.id))
-        })?;
-    let declared = ctx
-        .parse_text::<usize>(count_text, "fcstd spreadsheet cell count")?
-        .map_err(|_| {
-            malformed_design(ctx, format_args!("{} has invalid Cells Count", property.id))
-        })?;
-    if declared > MAX_SKETCH_RECORDS {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{} cell count exceeds {MAX_SKETCH_RECORDS}", property.id),
-        ));
-    }
-    let mut found = 0_usize;
-    let mut xml_nodes_3 = cells.children();
-    while let Some(cell) = ctx.next_charged(&mut xml_nodes_3, "FreeCAD design XML traversal")? {
-        if ctx.xml_has_tag_name(cell, "Cell", "FreeCAD design XML tag")? {
-            found = found.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("FreeCAD spreadsheet cell count", u64::MAX, u64::MAX)
-            })?;
-        }
-    }
-    if declared != found {
-        return Err(malformed_design(
-            ctx,
-            format_args!(
-                "{} declares {declared} cells but contains {}",
-                property.id, found
-            ),
-        ));
-    }
-    let mut cell_ids = ctx.vector_storage(found, "FreeCAD spreadsheet cells")?;
-    let mut merged_ranges: Vec<SpreadsheetRange> = Vec::new();
-    let mut index = 0_usize;
-    let mut xml_nodes_4 = cells.children();
-    while let Some(cell) = ctx.next_charged(&mut xml_nodes_4, "FreeCAD design XML traversal")? {
-        if !ctx.xml_has_tag_name(cell, "Cell", "FreeCAD design XML tag")? {
-            continue;
-        }
-        let address = ctx
-            .xml_attribute(cell, "address", "FreeCAD design XML attribute")?
-            .ok_or_else(|| {
-                malformed_design(ctx, format_args!("{} cell has no address", property.id))
-            })?;
-        let content = ctx
-            .xml_attribute(cell, "content", "FreeCAD design XML attribute")?
-            .unwrap_or_default();
-        let name = ctx
-            .xml_attribute(cell, "alias", "FreeCAD design XML attribute")?
-            .unwrap_or(address);
-        let mut retained = BTreeMap::new();
-        ctx.insert_btree_map(
-            &mut retained,
-            cadmpeg_core::nonblank_literal!("address"),
-            ctx.copy_retained_text(address, "fcstd spreadsheet address")?,
-            "fcstd spreadsheet cell properties",
-        )?;
-        for attribute in [
-            cadmpeg_core::nonblank_literal!("alias"),
-            cadmpeg_core::nonblank_literal!("alignment"),
-            cadmpeg_core::nonblank_literal!("style"),
-            cadmpeg_core::nonblank_literal!("foregroundColor"),
-            cadmpeg_core::nonblank_literal!("backgroundColor"),
-            cadmpeg_core::nonblank_literal!("displayUnit"),
-            cadmpeg_core::nonblank_literal!("rowSpan"),
-            cadmpeg_core::nonblank_literal!("colSpan"),
-        ] {
-            if let Some(value) =
-                ctx.xml_attribute(cell, attribute.as_str(), "FreeCAD design XML attribute")?
-            {
-                ctx.insert_btree_map(
-                    &mut retained,
-                    attribute,
-                    ctx.copy_retained_text(value, "fcstd spreadsheet cell attribute")?,
-                    "fcstd spreadsheet cell properties",
-                )?;
-            }
-        }
-        let (row, column) = cell_address(ctx, address)?.ok_or_else(|| {
-            malformed_design(
-                ctx,
-                format_args!("{} cell has invalid address", property.id),
-            )
-        })?;
-        let cell_address = CellAddress::new(row, column).ok_or_else(|| {
-            malformed_design(
-                ctx,
-                format_args!("{} cell has invalid address", property.id),
-            )
-        })?;
-        let id = ParameterId::mint(design_identity_text(
-            ctx,
-            "parameter",
-            object,
-            format_args!(":cell:{address}"),
-            "fcstd spreadsheet cell identity",
-        )?)
-        .map_err(CodecError::malformed)?;
-        ctx.push_vec(
-            &mut cell_ids,
-            SpreadsheetCell {
-                address: cell_address,
-                parameter: id.try_clone_for_decode(ctx, "fcstd spreadsheet cell parameter")?,
-            },
-            "FreeCAD spreadsheet cells",
-        )?;
-        if let Some(range) = merged_range(ctx, cell)? {
-            if !ctx.any_by(
-                &merged_ranges,
-                |existing| Ok(existing.contains(range.start())),
-                "fcstd spreadsheet merged range lookup",
-            )? {
-                ctx.push_vec(&mut merged_ranges, range, "fcstd spreadsheet merged ranges")?;
-            }
-        }
-        let value = if content.starts_with('=') {
-            None
-        } else {
-            match ctx.parse_text::<f64>(content, "fcstd spreadsheet cell value")? {
-                Ok(value) => cadmpeg_ir::scalar::FiniteReal::new(value).map(ParameterValue::Real),
-                Err(_) => None,
-            }
-        };
-        ctx.push_vec(
-            parameters,
-            DesignParameter {
-                id,
-                owner: Some(feature_id(ctx, object)?),
-                ordinal: u32::try_from(index).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "FreeCAD ordinal",
-                        u64::from(u32::MAX),
-                        cadmpeg_core::decode::u64_from_index(index),
-                    )
-                })?,
-                name: ctx.copy_retained_text(name, "fcstd spreadsheet cell name")?,
-                expression: ctx.copy_retained_text(content, "fcstd spreadsheet cell expression")?,
-                display: None,
-                value,
-                dependencies: DistinctMembers::default(),
-                properties: retained,
-                pmi: None,
-                native_ref: Some(ctx.copy_retained_text(
-                    &property.id,
-                    "fcstd spreadsheet parameter native reference",
-                )?),
-            },
-            "fcstd spreadsheet parameters",
-        )?;
-        index = index
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("FreeCAD ordinal", u64::MAX, u64::MAX))?;
-    }
-    let column_widths = spreadsheet_dimensions(
-        ctx,
-        properties,
-        "Spreadsheet::PropertyColumnWidths",
-        "columnWidths",
-        "ColumnInfo",
-        "Column",
-        "width",
-    )?;
-    let row_heights = spreadsheet_dimensions(
-        ctx,
-        properties,
-        "Spreadsheet::PropertyRowHeights",
-        "rowHeights",
-        "RowInfo",
-        "Row",
-        "height",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(cell_ids.len()),
-        "fcstd spreadsheet distinct parameter IDs",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(cell_ids.len()),
-        "fcstd spreadsheet distinct addresses",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(column_widths.len()),
-        "fcstd spreadsheet distinct column widths",
-    )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(row_heights.len()),
-        "fcstd spreadsheet distinct row heights",
-    )?;
-    Spreadsheet::new(
-        SpreadsheetId::mint(design_identity_text(
-            ctx,
-            "spreadsheet",
-            object,
-            format_args!(""),
-            "fcstd spreadsheet identity",
-        )?)
-        .map_err(CodecError::malformed)?,
-        feature_id(ctx, object)?,
-        cell_ids,
-        column_widths,
-        row_heights,
-        merged_ranges,
-        Some(ctx.copy_retained_text(object.id(), "fcstd spreadsheet native reference")?),
-    )
-    .map_err(CodecError::malformed)
-}
-
-fn spreadsheet_dimensions(
-    ctx: &DecodeContext<'_>,
-    properties: &[&PropertyRecord],
-    type_name: &str,
-    property_name: &str,
-    container: &str,
-    element: &str,
-    value_name: &str,
-) -> Result<Vec<SpreadsheetDimension>, CodecError> {
-    let property = match crate::native::sole_property_matching(ctx, properties, |property| {
-        property.name == property_name && property.type_name == type_name
-    })? {
-        Ok(Some(property)) => property,
-        Ok(None) => return Ok(Vec::new()),
-        Err(_) => {
-            return Err(malformed_design(
-                ctx,
-                format_args!("spreadsheet has multiple {property_name} properties"),
-            ));
-        }
-    };
-    let admitted_xml = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
-        .map_err(|error| {
-            let CodecError::Malformed(error) = error else {
-                return error;
-            };
-            malformed_design(
-                ctx,
-                format_args!("invalid spreadsheet dimension {}: {error}", property.id),
-            )
-        })?;
-    let xml = admitted_xml.document();
-    let root = direct_spreadsheet_value(ctx, xml, container, &property.id)?;
-    let mut found = 0_usize;
-    let mut xml_nodes_5 = root.children();
-    while let Some(record) = ctx.next_charged(&mut xml_nodes_5, "FreeCAD design XML traversal")? {
-        if ctx.xml_has_tag_name(record, element, "FreeCAD design XML tag")? {
-            found = found.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("FreeCAD spreadsheet dimension count", u64::MAX, u64::MAX)
-            })?;
-        }
-    }
-    let count_text = ctx
-        .xml_attribute(root, "Count", "FreeCAD design XML attribute")?
-        .ok_or_else(|| {
-            malformed_design(
-                ctx,
-                format_args!("{} has invalid dimension count", property.id),
-            )
-        })?;
-    let declared = ctx
-        .parse_text::<usize>(count_text, "fcstd spreadsheet dimension count")?
-        .map_err(|_| {
-            malformed_design(
-                ctx,
-                format_args!("{} has invalid dimension count", property.id),
-            )
-        })?;
-    if declared != found || declared > MAX_SKETCH_RECORDS {
-        return Err(malformed_design(
-            ctx,
-            format_args!("{} dimension count does not match its records", property.id),
-        ));
-    }
-    let mut dimensions = ctx.vector_storage(found, "fcstd spreadsheet dimensions")?;
-    let mut xml_nodes_6 = root.children();
-    while let Some(record) = ctx.next_charged(&mut xml_nodes_6, "FreeCAD design XML traversal")? {
-        if !ctx.xml_has_tag_name(record, element, "FreeCAD design XML tag")? {
-            continue;
-        }
-        let name = ctx
-            .xml_attribute(record, "name", "FreeCAD design XML attribute")?
-            .ok_or_else(|| {
-                malformed_design(ctx, format_args!("{} dimension has no name", property.id))
-            })?;
-        let pixels_text = ctx
-            .xml_attribute(record, value_name, "FreeCAD design XML attribute")?
-            .ok_or_else(|| {
-                malformed_design(
-                    ctx,
-                    format_args!("{} dimension has invalid size", property.id),
-                )
-            })?;
-        let pixels = ctx
-            .parse_text::<u32>(pixels_text, "fcstd spreadsheet dimension size")?
-            .map_err(|_| {
-                malformed_design(
-                    ctx,
-                    format_args!("{} dimension has invalid size", property.id),
-                )
-            })?;
-        let index = if element == "Column" {
-            let (address, _address_storage) =
-                ctx.format_scoped(format_args!("{name}1"), "fcstd spreadsheet column address")?;
-            let (_, column) = cell_address(ctx, &address)?.ok_or_else(|| {
-                malformed_design(
-                    ctx,
-                    format_args!("{} dimension has invalid column {name}", property.id),
-                )
-            })?;
-            column
-        } else {
-            ctx.parse_text::<u32>(name, "fcstd spreadsheet row address")?
-                .ok()
-                .filter(|row| *row > 0)
-                .ok_or_else(|| {
-                    malformed_design(
-                        ctx,
-                        format_args!("{} dimension has invalid row {name}", property.id),
-                    )
-                })?
-        };
-        let index = std::num::NonZeroU32::new(index).ok_or_else(|| {
-            malformed_design(
-                ctx,
-                format_args!("{} dimension index must be nonzero", property.id),
-            )
-        })?;
-        ctx.push_vec(
-            &mut dimensions,
-            SpreadsheetDimension { index, pixels },
-            "fcstd spreadsheet dimensions",
-        )?;
-    }
-    Ok(dimensions)
-}
-
-fn merged_range(
-    ctx: &DecodeContext<'_>,
-    cell: roxmltree::Node<'_, '_>,
-) -> Result<Option<SpreadsheetRange>, CodecError> {
-    let rows = match ctx.xml_attribute(cell, "rowSpan", "FreeCAD design XML attribute")? {
-        Some(value) => ctx
-            .parse_text::<i32>(value, "fcstd spreadsheet row span")?
-            .map_err(|_| {
-                malformed_design(ctx, format_args!("spreadsheet cell has invalid row span"))
-            })?,
-        None => 1_i32,
-    };
-    let columns = match ctx.xml_attribute(cell, "colSpan", "FreeCAD design XML attribute")? {
-        Some(value) => ctx
-            .parse_text::<i32>(value, "fcstd spreadsheet column span")?
-            .map_err(|_| {
-                malformed_design(
-                    ctx,
-                    format_args!("spreadsheet cell has invalid column span"),
-                )
-            })?,
-        None => 1_i32,
-    };
-    if rows < 1 || columns < 1 {
-        return Ok(None);
-    }
-    if rows == 1 && columns == 1 {
-        return Ok(None);
-    }
-    let start = ctx
-        .xml_attribute(cell, "address", "FreeCAD design XML attribute")?
-        .ok_or_else(|| malformed_design(ctx, format_args!("spreadsheet cell has no address")))?;
-    let (end, _end_storage) =
-        ctx.with_scoped_storage("fcstd spreadsheet range endpoint", || {
-            offset_cell_address(
-                ctx,
-                start,
-                u32::try_from(rows - 1).map_err(|_| {
-                    CodecError::Malformed("spreadsheet cell span is out of range".into())
-                })?,
-                u32::try_from(columns - 1).map_err(|_| {
-                    CodecError::Malformed("spreadsheet cell span is out of range".into())
-                })?,
-            )
-        })?;
-    let end = end.ok_or_else(|| {
-        malformed_design(ctx, format_args!("spreadsheet cell span is out of range"))
-    })?;
-    let (start_row, start_column) = cell_address(ctx, start)?.ok_or_else(|| {
-        malformed_design(ctx, format_args!("spreadsheet cell has invalid address"))
-    })?;
-    let start = CellAddress::new(start_row, start_column).ok_or_else(|| {
-        malformed_design(ctx, format_args!("spreadsheet cell has invalid address"))
-    })?;
-    let (end_row, end_column) = cell_address(ctx, &end)?.ok_or_else(|| {
-        malformed_design(ctx, format_args!("spreadsheet cell span is out of range"))
-    })?;
-    let end = CellAddress::new(end_row, end_column).ok_or_else(|| {
-        malformed_design(ctx, format_args!("spreadsheet cell span is out of range"))
-    })?;
-    SpreadsheetRange::new(start, end)
-        .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))
-        .map(Some)
-}
-
-fn offset_cell_address(
-    ctx: &DecodeContext<'_>,
-    address: &str,
-    rows: u32,
-    columns: u32,
-) -> Result<Option<String>, CodecError> {
-    Ok((|| -> Result<Option<String>, CodecError> {
-        let (row, mut column) = required!(cell_address(ctx, address)?);
-        let row = required!(row.checked_add(rows));
-        column = required!(column.checked_add(columns));
-        // Seven base-26 letters hold every nonzero u32 column index.
-        let mut label = [0_u8; 7];
-        let mut start = label.len();
-        while column > 0 {
-            start = required!(start.checked_sub(1));
-            column -= 1;
-            label[start] = b'A' + required!(u8::try_from(column % 26).ok());
-            column /= 26;
-        }
-        let letters = required!(std::str::from_utf8(&label[start..]).ok());
-        Ok(Some(ctx.format_retained(
-            format_args!("{letters}{row}"),
-            "fcstd spreadsheet cell address",
-        )?))
-    })()?)
-}
-
-fn cell_address(ctx: &DecodeContext<'_>, address: &str) -> Result<Option<(u32, u32)>, CodecError> {
-    let split = required!(ctx.position_by(
-        address.as_bytes(),
-        |byte| Ok(byte.is_ascii_digit()),
-        "fcstd spreadsheet cell address"
-    )?);
-    let mut column = 0_u32;
-    let mut bytes = address[..split].bytes();
-    while let Some(byte) = ctx.next_charged(&mut bytes, "fcstd spreadsheet column address")? {
-        if !byte.is_ascii_uppercase() {
-            return Ok(None);
-        }
-        column = required!(column
-            .checked_mul(26)
-            .and_then(|column| column.checked_add(u32::from(byte - b'A' + 1))));
-    }
-    let row = required!(ctx
-        .parse_text::<u32>(&address[split..], "fcstd spreadsheet row address")?
-        .ok());
-    Ok((row != 0 && column != 0).then_some((row, column)))
-}
-
-#[cfg(test)]
-fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
-    CellAddress::parse(address).is_some_and(|address| range.contains(address))
-}
-
 fn append_operation_parameters(
     ctx: &DecodeContext<'_>,
     parameters: &mut Vec<DesignParameter>,
@@ -2642,7 +2118,7 @@ fn parse_sketch(
             .as_ref()
             .map(|(property, tree)| (*property, tree.document())),
     )?;
-    let profiles = build_profiles(ctx, &entities, &constraints)?;
+    let profiles = profiles::build_profiles(ctx, &entities, &constraints)?;
     let (origin, normal, u_axis) = sketch_frame(ctx, properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
@@ -5267,573 +4743,6 @@ fn sketch_geometry(
         Some(definition) => SketchGeometry::try_from(definition).map_err(CodecError::malformed),
         None => native(),
     }
-}
-
-fn build_profiles(
-    ctx: &DecodeContext<'_>,
-    entities: &[SketchEntity],
-    constraints: &[SketchConstraint],
-) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
-    // Internal entities arrive in GeometryList order; appended external and built-in reference
-    // entities are construction entries. Indices therefore preserve the persisted ordinal for
-    // every eligible profile entity.
-    let mut profile_storage = ctx.reserve_scoped(0, "FCStd profile entity ordinals")?;
-    let mut profile_entities = BTreeSet::new();
-    profile_storage.with_storage(|| {
-        for (index, entity) in ctx
-            .admit_iter(entities, "FCStd profile entity scan")?
-            .enumerate()
-        {
-            if !entity.construction {
-                ctx.insert_btree_set(&mut profile_entities, index, "FCStd profile ordinals")?;
-            }
-        }
-        Ok::<_, CodecError>(())
-    })?;
-    let mut unused_storage = ctx.reserve_scoped(0, "FCStd remaining profile ordinals")?;
-    let mut unused = unused_storage.with_storage(|| {
-        ctx.collect_btree_set(
-            profile_entities.iter().copied(),
-            "FCStd remaining profile ordinals",
-        )
-    })?;
-    let (explicit_storage, explicit_relations) =
-        explicit_endpoint_relations(ctx, &profile_entities, entities, constraints)?;
-    let (index_storage, index) = EndpointIndex::new(ctx, &profile_entities, entities)?;
-    let mut ambiguous_storage = ctx.reserve_scoped(0, "FCStd ambiguous profile ordinals")?;
-    let mut ambiguous = BTreeSet::new();
-    for entity in ctx.admit_iter(&unused, "FCStd profile ambiguity scan")? {
-        for start in [true, false] {
-            let (matches_storage, matches) = endpoint_candidates(
-                ctx,
-                EndpointLocus {
-                    entity: *entity,
-                    start,
-                },
-                &unused,
-                &explicit_relations,
-                entities,
-                &index,
-            )?;
-            if matches.len() > 1 {
-                ambiguous_storage.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut ambiguous,
-                        *entity,
-                        "FCStd ambiguous profile ordinals",
-                    )
-                })?;
-                for candidate in ctx.admit_iter(&matches, "FCStd ambiguous profile matches")? {
-                    ambiguous_storage.with_storage(|| {
-                        ctx.insert_btree_set(
-                            &mut ambiguous,
-                            candidate.entity,
-                            "FCStd ambiguous profile ordinals",
-                        )
-                    })?;
-                }
-            }
-            drop(matches);
-            drop(matches_storage);
-        }
-    }
-    let mut profiles = Vec::new();
-    // FreeCAD persists no profile seed. CADIR selects the first remaining persisted ordinal.
-    while let Some(first) = unused.first().copied() {
-        unused_storage.with_storage(|| {
-            ctx.remove_btree_set(&mut unused, &first, "FCStd remaining profile ordinals")
-        })?;
-        let mut chain = VecDeque::new();
-        let mut chain_storage = ctx.reserve_scoped(0, "FCStd profile uses")?;
-        chain_storage
-            .with_storage(|| ctx.push_back(&mut chain, (first, false), "FCStd profile uses"))?;
-        if ctx.contains_btree_set(&ambiguous, &first, "FCStd ambiguous profile lookup")? {
-            ctx.push_vec(
-                &mut profiles,
-                finish_profile_chain(ctx, chain, entities, chain_storage)?,
-                "FCStd profile chains",
-            )?;
-            continue;
-        }
-        if endpoints(&entities[first]).is_none() {
-            ctx.push_vec(
-                &mut profiles,
-                finish_profile_chain(ctx, chain, entities, chain_storage)?,
-                "FCStd profile chains",
-            )?;
-            continue;
-        }
-        let mut head = EndpointLocus {
-            entity: first,
-            start: true,
-        };
-        let mut tail = EndpointLocus {
-            entity: first,
-            start: false,
-        };
-        loop {
-            let (_candidate_storage, mut candidates) =
-                endpoint_candidates(ctx, tail, &unused, &explicit_relations, entities, &index)?;
-            ctx.retain_vec(
-                &mut candidates,
-                |candidate| {
-                    ctx.contains_btree_set(
-                        &ambiguous,
-                        &candidate.entity,
-                        "FCStd ambiguous profile lookup",
-                    )
-                    .map(|ambiguous| !ambiguous)
-                },
-                "FCStd unambiguous profile candidates",
-            )?;
-            let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
-                break;
-            };
-            let (reversed, next_tail) = if candidate.start {
-                (
-                    false,
-                    EndpointLocus {
-                        entity: candidate.entity,
-                        start: false,
-                    },
-                )
-            } else {
-                (
-                    true,
-                    EndpointLocus {
-                        entity: candidate.entity,
-                        start: true,
-                    },
-                )
-            };
-            unused_storage.with_storage(|| {
-                ctx.remove_btree_set(
-                    &mut unused,
-                    &candidate.entity,
-                    "FCStd remaining profile ordinals",
-                )
-            })?;
-            chain_storage.with_storage(|| {
-                ctx.push_back(
-                    &mut chain,
-                    (candidate.entity, reversed),
-                    "FCStd profile uses",
-                )
-            })?;
-            tail = next_tail;
-        }
-        loop {
-            let (_candidate_storage, mut candidates) =
-                endpoint_candidates(ctx, head, &unused, &explicit_relations, entities, &index)?;
-            ctx.retain_vec(
-                &mut candidates,
-                |candidate| {
-                    ctx.contains_btree_set(
-                        &ambiguous,
-                        &candidate.entity,
-                        "FCStd ambiguous profile lookup",
-                    )
-                    .map(|ambiguous| !ambiguous)
-                },
-                "FCStd unambiguous profile candidates",
-            )?;
-            let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
-                break;
-            };
-            let (reversed, next_head) = if candidate.start {
-                (
-                    true,
-                    EndpointLocus {
-                        entity: candidate.entity,
-                        start: false,
-                    },
-                )
-            } else {
-                (
-                    false,
-                    EndpointLocus {
-                        entity: candidate.entity,
-                        start: true,
-                    },
-                )
-            };
-            unused_storage.with_storage(|| {
-                ctx.remove_btree_set(
-                    &mut unused,
-                    &candidate.entity,
-                    "FCStd remaining profile ordinals",
-                )
-            })?;
-            chain_storage.with_storage(|| {
-                ctx.push_front(
-                    &mut chain,
-                    (candidate.entity, reversed),
-                    "FCStd profile uses",
-                )
-            })?;
-            head = next_head;
-        }
-        ctx.push_vec(
-            &mut profiles,
-            finish_profile_chain(ctx, chain, entities, chain_storage)?,
-            "FCStd profile chains",
-        )?;
-    }
-    drop(index);
-    drop(index_storage);
-    drop(explicit_relations);
-    drop(explicit_storage);
-    drop(ambiguous);
-    drop(ambiguous_storage);
-    drop(unused);
-    drop(unused_storage);
-    drop(profile_entities);
-    drop(profile_storage);
-    Ok(profiles)
-}
-
-fn finish_profile_chain(
-    ctx: &DecodeContext<'_>,
-    chain: VecDeque<(usize, bool)>,
-    entities: &[SketchEntity],
-    _chain_storage: ScopedReservation<'_>,
-) -> Result<Vec<SketchEntityUse>, CodecError> {
-    let mut profile = ctx.vector_storage(chain.len(), "FCStd profile chain extraction")?;
-    for &(index, reversed) in ctx.admit_iter(&chain, "FCStd profile chain extraction")? {
-        ctx.push_vec(
-            &mut profile,
-            SketchEntityUse {
-                entity: entities[index]
-                    .id()
-                    .try_clone_for_decode(ctx, "FCStd profile use identity")?,
-                reversed,
-            },
-            "FCStd profile chain extraction",
-        )?;
-    }
-    Ok(profile)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct EndpointLocus {
-    entity: usize,
-    start: bool,
-}
-
-impl cadmpeg_core::decode::cost::DecodeCost for EndpointLocus {
-    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<usize>() + std::mem::size_of::<bool>(),
-    ));
-    fn decode_cost(
-        &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _operation: &'static str,
-    ) -> Result<u64, cadmpeg_core::CodecError> {
-        Ok(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<usize>() + std::mem::size_of::<bool>(),
-        ))
-    }
-}
-
-struct IndexedEndpoint {
-    locus: EndpointLocus,
-    point: Point2,
-}
-
-struct EndpointIndex {
-    by_scale: BTreeMap<u64, Vec<IndexedEndpoint>>,
-}
-
-impl EndpointIndex {
-    fn new<'ctx>(
-        ctx: &'ctx DecodeContext<'_>,
-        profile_entities: &BTreeSet<usize>,
-        entities: &[SketchEntity],
-    ) -> Result<(ScopedReservation<'ctx>, Self), CodecError> {
-        let mut storage = ctx.reserve_scoped(0, "FCStd profile endpoint index")?;
-        let by_scale = storage.with_storage(|| {
-            let mut by_scale = BTreeMap::<u64, Vec<IndexedEndpoint>>::new();
-            for index in ctx.admit_iter(profile_entities, "FCStd profile endpoint extraction")? {
-                if let Some((start, end)) = endpoints(&entities[*index]) {
-                    for (at_start, point) in [(true, start), (false, end)] {
-                        let scale = endpoint_scale_bucket(point);
-                        ctx.push_btree_group(
-                            &mut by_scale,
-                            scale,
-                            IndexedEndpoint {
-                                locus: EndpointLocus {
-                                    entity: *index,
-                                    start: at_start,
-                                },
-                                point,
-                            },
-                            "FCStd profile endpoint buckets",
-                            "FCStd profile endpoint index",
-                        )?;
-                    }
-                }
-            }
-            for (_, bucket) in
-                ctx.admit_iter(&mut by_scale, "FCStd profile endpoint bucket sort")?
-            {
-                ctx.stable_sort_by(
-                    bucket,
-                    |value| &value.point.u,
-                    f64::total_cmp,
-                    "FCStd profile index sort",
-                )?;
-            }
-            Ok::<_, CodecError>(by_scale)
-        })?;
-        Ok((storage, Self { by_scale }))
-    }
-}
-
-fn endpoint_scale_bucket(point: Point2) -> u64 {
-    point.u.abs().max(point.v.abs()).max(1.0).to_bits() >> 52
-}
-
-fn endpoint_candidates<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    endpoint: EndpointLocus,
-    available: &BTreeSet<usize>,
-    explicit_relations: &BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>,
-    entities: &[SketchEntity],
-    index: &EndpointIndex,
-) -> Result<(ScopedReservation<'ctx>, Vec<EndpointLocus>), CodecError> {
-    // Active explicit coincident loci override coordinates. Coordinate matching below is the
-    // decoder-owned CADIR boundary, not a producer tolerance.
-    let mut storage = ctx.reserve_scoped(0, "FCStd profile candidates")?;
-    let matches = storage.with_storage(|| -> Result<Vec<EndpointLocus>, CodecError> {
-        if let Some(explicit) = ctx.get_btree_map(
-            explicit_relations,
-            &endpoint,
-            "FCStd explicit profile relation lookup",
-        )? {
-            let mut matches = Vec::new();
-            for candidate in ctx.admit_iter(explicit, "FCStd explicit profile matches")? {
-                if ctx.contains_btree_set(
-                    available,
-                    &candidate.entity,
-                    "FCStd available explicit profile candidate",
-                )? {
-                    ctx.push_vec(&mut matches, *candidate, "FCStd profile candidates")?;
-                }
-            }
-            return Ok(matches);
-        }
-        let Some(point) = endpoint_point(endpoint, entities) else {
-            return Ok(Vec::new());
-        };
-        let mut matches = Vec::new();
-        let scale = endpoint_scale_bucket(point);
-        for bucket_number in (scale - 1)..=(scale + 1) {
-            let Some(bucket) = ctx.get_btree_map(
-                &index.by_scale,
-                &bucket_number,
-                "FCStd profile scale bucket lookup",
-            )?
-            else {
-                continue;
-            };
-            let bucket_scale = f64::from_bits((bucket_number.max(scale) + 1) << 52).min(f64::MAX);
-            let tolerance = SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * bucket_scale;
-            let first = ctx.partition_point(
-                bucket,
-                |candidate| Ok(candidate.point.u < point.u - tolerance),
-                "FCStd profile index search",
-            )?;
-            let _stop = ctx.find_map(
-                &bucket[first..],
-                |candidate| {
-                    if candidate.point.u <= point.u + tolerance {
-                        if candidate.locus.entity != endpoint.entity
-                            && ctx.contains_btree_set(
-                                available,
-                                &candidate.locus.entity,
-                                "FCStd available profile candidate",
-                            )?
-                            && !ctx.contains_key_btree_map(
-                                explicit_relations,
-                                &candidate.locus,
-                                "FCStd explicit profile candidate lookup",
-                            )?
-                            && endpoints_match_by_roundoff(point, candidate.point)
-                        {
-                            ctx.push_vec(
-                                &mut matches,
-                                candidate.locus,
-                                "FCStd profile candidates",
-                            )?;
-                        }
-                        Ok(None)
-                    } else {
-                        Ok(Some(()))
-                    }
-                },
-                "FCStd profile candidate comparison",
-            )?;
-        }
-        ctx.sort_unstable_by(
-            &mut matches,
-            |value| value,
-            Ord::cmp,
-            "FCStd profile candidate order",
-        )?;
-        Ok(matches)
-    })?;
-    Ok((storage, matches))
-}
-
-fn explicit_endpoint_relations<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    profile_entities: &BTreeSet<usize>,
-    entities: &[SketchEntity],
-    constraints: &[SketchConstraint],
-) -> Result<
-    (
-        ScopedReservation<'ctx>,
-        BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>,
-    ),
-    CodecError,
-> {
-    let mut storage = ctx.reserve_scoped(0, "FCStd explicit profile relations")?;
-    let relations = storage.with_storage(|| {
-        let entity_indices = ctx.collect_hash_map(
-            entities
-                .iter()
-                .enumerate()
-                .map(|(index, entity)| (entity.id().as_str(), index)),
-            "FCStd profile entity lookup",
-        )?;
-        let mut relations = BTreeMap::new();
-        for constraint in ctx.admit_iter(constraints, "FCStd profile constraint scan")? {
-            if constraint.active == Some(false) {
-                continue;
-            }
-            let SketchConstraintDefinitionInput::CoincidentLoci { loci } =
-                constraint.definition.kind()
-            else {
-                continue;
-            };
-            let mut endpoint_storage = ctx.reserve_scoped(0, "FCStd explicit profile loci")?;
-            let mut endpoints = BTreeSet::new();
-            endpoint_storage.with_storage(|| {
-                for locus in ctx.admit_iter(loci, "FCStd explicit profile loci")? {
-                    let (entity, start) = match locus {
-                        SketchLocus::Start(entity) => (entity, true),
-                        SketchLocus::End(entity) => (entity, false),
-                        _ => continue,
-                    };
-                    let Some(index) = ctx
-                        .get_hash_map(
-                            &entity_indices,
-                            entity.as_str(),
-                            "FCStd profile entity index",
-                        )?
-                        .copied()
-                    else {
-                        continue;
-                    };
-                    if ctx.contains_btree_set(
-                        profile_entities,
-                        &index,
-                        "FCStd eligible profile entity lookup",
-                    )? {
-                        ctx.insert_btree_set(
-                            &mut endpoints,
-                            EndpointLocus {
-                                entity: index,
-                                start,
-                            },
-                            "FCStd explicit profile loci",
-                        )?;
-                    }
-                }
-                Ok::<_, CodecError>(())
-            })?;
-            for first in ctx.admit_iter(&endpoints, "FCStd explicit profile relation sources")? {
-                for candidate in
-                    ctx.admit_iter(&endpoints, "FCStd explicit profile relation targets")?
-                {
-                    if first == candidate {
-                        continue;
-                    }
-                    ctx.insert_btree_group_set(
-                        &mut relations,
-                        *first,
-                        *candidate,
-                        "FCStd explicit profile relations",
-                        "FCStd explicit profile relations",
-                    )?;
-                }
-            }
-            drop(endpoints);
-            drop(endpoint_storage);
-        }
-        Ok::<_, CodecError>(relations)
-    })?;
-    Ok((storage, relations))
-}
-
-fn endpoint_point(endpoint: EndpointLocus, entities: &[SketchEntity]) -> Option<Point2> {
-    endpoints(&entities[endpoint.entity])
-        .map(|points| if endpoint.start { points.0 } else { points.1 })
-}
-
-fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
-    match *entity.geometry.definition() {
-        SketchGeometryDefinition::Line { start, end } => Some((start.get(), end.get())),
-        SketchGeometryDefinition::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => Some((
-            Point2::new(
-                center.u + radius.get() * start_angle.get().cos(),
-                center.v + radius.get() * start_angle.get().sin(),
-            ),
-            Point2::new(
-                center.u + radius.get() * end_angle.get().cos(),
-                center.v + radius.get() * end_angle.get().sin(),
-            ),
-        )),
-        SketchGeometryDefinition::Ellipse {
-            center,
-            major_angle,
-            radii,
-            bounds: Some([start, end]),
-        } => {
-            let major = Point2::new(major_angle.get().cos(), major_angle.get().sin());
-            let minor = Point2::new(-major.v, major.u);
-            let point = |parameter: f64| {
-                let (along_major, along_minor) = (parameter.cos(), parameter.sin());
-                Point2::new(
-                    center.u
-                        + radii.major().get() * along_major * major.u
-                        + radii.minor().get() * along_minor * minor.u,
-                    center.v
-                        + radii.major().get() * along_major * major.v
-                        + radii.minor().get() * along_minor * minor.v,
-                )
-            };
-            Some((point(start.get()), point(end.get())))
-        }
-        _ => None,
-    }
-}
-
-const SKETCH_ENDPOINT_ROUNDING_ULPS: f64 = 64.0;
-
-fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
-    let scale =
-        a.u.abs()
-            .max(a.v.abs())
-            .max(b.u.abs())
-            .max(b.v.abs())
-            .max(1.0);
-    (a.u - b.u).hypot(a.v - b.v) <= SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * scale
 }
 
 fn profile_ref(
@@ -10935,9 +9844,9 @@ mod profile_tests {
     };
     use cadmpeg_ir::spreadsheets::{CellAddress, SpreadsheetRange};
 
-    use super::{
-        cell_address, endpoints_match_by_roundoff, merged_range, offset_cell_address,
-        range_contains_address,
+    use super::profiles::endpoints_match_by_roundoff;
+    use super::spreadsheets::{
+        cell_address, merged_range, offset_cell_address, range_contains_address,
     };
 
     fn build_profiles(
@@ -10948,7 +9857,7 @@ mod profile_tests {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("profile test context");
-        super::build_profiles(&ctx, entities, constraints).expect("profile projection")
+        super::profiles::build_profiles(&ctx, entities, constraints).expect("profile projection")
     }
 
     #[test]
@@ -10966,7 +9875,7 @@ mod profile_tests {
         policy.limits.max_work_units = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("profile test context");
-        let error = super::build_profiles(&ctx, &entities, &[])
+        let error = super::profiles::build_profiles(&ctx, &entities, &[])
             .expect_err("profile construction work must be admitted before scanning");
         assert!(matches!(
             error,
@@ -10991,7 +9900,7 @@ mod profile_tests {
             "FCStd profile endpoint index",
         ] {
             crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-                super::EndpointIndex::new(ctx, &profile_entities, &entities)
+                super::profiles::EndpointIndex::new(ctx, &profile_entities, &entities)
                     .map(|(_storage, index)| index)
             });
         }
@@ -10999,11 +9908,11 @@ mod profile_tests {
 
     #[test]
     fn explicit_profile_candidates_refuse_at_matching_collection_limit() {
-        let source = super::EndpointLocus {
+        let source = super::profiles::EndpointLocus {
             entity: 0,
             start: true,
         };
-        let target = super::EndpointLocus {
+        let target = super::profiles::EndpointLocus {
             entity: 1,
             start: true,
         };
@@ -11012,11 +9921,11 @@ mod profile_tests {
             source,
             std::collections::BTreeSet::from([target]),
         )]);
-        let index = super::EndpointIndex {
+        let index = super::profiles::EndpointIndex {
             by_scale: std::collections::BTreeMap::new(),
         };
         crate::test_support::assert_collection_refusal_at(&[], "FCStd profile candidates", |ctx| {
-            super::endpoint_candidates(ctx, source, &available, &relations, &[], &index)
+            super::profiles::endpoint_candidates(ctx, source, &available, &relations, &[], &index)
                 .map(|(_storage, candidates)| candidates)
         });
     }
@@ -11080,13 +9989,13 @@ mod profile_tests {
             .expect("valid line"),
         )];
         crate::test_support::assert_collection_refusal_at(&[], "FCStd profile uses", |ctx| {
-            super::build_profiles(ctx, &entities, &[])
+            super::profiles::build_profiles(ctx, &entities, &[])
         });
         crate::test_support::assert_retained_refusal_at(&[], "FCStd profile use identity", |ctx| {
-            super::build_profiles(ctx, &entities, &[])
+            super::profiles::build_profiles(ctx, &entities, &[])
         });
         crate::test_support::assert_collection_refusal_at(&[], "FCStd profile chains", |ctx| {
-            super::build_profiles(ctx, &entities, &[])
+            super::profiles::build_profiles(ctx, &entities, &[])
         });
     }
 
