@@ -4,8 +4,6 @@
 mod allocation_tests;
 mod nesting;
 
-use std::collections::BTreeMap;
-
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -163,23 +161,23 @@ fn one_curve_payload() -> ShapePayloadRecord {
 #[test]
 fn carrier_census_record_capacity_refuses_on_collection_limit() {
     let payload = one_curve_payload();
-    let result = with_collection_limit(&[], 0, |ctx| super::carrier_census(ctx, &[payload]));
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD carrier census records"
-    ));
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FreeCAD carrier census records",
+        |ctx| super::carrier_census(ctx, std::slice::from_ref(&payload)),
+    );
 }
 
 #[test]
 fn carrier_census_family_insert_refuses_on_collection_limit() {
     let payload = one_curve_payload();
-    let result = with_collection_limit(&[], 1, |ctx| super::carrier_census(ctx, &[payload]));
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD carrier census families"
-    ));
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &[],
+        "FreeCAD carrier census families",
+        |ctx| super::carrier_census(ctx, std::slice::from_ref(&payload)),
+    );
 }
 
 #[test]
@@ -881,10 +879,10 @@ fn parses_joined_seam_pcurve_continuity_token() {
     in_decode_context(|ctx| {
         let tokens = ["1", "2CN", "1", "0", "0", "10"];
         let mut cursor = TokenCursor::new(ctx, &tokens);
-        let counts = BTreeMap::from([
-            ("Curve2ds".to_owned(), 2),
-            ("Surfaces".to_owned(), 1),
-            ("Locations".to_owned(), 0),
+        let counts = crate::brep::TextSections::from_named_counts(&[
+            ("Curve2ds", 2),
+            ("Surfaces", 1),
+            ("Locations", 0),
         ]);
         let record = parse_edge_representation(3, &mut cursor, &counts, 1)
             .expect("joined pcurve continuity");
@@ -1714,7 +1712,7 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
     };
     let mut transfer = crate::brep::CurveTransfer::default();
 
-    let geometry = in_decode_context(|ctx| {
+    in_decode_context(|ctx| {
         crate::brep::append_text_curve(
             ctx,
             &curve,
@@ -1726,7 +1724,7 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
     .unwrap();
 
     assert_eq!(
-        geometry,
+        transfer.curves.last().expect("transferred curve").geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
             cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(center).unwrap()
         ))
@@ -1876,7 +1874,7 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
     };
     let mut curves = crate::brep::CurveTransfer::default();
     let mut surfaces = crate::brep::SurfaceTransfer::default();
-    let geometry = in_decode_context(|ctx| {
+    in_decode_context(|ctx| {
         crate::brep::append_text_surface(
             ctx,
             &surface,
@@ -1888,7 +1886,7 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
     })
     .expect("a signed half angle is a b-rep cone the reader admits");
     assert!(matches!(
-        geometry,
+        &surfaces.surfaces.last().expect("transferred surface").geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))
         if {
             let axis = *cone.frame().axis().as_raw();

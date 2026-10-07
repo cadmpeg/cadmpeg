@@ -1353,14 +1353,8 @@ impl CodecBackend for FcstdCodec {
             )?;
             let attachments = attachment::transfer(ctx, &graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "attachments", &attachments)?;
-            let mut curve_transfer =
-                brep::transfer_text_curves(ctx, &shape_payloads, &graph.properties)?;
-            let surface_transfer = brep::transfer_text_surfaces(
-                ctx,
-                &shape_payloads,
-                &graph.properties,
-                &mut curve_transfer,
-            )?;
+            let (curve_transfer, surface_transfer) =
+                brep::transfer_text_geometry(ctx, &shape_payloads, &graph.properties)?;
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
             ir.model.curves = curve_transfer.curves;
@@ -1620,7 +1614,7 @@ fn semantic_losses(
     gui_losses: Vec<LossNote>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = gui_losses;
-    for feature in &ir.model.features {
+    for feature in ctx.admit_iter(&ir.model.features, "FCStd feature semantic loss")? {
         let definition = match feature.evaluation.definition() {
             cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. }
             | cadmpeg_ir::features::FeatureDefinition::Operation(operation) => operation,
@@ -1628,10 +1622,14 @@ fn semantic_losses(
         let cadmpeg_ir::features::FeatureOperation::Native { kind, .. } = definition else {
             continue;
         };
-        let cycle_affected = feature
-            .native_ref
-            .as_ref()
-            .is_some_and(|id| cycle_affected_design_objects.contains(id));
+        let cycle_affected = match &feature.native_ref {
+            Some(id) => ctx.contains_btree_set(
+                cycle_affected_design_objects,
+                id.as_str(),
+                "FCStd feature semantic loss",
+            )?,
+            None => false,
+        };
         let (code, suffix) = if cycle_affected {
             (
                 FreecadLossCode::FeatureCyclicHistory,
@@ -1652,7 +1650,10 @@ fn semantic_losses(
             "FCStd feature semantic loss",
         )?;
     }
-    for entity in &ir.model.sketch_entities {
+    for entity in ctx.admit_iter(
+        &ir.model.sketch_entities,
+        "FCStd sketch geometry semantic loss",
+    )? {
         let cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } =
             entity.geometry.definition()
         else {
@@ -1671,7 +1672,10 @@ fn semantic_losses(
             "FCStd sketch geometry semantic loss",
         )?;
     }
-    for constraint in &ir.model.sketch_constraints {
+    for constraint in ctx.admit_iter(
+        &ir.model.sketch_constraints,
+        "FCStd sketch constraint semantic loss",
+    )? {
         let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, .. } =
             constraint.definition.kind()
         else {
