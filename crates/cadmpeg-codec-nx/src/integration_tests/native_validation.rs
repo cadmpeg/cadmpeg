@@ -77,3 +77,14 @@ fn native_validation_format_refuses_work() {
 fn native_validation_format_refuses_retained_bytes() {
     validation_message_refusal(ResourceDimension::RetainedBytes);
 }
+
+#[test]
+fn native_validation_propagates_namespace_admission_refusal() {
+    let ir = incomplete_native_segment();
+    crate::test_support::resource_refusal_at(
+        &[],
+        ResourceDimension::CollectionItems,
+        "load typed native record",
+        |ctx| crate::NxCodec::validate_native(ctx, &ir),
+    );
+}
