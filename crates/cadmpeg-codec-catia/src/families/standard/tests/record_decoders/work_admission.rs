@@ -10,7 +10,7 @@ use crate::families::standard::records::{
 use std::collections::HashMap;
 
 #[test]
-fn source_order_population_pair_copies_refuse_at_each_collection_boundary() {
+fn source_order_population_pairs_move_rosters_and_refuse_the_pair_list() {
     let layout = |start| FbbPopulationLayout {
         face_run: crate::families::standard::fbb::FbbFaceRun::try_new(start, 1).expect("one face"),
         edge_count: 1,
@@ -31,34 +31,30 @@ fn source_order_population_pair_copies_refuse_at_each_collection_boundary() {
         }],
     };
     let layouts = [layout(0), layout(100)];
-    let populations = [population(), population()];
     let result = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::pair_standard_populations(ctx, &layouts, &populations)
+        crate::families::standard::records::pair_standard_populations(
+            ctx,
+            &layouts,
+            vec![population(), population()],
+        )
     })
     .expect("service resource budget")
     .expect("matched populations");
     assert_eq!(result.rest.len(), 1);
-    let mut operations = std::collections::HashSet::new();
-    for limit in 0..5 {
-        let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::standard::records::pair_standard_populations(
-                ctx,
-                &layouts,
-                &populations,
-            )
-        });
-        let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result else {
-            panic!("expected resource refusal");
-        };
-        operations.insert(refusal.operation);
-    }
-    for operation in [
-        "catia_population_pair_records",
-        "catia_population_pair_supports",
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "catia_population_pairs",
-    ] {
-        assert!(operations.contains(operation), "no refusal at {operation}");
-    }
+        |cap| {
+            crate::test_support::with_collection_limit(cap, |ctx| {
+                crate::families::standard::records::pair_standard_populations(
+                    ctx,
+                    &layouts,
+                    vec![population(), population()],
+                )
+            })
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
