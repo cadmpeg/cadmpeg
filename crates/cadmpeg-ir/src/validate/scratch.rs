@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Vector storage whose reservation follows its values and consuming iterator.
 
+use cadmpeg_core::decode::iter_source::IterSource;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
@@ -55,10 +56,16 @@ impl<'ctx, T> Scratch<'ctx, T> {
         })
     }
 
-    pub(super) fn extend(&mut self, values: impl IntoIterator<Item = T>) -> Result<(), CodecError> {
-        for value in values {
-            self.ctx.charge_work(1, "validation extension scan")?;
-            self.push(value)?;
+    pub(super) fn extend<'values, S>(
+        &mut self,
+        values: &'values S,
+        mut project: impl FnMut(<<S as IterSource>::Iter<'values> as Iterator>::Item) -> T,
+    ) -> Result<(), CodecError>
+    where
+        S: IterSource + ?Sized + 'values,
+    {
+        for value in self.ctx.admit_iter(values, "validation extension scan")? {
+            self.push(project(value))?;
         }
         Ok(())
     }
@@ -68,12 +75,6 @@ impl<T> std::ops::Deref for Scratch<'_, T> {
     type Target = [T];
     fn deref(&self) -> &Self::Target {
         &self.values
-    }
-}
-
-impl<T: std::fmt::Debug> std::fmt::Debug for Scratch<'_, T> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.values, formatter)
     }
 }
 
