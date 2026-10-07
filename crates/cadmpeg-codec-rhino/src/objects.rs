@@ -1531,17 +1531,18 @@ fn parse_obsolete_custom_mesh_userdata(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<Option<settings::MeshParameters>, FramingError> {
-    let Some(descriptor) = ctx
-        .admit_iter(
-            &(descriptors)[..],
-            "Rhino parse obsolete custom mesh userdata traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-        .filter_map(AttributeUserdataDescriptor::known)
-        .find(|descriptor| {
-            descriptor.class_uuid == OBSOLETE_CUSTOM_MESH_USERDATA
-                && descriptor.item_uuid == OBSOLETE_CUSTOM_MESH_USERDATA
-        })
+    let Some(descriptor) = ctx.find_map(
+        descriptors,
+        |raw| {
+            let Some(descriptor) = AttributeUserdataDescriptor::known(raw) else {
+                return Ok(None);
+            };
+            Ok((descriptor.class_uuid == OBSOLETE_CUSTOM_MESH_USERDATA
+                && descriptor.item_uuid == OBSOLETE_CUSTOM_MESH_USERDATA)
+                .then_some(descriptor))
+        },
+        "Rhino parse obsolete custom mesh userdata traversal",
+    )?
     else {
         return Ok(None);
     };
@@ -1583,17 +1584,20 @@ fn parse_per_object_mesh_userdata(
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
 ) -> Result<Option<settings::MeshParameters>, FramingError> {
-    let Some(descriptor) = ctx
-        .admit_iter(
-            &(descriptors)[..],
-            "Rhino parse per object mesh userdata traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-        .filter_map(AttributeUserdataDescriptor::known)
-        .find(|descriptor| {
-            descriptor.class_uuid == PER_OBJECT_MESH_PARAMETERS_USERDATA
-                && descriptor.item_uuid == PER_OBJECT_MESH_PARAMETERS_USERDATA
-        })
+    let Some(descriptor) = ctx.find_map(
+        descriptors,
+        |raw| {
+            let Some(descriptor) = AttributeUserdataDescriptor::known(raw) else {
+                return Ok(None);
+            };
+            Ok(
+                (descriptor.class_uuid == PER_OBJECT_MESH_PARAMETERS_USERDATA
+                    && descriptor.item_uuid == PER_OBJECT_MESH_PARAMETERS_USERDATA)
+                    .then_some(descriptor),
+            )
+        },
+        "Rhino parse per object mesh userdata traversal",
+    )?
     else {
         return Ok(None);
     };

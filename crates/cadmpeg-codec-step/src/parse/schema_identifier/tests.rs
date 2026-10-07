@@ -370,3 +370,32 @@ fn schema_numeric_component_parse_preserves_refusal() {
         },
     );
 }
+
+#[test]
+fn schema_name_search_charges_visited_bytes_and_end_probe() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    // Invalid names stop on their first invalid byte. A valid or empty name
+    // pays for every visited byte plus one end probe.
+    for (name, valid, work) in [
+        ("_long_tail", false, 1),
+        ("A!long_tail", false, 2),
+        ("A", true, 2),
+        ("", false, 1),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = work;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+        assert_eq!(super::valid_schema_name(&ctx, name).unwrap(), valid);
+        let CodecError::ResourceLimit(limit) = ctx
+            .charge_work(1, "test schema search boundary")
+            .unwrap_err()
+        else {
+            panic!("the search consumes its exact work budget");
+        };
+        assert_eq!(limit.used, work);
+        assert_eq!(limit.additional, 1);
+    }
+}

@@ -715,18 +715,8 @@ fn collect_invisible_body_ids(
     };
     let mut found_reference = false;
     let mut supported = true;
-    if ctx
-        .admit_iter(
-            &(record.partials)[..],
-            "STEP collect invisible body ids traversal",
-        )?
-        .any(|partial| partial.name == "STYLED_ITEM")
-        || ctx
-            .admit_iter(
-                &(record.partials)[..],
-                "STEP collect invisible body ids traversal",
-            )?
-            .any(|partial| partial.name == "OVER_RIDING_STYLED_ITEM")
+    if record.partial(ctx, "STYLED_ITEM")?.is_some()
+        || record.partial(ctx, "OVER_RIDING_STYLED_ITEM")?.is_some()
     {
         if let Some(reference) =
             styled_item_parts(ctx, record)?.and_then(|parts| parts.target.reference())
@@ -742,13 +732,11 @@ fn collect_invisible_body_ids(
                 ctx,
             )?;
         }
-    } else if ctx
-        .admit_iter(
-            &(record.partials)[..],
-            "STEP collect invisible body ids traversal",
-        )?
-        .any(|partial| super::representation::is_representation_name(&partial.name))
-    {
+    } else if ctx.any_by(
+        &(record.partials)[..],
+        |partial| Ok(super::representation::is_representation_name(&partial.name)),
+        "STEP collect invisible body ids traversal",
+    )? {
         if let Some(references) = super::representation::items(ctx, record)? {
             for reference in references {
                 found_reference = true;
@@ -788,18 +776,17 @@ fn expand_style_targets(
         ctx.push_vec(&mut targets, id, "step_presentation_style_target_items")?;
         return Ok(targets);
     };
-    let Some(set_name) = ctx
-        .admit_iter(
-            &(record.partials)[..],
-            "STEP expand style targets traversal",
-        )?
-        .find_map(|partial| {
-            matches!(
+    let Some(set_name) = ctx.find_map(
+        &(record.partials)[..],
+        |partial| {
+            Ok(matches!(
                 partial.name.as_str(),
                 "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET"
             )
-            .then_some(partial.name.as_str())
-        })
+            .then_some(partial.name.as_str()))
+        },
+        "STEP expand style targets traversal",
+    )?
     else {
         active.remove(&id);
         let mut targets = Vec::new();
@@ -1579,22 +1566,22 @@ fn find_color(
         let name = if let Some(name) = record.simple_name() {
             Some(name)
         } else {
-            ctx.admit_iter(
+            ctx.find_map(
                 &record.partials[..],
+                |partial| {
+                    Ok(matches!(
+                        partial.name.as_str(),
+                        "COLOUR_RGB" | "DRAUGHTING_PRE_DEFINED_COLOUR"
+                    )
+                    .then_some(partial.name.as_str()))
+                },
                 "STEP color classification partial traversal",
             )?
-            .find_map(|partial| {
-                matches!(
-                    partial.name.as_str(),
-                    "COLOUR_RGB" | "DRAUGHTING_PRE_DEFINED_COLOUR"
-                )
-                .then_some(partial.name.as_str())
-            })
         };
-        let record_domain = ctx
-            .admit_iter(&record.partials[..], "STEP find color traversal")?
-            .find_map(|partial| {
-                if partial.name.starts_with("SURFACE_STYLE") {
+        let record_domain = ctx.find_map(
+            &record.partials[..],
+            |partial| {
+                Ok(if partial.name.starts_with("SURFACE_STYLE") {
                     Some(StyleDomain::Surface)
                 } else if partial.name == "CURVE_STYLE" {
                     Some(StyleDomain::Curve)
@@ -1602,8 +1589,10 @@ fn find_color(
                     Some(StyleDomain::Point)
                 } else {
                     None
-                }
-            });
+                })
+            },
+            "STEP find color traversal",
+        )?;
         let incompatible = record_domain
             .is_some_and(|candidate| domain != StyleDomain::Any && candidate != domain);
         if incompatible {
@@ -1817,12 +1806,8 @@ fn surface_transparency(
                 let Some(property) = exchange.records().get(&property_id) else {
                     continue;
                 };
-                let Some(transparency) = ctx
-                    .admit_iter(
-                        &(property.partials)[..],
-                        "STEP surface transparency traversal",
-                    )?
-                    .find(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
+                let Some(transparency) = property
+                    .partial(ctx, "SURFACE_STYLE_TRANSPARENT")?
                     .and_then(|partial| partial.parameters.first())
                     .and_then(ValueExt::number)
                     .and_then(Fraction::new)
@@ -1956,15 +1941,17 @@ fn style_domain_at(
         active.remove(&id);
         return Ok(StyleDomain::Any);
     };
-    let set_name = ctx
-        .admit_iter(&record.partials[..], "STEP style domain at traversal")?
-        .find_map(|partial| {
-            matches!(
+    let set_name = ctx.find_map(
+        &record.partials[..],
+        |partial| {
+            Ok(matches!(
                 partial.name.as_str(),
                 "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET"
             )
-            .then_some(partial.name.as_str())
-        });
+            .then_some(partial.name.as_str()))
+        },
+        "STEP style domain at traversal",
+    )?;
     if let Some(set_name) = set_name {
         let mut first = None;
         let mut same = true;
@@ -1988,70 +1975,89 @@ fn style_domain_at(
         }
     }
     let has_point = ctx
-        .admit_iter(&record.partials[..], "STEP style domain at traversal")?
-        .map(|partial| -> Result<Option<()>, CodecError> {
-            let name = partial.name.as_str();
-            Ok(
-                (ctx.contains_text(name, "POINT", "STEP style domain point containment")?
-                    || ctx.contains_text(
-                        name,
-                        "VERTEX",
-                        "STEP style domain vertex containment",
-                    )?)
-                .then_some(()),
-            )
-        })
-        .find_map(Result::transpose)
-        .transpose()?
+        .find_map(
+            &record.partials[..],
+            |partial| -> Result<Option<()>, CodecError> {
+                let name = partial.name.as_str();
+                Ok(
+                    (ctx.contains_text(name, "POINT", "STEP style domain point containment")?
+                        || ctx.contains_text(
+                            name,
+                            "VERTEX",
+                            "STEP style domain vertex containment",
+                        )?)
+                    .then_some(()),
+                )
+            },
+            "STEP style domain at traversal",
+        )?
         .is_some();
     if has_point {
         active.remove(&id);
         return Ok(StyleDomain::Point);
     }
     let has_curve = ctx
-        .admit_iter(&record.partials[..], "STEP style domain at traversal")?
-        .map(|partial| -> Result<Option<()>, CodecError> {
-            let name = partial.name.as_str();
-            Ok(
-                (ctx.contains_text(name, "CURVE", "STEP style domain curve containment")?
-                    || ctx.contains_text(name, "EDGE", "STEP style domain edge containment")?
-                    || ctx.contains_text(name, "_LINE", "STEP style domain line containment")?
-                    || matches!(
-                        name,
-                        "LINE" | "POLYLINE" | "CIRCLE" | "ELLIPSE" | "HYPERBOLA" | "PARABOLA"
-                    ))
-                .then_some(()),
-            )
-        })
-        .find_map(Result::transpose)
-        .transpose()?
+        .find_map(
+            &record.partials[..],
+            |partial| -> Result<Option<()>, CodecError> {
+                let name = partial.name.as_str();
+                Ok(
+                    (ctx.contains_text(name, "CURVE", "STEP style domain curve containment")?
+                        || ctx.contains_text(
+                            name,
+                            "EDGE",
+                            "STEP style domain edge containment",
+                        )?
+                        || ctx.contains_text(
+                            name,
+                            "_LINE",
+                            "STEP style domain line containment",
+                        )?
+                        || matches!(
+                            name,
+                            "LINE" | "POLYLINE" | "CIRCLE" | "ELLIPSE" | "HYPERBOLA" | "PARABOLA"
+                        ))
+                    .then_some(()),
+                )
+            },
+            "STEP style domain at traversal",
+        )?
         .is_some();
     if has_curve {
         active.remove(&id);
         return Ok(StyleDomain::Curve);
     }
     let result = if ctx
-        .admit_iter(&record.partials[..], "STEP style domain at traversal")?
-        .map(|partial| -> Result<Option<()>, CodecError> {
-            let name = partial.name.as_str();
-            Ok(
-                (ctx.contains_text(name, "FACE", "STEP style domain face containment")?
-                    || ctx.contains_text(
-                        name,
-                        "SURFACE",
-                        "STEP style domain surface containment",
-                    )?
-                    || ctx.contains_text(name, "SOLID", "STEP style domain solid containment")?
-                    || ctx.contains_text(name, "SHELL", "STEP style domain shell containment")?
-                    || matches!(
-                        name,
-                        "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
-                    ))
-                .then_some(()),
-            )
-        })
-        .find_map(Result::transpose)
-        .transpose()?
+        .find_map(
+            &record.partials[..],
+            |partial| -> Result<Option<()>, CodecError> {
+                let name = partial.name.as_str();
+                Ok(
+                    (ctx.contains_text(name, "FACE", "STEP style domain face containment")?
+                        || ctx.contains_text(
+                            name,
+                            "SURFACE",
+                            "STEP style domain surface containment",
+                        )?
+                        || ctx.contains_text(
+                            name,
+                            "SOLID",
+                            "STEP style domain solid containment",
+                        )?
+                        || ctx.contains_text(
+                            name,
+                            "SHELL",
+                            "STEP style domain shell containment",
+                        )?
+                        || matches!(
+                            name,
+                            "PLANE" | "CYLINDER" | "CONE" | "SPHERE" | "TORUS" | "DEGENERATE_TORUS"
+                        ))
+                    .then_some(()),
+                )
+            },
+            "STEP style domain at traversal",
+        )?
         .is_some()
     {
         StyleDomain::Surface

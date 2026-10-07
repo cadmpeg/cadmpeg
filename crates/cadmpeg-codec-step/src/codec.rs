@@ -424,12 +424,11 @@ fn starts_with_step_magic(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool,
         }
         if bytes.get(at..at + 2) == Some(b"/*") {
             at += 2;
-            let Some(relative_end) = ctx
-                .admit_iter(&bytes[at..], "STEP leading comment traversal")?
-                .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| {
-                    ctx.refuse_codec_limit("STEP leading comment window width", 0, 1)
-                })?)
-                .position(|window| window == b"*/")
+            let Some(relative_end) = ctx.position_by(
+                bytes[at..].windows(2),
+                |window| Ok(window == b"*/"),
+                "STEP leading comment traversal",
+            )?
             else {
                 return Ok(false);
             };
@@ -621,8 +620,11 @@ pub(crate) fn is_part28_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<boo
         return Ok(false);
     };
     let local_name = ctx
-        .admit_iter(name, "STEP XML qualified name traversal")?
-        .rposition(|byte| *byte == b':')
+        .rposition_by(
+            name,
+            |byte| Ok(*byte == b':'),
+            "STEP XML qualified name traversal",
+        )?
         .map_or(name, |separator| &name[separator + 1..]);
     if local_name.eq_ignore_ascii_case(b"iso_10303_28")
         || ascii_starts_with(ctx, local_name, b"iso_10303_28_")?
@@ -656,10 +658,11 @@ fn ascii_starts_with(
     if value.len() < prefix.len() {
         return Ok(false);
     }
-    Ok(ctx
-        .admit_iter(&value[..prefix.len()], "STEP XML name prefix traversal")?
-        .zip(ctx.admit_iter(prefix, "STEP XML marker prefix traversal")?)
-        .all(|(value, prefix)| value.eq_ignore_ascii_case(prefix)))
+    ctx.all_by(
+        value[..prefix.len()].iter().zip(prefix.iter()),
+        |(value, prefix)| Ok(value.eq_ignore_ascii_case(prefix)),
+        "STEP XML name prefix traversal",
+    )
 }
 
 fn xml_root_start_tag<'a>(
@@ -682,12 +685,11 @@ fn xml_root_start_tag<'a>(
             let Some(tail) = bytes.get(cursor + 2..) else {
                 return Ok(None);
             };
-            let Some(relative_end) = ctx
-                .admit_iter(tail, "STEP XML processing instruction traversal")?
-                .windows(std::num::NonZeroUsize::new(2).ok_or_else(|| {
-                    ctx.refuse_codec_limit("STEP XML processing instruction window width", 0, 1)
-                })?)
-                .position(|window| window == b"?>")
+            let Some(relative_end) = ctx.position_by(
+                tail.windows(2),
+                |window| Ok(window == b"?>"),
+                "STEP XML processing instruction traversal",
+            )?
             else {
                 return Ok(None);
             };
@@ -699,12 +701,11 @@ fn xml_root_start_tag<'a>(
             let Some(tail) = bytes.get(cursor + 4..) else {
                 return Ok(None);
             };
-            let Some(relative_end) =
-                ctx.admit_iter(tail, "STEP XML comment traversal")?
-                    .windows(std::num::NonZeroUsize::new(3).ok_or_else(|| {
-                        ctx.refuse_codec_limit("STEP XML comment window width", 0, 1)
-                    })?)
-                    .position(|window| window == b"-->")
+            let Some(relative_end) = ctx.position_by(
+                tail.windows(3),
+                |window| Ok(window == b"-->"),
+                "STEP XML comment traversal",
+            )?
             else {
                 return Ok(None);
             };
@@ -716,9 +717,11 @@ fn xml_root_start_tag<'a>(
             let Some(tail) = bytes.get(cursor + 2..) else {
                 return Ok(None);
             };
-            let Some(relative_end) = ctx
-                .admit_iter(tail, "STEP XML declaration traversal")?
-                .position(|byte| *byte == b'>')
+            let Some(relative_end) = ctx.position_by(
+                tail,
+                |byte| Ok(*byte == b'>'),
+                "STEP XML declaration traversal",
+            )?
             else {
                 return Ok(None);
             };
@@ -838,8 +841,11 @@ pub(crate) fn is_ap242_bo_model_xml(
         return Ok(false);
     };
     let local_name = ctx
-        .admit_iter(name, "STEP XML qualified name traversal")?
-        .rposition(|byte| *byte == b':')
+        .rposition_by(
+            name,
+            |byte| Ok(*byte == b':'),
+            "STEP XML qualified name traversal",
+        )?
         .map_or(name, |separator| &name[separator + 1..]);
     // BM-03: the published namespace must be bound on the Uos document
     // element. Text, comments, schemaLocation values, and local names do not

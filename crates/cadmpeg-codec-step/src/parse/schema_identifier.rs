@@ -224,11 +224,17 @@ pub(super) fn valid_schema_identifier(
 }
 
 fn valid_schema_name(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
-    let mut bytes = ctx
-        .admit_iter(name.as_bytes(), "STEP schema name bytes")?
-        .copied();
-    Ok(bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic())
-        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'))
+    Ok(ctx.all_by(
+        name.as_bytes().iter().enumerate(),
+        |(index, byte)| {
+            Ok(if index == 0 {
+                byte.is_ascii_alphabetic()
+            } else {
+                byte.is_ascii_alphanumeric() || *byte == b'_'
+            })
+        },
+        "STEP schema name bytes",
+    )? && !name.is_empty())
 }
 
 /// The position of the root component in an object identifier.
@@ -403,9 +409,11 @@ fn valid_schema_oid_second_arc(number: &str) -> bool {
 
 fn valid_schema_oid_number(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
     Ok(!value.is_empty()
-        && ctx
-            .admit_iter(value.as_bytes(), "STEP schema OID number bytes")?
-            .all(|byte| byte.is_ascii_digit())
+        && ctx.all_by(
+            value.as_bytes(),
+            |byte| Ok(byte.is_ascii_digit()),
+            "STEP schema OID number bytes",
+        )?
         && (value == "0" || !value.starts_with('0')))
 }
 

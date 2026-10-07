@@ -405,12 +405,11 @@ pub(crate) fn decode(
     }
     if (orientations.len() > 1
         && (orientations.first() != Some(&1)
-            || expand
-                .ctx()
-                .admit_iter(&orientations[..], "Rhino decode traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .skip(1)
-                .any(|value| *value != -1)))
+            || expand.ctx().any_by(
+                &orientations[1..],
+                |value| Ok(*value != -1),
+                "Rhino decode traversal",
+            )?))
         || (orientations.len() == 1 && !matches!(orientations[0], 0 | 1))
     {
         return Err(error(
@@ -418,11 +417,11 @@ pub(crate) fn decode(
             "extrusion profile orientations are invalid",
         ));
     }
-    let all_closed = expand
-        .ctx()
-        .admit_iter(&orientations[..], "Rhino decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .all(|orientation| *orientation != 0);
+    let all_closed = expand.ctx().all_by(
+        &orientations[..],
+        |orientation| Ok(*orientation != 0),
+        "Rhino decode traversal",
+    )?;
     let caps = if minor >= 2 {
         raw_caps
     } else if all_closed {
@@ -701,12 +700,16 @@ fn require_profile_plane(
 
 fn profile_off_plane(ctx: &DecodeContext<'_>, curve: &NurbsCurve) -> Result<bool, CodecError> {
     Ok(match curve.pole_rows() {
-        NurbsPoles3::Polynomial { points } => ctx
-            .admit_iter(points.as_slice(), "Rhino extrusion profile plane traversal")?
-            .any(|point| point.get().z != 0.0),
-        NurbsPoles3::Rational { points } => ctx
-            .admit_iter(points.as_slice(), "Rhino extrusion profile plane traversal")?
-            .any(|pole| pole.point.get().z != 0.0),
+        NurbsPoles3::Polynomial { points } => ctx.any_by(
+            points.as_slice(),
+            |point| Ok(point.get().z != 0.0),
+            "Rhino extrusion profile plane traversal",
+        )?,
+        NurbsPoles3::Rational { points } => ctx.any_by(
+            points.as_slice(),
+            |pole| Ok(pole.point.get().z != 0.0),
+            "Rhino extrusion profile plane traversal",
+        )?,
     })
 }
 
@@ -995,15 +998,18 @@ fn read_v5_mesh_cache(
         writer_version,
         scale,
     } = format;
-    let Some(cache) = expand
-        .ctx()
-        .admit_iter(&userdata[..], "Rhino read v5 mesh cache traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .filter_map(UserdataDescriptor::known)
-        .find(|value| {
-            value.class_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
-                && value.item_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
-        })
+    let Some(cache) = expand.ctx().find_map(
+        userdata,
+        |raw| {
+            let Some(value) = UserdataDescriptor::known(raw) else {
+                return Ok(None);
+            };
+            Ok((value.class_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
+                && value.item_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE)
+                .then_some(value))
+        },
+        "Rhino read v5 mesh cache traversal",
+    )?
     else {
         return Ok(Vec::new());
     };

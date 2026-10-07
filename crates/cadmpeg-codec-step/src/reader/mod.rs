@@ -915,12 +915,7 @@ fn retain_unowned_carriers(
     for (&id, record) in
         ctx.admit_iter(exchange.records(), "STEP retain unowned carriers traversal")?
     {
-        if ctx
-            .admit_iter(
-                &(record.partials)[..],
-                "STEP retain unowned carriers traversal",
-            )?
-            .any(|partial| partial.name == "PCURVE")
+        if record.partial(ctx, "PCURVE")?.is_some()
             && !ctx.contains_btree_set(
                 &owned,
                 ids::data(kind!("pcurve"), id).as_str(),
@@ -1806,18 +1801,16 @@ fn named_parameter<'a>(
     index: usize,
 ) -> Result<Option<&'a Value>, CodecError> {
     Ok(ctx
-        .admit_iter(
+        .find_map(
             &record.partials[..],
+            |partial| -> Result<Option<_>, CodecError> {
+                Ok(
+                    (ctx.equal(partial.name.as_str(), name, "STEP named parameter equality")?)
+                        .then_some(partial),
+                )
+            },
             "STEP named attribute partial traversal",
         )?
-        .map(|partial| -> Result<Option<_>, CodecError> {
-            Ok(
-                (ctx.equal(partial.name.as_str(), name, "STEP named parameter equality")?)
-                    .then_some(partial),
-            )
-        })
-        .find_map(Result::transpose)
-        .transpose()?
         .and_then(|partial| partial.parameters.get(index)))
 }
 

@@ -355,13 +355,15 @@ pub(super) fn decode(
             local_triangle_bytes,
             _coordinate_index_bytes,
         ) = if pnindex.is_empty() {
-            if ctx
-                .admit_iter(triangles.as_slice(), "STEP triangle index traversal")?
-                .flat_map(|triangle| [&triangle[0], &triangle[1], &triangle[2]])
-                .any(|index| {
-                    *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
-                })
-            {
+            if ctx.any_by(
+                triangles.as_slice(),
+                |triangle| {
+                    Ok(triangle.iter().any(|index| {
+                        *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
+                    }))
+                },
+                "STEP triangle index traversal",
+            )? {
                 push_loss(
                     &mut losses,
                     StepLossCode::DecodeWarning,
@@ -449,18 +451,24 @@ pub(super) fn decode(
                 Some(coordinate_index_bytes),
             )
         } else {
-            if ctx
-                .admit_iter(&pnindex[..], "STEP decode traversal")?
-                .any(|index| {
-                    *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > vertices.len()
-                })
-                || ctx
-                    .admit_iter(triangles.as_slice(), "STEP triangle index traversal")?
-                    .flat_map(|triangle| [&triangle[0], &triangle[1], &triangle[2]])
-                    .any(|index| {
+            if ctx.any_by(
+                &pnindex[..],
+                |index| {
+                    Ok(
+                        *index == 0
+                            || cadmpeg_core::decode::index_from_u32(*index) > vertices.len(),
+                    )
+                },
+                "STEP decode traversal",
+            )? || ctx.any_by(
+                triangles.as_slice(),
+                |triangle| {
+                    Ok(triangle.iter().any(|index| {
                         *index == 0 || cadmpeg_core::decode::index_from_u32(*index) > pnindex.len()
-                    })
-            {
+                    }))
+                },
+                "STEP triangle index traversal",
+            )? {
                 push_loss(
                     &mut losses,
                     StepLossCode::DecodeWarning,
@@ -1084,8 +1092,11 @@ fn distinct_placement(
         return Ok(None);
     };
     Ok(ctx
-        .admit_iter(placements, "STEP distinct placement traversal")?
-        .all(|placement| *placement == first)
+        .all_by(
+            placements,
+            |placement| Ok(*placement == first),
+            "STEP distinct placement traversal",
+        )?
         .then_some(first))
 }
 
@@ -1111,32 +1122,14 @@ fn tessellated_annotation_item(
     record: &RawRecord,
 ) -> Result<Option<u64>, CodecError> {
     for name in ["TESSELLATED_ANNOTATION_OCCURRENCE", "STYLED_ITEM"] {
-        let Some(partial) = ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP tessellated annotation partial traversal",
-            )?
-            .map(|partial| -> Result<Option<_>, CodecError> {
-                Ok((ctx.equal(
-                    partial.name.as_str(),
-                    name,
-                    "STEP tessellated annotation item equality",
-                )?)
-                .then_some(partial))
-            })
-            .find_map(Result::transpose)
-            .transpose()?
-        else {
+        let Some(partial) = record.partial(ctx, name)? else {
             continue;
         };
-        if let Some(item) = ctx
-            .admit_iter(
-                partial.parameters.as_slice(),
-                "STEP tessellated annotation reference traversal",
-            )?
-            .rev()
-            .find_map(ValueExt::reference)
-        {
+        if let Some(item) = ctx.find_map(
+            partial.parameters.as_slice().iter().rev(),
+            |value| Ok(ValueExt::reference(value)),
+            "STEP tessellated annotation reference traversal",
+        )? {
             return Ok(Some(item));
         }
     }
@@ -1222,13 +1215,7 @@ fn product_linked_representations<'a>(
     let mut product_shape_definitions = BTreeSet::new();
     let mut definition_bytes = ctx.reserve_scoped(0, "step_tessellation_product_definitions")?;
     for (id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
-        if ctx
-            .admit_iter(
-                &(record.partials)[..],
-                "STEP product linked representations traversal",
-            )?
-            .any(|partial| partial.name == "PRODUCT_DEFINITION_SHAPE")
-        {
+        if record.partial(ctx, "PRODUCT_DEFINITION_SHAPE")?.is_some() {
             ctx.insert_scoped_btree_value(
                 &mut definition_bytes,
                 &mut product_shape_definitions,
@@ -1269,12 +1256,7 @@ fn product_linked_representations<'a>(
         )?
         .map(|(_, value)| value)
     {
-        let Some(shape_relationship) = ctx
-            .admit_iter(
-                &(record.partials)[..],
-                "STEP product linked representations traversal",
-            )?
-            .find(|partial| partial.name == "SHAPE_REPRESENTATION_RELATIONSHIP")
+        let Some(shape_relationship) = record.partial(ctx, "SHAPE_REPRESENTATION_RELATIONSHIP")?
         else {
             continue;
         };
@@ -1286,13 +1268,7 @@ fn product_linked_representations<'a>(
             match (references.next(), references.next()) {
                 (Some(left), Some(right)) => (left, right),
                 _ => {
-                    let Some(base) = ctx
-                        .admit_iter(
-                            &(record.partials)[..],
-                            "STEP product linked representations traversal",
-                        )?
-                        .find(|partial| partial.name == "REPRESENTATION_RELATIONSHIP")
-                    else {
+                    let Some(base) = record.partial(ctx, "REPRESENTATION_RELATIONSHIP")? else {
                         continue;
                     };
                     let mut references = base.parameters.iter().filter_map(ValueExt::reference);
@@ -1553,15 +1529,18 @@ fn entity_kind<'a>(
         "STEP tessellation entity partial traversal",
     )? {
         if ctx
-            .admit_iter(names, "STEP tessellation entity name traversal")?
-            .map(|name| -> Result<Option<_>, CodecError> {
-                Ok(
-                    (ctx.equal::<str>(name, partial.name.as_str(), "STEP entity kind equality")?)
-                        .then_some(()),
-                )
-            })
-            .find_map(Result::transpose)
-            .transpose()?
+            .find_map(
+                names,
+                |name| -> Result<Option<_>, CodecError> {
+                    Ok((ctx.equal::<str>(
+                        name,
+                        partial.name.as_str(),
+                        "STEP entity kind equality",
+                    )?)
+                    .then_some(()))
+                },
+                "STEP tessellation entity name traversal",
+            )?
             .is_some()
         {
             return Ok(Some(partial.name.as_str()));
@@ -1577,21 +1556,18 @@ fn entity_parameter<'a>(
     index: usize,
     simple_offset: usize,
 ) -> Result<Option<&'a Value>, CodecError> {
-    let Some(partial) = ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP tessellation entity parameter traversal",
-        )?
-        .map(|partial| -> Result<Option<_>, CodecError> {
+    let Some(partial) = ctx.find_map(
+        &record.partials[..],
+        |partial| -> Result<Option<_>, CodecError> {
             Ok((ctx.equal(
                 partial.name.as_str(),
                 entity,
                 "STEP entity parameter equality",
             )?)
             .then_some(partial))
-        })
-        .find_map(Result::transpose)
-        .transpose()?
+        },
+        "STEP tessellation entity parameter traversal",
+    )?
     else {
         return Ok(None);
     };
@@ -1614,17 +1590,19 @@ enum TriangulatedEntity {
 
 impl TriangulatedEntity {
     fn of(ctx: &DecodeContext<'_>, record: &RawRecord) -> Result<Option<Self>, CodecError> {
-        Ok(ctx
-            .admit_iter(&record.partials[..], "STEP triangulated entity traversal")?
-            .find_map(|partial| {
-                Some(match partial.name.as_str() {
+        ctx.find_map(
+            &record.partials[..],
+            |partial| {
+                Ok(Some(match partial.name.as_str() {
                     "TRIANGULATED_FACE" => Self::Face,
                     "COMPLEX_TRIANGULATED_FACE" => Self::ComplexFace,
                     "TRIANGULATED_SURFACE_SET" => Self::SurfaceSet,
                     "COMPLEX_TRIANGULATED_SURFACE_SET" => Self::ComplexSurfaceSet,
-                    _ => return None,
-                })
-            }))
+                    _ => return Ok(None),
+                }))
+            },
+            "STEP triangulated entity traversal",
+        )
     }
 
     fn name(self) -> &'static str {

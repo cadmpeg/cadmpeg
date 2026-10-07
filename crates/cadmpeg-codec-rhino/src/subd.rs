@@ -1125,21 +1125,21 @@ fn validate_level(
         )?;
     }
     if expected_level == 0 {
-        if let Some(vertex) = ctx
-            .admit_iter(&level.vertices[..], "Rhino validate level traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .find(|vertex| vertex.tag.is_none())
-        {
+        if let Some(vertex) = ctx.find_by(
+            &level.vertices[..],
+            |vertex| Ok(vertex.tag.is_none()),
+            "Rhino validate level traversal",
+        )? {
             return Err(malformed(
                 vertex.base.source_offset,
                 "level-zero SubD vertex has unset tag",
             ));
         }
-        if let Some(edge) = ctx
-            .admit_iter(&level.edges[..], "Rhino validate level traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .find(|edge| edge.tag.is_none())
-        {
+        if let Some(edge) = ctx.find_by(
+            &level.edges[..],
+            |edge| Ok(edge.tag.is_none()),
+            "Rhino validate level traversal",
+        )? {
             return Err(malformed(
                 edge.base.source_offset,
                 "level-zero SubD edge has unset tag",
