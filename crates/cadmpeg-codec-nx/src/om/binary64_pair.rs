@@ -243,8 +243,8 @@ pub(crate) fn sketch_pairs(
     bytes: &[u8],
 ) -> Result<Vec<Binary64Pair<SketchBinary64PairForm>>, CodecError> {
     let mut pairs = scan_object_pairs(ctx, bytes, SketchBinary64PairForm::Object)?;
-    let window_count = bytes.len().saturating_sub(2);
-    for offset in ctx.admit_iter(0..window_count, "scan NX sketch pairs")? {
+    let windows = bytes.len().checked_sub(2).map_or(0..0, |end| 0..end);
+    for offset in ctx.admit_iter(windows, "scan NX sketch pairs")? {
         let window = &bytes[offset..offset + 3];
         let [code, repeated, 0x41] = window else {
             continue;

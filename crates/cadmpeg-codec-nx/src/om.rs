@@ -1113,7 +1113,10 @@ impl<'a> IndexedSection<'a> {
             &records,
             |(_, bytes, _)| {
                 ctx.any_by(
-                    0..bytes.len().saturating_sub(marker.len() - 1),
+                    bytes
+                        .len()
+                        .checked_sub(marker.len() - 1)
+                        .map_or(0..0, |end| 0..end),
                     |at| Ok(&bytes[at..at + marker.len()] == marker),
                     "NX numeric expression host globals marker",
                 )
@@ -1559,7 +1562,10 @@ fn validated_operation_headers(
     const SCALAR_LEN: usize = 8;
     let mut headers = Vec::new();
     for marker in ctx.admit_iter(
-        0..bytes.len().saturating_sub(PREFIX.len() - 1),
+        bytes
+            .len()
+            .checked_sub(PREFIX.len() - 1)
+            .map_or(0..0, |end| 0..end),
         "scan NX operation headers",
     )? {
         if &bytes[marker..marker + PREFIX.len()] != PREFIX {
@@ -2926,7 +2932,10 @@ pub(crate) fn sketch_payload_scalar_lanes(
     for form in [SketchScalarLaneForm::Form03, SketchScalarLaneForm::Form07] {
         let discriminator = form.discriminator();
         for offset in ctx.admit_iter(
-            0..bytes.len().saturating_sub(discriminator.len() - 1),
+            bytes
+                .len()
+                .checked_sub(discriminator.len() - 1)
+                .map_or(0..0, |end| 0..end),
             "scan NX sketch scalar lanes",
         )? {
             let window = &bytes[offset..offset + discriminator.len()];
@@ -2989,7 +2998,10 @@ pub(crate) fn sketch_payload_fixed_pairs(
         let discriminator = form.discriminator();
         let separator_width = form.separator_width();
         for offset in ctx.admit_iter(
-            0..bytes.len().saturating_sub(discriminator.len() - 1),
+            bytes
+                .len()
+                .checked_sub(discriminator.len() - 1)
+                .map_or(0..0, |end| 0..end),
             "scan NX sketch fixed pairs",
         )? {
             let window = &bytes[offset..offset + discriminator.len()];
@@ -3035,7 +3047,10 @@ pub(crate) fn sketch_payload_mixed_pairs(
     let discriminator = SketchPairForm::Legacy.discriminator();
     let mut pairs = Vec::new();
     for offset in ctx.admit_iter(
-        0..bytes.len().saturating_sub(discriminator.len() - 1),
+        bytes
+            .len()
+            .checked_sub(discriminator.len() - 1)
+            .map_or(0..0, |end| 0..end),
         "scan NX sketch mixed pairs",
     )? {
         let window = &bytes[offset..offset + discriminator.len()];
@@ -3086,7 +3101,10 @@ pub(crate) fn datum_csys_payload_fixed_pairs(
     for form in DatumPairForm::ALL {
         let discriminator = form.discriminator();
         for offset in ctx.admit_iter(
-            0..bytes.len().saturating_sub(discriminator.len() - 1),
+            bytes
+                .len()
+                .checked_sub(discriminator.len() - 1)
+                .map_or(0..0, |end| 0..end),
             "scan NX datum CSYS pairs",
         )? {
             let window = &bytes[offset..offset + discriminator.len()];
@@ -3142,9 +3160,10 @@ pub(crate) fn draft_construction_fixed_lanes(
 ) -> Result<Vec<FramedScalarRun<Q155LaneFrame, ()>>, CodecError> {
     let mut lanes = Vec::new();
     for offset in ctx.admit_iter(
-        0..bytes
+        bytes
             .len()
-            .saturating_sub(Q155LaneFrame::DISCRIMINATOR.len() - 1),
+            .checked_sub(Q155LaneFrame::DISCRIMINATOR.len() - 1)
+            .map_or(0..0, |end| 0..end),
         "scan NX draft fixed lanes",
     )? {
         let window = &bytes[offset..offset + Q155LaneFrame::DISCRIMINATOR.len()];
@@ -3204,7 +3223,10 @@ pub(crate) fn draft_construction_binary32_lanes(
     for branch in [DraftBinary32Branch::Form04, DraftBinary32Branch::Form03] {
         let discriminator = branch.discriminator();
         for offset in ctx.admit_iter(
-            0..bytes.len().saturating_sub(discriminator.len() - 1),
+            bytes
+                .len()
+                .checked_sub(discriminator.len() - 1)
+                .map_or(0..0, |end| 0..end),
             "scan NX draft binary32 lanes",
         )? {
             let window = &bytes[offset..offset + discriminator.len()];
@@ -3404,7 +3426,11 @@ pub(crate) fn operation_body_reference(
     ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
 ) -> Result<Option<OperationBodyReference>, CodecError> {
-    let mut starts = 0..record.bytes().len().saturating_sub(2);
+    let mut starts = record
+        .bytes()
+        .len()
+        .checked_sub(2)
+        .map_or(0..0, |end| 0..end);
     let mut cursor = 0;
     let first = ctx.find_map(
         &mut starts,
@@ -3434,7 +3460,11 @@ fn operation_body_reference_candidates<'record>(
     let mut cursor = 0;
     Ok(ctx
         .admit_iter(
-            0..record.bytes().len().saturating_sub(2),
+            record
+                .bytes()
+                .len()
+                .checked_sub(2)
+                .map_or(0..0, |end| 0..end),
             "NX operation body reference traversal",
         )?
         .filter_map(move |marker| operation_body_reference_at(record, marker, &mut cursor)))
@@ -3479,7 +3509,7 @@ fn body_write_frames(
 ) -> Result<Vec<BodyWriteFrame<usize>>, CodecError> {
     let mut relations = Vec::new();
     for marker in ctx.admit_iter(
-        0..payload.len().saturating_sub(1),
+        payload.len().checked_sub(1).map_or(0..0, |end| 0..end),
         "scan NX body-write frames",
     )? {
         if payload[marker..marker + 2] != [1, 2] {
@@ -4380,7 +4410,10 @@ pub(crate) fn string_values<'a>(
     const MARKER: &[u8] = &[0x66, 0x32, 0x03];
     let mut values = Vec::new();
     for offset in ctx.admit_iter(
-        0..bytes.len().saturating_sub(MARKER.len() - 1),
+        bytes
+            .len()
+            .checked_sub(MARKER.len() - 1)
+            .map_or(0..0, |end| 0..end),
         "scan NX printable strings",
     )? {
         if &bytes[offset..offset + MARKER.len()] != MARKER {
@@ -4432,7 +4465,10 @@ pub(crate) fn uuid_string_values<'a>(
     const TEXT_LEN: usize = 36;
     let mut values = Vec::new();
     for offset in ctx.admit_iter(
-        0..bytes.len().saturating_sub(MARKER.len() - 1),
+        bytes
+            .len()
+            .checked_sub(MARKER.len() - 1)
+            .map_or(0..0, |end| 0..end),
         "scan NX UUID strings",
     )? {
         if &bytes[offset..offset + MARKER.len()] != MARKER {
@@ -4582,7 +4618,10 @@ pub(crate) fn surface_payload_strings<'a>(
     const MARKER: &[u8] = &[0x66, 0x1b, 0x03];
     let mut strings = Vec::new();
     for offset in ctx.admit_iter(
-        0..bytes.len().saturating_sub(MARKER.len() - 1),
+        bytes
+            .len()
+            .checked_sub(MARKER.len() - 1)
+            .map_or(0..0, |end| 0..end),
         "scan NX surface payload strings",
     )? {
         if &bytes[offset..offset + MARKER.len()] != MARKER {
@@ -4628,7 +4667,10 @@ pub(crate) fn numeric_expressions<'a>(
 ) -> Result<Vec<NumericExpression<'a>>, CodecError> {
     let marker = b"hostglobalvariables";
     if !ctx.any_by(
-        0..bytes.len().saturating_sub(marker.len() - 1),
+        bytes
+            .len()
+            .checked_sub(marker.len() - 1)
+            .map_or(0..0, |end| 0..end),
         |start| Ok(&bytes[start..start + marker.len()] == marker),
         "NX numeric expression table marker",
     )? {
@@ -4637,7 +4679,10 @@ pub(crate) fn numeric_expressions<'a>(
     let mut expressions = Vec::new();
     let prefix = b"(Number [";
     for offset in ctx.admit_iter(
-        0..bytes.len().saturating_sub(prefix.len() - 1),
+        bytes
+            .len()
+            .checked_sub(prefix.len() - 1)
+            .map_or(0..0, |end| 0..end),
         "NX numeric expression marker traversal",
     )? {
         if &bytes[offset..offset + prefix.len()] != prefix {
@@ -4665,7 +4710,7 @@ pub(crate) fn sections<'a>(
     while at + 16 <= bytes.len() {
         let tail = &bytes[at..];
         let Some(relative) = ctx.position_by(
-            0..tail.len().saturating_sub(3),
+            tail.len().checked_sub(3).map_or(0..0, |end| 0..end),
             |start| Ok(tail[start..start + 4] == [0xff; 4]),
             "nx framed OM section scan",
         )?
@@ -5527,7 +5572,10 @@ fn numeric_expression_at<'a>(
 ) -> Result<Option<NumericExpression<'a>>, CodecError> {
     const PREFIX: &[u8] = b"(Number [";
     let Some(relative) = ctx.position_by(
-        0..bytes.len().saturating_sub(PREFIX.len() - 1),
+        bytes
+            .len()
+            .checked_sub(PREFIX.len() - 1)
+            .map_or(0..0, |end| 0..end),
         |start| Ok(&bytes[start..start + PREFIX.len()] == PREFIX),
         "NX numeric expression prefix",
     )?
