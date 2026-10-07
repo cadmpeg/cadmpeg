@@ -450,12 +450,19 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, false)?;
         let result = self.inspect_impl(&ctx, root).and_then(|result| {
-            if !ctx.equal_bytes(result.format().as_bytes(), C::FORMAT.as_str().as_bytes(), "inspect format comparison")? {
-                return Err(CodecError::WrongFormat(ctx.format_retained(format_args!(
-                    "codec {:?} inspected a {:?} container",
-                    C::FORMAT.as_str(),
-                    result.format()
-                ), "inspect format refusal")?));
+            if !ctx.equal_bytes(
+                result.format().as_bytes(),
+                C::FORMAT.as_str().as_bytes(),
+                "inspect format comparison",
+            )? {
+                return Err(CodecError::WrongFormat(ctx.format_retained(
+                    format_args!(
+                        "codec {:?} inspected a {:?} container",
+                        C::FORMAT.as_str(),
+                        result.format()
+                    ),
+                    "inspect format refusal",
+                )?));
             }
             Ok(result)
         });
@@ -484,7 +491,11 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     ) -> Result<DecodeResult, DecodeFailure> {
         let decoded = self.decode_impl(ctx, root)?;
         let result = DecodeResult::new(decoded, C::FORMAT, options.container_only, ctx)?;
-        if !ctx.equal_bytes(result.report().format().as_bytes(), C::FORMAT.as_str().as_bytes(), "decode format comparison")? {
+        if !ctx.equal_bytes(
+            result.report().format().as_bytes(),
+            C::FORMAT.as_str().as_bytes(),
+            "decode format comparison",
+        )? {
             return Err(CodecError::WrongFormat(ctx.format_retained(
                 format_args!(
                     "codec {:?} decoded a {:?} document",
@@ -503,7 +514,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
                     |loss| Ok(loss.strict_consequence() == StrictConsequence::Reject),
                     "decode strict loss scan",
                 )?
-                    .map(RejectingLossIndex)
+                .map(RejectingLossIndex)
             } else {
                 None
             };

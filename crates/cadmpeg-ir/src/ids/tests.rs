@@ -588,7 +588,14 @@ fn identity_grammar_admits_only_the_scalars_inspected() {
 #[test]
 fn decode_identity_constructors_preserve_grammar_and_owned_buffers() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    for value in ["", "a", "t:m:k#é:部", "t::k#0", "t:m:k#a#b", "t:m:k#a\u{2000}b"] {
+    for value in [
+        "",
+        "a",
+        "t:m:k#é:部",
+        "t::k#0",
+        "t:m:k#a#b",
+        "t:m:k#a\u{2000}b",
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
@@ -597,7 +604,9 @@ fn decode_identity_constructors_preserve_grammar_and_owned_buffers() {
         let pointer = owned.as_ptr();
         let result = super::Identity::new_for_decode(&ctx, owned, "identity grammar").unwrap();
         assert_eq!(result, super::Identity::new(value));
-        if let Ok(identity) = result { assert_eq!(identity.as_str().as_ptr(), pointer); }
+        if let Ok(identity) = result {
+            assert_eq!(identity.as_str().as_ptr(), pointer);
+        }
         assert_eq!(
             super::UnknownId::mint_for_decode(&ctx, value.to_owned(), "unknown grammar").unwrap(),
             super::UnknownId::mint(value),
@@ -606,10 +615,20 @@ fn decode_identity_constructors_preserve_grammar_and_owned_buffers() {
     }
     for value in ["", "é部", "a:b", "a#b", "a\u{2000}b", "a\u{1c}b"] {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        assert_eq!(IdentityComponent::try_new_for_decode(&ctx, value, "component grammar").unwrap(), IdentityComponent::try_new(value));
-        assert_eq!(super::HistoricalBodyId::mint_for_decode(&ctx, value, "local grammar").unwrap(), super::HistoricalBodyId::mint(value));
-        assert_eq!(IdentityComponent::try_new(value).is_ok(), super::valid_component_text(value));
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(
+            IdentityComponent::try_new_for_decode(&ctx, value, "component grammar").unwrap(),
+            IdentityComponent::try_new(value)
+        );
+        assert_eq!(
+            super::HistoricalBodyId::mint_for_decode(&ctx, value, "local grammar").unwrap(),
+            super::HistoricalBodyId::mint(value)
+        );
+        assert_eq!(
+            IdentityComponent::try_new(value).is_ok(),
+            super::valid_component_text(value)
+        );
     }
 }
 
@@ -617,29 +636,60 @@ fn decode_identity_constructors_preserve_grammar_and_owned_buffers() {
 fn decode_identity_constructors_refuse_scans_and_borrowed_copies() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     for constructor in 0..4 {
-        for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
-            let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, "decode identity", |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                match dimension {
-                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-                    _ => unreachable!(),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = match constructor {
-                    0 => super::Identity::new_for_decode(&ctx, "test:model:body#é", "decode identity").map(|_| ()),
-                    1 => IdentityComponent::try_new_for_decode(&ctx, "component", "decode identity").map(|_| ()),
-                    2 => super::UnknownId::mint_for_decode(&ctx, "test:source:unknown#0", "decode identity").map(|_| ()),
-                    _ => super::HistoricalBodyId::mint_for_decode(&ctx, "local", "decode identity").map(|_| ()),
-                };
-                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(ctx.resource_refusal(), Some(*limit));
-                    assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit));
-                }
-                result
-            });
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+        for dimension in [
+            ResourceDimension::WorkUnits,
+            ResourceDimension::RetainedBytes,
+        ] {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                dimension,
+                "decode identity",
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    match dimension {
+                        ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                        _ => unreachable!(),
+                    }
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    let result = match constructor {
+                        0 => super::Identity::new_for_decode(
+                            &ctx,
+                            "test:model:body#é",
+                            "decode identity",
+                        )
+                        .map(|_| ()),
+                        1 => IdentityComponent::try_new_for_decode(
+                            &ctx,
+                            "component",
+                            "decode identity",
+                        )
+                        .map(|_| ()),
+                        2 => super::UnknownId::mint_for_decode(
+                            &ctx,
+                            "test:source:unknown#0",
+                            "decode identity",
+                        )
+                        .map(|_| ()),
+                        _ => super::HistoricalBodyId::mint_for_decode(
+                            &ctx,
+                            "local",
+                            "decode identity",
+                        )
+                        .map(|_| ()),
+                    };
+                    if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                        assert_eq!(ctx.resource_refusal(), Some(*limit));
+                        assert!(
+                            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit)
+                        );
+                    }
+                    result
+                },
+            );
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+            );
         }
     }
 }
@@ -653,31 +703,70 @@ fn decode_identity_grammar_stops_at_the_first_invalid_scalar() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let value = format!(" {}", "x".repeat(4096));
-    assert_eq!(super::Identity::new_for_decode(&ctx, value.clone(), "identity scan").unwrap(), super::Identity::new(value));
+    assert_eq!(
+        super::Identity::new_for_decode(&ctx, value.clone(), "identity scan").unwrap(),
+        super::Identity::new(value)
+    );
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn decode_owned_identity_constructors_refuse_grammar_visits() {
-    use super::{Identity, UnknownId, HistoricalFaceId};
+    use super::{HistoricalFaceId, Identity, UnknownId};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     for kind in 0..4 {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "owned identity grammar", |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            let result = match kind {
-                0 => Identity::new_for_decode(&ctx, "a:b:c#é部".to_owned(), "owned identity grammar").map(|value| { value.unwrap(); }),
-                1 => IdentityComponent::try_new_for_decode(&ctx, "é部".to_owned(), "owned identity grammar").map(|value| { value.unwrap(); }),
-                2 => UnknownId::mint_for_decode(&ctx, "a:b:c#é部".to_owned(), "owned identity grammar").map(|value| { value.unwrap(); }),
-                _ => HistoricalFaceId::mint_for_decode(&ctx, "é部".to_owned(), "owned identity grammar").map(|value| { value.unwrap(); }),
-            };
-            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result else { panic!("grammar refusal"); };
-            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit));
-            result
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "owned identity grammar",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let result = match kind {
+                    0 => Identity::new_for_decode(
+                        &ctx,
+                        "a:b:c#é部".to_owned(),
+                        "owned identity grammar",
+                    )
+                    .map(|value| {
+                        value.unwrap();
+                    }),
+                    1 => IdentityComponent::try_new_for_decode(
+                        &ctx,
+                        "é部".to_owned(),
+                        "owned identity grammar",
+                    )
+                    .map(|value| {
+                        value.unwrap();
+                    }),
+                    2 => UnknownId::mint_for_decode(
+                        &ctx,
+                        "a:b:c#é部".to_owned(),
+                        "owned identity grammar",
+                    )
+                    .map(|value| {
+                        value.unwrap();
+                    }),
+                    _ => HistoricalFaceId::mint_for_decode(
+                        &ctx,
+                        "é部".to_owned(),
+                        "owned identity grammar",
+                    )
+                    .map(|value| {
+                        value.unwrap();
+                    }),
+                };
+                let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result else {
+                    panic!("grammar refusal");
+                };
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit)
+                );
+                result
+            },
+        );
     }
 }
 
@@ -692,6 +781,9 @@ fn static_identity_key_copy_needs_no_work_or_storage() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let key = crate::identity_key!("static");
-    assert_eq!(key.try_clone_for_decode(&ctx, "static key copy").unwrap(), key);
+    assert_eq!(
+        key.try_clone_for_decode(&ctx, "static key copy").unwrap(),
+        key
+    );
     ctx.finish_session().unwrap();
 }

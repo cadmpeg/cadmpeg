@@ -34,13 +34,19 @@ fn admit_local_text<E>(
     let mut valid = !value.is_empty();
     while !characters.as_str().is_empty() {
         visit(1)?;
-        let Some(character) = characters.next() else { break; };
+        let Some(character) = characters.next() else {
+            break;
+        };
         if character.is_whitespace() {
             valid = false;
             break;
         }
     }
-    Ok(if valid { Ok(value) } else { Err(IdentityError::InvalidId { value }) })
+    Ok(if valid {
+        Ok(value)
+    } else {
+        Err(IdentityError::InvalidId { value })
+    })
 }
 
 use std::fmt::{self, Display};
@@ -160,8 +166,10 @@ impl Identity {
             std::borrow::Cow::Owned(value) => value,
             std::borrow::Cow::Borrowed(value) => ctx.copy_retained_text(value, operation)?,
         };
-        Ok(Self::admit_text(value, |work| ctx.charge_work(work, operation))?
-            .map_err(|value| IdentityError::InvalidId { value }))
+        Ok(
+            Self::admit_text(value, |work| ctx.charge_work(work, operation))?
+                .map_err(|value| IdentityError::InvalidId { value }),
+        )
     }
 
     /// Admit owned text with the same grammar used by standard reconstruction.
@@ -438,7 +446,10 @@ impl IdentityComponent {
         Ok(if check_component(&value, visit)? {
             Ok(Self(std::borrow::Cow::Owned(value)))
         } else {
-            Err(IdentityError::InvalidComponent { label: "component", value })
+            Err(IdentityError::InvalidComponent {
+                label: "component",
+                value,
+            })
         })
     }
 

@@ -16,7 +16,8 @@ fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
         .unwrap();
     let index = super::ReplacementIndex::build(
         &fixture,
-        &replacements, |(source, target)| (source, target),
+        &replacements,
+        |(source, target)| (source, target),
         &mut storage,
         "fixture replacement index",
     )
@@ -54,7 +55,8 @@ fn replacement_lookup_preserves_each_comparison_refusal_and_empty_fuse() {
     let empty = std::collections::BTreeMap::<String, String>::new();
     let empty_index = super::ReplacementIndex::build(
         &ctx,
-        &empty, |(source, target)| (source, target),
+        &empty,
+        |(source, target)| (source, target),
         &mut empty_storage,
         "empty replacement index",
     )
@@ -108,7 +110,8 @@ fn replacement_index_admits_storage_and_preserves_byte_order() {
         let mut storage = ctx.reserve_scoped_limit(0, "replacement storage").unwrap();
         let CodecError::ResourceLimit(original) = super::ReplacementIndex::build(
             &ctx,
-            &replacements, |(source, target)| (source, target),
+            &replacements,
+            |(source, target)| (source, target),
             &mut storage,
             "replacement storage",
         )
@@ -130,7 +133,8 @@ fn replacement_index_admits_storage_and_preserves_byte_order() {
     let mut storage = ctx.reserve_scoped_limit(0, "replacement storage").unwrap();
     let index = super::ReplacementIndex::build(
         &ctx,
-        &replacements, |(source, target)| (source, target),
+        &replacements,
+        |(source, target)| (source, target),
         &mut storage,
         "replacement storage",
     )

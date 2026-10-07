@@ -31,11 +31,18 @@ fn typed_identity_cache_admits_copies_once_and_repeated_comparisons() {
         let result = map.identity(&ctx, source);
         if let Err(CodecError::ResourceLimit(original)) = &result {
             assert_eq!(original.dimension, dimension);
-            assert!(matches!(map.finish(&ctx), Err(CodecError::ResourceLimit(limit)) if limit == *original));
+            assert!(
+                matches!(map.finish(&ctx), Err(CodecError::ResourceLimit(limit)) if limit == *original)
+            );
             drop(map);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == *original));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == *original)
+            );
         } else {
-            assert_eq!((first, result.as_ref().unwrap().clone()), (source.to_owned(), source.to_owned()));
+            assert_eq!(
+                (first, result.as_ref().unwrap().clone()),
+                (source.to_owned(), source.to_owned())
+            );
             assert_eq!(calls.get(), 1);
             assert_eq!(map.targets.len(), 1);
             assert_eq!(map.occupied.len(), 1);
@@ -45,8 +52,15 @@ fn typed_identity_cache_admits_copies_once_and_repeated_comparisons() {
         }
         result
     };
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::RetainedBytes] {
-        cadmpeg_test_support::refusal::resource_limit_at(dimension, "repeat identity cache", |cap| run(cap, dimension));
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::RetainedBytes,
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            "repeat identity cache",
+            |cap| run(cap, dimension),
+        );
     }
     run(u64::MAX, ResourceDimension::WorkUnits).unwrap();
 }
@@ -54,24 +68,34 @@ fn typed_identity_cache_admits_copies_once_and_repeated_comparisons() {
 #[test]
 fn typed_identity_cache_comparison_refusal_cannot_return_a_cached_target() {
     let source = "test:model:point#one";
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "refused identity comparison", |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        let mut map = IdentityMap::new(&ctx, "initial identity cache", |source: &str| {
-            ctx.copy_retained_text(source, "identity callback copy")
-        })?;
-        assert_eq!(map.identity(&ctx, source)?, source);
-        map.operation = "refused identity comparison";
-        let result = map.identity(&ctx, source);
-        let Err(CodecError::ResourceLimit(original)) = &result else { panic!("comparison must refuse"); };
-        assert_eq!(original.operation, "refused identity comparison");
-        assert!(matches!(map.identity(&ctx, "another identity"), Err(CodecError::ResourceLimit(limit)) if limit == *original));
-        drop(map);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == *original));
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "refused identity comparison",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut map = IdentityMap::new(&ctx, "initial identity cache", |source: &str| {
+                ctx.copy_retained_text(source, "identity callback copy")
+            })?;
+            assert_eq!(map.identity(&ctx, source)?, source);
+            map.operation = "refused identity comparison";
+            let result = map.identity(&ctx, source);
+            let Err(CodecError::ResourceLimit(original)) = &result else {
+                panic!("comparison must refuse");
+            };
+            assert_eq!(original.operation, "refused identity comparison");
+            assert!(
+                matches!(map.identity(&ctx, "another identity"), Err(CodecError::ResourceLimit(limit)) if limit == *original)
+            );
+            drop(map);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == *original)
+            );
+            result
+        },
+    );
 }
 
 #[test]
@@ -277,7 +301,8 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             policy.limits.max_materialized_bytes = 4096;
-            policy.limits.max_retained_bytes = 2 * cadmpeg_core::decode::u64_from_index(source.len());
+            policy.limits.max_retained_bytes =
+                2 * cadmpeg_core::decode::u64_from_index(source.len());
             policy.limits.max_collection_items = 2;
             policy.limits.max_recursion_depth = 0;
             let arena = DecodeArena::new();
@@ -287,10 +312,14 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
                 calls.set(calls.get() + 1);
                 ctx.copy_retained_text(source, "typed callback copy")
             })?;
-            let first = crate::ids::Identity::new(source).unwrap().rewrite_identities(&ctx, &mut map)?;
+            let first = crate::ids::Identity::new(source)
+                .unwrap()
+                .rewrite_identities(&ctx, &mut map)?;
             assert_eq!(first.as_str(), source);
             map.operation = "repeat grammar cache";
-            let result = crate::ids::Identity::new(source).unwrap().rewrite_identities(&ctx, &mut map);
+            let result = crate::ids::Identity::new(source)
+                .unwrap()
+                .rewrite_identities(&ctx, &mut map);
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             } else {
@@ -304,7 +333,11 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
             }
             result
         };
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "repeat grammar cache", run);
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "repeat grammar cache",
+            run,
+        );
         run(u64::MAX).unwrap();
     }
 }
@@ -324,7 +357,8 @@ fn unchanged_nonblank_rewrite_moves_its_proof_without_scanning() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut map = IdentityMap::new(&ctx, "unchanged nonblank text", |_: &str| {
         panic!("ordinary text does not call the identity mapping")
-    }).unwrap();
+    })
+    .unwrap();
     let value = value.rewrite_identities(&ctx, &mut map).unwrap();
     assert_eq!(value.as_str().as_ptr(), pointer);
     assert_eq!(value.as_str(), format!("{}x", "\u{2003}".repeat(4096)));
