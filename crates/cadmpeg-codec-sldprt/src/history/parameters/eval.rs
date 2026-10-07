@@ -114,8 +114,13 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     }
 
     pub(super) fn parse(mut self) -> Result<Option<ParameterValue>, CodecError> {
+        self.parse_borrowed()?.map(|value| self.retain_value(value)).transpose()
+    }
+
+    /// An evaluated result that borrows referenced values.
+    pub(super) fn parse_borrowed(&mut self) -> Result<Option<Cow<'a, ParameterValue>>, CodecError> {
         match self.parse_value() {
-            Ok(value) => Ok(Some(self.retain_value(value)?)),
+            Ok(value) => Ok(Some(value)),
             Err(ExpressionFailure::NoValue) => Ok(None),
             Err(ExpressionFailure::Resource(error)) => Err(error),
         }

@@ -1056,12 +1056,12 @@ pub(crate) fn parameters_with_unevaluable_expressions(
         let mut states = configurations.is_empty().then_some(None).into_iter()
             .chain(configurations.iter().map(Some));
         while let Some(configuration) = ctx.next_charged(&mut states, "check SLDPRT parameter evaluation")? {
-            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage("check SLDPRT parameter evaluation", || {
+            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage("check SLDPRT parameter evaluation", || -> Result<_, CodecError> {
                 match ParameterExpressionParser::new(ctx, &parameter.expression, aliases, eval::ParameterValues::Validation {
                     values: &values, configuration, excluded: &parameter.id,
-                }).parse()? {
+                }).parse_borrowed()? {
                     Some(value) => Ok(Some(value)),
-                    None => text_parameter_literal(ctx, &parameter.name, &parameter.expression),
+                    None => Ok(text_parameter_literal(ctx, &parameter.name, &parameter.expression)?.map(std::borrow::Cow::Owned)),
                 }
             })?;
             if evaluated.is_none() { count += 1; break; }
@@ -1117,9 +1117,9 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
             let (evaluated, _evaluation_storage) = ctx.with_scoped_storage("check SLDPRT evaluated parameter coherence", || {
                 ParameterExpressionParser::new(ctx, &parameter.expression, aliases, eval::ParameterValues::Validation {
                     values: &values, configuration, excluded: &parameter.id,
-                }).parse()
+                }).parse_borrowed()
             })?;
-            if actual.zip(evaluated.as_ref()).is_some_and(|(actual, evaluated)| !equivalent_parameter_values(actual, evaluated)) {
+            if actual.zip(evaluated.as_ref()).is_some_and(|(actual, evaluated)| !equivalent_parameter_values(actual, evaluated.as_ref())) {
                 count += 1; break;
             }
         }

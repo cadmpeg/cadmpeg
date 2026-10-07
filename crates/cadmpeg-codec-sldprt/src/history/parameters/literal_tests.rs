@@ -660,3 +660,28 @@ fn validation_views_borrow_large_values_and_apply_configuration_overrides() {
     assert_eq!(super::parameters_with_incoherent_evaluated_values(&ctx, &parameters, &aliases, std::slice::from_ref(&configuration)).unwrap(), 1);
     assert!(ctx.resource_refusal().is_none());
 }
+
+#[test]
+fn validation_borrows_a_large_referenced_result() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
+    let parameter = |name: &str, expression: &str| DesignParameter {
+        id: ParameterId::mint(format!("synthetic:test:parameter#{name}")).unwrap(),
+        owner: None, ordinal: 0, name: name.into(), expression: expression.into(),
+        display: None, value: Some(ParameterValue::String("a".repeat(128 * 1024))),
+        dependencies: DistinctMembers::default(), properties: std::collections::BTreeMap::new(),
+        pmi: None, native_ref: None,
+    };
+    let text = parameter("Text", "stated");
+    let mut alias = parameter("Alias", "Text");
+    alias.dependencies = DistinctMembers::try_from(vec![text.id.clone()], &cadmpeg_test_support::service_decode_context()).unwrap();
+    let parameters = [text, alias];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (aliases, _storage) = super::ParameterAliases::scoped(&ctx, &parameters, &std::collections::HashMap::new(), &std::collections::HashSet::new()).unwrap();
+    assert_eq!(super::parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap(), 0);
+    assert!(ctx.resource_refusal().is_none());
+}
