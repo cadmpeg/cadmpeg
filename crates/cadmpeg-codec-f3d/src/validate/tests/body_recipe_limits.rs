@@ -112,29 +112,11 @@ fn native(valid: bool) -> crate::native::F3dNative {
     native
 }
 
-fn nested_items(value: &serde_json::Value) -> u64 {
-    match value {
-        serde_json::Value::Array(values) => {
-            u64::try_from(values.len()).unwrap() + values.iter().map(nested_items).sum::<u64>()
-        }
-        serde_json::Value::Object(values) => {
-            u64::try_from(values.len()).unwrap() + values.values().map(nested_items).sum::<u64>()
-        }
-        _ => 0,
-    }
-}
-
 fn reload_items(ir: &cadmpeg_ir::CadIr) -> u64 {
-    let record = &ir
-        .native
-        .namespace("f3d")
-        .unwrap()
-        .arenas()
-        .get("design_body_recipe_operands")
-        .unwrap()[0];
-    let fields = record.fields();
-    // The record and its identity field count one item each.
-    2 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
+    super::typed_reload_items::<crate::records::topology::body_recipe::DesignBodyRecipeOperand>(
+        ir,
+        "design_body_recipe_operands",
+    )
 }
 
 fn body_recipe_error(

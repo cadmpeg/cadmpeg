@@ -9,11 +9,12 @@ use crate::features::{
 };
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 
-/// Scoped-byte limit that admits every membership index here. An index's growth peaks at
-/// twice its table bound while the table is filled; the largest table is 16 buckets of
-/// slots under 64 bytes, so the peak stays below this limit. Reserving all of it afterwards
-/// shows the index released.
-const INDEX_ROOM: u64 = 4096;
+/// Scoped-byte limit that admits every membership index here. A two-member index is
+/// eight buckets of 32-byte member slots with their control bytes, 295 bytes, and is
+/// held twice while its table is filled; body members hold one such index while a
+/// second fills, a peak of three. Reserving all of it afterwards shows the indexes
+/// released.
+const INDEX_ROOM: u64 = 3 * 295;
 
 #[test]
 fn invalid_membership_constructors_preserve_an_existing_refusal() {

@@ -635,6 +635,9 @@ macro_rules! define_model_index {
                 procedural_curves: ProceduralCurve;
                 tessellations: Tessellation;
                 appearances: Appearance;
+                product_definitions: crate::products::ProductDefinition;
+                occurrences: crate::products::Occurrence;
+                pmi: crate::pmi::PmiAnnotation;
             ]
         }
     };

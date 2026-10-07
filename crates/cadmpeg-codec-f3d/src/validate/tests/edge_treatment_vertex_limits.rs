@@ -35,29 +35,10 @@ fn operand() -> crate::records::feature::work_geometry::DesignEdgeTreatmentVerte
     }
 }
 
-fn nested_items(value: &serde_json::Value) -> u64 {
-    match value {
-        serde_json::Value::Array(values) => {
-            u64::try_from(values.len()).unwrap() + values.iter().map(nested_items).sum::<u64>()
-        }
-        serde_json::Value::Object(values) => {
-            u64::try_from(values.len()).unwrap() + values.values().map(nested_items).sum::<u64>()
-        }
-        _ => 0,
-    }
-}
-
 fn reload_items(ir: &cadmpeg_ir::CadIr) -> u64 {
-    let record = &ir
-        .native
-        .namespace("f3d")
-        .unwrap()
-        .arenas()
-        .get("design_edge_treatment_vertex_operands")
-        .unwrap()[0];
-    let fields = record.fields();
-    // The record and its identity field count one item each.
-    2 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
+    super::typed_reload_items::<
+        crate::records::feature::work_geometry::DesignEdgeTreatmentVertexOperand,
+    >(ir, "design_edge_treatment_vertex_operands")
 }
 
 fn vertex_error(stored: bool, extra_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {

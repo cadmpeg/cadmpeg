@@ -390,55 +390,45 @@ macro_rules! sorted_model_value {
     ($model:expr, $ctx:expr, curves) => {
         sorted_rows($ctx, &$model.curves, |value| Ok(CurveWire(value)))?
     };
-    ($model:expr, $ctx:expr, procedural_surfaces) => {
+    ($model:expr, $ctx:expr, procedural_surfaces) => {{
+        let owners = procedural_owner_index($ctx, &$model.surfaces, |surface| {
+            surface
+                .geometry
+                .procedural_construction()
+                .map(|id| id.as_str())
+        })?;
         sorted_rows($ctx, &$model.procedural_surfaces, |procedural| {
-            admit_owner_scan(
-                $ctx,
-                &$model.surfaces,
-                procedural.id.as_str(),
-                "find digest procedural owner",
-            )?;
             Ok(ProceduralSurfaceWire {
-                owner: $model.procedural_surface_owner(&procedural.id),
+                owner: unique_procedural_owner($ctx, &owners, procedural.id.as_str())?
+                    .map(|surface| &surface.id),
                 procedural,
             })
         })?
-    };
-    ($model:expr, $ctx:expr, procedural_curves) => {
+    }};
+    ($model:expr, $ctx:expr, procedural_curves) => {{
+        let owners = procedural_owner_index($ctx, &$model.curves, |curve| {
+            curve
+                .geometry
+                .procedural_construction()
+                .map(|id| id.as_str())
+        })?;
         sorted_rows($ctx, &$model.procedural_curves, |procedural| {
-            admit_owner_scan(
-                $ctx,
-                &$model.curves,
-                procedural.id.as_str(),
-                "find digest procedural owner",
-            )?;
             Ok(ProceduralCurveWire {
-                owner: $model.procedural_curve_owner(&procedural.id),
+                owner: unique_procedural_owner($ctx, &owners, procedural.id.as_str())?
+                    .map(|curve| &curve.id),
                 procedural,
             })
         })?
-    };
+    }};
     ($model:expr, $ctx:expr, features) => {
         sorted_rows($ctx, &$model.features, |feature| {
-            let count =
-                cadmpeg_core::decode::u64_from_index($model.feature_regeneration_parents.0.len());
-            $ctx.charge_work(
-                count
-                    .checked_mul(cadmpeg_core::decode::u64_from_index(
-                        feature.id.as_str().len(),
-                    ))
-                    .ok_or_else(|| {
-                        $ctx.refuse_codec_limit(
-                            "find digest feature parent",
-                            u64::MAX - 1,
-                            u64::MAX,
-                        )
-                    })?,
-                "find digest feature parent",
-            )?;
             Ok(FeatureWriteWire::new(
                 feature,
-                $model.feature_regeneration_parent(&feature.id),
+                $ctx.get_btree_map(
+                    &$model.feature_regeneration_parents.0,
+                    &feature.id,
+                    "find digest feature parent",
+                )?,
             ))
         })?
     };
@@ -583,10 +573,10 @@ macro_rules! declare_model {
 
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-                $(ctx.stable_sort_by(
+                $(crate::ids::comparison::stable_sort_by_identity(
+                    ctx,
                     &mut self.$field,
-                    |entity| crate::schema::EntitySchema::identity(entity),
-                    Ord::cmp,
+                    crate::schema::EntitySchema::identity,
                     "finalize model arena",
                 )?;)*
                 Ok(())
@@ -697,10 +687,10 @@ fn sorted_rows<'a, T: crate::schema::EntitySchema, U>(
     let mut storage = ctx.reserve_scoped(0, "digest arena order")?;
     let mut refs =
         storage.with_storage(|| ctx.collect_vec(entities.iter(), "digest arena order"))?;
-    ctx.stable_sort_by(
+    crate::ids::comparison::stable_sort_by_identity(
+        ctx,
         &mut refs,
         |value| value.identity(),
-        Ord::cmp,
         "sort digest arena",
     )?;
     let result = ctx.try_collect_vec(
@@ -725,6 +715,53 @@ fn admit_owner_scan<T>(
         )
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, operation)
+}
+
+/// Carriers that name a procedural construction, ordered by construction.
+fn procedural_owner_index<'a, T>(
+    ctx: &DecodeContext<'_>,
+    carriers: &'a [T],
+    construction: impl Fn(&'a T) -> Option<&'a str>,
+) -> Result<Vec<(&'a str, &'a T)>, CodecError> {
+    let operation = "index digest procedural owners";
+    let mut owners = Vec::new();
+    for carrier in ctx.admit_iter(carriers, operation)? {
+        if let Some(id) = construction(carrier) {
+            ctx.push_vec(&mut owners, (id, carrier), operation)?;
+        }
+    }
+    crate::ids::comparison::stable_sort_by_identity(ctx, &mut owners, |owner| owner.0, operation)?;
+    Ok(owners)
+}
+
+/// The carrier that names `construction`, when exactly one does.
+fn unique_procedural_owner<'a, T>(
+    ctx: &DecodeContext<'_>,
+    owners: &[(&str, &'a T)],
+    construction: &str,
+) -> Result<Option<&'a T>, CodecError> {
+    let operation = "find digest procedural owner";
+    let names = |index: usize| -> Result<bool, CodecError> {
+        let Some((id, _)) = owners.get(index) else {
+            return Ok(false);
+        };
+        ctx.charge_work(1, operation)?;
+        Ok(crate::ids::comparison::equal(
+            ctx,
+            id,
+            construction,
+            operation,
+        )?)
+    };
+    let first = ctx.partition_point(
+        owners,
+        |(id, _)| Ok(crate::ids::comparison::compare(ctx, id, construction, operation)?.is_lt()),
+        operation,
+    )?;
+    if !names(first)? || names(first + 1)? {
+        return Ok(None);
+    }
+    Ok(Some(owners[first].1))
 }
 
 macro_rules! declare_arena_name {
