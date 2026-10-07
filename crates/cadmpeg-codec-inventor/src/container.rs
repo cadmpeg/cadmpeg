@@ -38,7 +38,7 @@ impl<'a> InventorContainer<'a> {
         let rse = RseInventory::build(ctx, &snapshot)?;
         let property_sets = property_set_inventory(ctx, &snapshot)?;
         let protein = parse_protein(ctx, &snapshot)?;
-        let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind(ctx)?)?;
+        let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind())?;
         Ok(Self {
             snapshot,
             rse,

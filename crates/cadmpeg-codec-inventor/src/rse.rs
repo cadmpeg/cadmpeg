@@ -87,14 +87,6 @@ enum SegmentPrefix {
 }
 
 impl SegmentToken {
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-        operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        self.0.try_clone_for_decode(ctx, operation).map(Self)
-    }
-
     fn parse(
         ctx: &DecodeContext<'_>,
         name: &str,
@@ -504,6 +496,7 @@ pub(crate) struct RseInventory<'a> {
     pub(crate) unpaired_metadata: Vec<SegmentToken>,
     pub(crate) unpaired_bulk: Vec<SegmentToken>,
     pub(crate) active_carrier: ActiveCarrierState<'a>,
+    document_kind: DocumentKind,
 }
 
 impl<'a> RseInventory<'a> {
@@ -533,9 +526,9 @@ impl<'a> RseInventory<'a> {
             let Some(name) = direct_rse_child(ctx, path)? else {
                 continue;
             };
-            let Some((prefix, token)) =
-                stream_storage.with_storage(|| SegmentToken::parse(ctx, name))?
-            else {
+            // Every parsed token is kept, paired or unpaired, so its copy is
+            // retained; the indexes that pair them are scoped.
+            let Some((prefix, token)) = SegmentToken::parse(ctx, name)? else {
                 continue;
             };
             match prefix {
@@ -580,15 +573,10 @@ impl<'a> RseInventory<'a> {
                         "retain RSe issue detail",
                     )?),
                 },
-                None => {
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(
-                            "RSe database stream handle is absent".len(),
-                        ),
-                        "retain RSe missing database detail",
-                    )?;
-                    DatabaseState::Unreadable("RSe database stream handle is absent".into())
-                }
+                None => DatabaseState::Unreadable(ctx.copy_retained_text(
+                    "RSe database stream handle is absent",
+                    "retain RSe missing database detail",
+                )?),
             };
             ctx.push_vec(
                 &mut database_descriptors,
@@ -632,28 +620,42 @@ impl<'a> RseInventory<'a> {
                 )?),
             },
         };
+        // Pairing moves each token into its pair or its unpaired list; the
+        // bulk streams left after pairing are the unpaired bulk streams.
         let mut pairs = Vec::new();
         let mut pairs_storage = ctx.reserve_scoped(0, "pair RSe segment streams")?;
-        for (token, metadata_id) in ctx.admit_iter(&metadata, "pair RSe metadata streams")? {
-            let Some(bulk_id) = ctx.get_btree_map(&bulk, token, "find paired RSe bulk stream")?
-            else {
-                continue;
-            };
-            let pair = SegmentPair {
-                token: token.try_clone_for_decode(ctx, "retain RSe paired token")?,
-                metadata: *metadata_id,
-                bulk: *bulk_id,
-            };
-            pairs_storage
-                .with_storage(|| ctx.push_vec(&mut pairs, pair, "pair RSe segment streams"))?;
+        let mut unpaired_metadata = Vec::new();
+        for (token, metadata_id) in ctx.admit_iter(metadata, "pair RSe metadata streams")? {
+            let paired = stream_storage.with_storage(|| {
+                ctx.remove_btree_map(&mut bulk, &token, "find paired RSe bulk stream")
+            })?;
+            match paired {
+                Some(bulk_id) => pairs_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut pairs,
+                        SegmentPair {
+                            token,
+                            metadata: metadata_id,
+                            bulk: bulk_id,
+                        },
+                        "pair RSe segment streams",
+                    )
+                })?,
+                None => ctx.push_vec(
+                    &mut unpaired_metadata,
+                    token,
+                    "collect RSe unpaired metadata",
+                )?,
+            }
         }
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(pairs.len()),
-            "admit RSe segment descriptors",
-        )?;
-        let mut segments = pairs
-            .into_iter()
-            .map(
+        let mut unpaired_bulk = Vec::new();
+        for (token, _) in ctx.admit_iter(bulk, "collect RSe unpaired bulk streams")? {
+            ctx.push_vec(&mut unpaired_bulk, token, "collect RSe unpaired bulk")?;
+        }
+        drop(databases);
+        drop(stream_storage);
+        let mut segments = ctx.try_collect_vec(
+            pairs.into_iter().map(
                 |pair| -> Result<SegmentDescriptor<'a, BulkEnvelope<'a>>, CodecError> {
                     let meta = snapshot
                         .stream_by_id(ctx, pair.metadata)?
@@ -693,17 +695,16 @@ impl<'a> RseInventory<'a> {
                         bulk,
                     })
                 },
-            )
-            .collect::<Result<Vec<_>, _>>()?;
+            ),
+            "admit RSe segment descriptors",
+        )?;
         drop(pairs_storage);
         if let ParsedState::Parsed(registry) = &registry {
             join_registry(ctx, &mut segments, registry)?;
         } else {
-            for index in ctx.admit_iter(
-                &(0..segments.len()),
-                "classify RSe segments without registry",
-            )? {
-                let segment = &mut segments[index];
+            for segment in
+                ctx.admit_iter(&mut segments, "classify RSe segments without registry")?
+            {
                 if let SegmentMetaState::Parsed(meta) = &segment.meta {
                     segment.kind = SegmentKind::classify(ctx, &meta.display_name, None)?;
                 } else {
@@ -717,26 +718,6 @@ impl<'a> RseInventory<'a> {
             }
         }
         let segments = frame_segment_records(ctx, segments)?;
-        let mut unpaired_metadata = Vec::new();
-        for (token, _) in ctx.admit_iter(&metadata, "scan unpaired RSe metadata streams")? {
-            if !ctx.contains_key_btree_map(&bulk, token, "match RSe metadata token")? {
-                ctx.push_vec(
-                    &mut unpaired_metadata,
-                    token.try_clone_for_decode(ctx, "retain RSe unpaired metadata token")?,
-                    "collect RSe unpaired metadata",
-                )?;
-            }
-        }
-        let mut unpaired_bulk = Vec::new();
-        for (token, _) in ctx.admit_iter(&bulk, "scan unpaired RSe bulk streams")? {
-            if !ctx.contains_key_btree_map(&metadata, token, "match RSe bulk token")? {
-                ctx.push_vec(
-                    &mut unpaired_bulk,
-                    token.try_clone_for_decode(ctx, "retain RSe unpaired bulk token")?,
-                    "collect RSe unpaired bulk",
-                )?;
-            }
-        }
         let document_kind = document_kind_for_segments(ctx, &segments)?;
         let active_carrier = select_active_carrier(ctx, &segments, &document_kind)?;
         Ok(Self {
@@ -747,14 +728,13 @@ impl<'a> RseInventory<'a> {
             unpaired_metadata,
             unpaired_bulk,
             active_carrier,
+            document_kind,
         })
     }
 
-    pub(crate) fn document_kind(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<DocumentKind, CodecError> {
-        document_kind_for_segments(ctx, &self.segments)
+    /// The document kind the segment kinds declare, classified once at build.
+    pub(crate) fn document_kind(&self) -> DocumentKind {
+        self.document_kind.clone()
     }
 }
 
@@ -762,10 +742,10 @@ fn document_kind_for_segments(
     ctx: &DecodeContext<'_>,
     segments: &[SegmentDescriptor<'_>],
 ) -> Result<DocumentKind, CodecError> {
-    let has_part = ctx
-        .admit_iter(segments, "find RSe part segments")?
-        .any(|segment| {
-            matches!(
+    let has_part = ctx.any_by(
+        segments,
+        |segment| {
+            Ok(matches!(
                 segment.kind,
                 SegmentKind::PmBRep
                     | SegmentKind::PmDc
@@ -773,12 +753,14 @@ fn document_kind_for_segments(
                     | SegmentKind::PmApp
                     | SegmentKind::PmBrowser
                     | SegmentKind::PmResult
-            )
-        });
-    let has_assembly = ctx
-        .admit_iter(segments, "find RSe assembly segments")?
-        .any(|segment| {
-            matches!(
+            ))
+        },
+        "find RSe part segments",
+    )?;
+    let has_assembly = ctx.any_by(
+        segments,
+        |segment| {
+            Ok(matches!(
                 segment.kind,
                 SegmentKind::AmDc
                     | SegmentKind::AmBRep
@@ -786,8 +768,10 @@ fn document_kind_for_segments(
                     | SegmentKind::AmApp
                     | SegmentKind::AmBrowser
                     | SegmentKind::AmRx
-            )
-        });
+            ))
+        },
+        "find RSe assembly segments",
+    )?;
     Ok(match (has_part, has_assembly) {
         (true, false) => DocumentKind::Part,
         (false, true) => DocumentKind::Assembly,
@@ -814,8 +798,16 @@ fn join_registry<B>(
     segments: &mut [SegmentDescriptor<'_, B>],
     registry: &SegmentRegistry,
 ) -> Result<(), CodecError> {
-    for index in ctx.admit_iter(&(0..segments.len()), "join RSe registry segments")? {
-        let segment = &mut segments[index];
+    // One index serves every segment: an id that occurs twice in the registry
+    // is kept as a repeated marker.
+    let (by_segment_id, _index_storage) = ctx.unique_index(
+        registry
+            .entries
+            .iter()
+            .map(|entry| (entry.segment_id, entry)),
+        "index RSe registry segment IDs",
+    )?;
+    for segment in ctx.admit_iter(segments, "join RSe registry segments")? {
         let SegmentMetaState::Parsed(meta) = &segment.meta else {
             push_identity_issue(
                 ctx,
@@ -825,13 +817,20 @@ fn join_registry<B>(
             segment.kind = SegmentKind::Unresolved;
             continue;
         };
-        let mut matches = ctx
-            .admit_iter(&registry.entries, "match RSe registry segment IDs")?
-            .filter(|entry| entry.segment_id == meta.segment_id);
-        let first = matches.next();
-        let second = matches.next();
-        let Some(entry) = first.filter(|_| second.is_none()) else {
-            let detail = if first.is_none() {
+        let Some(&Some(entry)) = ctx.get_hash_map(
+            &by_segment_id,
+            &meta.segment_id,
+            "match RSe registry segment IDs",
+        )?
+        else {
+            let detail = if ctx
+                .get_hash_map(
+                    &by_segment_id,
+                    &meta.segment_id,
+                    "match RSe registry segment IDs",
+                )?
+                .is_none()
+            {
                 "metadata segment id is absent from the registry"
             } else {
                 "metadata segment id is duplicated in the registry"
@@ -961,15 +960,21 @@ fn parse_meta_stream<'a>(
     // The marker and version are a declaration, never a gate: the version-8
     // grammar is attempted on every stream, and a body that does not obey it is
     // `Malformed` with the declaration intact.
-    let parsed_declaration = MetaStreamDeclaration {
-        marker: ctx
-            .copy_retained_text(&declared.marker, "retain RSe metadata declaration marker")?,
-        version: declared.version,
-    };
-    match parse_meta_stream_v8(ctx, source, cursor, parsed_declaration) {
-        Ok(meta) => {
+    match parse_meta_stream_v8(ctx, source, cursor) {
+        Ok(body) => {
             ctx.charge_collection_items(1, "admit RSe parsed metadata segment")?;
-            Ok(SegmentMetaState::Parsed(Box::new(meta)))
+            Ok(SegmentMetaState::Parsed(Box::new(SegmentMeta {
+                declared,
+                header_values: body.header_values,
+                display_name: body.display_name,
+                segment_id: body.segment_id,
+                state_words: body.state_words,
+                created: body.created,
+                modified: body.modified,
+                body_form: body.body_form,
+                body: body.body,
+                tables: body.tables,
+            })))
         }
         Err(error) => Ok(SegmentMetaState::Malformed {
             declared: Some(declared),
@@ -978,12 +983,24 @@ fn parse_meta_stream<'a>(
     }
 }
 
+/// The version-8 body fields that follow a metadata stream's declaration.
+struct MetaStreamBody<'a> {
+    header_values: [u16; 8],
+    display_name: String,
+    segment_id: [u8; 16],
+    state_words: [u32; 3],
+    created: String,
+    modified: String,
+    body_form: u8,
+    body: View<'a>,
+    tables: MetaTables<'a>,
+}
+
 fn parse_meta_stream_v8<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
     mut cursor: MetaCursor<'a>,
-    declared: MetaStreamDeclaration,
-) -> Result<SegmentMeta<'a>, CodecError> {
+) -> Result<MetaStreamBody<'a>, CodecError> {
     let header_values = cursor.u16_array("header values")?;
     let display_name = cursor.length_prefixed_utf16(ctx, "display name")?;
     let mut segment_id = [0; 16];
@@ -1002,8 +1019,7 @@ fn parse_meta_stream_v8<'a>(
         .ok_or_else(|| CodecError::Malformed("RSe metadata body range is invalid".into()))?;
     let body = inflate_zlib_exact(ctx, compressed)?;
     let tables = parse_meta_tables(ctx, body)?;
-    Ok(SegmentMeta {
-        declared,
+    Ok(MetaStreamBody {
         header_values,
         display_name,
         segment_id,
@@ -1321,11 +1337,13 @@ mod tests {
     }
 
     #[test]
-    fn rse_inventory_paired_token_refuses_retained_limit_before_copy() {
+    fn rse_inventory_segment_token_refuses_retained_limit_before_copy() {
+        // A token is copied once, when its stream name is parsed; pairing and
+        // the unpaired lists move it.
         let operations = inventory_refusal_operations(ResourceDimension::RetainedBytes, 1024);
         assert!(
-            operations.contains("retain RSe paired token"),
-            "paired token copy must be admitted"
+            operations.contains("retain RSe segment token"),
+            "segment token copy must be admitted"
         );
     }
 
@@ -1349,7 +1367,7 @@ mod tests {
             ResourceDimension::RetainedBytes,
             1024,
         );
-        assert!(metadata_retained.contains("retain RSe unpaired metadata token"));
+        assert!(metadata_retained.contains("retain RSe segment token"));
 
         let mut bulk_only = crate::test_support::test_fixtures::primary_envelope_fixture();
         bulk_only[DIRECTORY_OFFSET + META_ENTRY * DIRECTORY_ENTRY_LEN] = b'C';
@@ -1358,7 +1376,7 @@ mod tests {
         assert!(bulk_collections.contains("collect RSe unpaired bulk"));
         let bulk_retained =
             inventory_refusal_operations_for(&bulk_only, ResourceDimension::RetainedBytes, 1024);
-        assert!(bulk_retained.contains("retain RSe unpaired bulk token"));
+        assert!(bulk_retained.contains("retain RSe segment token"));
     }
 
     #[test]
@@ -1556,20 +1574,19 @@ mod tests {
     }
 
     #[test]
-    fn metadata_declaration_refuses_retained_limit_before_marker_clone() {
+    fn metadata_declaration_refuses_retained_limit_before_marker_copy() {
         let bytes = meta_fixture(false);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-            MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1,
-        );
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(MetaStreamDeclaration::VERIFIED_MARKER.len() - 1);
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("metadata stream fits input cap");
         assert!(matches!(
             parse_meta_stream(&ctx, root),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "retain RSe metadata declaration marker"
+                    && limit.operation == "retain RSe metadata UTF-8 field"
         ));
     }
 

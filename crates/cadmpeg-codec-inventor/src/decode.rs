@@ -115,7 +115,7 @@ fn decode_container<'a>(
         "rse_segment_pairs",
         format_args!("{}", container.rse.segments.len()),
     )?;
-    let mut document_kind = container.rse.document_kind(ctx)?;
+    let mut document_kind = container.rse.document_kind();
     let mut metadata = MetadataProjection::default();
     let mut property_sets = Vec::new();
     let mut property_sections = Vec::new();
