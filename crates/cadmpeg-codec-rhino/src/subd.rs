@@ -316,7 +316,8 @@ pub(crate) fn decode_mesh_proxy(
 
     let embedded_start = reader.position();
     let embedded_end = embedded_subd_end(ctx, &reader, archive)?;
-    let decoded = decode(ctx, data, embedded_start..embedded_end, archive, scale, id)?;
+    let mut candidate_storage = ctx.reserve_scoped(0, "Rhino SubD mesh proxy candidate")?;
+    let decoded = candidate_storage.with_storage(|| decode(ctx, data, embedded_start..embedded_end, archive, scale, id))?;
     reader.skip(embedded_end - reader.position())?;
     let face_count = reader.i32()?;
     let vertex_count = reader.i32()?;
@@ -338,6 +339,7 @@ pub(crate) fn decode_mesh_proxy(
     {
         return Ok(None);
     }
+    candidate_storage.commit()?;
     Ok(decoded)
 }
 

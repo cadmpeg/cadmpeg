@@ -617,3 +617,62 @@ fn optional_modifier_child_search_preserves_refusal_without_warning() {
         },
     );
 }
+
+#[test]
+fn dropped_modifier_does_not_retain_its_numeric_array() {
+    let xml = "<xml><new-displacement-object-data><sub/><on type=\"bool\">bad</on></new-displacement-object-data></xml>";
+    let payload = super::v2_payload(xml);
+    let descriptors = [super::descriptor(&payload, Some(super::MESH_MODIFIER_PLUGIN))];
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::RetainedBytes, "Rhino displacement sub-items", None,
+    );
+    let mut warnings = crate::loss::Diagnostics::new();
+    let modifier = super::super::parse_attribute_userdata(
+        &ctx, &payload, &descriptors, crate::chunks::ArchiveVersion::V6, &mut warnings,
+    ).unwrap();
+    assert!(modifier.is_none());
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].contains("XML field `on` has invalid bool value"));
+    assert!(ctx.finish_session().is_ok());
+}
+
+#[test]
+fn optional_modifier_array_refuses_speculative_and_retained_boundaries() {
+    let xml = "<xml><new-displacement-object-data><sub/></new-displacement-object-data></xml>";
+    let payload = super::v2_payload(xml);
+    let descriptors = [super::descriptor(&payload, Some(super::MESH_MODIFIER_PLUGIN))];
+    for (dimension, operation) in [
+        (ResourceDimension::MaterializedBytes, "Rhino displacement sub-items"),
+        (ResourceDimension::RetainedBytes, "Rhino optional modifier output"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                _ => panic!("storage dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+            let mut warnings = crate::loss::Diagnostics::new();
+            let result = super::super::parse_attribute_userdata(
+                &ctx, &payload, &descriptors, crate::chunks::ArchiveVersion::V6, &mut warnings,
+            );
+            assert!(warnings.is_empty());
+            if let Err(FramingError::Resource(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result.map_err(|error| match error { FramingError::Resource(limit) => CodecError::ResourceLimit(limit), error => panic!("unexpected modifier error: {error:?}") })
+        });
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut warnings = crate::loss::Diagnostics::new();
+    let modifier = super::super::parse_attribute_userdata(
+        &ctx, &payload, &descriptors, crate::chunks::ArchiveVersion::V6, &mut warnings,
+    ).unwrap().unwrap();
+    assert_eq!(modifier.displacement.unwrap().sub_items.len(), 1);
+    assert!(warnings.is_empty());
+}

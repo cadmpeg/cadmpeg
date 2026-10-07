@@ -246,13 +246,14 @@ pub(crate) fn decode(
         expand.ctx().charge_work(1, "Rhino polyedge segments")?;
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
-        let class = parse_class_wrapper(
+        let mut wrapper_storage = expand.ctx().reserve_scoped(0, "Rhino polyedge wrapper scratch")?;
+        let class = wrapper_storage.with_storage(|| parse_class_wrapper(
             expand.ctx(),
             data,
             start..wrapper.next_offset(),
             archive,
             &mut Diagnostics::new(),
-        )?;
+        ))?;
         if class.class_uuid != SEGMENT_CLASS {
             return Err(FramingError::structural(
                 start,
