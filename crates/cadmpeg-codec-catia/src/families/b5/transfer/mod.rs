@@ -743,13 +743,16 @@ fn build_plan(
                     ctx.insert_btree_set(&mut edge_ids, edge_id, "catia_b5_transfer_edge_ids")?;
                     continue;
                 };
-                // Both helix plans were built and charged by the fit; core has
-                // no charged equality for curve definitions.
-                if ctx
-                    .get_hash_map(&edge_helix_plan, &edge_id, LOOKUP)?
-                    .is_some_and(|existing| existing != &helix)
-                {
-                    return Ok(None);
+                if let Some(existing) = ctx.get_hash_map(&edge_helix_plan, &edge_id, LOOKUP)? {
+                    // Cylinder helix definitions and ranges have fixed-size fields.
+                    if existing.definition != helix.definition
+                        || existing.parameter_range != helix.parameter_range
+                        || existing.fit_tolerance != helix.fit_tolerance
+                        || !edges::nurbs_curves_equal(ctx, &existing.cache, &helix.cache,
+                            "catia_b5_edge_helix_plan_comparison")?
+                    {
+                        return Ok(None);
+                    }
                 }
                 let Some(edge_tolerance) = PositiveReal::new(helix.fit_tolerance.get()) else {
                     return Ok(None);
