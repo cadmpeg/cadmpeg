@@ -39,8 +39,23 @@ pub(super) fn decode_analytic_carriers(
         if is_analytic_surface(r.head()) {
             if let Some((geometry, inward)) = decode_surface(ctx, r).transpose()? {
                 if inward {
-                    scratch.with_storage(|| ctx.insert_hash_set(
-                        &mut inward_normal_surfaces,
+                    scratch.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut inward_normal_surfaces,
+                            i64::try_from(r.index).map_err(|_| {
+                                ctx.refuse_codec_limit(
+                                    "ASM record index",
+                                    9_223_372_036_854_775_807,
+                                    cadmpeg_core::decode::u64_from_index(r.index),
+                                )
+                            })?,
+                            "ASM topology inward_normal_surfaces",
+                        )
+                    })?;
+                }
+                scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut surface_geo,
                         i64::try_from(r.index).map_err(|_| {
                             ctx.refuse_codec_limit(
                                 "ASM record index",
@@ -48,36 +63,27 @@ pub(super) fn decode_analytic_carriers(
                                 cadmpeg_core::decode::u64_from_index(r.index),
                             )
                         })?,
-                        "ASM topology inward_normal_surfaces",
-                    ))?;
-                }
-                scratch.with_storage(|| ctx.insert_hash_map(
-                    &mut surface_geo,
-                    i64::try_from(r.index).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "ASM record index",
-                            9_223_372_036_854_775_807,
-                            cadmpeg_core::decode::u64_from_index(r.index),
-                        )
-                    })?,
-                    SurfaceGeometry::Solved(geometry),
-                    "ASM topology surface_geo",
-                ))?;
+                        SurfaceGeometry::Solved(geometry),
+                        "ASM topology surface_geo",
+                    )
+                })?;
             }
         } else if is_analytic_curve(r.head()) {
             if let Some(g) = decode_curve(ctx, r).transpose()? {
-                scratch.with_storage(|| ctx.insert_hash_map(
-                    &mut curve_geo,
-                    i64::try_from(r.index).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "ASM record index",
-                            9_223_372_036_854_775_807,
-                            cadmpeg_core::decode::u64_from_index(r.index),
-                        )
-                    })?,
-                    g,
-                    "ASM topology curve_geo",
-                ))?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut curve_geo,
+                        i64::try_from(r.index).map_err(|_| {
+                            ctx.refuse_codec_limit(
+                                "ASM record index",
+                                9_223_372_036_854_775_807,
+                                cadmpeg_core::decode::u64_from_index(r.index),
+                            )
+                        })?,
+                        g,
+                        "ASM topology curve_geo",
+                    )
+                })?;
             }
         }
     }
@@ -152,17 +158,19 @@ pub(super) fn keep_faces_and_carriers(
             )?;
             continue;
         };
-        scratch.with_storage(|| ctx.insert_hash_set(
-            kept_faces,
-            i64::try_from(r.index).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "ASM record index",
-                    9_223_372_036_854_775_807,
-                    cadmpeg_core::decode::u64_from_index(r.index),
-                )
-            })?,
-            "ASM topology kept_faces",
-        ))?;
+        scratch.with_storage(|| {
+            ctx.insert_hash_set(
+                kept_faces,
+                i64::try_from(r.index).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "ASM record index",
+                        9_223_372_036_854_775_807,
+                        cadmpeg_core::decode::u64_from_index(r.index),
+                    )
+                })?,
+                "ASM topology kept_faces",
+            )
+        })?;
         if purpose == DecodePurpose::History {
             let mut kind_storage = ctx.reserve_scoped(0, "ASM construction kind scratch")?;
             let native_kind = kind_storage.with_storage(|| {
@@ -180,23 +188,29 @@ pub(super) fn keep_faces_and_carriers(
                     &surf_rec.tokens,
                     token_table,
                 ) {
-                    scratch.with_storage(|| ctx.insert_hash_map(
-                        procedural_surface_defs,
-                        surf_ref,
-                        procedural?,
-                        "ASM topology procedural_surface_defs",
-                    ))?;
+                    scratch.with_storage(|| {
+                        ctx.insert_hash_map(
+                            procedural_surface_defs,
+                            surf_ref,
+                            procedural?,
+                            "ASM topology procedural_surface_defs",
+                        )
+                    })?;
                 }
             }
             if !surface_geo.contains_key(&surf_ref) {
-                scratch.with_storage(|| ctx.insert_hash_map(
-                    surface_geo,
-                    surf_ref,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                    "ASM topology surface_geo",
-                ))?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        surface_geo,
+                        surf_ref,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                        "ASM topology surface_geo",
+                    )
+                })?;
             }
-            scratch.with_storage(|| ctx.insert_hash_set(kept_surfaces, surf_ref, "ASM topology kept_surfaces"))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(kept_surfaces, surf_ref, "ASM topology kept_surfaces")
+            })?;
             continue;
         }
         if let Some(procedural) = nurbs::proc_surface::procedural_surface_resolving_refs(
@@ -204,16 +218,25 @@ pub(super) fn keep_faces_and_carriers(
             &surf_rec.tokens,
             token_table,
         ) {
-            scratch.with_storage(|| ctx.insert_hash_map(
-                procedural_surface_defs,
-                surf_ref,
-                procedural?,
-                "ASM topology procedural_surface_defs",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    procedural_surface_defs,
+                    surf_ref,
+                    procedural?,
+                    "ASM topology procedural_surface_defs",
+                )
+            })?;
         }
         if let Some(procedural) = procedural_surface_defs.get(&surf_ref) {
             if let Some(geometry) = analytic_procedural_surface(ctx, procedural.definition()) {
-                scratch.with_storage(|| ctx.insert_hash_map(surface_geo, surf_ref, geometry?, "ASM topology surface_geo"))?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        surface_geo,
+                        surf_ref,
+                        geometry?,
+                        "ASM topology surface_geo",
+                    )
+                })?;
             }
         }
         let exact_cacheless_construction =
@@ -230,18 +253,22 @@ pub(super) fn keep_faces_and_carriers(
             if let Some(ns) =
                 nurbs::core::surface_cache_resolving_refs(ctx, &surf_rec.tokens, token_table)
             {
-                scratch.with_storage(|| ctx.insert_hash_map(
-                    surface_geo,
-                    surf_ref,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns?)),
-                    "ASM topology surface_geo",
-                ))?;
-                if surf_rec.head() == "spline" && !procedural_surface_defs.contains_key(&surf_ref) {
-                    scratch.with_storage(|| ctx.insert_hash_set(
-                        cached_unknown_procedural_surfaces,
+                scratch.with_storage(|| {
+                    ctx.insert_hash_map(
+                        surface_geo,
                         surf_ref,
-                        "ASM topology cached_unknown_procedural_surfaces",
-                    ))?;
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns?)),
+                        "ASM topology surface_geo",
+                    )
+                })?;
+                if surf_rec.head() == "spline" && !procedural_surface_defs.contains_key(&surf_ref) {
+                    scratch.with_storage(|| {
+                        ctx.insert_hash_set(
+                            cached_unknown_procedural_surfaces,
+                            surf_ref,
+                            "ASM topology cached_unknown_procedural_surfaces",
+                        )
+                    })?;
                 }
                 out.stats.nurbs_surfaces += 1;
             }
@@ -255,7 +282,12 @@ pub(super) fn keep_faces_and_carriers(
                     });
             let geometry = if construction_is_exact_carrier {
                 SurfaceGeometry::Procedural {
-                    construction: brep_id!(format, ProceduralSurfaceId, "procedural_surface", surf_ref),
+                    construction: brep_id!(
+                        format,
+                        ProceduralSurfaceId,
+                        "procedural_surface",
+                        surf_ref
+                    ),
                     cache: None,
                 }
             } else {
@@ -263,34 +295,52 @@ pub(super) fn keep_faces_and_carriers(
                     record: Some(unknown_record_id(ctx, surf_rec, format)?),
                 })
             };
-            scratch.with_storage(|| ctx.insert_hash_map(
-                surface_geo, surf_ref, geometry, "ASM topology surface_geo",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(surface_geo, surf_ref, geometry, "ASM topology surface_geo")
+            })?;
             if !construction_is_exact_carrier {
-                scratch.with_storage(|| ctx.insert_hash_set(
-                    undecoded_carriers,
-                    surf_ref,
-                    "ASM topology undecoded_carriers",
-                ))?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_set(
+                        undecoded_carriers,
+                        surf_ref,
+                        "ASM topology undecoded_carriers",
+                    )
+                })?;
             }
         }
         if surface_geo.contains_key(&surf_ref) {
-            scratch.with_storage(|| ctx.insert_hash_set(kept_surfaces, surf_ref, "ASM topology kept_surfaces"))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(kept_surfaces, surf_ref, "ASM topology kept_surfaces")
+            })?;
         } else {
-            scratch.with_storage(|| ctx.insert_hash_set(
-                unknown_surface_records,
-                surf_ref,
-                "ASM topology unknown_surface_records",
-            ))?;
-            scratch.with_storage(|| ctx.insert_hash_set(
-                undecoded_carriers,
-                surf_ref,
-                "ASM topology undecoded_carriers",
-            ))?;
-            if surf_rec.head() == "mesh_surface" && !ctx.any_by(surf_rec.tokens.as_ref(), |token| Ok(!token.is_payload_ident()), "ASM mesh surface payload search")? {
-                if !ctx.any_by(&out.mesh_surface_sentinels, |sentinel| Ok({
-                    usize::try_from(sentinel.record_index).ok() == Some(surf_rec.index)
-                }), "ASM mesh surface sentinel search")? {
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(
+                    unknown_surface_records,
+                    surf_ref,
+                    "ASM topology unknown_surface_records",
+                )
+            })?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(
+                    undecoded_carriers,
+                    surf_ref,
+                    "ASM topology undecoded_carriers",
+                )
+            })?;
+            if surf_rec.head() == "mesh_surface"
+                && !ctx.any_by(
+                    surf_rec.tokens.as_ref(),
+                    |token| Ok(!token.is_payload_ident()),
+                    "ASM mesh surface payload search",
+                )?
+            {
+                if !ctx.any_by(
+                    &out.mesh_surface_sentinels,
+                    |sentinel| {
+                        Ok(usize::try_from(sentinel.record_index).ok() == Some(surf_rec.index))
+                    },
+                    "ASM mesh surface sentinel search",
+                )? {
                     ctx.reserve_vec(
                         &mut out.mesh_surface_sentinels,
                         1,
@@ -313,7 +363,9 @@ pub(super) fn keep_faces_and_carriers(
             } else {
                 let mut kind_storage = ctx.reserve_scoped(0, "ASM construction kind scratch")?;
                 let native_kind = if surf_rec.head() == "spline" {
-                    kind_storage.with_storage(|| nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens).transpose())?
+                    kind_storage.with_storage(|| {
+                        nurbs::toks::owned_construction_subtype(ctx, &surf_rec.tokens).transpose()
+                    })?
                 } else {
                     None
                 };
@@ -368,55 +420,80 @@ pub(super) fn walk_reachable_topology(
     let mut walked_faces = HashSet::new();
     let mut walked_face_storage = ctx.reserve_scoped(0, "ASM visited faces")?;
     for face in ctx.admit_iter(records, "ASM reachable face walk")? {
-        let face_idx = i64::try_from(face.index).map_err(|_| ctx.refuse_codec_limit(
-            "ASM record index", i64::MAX.unsigned_abs(), cadmpeg_core::decode::u64_from_index(face.index),
-        ))?;
-        if !kept_faces.contains(&face_idx) || !walked_face_storage.with_storage(|| ctx.insert_hash_set(&mut walked_faces, face_idx, "ASM visited faces"))? {
+        let face_idx = i64::try_from(face.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                i64::MAX.unsigned_abs(),
+                cadmpeg_core::decode::u64_from_index(face.index),
+            )
+        })?;
+        if !kept_faces.contains(&face_idx)
+            || !walked_face_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut walked_faces, face_idx, "ASM visited faces")
+            })?
+        {
             continue;
         }
-        let Some(face) = by_index.get(&face_idx) else { continue };
+        let Some(face) = by_index.get(&face_idx) else {
+            continue;
+        };
         let mut loop_ref = face.ref_at(4);
         let mut loop_guard = HashSet::new();
         let mut loop_guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
         while let Some(li) = loop_ref {
             ctx.charge_work(1, "ASM reachable face loop walk")?;
-            if !loop_guard_storage.with_storage(|| ctx.insert_hash_set(&mut loop_guard, li, "ASM topology loop_guard"))? {
+            if !loop_guard_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut loop_guard, li, "ASM topology loop_guard")
+            })? {
                 break;
             }
             let Some(lp) = by_index.get(&li) else { break };
             if lp.head() != "loop" {
                 break;
             }
-            scratch.with_storage(|| ctx.insert_hash_set(kept_loops, li, "ASM topology kept_loops"))?;
+            scratch
+                .with_storage(|| ctx.insert_hash_set(kept_loops, li, "ASM topology kept_loops"))?;
             // Ring-walk coedges via chunk[3] = next.
             if let Some(first_ce) = lp.ref_at(4) {
                 let mut ce_ref = Some(first_ce);
                 let mut ce_guard = HashSet::new();
-        let mut ce_guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+                let mut ce_guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
                 while let Some(ci) = ce_ref {
                     ctx.charge_work(1, "ASM reachable coedge ring walk")?;
-                    if !ce_guard_storage.with_storage(|| ctx.insert_hash_set(&mut ce_guard, ci, "ASM topology ce_guard"))? {
+                    if !ce_guard_storage.with_storage(|| {
+                        ctx.insert_hash_set(&mut ce_guard, ci, "ASM topology ce_guard")
+                    })? {
                         break;
                     }
                     let Some(ce) = by_index.get(&ci) else { break };
                     if !is_coedge_record(ce) {
                         break;
                     }
-                    scratch.with_storage(|| ctx.insert_hash_set(kept_coedges, ci, "ASM topology kept_coedges"))?;
+                    scratch.with_storage(|| {
+                        ctx.insert_hash_set(kept_coedges, ci, "ASM topology kept_coedges")
+                    })?;
                     if let Some(pc) = coedge_pcurve_ref(ce) {
                         if let Some(prec) = by_index.get(&pc) {
                             if purpose == DecodePurpose::History {
                                 if !pcurve_geo.contains_key(&super::PcurveRecordIndex(pc)) {
-                                    scratch.with_storage(|| ctx.insert_hash_map(
-                                        pcurve_geo,
-                                        super::PcurveRecordIndex(pc),
-                                        PcurveGeometry::Line(
-                                            cadmpeg_ir::geometry::pcurve::LinePcurve::U_AXIS,
-                                        ),
-                                        "ASM topology pcurve_geo",
-                                    ))?;
+                                    scratch.with_storage(|| {
+                                        ctx.insert_hash_map(
+                                            pcurve_geo,
+                                            super::PcurveRecordIndex(pc),
+                                            PcurveGeometry::Line(
+                                                cadmpeg_ir::geometry::pcurve::LinePcurve::U_AXIS,
+                                            ),
+                                            "ASM topology pcurve_geo",
+                                        )
+                                    })?;
                                 }
-                                scratch.with_storage(|| ctx.insert_hash_set(kept_pcurves, pc, "ASM topology kept_pcurves"))?;
+                                scratch.with_storage(|| {
+                                    ctx.insert_hash_set(
+                                        kept_pcurves,
+                                        pc,
+                                        "ASM topology kept_pcurves",
+                                    )
+                                })?;
                             } else {
                                 // An inline `exp_par_cur` owns its first BS2 field.
                                 // A wrapped subtype ref resolves that same typed
@@ -495,23 +572,29 @@ pub(super) fn walk_reachable_topology(
                                         .map(|range| (decoded, range)))
                                 }).transpose()?.flatten();
                                 if let Some((decoded, parameter_range)) = decoded {
-                                    scratch.with_storage(|| ctx.insert_hash_map(
-                                        pcurve_geo,
-                                        super::PcurveRecordIndex(pc),
-                                        PcurveGeometry::Nurbs { nurbs: decoded },
-                                        "ASM topology pcurve_geo",
-                                    ))?;
-                                    scratch.with_storage(|| ctx.insert_hash_map(
-                                        pcurve_parameter_ranges,
-                                        super::CoedgeRecordIndex(ci),
-                                        parameter_range,
-                                        "ASM topology pcurve_parameter_ranges",
-                                    ))?;
-                                    scratch.with_storage(|| ctx.insert_hash_set(
-                                        kept_pcurves,
-                                        pc,
-                                        "ASM topology kept_pcurves",
-                                    ))?;
+                                    scratch.with_storage(|| {
+                                        ctx.insert_hash_map(
+                                            pcurve_geo,
+                                            super::PcurveRecordIndex(pc),
+                                            PcurveGeometry::Nurbs { nurbs: decoded },
+                                            "ASM topology pcurve_geo",
+                                        )
+                                    })?;
+                                    scratch.with_storage(|| {
+                                        ctx.insert_hash_map(
+                                            pcurve_parameter_ranges,
+                                            super::CoedgeRecordIndex(ci),
+                                            parameter_range,
+                                            "ASM topology pcurve_parameter_ranges",
+                                        )
+                                    })?;
+                                    scratch.with_storage(|| {
+                                        ctx.insert_hash_set(
+                                            kept_pcurves,
+                                            pc,
+                                            "ASM topology kept_pcurves",
+                                        )
+                                    })?;
                                 } else {
                                     count_kind(
                                         ctx,
@@ -534,23 +617,29 @@ pub(super) fn walk_reachable_topology(
                             // count its curve loss) only the first time it is
                             // reached so shared edges are not double-counted.
                             if is_edge_record(edge)
-                                && scratch.with_storage(|| ctx.insert_hash_set(kept_edges, ei, "ASM topology kept_edges"))?
+                                && scratch.with_storage(|| {
+                                    ctx.insert_hash_set(kept_edges, ei, "ASM topology kept_edges")
+                                })?
                             {
                                 for slot in [3usize, 5] {
                                     if let Some(vi) = edge.ref_at(slot) {
                                         if let Some(v) = by_index.get(&vi) {
                                             if is_vertex_record(v) {
-                                                scratch.with_storage(|| ctx.insert_hash_set(
-                                                    kept_vertices,
-                                                    vi,
-                                                    "ASM topology kept_vertices",
-                                                ))?;
+                                                scratch.with_storage(|| {
+                                                    ctx.insert_hash_set(
+                                                        kept_vertices,
+                                                        vi,
+                                                        "ASM topology kept_vertices",
+                                                    )
+                                                })?;
                                                 if let Some(pi) = vertex_point_ref(v) {
-                                                    scratch.with_storage(|| ctx.insert_hash_set(
-                                                        kept_points,
-                                                        pi,
-                                                        "ASM topology kept_points",
-                                                    ))?;
+                                                    scratch.with_storage(|| {
+                                                        ctx.insert_hash_set(
+                                                            kept_points,
+                                                            pi,
+                                                            "ASM topology kept_points",
+                                                        )
+                                                    })?;
                                                 }
                                             }
                                         }
@@ -558,11 +647,13 @@ pub(super) fn walk_reachable_topology(
                                 }
                                 match edge.ref_at(8) {
                                     Some(cv) if curve_geo.contains_key(&cv) => {
-                                        scratch.with_storage(|| ctx.insert_hash_set(
-                                            kept_curves,
-                                            cv,
-                                            "ASM topology kept_curves",
-                                        ))?;
+                                        scratch.with_storage(|| {
+                                            ctx.insert_hash_set(
+                                                kept_curves,
+                                                cv,
+                                                "ASM topology kept_curves",
+                                            )
+                                        })?;
                                     }
                                     Some(cv) => {
                                         if let Some(crec) = by_index.get(&cv) {
@@ -691,11 +782,16 @@ pub(super) fn collect_wire_topology(
             let already_owned = reach.edges.contains(&edge_index);
             keep_wire_edge(inputs, out, edge_index, carriers, reach, scratch)?;
             if !already_owned && reach.edges.contains(&edge_index) {
-                scratch.with_storage(|| ctx.push_vec(&mut saved_free_edges, edge_index, "ASM saved free edges"))?;
+                scratch.with_storage(|| {
+                    ctx.push_vec(&mut saved_free_edges, edge_index, "ASM saved free edges")
+                })?;
             }
         }
     }
-    for shell in ctx.admit_iter(records, "ASM topology record pass")?.filter(|record| record.head() == "shell") {
+    for shell in ctx
+        .admit_iter(records, "ASM topology record pass")?
+        .filter(|record| record.head() == "shell")
+    {
         let shell_index = i64::try_from(shell.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -711,7 +807,9 @@ pub(super) fn collect_wire_topology(
             let mut wire_ref = Some(root);
             while let Some(wire_index) = wire_ref {
                 ctx.charge_work(1, "ASM shell wire chain walk")?;
-                if !wire_guard_storage.with_storage(|| ctx.insert_hash_set(&mut wire_guard, wire_index, "ASM topology wire_guard"))? {
+                if !wire_guard_storage.with_storage(|| {
+                    ctx.insert_hash_set(&mut wire_guard, wire_index, "ASM topology wire_guard")
+                })? {
                     break;
                 }
                 let Some(wire) = by_index
@@ -731,14 +829,17 @@ pub(super) fn collect_wire_topology(
                 if let Some(first_coedge) = wire.ref_at(4) {
                     let mut coedge_ref = Some(first_coedge);
                     let mut coedge_guard = HashSet::new();
-        let mut coedge_guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+                    let mut coedge_guard_storage =
+                        ctx.reserve_scoped(0, "ASM topology visited storage")?;
                     while let Some(coedge_index) = coedge_ref {
                         ctx.charge_work(1, "ASM wire coedge ring walk")?;
-                        if !coedge_guard_storage.with_storage(|| ctx.insert_hash_set(
-                            &mut coedge_guard,
-                            coedge_index,
-                            "ASM topology coedge_guard",
-                        ))? {
+                        if !coedge_guard_storage.with_storage(|| {
+                            ctx.insert_hash_set(
+                                &mut coedge_guard,
+                                coedge_index,
+                                "ASM topology coedge_guard",
+                            )
+                        })? {
                             break;
                         }
                         let Some(coedge) = by_index
@@ -748,17 +849,35 @@ pub(super) fn collect_wire_topology(
                             break;
                         };
                         if let Some(edge_index) = coedge.ref_at(6) {
-                            if wire_edge_storage.with_storage(|| ctx.insert_hash_set(&mut wire_edge_membership, edge_index, "ASM wire member index"))? {
-                                wire_edge_storage.with_storage(|| ctx.push_vec(&mut wire_edges, edge_index, "ASM wire edges"))?;
+                            if wire_edge_storage.with_storage(|| {
+                                ctx.insert_hash_set(
+                                    &mut wire_edge_membership,
+                                    edge_index,
+                                    "ASM wire member index",
+                                )
+                            })? {
+                                wire_edge_storage.with_storage(|| {
+                                    ctx.push_vec(&mut wire_edges, edge_index, "ASM wire edges")
+                                })?;
                             }
-                            scratch.with_storage(|| ctx.admit_hash_map_entry(
-                                &mut wire_edges_by_shell,
-                                &shell_index,
-                                "ASM wire edges by shell",
-                            ))?;
+                            scratch.with_storage(|| {
+                                ctx.admit_hash_map_entry(
+                                    &mut wire_edges_by_shell,
+                                    &shell_index,
+                                    "ASM wire edges by shell",
+                                )
+                            })?;
                             let edges = wire_edges_by_shell.entry(shell_index).or_default();
-                            if membership_storage.with_storage(|| ctx.insert_hash_set(&mut shell_edge_membership, (shell_index, edge_index), "ASM shell wire member index"))? {
-                                scratch.with_storage(|| ctx.push_vec(edges, edge_index, "ASM shell wire edges"))?;
+                            if membership_storage.with_storage(|| {
+                                ctx.insert_hash_set(
+                                    &mut shell_edge_membership,
+                                    (shell_index, edge_index),
+                                    "ASM shell wire member index",
+                                )
+                            })? {
+                                scratch.with_storage(|| {
+                                    ctx.push_vec(edges, edge_index, "ASM shell wire edges")
+                                })?;
                             }
                             keep_wire_edge(inputs, out, edge_index, carriers, reach, scratch)?;
                         }
@@ -778,25 +897,43 @@ pub(super) fn collect_wire_topology(
                     None
                 };
                 if let Some(vertex) = free_vertex {
-                    scratch.with_storage(|| ctx.insert_hash_set(
-                        &mut reach.vertices,
-                        vertex,
-                        "ASM topology reach.vertices",
-                    ))?;
-                    scratch.with_storage(|| ctx.admit_hash_map_entry(
-                        &mut free_vertices_by_shell,
-                        &shell_index,
-                        "ASM free vertices by shell",
-                    ))?;
+                    scratch.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut reach.vertices,
+                            vertex,
+                            "ASM topology reach.vertices",
+                        )
+                    })?;
+                    scratch.with_storage(|| {
+                        ctx.admit_hash_map_entry(
+                            &mut free_vertices_by_shell,
+                            &shell_index,
+                            "ASM free vertices by shell",
+                        )
+                    })?;
                     let vertices = free_vertices_by_shell.entry(shell_index).or_default();
-                    if membership_storage.with_storage(|| ctx.insert_hash_set(&mut shell_vertex_membership, (shell_index, vertex), "ASM shell vertex member index"))? {
-                        scratch.with_storage(|| ctx.push_vec(vertices, vertex, "ASM shell free vertices"))?;
+                    if membership_storage.with_storage(|| {
+                        ctx.insert_hash_set(
+                            &mut shell_vertex_membership,
+                            (shell_index, vertex),
+                            "ASM shell vertex member index",
+                        )
+                    })? {
+                        scratch.with_storage(|| {
+                            ctx.push_vec(vertices, vertex, "ASM shell free vertices")
+                        })?;
                     }
                     if let Some(point) = by_index
                         .get(&vertex)
                         .and_then(|record| vertex_point_ref(record))
                     {
-                        scratch.with_storage(|| ctx.insert_hash_set(&mut reach.points, point, "ASM topology reach.points"))?;
+                        scratch.with_storage(|| {
+                            ctx.insert_hash_set(
+                                &mut reach.points,
+                                point,
+                                "ASM topology reach.points",
+                            )
+                        })?;
                     }
                 }
                 if let Some(side) = side {
@@ -870,7 +1007,9 @@ fn keep_wire_edge(
     else {
         return Ok(());
     };
-    if !scratch.with_storage(|| ctx.insert_hash_set(kept_edges, edge_index, "ASM topology kept_edges"))? {
+    if !scratch
+        .with_storage(|| ctx.insert_hash_set(kept_edges, edge_index, "ASM topology kept_edges"))?
+    {
         return Ok(());
     }
     for slot in [3usize, 5] {
@@ -879,9 +1018,13 @@ fn keep_wire_edge(
                 .get(&vertex_index)
                 .filter(|vertex| is_vertex_record(vertex))
             {
-                scratch.with_storage(|| ctx.insert_hash_set(kept_vertices, vertex_index, "ASM topology kept_vertices"))?;
+                scratch.with_storage(|| {
+                    ctx.insert_hash_set(kept_vertices, vertex_index, "ASM topology kept_vertices")
+                })?;
                 if let Some(point_index) = vertex_point_ref(vertex) {
-                    scratch.with_storage(|| ctx.insert_hash_set(kept_points, point_index, "ASM topology kept_points"))?;
+                    scratch.with_storage(|| {
+                        ctx.insert_hash_set(kept_points, point_index, "ASM topology kept_points")
+                    })?;
                 }
             }
         }
@@ -890,7 +1033,9 @@ fn keep_wire_edge(
         return Ok(());
     };
     if curve_geo.contains_key(&curve_index) {
-        scratch.with_storage(|| ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves"))?;
+        scratch.with_storage(|| {
+            ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves")
+        })?;
     } else {
         let Some(curve_record) = by_index.get(&curve_index) else {
             count_kind(
@@ -901,13 +1046,17 @@ fn keep_wire_edge(
             return Ok(());
         };
         if purpose == DecodePurpose::History {
-            scratch.with_storage(|| ctx.insert_hash_map(
-                curve_geo,
-                curve_index,
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                "ASM topology curve_geo",
-            ))?;
-            scratch.with_storage(|| ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves"))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    curve_geo,
+                    curve_index,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                    "ASM topology curve_geo",
+                )
+            })?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves")
+            })?;
             return Ok(());
         }
         if let Some(decoded) = nurbs::proc_curve::procedural_curve_resolving_refs(
@@ -922,23 +1071,29 @@ fn keep_wire_edge(
             if record_reversed(ctx, curve_record)? {
                 curve.reverse_parameterization(ctx)?;
             }
-            scratch.with_storage(|| ctx.insert_hash_map(
-                curve_geo,
-                curve_index,
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                "ASM topology curve_geo",
-            ))?;
-            scratch.with_storage(|| ctx.insert_hash_map(
-                procedural_curve_defs,
-                curve_index,
-                super::ProceduralCurveSource::Cached {
-                    construction: Box::new(decoded.construction),
-                    cache_fit_tolerance: decoded.cache_fit_tolerance,
-                    parsed_domain,
-                },
-                "ASM topology procedural_curve_defs",
-            ))?;
-            scratch.with_storage(|| ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves"))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    curve_geo,
+                    curve_index,
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    "ASM topology curve_geo",
+                )
+            })?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    procedural_curve_defs,
+                    curve_index,
+                    super::ProceduralCurveSource::Cached {
+                        construction: Box::new(decoded.construction),
+                        cache_fit_tolerance: decoded.cache_fit_tolerance,
+                        parsed_domain,
+                    },
+                    "ASM topology procedural_curve_defs",
+                )
+            })?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves")
+            })?;
             out.stats.nurbs_curves += 1;
         } else if let Some(definition) =
             nurbs::proc_curve::cacheless_procedural_curve_resolving_refs(
@@ -949,39 +1104,51 @@ fn keep_wire_edge(
             .transpose()?
             .and_then(|definition| definition.into_definition().ok())
             .map(|mut definition| -> Result<_, cadmpeg_core::CodecError> {
-                if record_reversed(ctx, curve_record)? && reverse_procedural_curve_definition(&mut definition).is_err() {
+                if record_reversed(ctx, curve_record)?
+                    && reverse_procedural_curve_definition(&mut definition).is_err()
+                {
                     return Ok(None);
                 }
                 Ok(Some(definition))
-            }).transpose()?.flatten()
+            })
+            .transpose()?
+            .flatten()
         {
-            scratch.with_storage(|| ctx.insert_hash_map(
-                curve_geo,
-                curve_index,
-                CurveGeometry::Procedural {
-                    construction: brep_id!(
-                        format,
-                        ProceduralCurveId,
-                        "procedural_curve",
-                        curve_index
-                    ),
-                    cache: None,
-                },
-                "ASM topology curve_geo",
-            ))?;
-            scratch.with_storage(|| ctx.insert_hash_map(
-                procedural_curve_defs,
-                curve_index,
-                super::ProceduralCurveSource::Cacheless(Box::new(definition)),
-                "ASM topology procedural_curve_defs",
-            ))?;
-            scratch.with_storage(|| ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves"))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    curve_geo,
+                    curve_index,
+                    CurveGeometry::Procedural {
+                        construction: brep_id!(
+                            format,
+                            ProceduralCurveId,
+                            "procedural_curve",
+                            curve_index
+                        ),
+                        cache: None,
+                    },
+                    "ASM topology curve_geo",
+                )
+            })?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    procedural_curve_defs,
+                    curve_index,
+                    super::ProceduralCurveSource::Cacheless(Box::new(definition)),
+                    "ASM topology procedural_curve_defs",
+                )
+            })?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(kept_curves, curve_index, "ASM topology kept_curves")
+            })?;
         } else {
-            scratch.with_storage(|| ctx.insert_hash_set(
-                undecoded_carriers,
-                curve_index,
-                "ASM topology undecoded_carriers",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(
+                    undecoded_carriers,
+                    curve_index,
+                    "ASM topology undecoded_carriers",
+                )
+            })?;
 
             count_kind(
                 ctx,
@@ -1054,10 +1221,13 @@ pub(super) fn ring_coedges(
     };
     let mut cur = Some(first);
     let mut guard = HashSet::new();
-        let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
     while let Some(ci) = cur {
         ctx.charge_work(1, "ASM ring coedges walk")?;
-        if !guard_storage.with_storage(|| ctx.insert_hash_set(&mut guard, ci, "ASM topology guard"))? || !kept.contains(&ci) {
+        if !guard_storage
+            .with_storage(|| ctx.insert_hash_set(&mut guard, ci, "ASM topology guard"))?
+            || !kept.contains(&ci)
+        {
             break;
         }
         ctx.push_vec(&mut out, id(ci), "ASM ring coedges")?;
@@ -1081,10 +1251,12 @@ pub(super) fn loop_chain(
     let mut out = Vec::new();
     let mut cur = face_rec.ref_at(4);
     let mut guard = HashSet::new();
-        let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
     while let Some(li) = cur {
         ctx.charge_work(1, "ASM face loop chain walk")?;
-        if !guard_storage.with_storage(|| ctx.insert_hash_set(&mut guard, li, "ASM topology guard"))? {
+        if !guard_storage
+            .with_storage(|| ctx.insert_hash_set(&mut guard, li, "ASM topology guard"))?
+        {
             break;
         }
         if kept.contains(&li) {
@@ -1107,10 +1279,12 @@ fn face_chain(
     let mut out = Vec::new();
     let mut cur = shell_rec.ref_at(5);
     let mut guard = HashSet::new();
-        let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
     while let Some(fi) = cur {
         ctx.charge_work(1, "ASM shell face chain walk")?;
-        if !guard_storage.with_storage(|| ctx.insert_hash_set(&mut guard, fi, "ASM topology guard"))? {
+        if !guard_storage
+            .with_storage(|| ctx.insert_hash_set(&mut guard, fi, "ASM topology guard"))?
+        {
             break;
         }
         if kept.contains(&fi) {
@@ -1128,13 +1302,18 @@ pub(super) fn subshell_ancestor_shells(
     by_index: &HashMap<i64, &Record>,
 ) -> Result<HashMap<i64, i64>, cadmpeg_core::CodecError> {
     let mut out = HashMap::new();
-    for record in ctx.admit_iter(records, "ASM topology record pass")?.filter(|record| record.head() == "subshell") {
+    for record in ctx
+        .admit_iter(records, "ASM topology record pass")?
+        .filter(|record| record.head() == "subshell")
+    {
         let mut owner = record.ref_at(3);
         let mut guard = HashSet::new();
         let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
         while let Some(index) = owner {
             ctx.charge_work(1, "ASM subshell ancestor walk")?;
-            if !guard_storage.with_storage(|| ctx.insert_hash_set(&mut guard, index, "ASM topology guard"))? {
+            if !guard_storage
+                .with_storage(|| ctx.insert_hash_set(&mut guard, index, "ASM topology guard"))?
+            {
                 break;
             }
             let Some(parent) = by_index.get(&index) else {
@@ -1173,12 +1352,15 @@ pub(super) fn shell_faces(
 ) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
     let mut out = face_chain(ctx, shell, by_index, kept, format)?;
     let mut pending_storage = ctx.reserve_scoped(0, "ASM pending subshells")?;
-    let mut pending = pending_storage.with_storage(|| ctx.collect_vec(shell.ref_at(4), "ASM pending subshells"))?;
+    let mut pending = pending_storage
+        .with_storage(|| ctx.collect_vec(shell.ref_at(4), "ASM pending subshells"))?;
     let mut guard = HashSet::new();
-        let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
     while let Some(index) = pending.pop() {
         ctx.charge_work(1, "ASM shell faces walk")?;
-        if !guard_storage.with_storage(|| ctx.insert_hash_set(&mut guard, index, "ASM topology guard"))? {
+        if !guard_storage
+            .with_storage(|| ctx.insert_hash_set(&mut guard, index, "ASM topology guard"))?
+        {
             break;
         }
         let Some(record) = by_index
@@ -1189,10 +1371,12 @@ pub(super) fn shell_faces(
         };
         face_chain_from(ctx, record.ref_at(6), by_index, kept, format, &mut out)?;
         if let Some(next) = record.ref_at(4) {
-            pending_storage.with_storage(|| ctx.push_vec(&mut pending, next, "ASM pending subshells"))?;
+            pending_storage
+                .with_storage(|| ctx.push_vec(&mut pending, next, "ASM pending subshells"))?;
         }
         if let Some(child) = record.ref_at(5) {
-            pending_storage.with_storage(|| ctx.push_vec(&mut pending, child, "ASM pending subshells"))?;
+            pending_storage
+                .with_storage(|| ctx.push_vec(&mut pending, child, "ASM pending subshells"))?;
         }
     }
     Ok(out)
@@ -1205,12 +1389,15 @@ pub(super) fn shell_wire_roots(
 ) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
     let mut out = ctx.collect_vec(shell.ref_at(6), "ASM shell wire roots")?;
     let mut pending_storage = ctx.reserve_scoped(0, "ASM pending subshells")?;
-    let mut pending = pending_storage.with_storage(|| ctx.collect_vec(shell.ref_at(4), "ASM pending subshells"))?;
+    let mut pending = pending_storage
+        .with_storage(|| ctx.collect_vec(shell.ref_at(4), "ASM pending subshells"))?;
     let mut guard = HashSet::new();
-        let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
     while let Some(index) = pending.pop() {
         ctx.charge_work(1, "ASM shell wire roots walk")?;
-        if !guard_storage.with_storage(|| ctx.insert_hash_set(&mut guard, index, "ASM topology guard"))? {
+        if !guard_storage
+            .with_storage(|| ctx.insert_hash_set(&mut guard, index, "ASM topology guard"))?
+        {
             break;
         }
         let Some(record) = by_index
@@ -1223,10 +1410,12 @@ pub(super) fn shell_wire_roots(
             ctx.push_vec(&mut out, wire, "ASM shell wire roots")?;
         }
         if let Some(next) = record.ref_at(4) {
-            pending_storage.with_storage(|| ctx.push_vec(&mut pending, next, "ASM pending subshells"))?;
+            pending_storage
+                .with_storage(|| ctx.push_vec(&mut pending, next, "ASM pending subshells"))?;
         }
         if let Some(child) = record.ref_at(5) {
-            pending_storage.with_storage(|| ctx.push_vec(&mut pending, child, "ASM pending subshells"))?;
+            pending_storage
+                .with_storage(|| ctx.push_vec(&mut pending, child, "ASM pending subshells"))?;
         }
     }
     Ok(out)
@@ -1241,10 +1430,12 @@ fn face_chain_from(
     out: &mut Vec<FaceId>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut guard = HashSet::new();
-        let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
     while let Some(index) = current {
         ctx.charge_work(1, "ASM subshell face chain walk")?;
-        if !guard_storage.with_storage(|| ctx.insert_hash_set(&mut guard, index, "ASM topology guard"))? {
+        if !guard_storage
+            .with_storage(|| ctx.insert_hash_set(&mut guard, index, "ASM topology guard"))?
+        {
             break;
         }
         if kept.contains(&index) {
@@ -1268,10 +1459,12 @@ pub(super) fn shell_chain(
     let mut out = Vec::new();
     let mut cur = region_rec.ref_at(4);
     let mut guard = HashSet::new();
-        let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
     while let Some(si) = cur {
         ctx.charge_work(1, "ASM region shell chain walk")?;
-        if !guard_storage.with_storage(|| ctx.insert_hash_set(&mut guard, si, "ASM topology guard"))? {
+        if !guard_storage
+            .with_storage(|| ctx.insert_hash_set(&mut guard, si, "ASM topology guard"))?
+        {
             break;
         }
         ctx.push_vec(&mut out, id(si), "ASM region shells")?;
@@ -1291,10 +1484,12 @@ pub(super) fn region_chain(
     let mut out = Vec::new();
     let mut cur = body_rec.ref_at(3);
     let mut guard = HashSet::new();
-        let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
+    let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
     while let Some(li) = cur {
         ctx.charge_work(1, "ASM body region chain walk")?;
-        if !guard_storage.with_storage(|| ctx.insert_hash_set(&mut guard, li, "ASM topology guard"))? {
+        if !guard_storage
+            .with_storage(|| ctx.insert_hash_set(&mut guard, li, "ASM topology guard"))?
+        {
             break;
         }
         ctx.push_vec(&mut out, id(li), "ASM body regions")?;

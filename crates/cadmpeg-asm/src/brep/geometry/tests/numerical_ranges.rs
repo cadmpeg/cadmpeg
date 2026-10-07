@@ -158,7 +158,7 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
             len: 0,
         };
         assert_eq!(
-            super::super::pcurve_ranges_on_domain(&c, Some(&edge)).map(|ranges| ranges.collect::<Vec<_>>()),
+            super::super::pcurve_ranges_on_domain(&c, Some(&edge)).map(Iterator::collect::<Vec<_>>),
             Some(vec![[0., d]])
         );
     }
@@ -173,7 +173,7 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
     .expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(
-        super::super::pcurve_ranges_on_domain(&c, None).map(|ranges| ranges.collect::<Vec<_>>()),
+        super::super::pcurve_ranges_on_domain(&c, None).map(Iterator::collect::<Vec<_>>),
         Some(vec![[0., 1.]])
     );
 }

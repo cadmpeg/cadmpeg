@@ -56,7 +56,9 @@ fn rational_circle_homogeneous_poles_refuse_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "ASM rational four-arc homogeneous poles", |cap| {
+        ResourceDimension::CollectionItems,
+        "ASM rational four-arc homogeneous poles",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
@@ -89,12 +91,23 @@ fn subtype_definition_index_refuses_collection_limit_before_construction() {
     }];
     let bytes = [0_u8];
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "index ASM subtype definitions", |cap| {
+        ResourceDimension::CollectionItems,
+        "index ASM subtype definitions",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
-            super::decode_with_header(&ctx, &records, &bytes, None, "stream", FORMAT, DecodePurpose::Model).map(|_| ())
+            super::decode_with_header(
+                &ctx,
+                &records,
+                &bytes,
+                None,
+                "stream",
+                FORMAT,
+                DecodePurpose::Model,
+            )
+            .map(|_| ())
         },
     );
     let CodecError::ResourceLimit(limit) = error else {
@@ -718,7 +731,10 @@ fn nested_attributes_inherit_their_topology_owner() {
     let cycle_left = current_attribute(9, 10);
     let cycle_right = legacy_attribute(10, 9);
     let cycle = HashMap::from([(9, &cycle_left), (10, &cycle_right)]);
-    assert_eq!(inherited_attribute_target(&ctx, 9, &cycle, &targets).unwrap(), None);
+    assert_eq!(
+        inherited_attribute_target(&ctx, 9, &cycle, &targets).unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -809,14 +825,12 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         })
         .collect::<HashMap<_, _>>();
 
-    let (carrier, decoded) = attribute_chain_color_carrier(
-        &resource_ctx,
-        &entity,
-        by_index.len(),
-        |index| by_index.get(&index).copied(),
-    )
-    .expect("color parser admission")
-    .expect("exact color carrier");
+    let (carrier, decoded) =
+        attribute_chain_color_carrier(&resource_ctx, &entity, by_index.len(), |index| {
+            by_index.get(&index).copied()
+        })
+        .expect("color parser admission")
+        .expect("exact color carrier");
     assert_eq!(carrier.index, 5);
     assert_eq!(
         decoded.carrier,
@@ -839,7 +853,12 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
-        (&mut emitted, &mut resource_ctx.reserve_scoped(0, "ASM test emitted attributes").unwrap()),
+        (
+            &mut emitted,
+            &mut resource_ctx
+                .reserve_scoped(0, "ASM test emitted attributes")
+                .unwrap(),
+        ),
         &mut source,
         FORMAT,
     )
@@ -918,14 +937,12 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     };
     let by_index = HashMap::from([(1, &color), (2, &name)]);
 
-    let (carrier, decoded) = attribute_chain_color_carrier(
-        &resource_ctx,
-        &entity,
-        by_index.len(),
-        |index| by_index.get(&index).copied(),
-    )
-    .expect("color parser admission")
-    .expect("exact color carrier");
+    let (carrier, decoded) =
+        attribute_chain_color_carrier(&resource_ctx, &entity, by_index.len(), |index| {
+            by_index.get(&index).copied()
+        })
+        .expect("color parser admission")
+        .expect("exact color carrier");
     assert_eq!(carrier.index, 1);
     assert_eq!(
         decoded.carrier,
@@ -945,7 +962,12 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
-        (&mut emitted, &mut resource_ctx.reserve_scoped(0, "ASM test emitted attributes").unwrap()),
+        (
+            &mut emitted,
+            &mut resource_ctx
+                .reserve_scoped(0, "ASM test emitted attributes")
+                .unwrap(),
+        ),
         &mut source,
         FORMAT,
     )
@@ -1031,7 +1053,11 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             &records,
             &by_index,
             &reach,
-            FORMAT, &mut resource_ctx.reserve_scoped(0, "ASM test emitted attributes").unwrap())
+            FORMAT,
+            &mut resource_ctx
+                .reserve_scoped(0, "ASM test emitted attributes")
+                .unwrap()
+        )
         .expect("finite attribute values"),
         HashSet::from([1, 2])
     );
@@ -1127,7 +1153,11 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         &records,
         &by_index,
         &Reachable::default(),
-        FORMAT, &mut resource_ctx.reserve_scoped(0, "ASM test emitted attributes").unwrap())
+        FORMAT,
+        &mut resource_ctx
+            .reserve_scoped(0, "ASM test emitted attributes")
+            .unwrap(),
+    )
     .expect("finite attribute values");
 
     assert_eq!(emitted, HashSet::from([3]));
@@ -1344,7 +1374,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
     .expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(
-        pcurve_ranges_on_domain(&candidate, Some(&edge)).map(|ranges| ranges.collect::<Vec<_>>()),
+        pcurve_ranges_on_domain(&candidate, Some(&edge)).map(Iterator::collect::<Vec<_>>),
         Some(vec![[0.55, 0.60], [0.0, 1.0]])
     );
 }
@@ -1701,7 +1731,12 @@ fn attribute_chain_tracking_refuses_collection_limit() {
         &entity,
         &AttributeTarget::Document,
         &by_index,
-        (&mut emitted, &mut ctx.reserve_scoped(0, "ASM test emitted attributes").unwrap()),
+        (
+            &mut emitted,
+            &mut ctx
+                .reserve_scoped(0, "ASM test emitted attributes")
+                .unwrap(),
+        ),
         &mut out,
         FORMAT,
     )

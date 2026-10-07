@@ -24,26 +24,36 @@ fn with_collection_limit(
     operation: &str,
     mut f: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> cadmpeg_core::CodecError,
 ) -> cadmpeg_core::CodecError {
-    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, operation, |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Err::<(), _>(f(&ctx))
-    })
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            Err::<(), _>(f(&ctx))
+        },
+    )
 }
 
 fn with_work_limit(
     operation: &str,
     mut f: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>) -> cadmpeg_core::CodecError,
 ) -> cadmpeg_core::CodecError {
-    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Err::<(), _>(f(&ctx))
-    })
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            Err::<(), _>(f(&ctx))
+        },
+    )
 }
 
 fn assert_work_refusal(error: &cadmpeg_core::CodecError, operation: &str) {
@@ -84,8 +94,11 @@ fn reachable_topology(
             format: crate::asm_format!("f3d"),
         },
         &mut out,
-        &records, &mut carriers,
-        &mut reach, &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap())
+        records,
+        &mut carriers,
+        &mut reach,
+        &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap(),
+    )
 }
 
 fn wire_topology(
@@ -109,7 +122,9 @@ fn wire_topology(
         records,
         None,
         &mut carriers,
-        &mut reach, &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap())
+        &mut reach,
+        &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap(),
+    )
     .map(|_| ())
 }
 
@@ -300,7 +315,9 @@ fn shell_wire_chain_walk_refuses_work() {
         ref_record(0, "shell", &[-1, -1, -1, -1, -1, -1, 1]),
         ref_record(1, "wire", &[-1; 8]),
     ];
-    let error = with_work_limit("ASM shell wire chain walk", |ctx| wire_topology(ctx, &records).unwrap_err());
+    let error = with_work_limit("ASM shell wire chain walk", |ctx| {
+        wire_topology(ctx, &records).unwrap_err()
+    });
     assert_work_refusal(&error, "ASM shell wire chain walk");
 }
 
@@ -311,7 +328,9 @@ fn wire_coedge_ring_walk_refuses_work() {
         ref_record(1, "wire", &[-1, -1, -1, -1, 2, -1, -1, -1]),
         ref_record(2, "coedge", &[-1; 7]),
     ];
-    let error = with_work_limit("ASM wire coedge ring walk", |ctx| wire_topology(ctx, &records).unwrap_err());
+    let error = with_work_limit("ASM wire coedge ring walk", |ctx| {
+        wire_topology(ctx, &records).unwrap_err()
+    });
     assert_work_refusal(&error, "ASM wire coedge ring walk");
 }
 
@@ -602,14 +621,24 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                 &mut out,
                 &records,
                 &mut carriers,
-                &mut reach, &mut asm_decode_ctx.reserve_scoped(0, "ASM test scratch").unwrap())
+                &mut reach,
+                &mut asm_decode_ctx
+                    .reserve_scoped(0, "ASM test scratch")
+                    .unwrap(),
+            )
             .expect("generated identities are valid");
             assert_eq!(out.stats.nurbs_surfaces, 1);
             crate::brep::emit::emit_carrier_records(
                 &asm_decode_ctx,
                 &mut out,
                 &records,
-                (&mut carriers, &mut asm_decode_ctx.reserve_scoped(0, "ASM test scratch").unwrap(), DecodePurpose::Model),
+                (
+                    &mut carriers,
+                    &mut asm_decode_ctx
+                        .reserve_scoped(0, "ASM test scratch")
+                        .unwrap(),
+                    DecodePurpose::Model,
+                ),
                 &reach,
                 crate::brep::emit::CurveSenseRefs {
                     reversed_curve_refs: &HashSet::new(),
@@ -670,8 +699,13 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
             format: crate::asm_format!("f3d"),
         },
         &mut out,
-        &records, &mut carriers,
-        &mut reach, &mut asm_decode_ctx.reserve_scoped(0, "ASM test scratch").unwrap())
+        &records,
+        &mut carriers,
+        &mut reach,
+        &mut asm_decode_ctx
+            .reserve_scoped(0, "ASM test scratch")
+            .unwrap(),
+    )
     .expect("history topology is within resource limits");
     super::super::emit::emit_coedges(
         &asm_decode_ctx,
@@ -755,8 +789,11 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
                 format: crate::asm_format!("f3d"),
             },
             &mut out,
-            &records, &mut carriers,
-            &mut reach, &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap())
+            &records,
+            &mut carriers,
+            &mut reach,
+            &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap(),
+        )
         .expect_err("parameter-range map exceeds collection limit")
     });
     assert_collection_refusal(&error, "ASM topology pcurve_parameter_ranges");
@@ -768,14 +805,24 @@ fn history_construction_kind_does_not_consume_retained_storage() {
     let records = [
         ref_record(0, "face", &[-1, -1, -1, -1, -1, -1, -1, 1]),
         Record {
-            index: 1, name: "spline".into(), offset: 0, len: 0,
-            tokens: vec![Token::SubtypeOpen, Token::Ident("mystery".into()), Token::SubtypeClose].into(),
+            index: 1,
+            name: "spline".into(),
+            offset: 0,
+            len: 0,
+            tokens: vec![
+                Token::SubtypeOpen,
+                Token::Ident("mystery".into()),
+                Token::SubtypeClose,
+            ]
+            .into(),
         },
     ];
     let by_index = indexed_records(&records);
     let token_table = nurbs::toks::SubtypeTable::from_records(
-        &cadmpeg_test_support::service_decode_context(), &records,
-    ).unwrap();
+        &cadmpeg_test_support::service_decode_context(),
+        &records,
+    )
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -783,12 +830,28 @@ fn history_construction_kind_does_not_consume_retained_storage() {
     let mut scratch = ctx.reserve_scoped(0, "ASM test decode scratch").unwrap();
     let mut carriers = Carriers::default();
     let mut reach = Reachable::default();
-    keep_faces_and_carriers(TopologyContext {
-        ctx: &ctx, by_index: &by_index, token_table: &token_table,
-        purpose: DecodePurpose::History, format: crate::asm_format!("f3d"),
-    }, &mut AsmBrep::default(), &records, &mut carriers, &mut reach, &mut scratch).unwrap();
+    keep_faces_and_carriers(
+        TopologyContext {
+            ctx: &ctx,
+            by_index: &by_index,
+            token_table: &token_table,
+            purpose: DecodePurpose::History,
+            format: crate::asm_format!("f3d"),
+        },
+        &mut AsmBrep::default(),
+        &records,
+        &mut carriers,
+        &mut reach,
+        &mut scratch,
+    )
+    .unwrap();
     assert!(reach.faces.contains(&0));
     assert!(reach.surfaces.contains(&1));
     assert!(carriers.procedural_surface_defs.is_empty());
-    assert!(matches!(carriers.surface_geo.get(&1), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }))));
+    assert!(matches!(
+        carriers.surface_geo.get(&1),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: None
+        }))
+    ));
 }

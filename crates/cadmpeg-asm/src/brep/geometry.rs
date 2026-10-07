@@ -63,7 +63,12 @@ pub(super) fn collect_carrier<'ctx>(
     for t in ctx.admit_iter(rec.tokens.as_ref(), "ASM analytic carrier tokens")? {
         match t {
             Token::Position(p) => {
-                ctx.push_scoped_vec(&mut c.storage, &mut c.positions, *p, "ASM carrier positions")?;
+                ctx.push_scoped_vec(
+                    &mut c.storage,
+                    &mut c.positions,
+                    *p,
+                    "ASM carrier positions",
+                )?;
             }
             Token::Vector3(v) => {
                 ctx.push_scoped_vec(&mut c.storage, &mut c.vectors, *v, "ASM carrier vectors")?;
@@ -250,7 +255,8 @@ pub(super) fn tolerant_coedge_extension(
     let mut fields = [None; 16];
     for field in &mut fields {
         *field = ctx.find_map(
-            &mut tokens, |token| Ok((!token.is_payload_ident()).then_some(token)),
+            &mut tokens,
+            |token| Ok((!token.is_payload_ident()).then_some(token)),
             "ASM tolerant coedge fields",
         )?;
         if field.is_none() {
@@ -272,7 +278,8 @@ pub(super) fn tolerant_coedge_extension(
                 _ => return Ok(None),
             };
             let open = ctx.find_map(
-                &mut tokens, |token| Ok((!token.is_payload_ident()).then_some(token)),
+                &mut tokens,
+                |token| Ok((!token.is_payload_ident()).then_some(token)),
                 "ASM tolerant coedge fields",
             )?;
             if !matches!(open, Some(Token::SubtypeOpen)) {
@@ -280,27 +287,32 @@ pub(super) fn tolerant_coedge_extension(
             }
             let mut depth = 1usize;
             let mut payload_token_count = 0usize;
-            let close = ctx.find_map(&mut tokens, |token| {
-                match token {
-                    Token::SubtypeOpen => depth += 1,
-                    Token::SubtypeClose => depth -= 1,
-                    _ => {}
-                }
-                if depth == 0 {
-                    return Ok(Some(()));
-                }
-                if !token.is_payload_ident() {
-                    payload_token_count += 1;
-                }
-                Ok(None)
-            }, "ASM tolerant coedge payload")?;
+            let close = ctx.find_map(
+                &mut tokens,
+                |token| {
+                    match token {
+                        Token::SubtypeOpen => depth += 1,
+                        Token::SubtypeClose => depth -= 1,
+                        _ => {}
+                    }
+                    if depth == 0 {
+                        return Ok(Some(()));
+                    }
+                    if !token.is_payload_ident() {
+                        payload_token_count += 1;
+                    }
+                    Ok(None)
+                },
+                "ASM tolerant coedge payload",
+            )?;
             if close.is_none() {
                 return Ok(None);
             }
             let mut suffix = [None; 6];
             for field in &mut suffix {
                 *field = ctx.find_map(
-                    &mut tokens, |token| Ok((!token.is_payload_ident()).then_some(token)),
+                    &mut tokens,
+                    |token| Ok((!token.is_payload_ident()).then_some(token)),
                     "ASM tolerant coedge suffix",
                 )?;
                 if field.is_none() {
@@ -308,8 +320,11 @@ pub(super) fn tolerant_coedge_extension(
                 }
             }
             let parameter_range = match suffix {
-                [Some(Token::False), Some(Token::False), Some(Token::Long(0)), None, None, None] => None,
-                [Some(Token::True), Some(Token::Double(start)), Some(Token::True), Some(Token::Double(end)), Some(Token::Long(0)), None] => {
+                [Some(Token::False), Some(Token::False), Some(Token::Long(0)), None, None, None] => {
+                    None
+                }
+                [Some(Token::True), Some(Token::Double(start)), Some(Token::True), Some(Token::Double(end)), Some(Token::Long(0)), None] =>
+                {
                     let Some(range) = cadmpeg_ir::units::FiniteVector::new([*start, *end]) else {
                         return Ok(None);
                     };
@@ -321,7 +336,10 @@ pub(super) fn tolerant_coedge_extension(
                 return Ok(None);
             };
             Ok(Some(TolerantCoedgeExtension::EmbeddedCurve {
-                target, curve_reversed, payload_token_count, parameter_range,
+                target,
+                curve_reversed,
+                payload_token_count,
+                parameter_range,
             }))
         }
         _ => Ok(None),
@@ -395,11 +413,7 @@ pub(super) fn pcurve_ranges_on_domain(
             range
                 .iter()
                 .all(|value| {
-                    cadmpeg_ir::math::parameter_in_domain(
-                        *value,
-                        [first, last],
-                        EPS_PCURVE_DOMAIN,
-                    )
+                    cadmpeg_ir::math::parameter_in_domain(*value, [first, last], EPS_PCURVE_DOMAIN)
                 })
                 .then_some(())?;
             let range = range.map(|value| value.clamp(first, last));
@@ -486,22 +500,32 @@ pub(super) fn record_reversed(
     let mut previous: Option<&Token> = None;
     let mut header_fields = 0;
     let mut header_reversed = false;
-    let scoped = ctx.find_map(rec.tokens.as_ref(), |token| {
-        if token.is_payload_ident() { return Ok(None); }
-        if header_fields < 4 {
-            if header_fields == 3 { header_reversed = matches!(token, Token::True); }
-            header_fields += 1;
-        }
-        let reversed = if matches!(token, Token::SubtypeOpen) {
-            match previous {
-                Some(Token::True) => Some(true),
-                Some(Token::False) => Some(false),
-                _ => None,
+    let scoped = ctx.find_map(
+        rec.tokens.as_ref(),
+        |token| {
+            if token.is_payload_ident() {
+                return Ok(None);
             }
-        } else { None };
-        previous = Some(token);
-        Ok(reversed)
-    }, "ASM record sense tokens")?;
+            if header_fields < 4 {
+                if header_fields == 3 {
+                    header_reversed = matches!(token, Token::True);
+                }
+                header_fields += 1;
+            }
+            let reversed = if matches!(token, Token::SubtypeOpen) {
+                match previous {
+                    Some(Token::True) => Some(true),
+                    Some(Token::False) => Some(false),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            previous = Some(token);
+            Ok(reversed)
+        },
+        "ASM record sense tokens",
+    )?;
     Ok(scoped.unwrap_or_else(|| rec.head() == "intcurve" && header_reversed))
 }
 
@@ -547,43 +571,56 @@ pub(super) fn double_at(rec: &Record, i: usize) -> Option<f64> {
     }
 }
 
+#[derive(Default)]
+pub(super) struct PcurveTailMetadata {
+    pub(super) flags: Option<[bool; 4]>,
+    pub(super) parameter_range: Option<[f64; 2]>,
+}
+
 pub(super) fn pcurve_tail_metadata(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rec: &Record,
-) -> Result<(Option<[bool; 4]>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
+) -> Result<PcurveTailMetadata, cadmpeg_core::CodecError> {
+    let mut metadata = PcurveTailMetadata::default();
     let mut values = rec.tokens.iter().rev();
     let mut tail = [None; 6];
     for slot in &mut tail[..2] {
-        *slot = ctx.find_map(&mut values, |token| {
-            Ok((!token.is_payload_ident()).then_some(token))
-        }, "ASM pcurve parameter tail")?;
+        *slot = ctx.find_map(
+            &mut values,
+            |token| Ok((!token.is_payload_ident()).then_some(token)),
+            "ASM pcurve parameter tail",
+        )?;
         if slot.is_none() {
-            return Ok((None, None));
+            return Ok(metadata);
         }
     }
-    let range = match (tail[0], tail[1]) {
+    metadata.parameter_range = match (tail[0], tail[1]) {
         (Some(Token::Double(end)), Some(Token::Double(start))) => Some([*start, *end]),
         _ => None,
     };
     let mut prefix = rec.tokens.iter();
     let mut field = None;
     for _ in 0..4 {
-        field = ctx.find_map(&mut prefix, |token| {
-            Ok((!token.is_payload_ident()).then_some(token))
-        }, "ASM pcurve wrapper fields")?;
+        field = ctx.find_map(
+            &mut prefix,
+            |token| Ok((!token.is_payload_ident()).then_some(token)),
+            "ASM pcurve wrapper fields",
+        )?;
         if field.is_none() {
-            return Ok((None, range));
+            return Ok(metadata);
         }
     }
     if !matches!(field, Some(Token::Long(0))) {
-        return Ok((None, range));
+        return Ok(metadata);
     }
     for slot in &mut tail[2..] {
-        *slot = ctx.find_map(&mut values, |token| {
-            Ok((!token.is_payload_ident()).then_some(token))
-        }, "ASM pcurve boolean tail")?;
+        *slot = ctx.find_map(
+            &mut values,
+            |token| Ok((!token.is_payload_ident()).then_some(token)),
+            "ASM pcurve boolean tail",
+        )?;
         if slot.is_none() {
-            return Ok((None, range));
+            return Ok(metadata);
         }
     }
     let mut flags = [false; 4];
@@ -591,10 +628,11 @@ pub(super) fn pcurve_tail_metadata(
         *slot = match token {
             Some(Token::True) => true,
             Some(Token::False) => false,
-            _ => return Ok((None, range)),
+            _ => return Ok(metadata),
         };
     }
-    Ok((Some(flags), range))
+    metadata.flags = Some(flags);
+    Ok(metadata)
 }
 
 pub(super) fn procedural_surface_definition_is_exact_carrier(
@@ -653,8 +691,7 @@ pub(super) fn analytic_procedural_surface(
             let (center, normal, ref_direction, radius) =
                 propagate_resource!(rational_four_arc_circle(ctx, directrix)?);
             let axis = UnitVector3::normalized(*direction)?;
-            if 1.0 - axis.as_raw().dot(normal).abs() > EPS_EXTRUSION_AXIS_ALIGNMENT
-            {
+            if 1.0 - axis.as_raw().dot(normal).abs() > EPS_EXTRUSION_AXIS_ALIGNMENT {
                 return None;
             }
             Some(Ok(SurfaceGeometry::Solved(
@@ -729,8 +766,7 @@ fn analytic_rolling_ball_surface(
             (*first_origin, first_normal),
             (*second_origin, second_normal),
         ] {
-            if axis.as_raw().dot(plane_normal).abs()
-                > EPS_ROLLING_BALL_MATCH
+            if axis.as_raw().dot(plane_normal).abs() > EPS_ROLLING_BALL_MATCH
                 || (point_vector(plane_origin, origin).dot(plane_normal).abs() - radius).abs()
                     > tolerance
             {
@@ -824,9 +860,11 @@ fn linear_nurbs_spine(
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             let first_sign = points.first()?.weight.get().signum();
-            if propagate_resource!(ctx.any_by(points, |pole| {
-                Ok(pole.weight.get().signum() != first_sign)
-            }, "ASM spine weight signs")) {
+            if propagate_resource!(ctx.any_by(
+                points,
+                |pole| { Ok(pole.weight.get().signum() != first_sign) },
+                "ASM spine weight signs"
+            )) {
                 return None;
             }
             linear_spine_points(ctx, points, |pole| pole.point)
@@ -852,11 +890,19 @@ fn linear_spine_points<T>(
     }
     let axis = UnitVector3::normalized(point_vector(origin.get(), point(farthest).get()))?;
     // This admits an analytic replacement, not a model-length approximation.
-    if propagate_resource!(ctx.any_by(points, |pole| {
-        let relative = point_vector(origin.get(), point(pole).get());
-        let relative = Vector3::new(relative.x / extent, relative.y / extent, relative.z / extent);
-        Ok(axis.as_raw().cross(relative).norm() > EPS_SPINE_COLLINEARITY)
-    }, "ASM spine collinearity")) {
+    if propagate_resource!(ctx.any_by(
+        points,
+        |pole| {
+            let relative = point_vector(origin.get(), point(pole).get());
+            let relative = Vector3::new(
+                relative.x / extent,
+                relative.y / extent,
+                relative.z / extent,
+            );
+            Ok(axis.as_raw().cross(relative).norm() > EPS_SPINE_COLLINEARITY)
+        },
+        "ASM spine collinearity"
+    )) {
         return None;
     }
     Some(Ok((origin.get(), axis)))
@@ -889,20 +935,28 @@ pub(super) fn rational_four_arc_circle(
     {
         return None;
     }
-    for span in 0..5 {
-
-            let range = if span == 0 {
-                0..degree + 1
-            } else if span == 4 {
-                4 * degree + 1..curve.knots().len()
-            } else {
-                span * degree + 1..(span + 1) * degree + 1
-            };
-        if propagate_resource!(ctx.any_by(&curve.knots()[range], |value| Ok((*value - spans[span]).abs() > knot_tolerance), "ASM rational span knots")) {
+    for (span, knot) in spans.iter().enumerate() {
+        let range = if span == 0 {
+            0..degree + 1
+        } else if span == 4 {
+            4 * degree + 1..curve.knots().len()
+        } else {
+            span * degree + 1..(span + 1) * degree + 1
+        };
+        if propagate_resource!(ctx.any_by(
+            &curve.knots()[range],
+            |value| Ok((*value - knot).abs() > knot_tolerance),
+            "ASM rational span knots"
+        )) {
             return None;
         }
     }
-    let weight_scale = propagate_resource!(ctx.fold(points, 0.0_f64, |scale, pole| Ok(scale.max(pole.weight.get().abs())), "ASM rational weight scale"));
+    let weight_scale = propagate_resource!(ctx.fold(
+        points,
+        0.0_f64,
+        |scale, pole| Ok(scale.max(pole.weight.get().abs())),
+        "ASM rational weight scale"
+    ));
     let (mut homogeneous, _homogeneous_storage) = propagate_resource!(
         ctx.temporary_vec(points.len(), "ASM rational four-arc homogeneous poles")
     );
@@ -1017,11 +1071,13 @@ fn reduce_homogeneous_bezier_to_quadratic(
     input: &[[f64; 4]],
 ) -> Option<Result<[[f64; 4]; 3], cadmpeg_core::CodecError>> {
     (|| -> Result<Option<[[f64; 4]; 3]>, cadmpeg_core::CodecError> {
-        let (mut control, mut control_storage) = ctx.copy_temporary_slice(input, "ASM rational four-arc control copy")?;
+        let (mut control, mut control_storage) =
+            ctx.copy_temporary_slice(input, "ASM rational four-arc control copy")?;
         while control.len() > 3 {
             ctx.charge_work(1, "ASM rational four-arc reduction work")?;
             let degree = control.len() - 1;
-            let (mut reduced, reduced_storage) = ctx.temporary_vec(degree, "ASM rational four-arc degree reduction")?;
+            let (mut reduced, reduced_storage) =
+                ctx.temporary_vec(degree, "ASM rational four-arc degree reduction")?;
             reduced.push(control[0]);
             for index in ctx.admit_iter(1..degree, "ASM rational reduction poles")? {
                 let (Some(index_value), Some(degree_value)) = (
@@ -1037,13 +1093,23 @@ fn reduce_homogeneous_bezier_to_quadratic(
                         / denominator
                 }));
             }
-            if ctx.any_by(&reduced, |point| Ok(point.iter().any(|value| !value.is_finite())), "ASM rational reduced pole finiteness")? {
+            if ctx.any_by(
+                &reduced,
+                |point| Ok(point.iter().any(|value| !value.is_finite())),
+                "ASM rational reduced pole finiteness",
+            )? {
                 return Ok(None);
             }
             for coordinate in 0..4 {
-                let scale = ctx.fold(&control, 0.0_f64, |scale, point| Ok(scale.max(point[coordinate].abs())), "ASM rational reduction scale")?;
+                let scale = ctx.fold(
+                    &control,
+                    0.0_f64,
+                    |scale, point| Ok(scale.max(point[coordinate].abs())),
+                    "ASM rational reduction scale",
+                )?;
                 if (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs()
-                    > EPS_DEGREE_REDUCTION * scale {
+                    > EPS_DEGREE_REDUCTION * scale
+                {
                     return Ok(None);
                 }
             }
@@ -1077,27 +1143,31 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
     out: &mut AsmBrep,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, "ASM edge domain storage")?;
-    let domains: HashMap<&str, [f64; 2]> = storage.with_storage(|| ctx.collect_hash_map(
-        ctx.admit_iter(&out.curves, "ASM edge domain curves")?.filter_map(|curve| match &curve.geometry {
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                let first = nurbs.knots().get(usize::try_from(nurbs.degree()).ok()?)?;
-                let last = nurbs.knots().get(nurbs.pole_count())?;
-                Some((curve.id.as_str(), [*first, *last]))
-            }
-            _ => None,
-        }),
-        "ASM edge carrier domains",
-    ))?;
+    let domains: HashMap<&str, [f64; 2]> = storage.with_storage(|| {
+        ctx.collect_hash_map(
+            ctx.admit_iter(&out.curves, "ASM edge domain curves")?
+                .filter_map(|curve| match &curve.geometry {
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                        let first = nurbs.knots().get(usize::try_from(nurbs.degree()).ok()?)?;
+                        let last = nurbs.knots().get(nurbs.pole_count())?;
+                        Some((curve.id.as_str(), [*first, *last]))
+                    }
+                    _ => None,
+                }),
+            "ASM edge carrier domains",
+        )
+    })?;
     for edge in ctx.admit_iter(&mut out.edges, "ASM edge range clamp")? {
         let Some([mut start, mut end]) = edge.param_range().map(FiniteVector::get) else {
             continue;
         };
         let Some(curve) = edge.curve() else { continue };
-        let Some([first, last]) = ctx.get_hash_map(&domains, curve.as_str(), "ASM edge domain lookup")? else {
+        let Some([first, last]) =
+            ctx.get_hash_map(&domains, curve.as_str(), "ASM edge domain lookup")?
+        else {
             continue;
         };
-        let tolerance = (last * 0.5 - first * 0.5).abs()
-            * (2.0 * EPS_EDGE_DOMAIN_SNAP);
+        let tolerance = (last * 0.5 - first * 0.5).abs() * (2.0 * EPS_EDGE_DOMAIN_SNAP);
         if start < *first && *first - start <= tolerance {
             start = *first;
         }
@@ -1123,29 +1193,43 @@ pub(super) fn classify_body_kinds(
     let mut shell_bodies = HashMap::new();
     for region in ctx.admit_iter(&out.regions, "ASM body classification regions")? {
         for shell in ctx.admit_iter(&region.shells, "ASM region shells")? {
-            storage.with_storage(|| ctx.insert_hash_map(&mut shell_bodies, shell, &region.body, "ASM shell bodies"))?;
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut shell_bodies, shell, &region.body, "ASM shell bodies")
+            })?;
         }
     }
     let mut body_has_faces = HashSet::new();
     let mut body_has_wires = HashSet::new();
     let mut face_bodies = HashMap::new();
     for shell in ctx.admit_iter(&out.shells, "ASM body classification shells")? {
-        let Some(body) = ctx.get_hash_map(&shell_bodies, &&shell.id, "ASM body owner lookup")?.copied() else {
+        let Some(body) = ctx
+            .get_hash_map(&shell_bodies, &&shell.id, "ASM body owner lookup")?
+            .copied()
+        else {
             continue;
         };
         if !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty() {
-            storage.with_storage(|| ctx.insert_hash_set(&mut body_has_wires, body, "ASM bodies with wires"))?;
+            storage.with_storage(|| {
+                ctx.insert_hash_set(&mut body_has_wires, body, "ASM bodies with wires")
+            })?;
         }
         if !shell.faces().is_empty() {
-            storage.with_storage(|| ctx.insert_hash_set(&mut body_has_faces, body, "ASM bodies with faces"))?;
+            storage.with_storage(|| {
+                ctx.insert_hash_set(&mut body_has_faces, body, "ASM bodies with faces")
+            })?;
         }
         for face in ctx.admit_iter(shell.faces(), "ASM shell faces")? {
-            storage.with_storage(|| ctx.insert_hash_map(&mut face_bodies, face, body, "ASM face bodies"))?;
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut face_bodies, face, body, "ASM face bodies")
+            })?;
         }
     }
     let mut loop_bodies = HashMap::new();
     for face in ctx.admit_iter(&out.faces, "ASM body classification faces")? {
-        let Some(body) = ctx.get_hash_map(&face_bodies, &&face.id, "ASM body owner lookup")?.copied() else {
+        let Some(body) = ctx
+            .get_hash_map(&face_bodies, &&face.id, "ASM body owner lookup")?
+            .copied()
+        else {
             continue;
         };
         let (outer, inner) = match &face.loops {
@@ -1153,27 +1237,43 @@ pub(super) fn classify_body_kinds(
             cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => (Some(outer), inner),
         };
         if let Some(outer) = outer {
-            storage.with_storage(|| ctx.insert_hash_map(&mut loop_bodies, outer, body, "ASM loop bodies"))?;
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut loop_bodies, outer, body, "ASM loop bodies")
+            })?;
         }
         for loop_id in ctx.admit_iter(inner, "ASM face loops")? {
-            storage.with_storage(|| ctx.insert_hash_map(&mut loop_bodies, loop_id, body, "ASM loop bodies"))?;
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut loop_bodies, loop_id, body, "ASM loop bodies")
+            })?;
         }
     }
     let mut coedge_bodies = HashMap::new();
     for loop_ in ctx.admit_iter(&out.loops, "ASM body classification loops")? {
-        let Some(body) = ctx.get_hash_map(&loop_bodies, &&loop_.id, "ASM body owner lookup")?.copied() else {
+        let Some(body) = ctx
+            .get_hash_map(&loop_bodies, &&loop_.id, "ASM body owner lookup")?
+            .copied()
+        else {
             continue;
         };
         for coedge in ctx.admit_iter(loop_.coedges(), "ASM loop coedges")? {
-            storage.with_storage(|| ctx.insert_hash_map(&mut coedge_bodies, coedge, body, "ASM coedge bodies"))?;
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut coedge_bodies, coedge, body, "ASM coedge bodies")
+            })?;
         }
     }
     let mut edge_use_counts = HashMap::<_, std::collections::BTreeMap<&EdgeId, usize>>::new();
     for coedge in ctx.admit_iter(&out.coedges, "ASM body classification coedges")? {
-        if let Some(body) = ctx.get_hash_map(&coedge_bodies, &&coedge.id, "ASM body owner lookup")?.copied() {
-            storage.with_storage(|| ctx.admit_hash_map_entry(&mut edge_use_counts, &body, "ASM body edge use counts"))?;
+        if let Some(body) = ctx
+            .get_hash_map(&coedge_bodies, &&coedge.id, "ASM body owner lookup")?
+            .copied()
+        {
+            storage.with_storage(|| {
+                ctx.admit_hash_map_entry(&mut edge_use_counts, &body, "ASM body edge use counts")
+            })?;
             let counts = edge_use_counts.entry(body).or_default();
-            storage.with_storage(|| ctx.admit_btree_entry(counts, &&coedge.edge, "ASM edge use counts"))?;
+            storage.with_storage(|| {
+                ctx.admit_btree_entry(counts, &&coedge.edge, "ASM edge use counts")
+            })?;
             *counts.entry(&coedge.edge).or_default() += 1;
         }
     }
@@ -1188,7 +1288,14 @@ pub(super) fn classify_body_kinds(
         }
         let counts = ctx.get_hash_map(&edge_use_counts, &&body.id, "ASM body edge count lookup")?;
         body.kind = if match counts {
-            Some(counts) => !counts.is_empty() && ctx.all_by(counts, |(_, count)| Ok(*count == 2), "ASM closed body edge counts")?,
+            Some(counts) => {
+                !counts.is_empty()
+                    && ctx.all_by(
+                        counts,
+                        |(_, count)| Ok(*count == 2),
+                        "ASM closed body edge counts",
+                    )?
+            }
             None => false,
         } {
             cadmpeg_ir::topology::BodyKind::Solid
@@ -1329,7 +1436,10 @@ mod sense_tests {
                 offset: 0,
                 len: 0,
             };
-            assert_eq!(record_reversed(&cadmpeg_test_support::service_decode_context(), &record).unwrap(), expected);
+            assert_eq!(
+                record_reversed(&cadmpeg_test_support::service_decode_context(), &record).unwrap(),
+                expected
+            );
         }
     }
 }
@@ -1347,13 +1457,18 @@ mod tests {
         use cadmpeg_core::CodecError;
 
         let poles = [[0.0, 0.0, 0.0, 1.0]; 4];
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "ASM rational four-arc degree reduction", |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles).expect("degree-four input")
-        });
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "ASM rational four-arc degree reduction",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles)
+                    .expect("degree-four input")
+            },
+        );
         let CodecError::ResourceLimit(limit) = error else {
             panic!("expected collection refusal: {error:?}");
         };
@@ -1366,12 +1481,15 @@ mod tests {
 
         let poles = [[0.0, 0.0, 0.0, 1.0]; 4];
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "ASM rational four-arc reduction work", |cap| {
+            ResourceDimension::WorkUnits,
+            "ASM rational four-arc reduction work",
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles).expect("degree-four input")
+                super::reduce_homogeneous_bezier_to_quadratic(&ctx, &poles)
+                    .expect("degree-four input")
             },
         );
         let CodecError::ResourceLimit(limit) = error else {
@@ -1401,8 +1519,14 @@ mod tests {
                 .expect("fixture constructor admission")
                 .unwrap()
             };
-            assert!(super::linear_nurbs_spine(&ctx, &spine(0.4)).transpose().unwrap().is_none());
-            assert!(super::linear_nurbs_spine(&ctx, &spine(0.0)).transpose().unwrap().is_some());
+            assert!(super::linear_nurbs_spine(&ctx, &spine(0.4))
+                .transpose()
+                .unwrap()
+                .is_none());
+            assert!(super::linear_nurbs_spine(&ctx, &spine(0.0))
+                .transpose()
+                .unwrap()
+                .is_some());
         }
     }
     #[test]

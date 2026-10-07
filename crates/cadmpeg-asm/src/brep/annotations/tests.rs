@@ -41,7 +41,7 @@ fn annotation_curve_index_refuses_collection_limit() {
 
 #[test]
 fn annotation_stream_refuses_retained_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 
@@ -62,16 +62,22 @@ fn annotation_stream_refuses_retained_limit() {
     };
     let by_index = std::collections::HashMap::from([(1, &records[0])]);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "ASM annotation stream", |cap| {
+        ResourceDimension::RetainedBytes,
+        "ASM annotation stream",
+        |cap| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[], &arena, &policy,
-            ).unwrap();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             emit_annotation_records(
-                &ctx, &mut make_out(), &records, &by_index,
-                &mut Carriers::default(), "source", crate::asm_format!("f3d"),
+                &ctx,
+                &mut make_out(),
+                &records,
+                &by_index,
+                &mut Carriers::default(),
+                "source",
+                crate::asm_format!("f3d"),
             )
         },
     );

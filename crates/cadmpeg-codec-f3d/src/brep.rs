@@ -473,7 +473,10 @@ fn sketch_curve_link(
     };
     Ok(Some(SketchCurveLink {
         id: ctx.format_retained(
-            format_args!("f3d:design:sketch-curve-link#{}", attribute_key(ctx, attribute)?),
+            format_args!(
+                "f3d:design:sketch-curve-link#{}",
+                attribute_key(ctx, attribute)?
+            ),
             "retain F3D sketch curve link ID",
         )?,
         target: copy_attribute_target(ctx, &attribute.target)?,
@@ -721,7 +724,10 @@ fn creation_timestamp(
     };
     Ok(Some(CreationTimestamp {
         id: ctx.format_retained(
-            format_args!("f3d:design:creation-timestamp#{}", attribute_key(ctx, attribute)?),
+            format_args!(
+                "f3d:design:creation-timestamp#{}",
+                attribute_key(ctx, attribute)?
+            ),
             "retain F3D creation timestamp ID",
         )?,
         target: copy_attribute_target(ctx, &attribute.target)?,

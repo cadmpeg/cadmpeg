@@ -65,7 +65,9 @@ fn collect_entity_adjacency_refuses_collection_limit() {
     )]));
     let owned = HashSet::from(["referenced".into()]);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "ASM adjacency owners", |cap| {
+        ResourceDimension::CollectionItems,
+        "ASM adjacency owners",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
@@ -101,4 +103,3 @@ fn remap_owned_ids_refuses_collection_limit() {
     };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }
-

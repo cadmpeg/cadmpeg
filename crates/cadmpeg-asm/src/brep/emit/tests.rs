@@ -34,7 +34,9 @@ fn body_source_stream_copy_refuses_retained_limit() {
     }];
     let by_index = HashMap::from([(1, &records[0])]);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "ASM body source stream", |cap| {
+        ResourceDimension::RetainedBytes,
+        "ASM body source stream",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
@@ -85,7 +87,9 @@ fn edge_continuity_copy_refuses_retained_limit() {
         ..Reachable::default()
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "ASM edge continuity text", |cap| {
+        ResourceDimension::RetainedBytes,
+        "ASM edge continuity text",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
@@ -144,7 +148,9 @@ fn loop_ring_members_refuse_collection_limit() {
         ..Reachable::default()
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "loop ring members", |cap| {
+        ResourceDimension::CollectionItems,
+        "loop ring members",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
@@ -171,23 +177,40 @@ fn saved_edge_container_members_refuse_collection_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::HashMap;
     for operation in [
-        "ASM saved edge body regions", "ASM saved edge region shells", "ASM saved edge shell wires",
+        "ASM saved edge body regions",
+        "ASM saved edge region shells",
+        "ASM saved edge shell wires",
     ] {
-        let wire = WireShellTopology { saved_free_edges: vec![7], ..WireShellTopology::default() };
+        let wire = WireShellTopology {
+            saved_free_edges: vec![7],
+            ..WireShellTopology::default()
+        };
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::CollectionItems, operation, |cap| {
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                emit_containers(&ctx, &mut AsmBrep::default(), ContainerInputs {
-                    records: &[], by_index: &HashMap::new(), reach: &Reachable::default(),
-                    wire: &wire, stream: "folder/source.brp", header_scale: 1.0,
-                    format: crate::asm_format!("f3d"),
-                })
+                emit_containers(
+                    &ctx,
+                    &mut AsmBrep::default(),
+                    ContainerInputs {
+                        records: &[],
+                        by_index: &HashMap::new(),
+                        reach: &Reachable::default(),
+                        wire: &wire,
+                        stream: "folder/source.brp",
+                        header_scale: 1.0,
+                        format: crate::asm_format!("f3d"),
+                    },
+                )
             },
         );
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("resource refusal")
+        };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, operation);
     }
@@ -252,16 +275,19 @@ fn reversed_nurbs_carrier_copy_refuses_collection_limit() {
     .expect("fixture constructor admission")
     .unwrap();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "ASM reversed carrier curve", |cap| {
+        ResourceDimension::CollectionItems,
+        "ASM reversed carrier curve",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let mut carriers = Carriers::default();
-            carriers
-                .curve_geo
-                .insert(4, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone())));
-        emit_carrier_curve(
+            carriers.curve_geo.insert(
+                4,
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone())),
+            );
+            emit_carrier_curve(
                 &ctx,
                 &mut AsmBrep::default(),
                 4,
@@ -390,13 +416,15 @@ fn unknown_carrier_source_copy_refuses_retained_limit_before_emission() {
         ..Reachable::default()
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "retain ASM unknown record", |cap| {
+        ResourceDimension::RetainedBytes,
+        "retain ASM unknown record",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
             let mut out = AsmBrep::default();
-        let result = super::emit_passthrough_unknowns(
+            let result = super::emit_passthrough_unknowns(
                 &ctx,
                 &mut out,
                 &records,
@@ -404,8 +432,8 @@ fn unknown_carrier_source_copy_refuses_retained_limit_before_emission() {
                 &reach,
                 crate::asm_format!("f3d"),
             );
-        assert!(out.unknowns.is_empty());
-        result
+            assert!(out.unknowns.is_empty());
+            result
         },
     );
     let CodecError::ResourceLimit(limit) = error else {
@@ -579,7 +607,12 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let (_, inward) = super::super::topology::decode_analytic_carriers(&ctx, &records, &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap()).unwrap();
+        let (_, inward) = super::super::topology::decode_analytic_carriers(
+            &ctx,
+            &records,
+            &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap(),
+        )
+        .unwrap();
         let reach = Reachable {
             faces: HashSet::from([0]),
             ..Reachable::default()
@@ -989,8 +1022,13 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
                 format: crate::asm_format!("f3d"),
             },
             &mut out,
-            &records, &mut carriers,
-            &mut reach, &mut asm_decode_ctx.reserve_scoped(0, "ASM test scratch").unwrap())
+            &records,
+            &mut carriers,
+            &mut reach,
+            &mut asm_decode_ctx
+                .reserve_scoped(0, "ASM test scratch")
+                .unwrap(),
+        )
         .expect("generated topology is within resource limits");
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(normalized)) = &carriers.curve_geo[&4]
         else {
