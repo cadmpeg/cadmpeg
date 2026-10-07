@@ -721,6 +721,7 @@ impl<'a> DecodeContext<'a> {
         let appended =
             self.session
                 .try_append(candidate.model, candidate.native, |combined, unknowns| {
+                    drop(arena_storage);
                     let validation = match cadmpeg_ir::validate::admit::admit_with_native_unknowns(
                         session,
                         combined,
@@ -2543,7 +2544,8 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
         self.expand
             .ctx()
             .reserve_scoped_vec(scratch, path, 1, "Rhino instance path slots")?;
-        path.push(self.reference_segment(source_order, identity, scratch)?);
+        let mut segment_storage = self.expand.ctx().reserve_scoped(0, "Rhino instance segment scratch")?;
+        path.push(self.reference_segment(source_order, identity, &mut segment_storage)?);
         let previous_display = self.instance_display;
         self.instance_display = Some(InstanceDisplay {
             color: identity
@@ -2553,6 +2555,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
             visible: previous_display.is_none_or(|display| display.visible)
                 && identity.effective_visible,
         });
+        let result = (|| {
         let mut links = Vec::new();
         for &member_id in self.expand.ctx().admit_iter(definition_members, "Rhino instance definition members").map_err(cadmpeg_core::CodecError::from)? {
             self.expansion_budget.member(self.expand.ctx())?;
@@ -2611,10 +2614,12 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
             let transformed = self.transform_new_entities(&before.0, transform, scratch)?;
             scratch.with_storage(|| self.expand.ctx().extend_vec(&mut links, transformed, "Rhino instance link slots"))?;
         }
+        Ok(links)
+        })();
         self.instance_display = previous_display;
         path.pop();
         stack.pop();
-        Ok(links)
+        result
     }
 
     fn transform_new_entities(
@@ -2626,9 +2631,9 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
         let ctx = self.expand.ctx();
         let ir = self.session.document_mut()?;
         let mut links = Vec::new();
+        let mut derived_storage = ctx.reserve_scoped(0, "Rhino transformed annotation scratch")?;
         let mut derived_ids = Vec::new();
-        for body in ctx.admit_iter(before
-            .added_mut::<Body>(&mut ir.model)
+        for body in ctx.admit_iter(ir.model.bodies.get_mut(before.arena_len::<Body>()..)
             .ok_or_else(|| "instance decode removed existing bodies".to_string())?, "Rhino transformed entity traversal").map_err(cadmpeg_core::CodecError::from)?
         {
             ctx.reserve_scoped_vec(scratch, &mut links, 1, "Rhino transformed instance links")?;
@@ -2638,40 +2643,18 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                 "Rhino transformed instance links",
             )?;
             links.push(id);
-            ctx.reserve_scoped_vec(
-                scratch,
-                &mut derived_ids,
-                1,
-                "Rhino transformed instance annotations",
-            )?;
-            let id = ctx.format_scoped_text(
-                scratch,
-                format_args!("{}", body.id.as_str()),
-                "Rhino transformed instance annotations",
-            )?;
-            derived_ids.push(id);
+            ctx.push_scoped_vec(&mut derived_storage, &mut derived_ids,
+                body.id.as_str(), "Rhino transformed instance annotations")?;
         }
-        for point in ctx.admit_iter(before
-            .added_mut::<Point>(&mut ir.model)
+        for point in ctx.admit_iter(ir.model.points.get_mut(before.arena_len::<Point>()..)
             .ok_or_else(|| "instance decode removed existing points".to_string())?, "Rhino transformed entity traversal").map_err(cadmpeg_core::CodecError::from)?
         {
             let placed = placed_finite_point(transform, point.position())?;
             point.set_position(placed);
-            ctx.reserve_scoped_vec(
-                scratch,
-                &mut derived_ids,
-                1,
-                "Rhino transformed instance annotations",
-            )?;
-            let id = ctx.format_scoped_text(
-                scratch,
-                format_args!("{}", point.id.as_str()),
-                "Rhino transformed instance annotations",
-            )?;
-            derived_ids.push(id);
+            ctx.push_scoped_vec(&mut derived_storage, &mut derived_ids,
+                point.id.as_str(), "Rhino transformed instance annotations")?;
         }
-        for curve in ctx.admit_iter(before
-            .added_mut::<Curve>(&mut ir.model)
+        for curve in ctx.admit_iter(ir.model.curves.get_mut(before.arena_len::<Curve>()..)
             .ok_or_else(|| "instance decode removed existing curves".to_string())?, "Rhino transformed entity traversal").map_err(cadmpeg_core::CodecError::from)?
         {
             if let CurveGeometry::Procedural { cache, .. } = &mut curve.geometry {
@@ -2687,21 +2670,10 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                 "Rhino transformed instance links",
             )?;
             links.push(id);
-            ctx.reserve_scoped_vec(
-                scratch,
-                &mut derived_ids,
-                1,
-                "Rhino transformed instance annotations",
-            )?;
-            let id = ctx.format_scoped_text(
-                scratch,
-                format_args!("{}", curve.id.as_str()),
-                "Rhino transformed instance annotations",
-            )?;
-            derived_ids.push(id);
+            ctx.push_scoped_vec(&mut derived_storage, &mut derived_ids,
+                curve.id.as_str(), "Rhino transformed instance annotations")?;
         }
-        for surface in ctx.admit_iter(before
-            .added_mut::<Surface>(&mut ir.model)
+        for surface in ctx.admit_iter(ir.model.surfaces.get_mut(before.arena_len::<Surface>()..)
             .ok_or_else(|| "instance decode removed existing surfaces".to_string())?, "Rhino transformed entity traversal").map_err(cadmpeg_core::CodecError::from)?
         {
             if let SurfaceGeometry::Procedural { cache, .. } = &mut surface.geometry {
@@ -2717,21 +2689,10 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                 "Rhino transformed instance links",
             )?;
             links.push(id);
-            ctx.reserve_scoped_vec(
-                scratch,
-                &mut derived_ids,
-                1,
-                "Rhino transformed instance annotations",
-            )?;
-            let id = ctx.format_scoped_text(
-                scratch,
-                format_args!("{}", surface.id.as_str()),
-                "Rhino transformed instance annotations",
-            )?;
-            derived_ids.push(id);
+            ctx.push_scoped_vec(&mut derived_storage, &mut derived_ids,
+                surface.id.as_str(), "Rhino transformed instance annotations")?;
         }
-        for mesh in ctx.admit_iter(before
-            .added_mut::<Tessellation>(&mut ir.model)
+        for mesh in ctx.admit_iter(ir.model.tessellations.get_mut(before.arena_len::<Tessellation>()..)
             .ok_or_else(|| "instance decode removed existing tessellations".to_string())?, "Rhino transformed entity traversal").map_err(cadmpeg_core::CodecError::from)?
         {
             mesh.edit_vertices(|vertex| {
@@ -2780,21 +2741,10 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                 "Rhino transformed instance links",
             )?;
             links.push(id);
-            ctx.reserve_scoped_vec(
-                scratch,
-                &mut derived_ids,
-                1,
-                "Rhino transformed instance annotations",
-            )?;
-            let id = ctx.format_scoped_text(
-                scratch,
-                format_args!("{}", mesh.id.as_str()),
-                "Rhino transformed instance annotations",
-            )?;
-            derived_ids.push(id);
+            ctx.push_scoped_vec(&mut derived_storage, &mut derived_ids,
+                mesh.id.as_str(), "Rhino transformed instance annotations")?;
         }
-        for subd in ctx.admit_iter(before
-            .added_mut::<cadmpeg_ir::SubdSurface>(&mut ir.model)
+        for subd in ctx.admit_iter(ir.model.subds.get_mut(before.arena_len::<cadmpeg_ir::SubdSurface>()..)
             .ok_or_else(|| "instance decode removed existing subdivision surfaces".to_string())?, "Rhino transformed entity traversal").map_err(cadmpeg_core::CodecError::from)?
         {
             subd.cage
@@ -2825,18 +2775,8 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                 "Rhino transformed instance links",
             )?;
             links.push(id);
-            ctx.reserve_scoped_vec(
-                scratch,
-                &mut derived_ids,
-                1,
-                "Rhino transformed instance annotations",
-            )?;
-            let id = ctx.format_scoped_text(
-                scratch,
-                format_args!("{}", subd.id.as_str()),
-                "Rhino transformed instance annotations",
-            )?;
-            derived_ids.push(id);
+            ctx.push_scoped_vec(&mut derived_storage, &mut derived_ids,
+                subd.id.as_str(), "Rhino transformed instance annotations")?;
         }
         let procedural_curve_start = before.arena_len::<ProceduralCurve>();
         let procedural_surface_start = before.arena_len::<ProceduralSurface>();
@@ -2873,7 +2813,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
             )?;
         }
         for id in ctx.admit_iter(derived_ids, "Rhino derived identity traversal").map_err(cadmpeg_core::CodecError::from)? {
-            annotate_derived(self.expand.ctx(), &mut self.annotations, &id)?;
+            annotate_derived(self.expand.ctx(), &mut self.annotations, id)?;
         }
         Ok(links)
     }
@@ -4367,6 +4307,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
             .id()
             .try_clone_for_decode(self.expand.ctx(), "Rhino unknown identity copy")?;
         let mut arena_storage = self.expand.ctx().reserve_scoped(0, "Rhino Brep arena scratch")?;
+        let mut metadata_storage = self.expand.ctx().reserve_scoped(0, "Rhino Brep link scratch")?;
         let staged = match &parsed {
             crate::brep::BrepParse::Valid(brep) => stage_brep(BrepTransferInput {
                 expand: self.expand,
@@ -4379,7 +4320,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                 unknown: &unknown,
                 scale,
                 mesh_budget: &mut self.mesh_budget,
-            }, &mut arena_storage,),
+            }, &mut arena_storage, &mut metadata_storage,),
             crate::brep::BrepParse::SemanticInvalid { raw, error, .. } => stage_invalid_brep(
                 BrepCarrierInput {
                     expand: self.expand,
@@ -4393,7 +4334,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                     scale,
                     mesh_budget: &mut self.mesh_budget,
                 },
-                error, &mut arena_storage,),
+                error, &mut arena_storage, &mut metadata_storage,),
         };
         match staged {
             Ok(staged) => {
@@ -4423,11 +4364,14 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                             "Rhino draft admission message",
                         )?),
                     },
-                    Err(error) => Err(self.expand.ctx().format_retained(
-                        format_args!("{error}"),
-                        "Rhino native admission message",
-                    )?),
+                    Err(error) => {
+                        drop(draft);
+                        Err(self.expand.ctx().format_retained(
+                            format_args!("{error}"), "Rhino native admission message",
+                        )?)
+                    },
                 };
+                drop(arena_storage);
                 if let Err(error) = committed {
                     self.scan_warning(
                         source_order,
@@ -5223,6 +5167,7 @@ fn stage_brep_carriers<'a>(
     input: BrepCarrierInput<'a>,
     retain_slot_lookup: bool,
  arena_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+ metadata_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<BrepCarrierDraft<'a>, crate::curves::GeometryError> {
     let BrepCarrierInput {
         expand,
@@ -5292,10 +5237,10 @@ ctx, &mesh.tessellation.id,
                             Exactness::ByteExact
                         },
                     )?;
-                    { let link = ctx.format_scoped_text(arena_storage,
+                    { let link = ctx.format_scoped_text(metadata_storage,
                         format_args!("{}", mesh.tessellation.id),
                         "Rhino stage_brep_carriers text",
-                    )?; ctx.push_scoped_vec(arena_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
+                    )?; ctx.push_scoped_vec(metadata_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
                     ctx.push_scoped_vec(arena_storage, &mut staged.draft.model_mut().tessellations, mesh.tessellation, "Rhino Brep carrier tessellations arena")?;
                 }
                 Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
@@ -5325,7 +5270,7 @@ ctx, &mesh.tessellation.id,
                     &curve,
                     format_args!("C3 slot {index}"),
                 )?;
-                let id = match stage_curve_tree((expand.ctx(), &mut *arena_storage),
+                let id = match stage_curve_tree((expand.ctx(), &mut *arena_storage, &mut *metadata_storage),
                     &mut staged,
                     curve,
                     key,
@@ -5419,6 +5364,8 @@ ctx, &id,
                         Exactness::ByteExact
                     },
                 )?;
+                let link = ctx.copy_scoped_text(id.as_str(), metadata_storage, "Rhino Brep surface link text")?;
+                ctx.push_scoped_vec(metadata_storage, &mut staged.links, link, "Rhino Brep carrier links")?;
                 if retain_slot_lookup { carrier_storage.with_storage(|| ctx.insert_hash_map(&mut surfaces,
                     index,
                     StagedBrepSurface {
@@ -5442,7 +5389,7 @@ ctx, &id,
                     key,
                     association,
                     unknown,
-                }, &mut *arena_storage,) {
+                }, &mut *arena_storage, &mut *metadata_storage,) {
                 Ok(id) => {
                     if retain_slot_lookup { carrier_storage.with_storage(|| ctx.insert_hash_map(&mut surfaces,
                         index,
@@ -5487,13 +5434,15 @@ fn stage_invalid_brep(
     input: BrepCarrierInput<'_>,
     semantic_error: &crate::curves::GeometryError,
  arena_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+ metadata_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<BrepDraft, crate::curves::GeometryError> {
     let ctx = input.expand.ctx();
-    let carriers = stage_brep_carriers(input, false, &mut *arena_storage,)?;
-    finish_brep_fallback(ctx, carriers.staged, semantic_error, &mut *arena_storage,)
+    let carriers = stage_brep_carriers(input, false, &mut *arena_storage, &mut *metadata_storage,)?;
+    carriers.staged.free_carrier_fallback(ctx, semantic_error).map_err(Into::into)
 }
 
 fn stage_brep(input: BrepTransferInput<'_>, arena_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+ metadata_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<BrepDraft, crate::curves::GeometryError> {
     let BrepTransferInput {
         expand,
@@ -5538,10 +5487,10 @@ fn stage_brep(input: BrepTransferInput<'_>, arena_storage: &mut cadmpeg_core::de
         unknown,
         scale,
         mesh_budget,
-    }, true, &mut *arena_storage,)?;
+    }, true, &mut *arena_storage, &mut *metadata_storage,)?;
     let ctx = expand.ctx();
     if let Some((cause, _cause_storage)) = child_cause {
-        return finish_brep_fallback(ctx, staged, cause, &mut *arena_storage,);
+        return staged.free_carrier_fallback(ctx, cause).map_err(Into::into);
     }
     let DecodedPcurves {
         _storage: _pcurve_id_storage,
@@ -5667,10 +5616,8 @@ fn stage_brep(input: BrepTransferInput<'_>, arena_storage: &mut cadmpeg_core::de
     let (grouping, _grouping_storage) = ctx.with_scoped_storage("Rhino Brep shell grouping scratch", || region_shell_groups(ctx, raw, resolved, &components))?;
     let (free_vertex_indices, _free_vertex_storage) = ctx.with_scoped_storage("Rhino Brep free vertex scratch", || brep_free_vertex_indices(ctx, resolved))?;
     if !free_vertex_indices.is_empty() && grouping.shells.len() != 1 {
-        return finish_brep_fallback(
-            ctx,
-            staged,
-            "Brep free vertices have no unique shell membership", &mut *arena_storage,);
+        return staged.free_carrier_fallback(ctx,
+            "Brep free vertices have no unique shell membership").map_err(Into::into);
     }
     let mut free_vertex_ids = ctx
         .collection_vec(
@@ -6086,36 +6033,8 @@ fn stage_brep(input: BrepTransferInput<'_>, arena_storage: &mut cadmpeg_core::de
         color: association.color,
         visible: association.visible,
     });
-    ctx.reserve_scoped_vec(arena_storage,
-        &mut staged.links,
-        staged.draft.model().curves.len() + staged.draft.model().surfaces.len() + 1,
-        "Rhino staged Brep links",
-    )
-    .map_err(crate::curves::GeometryError::from)?;
-    for curve in ctx
-        .admit_iter(
-            &(staged.draft.model().curves)[..],
-            "Rhino stage brep traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
-        staged.links.push(
-            ctx.format_scoped_text(arena_storage,format_args!("{}", curve.id), "Rhino staged Brep link text")?,
-        );
-    }
-    for surface in ctx
-        .admit_iter(
-            &(staged.draft.model().surfaces)[..],
-            "Rhino stage brep traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
-        staged.links.push(ctx.format_scoped_text(arena_storage,
-            format_args!("{}", surface.id),
-            "Rhino staged Brep link text",
-        )?);
-    }
-    staged.links.push(ctx.format_scoped_text(arena_storage,format_args!("{body_id}"), "Rhino staged Brep link text")?);
+    ctx.reserve_scoped_vec(metadata_storage, &mut staged.links, 1, "Rhino staged Brep links")?;
+    staged.links.push(ctx.copy_scoped_text(body_id.as_str(), metadata_storage, "Rhino staged Brep link text")?);
     let (derived_ids, _derived_id_storage) = ctx.with_scoped_storage("Rhino Brep derived identity scratch", || {
         let model = staged.draft.model();
         let count = model.bodies.len()
@@ -6158,30 +6077,6 @@ fn stage_brep(input: BrepTransferInput<'_>, arena_storage: &mut cadmpeg_core::de
     Ok(staged)
 }
 
-fn finish_brep_fallback(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    mut staged: BrepDraft,
-    cause: impl std::fmt::Display,
- arena_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-) -> Result<BrepDraft, crate::curves::GeometryError> {
-    for id in ctx
-        .admit_iter(
-            &(staged.draft.model().curves)[..],
-            "Rhino finish brep fallback traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-        .map(|curve| curve.id.as_str())
-        .chain(
-            ctx.admit_iter(&staged.draft.model().surfaces, "Rhino finish brep fallback traversal").map_err(cadmpeg_core::CodecError::from)?
-                .map(|surface| surface.id.as_str()),
-        )
-    {
-        ctx.reserve_scoped_vec(arena_storage,&mut staged.links, 1, "Rhino Brep fallback links")?;
-        staged.links.push(ctx.copy_scoped_text(id, arena_storage, "Rhino Brep fallback link text")?);
-    }
-    Ok(staged.free_carrier_fallback(ctx, cause)?)
-}
-
 /// Projects one embedded Brep into a self-contained semantic topology value.
 pub(crate) fn embedded_brep_json(
     expand: crate::mesh::MeshExpand<'_>,
@@ -6222,6 +6117,10 @@ pub(crate) fn embedded_brep_json(
         Ok(storage) => storage,
         Err(error) => { *refusal = Some(error); return None; }
     };
+    let mut metadata_storage = match expand.ctx().reserve_scoped(0, "Rhino embedded Brep link scratch") {
+        Ok(storage) => storage,
+        Err(error) => { *refusal = Some(error); return None; }
+    };
     let staged = match stage_brep(BrepTransferInput {
         expand,
         data,
@@ -6233,7 +6132,7 @@ pub(crate) fn embedded_brep_json(
         unknown: &unknown,
         scale,
         mesh_budget: &mut mesh_budget,
-    }, &mut arena_storage,) {
+    }, &mut arena_storage, &mut metadata_storage,) {
         Ok(value) => value,
         Err(crate::curves::GeometryError::Codec(error)) => {
             *refusal = Some(error);
@@ -6426,6 +6325,7 @@ fn stage_brep_procedural_surface(
     definition: crate::surfaces::DecodedProceduralSurface,
     context: &BrepStageContext<'_>,
  arena_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+ metadata_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
     let mut source_key_storage = context
         .ctx
@@ -6442,7 +6342,7 @@ fn stage_brep_procedural_surface(
             ).map_or_else(Into::into, crate::curves::GeometryError::unpositioned))?;
     let definition = definition.into_definition(
         |child_index, _, child| {
-            stage_curve_tree((context.ctx, &mut *arena_storage),
+            stage_curve_tree((context.ctx, &mut *arena_storage, &mut *metadata_storage),
                 staged,
                 child,
                 key.as_str(),
@@ -6510,19 +6410,19 @@ context.ctx, &surface_id,
 context.ctx, &procedural_id,
         Exactness::Derived,
     )?;
-    { let link = context.ctx.format_scoped_text(arena_storage,
+    { let link = context.ctx.format_scoped_text(metadata_storage,
         format_args!("{}", surface_id),
         "Rhino stage_brep_procedural_surface text",
-    )?; context.ctx.push_scoped_vec(arena_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
-    { let link = context.ctx.format_scoped_text(arena_storage,
+    )?; context.ctx.push_scoped_vec(metadata_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
+    { let link = context.ctx.format_scoped_text(metadata_storage,
         format_args!("{}", procedural_id),
         "Rhino stage_brep_procedural_surface text",
-    )?; context.ctx.push_scoped_vec(arena_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
+    )?; context.ctx.push_scoped_vec(metadata_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
     Ok(surface_id)
 }
 
 fn stage_curve_tree(
-    scope: (&cadmpeg_core::decode::DecodeContext<'_>, &mut cadmpeg_core::decode::ScopedReservation<'_>),
+    scope: (&cadmpeg_core::decode::DecodeContext<'_>, &mut cadmpeg_core::decode::ScopedReservation<'_>, &mut cadmpeg_core::decode::ScopedReservation<'_>),
     staged: &mut BrepDraft,
     curve: crate::curves::DecodedCurve,
     key: &str,
@@ -6530,7 +6430,7 @@ fn stage_curve_tree(
     association: &SourceObjectAssociation,
     unknown: &UnknownId,
 ) -> Result<cadmpeg_ir::ids::CurveId, crate::curves::GeometryError> {
-    let (ctx, arena_storage) = scope;
+    let (ctx, arena_storage, metadata_storage) = scope;
     let _nested = ctx.enter_nested("Rhino Brep curve tree")?;
     let (geometry, definition) = match curve {
         crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
@@ -6557,7 +6457,7 @@ fn stage_curve_tree(
                 )?;
                 components.push(cadmpeg_ir::geometry::CompoundComponent {
                     parameter,
-                    component: stage_curve_tree((ctx, &mut *arena_storage),
+                    component: stage_curve_tree((ctx, &mut *arena_storage, &mut *metadata_storage),
                         staged,
                         child,
                         key,
@@ -6623,7 +6523,7 @@ fn stage_curve_tree(
 ctx, &id,
         Exactness::Derived,
     )?;
-    { let link = ctx.format_scoped_text(arena_storage,format_args!("{}", id), "Rhino stage_curve_tree text")?; ctx.push_scoped_vec(arena_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
+    { let link = ctx.format_scoped_text(metadata_storage,format_args!("{}", id), "Rhino Brep curve link text")?; ctx.push_scoped_vec(metadata_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
     if let Some(definition) = definition {
         let mut procedure_key_copy_storage =
             ctx.reserve_scoped(0, "Rhino temporary identity key")?;
@@ -6653,10 +6553,10 @@ ctx, &id,
 ctx, &procedure_id,
             Exactness::Derived,
         )?;
-        { let link = ctx.format_scoped_text(arena_storage,
+        { let link = ctx.format_scoped_text(metadata_storage,
             format_args!("{}", procedure_id),
             "Rhino stage_curve_tree text",
-        )?; ctx.push_scoped_vec(arena_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
+        )?; ctx.push_scoped_vec(metadata_storage, &mut staged.links, link, "Rhino Brep carrier links")?; };
         staged
             .draft
             .model_mut()

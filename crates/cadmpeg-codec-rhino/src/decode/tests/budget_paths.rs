@@ -185,8 +185,9 @@ fn staged_curve_arena_preserves_materialized_refusal() {
             policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             let mut storage = ctx.reserve_scoped(0, "fixture arena scratch")?;
+            let mut metadata_storage = ctx.reserve_scoped(0, "fixture link scratch")?;
             let mut staged = super::BrepDraft::default();
-            super::stage_curve_tree(( &ctx, &mut storage), &mut staged,
+            super::stage_curve_tree(( &ctx, &mut storage, &mut metadata_storage), &mut staged,
                 super::decoded_nurbs(super::line_nurbs(0.0, 1.0, false)), "curve", "root",
                 &super::test_association(), &DecodeContext::mint_unknown_id(0))
                 .map_err(|error| match error {
@@ -263,17 +264,88 @@ fn replacing_brep_fallback_cause_releases_previous_text() {
     let unknown = DecodeContext::mint_unknown_id(0);
     let mut mesh_budget = crate::mesh::MeshBudget::new();
     let mut storage = ctx.reserve_scoped(0, "fixture Brep arena scratch").expect("scratch");
+    let mut metadata_storage = ctx.reserve_scoped(0, "fixture Brep link scratch").expect("scratch");
     let carriers = super::super::stage_brep_carriers(super::super::BrepCarrierInput {
         expand: crate::mesh::MeshExpand::new(&ctx, root), data: &data,
         archive: ArchiveVersion::V5, writer_version: Some(200_206_180), raw: &raw,
         key: "fixture", association: &association, unknown: &unknown,
         scale: crate::settings::MillimeterScale::IDENTITY, mesh_budget: &mut mesh_budget,
-    }, true, &mut storage).expect("only the latest fallback cause remains live");
+    }, true, &mut storage, &mut metadata_storage).expect("only the latest fallback cause remains live");
     assert!(carriers.staged.draft.model().curves.is_empty());
     assert!(carriers.child_cause.as_ref().expect("fallback cause").0.starts_with("C3 slot 99:"));
     drop(carriers);
     drop(storage);
+    drop(metadata_storage);
     let storage = ctx.reserve_scoped(1024, "fallback cause storage released")
         .expect("all cause reservations are released");
     drop(storage);
+}
+
+#[test]
+fn transformed_annotation_identity_uses_one_text_bridge() {
+    let id = format!("rhino:test:point#{}", "x".repeat(1024));
+    let scan = scan_with_objects(&[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 1536;
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
+        .expect("empty root");
+    let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))
+        .expect("transaction");
+    let checkpoint = cadmpeg_ir::draft::ModelCheckpoint::capture(&transaction.session.document().model, &ctx)
+        .expect("checkpoint");
+    transaction.ir_mut().model.points.push(cadmpeg_ir::topology::Point::new(
+        id.clone().try_into().expect("identity"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).expect("point"), None,
+    ));
+    let mut scratch = ctx.reserve_scoped(0, "fixture traversal scratch").expect("scratch");
+    let links = transaction.transform_new_entities(&checkpoint.0, cadmpeg_ir::transform::Transform::identity(), &mut scratch)
+        .expect("borrow the identity until annotation copies it");
+    assert!(links.is_empty());
+    assert_eq!(transaction.session.document().model.points[0].id.as_str(), id);
+    assert_eq!(transaction.annotations.exactness().get(&id).expect("derived annotation").entity(), cadmpeg_ir::Exactness::Derived);
+    drop(links);
+    drop(scratch);
+    let storage = ctx.reserve_scoped(1536, "annotation bridge storage released")
+        .expect("all annotation scratch is released");
+    drop(storage);
+}
+
+#[test]
+fn staged_curve_links_preserve_work_and_storage_refusals() {
+    // Link text uses the same bytes as the earlier exactness lookup and does
+    // not raise its scratch peak. Probe its work and the link buffer's storage.
+    for (dimension, operation) in [
+        (cadmpeg_core::decode::ResourceDimension::WorkUnits, "Rhino Brep curve link text"),
+        (cadmpeg_core::decode::ResourceDimension::MaterializedBytes, "Rhino Brep carrier links"),
+    ] {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        dimension, operation, |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            if dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits {
+                policy.limits.max_work_units = cap;
+            } else {
+                policy.limits.max_materialized_bytes = cap;
+            }
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut arena_storage = ctx.reserve_scoped(0, "fixture arena scratch")?;
+            let mut link_storage = ctx.reserve_scoped(0, "fixture link scratch")?;
+            let mut staged = super::BrepDraft::default();
+            super::stage_curve_tree((&ctx, &mut arena_storage, &mut link_storage), &mut staged,
+                super::decoded_nurbs(super::line_nurbs(0.0, 1.0, false)), "curve", "root",
+                &super::test_association(), &DecodeContext::mint_unknown_id(0))
+                .map_err(|error| match error {
+                    crate::curves::GeometryError::Codec(error) => {
+                        if let cadmpeg_core::CodecError::ResourceLimit(ref limit) = error {
+                            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+                        }
+                        error
+                    },
+                    error => panic!("unexpected geometry error: {error}"),
+                })
+        });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == operation && limit.dimension == dimension));
+    }
 }
