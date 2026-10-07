@@ -229,13 +229,17 @@ pub(crate) fn parse_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Head
         .position(u8::is_ascii_digit)
         .ok_or(FramingError::InvalidHeader)?;
     if version[..first_digit].iter().any(|byte| *byte != b' ')
-        || version[first_digit..].iter().any(|byte| !byte.is_ascii_digit())
+        || version[first_digit..]
+            .iter()
+            .any(|byte| !byte.is_ascii_digit())
     {
         return Err(FramingError::InvalidHeader);
     }
     let text =
         std::str::from_utf8(&version[first_digit..]).map_err(|_| FramingError::InvalidHeader)?;
-    let value = text.parse::<u64>().map_err(|_| FramingError::InvalidHeader)?;
+    let value = text
+        .parse::<u64>()
+        .map_err(|_| FramingError::InvalidHeader)?;
     if value == 0 {
         return Err(FramingError::InvalidHeader);
     }
@@ -727,10 +731,12 @@ where
         needed: kind.width(),
     })?;
     let actual = match kind {
-        ChecksumKind::Crc16 => u32::from(View::u16_le_at(stored, 0).ok_or(FramingError::Truncated {
-            offset: checksum.start,
-            needed: 2,
-        })?),
+        ChecksumKind::Crc16 => {
+            u32::from(View::u16_le_at(stored, 0).ok_or(FramingError::Truncated {
+                offset: checksum.start,
+                needed: 2,
+            })?)
+        }
         ChecksumKind::Crc32 => View::u32_le_at(stored, 0).ok_or(FramingError::Truncated {
             offset: checksum.start,
             needed: 4,
@@ -750,9 +756,9 @@ where
                 "checksum range escapes chunk body",
             ));
         }
-        let data = bytes.get(range.clone()).ok_or_else(|| {
-            FramingError::structural(range.start, "checksum range escapes input")
-        })?;
+        let data = bytes
+            .get(range.clone())
+            .ok_or_else(|| FramingError::structural(range.start, "checksum range escapes input"))?;
         match kind {
             ChecksumKind::Crc16 => crc = crc16(ctx, crc, data)?,
             ChecksumKind::Crc32 => {
@@ -869,7 +875,11 @@ pub(crate) fn direct_checksum_ranges<'a>(
                 "Rhino checksum child ordering copy",
             )
             .map_err(FramingError::Resource)?;
-        values.extend(ctx.admit_iter(children, "Rhino checksum child ordering copy").map_err(FramingError::Resource)?.cloned());
+        values.extend(
+            ctx.admit_iter(children, "Rhino checksum child ordering copy")
+                .map_err(FramingError::Resource)?
+                .cloned(),
+        );
         ctx.stable_sort_by(
             &mut values,
             |value| &value.start,
@@ -882,7 +892,10 @@ pub(crate) fn direct_checksum_ranges<'a>(
         }
     };
     let mut cursor = body.start;
-    for child in ctx.admit_iter(children.as_slice(), "Rhino checksum child validation").map_err(FramingError::Resource)? {
+    for child in ctx
+        .admit_iter(children.as_slice(), "Rhino checksum child validation")
+        .map_err(FramingError::Resource)?
+    {
         if child.start < cursor || child.end < child.start || child.end > body.end {
             return Err(FramingError::Structural {
                 offset: child.start,
@@ -1117,7 +1130,9 @@ mod direct_range_tests {
     #[test]
     fn direct_checksum_ranges_validation_refuses_work_limit() {
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "Rhino checksum child validation", |cap| {
+            ResourceDimension::WorkUnits,
+            "Rhino checksum child validation",
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
@@ -1136,35 +1151,49 @@ mod direct_range_tests {
 
     #[test]
     fn direct_checksum_ranges_unsorted_sort_refuses_work_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Admit the order comparison, two copied ranges, and the core key scan.
-        policy.limits.max_work_units = 1 + 2 + 2;
-        let ctx = DecodeContext::new(&arena, &policy, false);
         let children = [30..40, 15..20];
-        assert!(matches!(
-            direct_checksum_ranges(&ctx, &(10..50), &children),
-            Err(FramingError::Resource(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "Rhino checksum child ordering sort"
-                    && Some(limit) == ctx.resource_refusal()
-        ));
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "Rhino checksum child ordering sort",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let ctx = DecodeContext::new(&arena, &policy, false);
+                let result = direct_checksum_ranges(&ctx, &(10..50), &children);
+                if let Err(FramingError::Resource(limit)) = &result {
+                    assert_eq!(Some(*limit), ctx.resource_refusal());
+                }
+                result.map(|_| ()).map_err(|error| match error {
+                    FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
+                    error => panic!("unexpected framing failure: {error:?}"),
+                })
+            },
+        );
         assert_eq!(children, [30..40, 15..20]);
     }
 
     #[test]
     fn direct_checksum_ranges_unsorted_copy_refuses_work_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        let ctx = DecodeContext::new(&arena, &policy, false);
-        assert!(matches!(
-            direct_checksum_ranges(&ctx, &(10..50), &[30..40, 15..20]),
-            Err(FramingError::Resource(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "Rhino checksum child ordering copy"
-                    && Some(limit) == ctx.resource_refusal()
-        ));
+        let children = [30..40, 15..20];
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "Rhino checksum child ordering copy",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let ctx = DecodeContext::new(&arena, &policy, false);
+                let result = direct_checksum_ranges(&ctx, &(10..50), &children);
+                if let Err(FramingError::Resource(limit)) = &result {
+                    assert_eq!(Some(*limit), ctx.resource_refusal());
+                }
+                result.map(|_| ()).map_err(|error| match error {
+                    FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
+                    error => panic!("unexpected framing failure: {error:?}"),
+                })
+            },
+        );
     }
 
     #[test]
@@ -1256,7 +1285,9 @@ mod direct_range_tests {
     #[test]
     fn direct_checksum_ranges_child_walk_refuses_instead_of_quiet_none() {
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "Rhino checksum child traversal", |cap| {
+            ResourceDimension::WorkUnits,
+            "Rhino checksum child traversal",
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
@@ -1297,20 +1328,30 @@ mod direct_range_tests {
     fn direct_checksum_ranges_verify_propagates_validation_walk_refusal() {
         for kind in [ChecksumKind::Crc16, ChecksumKind::Crc32] {
             cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::WorkUnits, "Rhino checksum child traversal", |cap| {
+                ResourceDimension::WorkUnits,
+                "Rhino checksum child traversal",
+                |cap| {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_work_units = cap;
                     let ctx = DecodeContext::new(&arena, &policy, false);
                     let children = [0..4, 4..8];
-                    let direct = direct_checksum_ranges(&ctx, &(0..8), &children)
-                        .map_err(|error| match error {
-                        FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
-                        error => panic!("unexpected framing failure: {error:?}"),
-                    })?;
+                    let direct =
+                        direct_checksum_ranges(&ctx, &(0..8), &children).map_err(|error| {
+                            match error {
+                                FramingError::Resource(limit) => {
+                                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                                }
+                                error => panic!("unexpected framing failure: {error:?}"),
+                            }
+                        })?;
                     let chunk = Chunk {
-                        header_start: 0, typecode: TCODE_CRC,
-                        form: ChunkBody::Long { body: 0..8, checksum: Some(kind) },
+                        header_start: 0,
+                        typecode: TCODE_CRC,
+                        form: ChunkBody::Long {
+                            body: 0..8,
+                            checksum: Some(kind),
+                        },
                     };
                     let mut bytes = vec![0; 8];
                     match kind {
@@ -1322,7 +1363,9 @@ mod direct_range_tests {
                         assert_eq!(Some(limit), ctx.resource_refusal());
                     }
                     result.map_err(|error| match error {
-                        FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
+                        FramingError::Resource(limit) => {
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                        }
                         error => panic!("unexpected framing failure: {error:?}"),
                     })
                 },

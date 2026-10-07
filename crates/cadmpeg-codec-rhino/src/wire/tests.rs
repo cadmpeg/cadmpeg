@@ -134,7 +134,6 @@ fn loss_message_retained_bytes_are_charged_once() {
     );
 }
 
-
 #[test]
 fn canonical_json_preserves_ordinary_raw_value_named_keys() {
     let value = serde_json::json!({
@@ -144,5 +143,8 @@ fn canonical_json_preserves_ordinary_raw_value_named_keys() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let text = super::admitted_canonical_json(&ctx, &value, "canonical raw-named key")
         .expect("the keys are ordinary object keys");
-    assert_eq!(text, r#"{"$serde_json::private::RawValue":"not-json","nested":{"$serde_json::private::RawValue":"[0]"}}"#);
+    assert_eq!(
+        text,
+        r#"{"$serde_json::private::RawValue":"not-json","nested":{"$serde_json::private::RawValue":"[0]"}}"#
+    );
 }

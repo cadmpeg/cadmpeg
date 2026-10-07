@@ -1,23 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{legacy_face_archive, ArchiveVersion, chunk_at};
-use cadmpeg_ir::{document::CadIr, math::Point3};
+use super::{chunk_at, legacy_face_archive, ArchiveVersion};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_ir::{document::CadIr, math::Point3};
 use cadmpeg_ir::{geometry::nurbs::NurbsCurve, topology::LoopBoundaryRole};
 
 fn parsed_brep(data: &[u8]) -> super::super::LegacyBrep {
     let ctx = cadmpeg_test_support::service_decode_context();
     let comment = chunk_at(data, 32, data.len(), ArchiveVersion::V1, false).unwrap();
-    let face = chunk_at(data, comment.next_offset(), data.len(), ArchiveVersion::V1, false).unwrap();
+    let face = chunk_at(
+        data,
+        comment.next_offset(),
+        data.len(),
+        ArchiveVersion::V1,
+        false,
+    )
+    .unwrap();
     let mut storage = ctx.reserve_scoped(0, "test parsing workspace").unwrap();
-    super::super::legacy_brep(&ctx, &mut storage, data, &face, super::super::MillimeterScale::IDENTITY).unwrap()
+    super::super::legacy_brep(
+        &ctx,
+        &mut storage,
+        data,
+        &face,
+        super::super::MillimeterScale::IDENTITY,
+    )
+    .unwrap()
 }
 
 #[test]
 fn v1_brep_first_trim_index_refuses_before_topology_output() {
     let data = legacy_face_archive();
     for (dimension, operation) in [
-        (ResourceDimension::MaterializedBytes, "Rhino V1 Brep first trim index"),
-        (ResourceDimension::WorkUnits, "Rhino V1 Brep first trim lookup"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "Rhino V1 Brep first trim index",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "Rhino V1 Brep first trim lookup",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let brep = parsed_brep(&data);
@@ -50,9 +70,14 @@ fn v1_brep_first_trim_index_keeps_distinct_faces_and_loops() {
         reversed: face.reversed,
         seam_glue: Vec::new(),
         surface: face.surface.clone(),
-        loops: face.loops.iter().map(|row| super::super::LegacyLoop {
-            role: row.role, trims: row.trims.clone(),
-        }).collect(),
+        loops: face
+            .loops
+            .iter()
+            .map(|row| super::super::LegacyLoop {
+                role: row.role,
+                trims: row.trims.clone(),
+            })
+            .collect(),
     };
     brep.faces.push(second);
     let ctx = cadmpeg_test_support::service_decode_context();
@@ -65,13 +90,27 @@ fn v1_brep_first_trim_index_keeps_distinct_faces_and_loops() {
     assert_eq!(ir.model.vertices.len(), 16);
     for row in &ir.model.loops {
         assert_eq!(row.coedges().len(), 4);
-        let positions: Vec<_> = row.coedges().iter().map(|id| {
-            ir.model.coedges.iter().position(|coedge| &coedge.id == id).unwrap()
-        }).collect();
+        let positions: Vec<_> = row
+            .coedges()
+            .iter()
+            .map(|id| {
+                ir.model
+                    .coedges
+                    .iter()
+                    .position(|coedge| &coedge.id == id)
+                    .unwrap()
+            })
+            .collect();
         for (slot, index) in positions.iter().enumerate() {
             let coedge = &ir.model.coedges[*index];
-            assert_eq!(row.next_coedge(&coedge.id), Some(&ir.model.coedges[positions[(slot + 1) % 4]].id));
-            assert_eq!(row.previous_coedge(&coedge.id), Some(&ir.model.coedges[positions[(slot + 3) % 4]].id));
+            assert_eq!(
+                row.next_coedge(&coedge.id),
+                Some(&ir.model.coedges[positions[(slot + 1) % 4]].id)
+            );
+            assert_eq!(
+                row.previous_coedge(&coedge.id),
+                Some(&ir.model.coedges[positions[(slot + 3) % 4]].id)
+            );
             assert_eq!(coedge.radial_next, coedge.id);
         }
     }
@@ -80,7 +119,9 @@ fn v1_brep_first_trim_index_keeps_distinct_faces_and_loops() {
 #[test]
 fn v1_topology_parent_walk_refuses_before_compression() {
     cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "Rhino V1 topology parent walk", |cap| {
+        ResourceDimension::WorkUnits,
+        "Rhino V1 topology parent walk",
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let arena = DecodeArena::new();
@@ -97,10 +138,19 @@ fn v1_topology_parent_walk_refuses_before_compression() {
 fn v1_curve_evaluation_charges_actual_quadratic_degree_steps() {
     let parse_ctx = cadmpeg_test_support::service_decode_context();
     let curve = NurbsCurve::from_checked_lanes(
-        &parse_ctx, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0),
-             Point3::new(2.0, 0.0, 0.0)], None, false,
-    ).unwrap().unwrap();
+        &parse_ctx,
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap()
+    .unwrap();
     // Three pole initializations, two degree levels, and three blends.
     // The endpoint selects its span directly, so no knot-span search runs.
     let mut policy = DecodePolicy::service();
@@ -112,3 +162,59 @@ fn v1_curve_evaluation_charges_actual_quadratic_degree_steps() {
     ctx.finish_session().unwrap();
 }
 
+#[test]
+fn v1_fixed_annotation_points_need_no_work_units() {
+    let data = [0_u8; 11 * 24];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut reader = super::super::BoundedReader::new(&data, 0, data.len()).unwrap();
+    let points = super::super::v1_fixed_points::<11>(&ctx, &mut reader, "dimension point").unwrap();
+    assert_eq!(points, vec![[cadmpeg_ir::scalar::FiniteReal::ZERO; 3]; 11]);
+    assert_eq!(reader.remaining(), 0);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn v1_leader_point_traversal_refuses_before_coordinates() {
+    let data = super::v1_annotation_records().remove(1);
+    let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino V1 leader point traversal",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+            super::super::v1_annotation(&ctx, &data, &chunk)
+        },
+    );
+    assert!(
+        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.used == 0 && limit.additional == 1)
+    );
+}
+
+#[test]
+fn v1_truncated_leader_points_have_no_traversal_charge() {
+    let complete = super::v1_annotation_records().remove(1);
+    let chunk = chunk_at(&complete, 0, complete.len(), ArchiveVersion::V1, false).unwrap();
+    let body = chunk.body();
+    let data = super::chunk(
+        super::TCODE_ANNOTATION_LEADER,
+        &complete[body.start..body.end - 24],
+    );
+    let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let result = super::super::v1_annotation(&ctx, &data, &chunk);
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::Malformed(message))
+        if message == "V1 leader point count exceeds the remaining bytes")
+    );
+    ctx.finish_session().unwrap();
+}

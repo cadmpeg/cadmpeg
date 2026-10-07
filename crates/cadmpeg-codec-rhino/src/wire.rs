@@ -72,8 +72,8 @@ pub(crate) fn admitted_json(
     })
 }
 
-/// Preserves the sorted object-key order of `serde_json::Value` without building
-/// an uncharged intermediate tree.
+/// Preserves the sorted object-key order of `serde_json::Value` with scoped
+/// storage for the intermediate tree.
 pub(crate) fn admitted_canonical_json(
     ctx: &DecodeContext<'_>,
     value: &impl serde::Serialize,
@@ -195,8 +195,13 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
     ) -> Result<Self::Value, A::Error> {
         let mut values = Vec::new();
         loop {
-            self.0.ctx.charge_work(1, self.0.operation).map_err(|error| self.0.fail(error))?;
-            let Some(value) = sequence.next_element_seed(self.0)? else { break };
+            self.0
+                .ctx
+                .charge_work(1, self.0.operation)
+                .map_err(|error| self.0.fail(error))?;
+            let Some(value) = sequence.next_element_seed(self.0)? else {
+                break;
+            };
             self.0
                 .ctx
                 .reserve_vec(&mut values, 1, self.0.operation)
@@ -208,8 +213,13 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
     fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut values = serde_json::Map::new();
         loop {
-            self.0.ctx.charge_work(1, self.0.operation).map_err(|error| self.0.fail(error))?;
-            let Some(key) = map.next_key_seed(CanonicalKeySeed(self.0))? else { break };
+            self.0
+                .ctx
+                .charge_work(1, self.0.operation)
+                .map_err(|error| self.0.fail(error))?;
+            let Some(key) = map.next_key_seed(CanonicalKeySeed(self.0))? else {
+                break;
+            };
             self.0
                 .ctx
                 .charge_collection_items(1, self.0.operation)

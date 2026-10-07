@@ -200,15 +200,19 @@ fn header_magic_scan_refuses_work_before_search() {
             bytes.extend(header("80"));
         }
         let refusal = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "Rhino header magic scan", |cap| {
+            ResourceDimension::WorkUnits,
+            "Rhino header magic scan",
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-                let result = parse_header(&ctx, &bytes).map(|_| ()).map_err(|error| match error {
-                    FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
-                    error => panic!("unexpected framing error before refusal: {error:?}"),
-                });
+                let result = parse_header(&ctx, &bytes)
+                    .map(|_| ())
+                    .map_err(|error| match error {
+                        FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+                        error => panic!("unexpected framing error before refusal: {error:?}"),
+                    });
                 if let Err(CodecError::ResourceLimit(limit)) = &result {
                     assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
                 }
@@ -550,13 +554,22 @@ fn checksum_direct_bytes_refuse_before_hashing() {
     let bytes =
         crate::test_support::test_dump::crc_chunk(ArchiveVersion::V5, 0x4000_8000, &[1, 2, 3, 4]);
     let chunk = chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V5, false).unwrap();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 4;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let result = verify_checksum(&ctx, &bytes, &chunk);
-    assert!(matches!(result, Err(FramingError::Resource(limit))
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino chunk checksum bytes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            verify_checksum(&ctx, &bytes, &chunk).map_err(|error| match error {
+                FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+                error => panic!("unexpected checksum failure: {error:?}"),
+            })
+        },
+    );
+    // One range-validation step precedes the four checksum bytes.
+    assert!(matches!(refusal, CodecError::ResourceLimit(limit)
         if limit.operation == "Rhino chunk checksum bytes" && limit.used == 1 && limit.additional == 4));
 }
 
