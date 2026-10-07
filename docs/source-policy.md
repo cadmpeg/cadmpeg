@@ -848,8 +848,10 @@ A sort's charge does not depend on the input's order, so a decode that sorts
 values gathered in an unspecified order still charges deterministically.
 `is_sorted_by` compares neighbours, each comparison charged one step and both
 operands' key costs, and stops at the first pair out of order; code whose input
-order is deterministic uses it to skip a sort. A stable sort of more than twenty
-values sorts an index array, whose sort admits the comparisons and index moves
-once, and then moves each value along its permutation cycle, admitting two
-value moves per value. Truncating, clearing, filling or
+order is deterministic uses it to skip a sort. A stable sort of twenty or fewer
+values inserts by adjacent swaps and compares every earlier neighbour without
+stopping where the value comes to rest, so its steps depend only on the length.
+A stable sort of more than twenty values sorts an index array, whose sort
+admits the comparisons and index moves once, and then gives each destination
+its value with one swap, admitting two value moves per value. Truncating, clearing, filling or
 compacting a vector charges nothing for the values it releases.
