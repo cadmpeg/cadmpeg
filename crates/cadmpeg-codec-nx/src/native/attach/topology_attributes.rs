@@ -245,8 +245,8 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
             return Ok(None);
         };
         if !ctx.equal_bytes(
-            field_use.attribute_class_use.as_str().as_bytes(),
-            class_use.attribute_class_use.as_str().as_bytes(),
+            field_use.attribute_class_use.as_bytes(),
+            class_use.attribute_class_use.as_bytes(),
             "NX attribute field class-use identity equality",
         )? || !ctx.equal_bytes(
             field_use.attribute_definition.as_bytes(),
@@ -380,9 +380,9 @@ fn parasolid_topology_attribute_class_names<'a>(
     for class_use in ctx.admit_iter(class_uses, "NX topology attribute class uses")? {
         for definition in ctx.admit_iter(definitions, "NX Parasolid class name lookup")? {
             if !(ctx.equal_bytes(
-                definition.id.as_str().as_bytes(),
+                definition.id.as_bytes(),
                 class_use.attribute_definition.as_bytes(),
-                "NX parasolid topology attribute class names equality",
+                "NX attribute class definition identity equality",
             )?) {
                 continue;
             }
@@ -404,7 +404,7 @@ fn parasolid_topology_attribute_class_names<'a>(
                         Some(existing) => !ctx.equal_bytes(
                             existing.as_bytes(),
                             name.as_bytes(),
-                            "NX parasolid topology attribute class names equality",
+                            "NX attribute class name ambiguity equality",
                         )?,
                         None => false,
                     } {
@@ -432,7 +432,7 @@ fn parasolid_topology_attribute_targets(
             || {
                 shell
                     .id
-                    .try_clone_for_decode(ctx, "NX Parasolid topology target identity")
+                    .try_clone_for_decode(ctx, "NX attribute shell target identity")
                     .map(AttributeTarget::Shell)
             },
         )?;
@@ -440,7 +440,7 @@ fn parasolid_topology_attribute_targets(
     for face in ctx.admit_iter(&ir.model.faces, "NX topology attribute faces")? {
         insert_parasolid_topology_target(ctx, reservation, &mut targets, face.id.as_str(), || {
             face.id
-                .try_clone_for_decode(ctx, "NX Parasolid topology target identity")
+                .try_clone_for_decode(ctx, "NX attribute face target identity")
                 .map(AttributeTarget::Face)
         })?;
     }
@@ -453,7 +453,7 @@ fn parasolid_topology_attribute_targets(
             || {
                 loop_
                     .id
-                    .try_clone_for_decode(ctx, "NX Parasolid topology target identity")
+                    .try_clone_for_decode(ctx, "NX attribute loop target identity")
                     .map(AttributeTarget::Loop)
             },
         )?;
@@ -461,7 +461,7 @@ fn parasolid_topology_attribute_targets(
     for edge in ctx.admit_iter(&ir.model.edges, "NX topology attribute edges")? {
         insert_parasolid_topology_target(ctx, reservation, &mut targets, edge.id.as_str(), || {
             edge.id
-                .try_clone_for_decode(ctx, "NX Parasolid topology target identity")
+                .try_clone_for_decode(ctx, "NX attribute edge target identity")
                 .map(AttributeTarget::Edge)
         })?;
     }
@@ -474,7 +474,7 @@ fn parasolid_topology_attribute_targets(
             || {
                 coedge
                     .id
-                    .try_clone_for_decode(ctx, "NX Parasolid topology target identity")
+                    .try_clone_for_decode(ctx, "NX attribute coedge target identity")
                     .map(AttributeTarget::Coedge)
             },
         )?;
@@ -488,7 +488,7 @@ fn parasolid_topology_attribute_targets(
             || {
                 vertex
                     .id
-                    .try_clone_for_decode(ctx, "NX Parasolid topology target identity")
+                    .try_clone_for_decode(ctx, "NX attribute vertex target identity")
                     .map(AttributeTarget::Vertex)
             },
         )?;

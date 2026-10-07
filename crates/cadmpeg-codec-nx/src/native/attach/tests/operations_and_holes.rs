@@ -908,9 +908,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
                 "EXTRACT_STRING",
                 &object_indices,
                 &[],
-                0,
-                0,
-                0,
+                [0, 0, 0],
                 &source_properties,
             ).unwrap(),
             Some(FeatureDefinition::Operation(FeatureOperation::TreeNode {
@@ -969,9 +967,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
                 "EXTRACT_STRING",
                 &object_indices,
                 &outputs,
-                body_references,
-                body_operands,
-                strings,
+                [body_references, body_operands, strings],
                 &properties,
             )
             .unwrap()
@@ -985,9 +981,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
             "EXTRACT_STRING",
             &object_indices,
             &[],
-            0,
-            0,
-            0,
+            [0, 0, 0],
             &extra_property,
         )
         .unwrap()

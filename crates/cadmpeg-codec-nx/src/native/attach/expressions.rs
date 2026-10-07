@@ -486,11 +486,14 @@ fn order_expression_dependencies(
     let mut emitted = reservation
         .with_storage(|| ctx.alloc_filled(count, false, "NX expression dependency order"))?;
     let mut order = Vec::new();
-    let mut records_iter = (0..count).into_iter();
-    while let Some(_) = ctx.next_charged(
-        &mut records_iter,
-        "NX order expression dependencies range traversal",
-    )? {
+    let mut records_iter = 0..count;
+    while ctx
+        .next_charged(
+            &mut records_iter,
+            "NX order expression dependencies range traversal",
+        )?
+        .is_some()
+    {
         let mut ready = None;
         let mut records_iter = expressions.iter().enumerate();
         while let Some((index, expression)) =
@@ -544,7 +547,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
     dimensions: &[crate::native::features::FeatureBlockDimensions],
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut records_iter = (dimensions).into_iter();
+    let mut records_iter = dimensions.iter();
     while let Some(dimension_set) =
         ctx.next_charged(&mut records_iter, "NX block dimension traversal")?
     {
@@ -557,12 +560,12 @@ pub(super) fn attach_block_dimension_parameter_consumers(
             Some((prefix, suffix)) => ctx.format_scoped_text(
                 &mut reservation,
                 format_args!("{prefix}feature{suffix}"),
-                "NX attach block dimension parameter consumers text",
+                "NX block parameter consumer identity text",
             )?,
             None => ctx.format_scoped_text(
                 &mut reservation,
                 format_args!("{}", dimension_set.operation_label),
-                "NX attach block dimension parameter consumers text",
+                "NX block parameter consumer identity text",
             )?,
         };
         for (ordinal, dimension) in dimension_set.dimensions.iter().enumerate() {
@@ -575,11 +578,11 @@ pub(super) fn attach_block_dimension_parameter_consumers(
             let Some(parameter_index) = ctx.rposition_by(
                 &ir.model.parameters,
                 |parameter| {
-                    Ok(ctx.equal_bytes(
+                    ctx.equal_bytes(
                         parameter.id.as_str().as_bytes(),
                         parameter_id.as_str().as_bytes(),
                         "NX attach block dimension parameter consumers equality",
-                    )?)
+                    )
                 },
                 "NX block dimension parameter lookup",
             )?
@@ -593,7 +596,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                 format_args!("block_dimension.{ordinal}"),
                 ctx.format_retained(
                     format_args!("{}", dimension_set.id),
-                    "NX attach block dimension parameter consumers text",
+                    "NX block dimension source property value",
                 )?,
             )?;
             let has_consumer = ctx.any_by(
@@ -611,7 +614,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                 // One more candidate than the map holds entries, so one of
                 // them is free; the `else` states that rather than asserting it.
                 let mut consumer_ordinal = None;
-                let mut records_iter = (0..=parameter.properties.len()).into_iter();
+                let mut records_iter = 0..=parameter.properties.len();
                 while let Some(candidate) =
                     ctx.next_charged(&mut records_iter, "NX block dimension consumer ordinal")?
                 {
@@ -620,7 +623,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                     let key = ctx.format_scoped_text(
                         &mut key_reservation,
                         format_args!("consumer.{candidate}"),
-                        "NX attach block dimension parameter consumers text",
+                        "NX block consumer property candidate key",
                     )?;
                     if !ctx.contains_key_btree_map(
                         &parameter.properties,
@@ -641,7 +644,7 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                     format_args!("consumer.{consumer_ordinal}"),
                     ctx.format_retained(
                         format_args!("{consumer}"),
-                        "NX attach block dimension parameter consumers text",
+                        "NX block consumer property value",
                     )?,
                 )?;
             }

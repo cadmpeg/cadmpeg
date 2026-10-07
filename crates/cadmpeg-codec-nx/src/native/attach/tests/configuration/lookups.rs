@@ -153,7 +153,7 @@ fn result_group_equality_cost_counts_member_text() {
                 .decode_cost(ctx, "NX group member equality cost")
                 .unwrap(),
             7 + 4
-        )
+        );
     });
     let error = crate::test_support::resource_refusal_at(
         &[],
