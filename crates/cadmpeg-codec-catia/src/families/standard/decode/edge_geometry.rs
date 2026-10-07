@@ -411,13 +411,14 @@ pub(super) fn standard_spline_line(
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
-) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<(CurveGeometry, [f64; 2])>, CodecError> {
     const TOLERANCE: f64 = 2e-3;
     ctx.charge_work_limit(0, "catia surface membership boundary")?;
 
-    let surfaces = support
-        .faces
-        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let surfaces = [
+        face_surface(ctx, ir, bindings, surface_indices, support.faces[0])?,
+        face_surface(ctx, ir, bindings, surface_indices, support.faces[1])?,
+    ];
     let [Some(left), Some(right)] = surfaces else {
         return Ok(None);
     };
@@ -511,11 +512,12 @@ pub(super) fn standard_spline_circle(
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
-) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<CurveGeometry>, CodecError> {
     ctx.charge_work_limit(0, "catia surface membership boundary")?;
-    let surfaces = support
-        .faces
-        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let surfaces = [
+        face_surface(ctx, ir, bindings, surface_indices, support.faces[0])?,
+        face_surface(ctx, ir, bindings, surface_indices, support.faces[1])?,
+    ];
     let [Some(left), Some(right)] = surfaces else {
         return Ok(None);
     };
@@ -603,11 +605,12 @@ pub(super) fn standard_spline_cylinder_plane(
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
-) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<CurveGeometry>, CodecError> {
     ctx.charge_work_limit(0, "catia surface membership boundary")?;
-    let surfaces = support
-        .faces
-        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let surfaces = [
+        face_surface(ctx, ir, bindings, surface_indices, support.faces[0])?,
+        face_surface(ctx, ir, bindings, surface_indices, support.faces[1])?,
+    ];
     let [Some(left), Some(right)] = surfaces else {
         return Ok(None);
     };
@@ -742,11 +745,12 @@ pub(super) fn standard_spline_perpendicular_cylinders(
     surface_indices: &HashMap<SurfaceId, usize>,
     support: &crate::families::standard::records::StandardCurveSupport,
     points: [usize; 2],
-) -> Result<Option<CurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<CurveGeometry>, CodecError> {
     ctx.charge_work_limit(0, "catia surface membership boundary")?;
-    let surfaces = support
-        .faces
-        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let surfaces = [
+        face_surface(ctx, ir, bindings, surface_indices, support.faces[0])?,
+        face_surface(ctx, ir, bindings, surface_indices, support.faces[1])?,
+    ];
     let [Some(left), Some(right)] = surfaces else {
         return Ok(None);
     };
@@ -1162,41 +1166,32 @@ pub(super) fn build_standard_edge_curve(
             let radius = admitted_radius.get();
             let start = ir.model.points[points[0]].position().get();
             let end = ir.model.points[points[1]].position().get();
-            let mut axes = ctx.collect_vec(
-                ctx.admit_iter(&support.faces, "catia_standard_edge_circle_axes")?
-                    .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
-                    .filter_map(|surface| {
+            // Two face carriers and at most two native carriers can state the
+            // axis; the endpoints state it only when no carrier does.
+            let mut axes = [None; 4];
+            for (slot, &face) in axes.iter_mut().zip(&support.faces) {
+                *slot =
+                    face_surface(ctx, ir, bindings, surface_indices, face)?.and_then(|surface| {
                         standard_circle_axis_from_carrier(center, radius, &surface.geometry)
-                    }),
-                "catia_standard_edge_circle_axes",
-            )?;
+                    });
+            }
             if let Some(native) = native_support {
-                for carrier in
-                    ctx.admit_iter(&native.carriers, "catia_standard_native_circle_carriers")?
-                {
-                    let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
+                for (slot, carrier) in axes[2..].iter_mut().zip(&native.carriers) {
+                    if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
                         carrier
-                    else {
-                        continue;
-                    };
-                    if let Some(axis) = standard_circle_axis_from_carrier(center, radius, surface) {
-                        ctx.push_vec(&mut axes, axis, "catia_standard_edge_circle_axes")?;
+                    {
+                        *slot = standard_circle_axis_from_carrier(center, radius, surface);
                     }
                 }
             }
-            if axes.is_empty() {
-                if let Some(axis) = circle_axis_from_endpoints(center, radius, start, end) {
-                    ctx.push_vec(&mut axes, axis, "catia_standard_edge_circle_axes")?;
-                }
+            if axes.iter().all(Option::is_none) {
+                axes[0] = circle_axis_from_endpoints(center, radius, start, end);
             }
-            let axis = axes.first().copied();
-            let conflicting_axes = if let Some(axis) = axis {
-                ctx.admit_iter(&axes, "catia_standard_edge_circle_axis_conflicts")?
-                    .skip(1)
-                    .any(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999)
-            } else {
-                false
-            };
+            let mut stated = axes.into_iter().flatten();
+            let axis = stated.next();
+            let conflicting_axes = axis.is_some_and(|axis| {
+                stated.any(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999)
+            });
             match axis.filter(|_| !conflicting_axes) {
                 Some(axis) if points[0] == points[1] => {
                     match full_circle_frame(center, radius, axis, start) {
@@ -1601,7 +1596,13 @@ pub(super) fn build_standard_edge_curve(
         } else {
             let side = |face| -> Result<IntcurveSupportSide, CodecError> {
                 let surface = match bindings.get(face) {
-                    Some((id, _, _)) if surface_indices.contains_key(id) => {
+                    Some((id, _, _))
+                        if ctx.contains_key_hash_map(
+                            surface_indices,
+                            id,
+                            "catia_standard_intersection_side_surface_lookup",
+                        )? =>
+                    {
                         Some(id.try_clone_for_decode(
                             ctx,
                             "catia_standard_intersection_side_surface_id",
@@ -1616,9 +1617,13 @@ pub(super) fn build_standard_edge_curve(
             };
             [side(support.faces[0])?, side(support.faces[1])?]
         };
-        if sides.iter().all(|side| side.surface.is_some())
-            && (native_support.is_some() || sides[0].surface != sides[1].surface)
-        {
+        let distinct_sides = match (&sides[0].surface, &sides[1].surface) {
+            (Some(first), Some(second)) => {
+                Some(!ctx.equal(first, second, "catia_standard_intersection_side_surfaces")?)
+            }
+            _ => None,
+        };
+        if distinct_sides.is_some_and(|distinct| native_support.is_some() || distinct) {
             let curve_parameter_range = param_range.or_else(|| {
                 geometry_is_unknown
                     .then(|| native_support.map_or([0.0, 1.0], |native| native.parameter_range))
@@ -1692,21 +1697,37 @@ pub(super) fn ensure_native_edge_support_surface(
     carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
-    let source = cgm_source(admission.context(), "surface", surface_object_id)?;
+    let ctx = admission.context();
+    let source = cgm_source(ctx, "surface", surface_object_id)?;
+    // A surface matches when its source object or, failing that, its exact
+    // geometry agrees; two distinct matching identities leave it ambiguous.
+    // Source objects and surface geometry have no decode cost, so those
+    // comparisons are unpriced; each visit and identity comparison is charged.
     let mut source_match = None::<&SurfaceId>;
     let mut source_ambiguous = false;
-    for surface in &ir.model.surfaces {
-        admission
-            .context()
-            .charge_work(1, "catia_native_edge_support_source_scan")?;
-        if surface.source_object.as_ref() == Some(&source) {
-            if source_match.is_some_and(|id| id != &surface.id) {
-                source_ambiguous = true;
-            } else {
-                source_match = Some(&surface.id);
+    ctx.fold(
+        &ir.model.surfaces,
+        (),
+        |(), surface| {
+            if surface.source_object.as_ref() == Some(&source) {
+                match source_match {
+                    Some(id)
+                        if !ctx.equal(
+                            id,
+                            &surface.id,
+                            "catia_native_edge_support_source_scan",
+                        )? =>
+                    {
+                        source_ambiguous = true;
+                    }
+                    Some(_) => {}
+                    None => source_match = Some(&surface.id),
+                }
             }
-        }
-    }
+            Ok(())
+        },
+        "catia_native_edge_support_source_scan",
+    )?;
     let source_matches_empty = source_match.is_none();
     if !source_ambiguous {
         if let Some(surface_id) = source_match {
@@ -1719,18 +1740,29 @@ pub(super) fn ensure_native_edge_support_surface(
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
         let mut geometry_match = None::<&SurfaceId>;
         let mut geometry_ambiguous = false;
-        for surface in &ir.model.surfaces {
-            admission
-                .context()
-                .charge_work(1, "catia_native_edge_support_geometry_scan")?;
-            if surface.geometry == *geometry {
-                if geometry_match.is_some_and(|id| id != &surface.id) {
-                    geometry_ambiguous = true;
-                } else {
-                    geometry_match = Some(&surface.id);
+        ctx.fold(
+            &ir.model.surfaces,
+            (),
+            |(), surface| {
+                if surface.geometry == *geometry {
+                    match geometry_match {
+                        Some(id)
+                            if !ctx.equal(
+                                id,
+                                &surface.id,
+                                "catia_native_edge_support_geometry_scan",
+                            )? =>
+                        {
+                            geometry_ambiguous = true;
+                        }
+                        Some(_) => {}
+                        None => geometry_match = Some(&surface.id),
+                    }
                 }
-            }
-        }
+                Ok(())
+            },
+            "catia_native_edge_support_geometry_scan",
+        )?;
         if source_matches_empty && !geometry_ambiguous {
             if let Some(surface_id) = geometry_match {
                 return surface_id.try_clone_for_decode(
@@ -1909,13 +1941,19 @@ pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>
                 return Ok(None);
             };
             selected[index] = choice_index;
-            let Some(prefix) = choices.get(..index + 1) else {
-                return Ok(None);
-            };
-            let compatible =
-                circular_ranges_are_nonoverlapping_or_coincident_by(ctx, prefix, |at| {
-                    choices[at].as_ref()[usize::from(selected[at])]
-                })?;
+            // The earlier selections are pairwise compatible already; the new
+            // range needs checking only against each of them.
+            let range = choices[index].as_ref()[usize::from(choice_index)];
+            let compatible = ctx.all_by(
+                0..index,
+                |at| {
+                    Ok(circular_ranges_are_compatible(
+                        choices[at].as_ref()[usize::from(selected[at])],
+                        range,
+                    ))
+                },
+                "catia_standard_circle_range_selection",
+            )?;
             if compatible {
                 match visit(ctx, choices, index + 1, selected, states)? {
                     Some(true) => {
@@ -1931,10 +1969,11 @@ pub(super) fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>
         Ok(Some(false))
     }
 
-    if ctx
-        .admit_iter(choices, "catia_standard_iteration")?
-        .any(|choice| choice.as_ref().is_empty())
-    {
+    if ctx.any_by(
+        choices,
+        |choice| Ok(choice.as_ref().is_empty()),
+        "catia_standard_iteration",
+    )? {
         return Ok(false);
     }
     Ok(visit(ctx, choices, 0, &mut [0; MAX_SELECTION_STATES], &mut 0)?.unwrap_or(false))
@@ -1945,14 +1984,22 @@ pub(super) fn circular_ranges_are_nonoverlapping_or_coincident(
     ctx: &DecodeContext<'_>,
     ranges: &[[f64; 2]],
 ) -> Result<bool, CodecError> {
-    circular_ranges_are_nonoverlapping_or_coincident_by(ctx, ranges, |index| ranges[index])
+    ctx.all_by(
+        ranges.iter().enumerate(),
+        |(left_index, &left)| {
+            ctx.all_by(
+                &ranges[left_index + 1..],
+                |&right| Ok(circular_ranges_are_compatible(left, right)),
+                "catia_standard_circle_range_pair_right",
+            )
+        },
+        "catia_standard_circle_range_pair_left",
+    )
 }
 
-pub(super) fn circular_ranges_are_nonoverlapping_or_coincident_by<T>(
-    ctx: &DecodeContext<'_>,
-    source: &[T],
-    range_at: impl Fn(usize) -> [f64; 2],
-) -> Result<bool, CodecError> {
+/// Two circular parameter ranges are compatible when they coincide or their
+/// arcs overlap by no more than the coarse geometry tolerance.
+fn circular_ranges_are_compatible(left: [f64; 2], right: [f64; 2]) -> bool {
     fn segments(range: [f64; 2]) -> [Option<[f64; 2]>; 2] {
         let span = range[1] - range[0];
         let start = range[0].rem_euclid(std::f64::consts::TAU);
@@ -1967,54 +2014,15 @@ pub(super) fn circular_ranges_are_nonoverlapping_or_coincident_by<T>(
         }
     }
 
-    for (left_index, _) in ctx
-        .admit_iter(source, "catia_standard_circle_range_pair_left")?
-        .enumerate()
-    {
-        let left = range_at(left_index);
-        let Some(first_right) = left_index.checked_add(1) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_standard_circle_range_pair_right",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        let Some(right_source) = source.get(first_right..) else {
-            return Err(ctx.refuse_codec_limit(
-                "catia_standard_circle_range_pair_right",
-                u64::MAX,
-                u64::MAX,
-            ));
-        };
-        for (relative, _) in ctx
-            .admit_iter(right_source, "catia_standard_circle_range_pair_right")?
-            .enumerate()
-        {
-            let Some(right_index) = first_right.checked_add(relative) else {
-                return Err(ctx.refuse_codec_limit(
-                    "catia_standard_circle_range_pair_right",
-                    u64::MAX,
-                    u64::MAX,
-                ));
-            };
-            let right = range_at(right_index);
-            let coincident = (right[0] - left[0]).abs() <= EPS_STANDARD_DECODE_GEOMETRY
-                && (right[1] - left[1]).abs() <= EPS_STANDARD_DECODE_GEOMETRY;
-            if coincident {
-                continue;
-            }
-            for left_segment in segments(left).into_iter().flatten() {
-                for right_segment in segments(right).into_iter().flatten() {
-                    if left_segment[1].min(right_segment[1]) - left_segment[0].max(right_segment[0])
-                        > EPS_STANDARD_DECODE_COARSE_GEOMETRY
-                    {
-                        return Ok(false);
-                    }
-                }
-            }
-        }
-    }
-    Ok(true)
+    let coincident = (right[0] - left[0]).abs() <= EPS_STANDARD_DECODE_GEOMETRY
+        && (right[1] - left[1]).abs() <= EPS_STANDARD_DECODE_GEOMETRY;
+    coincident
+        || segments(left).into_iter().flatten().all(|left_segment| {
+            segments(right).into_iter().flatten().all(|right_segment| {
+                left_segment[1].min(right_segment[1]) - left_segment[0].max(right_segment[0])
+                    <= EPS_STANDARD_DECODE_COARSE_GEOMETRY
+            })
+        })
 }
 
 pub(super) struct StandardCircleParamRangeInputs<
@@ -2060,7 +2068,7 @@ pub(super) fn standard_circle_param_range(
 
     let mut selected: Option<[f64; 2]> = None;
     for face in &support.faces {
-        let Some(surface) = face_surface(ir, bindings, surface_indices, *face) else {
+        let Some(surface) = face_surface(ctx, ir, bindings, surface_indices, *face)? else {
             continue;
         };
         let Some(binding) = bindings.get(*face) else {
@@ -2191,6 +2199,43 @@ pub(super) fn native_support_circle_param_range(
     .transpose()
 }
 
+/// Each face binding's surface geometry, through one index of the surface
+/// arena; the first surface with an identity owns it.
+fn bound_face_geometries<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    surfaces: &'a [Surface],
+    bindings: &[(SurfaceId, bool, usize)],
+) -> Result<
+    (
+        Vec<Option<&'a SurfaceGeometry>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    const OPERATION: &str = "catia_standard_bound_face_geometries";
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut first_surfaces = HashMap::<&SurfaceId, usize>::new();
+    for (index, surface) in ctx.admit_iter(surfaces, OPERATION)?.enumerate() {
+        if ctx
+            .get_hash_map(&first_surfaces, &&surface.id, OPERATION)?
+            .is_none()
+        {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut first_surfaces, &surface.id, index, OPERATION)
+            })?;
+        }
+    }
+    let mut geometries = Vec::new();
+    ctx.reserve_scoped_vec(&mut storage, &mut geometries, bindings.len(), OPERATION)?;
+    for (surface_id, _, _) in ctx.admit_iter(bindings, OPERATION)? {
+        geometries.push(
+            ctx.get_hash_map(&first_surfaces, &surface_id, OPERATION)?
+                .map(|&index| &surfaces[index].geometry),
+        );
+    }
+    Ok((geometries, storage))
+}
+
 pub(super) fn attach_standard_circles(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -2199,50 +2244,45 @@ pub(super) fn attach_standard_circles(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut plans = Vec::new();
+    let (face_geometries, mut storage) = bound_face_geometries(ctx, &ir.model.surfaces, bindings)?;
     for support in ctx.admit_iter(supports, "catia_standard_attached_circles")? {
         let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
             support.geometry
         else {
             continue;
         };
-        let admitted_center = center;
-        let admitted_radius = radius;
-        let center = center.get();
-        let radius = radius.get();
-        let axes = ctx.try_collect_vec(
-            ctx.admit_iter(&support.faces, "catia_standard_attached_circle_faces")?
-                .map(|face| -> Result<_, cadmpeg_core::CodecError> {
-                    let Some((surface_id, _, _)) = bindings.get(*face) else {
-                        return Ok(None);
-                    };
-                    let Some(surface) = ctx
-                        .admit_iter(
-                            &ir.model.surfaces,
-                            "catia_standard_attached_circle_surfaces",
-                        )?
-                        .find(|surface| surface.id == *surface_id)
-                    else {
-                        return Ok(None);
-                    };
-                    Ok(standard_circle_axis_from_carrier(
-                        center,
-                        radius,
-                        &surface.geometry,
-                    ))
+        let mut stated = support.faces.into_iter().filter_map(|face| {
+            face_geometries
+                .get(face)
+                .copied()
+                .flatten()
+                .and_then(|geometry| {
+                    standard_circle_axis_from_carrier(center.get(), radius.get(), geometry)
                 })
-                .filter_map(Result::transpose),
-            "catia_standard_attached_circle_axes",
-        )?;
-        let Some(axis) = axes.first().copied() else {
+        });
+        let Some(axis) = stated.next() else {
             continue;
         };
-        if ctx
-            .admit_iter(&axes, "catia_standard_attached_circle_axis_conflicts")?
-            .skip(1)
-            .any(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999)
-        {
+        if stated.any(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999) {
             continue;
         }
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut plans,
+            (support, axis),
+            "catia_standard_attached_circle_plans",
+        )?;
+    }
+    drop(face_geometries);
+    for &(support, axis) in ctx.admit_iter(&plans, "catia_standard_attached_circle_plans")? {
+        let crate::families::standard::records::StandardCurveGeometry::Circle {
+            center: admitted_center,
+            radius: admitted_radius,
+        } = support.geometry
+        else {
+            continue;
+        };
         let index = ir.model.curves.len();
         let id = standard_id(
             admission.context(),
@@ -2470,6 +2510,8 @@ pub(super) fn attach_standard_lines(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut plans = Vec::new();
+    let (face_geometries, mut storage) = bound_face_geometries(ctx, &ir.model.surfaces, bindings)?;
     for support in ctx.admit_iter(supports, "catia_standard_attached_lines")? {
         if !matches!(
             support.geometry,
@@ -2477,12 +2519,11 @@ pub(super) fn attach_standard_lines(
         ) {
             continue;
         }
-        let Some((origin_a, normal_a)) = plane_for_face(ctx, ir, bindings, support.faces[0])?
-        else {
+        let plane = |face: usize| plane_of(face_geometries.get(face).copied().flatten()?);
+        let Some((origin_a, normal_a)) = plane(support.faces[0]) else {
             continue;
         };
-        let Some((origin_b, normal_b)) = plane_for_face(ctx, ir, bindings, support.faces[1])?
-        else {
+        let Some((origin_b, normal_b)) = plane(support.faces[1]) else {
             continue;
         };
         let Some((origin, direction)) =
@@ -2490,6 +2531,17 @@ pub(super) fn attach_standard_lines(
         else {
             continue;
         };
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut plans,
+            (support, origin, direction),
+            "catia_standard_attached_line_plans",
+        )?;
+    }
+    drop(face_geometries);
+    for &(support, origin, direction) in
+        ctx.admit_iter(&plans, "catia_standard_attached_line_plans")?
+    {
         let index = ir.model.curves.len();
         let id = standard_id(
             admission.context(),
@@ -2567,27 +2619,12 @@ pub(super) fn plane_intersection_line(
     origin.is_finite().then_some((origin, direction))
 }
 
-pub(super) fn plane_for_face(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    bindings: &[(SurfaceId, bool, usize)],
-    face: usize,
-) -> Result<Option<(cadmpeg_ir::math::Point3, Vector3)>, CodecError> {
-    let Some((surface_id, _, _)) = bindings.get(face) else {
-        return Ok(None);
-    };
-    let Some(surface) = ctx
-        .admit_iter(&ir.model.surfaces, "catia_standard_plane_for_face_surfaces")?
-        .find(|surface| surface.id == *surface_id)
-    else {
-        return Ok(None);
-    };
-    Ok(match &surface.geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin().get();
-            let normal = plane_surface.frame().axis().as_raw();
-            Some((origin, *normal))
-        }
+fn plane_of(geometry: &SurfaceGeometry) -> Option<(Point3, Vector3)> {
+    match geometry {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => Some((
+            plane_surface.origin().get(),
+            *plane_surface.frame().axis().as_raw(),
+        )),
         _ => None,
-    })
+    }
 }
