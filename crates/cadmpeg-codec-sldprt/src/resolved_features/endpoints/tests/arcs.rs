@@ -1840,16 +1840,21 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
         ["start", "end"]
     );
     crate::test_support::work_refusal_at("deduplicate SLDPRT marker104 arc centers", |ctx| {
-        super::legacy_marker104_arc_center(ctx, &payload, &entities[0], &markers, endpoints)
+        super::legacy_marker104_arc_center(ctx, &payload, &entities[0], &markers, endpoints,
+            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &payload)?)?)
     });
     assert_eq!(
+        { let ctx = cadmpeg_test_support::service_decode_context();
+        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap();
         super::legacy_marker104_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
+            &ctx,
             &payload,
             &entities[0],
             &markers,
             endpoints,
+            &geometry,
         )
+        }
         .unwrap(),
         Some([0.0, 1.0])
     );

@@ -2506,13 +2506,14 @@ marker,
                                         marker,
                                         &object_markers,
                                         [endpoints[0], endpoints[1]],
+                                        &geometry_index,
                                     )? {
                                         Some(center) => Some(center),
                                         None => legacy_compact_diameter_arc_center(
                                             ctx,
                                             &lane.native_payload,
                                             marker,
-                                            &object_markers,
+                                            &geometry_index,
                                             [endpoints[0], endpoints[1]],
                                         )?,
                                     };

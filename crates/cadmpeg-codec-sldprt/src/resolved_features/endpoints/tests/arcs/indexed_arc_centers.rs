@@ -223,16 +223,20 @@ fn compact_legacy_bounded_arc_uses_its_diameter_center_marker() {
     let markers = [&start, &center, &end, &off_axis];
 
     crate::test_support::work_refusal_at("deduplicate SLDPRT endpoint centers", |ctx| {
-        legacy_compact_diameter_arc_center(ctx, &payload, &curve, &markers, [&start, &end])
+        legacy_compact_diameter_arc_center(ctx, &payload, &curve,
+            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(ctx, &payload)?)?, [&start, &end])
     });
     assert_eq!(
+        { let ctx = cadmpeg_test_support::service_decode_context();
+        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()).unwrap();
         legacy_compact_diameter_arc_center(
-            &cadmpeg_test_support::service_decode_context(),
+            &ctx,
             &payload,
             &curve,
-            &markers,
+            &geometry,
             [&start, &end]
         )
+        }
         .unwrap(),
         Some([0.0, 0.0])
     );

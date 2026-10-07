@@ -2,7 +2,7 @@
 
 pub(super) mod geometry_index;
 pub(super) mod arc_centers;
-use arc_centers::unique_arc_center_marker;
+use arc_centers::{unique_arc_center_marker, PointPositionQuery};
 use geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex, MarkerRoster};
 
 use super::curves::compact_bounded_curve_tangent;
@@ -2845,6 +2845,7 @@ pub(super) fn legacy_marker104_arc_center(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
     endpoints: [&SketchInputEntity; 2],
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT legacy marker104 arc center";
     let (center, _storage) = ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
@@ -2859,20 +2860,10 @@ pub(super) fn legacy_marker104_arc_center(
     let Some((first_u, first_v, second_u, second_v)) = eligibility else {
         return Ok(None);
     };
-    let mut centers = collect_marker_points(
-        ctx,
-        markers,
-        curve,
-        |marker, center| {
-            let first_radius = (first_u - center[0]).hypot(first_v - center[1]);
-            let second_radius = (second_u - center[0]).hypot(second_v - center[1]);
-            Ok(is_point_marker(marker)
-                && first_radius > 0.0
-                && same_dimension_length(first_radius, second_radius)
-                && !same_marker(ctx, marker, endpoints[0])?
-                && !same_marker(ctx, marker, endpoints[1])?)
-        },
-        OPERATION,
+    let Some(positions) = geometry.point_positions(curve)? else { return Ok(None); };
+    let (mut centers, _centers_storage) = positions.point_candidates(ctx,
+        PointPositionQuery::EqualRadii { start: Point2::new(first_u, first_v), end: Point2::new(second_u, second_v) },
+        [Some(endpoints[0].id()), Some(endpoints[1].id())],
     )?;
     sort_endpoint_points(ctx, &mut centers, OPERATION)?;
     ctx.dedup_by(
@@ -2897,7 +2888,7 @@ pub(super) fn legacy_compact_diameter_arc_center(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
     endpoints: [&SketchInputEntity; 2],
 ) -> Result<Option<[f64; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT legacy compact diameter arc center";
@@ -2923,18 +2914,10 @@ pub(super) fn legacy_compact_diameter_arc_center(
     let Some(midpoint) = eligibility else {
         return Ok(None);
     };
-    let mut centers = collect_marker_points(
-        ctx,
-        markers,
-        curve,
-        |marker, center| {
-            Ok(is_point_marker(marker)
-                && same_dimension_length(center[0], midpoint[0])
-                && same_dimension_length(center[1], midpoint[1])
-                && !same_marker(ctx, marker, endpoints[0])?
-                && !same_marker(ctx, marker, endpoints[1])?)
-        },
-        OPERATION,
+    let Some(positions) = geometry.point_positions(curve)? else { return Ok(None); };
+    let (mut centers, _centers_storage) = positions.point_candidates(ctx,
+        PointPositionQuery::Coordinates { point: Point2::new(midpoint[0], midpoint[1]) },
+        [Some(endpoints[0].id()), Some(endpoints[1].id())],
     )?;
     sort_endpoint_points(ctx, &mut centers, OPERATION)?;
     ctx.dedup_vec(&mut centers, "deduplicate SLDPRT endpoint centers")?;
@@ -3536,6 +3519,7 @@ circle: &SketchInputEntity,
 geometry: &MarkerGeometryIndex<'a, '_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT compact profile full circle";
+    let (circle, _storage) = ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
     let eligibility = (|| {
         let offset = usize::try_from(circle.offset()).ok()?;
         let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
@@ -3617,9 +3601,9 @@ geometry: &MarkerGeometryIndex<'a, '_, '_>,
         .copied();
     let mut radials = Vec::new();
     for marker in ctx
-        .admit_iter(points, OPERATION)?
+        .admit_iter(geometry.object_markers(ctx, circle, Some(u32::from(radial_index)))?, OPERATION)?
         .copied()
-        .filter(|marker| marker.object_index() == Some(u32::from(radial_index)))
+        .filter(|marker| is_point_marker(marker))
         .chain(positional)
     {
         let Some(radial) = marker
@@ -3660,6 +3644,8 @@ geometry: &MarkerGeometryIndex<'a, '_, '_>,
         let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
         Some((center, radius))
     })())
+    })?;
+    Ok(circle)
 }
 
 pub(super) fn compact_legacy_terminal_diameter_circle<'a>(
@@ -3959,11 +3945,19 @@ geometry: &MarkerGeometryIndex<'a, '_, '_>,
         return Ok(None);
     };
     let direct_radial = if terminal {
-        ctx.position_by(
-            coordinates,
-            |marker| Ok(marker.object_index() == Some(u32::from(raw_index_u16))),
-            OPERATION,
-        )?
+        let group = geometry.object_markers(ctx, circle, Some(u32::from(raw_index_u16)))?;
+        let first_offset = ctx.fold(group, None, |first: Option<u64>, marker| {
+            Ok(Some(first.map_or(marker.offset(), |offset| offset.min(marker.offset()))))
+        }, OPERATION)?;
+        match first_offset {
+            Some(offset) => {
+                let first = ctx.partition_point(coordinates, |marker| Ok(marker.offset() < offset), OPERATION)?;
+                let last = ctx.partition_point(&coordinates[first..], |marker| Ok(marker.offset() == offset), OPERATION)? + first;
+                ctx.position_by(&coordinates[first..last], |marker| Ok(marker.object_index() == Some(u32::from(raw_index_u16))), OPERATION)?
+                    .map(|index| first + index)
+            }
+            None => None,
+        }
     } else {
         None
     };

@@ -215,5 +215,89 @@ pub(in crate::resolved_features) fn unique_arc_center_marker(
     Ok(match centers.as_slice() { [(_, center)] => Some(*center), _ => None })
 }
 
+/// Exact point predicates with conservative position bounds.
+#[derive(Clone, Copy)]
+pub(in crate::resolved_features) enum PointPositionQuery {
+    EqualRadii { start: Point2, end: Point2 },
+    Coordinates { point: Point2 },
+}
+
+const EPS_RELATIVE_POINT_MATCH: f64 = 1.0e-9;
+
+impl PointPositionQuery {
+    fn accepts(self, point: Point2) -> bool {
+        use crate::resolved_features::relation_loci::same_dimension_length;
+        match self {
+            Self::EqualRadii { start, end } => {
+                let radius = (start.u - point.u).hypot(start.v - point.v);
+                let end_radius = (end.u - point.u).hypot(end.v - point.v);
+                radius > 0.0 && same_dimension_length(radius, end_radius)
+            }
+            Self::Coordinates { point: target } =>
+                same_dimension_length(point.u, target.u) && same_dimension_length(point.v, target.v),
+        }
+    }
+
+    fn may_match(self, node: &ArcCenterNode) -> bool {
+        match self {
+            Self::EqualRadii { start, end } => node.may_match(start, end, EPS_RELATIVE_POINT_MATCH),
+            Self::Coordinates { point } => {
+                if !node.finite || !point.u.is_finite() || !point.v.is_finite() { return true; }
+                let [umin, umax, vmin, vmax] = node.bounds;
+                let overlaps = |lower: f64, upper: f64, coordinate: f64| {
+                    // Twice the relative predicate's maximum scale covers subtraction rounding.
+                    let margin = 2.0 * EPS_RELATIVE_POINT_MATCH * lower.abs().max(upper.abs()).max(coordinate.abs()).max(1.0);
+                    lower - coordinate <= margin && coordinate - upper <= margin
+                };
+                overlaps(umin, umax, point.u) && overlaps(vmin, vmax, point.v)
+            }
+        }
+    }
+}
+
+impl ArcCenterIndex<'_, '_> {
+    /// Numeric candidate coordinates remain scoped until the caller finishes its query.
+    pub(in crate::resolved_features) fn point_candidates<'query>(
+        &self,
+        ctx: &'query DecodeContext<'_>,
+        query: PointPositionQuery,
+        excluded: [Option<&str>; 2],
+    ) -> Result<(Vec<[f64; 2]>, cadmpeg_core::decode::ScopedReservation<'query>), CodecError> {
+        const OPERATION: &str = "match SLDPRT indexed point positions";
+        ctx.with_scoped_storage(OPERATION, || {
+            let mut points = Vec::new();
+            if !self.nodes.is_empty() { self.visit_points(ctx, 0, query, excluded, &mut points)?; }
+            Ok(points)
+        })
+    }
+
+    fn visit_points(
+        &self, ctx: &DecodeContext<'_>, index: usize, query: PointPositionQuery,
+        excluded: [Option<&str>; 2], points: &mut Vec<[f64; 2]>,
+    ) -> Result<(), CodecError> {
+        const OPERATION: &str = "match SLDPRT indexed point positions";
+        ctx.fold(std::slice::from_ref(&self.nodes[index]), (), |(), node| {
+            if !query.may_match(node) { return Ok(()); }
+            if let Some((left, right)) = node.children {
+                self.visit_points(ctx, left, query, excluded, points)?;
+                return self.visit_points(ctx, right, query, excluded, points);
+            }
+            for &index in ctx.admit_iter(&self.order[node.range.clone()], OPERATION)? {
+                let record = &self.records[index];
+                if !query.accepts(record.point) { continue; }
+                if let Some(reference) = record.reference {
+                    let mut rejected = false;
+                    for excluded in excluded.into_iter().flatten() {
+                        if ctx.equal(reference, excluded, OPERATION)? { rejected = true; break; }
+                    }
+                    if rejected { continue; }
+                }
+                ctx.push_vec(points, [record.point.u, record.point.v], OPERATION)?;
+            }
+            Ok(())
+        }, OPERATION)
+    }
+}
+
 #[cfg(test)]
 mod tests;
