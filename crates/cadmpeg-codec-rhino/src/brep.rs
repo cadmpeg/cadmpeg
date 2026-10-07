@@ -2941,7 +2941,10 @@ fn validate_regions(
         };
         sides.push(ResolvedFaceSide { face, region });
     }
-    let mut listed_sides = HashSet::new();
+    let mut listed_storage = ctx.reserve_scoped(0, "Rhino Brep listed region sides")?;
+    let mut listed_sides = listed_storage.with_storage(|| {
+        ctx.alloc_filled(sides.len(), false, "Rhino Brep listed region sides")
+    })?;
     for (index, region) in ctx
         .admit_iter(&raw.regions[..], "Rhino validate regions traversal")
         .map_err(cadmpeg_core::CodecError::from)?
@@ -2958,10 +2961,9 @@ fn validate_regions(
             .map_err(cadmpeg_core::CodecError::from)?
         {
             let side = slot(ctx, *side, raw.face_sides.len(), "region side")?;
-            if !listed_sides.contains(&side) {
-                ctx.reserve_set(&mut listed_sides, 1, "Rhino Brep listed region sides")?;
-            }
-            if !listed_sides.insert(side) || sides[side].region != Some(index) {
+            if std::mem::replace(&mut listed_sides[side], true)
+                || sides[side].region != Some(index)
+            {
                 return Err(error(
                     region.source_range.start,
                     "region membership is not reciprocal",
@@ -2971,7 +2973,7 @@ fn validate_regions(
     }
     if ctx.any_by(
         sides[..].iter().enumerate(),
-        |(index, side)| Ok(side.region.is_some() && !listed_sides.contains(&index)),
+        |(index, side)| Ok(side.region.is_some() && !listed_sides[index]),
         "Rhino validate regions traversal",
     )? {
         return Err(error(
