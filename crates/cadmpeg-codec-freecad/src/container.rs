@@ -187,7 +187,13 @@ pub(crate) fn entry_records(
                         "FCStd entry reference index",
                     )?
                     .or_default();
-                if owners.last() != Some(&property.id.as_str()) {
+                let repeated = match owners.last() {
+                    Some(last) => {
+                        ctx.equal(*last, property.id.as_str(), "FCStd entry reference index")?
+                    }
+                    None => false,
+                };
+                if !repeated {
                     ctx.push_vec(owners, property.id.as_str(), "FCStd entry reference index")?;
                 }
                 Ok::<(), CodecError>(())
