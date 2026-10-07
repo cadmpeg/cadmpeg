@@ -124,16 +124,32 @@ fn uri_base_member_refuses_temporary_byte_limit() {
 #[test]
 fn root_reference_note_refuses_retained_byte_limit() {
     // The note owns its formatted bytes; the vector slot is admitted on insertion.
-    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::RetainedBytes, "step_zip_reference_note", |cap| {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).expect("test context");
-        let mut notes = Vec::new();
-        let result = super::push_reference_note(&ctx, &mut notes, "internal resource ", crate::parse::ReferenceName::Entity(1), "part.p21", None, None);
-        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-        result
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "step_zip_reference_note",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy)
+                    .expect("test context");
+            let mut notes = Vec::new();
+            let result = super::push_reference_note(
+                &ctx,
+                &mut notes,
+                "internal resource ",
+                crate::parse::ReferenceName::Entity(1),
+                "part.p21",
+                None,
+                None,
+            );
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+            }
+            result
+        },
+    );
 }
 
 use std::io::{Cursor, Read as _};
@@ -1134,19 +1150,31 @@ fn forwarded_anchor_lookup_refuses_caller_work_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid anchor exchange");
-    let bindings = exchange.anchors().iter().filter_map(|anchor| {
-        let crate::parse::Value::Resource(uri) = &anchor.value else { return None; };
-        Some((anchor.name.as_str(), uri.as_str()))
-    }).collect::<std::collections::BTreeMap<_, _>>();
-    cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, "step_zip_anchor_lookup", |cap| {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        crate::test_support::with_policy_context(SOURCE, &policy, |_, ctx| {
-            let result = super::forwarded_reference_uri(&bindings, "#ac", ctx).map(|_| ());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal)); }
-            result
+    let bindings = exchange
+        .anchors()
+        .iter()
+        .filter_map(|anchor| {
+            let crate::parse::Value::Resource(uri) = &anchor.value else {
+                return None;
+            };
+            Some((anchor.name.as_str(), uri.as_str()))
         })
-    });
+        .collect::<std::collections::BTreeMap<_, _>>();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "step_zip_anchor_lookup",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(SOURCE, &policy, |_, ctx| {
+                let result = super::forwarded_reference_uri(&bindings, "#ac", ctx).map(|_| ());
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                }
+                result
+            })
+        },
+    );
     crate::test_support::with_service_context(SOURCE, |_, ctx| {
         assert_eq!(
             super::forwarded_reference_uri(&bindings, "#ac", ctx).unwrap(),

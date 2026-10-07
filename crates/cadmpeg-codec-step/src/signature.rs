@@ -144,11 +144,11 @@ impl<'a> Ber<'a> {
             self.at = end;
             // The length uses at most one machine word of octets.
             bytes.iter().try_fold(0usize, |value, byte| {
-                    value
-                        .checked_shl(8)
-                        .and_then(|value| value.checked_add(usize::from(*byte)))
-                        .ok_or("BER length overflow")
-                })?
+                value
+                    .checked_shl(8)
+                    .and_then(|value| value.checked_add(usize::from(*byte)))
+                    .ok_or("BER length overflow")
+            })?
         };
         let end = self.at.checked_add(length).ok_or("BER value overflow")?;
         let value = self.input.get(self.at..end).ok_or("truncated BER value")?;

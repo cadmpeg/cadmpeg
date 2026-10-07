@@ -160,7 +160,13 @@ fn schema_identifier_form<'a>(
 ) -> Result<SchemaIdentifierForm<'a>, CodecError> {
     let identifier = ctx.trim_text(identifier, "STEP schema identifier trim")?;
     if identifier.is_empty()
-        || ctx.position_by(identifier.chars().enumerate(), |(index, _)| Ok(index == 1024), "STEP schema identifier characters")?.is_some()
+        || ctx
+            .position_by(
+                identifier.chars().enumerate(),
+                |(index, _)| Ok(index == 1024),
+                "STEP schema identifier characters",
+            )?
+            .is_some()
     {
         return Ok(SchemaIdentifierForm::Invalid);
     }
@@ -292,7 +298,9 @@ fn schema_oid_components<'a>(
     let mut at = 0;
     let mut failed = false;
     Ok(std::iter::from_fn(move || {
-        if failed { return None; }
+        if failed {
+            return None;
+        }
         let mut start = None;
         while at < value.len() {
             if let Err(error) = ctx.charge_work(1, "STEP schema OID characters") {
@@ -304,8 +312,12 @@ fn schema_oid_components<'a>(
             let character = value[at..].chars().next()?;
             at += character.len_utf8();
             if character.is_whitespace() {
-                if let Some(start) = start { return Some(Ok(&value[start..end])); }
-            } else { start.get_or_insert(end); }
+                if let Some(start) = start {
+                    return Some(Ok(&value[start..end]));
+                }
+            } else {
+                start.get_or_insert(end);
+            }
         }
         start.map(|start| Ok(&value[start..at]))
     }))
@@ -411,16 +423,26 @@ fn valid_schema_oid_number(ctx: &DecodeContext<'_>, value: &str) -> Result<bool,
 
 fn valid_schema_oid_name(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
     let mut previous_hyphen = false;
-    Ok(!value.is_empty() && ctx.all_by(value.as_bytes().iter().enumerate(), |(index, byte)| {
-        if index == 0 { return Ok(byte.is_ascii_lowercase()); }
-        if byte.is_ascii_alphabetic() || byte.is_ascii_digit() {
-            previous_hyphen = false;
-            Ok(true)
-        } else if *byte == b'-' && !previous_hyphen {
-            previous_hyphen = true;
-            Ok(true)
-        } else { Ok(false) }
-    }, "STEP schema OID name bytes")? && !value.ends_with('-'))
+    Ok(!value.is_empty()
+        && ctx.all_by(
+            value.as_bytes().iter().enumerate(),
+            |(index, byte)| {
+                if index == 0 {
+                    return Ok(byte.is_ascii_lowercase());
+                }
+                if byte.is_ascii_alphabetic() || byte.is_ascii_digit() {
+                    previous_hyphen = false;
+                    Ok(true)
+                } else if *byte == b'-' && !previous_hyphen {
+                    previous_hyphen = true;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            },
+            "STEP schema OID name bytes",
+        )?
+        && !value.ends_with('-'))
 }
 
 /// The number of the root component, when the component text gives one.

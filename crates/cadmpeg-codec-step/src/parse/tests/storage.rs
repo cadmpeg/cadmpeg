@@ -203,55 +203,67 @@ fn copied_value_list_and_box_admit_their_storage() {
 #[test]
 fn anchor_typed_name_copy_refuses_work_limit() {
     // The copy pays the seven name bytes once; value visits precede it.
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "step_anchor_typed_name_copy", |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        with_policy_context(b"", &policy, |_, ctx| {
-            let anchors = BTreeMap::new();
-            let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
-            let result = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits").resolve_root(&value);
-            match result {
-                Err(ResolveError::Resource(error)) => {
-                    if let CodecError::ResourceLimit(refusal) = &error {
-                        assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-                        if refusal.operation.ends_with("typed_name_copy") {
-                            assert_eq!(refusal.used, 3);
-                            assert_eq!(refusal.additional, 7);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "step_anchor_typed_name_copy",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            with_policy_context(b"", &policy, |_, ctx| {
+                let anchors = BTreeMap::new();
+                let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
+                let result = AnchorResolver::new(&anchors, ctx)
+                    .expect("empty resolver scope fits")
+                    .resolve_root(&value);
+                match result {
+                    Err(ResolveError::Resource(error)) => {
+                        if let CodecError::ResourceLimit(refusal) = &error {
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                            if refusal.operation.ends_with("typed_name_copy") {
+                                assert_eq!(refusal.used, 3);
+                                assert_eq!(refusal.additional, 7);
+                            }
                         }
+                        Err(error)
                     }
-                    Err(error)
+                    Ok(_) => Ok(()),
+                    other => panic!("unexpected typed resolution result: {other:?}"),
                 }
-                Ok(_) => Ok(()),
-                other => panic!("unexpected typed resolution result: {other:?}"),
-            }
-        })
-    });
+            })
+        },
+    );
 }
 
 #[test]
 fn reference_typed_name_copy_refuses_work_limit() {
     // The copy pays the seven name bytes once; value visits precede it.
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "step_reference_typed_name_copy", |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        with_policy_context(b"", &policy, |_, ctx| {
-            let anchors = BTreeMap::new();
-            let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
-            let result = ReferenceResolver::new(&[], &anchors, ctx).expect("empty bindings").resolve_value(&value, 0);
-            match result {
-                Err(ResolveError::Resource(error)) => {
-                    if let CodecError::ResourceLimit(refusal) = &error {
-                        assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-                        if refusal.operation.ends_with("typed_name_copy") {
-                            assert_eq!(refusal.used, 3);
-                            assert_eq!(refusal.additional, 7);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "step_reference_typed_name_copy",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            with_policy_context(b"", &policy, |_, ctx| {
+                let anchors = BTreeMap::new();
+                let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
+                let result = ReferenceResolver::new(&[], &anchors, ctx)
+                    .expect("empty bindings")
+                    .resolve_value(&value, 0);
+                match result {
+                    Err(ResolveError::Resource(error)) => {
+                        if let CodecError::ResourceLimit(refusal) = &error {
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
+                            if refusal.operation.ends_with("typed_name_copy") {
+                                assert_eq!(refusal.used, 3);
+                                assert_eq!(refusal.additional, 7);
+                            }
                         }
+                        Err(error)
                     }
-                    Err(error)
+                    Ok(_) => Ok(()),
+                    other => panic!("unexpected typed resolution result: {other:?}"),
                 }
-                Ok(_) => Ok(()),
-                other => panic!("unexpected typed resolution result: {other:?}"),
-            }
-        })
-    });
+            })
+        },
+    );
 }

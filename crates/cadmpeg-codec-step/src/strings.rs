@@ -55,10 +55,15 @@ pub(crate) fn decode_with_context(
 
 /// Validate the string and count its emitted characters without copying text.
 pub(crate) fn decoded_char_count(
-    ctx: &DecodeContext<'_>, input: &[u8], level: ImplementationLevel,
+    ctx: &DecodeContext<'_>,
+    input: &[u8],
+    level: ImplementationLevel,
 ) -> Result<usize, StringDecodeFailure> {
     let mut count = 0;
-    decode_chars(ctx, input, level, |_| { count += 1; Ok(()) })?;
+    decode_chars(ctx, input, level, |_| {
+        count += 1;
+        Ok(())
+    })?;
     Ok(count)
 }
 
@@ -145,10 +150,12 @@ fn decode_chars(
                 }
                 let direct = &input[start..at];
                 if level.is_edition3() {
-                    let text = ctx.validate_utf8(direct, "STEP direct string UTF-8 validation")?.map_err(|error| StringError {
-                        offset: start + error.valid_up_to(),
-                        message: "invalid UTF-8 direct string bytes".into(),
-                    })?;
+                    let text = ctx
+                        .validate_utf8(direct, "STEP direct string UTF-8 validation")?
+                        .map_err(|error| StringError {
+                            offset: start + error.valid_up_to(),
+                            message: "invalid UTF-8 direct string bytes".into(),
+                        })?;
                     for character in ctx
                         .admit_iter(text, "STEP decode chars traversal")
                         .map_err(cadmpeg_core::CodecError::from)?
@@ -198,14 +205,18 @@ fn decode_page_byte(
         6 => encoding_rs::ISO_8859_6,
         7 => encoding_rs::ISO_8859_7,
         8 => encoding_rs::ISO_8859_8,
-        _ => return Err(StringError {
-            offset,
-            message: format!("ISO 8859 part {part} is unavailable"),
-        }.into()),
+        _ => {
+            return Err(StringError {
+                offset,
+                message: format!("ISO 8859 part {part} is unavailable"),
+            }
+            .into())
+        }
     };
     let mut decoder = encoding.new_decoder_without_bom_handling();
     let mut units = [0_u16; 1];
-    let (result, _, written) = decoder.decode_to_utf16_without_replacement(&[byte], &mut units, true);
+    let (result, _, written) =
+        decoder.decode_to_utf16_without_replacement(&[byte], &mut units, true);
     if matches!(result, encoding_rs::DecoderResult::Malformed(..)) {
         return error(
             ctx,
@@ -261,7 +272,12 @@ fn decode_wide(
     width: usize,
     emit: &mut impl FnMut(char) -> Result<(), StringDecodeFailure>,
 ) -> Result<usize, StringDecodeFailure> {
-    let Some(relative_end) = ctx.position_by(input[start..].windows(4), |bytes| Ok(bytes == b"\\X0\\"), "STEP wide escape terminator search")? else {
+    let Some(relative_end) = ctx.position_by(
+        input[start..].windows(4),
+        |bytes| Ok(bytes == b"\\X0\\"),
+        "STEP wide escape terminator search",
+    )?
+    else {
         return error(ctx, start, "unterminated wide escape");
     };
     let end = start + relative_end;
