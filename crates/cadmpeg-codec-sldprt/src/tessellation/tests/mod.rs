@@ -80,7 +80,7 @@ macro_rules! planar_contains_mesh {
         $trim
             .contains_mesh(
                 &ctx,
-                $mesh,
+                $mesh.mesh(),
                 cadmpeg_ir::transform::Transform::identity(),
                 $tolerance,
             )
@@ -1609,7 +1609,7 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
             Point2::new(4.0, 4.0),
             Point2::new(-4.0, 4.0),
         ])),
-        holes: vec![PlanarHole::polygon(
+        holes: vec![geometry_predicates::hole_polygon(
             &ctx,
             vec![
                 Point2::new(-2.0, -2.0),

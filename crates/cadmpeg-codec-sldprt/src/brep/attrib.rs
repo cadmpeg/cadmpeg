@@ -615,8 +615,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
         let dictionary = dictionary(&ctx, bytes).expect("definitions");
-        let family = dictionary.family(&ctx, node).expect("definition lookup");
-        family
+        dictionary.family(&ctx, node).expect("definition lookup")
     }
 
     fn refusal(dimension: ResourceDimension, operation: &'static str, bytes: &[u8]) {

@@ -177,10 +177,11 @@ fn conical_trim_uses_scaled_angular_coordinate() {
     assert!(trim
         .contains_mesh(
             &cadmpeg_test_support::service_decode_context(),
-            &mesh(
+            mesh(
                 point_at(std::f64::consts::FRAC_PI_4),
                 "synthetic:test:tessellation#inside"
-            ),
+            )
+            .mesh(),
             cadmpeg_ir::transform::Transform::identity(),
             0.0,
         )
@@ -188,10 +189,11 @@ fn conical_trim_uses_scaled_angular_coordinate() {
     assert!(!trim
         .contains_mesh(
             &cadmpeg_test_support::service_decode_context(),
-            &mesh(
+            mesh(
                 point_at(3.0 * std::f64::consts::FRAC_PI_4),
                 "synthetic:test:tessellation#outside"
-            ),
+            )
+            .mesh(),
             cadmpeg_ir::transform::Transform::identity(),
             0.0,
         )
