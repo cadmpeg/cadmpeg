@@ -4,7 +4,7 @@
 //! builder, and the pass that fills the `annotations` arena while recording
 //! counted-tail verdicts.
 
-use super::{collect_native_items, OverdeclaredCounts};
+use super::OverdeclaredCounts;
 
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::entities::annotation::{
@@ -725,10 +725,8 @@ pub(super) fn build(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
     let (by_directory, entries) = indexes;
-    collect_native_items(
-        ctx,
-        directory
-            .iter()
+    ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native annotation scan")?
             .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind))),
         "iges native annotation slots",
         |(entry, kind)| -> Result<NativeAnnotation, CodecError> {

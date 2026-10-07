@@ -24,31 +24,23 @@ fn native_token_copy_refuses_outer_and_nested_allocations() {
         value: crate::parameter::TokenValue::String(b"abc".to_vec()),
         span: 0..3,
     }];
-    for (collection_cap, retained_cap, dimension, operation) in [
-        (
-            0,
-            16,
-            ResourceDimension::CollectionItems,
-            "iges native token slots",
-        ),
-        (
-            1,
-            2,
-            ResourceDimension::RetainedBytes,
-            "iges native token bytes",
-        ),
+    for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "iges native token slots"),
+        (ResourceDimension::RetainedBytes, "iges native token bytes"),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_cap;
-        policy.limits.max_retained_bytes = retained_cap
-            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::parameter::Token>());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::copy_native_tokens(&ctx, &tokens),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension && limit.operation == operation
-        ));
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                _ => unreachable!("test dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::copy_native_tokens(&ctx, &tokens)
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == operation));
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -60,31 +52,23 @@ fn native_entity_links_refuse_slots_and_text_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    for (collection_cap, retained_cap, dimension, operation) in [
-        (
-            0,
-            64,
-            ResourceDimension::CollectionItems,
-            "iges native test links",
-        ),
-        (
-            1,
-            1,
-            ResourceDimension::RetainedBytes,
-            "iges native linked entity id",
-        ),
+    for (dimension, operation) in [
+        (ResourceDimension::CollectionItems, "iges native test links"),
+        (ResourceDimension::RetainedBytes, "iges native linked entity id"),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_cap;
-        policy.limits.max_retained_bytes =
-            retained_cap + 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::native_entity_ids(&ctx, [3], "iges native test links"),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension && limit.operation == operation
-        ));
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                _ => unreachable!("test dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::native_entity_ids(&ctx, [3], "iges native test links")
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == operation));
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -110,50 +94,25 @@ fn native_parameter_record_refuses_bytes_tokens_and_comment() {
         }],
         b"e".to_vec(),
     );
-    for (collection_cap, retained_cap, dimension, operation) in [
-        (
-            1,
-            2,
-            ResourceDimension::RetainedBytes,
-            "iges native parameter bytes",
-        ),
-        (
-            0,
-            8,
-            ResourceDimension::CollectionItems,
-            "iges native token slots",
-        ),
-        (
-            1,
-            3,
-            ResourceDimension::RetainedBytes,
-            "iges native token bytes",
-        ),
-        (
-            1,
-            4,
-            ResourceDimension::RetainedBytes,
-            "iges native parameter comment",
-        ),
+    for (dimension, operation) in [
+        (ResourceDimension::RetainedBytes, "iges native parameter bytes"),
+        (ResourceDimension::CollectionItems, "iges native token slots"),
+        (ResourceDimension::RetainedBytes, "iges native token bytes"),
+        (ResourceDimension::RetainedBytes, "iges native parameter comment"),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_cap;
-        policy.limits.max_retained_bytes = retained_cap
-            + if operation == "iges native token bytes"
-                || operation == "iges native parameter comment"
-                || dimension == ResourceDimension::CollectionItems
-            {
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::parameter::Token>())
-            } else {
-                0
-            };
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::copy_native_parameter_record(&ctx, &record),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension && limit.operation == operation
-        ));
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                _ => unreachable!("test dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::copy_native_parameter_record(&ctx, &record)
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == operation));
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
