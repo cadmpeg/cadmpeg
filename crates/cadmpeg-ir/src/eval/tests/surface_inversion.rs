@@ -321,20 +321,31 @@ fn local_surface_inverse_preserves_each_work_refusal() {
     let surface = bilinear_surface();
     for seed in [None, Some(Point2::new(0.0, 0.0))] {
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "IR homogeneous pole traversal", |cap| {
+            ResourceDimension::WorkUnits,
+            "IR homogeneous pole traversal",
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 crate::eval::test_support::with_policy(policy, |ctx| {
                     let result = nurbs_surface_parameter_near_point(
-                        ctx, &surface, Point3::new(0.3, 0.7, 0.0), seed,
+                        ctx,
+                        &surface,
+                        Point3::new(0.3, 0.7, 0.0),
+                        seed,
                     );
                     let original = result.unwrap_err();
                     assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                     assert_eq!(original.operation, "IR homogeneous pole traversal");
                     assert_eq!(ctx.resource_refusal(), Some(original));
-                    assert_eq!(nurbs_surface_parameter_near_point(
-                        ctx, &surface, Point3::new(f64::NAN, 0.0, 0.0), None,
-                    ), Err(original));
+                    assert_eq!(
+                        nurbs_surface_parameter_near_point(
+                            ctx,
+                            &surface,
+                            Point3::new(f64::NAN, 0.0, 0.0),
+                            None,
+                        ),
+                        Err(original)
+                    );
                     result.map_err(cadmpeg_core::CodecError::from)
                 })
             },

@@ -403,16 +403,28 @@ fn admitted_polyline_tangent_borrows_points_and_parameters() {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_work_units = 2;
-        assert_eq!(with_policy(policy, |ctx| crate::eval::decode::outer_refusal(
-            crate::eval::decode::curve_tangent(ctx, &geometry, 0.5),
-        ).map_err(CodecError::from)).unwrap().unwrap().get(), crate::math::Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(
+            with_policy(policy, |ctx| crate::eval::decode::outer_refusal(
+                crate::eval::decode::curve_tangent(ctx, &geometry, 0.5),
+            )
+            .map_err(CodecError::from))
+            .unwrap()
+            .unwrap()
+            .get(),
+            crate::math::Vector3::new(1.0, 0.0, 0.0)
+        );
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "IR polyline tangent segment scan", |cap| {
+            ResourceDimension::WorkUnits,
+            "IR polyline tangent segment scan",
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
-                with_policy(policy, |ctx| crate::eval::decode::outer_refusal(
-                    crate::eval::decode::curve_tangent(ctx, &geometry, 0.5),
-                ).map_err(CodecError::from))
+                with_policy(policy, |ctx| {
+                    crate::eval::decode::outer_refusal(crate::eval::decode::curve_tangent(
+                        ctx, &geometry, 0.5,
+                    ))
+                    .map_err(CodecError::from)
+                })
             },
         );
         assert_eq!(

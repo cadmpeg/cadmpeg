@@ -278,11 +278,26 @@ fn tail_interval_search_preserves_refusals_and_releases_its_storage() {
     use cadmpeg_core::CodecError;
     let boundaries = [0., 1., 1., 2., 3.];
     for (dimension, operation) in [
-        (ResourceDimension::WorkUnits, "IR pcurve search interval scan"),
-        (ResourceDimension::WorkUnits, "IR pcurve search interval copy"),
-        (ResourceDimension::WorkUnits, "IR pcurve search interval reversal"),
-        (ResourceDimension::MaterializedBytes, "IR pcurve search intervals"),
-        (ResourceDimension::CollectionItems, "IR pcurve search intervals"),
+        (
+            ResourceDimension::WorkUnits,
+            "IR pcurve search interval scan",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "IR pcurve search interval copy",
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            "IR pcurve search interval reversal",
+        ),
+        (
+            ResourceDimension::MaterializedBytes,
+            "IR pcurve search intervals",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "IR pcurve search intervals",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = DecodeArena::new();
@@ -295,12 +310,15 @@ fn tail_interval_search_preserves_refusals_and_releases_its_storage() {
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = super::super::bounded_tail_intervals(&ctx, &boundaries)
-                .map(drop).map_err(CodecError::from);
+                .map(drop)
+                .map_err(CodecError::from);
             let Err(CodecError::ResourceLimit(limit)) = &result else {
                 panic!("each named interval boundary needs admission");
             };
             assert_eq!(limit.dimension, dimension);
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+            );
             result
         });
     }

@@ -275,19 +275,27 @@ fn helix_inverse_preserves_depth_refusal() {
     let definition = ir.model.procedural_curves[0].definition();
     let target = expected_helix(1.7).0;
     cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RecursionDepth, "IR helix inverse evaluation", |cap| {
+        ResourceDimension::RecursionDepth,
+        "IR helix inverse evaluation",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_recursion_depth = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = super::super::helix_parameter_near_point(
-                &ctx, target, 1.5, ir.tolerances.linear.into(), definition,
+                &ctx,
+                target,
+                1.5,
+                ir.tolerances.linear.into(),
+                definition,
             );
             let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = &result else {
                 panic!("helix inversion must refuse");
             };
             assert_eq!(first.dimension, ResourceDimension::RecursionDepth);
-            assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == *first));
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == *first)
+            );
             result
         },
     );
@@ -306,9 +314,17 @@ fn helix_inverse_needs_no_variable_work_budget() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let inverse = super::super::helix_parameter_near_point(
-        &ctx, target, 1.5, ir.tolerances.linear.into(), ir.model.procedural_curves[0].definition(),
-    ).unwrap().unwrap();
-    let evaluated = super::super::helix_differential(ir.model.procedural_curves[0].definition(), inverse.get()).unwrap();
+        &ctx,
+        target,
+        1.5,
+        ir.tolerances.linear.into(),
+        ir.model.procedural_curves[0].definition(),
+    )
+    .unwrap()
+    .unwrap();
+    let evaluated =
+        super::super::helix_differential(ir.model.procedural_curves[0].definition(), inverse.get())
+            .unwrap();
     assert!(evaluated.point.distance(target) <= ir.tolerances.linear.get());
     ctx.finish_session().unwrap();
 }
