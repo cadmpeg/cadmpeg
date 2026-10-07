@@ -1440,6 +1440,7 @@ pub(crate) fn bind_scalar_operands(
     lanes: &mut [FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const CANDIDATES: &str = "collect SLDPRT scalar binding candidates";
+    let mut selection_history = super::selections::SelectionHistory::new(ctx, histories)?;
     let represented_sketches = represented_sketch_features(ctx, histories, lanes)?;
     let metadata_ids = history_metadata_ids(ctx, histories)?;
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
@@ -1569,7 +1570,7 @@ pub(crate) fn bind_scalar_operands(
                 }
             }
         }
-        finalize_lane_bindings(ctx, histories, lane)?;
+        finalize_lane_bindings(ctx, histories, &mut selection_history, lane)?;
     }
     Ok(())
 }
@@ -1577,6 +1578,7 @@ pub(crate) fn bind_scalar_operands(
 pub(crate) fn finalize_lane_bindings(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
+    selection_history: &mut super::selections::SelectionHistory<'_, '_>,
     lane: &mut FeatureInputLane,
 ) -> Result<(), cadmpeg_core::CodecError> {
     const MARKERS: &str = "collect SLDPRT scalar marker candidates";
@@ -1741,8 +1743,9 @@ pub(crate) fn finalize_lane_bindings(
         relation_bindings_scoped(ctx, &lane.id, &lane.classes, &lane.scalars, &intervals)?;
     lane.relation_instances = relation_instances(ctx, histories, lane)?;
     lane.body_selections = compact_body_selections(ctx, histories, lane)?;
-    lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
-    lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
+    let history_features = selection_history.for_lane(ctx, lane)?;
+    lane.edge_selections = compact_edge_selections(ctx, histories, history_features, lane)?;
+    lane.surface_selections = compact_surface_selections(ctx, histories, history_features, lane)?;
     lane.generated_surface_identities = generated_surface_identities(ctx, lane)?;
     Ok(())
 }
@@ -1811,6 +1814,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut selection_history = super::selections::SelectionHistory::new(ctx, histories)?;
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
     let mut unresolved = HashSet::new();
     for feature in ctx.admit_iter(model_features, SCALAR_BINDING_INDEX)? {
@@ -1846,7 +1850,7 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
             continue;
         }
         bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
-        finalize_lane_bindings(ctx, histories, lane)?;
+        finalize_lane_bindings(ctx, histories, &mut selection_history, lane)?;
     }
     Ok(())
 }

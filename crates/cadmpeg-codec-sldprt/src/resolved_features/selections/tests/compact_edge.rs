@@ -886,9 +886,12 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
     let histories = [history];
     crate::test_support::work_refusal_at(
         "deduplicate SLDPRT compact edge selection offsets",
-        |ctx| compact_edge_selections(ctx, &histories, &lane),
+        |ctx| {
+            let mut history = crate::resolved_features::selections::SelectionHistory::new(ctx, &histories)?;
+            compact_edge_selections(ctx, &histories, history.for_lane(ctx, &lane)?, &lane)
+        },
     );
-    let selections = compact_edge_selections(&history_ctx, &histories, &lane).unwrap();
+    let selections = compact_edge_selections(&history_ctx, &histories, crate::resolved_features::selections::SelectionHistory::new(&history_ctx, &histories).unwrap().for_lane(&history_ctx, &lane).unwrap(), &lane).unwrap();
 
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "consumer");
@@ -1185,14 +1188,7 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let selections = operation_surface_selection_candidates(
-        &identity_ctx,
-        FeatureClass::CutWithSurface,
-        &lane,
-        0,
-        payload.len(),
-        None,
-    )
+    let selections = operation_surface_selection_candidates(&identity_ctx, FeatureClass::CutWithSurface, &lane, &crate::resolved_features::selections::OperationSurfaceClasses::new(&identity_ctx, &lane).unwrap(), 0, payload.len(), None)
     .unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].0, marker);
@@ -1302,7 +1298,8 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
+    let histories = [history];
+    let selections = compact_edge_selections(&history_ctx, &histories, crate::resolved_features::selections::SelectionHistory::new(&history_ctx, &histories).unwrap().for_lane(&history_ctx, &lane).unwrap(), &lane).unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].references.len(), 4);
     assert_eq!(selections[0].references[3][0].instance, Some(0x8083));
