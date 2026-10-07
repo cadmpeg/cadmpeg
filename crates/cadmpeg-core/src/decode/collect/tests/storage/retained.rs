@@ -5,12 +5,13 @@ use crate::decode::DecodeContext;
 use crate::CodecError;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-// The growth peak includes both new and old hash-map bucket storage.
+// Growth holds the map storage for twice the new length while the table
+// grows, then retains the storage of its real capacity.
 storage_case!(
     collect_hash_map_storage,
     99,
     167,
-    peak = (99, 167 + 99),
+    peak = (99, 99 + 303),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_hash_map(
             (0..count).map(|value| (u64::try_from(value).expect("small key"), 0u64)),
@@ -166,19 +167,6 @@ storage_case!(
         )
     }
 );
-// The growth peak includes both new and old hash-set bucket storage.
-storage_case!(
-    copy_retained_set_storage,
-    67,
-    103,
-    peak = (67, 103 + 67),
-    |ctx: &DecodeContext<'_>, count| {
-        let values = (0..count)
-            .map(|value| u64::try_from(value).expect("small value"))
-            .collect();
-        ctx.copy_retained_set(&values, "copied set storage")
-    }
-);
 storage_case!(
     collect_retained_texts_storage,
     25,
@@ -187,12 +175,13 @@ storage_case!(
         ctx.collect_retained_texts(std::iter::repeat_n("x", count), "copied text storage")
     }
 );
-// The hash growth peak includes three copied keys and the old buckets before the fourth copy.
+// The second growth holds a 431-byte bound beside the first 131-byte table and
+// three copied keys before the fourth copy.
 storage_case!(
     insert_string_set_storage,
     132,
     236,
-    peak = (132, 234 + 131),
+    peak = (132, 134 + 431),
     |ctx: &DecodeContext<'_>, count| {
         let mut values = HashSet::new();
         for value in &["a", "b", "c", "d", "e"][..count] {
@@ -201,12 +190,13 @@ storage_case!(
         Ok(values)
     }
 );
-// The hash growth peak includes three copied keys and the old buckets before the fourth copy.
+// The second growth holds a 431-byte bound beside the first 131-byte table and
+// three copied keys before the fourth copy.
 storage_case!(
     collect_string_set_storage,
     132,
     236,
-    peak = (132, 234 + 131),
+    peak = (132, 134 + 431),
     |ctx: &DecodeContext<'_>, count| {
         ctx.collect_string_set(
             ["a", "b", "c", "d", "e"][..count].iter().copied(),

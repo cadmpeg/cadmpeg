@@ -37,15 +37,18 @@ fn persistence_object_identity_refuses_at_retained_limit() {
 
 #[test]
 fn persistence_object_data_name_refuses_at_matching_retained_limit() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Body"/></Objects><ObjectData Count="1"><Object name="Body"><Properties Count="0"/></Object></ObjectData></Document>"#;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // One object-data hash allocation: four buckets, four control bytes,
-    // sixteen trailing controls and at most fifteen alignment bytes.
-    let lookup = 4 * std::mem::size_of::<(String, roxmltree::Node<'_, '_>)>() + 4 + 31;
+    let name = "Body";
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="{name}"/></Objects><ObjectData Count="1"><Object name="{name}"><Properties Count="0"/></Object></ObjectData></Document>"#
+    );
     let nodes = 2 * document.bytes().filter(|byte| *byte == b'<').count() + 2;
     let attributes = document.bytes().filter(|byte| *byte == b'=').count();
-    // Core XML admission keeps its tree bound live during graph construction.
+    // The XML tree admission holds one scoped reservation for the whole parse:
+    // node records (2 * nodes + 4 capacity, 192 bytes each), attribute records
+    // (2 * attributes + 16 capacity, 256 bytes each), the single namespace
+    // record (capacity 6, 66 bytes), inherited namespace indices
+    // (2 * nodes + 4 capacity, 2 bytes each), 32 bytes for each node,
+    // attribute and namespace string, eight input lengths and 1024 fixed bytes.
     let xml = (2 * nodes + 4) * (128 + 64)
         + (2 * attributes + 16) * (128 * 2)
         + (2 + 4) * (64 + 2)
@@ -53,16 +56,63 @@ fn persistence_object_data_name_refuses_at_matching_retained_limit() {
         + (nodes + attributes + 1) * 32
         + 8 * document.len()
         + 1024;
-    policy.limits.max_materialized_bytes =
-        cadmpeg_core::decode::u64_from_index(xml + lookup + "Body".len() - 1);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
-            .expect("source context");
-    assert!(
-        matches!(super::parse_with_context(document.as_bytes(), "4", &ctx),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.operation == "FCStd object data name")
+    // The first object-data record grows the empty lookup map to three entries:
+    // a four-bucket table of `(String, Node)` elements, 15 bytes of group
+    // padding (alignment 16), four control bytes and a 16-byte trailer. It is
+    // held as a transient reservation and then kept as scoped storage; the
+    // retained growth equals the transient bound, so the name charge that
+    // follows sees exactly the table behind it.
+    let lookup = 4 * std::mem::size_of::<(String, roxmltree::Node<'_, '_>)>() + 15 + 4 + 16;
+    let refusal = |materialized: usize| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(materialized);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            document.as_bytes(),
+            &arena,
+            &policy,
+        )
+        .expect("source context");
+        match super::parse_with_context(document.as_bytes(), "4", &ctx) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+            other => panic!("expected a resource refusal, got {:?}", other.map(|_| ())),
+        }
+    };
+    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
+
+    // One byte under the table: its transient reservation is refused behind
+    // the XML tree reservation.
+    let limit = refusal(xml + lookup - 1);
+    assert_eq!(
+        (
+            limit.dimension,
+            limit.operation,
+            limit.used,
+            limit.additional
+        ),
+        (
+            dimension,
+            "FCStd object data lookup",
+            cadmpeg_core::decode::u64_from_index(xml),
+            cadmpeg_core::decode::u64_from_index(lookup)
+        )
+    );
+    // Exactly the table: growth fits, and the name's own bytes are the first
+    // charge past it.
+    let limit = refusal(xml + lookup + name.len() - 1);
+    assert_eq!(
+        (
+            limit.dimension,
+            limit.operation,
+            limit.used,
+            limit.additional
+        ),
+        (
+            dimension,
+            "FCStd object data name",
+            cadmpeg_core::decode::u64_from_index(xml + lookup),
+            cadmpeg_core::decode::u64_from_index(name.len())
+        )
     );
 }
 

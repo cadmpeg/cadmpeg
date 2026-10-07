@@ -357,7 +357,7 @@ fn build_result(
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     ctx.extend_vec(
         &mut losses,
-        dialect_loss(ctx, kernel)?.into_iter().collect(),
+        dialect_loss(ctx, kernel)?,
         "SAT dialect loss notes",
     )?;
     if !geometry_transferred {

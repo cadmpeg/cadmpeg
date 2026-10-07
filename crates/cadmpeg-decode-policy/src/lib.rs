@@ -19,6 +19,8 @@ mod extent;
 mod external;
 mod fixed;
 mod flow;
+mod grammar;
+mod hash_tables;
 mod instantiation;
 mod iteration;
 mod key_work;
@@ -27,6 +29,7 @@ mod replacement;
 mod scalar;
 mod scope;
 mod serde;
+mod serde_bounds;
 mod storage;
 mod types;
 mod work;
@@ -45,6 +48,7 @@ struct Findings {
     externals: BTreeSet<String>,
     conversions: HashMap<rustc_hir::HirId, Vec<bool>>,
     admitted_operations: HashSet<rustc_hir::HirId>,
+    handled_work_operations: HashSet<rustc_hir::HirId>,
     admitted_growth_operations: HashSet<rustc_hir::HirId>,
     key_work_proofs: BTreeSet<String>,
     entries: BTreeMap<(String, usize, u32, u32, String), BTreeSet<String>>,

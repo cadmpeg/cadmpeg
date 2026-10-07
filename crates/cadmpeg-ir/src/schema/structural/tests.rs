@@ -2,7 +2,8 @@
 use super::project;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use serde::Serialize;
+use serde::ser::{SerializeMap, SerializeSeq};
+use serde::{Serialize, Serializer};
 
 #[derive(Serialize)]
 struct Shape {
@@ -141,4 +142,41 @@ fn structural_display_text_preserves_formatting_refusal() {
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
     );
+}
+
+struct UnknownLengthSequence;
+
+impl Serialize for UnknownLengthSequence {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(None)?;
+        sequence.serialize_element(&7u8)?;
+        sequence.end()
+    }
+}
+
+struct UnknownLengthMap;
+
+impl Serialize for UnknownLengthMap {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("key", &7u8)?;
+        map.end()
+    }
+}
+
+#[test]
+fn structural_projection_preserves_unknown_length_serializers() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let sequence = project(&ctx, &UnknownLengthSequence, "unknown length sequence").unwrap();
+    assert_eq!(
+        *sequence,
+        serde_value::to_value(&UnknownLengthSequence).unwrap()
+    );
+    let map = project(&ctx, &UnknownLengthMap, "unknown length map").unwrap();
+    assert_eq!(*map, serde_value::to_value(&UnknownLengthMap).unwrap());
+    drop(sequence);
+    drop(map);
+    ctx.finish_session().unwrap();
 }
