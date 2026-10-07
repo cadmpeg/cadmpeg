@@ -63,19 +63,22 @@ fn attribute_nurbs_patch_preserves_carrier_scan_refusal() {
 }
 
 #[test]
-fn analytic_marker_candidate_refusal_preserves_the_resource_limit() {
-    let mut body = vec![0_u8; super::analytic::MARKER + 1];
+fn analytic_marker_candidates_name_both_fixed_framings() {
+    let mut body = vec![0_u8; super::DELTAS_MARKER_OFFSET + 1];
     body[super::analytic::MARKER] = 0x2b;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let error = super::analytic_marker_candidates(&ctx, &body, 0).unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("candidate slot refusal");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, "collect SLDPRT decoded vector items");
-    assert_eq!(limit.additional, 1);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(
+        super::analytic_marker_candidates(&body, 0),
+        Some([Some(super::analytic::MARKER), None])
+    );
+    for index in 0..super::COMPACT_REF_COUNT {
+        body[super::analytic::REFS + index * super::DELTAS_REF_STRIDE + 2] = 1;
+    }
+    body[super::DELTAS_MARKER_OFFSET] = 0x2d;
+    assert_eq!(
+        super::analytic_marker_candidates(&body, 0),
+        Some([
+            Some(super::analytic::MARKER),
+            Some(super::DELTAS_MARKER_OFFSET)
+        ])
+    );
 }

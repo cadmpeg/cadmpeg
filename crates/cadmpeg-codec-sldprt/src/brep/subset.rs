@@ -91,11 +91,8 @@ pub(super) fn scan(
     carriers: &CarrierIndex,
 ) -> Result<Vec<CurveCarrier>, CodecError> {
     let mut out = Vec::new();
-    let scan_len = u64::try_from(bytes.len()).map_err(|_| {
-        ctx.refuse_codec_limit("scan Parasolid subset curves", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_work(scan_len, "scan Parasolid subset curves")?;
-    for off in 0..bytes.len().checked_sub(2).map_or(0, |end| end) {
+    let starts = 0..bytes.len().checked_sub(2).map_or(0, |end| end);
+    for off in ctx.admit_iter(starts, "scan Parasolid subset curves")? {
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
             continue;
         }
@@ -151,16 +148,19 @@ pub(super) fn scan(
         }
         let copied_geometry =
             geometry.try_clone_for_decode(ctx, "copy Parasolid subset curve lanes")?;
-        ctx.reserve_vec(&mut out, 1, "collect Parasolid subset curves")?;
-        out.push(CurveCarrier {
-            attr,
-            offset: off,
-            end: marker_at + 1 + PAYLOAD_LEN,
-            geometry: copied_geometry,
-            parameter_range: Some(cadmpeg_ir::units::FiniteVector::from([
-                values[6], values[7],
-            ])),
-        });
+        ctx.push_vec(
+            &mut out,
+            CurveCarrier {
+                attr,
+                offset: off,
+                end: marker_at + 1 + PAYLOAD_LEN,
+                geometry: copied_geometry,
+                parameter_range: Some(cadmpeg_ir::units::FiniteVector::from([
+                    values[6], values[7],
+                ])),
+            },
+            "collect Parasolid subset curves",
+        )?;
     }
     Ok(out)
 }
@@ -290,17 +290,9 @@ mod tests {
     fn parasolid_subset_scan_refuses_work_limit() {
         let bytes = wrapper(0.005, false);
         let carriers = carriers();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::try_from(bytes.len()).expect("fixture length") - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan(&ctx, &bytes, &carriers).expect_err("scan work exceeds its limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Parasolid subset curves"
-        ));
+        crate::test_support::work_refusal_at("scan Parasolid subset curves", |ctx| {
+            scan(ctx, &bytes, &carriers)
+        });
     }
 
     #[test]

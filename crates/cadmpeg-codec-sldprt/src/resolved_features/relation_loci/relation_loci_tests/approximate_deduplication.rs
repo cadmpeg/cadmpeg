@@ -1,5 +1,7 @@
 //! Coincident canonical profile point selection and refusal.
 
+use super::profile;
+
 #[test]
 fn canonical_profile_point_deduplication_preserves_identity_order_and_refusal() {
     use cadmpeg_ir::math::Point2;
@@ -19,7 +21,7 @@ fn canonical_profile_point_deduplication_preserves_identity_order_and_refusal() 
         )
     });
     let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        super::super::canonical_profile_loci(ctx, &sketch, &input)
+        super::super::canonical_profile_loci(ctx, &sketch, &profile(&input))
     };
     assert_eq!(
         solve(&cadmpeg_test_support::service_decode_context()).unwrap(),

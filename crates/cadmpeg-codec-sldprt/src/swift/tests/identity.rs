@@ -315,38 +315,42 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     .expect("topology index");
 
     assert_eq!(
-        index.resolve("schema-a:11").cloned(),
+        index.resolve(&ctx, "schema-a:11").unwrap().cloned(),
         Some(PmiTarget::Body {
             body: body.id.clone(),
         })
     );
     assert_eq!(
-        index.resolve("schema-b:222").cloned(),
+        index.resolve(&ctx, "schema-b:222").unwrap().cloned(),
         Some(PmiTarget::Face {
             face: face.id.clone(),
         })
     );
-    assert!(index.resolve("schema-b:22").cloned().is_none());
+    assert!(index
+        .resolve(&ctx, "schema-b:22")
+        .unwrap()
+        .cloned()
+        .is_none());
     assert_eq!(
-        index.resolve("schema-c:33").cloned(),
+        index.resolve(&ctx, "schema-c:33").unwrap().cloned(),
         Some(PmiTarget::Edge {
             edge: edge.id.clone(),
         })
     );
     assert_eq!(
-        index.resolve("schema-d:44").cloned(),
+        index.resolve(&ctx, "schema-d:44").unwrap().cloned(),
         Some(PmiTarget::Vertex {
             vertex: vertex.id.clone(),
         })
     );
     assert_eq!(
-        index.resolve("schema-e:333").cloned(),
+        index.resolve(&ctx, "schema-e:333").unwrap().cloned(),
         Some(PmiTarget::Edge {
             edge: edge.id.clone(),
         })
     );
     assert_eq!(
-        index.resolve("schema-f:444").cloned(),
+        index.resolve(&ctx, "schema-f:444").unwrap().cloned(),
         Some(PmiTarget::Vertex {
             vertex: vertex.id.clone(),
         })
@@ -370,13 +374,20 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     )
     .expect("topology index");
     assert_eq!(
-        active_with_alternate.resolve("schema-g:222").cloned(),
+        active_with_alternate
+            .resolve(&ctx, "schema-g:222")
+            .unwrap()
+            .cloned(),
         Some(PmiTarget::Face {
             face: face.id.clone(),
         })
     );
-    assert!(index.resolve("schema-e:not-a-number").cloned().is_none());
-    assert!(index.resolve("11").is_none());
+    assert!(index
+        .resolve(&ctx, "schema-e:not-a-number")
+        .unwrap()
+        .cloned()
+        .is_none());
+    assert!(index.resolve(&ctx, "11").unwrap().is_none());
 
     let collision = Face {
         id: FaceId::mint("sldprt:brep:face#11").expect("identity grammar"),
@@ -396,7 +407,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     )
     .expect("topology index");
     assert_eq!(
-        index.resolve("schema-g:11").cloned(),
+        index.resolve(&ctx, "schema-g:11").unwrap().cloned(),
         Some(PmiTarget::Body {
             body: body.id.clone(),
         })
@@ -416,7 +427,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     )
     .expect("topology index");
     assert_eq!(
-        sequence_wins.resolve("schema-h:11").cloned(),
+        sequence_wins.resolve(&ctx, "schema-h:11").unwrap().cloned(),
         Some(PmiTarget::Edge {
             edge: edge.id.clone(),
         })
@@ -435,7 +446,11 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[],
     )
     .expect("topology index");
-    assert!(unresolved.resolve("schema-i:11").cloned().is_none());
+    assert!(unresolved
+        .resolve(&ctx, "schema-i:11")
+        .unwrap()
+        .cloned()
+        .is_none());
 
     let conflicting = TopologyIdentityIndex::from_model(
         &ctx,
@@ -456,7 +471,11 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[],
     )
     .expect("topology index");
-    assert!(conflicting.resolve("schema-j:77").cloned().is_none());
+    assert!(conflicting
+        .resolve(&ctx, "schema-j:77")
+        .unwrap()
+        .cloned()
+        .is_none());
 
     let conflicting_families = TopologyIdentityIndex::from_model(
         &ctx,
@@ -472,7 +491,8 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     )
     .expect("topology index");
     assert!(conflicting_families
-        .resolve("schema-k:88")
+        .resolve(&ctx, "schema-k:88")
+        .unwrap()
         .cloned()
         .is_none());
 }
