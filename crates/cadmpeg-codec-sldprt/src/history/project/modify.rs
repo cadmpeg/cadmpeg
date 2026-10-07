@@ -13,7 +13,7 @@ use cadmpeg_ir::{
     scalar::{Fraction, NonNegativeLength},
 };
 
-use crate::history::classify::{indexed_name, is_fillet};
+use crate::history::classify::is_fillet;
 use crate::history::literals::{
     admit_literal, dimension_display, parse_angle_rad, parse_bool, parse_boolean_op,
     parse_bounded_angle_rad, parse_length_mm, parse_point3_mm, parse_positive_dimension_length_mm,
@@ -37,16 +37,20 @@ fn variable_radius_points(
     for (name, value) in
         ctx.admit_iter(&feature.parameters, "scan SLDPRT variable fillet positions")?
     {
-        admit_literal(ctx, name.as_str(), "scan SLDPRT fillet position digits")?;
         let Some(suffix) = name.as_str().strip_prefix("Position") else {
             continue;
         };
-        if !suffix.bytes().all(|byte| byte.is_ascii_digit())
-            || !(suffix.len() == 1 || !suffix.starts_with('0'))
+        if (suffix.len() != 1 && suffix.starts_with('0'))
+            || !ctx.all_by(
+                suffix.as_bytes(),
+                |byte| Ok(byte.is_ascii_digit()),
+                "scan SLDPRT fillet position digits",
+            )?
         {
             continue;
         }
-        let Ok(index) = suffix.parse::<usize>() else {
+        let Ok(index) = ctx.parse_text::<usize>(suffix, "parse SLDPRT fillet position index")?
+        else {
             continue;
         };
         if !ctx.contains_key_btree_map(&positions, &index, COLLECT)? {
@@ -55,29 +59,32 @@ fn variable_radius_points(
     }
     let mut points = Vec::new();
     for (name, radius) in ctx.admit_iter(&feature.parameters, RADII)? {
-        admit_literal(ctx, name.as_str(), RADII)?;
-        let Some(index) = name
-            .as_str()
-            .strip_prefix("Radius")
-            .and_then(|index| index.parse::<usize>().ok())
-        else {
+        let Some(suffix) = name.as_str().strip_prefix("Radius") else {
             continue;
         };
-        let parameter = ctx.get_btree_map(&positions, &index, COLLECT)?.copied();
-        if let Some(parameter) = parameter {
-            admit_literal(ctx, parameter, RADII)?;
-        }
-        admit_literal(ctx, radius, RADII)?;
-        let point = (|| {
-            let parameter = parameter?.trim().parse::<f64>().ok()?;
-            let radius = parse_positive_length_mm(radius)?;
-            Some(VariableRadius {
-                parameter: Fraction::new(parameter)?,
-                radius: NonNegativeLength::from(radius),
-            })
-        })();
-        let Some(point) = point else {
+        let Ok(index) = ctx.parse_text::<usize>(suffix, "parse SLDPRT fillet radius index")? else {
+            continue;
+        };
+        let Some(parameter) = ctx.get_btree_map(&positions, &index, COLLECT)?.copied() else {
             return Ok(None);
+        };
+        let parameter = ctx.trim_text(parameter, "trim SLDPRT fillet position")?;
+        let Some(parameter) = ctx
+            .parse_text::<f64>(parameter, "parse SLDPRT fillet position")?
+            .ok()
+        else {
+            return Ok(None);
+        };
+        let Some(parameter) = Fraction::new(parameter) else {
+            return Ok(None);
+        };
+        admit_literal(ctx, radius, RADII)?;
+        let Some(radius) = parse_positive_length_mm(radius) else {
+            return Ok(None);
+        };
+        let point = VariableRadius {
+            parameter,
+            radius: NonNegativeLength::from(radius),
         };
         ctx.push_scoped_vec(&mut scratch, &mut points, (index, point), COLLECT)?;
     }
@@ -97,13 +104,8 @@ fn variable_radius_points(
         return Ok(None);
     }
     let mut radii = Vec::new();
-    ctx.reserve_vec(
-        &mut radii,
-        points.len(),
-        "collect SLDPRT variable fillet controls",
-    )?;
     for (_, point) in ctx.admit_iter(points, "collect SLDPRT variable fillet controls")? {
-        radii.push(point);
+        ctx.push_vec(&mut radii, point, "collect SLDPRT variable fillet controls")?;
     }
     Ok(Some(radii))
 }
@@ -132,10 +134,17 @@ pub(super) fn project_fillet(
         match points {
             None => {
                 if ctx.any_by(
-                    feature.parameters.keys(),
-                    |name| {
-                        admit_literal(ctx, name.as_str(), "scan SLDPRT project_fillet map keys")?;
-                        Ok(indexed_name(name.as_str(), "Radius"))
+                    &feature.parameters,
+                    |(name, _)| {
+                        let Some(suffix) = name.as_str().strip_prefix("Radius") else {
+                            return Ok(false);
+                        };
+                        Ok(!suffix.is_empty()
+                            && ctx.all_by(
+                                suffix.as_bytes(),
+                                |byte| Ok(byte.is_ascii_digit()),
+                                "scan SLDPRT fillet radius digits",
+                            )?)
                     },
                     "scan SLDPRT project_fillet map keys",
                 )? {
@@ -325,32 +334,44 @@ pub(super) fn project_combine(
 /// The retention mode a body-delete record states through its `Mode` property
 /// or, without one, its kind token, for the writer.
 pub(in crate::history) fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
-    retention_mode(feature, feature.properties.get("Mode").map(String::as_str))
+    match retention_mode(
+        feature,
+        feature.properties.get("Mode").map(String::as_str),
+        || Ok::<_, std::convert::Infallible>(feature.kind.trim()),
+    ) {
+        Ok(mode) => mode,
+        Err(never) => match never {},
+    }
 }
 
-/// The retention mode for a record whose `Mode` property is `mode`. The test
-/// trims the kind text, so a decode caller admits it.
-fn retention_mode(feature: &Feature, mode: Option<&str>) -> Option<BodyRetentionMode> {
+/// Resolve fixed tokens before reading the trimmed kind fallback.
+fn retention_mode<'f, E>(
+    feature: &'f Feature,
+    mode: Option<&str>,
+    trimmed_kind: impl FnOnce() -> Result<&'f str, E>,
+) -> Result<Option<BodyRetentionMode>, E> {
     let value = mode.unwrap_or(feature.kind.as_str());
-    if ["delete", "deletebody", "body-delete"]
-        .iter()
-        .any(|name| value.eq_ignore_ascii_case(name))
-    {
-        Some(BodyRetentionMode::DeleteSelected)
-    } else if ["keep", "keepbody"]
-        .iter()
-        .any(|name| value.eq_ignore_ascii_case(name))
-    {
-        Some(BodyRetentionMode::KeepSelected)
-    } else if feature.xml_tag.eq_ignore_ascii_case("DeleteBody") {
-        Some(BodyRetentionMode::DeleteSelected)
-    } else if feature.xml_tag.eq_ignore_ascii_case("KeepBody") {
-        Some(BodyRetentionMode::KeepSelected)
-    } else if feature.kind.trim().eq_ignore_ascii_case("Body-Delete/Keep") {
-        Some(BodyRetentionMode::Unresolved)
-    } else {
-        None
-    }
+    Ok(
+        if ["delete", "deletebody", "body-delete"]
+            .iter()
+            .any(|name| value.eq_ignore_ascii_case(name))
+        {
+            Some(BodyRetentionMode::DeleteSelected)
+        } else if ["keep", "keepbody"]
+            .iter()
+            .any(|name| value.eq_ignore_ascii_case(name))
+        {
+            Some(BodyRetentionMode::KeepSelected)
+        } else if feature.xml_tag.eq_ignore_ascii_case("DeleteBody") {
+            Some(BodyRetentionMode::DeleteSelected)
+        } else if feature.xml_tag.eq_ignore_ascii_case("KeepBody") {
+            Some(BodyRetentionMode::KeepSelected)
+        } else if trimmed_kind()?.eq_ignore_ascii_case("Body-Delete/Keep") {
+            Some(BodyRetentionMode::Unresolved)
+        } else {
+            None
+        },
+    )
 }
 
 pub(super) fn project_cut_with_surface(
@@ -373,8 +394,10 @@ pub(super) fn project_delete_body(
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let mode = property_value(ctx, feature, "Mode")?;
-    admit_literal(ctx, &feature.kind, "classify SLDPRT body retention mode")?;
-    let Some(mode) = retention_mode(feature, mode) else {
+    let Some(mode) = retention_mode(feature, mode, || {
+        ctx.trim_text(&feature.kind, "trim SLDPRT body retention kind")
+    })?
+    else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -510,8 +533,11 @@ pub(super) fn project_move_body(
         }
         None => None,
     };
-    let copies = match property_literal(ctx, feature, "Copies")? {
-        Some(value) => match value.trim().parse::<u32>() {
+    let copies = match property_value(ctx, feature, "Copies")? {
+        Some(value) => match ctx.parse_text::<u32>(
+            ctx.trim_text(value, "trim SLDPRT body copy count")?,
+            "parse SLDPRT body copy count",
+        )? {
             Ok(copies) => copies,
             Err(_) => return Ok(None),
         },
@@ -551,9 +577,16 @@ pub(super) fn project_flex(
     }
     .and_then(parse_valid_direction);
     let angle = parameter_literal(ctx, feature, "Angle")?.and_then(parse_angle_rad);
-    let factor = parameter_literal(ctx, feature, "Factor")?
-        .and_then(|value| value.trim().parse::<f64>().ok())
-        .and_then(cadmpeg_ir::scalar::PositiveReal::new);
+    let factor = match ctx.get_btree_map(&feature.parameters, "Factor", super::FEATURE_LITERAL)? {
+        Some(value) => ctx
+            .parse_text::<f64>(
+                ctx.trim_text(value, super::FEATURE_LITERAL)?,
+                super::FEATURE_LITERAL,
+            )?
+            .ok()
+            .and_then(cadmpeg_ir::scalar::PositiveReal::new),
+        None => None,
+    };
     let distance = parameter_literal(ctx, feature, "Distance")?.and_then(parse_length_mm);
     let form = property_value(ctx, feature, "Mode")?.and_then(|value| {
         if ["bending", "bend"]
@@ -609,8 +642,16 @@ pub(super) fn project_scale(
         Some(_) => None,
     };
     let factor = |name| -> Result<_, CodecError> {
-        Ok(parameter_literal(ctx, feature, name)?
-            .and_then(|value| value.trim().parse::<f64>().ok())
+        let Some(value) = ctx.get_btree_map(&feature.parameters, name, super::FEATURE_LITERAL)?
+        else {
+            return Ok(None);
+        };
+        Ok(ctx
+            .parse_text::<f64>(
+                ctx.trim_text(value, super::FEATURE_LITERAL)?,
+                super::FEATURE_LITERAL,
+            )?
+            .ok()
             .and_then(cadmpeg_ir::scalar::NonZeroReal::new))
     };
     let factors = match (
@@ -649,7 +690,6 @@ fn ordered_dimensions<'f>(
             else {
                 return Ok(false);
             };
-            admit_literal(ctx, value, OPERATION)?;
             ordered[found] = Some(value.as_str());
             found += 1;
             Ok(found == ordered.len())
@@ -672,36 +712,44 @@ pub(super) fn project_chamfer(
             },
         )
     };
-    let positional_angle = parameter_literal(ctx, feature, "D2")?
-        .filter(|value| parse_bounded_angle_rad(value).is_some());
-    let ordered_spec = |ordered: [Option<&str>; 3]| match ordered {
-        [Some(distance), None, None] => Some(ChamferSpec::Distance {
-            distance: parse_positive_dimension_length_mm(distance)?,
-        }),
-        [Some(first), Some(second), None] => {
-            let first_length = parse_positive_dimension_length_mm(first);
-            let second_length = parse_positive_dimension_length_mm(second);
-            let first_angle = parse_bounded_angle_rad(first);
-            let second_angle = parse_bounded_angle_rad(second);
-            match (first_length, second_length, first_angle, second_angle) {
-                (Some(distance), None, None, Some(angle))
-                | (None, Some(distance), Some(angle), None) => {
-                    Some(ChamferSpec::DistanceAngle { distance, angle })
-                }
-                (Some(first), Some(second), None, None) => {
-                    Some(ChamferSpec::TwoDistances { first, second })
-                }
-                _ => None,
+    let ordered_spec = |ordered: [Option<&str>; 3]| -> Result<Option<ChamferSpec>, CodecError> {
+        match ordered {
+            [Some(distance), None, None] => {
+                admit_literal(ctx, distance, super::FEATURE_LITERAL)?;
+                Ok(parse_positive_dimension_length_mm(distance)
+                    .map(|distance| ChamferSpec::Distance { distance }))
             }
+            [Some(first), Some(second), None] => {
+                admit_literal(ctx, first, super::FEATURE_LITERAL)?;
+                admit_literal(ctx, second, super::FEATURE_LITERAL)?;
+                let first_length = parse_positive_dimension_length_mm(first);
+                let second_length = parse_positive_dimension_length_mm(second);
+                let first_angle = parse_bounded_angle_rad(first);
+                let second_angle = parse_bounded_angle_rad(second);
+                Ok(
+                    match (first_length, second_length, first_angle, second_angle) {
+                        (Some(distance), None, None, Some(angle))
+                        | (None, Some(distance), Some(angle), None) => {
+                            Some(ChamferSpec::DistanceAngle { distance, angle })
+                        }
+                        (Some(first), Some(second), None, None) => {
+                            Some(ChamferSpec::TwoDistances { first, second })
+                        }
+                        _ => None,
+                    },
+                )
+            }
+            _ => Ok(None),
         }
-        _ => None,
     };
     let angle = match parameter_literal(ctx, feature, "Angle")? {
-        Some(angle) => Some(angle),
-        None => positional_angle,
+        Some(angle) => Some(parse_bounded_angle_rad(angle)),
+        None => parameter_literal(ctx, feature, "D2")?
+            .and_then(parse_bounded_angle_rad)
+            .map(Some),
     };
-    let stated = if let Some(value) = angle {
-        match (length("Distance", "D1")?, parse_bounded_angle_rad(value)) {
+    let stated = if let Some(angle) = angle {
+        match (length("Distance", "D1")?, angle) {
             (Some(distance), Some(angle)) => Some(ChamferSpec::DistanceAngle { distance, angle }),
             _ => None,
         }
@@ -714,7 +762,7 @@ pub(super) fn project_chamfer(
     };
     let spec = match stated {
         Some(spec) => spec,
-        None => match ordered_spec(ordered_dimensions(ctx, feature)?) {
+        None => match ordered_spec(ordered_dimensions(ctx, feature)?)? {
             Some(spec) => spec,
             None => {
                 let has = |name| {

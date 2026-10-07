@@ -111,8 +111,22 @@ fn resolve_pattern(
         Ok(either_parameter(ctx, feature, "Spacing", "D3")?
             .and_then(parse_positive_dimension_length_mm))
     };
+    let parse_count = |value: &str| -> Result<_, CodecError> {
+        let value = ctx.trim_text(value, "trim SLDPRT pattern count")?;
+        Ok(ctx
+            .parse_text::<u32>(value, "parse SLDPRT pattern count")?
+            .ok()
+            .filter(|count| *count > 0))
+    };
     let count = |name, positional| -> Result<_, CodecError> {
-        Ok(either_parameter(ctx, feature, name, positional)?.and_then(parse_count))
+        let value = match ctx.get_btree_map(&feature.parameters, name, super::FEATURE_LITERAL)? {
+            Some(value) => Some(value),
+            None => ctx.get_btree_map(&feature.parameters, positional, super::FEATURE_LITERAL)?,
+        };
+        value
+            .map(|value| parse_count(value))
+            .transpose()
+            .map(Option::flatten)
     };
     let transform = match form {
         NativePatternClass::Linear => {
@@ -125,13 +139,13 @@ fn resolve_pattern(
             let second = match (
                 property_literal(ctx, feature, "Direction2")?,
                 parameter_literal(ctx, feature, "D4")?,
-                parameter_literal(ctx, feature, "D2")?,
+                ctx.get_btree_map(&feature.parameters, "D2", super::FEATURE_LITERAL)?,
             ) {
                 (Some(direction), Some(spacing), Some(count)) => {
                     Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                         direction: require!(parse_valid_direction(direction)),
                         spacing: require!(parse_positive_dimension_length_mm(spacing)),
-                        count: require!(parse_count(count)),
+                        count: require!(parse_count(count)?),
                     })
                 }
                 _ => None,
@@ -151,7 +165,11 @@ fn resolve_pattern(
             angle: require!(
                 parameter_literal(ctx, feature, "Angle")?.and_then(parse_positive_angle_rad)
             ),
-            count: require!(parameter_literal(ctx, feature, "Count")?.and_then(parse_count)),
+            count: require!(ctx
+                .get_btree_map(&feature.parameters, "Count", super::FEATURE_LITERAL)?
+                .map(|value| parse_count(value))
+                .transpose()?
+                .flatten()),
         },
         NativePatternClass::CurveDriven => PatternTransform::CurveDriven {
             path: curve_path,
@@ -172,19 +190,27 @@ pub(super) fn project_pattern(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_source: &super::NeutralByKey<'_, '_>,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
     const OPERATION: &str = "project SLDPRT pattern seeds";
     let form = native_pattern_form(ctx, feature)?;
     let mut seeds = Vec::new();
     if let Some(source_seeds) = property_value(ctx, feature, "Seeds")? {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(source_seeds.len()),
-            OPERATION,
-        )?;
-        for source in source_seeds.split(',').map(str::trim) {
+        let mut characters = source_seeds.char_indices();
+        let mut start = 0;
+        let mut finished = false;
+        while !finished {
+            let delimiter = ctx.find_map(
+                &mut characters,
+                |(offset, character)| Ok((character == ',').then_some(offset)),
+                "scan SLDPRT pattern seed delimiters",
+            )?;
+            let end = delimiter.unwrap_or(source_seeds.len());
+            finished = delimiter.is_none();
+            let source = ctx.trim_text(&source_seeds[start..end], "trim SLDPRT pattern seed")?;
+            start = end + usize::from(!finished);
             let Some(id) = ctx.get_hash_map(by_source, source, "look up SLDPRT hash key")? else {
-                seeds.clear();
+                ctx.clear_vec(&mut seeds, OPERATION)?;
                 break;
             };
             let id = copy_projected_feature_id(ctx, id)?;
