@@ -680,7 +680,7 @@ pub fn decode_with_header(
         ctx,
         &mut out,
         records,
-        (&mut carriers, &mut scratch),
+        (&mut carriers, &mut scratch, purpose),
         &reach,
         CurveSenseRefs {
             reversed_curve_refs: &reversed_curve_refs,

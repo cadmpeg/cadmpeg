@@ -1344,7 +1344,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
     .expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(
-        pcurve_ranges_on_domain(&candidate, Some(&edge)),
+        pcurve_ranges_on_domain(&candidate, Some(&edge)).map(|ranges| ranges.collect::<Vec<_>>()),
         Some(vec![[0.55, 0.60], [0.0, 1.0]])
     );
 }

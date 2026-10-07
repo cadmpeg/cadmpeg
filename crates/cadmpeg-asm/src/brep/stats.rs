@@ -32,7 +32,6 @@ pub struct Stats {
 
 impl Stats {
     /// Total count represented by `missing_face_surface_kinds`.
-    #[must_use]
     pub fn missing_face_surfaces(
         &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<usize, cadmpeg_core::CodecError> {
@@ -41,7 +40,6 @@ impl Stats {
     }
 
     /// Total count represented by `unknown_surface_kinds`.
-    #[must_use]
     pub fn unknown_surface_faces(
         &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<usize, cadmpeg_core::CodecError> {
@@ -50,7 +48,6 @@ impl Stats {
     }
 
     /// Total count represented by `procedural_curve_kinds`.
-    #[must_use]
     pub fn procedural_curve_edges(
         &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<usize, cadmpeg_core::CodecError> {
@@ -59,7 +56,6 @@ impl Stats {
     }
 
     /// Total count represented by `undecoded_pcurve_kinds`.
-    #[must_use]
     pub fn undecoded_pcurve_refs(
         &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<usize, cadmpeg_core::CodecError> {
@@ -68,7 +64,6 @@ impl Stats {
     }
 
     /// Total count represented by `other_record_kinds`.
-    #[must_use]
     pub fn other_records(
         &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<usize, cadmpeg_core::CodecError> {
@@ -260,4 +255,24 @@ mod tests {
         let error = error.to_string();
         assert!(error.contains("cone"), "{error}");
     }
+    #[test]
+    fn stats_count_refuses_before_summing_source_kinds() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let mut stats = Stats::default();
+        stats.unknown_surface_kinds.insert("spline".into(), 2);
+        stats.unknown_surface_kinds.insert("mesh_surface".into(), 3);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, "ASM unknown surface faces count", |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                stats.unknown_surface_faces(&ctx)
+            },
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+        assert_eq!(limit.operation, "ASM unknown surface faces count");
+        assert_eq!(stats.unknown_surface_faces(&cadmpeg_test_support::service_decode_context()).unwrap(), 5);
+    }
+
 }
