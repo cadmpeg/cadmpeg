@@ -5154,13 +5154,15 @@ pub(super) fn feature_payload_strings(
                         None,
                     )?,
                     ordinal: ordinal_u32,
-                    value: crate::payload_text::PayloadText::from_wire(ctx, text)?.map_err(|error| {
-                        ctx.format_retained(
-                            format_args!("{error}"),
-                            "NX feature payload string error",
-                        )
-                        .map_or_else(|limit| limit, CodecError::InvalidInput)
-                    })?,
+                    value: crate::payload_text::PayloadText::from_wire(ctx, text)?.map_err(
+                        |error| {
+                            ctx.format_retained(
+                                format_args!("{error}"),
+                                "NX feature payload string error",
+                            )
+                            .map_or_else(|limit| limit, CodecError::InvalidInput)
+                        },
+                    )?,
                     source_offset,
                 });
             }

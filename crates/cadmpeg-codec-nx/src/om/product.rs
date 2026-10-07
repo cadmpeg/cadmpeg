@@ -8,7 +8,7 @@ pub(crate) struct ProductText<S>(PrintableString<S>);
 
 impl<S: crate::immutable_text::ImmutableText> ProductText<S> {
     fn new(value: S) -> Result<Self, &'static str> {
-        let value = PrintableString::from_text(value)
+        let value = PrintableString::new(value)
             .map_err(|_| "product_version/version: requires printable ASCII")?;
         Self::from_printable(value)
     }

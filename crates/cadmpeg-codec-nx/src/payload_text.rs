@@ -5,7 +5,7 @@
 pub(crate) struct PayloadText<S>(S);
 
 impl<S: crate::immutable_text::ImmutableText> PayloadText<S> {
-    pub(crate) fn from_text(value: S) -> Result<Self, &'static str> {
+    pub(crate) fn new(value: S) -> Result<Self, &'static str> {
         match Self::validate(value.as_ref(), |chars| {
             Ok::<_, std::convert::Infallible>(chars.next())
         }) {
@@ -66,7 +66,7 @@ impl<S: crate::immutable_text::ImmutableText> serde::Serialize for PayloadText<S
 impl<'de> serde::Deserialize<'de> for PayloadText<String> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = <String as serde::Deserialize>::deserialize(deserializer)?;
-        Self::from_text(value).map_err(serde::de::Error::custom)
+        Self::new(value).map_err(serde::de::Error::custom)
     }
 }
 
@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn payload_text_preserves_wire_and_owned_transfer() {
         let text = " ×Name42";
-        let value = PayloadText::from_text(text).unwrap().into_owned();
+        let value = PayloadText::new(text).unwrap().into_owned();
         let json = serde_json::to_string(&value).unwrap();
         assert_eq!(json, serde_json::to_string(text).unwrap());
         assert_eq!(
@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn payload_text_rejects_empty_and_control() {
         for text in ["", "\0", "\n", "\t", "\u{7f}"] {
-            assert!(PayloadText::from_text(text).is_err());
+            assert!(PayloadText::new(text).is_err());
             let json = serde_json::to_string(text).unwrap();
             let error = serde_json::from_str::<PayloadText<String>>(&json).unwrap_err();
             assert!(error.to_string().contains("value"));
@@ -98,8 +98,8 @@ mod tests {
     #[test]
     fn payloadtext_serializes_the_checked_borrowed_and_owned_text() {
         let text = "μ Name";
-        let borrowed = super::PayloadText::from_text(text).unwrap();
-        let owned = super::PayloadText::from_text(text.to_owned()).unwrap();
+        let borrowed = super::PayloadText::new(text).unwrap();
+        let owned = super::PayloadText::new(text.to_owned()).unwrap();
         for _ in 0..3 {
             assert_eq!(borrowed.as_str(), text);
             assert_eq!(owned.as_str(), text);
@@ -138,7 +138,7 @@ mod tests {
             |policy| policy.limits.max_work_units = 1,
             |ctx| {
                 assert!(PayloadText::from_wire(ctx, text.as_str()).unwrap().is_err());
-                assert!(PayloadText::from_text(text.as_str()).is_err());
+                assert!(PayloadText::new(text.as_str()).is_err());
             },
         );
     }

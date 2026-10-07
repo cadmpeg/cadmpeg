@@ -178,17 +178,17 @@ fn om_operation_payload_text_frames_retain_marker_and_order() {
             OperationPayloadTextFrame {
                 marker: OperationTextMarker::Text,
                 offset: 200,
-                value: crate::payload_text::PayloadText::from_text("CUT").unwrap(),
+                value: crate::payload_text::PayloadText::new("CUT").unwrap(),
             },
             OperationPayloadTextFrame {
                 marker: OperationTextMarker::String,
                 offset: 206,
-                value: crate::payload_text::PayloadText::from_text("DONE").unwrap(),
+                value: crate::payload_text::PayloadText::new("DONE").unwrap(),
             },
             OperationPayloadTextFrame {
                 marker: OperationTextMarker::Text,
                 offset: 213,
-                value: crate::payload_text::PayloadText::from_text("M Profile").unwrap(),
+                value: crate::payload_text::PayloadText::new("M Profile").unwrap(),
             },
         ]
     );
