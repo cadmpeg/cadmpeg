@@ -55,13 +55,17 @@ fn rational_circle_homogeneous_poles_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 8;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = decode_rational_four_arc_circle(&ctx, &exact_circle_directrix())
-        .expect("valid circle")
-        .expect_err("nine poles exceed eight items");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "ASM rational four-arc homogeneous poles",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            decode_rational_four_arc_circle(&ctx, &exact_circle_directrix()).expect("valid circle")
+        },
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected collection refusal: {error:?}");
     };
@@ -86,21 +90,26 @@ fn subtype_definition_index_refuses_collection_limit_before_construction() {
         len: 0,
     }];
     let bytes = [0_u8];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = super::decode_with_header(
-        &ctx,
-        &records,
-        &bytes,
-        None,
-        "stream",
-        FORMAT,
-        DecodePurpose::Model,
-    )
-    .err()
-    .expect("subtype definition exceeds one collection slot");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "index ASM subtype definitions",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+            super::decode_with_header(
+                &ctx,
+                &records,
+                &bytes,
+                None,
+                "stream",
+                FORMAT,
+                DecodePurpose::Model,
+            )
+            .map(|_| ())
+        },
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected resource refusal, got {error:?}");
     };
@@ -702,6 +711,7 @@ fn nested_attributes_inherit_their_topology_owner() {
         offset: 0,
         len: 0,
     };
+    let ctx = cadmpeg_test_support::service_decode_context();
     let parent = current_attribute(7, 3);
     let child = legacy_attribute(8, 7);
     let records = HashMap::from([(7, &parent), (8, &child)]);
@@ -710,18 +720,21 @@ fn nested_attributes_inherit_their_topology_owner() {
     let targets = HashMap::from([(3, expected.clone())]);
 
     assert_eq!(
-        inherited_attribute_target(7, &records, &targets),
+        inherited_attribute_target(&ctx, 7, &records, &targets).unwrap(),
         Some(expected.clone())
     );
     assert_eq!(
-        inherited_attribute_target(8, &records, &targets),
+        inherited_attribute_target(&ctx, 8, &records, &targets).unwrap(),
         Some(expected)
     );
 
     let cycle_left = current_attribute(9, 10);
     let cycle_right = legacy_attribute(10, 9);
     let cycle = HashMap::from([(9, &cycle_left), (10, &cycle_right)]);
-    assert_eq!(inherited_attribute_target(9, &cycle, &targets), None);
+    assert_eq!(
+        inherited_attribute_target(&ctx, 9, &cycle, &targets).unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -812,14 +825,12 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         })
         .collect::<HashMap<_, _>>();
 
-    let (carrier, decoded) = attribute_chain_color_carrier(
-        &resource_ctx,
-        &entity,
-        by_index.len(),
-        |index| by_index.get(&index).copied(),
-    )
-    .expect("color parser admission")
-    .expect("exact color carrier");
+    let (carrier, decoded) =
+        attribute_chain_color_carrier(&resource_ctx, &entity, by_index.len(), |index| {
+            by_index.get(&index).copied()
+        })
+        .expect("color parser admission")
+        .expect("exact color carrier");
     assert_eq!(carrier.index, 5);
     assert_eq!(
         decoded.carrier,
@@ -842,7 +853,12 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
-        &mut emitted,
+        (
+            &mut emitted,
+            &mut resource_ctx
+                .reserve_scoped(0, "ASM test emitted attributes")
+                .unwrap(),
+        ),
         &mut source,
         FORMAT,
     )
@@ -921,14 +937,12 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     };
     let by_index = HashMap::from([(1, &color), (2, &name)]);
 
-    let (carrier, decoded) = attribute_chain_color_carrier(
-        &resource_ctx,
-        &entity,
-        by_index.len(),
-        |index| by_index.get(&index).copied(),
-    )
-    .expect("color parser admission")
-    .expect("exact color carrier");
+    let (carrier, decoded) =
+        attribute_chain_color_carrier(&resource_ctx, &entity, by_index.len(), |index| {
+            by_index.get(&index).copied()
+        })
+        .expect("color parser admission")
+        .expect("exact color carrier");
     assert_eq!(carrier.index, 1);
     assert_eq!(
         decoded.carrier,
@@ -948,7 +962,12 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
-        &mut emitted,
+        (
+            &mut emitted,
+            &mut resource_ctx
+                .reserve_scoped(0, "ASM test emitted attributes")
+                .unwrap(),
+        ),
         &mut source,
         FORMAT,
     )
@@ -1034,7 +1053,10 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             &records,
             &by_index,
             &reach,
-            FORMAT
+            FORMAT,
+            &mut resource_ctx
+                .reserve_scoped(0, "ASM test emitted attributes")
+                .unwrap()
         )
         .expect("finite attribute values"),
         HashSet::from([1, 2])
@@ -1132,6 +1154,9 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         &by_index,
         &Reachable::default(),
         FORMAT,
+        &mut resource_ctx
+            .reserve_scoped(0, "ASM test emitted attributes")
+            .unwrap(),
     )
     .expect("finite attribute values");
 
@@ -1349,7 +1374,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
     .expect("fixture pcurve construction admission")
     .unwrap();
     assert_eq!(
-        pcurve_ranges_on_domain(&candidate, Some(&edge)),
+        pcurve_ranges_on_domain(&candidate, Some(&edge)).map(Iterator::collect::<Vec<_>>),
         Some(vec![[0.55, 0.60], [0.0, 1.0]])
     );
 }
@@ -1706,7 +1731,12 @@ fn attribute_chain_tracking_refuses_collection_limit() {
         &entity,
         &AttributeTarget::Document,
         &by_index,
-        &mut emitted,
+        (
+            &mut emitted,
+            &mut ctx
+                .reserve_scoped(0, "ASM test emitted attributes")
+                .unwrap(),
+        ),
         &mut out,
         FORMAT,
     )
@@ -1828,124 +1858,4 @@ fn brep_append_refuses_collection_limit() {
     assert_eq!(limit.operation, "ASM append regions");
 }
 
-#[test]
-fn stats_merge_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let mut whole = super::stats::Stats::default();
-    let mut part = super::stats::Stats::default();
-    part.unknown_surface_kinds.insert("unknown".into(), 1);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = whole
-        .merge(&ctx, part)
-        .expect_err("one kind exceeds zero items");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected collection refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, "ASM merge loss kinds");
-}
-
-#[test]
-fn collect_owned_ids_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use serde_value::Value;
-
-    let value = Value::Map(std::collections::BTreeMap::from([(
-        Value::String("id".into()),
-        Value::String("f3d:brep:entity#1".into()),
-    )]));
-    let mut owned = HashSet::new();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::collect_owned_ids(&ctx, &value, &mut owned)
-        .expect_err("one owned id exceeds zero items");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected collection refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-}
-
-#[test]
-fn collect_references_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use serde_value::Value;
-
-    let value = Value::String("f3d:brep:entity#1".into());
-    let owned = HashSet::from(["f3d:brep:entity#1".into()]);
-    let mut references = HashSet::new();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::collect_references(&ctx, &value, &owned, &mut references)
-        .expect_err("one reference exceeds zero items");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected collection refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-}
-
-#[test]
-fn collect_entity_adjacency_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use serde_value::Value;
-
-    let entity = Value::Map(std::collections::BTreeMap::from([
-        (Value::String("id".into()), Value::String("owner".into())),
-        (
-            Value::String("peer".into()),
-            Value::String("referenced".into()),
-        ),
-    ]));
-    let value = Value::Map(std::collections::BTreeMap::from([(
-        Value::String("bodies".into()),
-        Value::Seq(vec![entity]),
-    )]));
-    let owned = HashSet::from(["referenced".into()]);
-    let mut adjacency = HashMap::new();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::collect_entity_adjacency(&ctx, &value, &owned, &mut adjacency)
-        .expect_err("adjacency owner exceeds one reference slot");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected collection refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, "ASM adjacency owners");
-}
-
-#[test]
-fn remap_owned_ids_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use serde_value::Value;
-
-    let mut value = Value::Map(std::collections::BTreeMap::from([(
-        Value::String("field".into()),
-        Value::I64(1),
-    )]));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::remap_owned_ids(&ctx, &mut value, &HashMap::new())
-        .expect_err("one remapped field exceeds zero items");
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected collection refusal: {error:?}");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-}
-
-mod attribute_limits;
+mod serialized_budget;

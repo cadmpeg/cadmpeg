@@ -5797,14 +5797,14 @@ fn geometry_losses(
             "retain F3D geometry loss",
         )?;
     }
-    if s.missing_face_surfaces() > 0 {
+    if s.missing_face_surfaces(ctx)? > 0 {
         push_loss_vec(ctx, &mut losses, F3dLossCode::FaceSurfaceReferenceDangling, format_args!(
             "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
-            s.missing_face_surfaces(),
+            s.missing_face_surfaces(ctx)?,
             KindCounts(&s.missing_face_surface_kinds)
         ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
-    if s.unknown_surface_faces() > 0 {
+    if s.unknown_surface_faces(ctx)? > 0 {
         push_loss_vec(
             ctx,
             &mut losses,
@@ -5816,7 +5816,7 @@ fn geometry_losses(
              evaluate); the face, its loops, and trims are emitted with an unknown-geometry \
              surface linking to the preserved record bytes. Topology is transferred; the \
              underlying surface shape is not. Native kinds: {}.",
-                s.unknown_surface_faces(),
+                s.unknown_surface_faces(ctx)?,
                 KindCounts(&s.unknown_surface_kinds)
             ),
             "collect F3D geometry losses",
@@ -5829,7 +5829,7 @@ fn geometry_losses(
             s.mesh_surface_faces
         ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
-    if s.procedural_curve_edges() > 0 {
+    if s.procedural_curve_edges(ctx)? > 0 {
         push_loss_vec(
             ctx,
             &mut losses,
@@ -5838,14 +5838,14 @@ fn geometry_losses(
             "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
              B-spline cache; the edge was emitted with its vertices and parameter range but no \
              attributed curve carrier. Native kinds: {}.",
-            s.procedural_curve_edges(),
+            s.procedural_curve_edges(ctx)?,
             KindCounts(&s.procedural_curve_kinds)
         ),
             "collect F3D geometry losses",
             "retain F3D geometry loss",
         )?;
     }
-    if s.undecoded_pcurve_refs() > 0 {
+    if s.undecoded_pcurve_refs(ctx)? > 0 {
         push_loss_vec(
             ctx,
             &mut losses,
@@ -5854,7 +5854,7 @@ fn geometry_losses(
                 "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
              carrier on the face surface's parameterization; those coedges were emitted \
              without a pcurve. Native kinds: {}.",
-                s.undecoded_pcurve_refs(),
+                s.undecoded_pcurve_refs(ctx)?,
                 KindCounts(&s.undecoded_pcurve_kinds)
             ),
             "collect F3D geometry losses",
@@ -5867,14 +5867,14 @@ fn geometry_losses(
             s.partial_procedural_supports
         ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
-    if s.other_records() > 0 {
+    if s.other_records(ctx)? > 0 {
         push_loss_vec(
             ctx,
             &mut losses,
             F3dLossCode::SolvedRecordUntyped,
             format_args!(
                 "{} solved-record application/refinement record(s) were not transferred: {}.",
-                s.other_records(),
+                s.other_records(ctx)?,
                 KindCounts(&s.other_record_kinds)
             ),
             "collect F3D geometry losses",

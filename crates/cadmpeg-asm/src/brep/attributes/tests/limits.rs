@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::FORMAT;
+use crate::ids::IdFormat;
+
+const FORMAT: IdFormat = crate::asm_format!("f3d");
 use crate::sab::{Record, Token};
 
 #[test]
@@ -17,14 +19,17 @@ fn source_attribute_string_refuses_retained_limit() {
         offset: 0,
         len: 0,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<cadmpeg_ir::attributes::AttributeValue>(),
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "ASM attribute string",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            source_attribute(&ctx, &record, AttributeTarget::Document, FORMAT)
+        },
     );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = source_attribute(&ctx, &record, AttributeTarget::Document, FORMAT)
-        .expect_err("one attribute string exceeds zero retained bytes");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected retained refusal: {error:?}");
     };
@@ -60,7 +65,7 @@ fn source_attribute_record_name_refuses_retained_limit() {
 }
 
 #[test]
-fn unknown_record_kind_refuses_retained_limit() {
+fn unknown_record_kind_refuses_materialized_limit() {
     use crate::brep::attributes::unknown_record_id;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -74,14 +79,14 @@ fn unknown_record_kind_refuses_retained_limit() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = unknown_record_id(&ctx, &record, FORMAT)
-        .expect_err("one unknown kind exceeds zero retained bytes");
+        .expect_err("one unknown kind exceeds zero materialized bytes");
     let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected retained refusal: {error:?}");
+        panic!("expected materialized refusal: {error:?}");
     };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
 }
 
 #[test]
@@ -113,26 +118,31 @@ fn decimal_attribute_color_refuses_work_before_parsing() {
         len: 0,
     };
     let by_index = HashMap::from([(1, &decimal)]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // No preceding admission; the decimal scalar parser reads seven bytes.
-    policy.limits.max_work_units = 6;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-
-    let error = crate::brep::attributes::attribute_chain_color_carrier(
-        &ctx,
-        &entity,
-        by_index.len(),
-        |index| by_index.get(&index).copied(),
-    )
-    .expect_err("seven-byte decimal parse exceeds six work units");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "parse ASM decimal color",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = crate::brep::attributes::attribute_chain_color_carrier(
+                &ctx,
+                &entity,
+                by_index.len(),
+                |index| by_index.get(&index).copied(),
+            )
+            .map(|_| ());
+            if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
     let CodecError::ResourceLimit(refusal) = error else {
         panic!("expected work refusal, got {error:?}");
     };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(refusal.operation, "parse ASM decimal color");
-    assert_eq!(refusal.used, 0);
     assert_eq!(refusal.additional, 7);
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
 }
-
