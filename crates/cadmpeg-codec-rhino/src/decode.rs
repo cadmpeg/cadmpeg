@@ -1223,17 +1223,15 @@ impl<'a> DecodeContext<'a> {
                             ),
                         )?;
                     }
-                    let links = [self
-                        .expand
-                        .ctx()
-                        .copy_retained_text(annotation.id.as_str(), "Rhino annotation link")?];
                     let session = self.expand.ctx();
+                    let mut link_storage = session.reserve_scoped(0, "Rhino annotation link scratch")?;
+                    let link = session.copy_scoped_text(annotation.id.as_str(), &mut link_storage, "Rhino annotation link")?;
                     let result = self.validate_candidate_fallible(|candidate, _annotations, arena_storage| {
                         session.push_scoped_vec(arena_storage, &mut candidate.model.semantic_annotations, annotation, "Rhino candidate semantic annotations")
                     });
                     match result {
                         Ok(()) => {
-                            self.append_links(source_order, &links)?;
+                            self.append_links(source_order, &[link])?;
                             self.mark_decoded(source_order);
                             for code in self.expand.ctx().admit_iter(unresolved, "Rhino unresolved dimension reference traversal").map_err(cadmpeg_core::CodecError::from)? {
                                 push_report_loss(
@@ -1384,10 +1382,12 @@ impl<'a> DecodeContext<'a> {
                 }
             }
         }
+        let mut link_storage = ctx.reserve_scoped(0, "Rhino hatch link scratch")?;
         let loop_ids = hatch_loop_ids(
             self.expand.ctx(),
             key.as_str(),
             hatch.loops.iter().map(|hatch_loop| hatch_loop.kind),
+            &mut link_storage,
         )?;
         let mut parameters = BTreeMap::new();
         insert_feature_property(
@@ -1488,7 +1488,7 @@ impl<'a> DecodeContext<'a> {
                 for warning in ctx.admit_iter(&hatch.warnings[..], "Rhino hatch warning traversal").map_err(cadmpeg_core::CodecError::from)? {
                     self.scan_diagnostic(source_order, &warning)?;
                 }
-                let links = hatch_source_links(self.expand.ctx(), loop_ids, &feature_id)?;
+                let links = hatch_source_links(self.expand.ctx(), loop_ids, &feature_id, &mut link_storage)?;
                 self.append_links(source_order, &links)?;
                 self.geometry_transferred = true;
                 self.mark_native_retained(source_order, RhinoLossCode::HatchFillNotTransferred);
@@ -1658,8 +1658,9 @@ impl<'a> DecodeContext<'a> {
         let Some((key, _key_storage)) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
+        let mut link_storage = ctx.reserve_scoped(0, "Rhino source link scratch")?;
         let association = self.source_association(identity)?;
-        let curve_id = ctx.format_retained(
+        let curve_id = ctx.format_scoped_text(&mut link_storage,
             format_args!("rhino:object:curve#{key}.detail-boundary"),
             "Rhino decode_detail text",
         )?;
@@ -1741,7 +1742,7 @@ impl<'a> DecodeContext<'a> {
                     source_order,
                     &[
                         curve_id,
-                        ctx.format_retained(
+                        ctx.format_scoped_text(&mut link_storage,
                             format_args!("{}", feature_id),
                             "Rhino decode_detail text",
                         )?,
@@ -1970,11 +1971,12 @@ impl<'a> DecodeContext<'a> {
                 return Ok(());
             }
         };
+        let ctx = self.expand.ctx();
+        let mut link_storage = ctx.reserve_scoped(0, "Rhino source link scratch")?;
         let feature_id = self
             .expand
             .ctx()
-            .format_retained(format_args!("{}", feature.id), "Rhino decode_morph text")?;
-        let ctx = self.expand.ctx();
+            .format_scoped_text(&mut link_storage, format_args!("{}", feature.id), "Rhino decode_morph text")?;
         match self
             .validate_candidate_fallible(|candidate, _annotations, arena_storage| ctx.push_scoped_vec(arena_storage, &mut candidate.model.features, feature, "Rhino candidate features"))
         {
@@ -2040,8 +2042,9 @@ impl<'a> DecodeContext<'a> {
         let Some((key, _key_storage)) = self.checked_object_key(identity, source_order)? else {
             return Ok(());
         };
+        let mut link_storage = ctx.reserve_scoped(0, "Rhino source link scratch")?;
         let association = self.source_association(identity)?;
-        let parameter_id = ctx.format_retained(
+        let parameter_id = ctx.format_scoped_text(&mut link_storage,
             format_args!("rhino:object:curve#{key}.curve-on-surface-c2"),
             "Rhino decode_curve_on_surface text",
         )?;
@@ -2049,7 +2052,7 @@ impl<'a> DecodeContext<'a> {
             .model_curve
             .as_ref()
             .map(|_| {
-                ctx.format_retained(
+                ctx.format_scoped_text(&mut link_storage,
                     format_args!("rhino:object:curve#{key}.curve-on-surface-c3"),
                     "Rhino decode_curve_on_surface text",
                 )
@@ -2185,17 +2188,18 @@ impl<'a> DecodeContext<'a> {
                 for warning in ctx.admit_iter(&construction.warnings[..], "Rhino curve-on-surface warning traversal").map_err(cadmpeg_core::CodecError::from)? {
                     self.scan_diagnostic(source_order, &warning)?;
                 }
-                let mut links = vec![
+                let mut links = link_storage.with_storage(|| ctx.collection_vec(3 + usize::from(model_id.is_some()), "Rhino curve-on-surface links"))?;
+                links.extend([
                     parameter_id,
-                    ctx.format_retained(
+                    ctx.format_scoped_text(&mut link_storage,
                         format_args!("{}", surface_id),
                         "Rhino decode_curve_on_surface text",
                     )?,
-                    ctx.format_retained(
+                    ctx.format_scoped_text(&mut link_storage,
                         format_args!("{}", feature_id),
                         "Rhino decode_curve_on_surface text",
                     )?,
-                ];
+                ]);
                 if let Some(model_id) = model_id {
                     links.push(model_id);
                 }
@@ -2971,7 +2975,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
             return Ok(false);
         };
         surface.source_object = Some(self.source_association(identity)?);
-        let id = ctx.format_retained(
+        let (id, _link_storage) = ctx.format_scoped(
             format_args!("{}", surface.id),
             "Rhino commit_subd_surface text",
         )?;
@@ -2987,10 +2991,10 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                     Exactness::ByteExact
                 },
             )?;
-            ctx.copy_retained_text(&id, "Rhino SubD link identity copy")
+            Ok::<(), cadmpeg_core::CodecError>(())
         });
-        let link = match result {
-            Ok(link) => link,
+        match result {
+            Ok(()) => {},
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => {
                 self.scan_warning(
@@ -3000,7 +3004,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                 return Ok(false);
             }
         };
-        self.append_link(source_order, &link)?;
+        self.append_link(source_order, &id)?;
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -3935,13 +3939,10 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
             for id in [surface_id.as_str(), procedural_id.as_str()] {
                 set_exactness(ctx, candidate_annotations, id, Exactness::Derived)?;
             }
-            Ok::<_, CandidateError>(vec![ctx.format_retained(
-                format_args!("{}", surface_id),
-                "Rhino commit_procedural_surface text",
-            )?])
+            Ok::<_, CandidateError>(surface_id)
         });
-        let links = match result {
-            Ok(links) => links,
+        let link = match result {
+            Ok(link) => link,
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => {
                 self.report.phase_warnings.push_admitted(
@@ -3953,7 +3954,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                 return Ok(false);
             }
         };
-        self.append_links(source_order, &links)?;
+        self.append_link(source_order, link.as_str())?;
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -3992,6 +3993,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
         let association = self.source_association(identity)?;
         let session = self.expand.ctx();
         let mut source_boundaries = std::mem::take(&mut extrusion.boundaries);
+        let mut link_storage = ctx.reserve_scoped(0, "Rhino extrusion link scratch")?;
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations, arena_storage| {
             let mut links = Vec::new();
             let (mut boundaries, _boundary_storage) = session.temporary_vec(source_boundaries.len(), "Rhino committed extrusion boundaries")?;
@@ -4062,17 +4064,20 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                     let (identity_text, _identity_storage) = ctx.format_scoped(format_args!("{}", procedure_id), "Rhino commit_extrusion text")?;
                     annotate_derived(ctx, candidate_annotations, &identity_text)?;
                 }
-                links.push(ctx.format_retained(format_args!("{}", surface_id), "Rhino commit_extrusion text")?);
+                let link = ctx.format_scoped_text(&mut link_storage, format_args!("{}", surface_id), "Rhino commit_extrusion text")?;
+                ctx.push_scoped_vec(&mut link_storage, &mut links, link, "Rhino extrusion links")?;
             }
             if extrusion.caps[0] || extrusion.caps[1] {
-                links.push(stage_extrusion_caps((session, &mut *arena_storage),
+                let cap_id = stage_extrusion_caps((session, &mut *arena_storage),
                     candidate,
                     candidate_annotations,
                     key.as_str(),
                     &association,
                     &extrusion,
                     &boundaries,
-                )?);
+                )?;
+                let link = ctx.format_scoped_text(&mut link_storage, format_args!("{cap_id}"), "Rhino extrusion cap link")?;
+                ctx.push_scoped_vec(&mut link_storage, &mut links, link, "Rhino extrusion links")?;
             }
             for (index, mut mesh) in ctx.admit_iter(extrusion.meshes, "Rhino extrusion mesh traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
                 let id = ctx.format_retained(
@@ -4093,7 +4098,8 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                     })?;
                 mesh.tessellation.source_object = Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?);
                 annotate_derived(ctx, candidate_annotations, mesh.tessellation.id.as_str())?;
-                links.push(ctx.format_retained(format_args!("{}", mesh.tessellation.id), "Rhino commit_extrusion text")?);
+                let link = ctx.format_scoped_text(&mut link_storage, format_args!("{}", mesh.tessellation.id), "Rhino commit_extrusion text")?;
+                ctx.push_scoped_vec(&mut link_storage, &mut links, link, "Rhino extrusion links")?;
                 ctx.push_scoped_vec(arena_storage, &mut candidate.model.tessellations, mesh.tessellation, "Rhino candidate tessellations")?;
             }
             Ok::<_, CandidateError>(links)
@@ -4159,13 +4165,11 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
                 source_object: Some(association),
             }, "Rhino candidate surfaces")?;
             set_exactness(ctx, candidate_annotations, &id, Exactness::Unknown)?;
-            Ok::<_, CandidateError>(
-                ctx.format_retained(format_args!("{}", id), "Rhino commit_unknown_surface text")?,
-            )
+            Ok::<_, CandidateError>(())
         });
         match validation {
-            Ok(link) => {
-                self.append_link(source_order, &link)?;
+            Ok(()) => {
+                self.append_link(source_order, id.as_str())?;
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(findings) => self.scan_warning(
@@ -4236,7 +4240,7 @@ Ok::<_, cadmpeg_core::CodecError>(if let Some(selected) = &self.instance_selecti
             mesh.warnings,
             format_args!("{}", identity.source_id),
         )?;
-        let id = self.expand.ctx().format_retained(
+        let (id, _link_storage) = self.expand.ctx().format_scoped(
             format_args!("{}", mesh.tessellation.id),
             "Rhino commit_mesh text",
         )?;
@@ -4682,7 +4686,7 @@ fn stage_extrusion_caps(
     association: &SourceObjectAssociation,
     extrusion: &crate::extrusion::DecodedExtrusion,
     boundaries: &[CommittedExtrusionBoundary<'_>],
-) -> Result<String, CandidateError> {
+) -> Result<cadmpeg_ir::ids::BodyId, CandidateError> {
     let (ctx, arena_storage) = scope;
     let mut key_text_storage = ctx.reserve_scoped(0, "Rhino stage_extrusion_caps text copy")?;
     ctx.charge_work(u64_from_index(key.len()), "Rhino extrusion cap key validation")?;
@@ -5073,10 +5077,7 @@ fn stage_extrusion_caps(
         )?;
         annotate_derived(ctx, annotations, &identity_text)?;
     }
-    Ok(ctx.format_retained(
-        format_args!("{}", body_id),
-        "Rhino stage_extrusion_caps text",
-    )?)
+    Ok(body_id)
 }
 
 #[derive(Debug)]
@@ -7314,11 +7315,12 @@ fn hatch_loop_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     key: &str,
     mut kinds: impl ExactSizeIterator<Item = crate::hatch::LoopKind>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Vec<(crate::hatch::LoopKind, String)>, cadmpeg_core::CodecError> {
-    let mut ids = ctx.collection_vec(kinds.len(), "Rhino hatch loop IDs")?;
+    let mut ids = storage.with_storage(|| ctx.collection_vec(kinds.len(), "Rhino hatch loop IDs"))?;
     let mut index = 0usize;
     while let Some(kind) = ctx.next_charged(&mut kinds, "Rhino hatch loop kind traversal")? {
-        let id = ctx.format_retained(
+        let id = ctx.format_scoped_text(storage,
             format_args!("rhino:object:curve#{key}.hatch-loop-{index}"),
             "Rhino hatch loop ID text",
         )?;
@@ -7332,14 +7334,15 @@ fn hatch_source_links(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loop_ids: Vec<(crate::hatch::LoopKind, String)>,
     feature_id: &cadmpeg_ir::features::FeatureId,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let count = loop_ids
         .len()
         .checked_add(1)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("hatch source link count overflow"))?;
-    let mut links = ctx.collection_vec(count, "Rhino hatch source links")?;
+    let mut links = storage.with_storage(|| ctx.collection_vec(count, "Rhino hatch source links"))?;
     links.extend(ctx.admit_iter(loop_ids, "Rhino hatch source link traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(_, id)| id));
-    links.push(ctx.copy_retained_text(feature_id.as_str(), "Rhino hatch feature link text")?);
+    links.push(ctx.copy_scoped_text(feature_id.as_str(), storage, "Rhino hatch feature link text")?);
     Ok(links)
 }
 

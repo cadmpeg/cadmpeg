@@ -109,8 +109,7 @@ fn hatch_loop_ids_refuse_collection_limit() {
         hatch_loop_ids(
             ctx,
             "fixture",
-            std::iter::once(crate::hatch::LoopKind::Outer),
-        )
+            std::iter::once(crate::hatch::LoopKind::Outer), &mut ctx.reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),)
         .expect_err("one loop exceeds zero collection items")
     });
     assert!(matches!(
@@ -121,24 +120,20 @@ fn hatch_loop_ids_refuse_collection_limit() {
 }
 
 #[test]
-fn hatch_loop_id_text_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    let expected_len = "rhino:object:curve#fixture.hatch-loop-0".len();
-    policy.limits.max_retained_bytes = u64::try_from(expected_len - 1).expect("bounded fixture");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = hatch_loop_ids(
-        &ctx,
-        "fixture",
-        std::iter::once(crate::hatch::LoopKind::Outer),
-    )
-    .expect_err("the loop ID exceeds the retained-byte limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino hatch loop ID text"
-    ));
+fn hatch_loop_id_text_refuses_scratch_limit() {
+    // The scoped row buffer precedes its scoped identity text.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino hatch loop ID text", |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut storage = ctx.reserve_scoped(0, "Rhino fixture link scratch")?;
+            hatch_loop_ids(&ctx, "fixture", std::iter::once(crate::hatch::LoopKind::Outer), &mut storage)
+        });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino hatch loop ID text"));
 }
 
 #[test]
@@ -151,8 +146,7 @@ fn hatch_source_links_refuse_collection_limit() {
         hatch_source_links(
             ctx,
             vec![(crate::hatch::LoopKind::Outer, "loop".to_string())],
-            &feature_id,
-        )
+            &feature_id, &mut ctx.reserve_scoped(0, "Rhino fixture link scratch").expect("fixture scratch"),)
         .expect_err("two links exceed one collection item")
     });
     assert!(matches!(
@@ -163,24 +157,24 @@ fn hatch_source_links_refuse_collection_limit() {
 }
 
 #[test]
-fn hatch_feature_link_text_refuses_retained_limit() {
+fn hatch_feature_link_text_refuses_scratch_limit() {
     let feature_id = cadmpeg_ir::features::FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "hatch", "feature"),
         cadmpeg_ir::identity_key!("fixture"),
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from(feature_id.as_str().len() - 1).expect("bounded fixture");
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root admitted");
-    let error = hatch_source_links(&ctx, Vec::new(), &feature_id)
-        .expect_err("feature link exceeds retained-byte limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(refusal)
-            if refusal.operation == "Rhino hatch feature link text"
-    ));
+    // The scoped link buffer precedes its scoped feature identity text.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino hatch feature link text", |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut storage = ctx.reserve_scoped(0, "Rhino fixture link scratch")?;
+            hatch_source_links(&ctx, Vec::new(), &feature_id, &mut storage)
+        });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino hatch feature link text"));
 }
 
 #[test]
