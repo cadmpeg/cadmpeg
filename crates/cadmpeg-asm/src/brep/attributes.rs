@@ -210,8 +210,8 @@ fn attribute_value(
         Token::Ref(value) => {
             AttributeValue::Reference(brep_id!(format, Identity, "entity", value).into_string())
         }
-        Token::SubtypeOpen => AttributeValue::String("subtype_open".into()),
-        Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
+        Token::SubtypeOpen => AttributeValue::String(ctx.copy_retained_text("subtype_open", "ASM attribute subtype marker")?),
+        Token::SubtypeClose => AttributeValue::String(ctx.copy_retained_text("subtype_close", "ASM attribute subtype marker")?),
         Token::Position(value) | Token::Vector3(value) => match AttributeValue::vector(*value) {
             Some(value) => value,
             None => return Ok(None),
@@ -529,7 +529,8 @@ pub fn unknown_record_id(
     rec: &Record,
     format: IdFormat,
 ) -> Result<UnknownId, cadmpeg_core::CodecError> {
-    let name = ctx.copy_retained_text(rec.head(), "ASM unknown record kind")?;
+    let mut kind_storage = ctx.reserve_scoped(0, "ASM unknown record kind scratch")?;
+    let name = kind_storage.with_storage(|| ctx.copy_retained_text(rec.head(), "ASM unknown record kind"))?;
     let kind = IdentityComponent::try_new(name).map_err(|error| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid ASM source identity component: {error}"
@@ -575,6 +576,47 @@ mod tests {
         };
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "ASM unknown record identity");
+    }
+
+    #[test]
+    fn unknown_record_kind_uses_scoped_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let record = Record {
+            index: 1,
+            name: "mystery".into(),
+            tokens: std::sync::Arc::from([]),
+            offset: 0,
+            len: 0,
+        };
+        let expected = "f3d:brep:mystery#1";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(expected.len()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let id = super::unknown_record_id(&ctx, &record, crate::asm_format!("f3d")).unwrap();
+        assert_eq!(id.as_str(), expected);
+    }
+
+    #[test]
+    fn attribute_subtype_markers_admit_retained_text() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_ir::attributes::AttributeValue;
+
+        for (token, expected) in [(Token::SubtypeOpen, "subtype_open"), (Token::SubtypeClose, "subtype_close")] {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes, "ASM attribute subtype marker", |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_retained_bytes = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    super::attribute_value(&ctx, &token, crate::asm_format!("f3d"))
+                },
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("resource refusal") };
+            assert_eq!(limit.operation, "ASM attribute subtype marker");
+            assert_eq!(super::attribute_value(&cadmpeg_test_support::service_decode_context(), &token, crate::asm_format!("f3d")).unwrap(), Some(AttributeValue::String(expected.into())));
+        }
     }
 
     #[test]
