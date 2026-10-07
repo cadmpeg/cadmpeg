@@ -225,3 +225,36 @@ fn sketch_endpoint_search_admits_the_first_lookup_before_refusal() {
         cadmpeg_ir::report::check::Check::NativeLinks
     );
 }
+
+#[test]
+fn expression_references_validate_without_collection_slots() {
+    for kind in [
+        serde_json::json!({"form": "value", "value": 0.0, "value_type": 0, "state": 0}),
+        serde_json::json!({"form": "parameter_reference", "operand": {"index": 1, "qualified": false}}),
+        serde_json::json!({"form": "unary", "operation": "negate", "operand": {"index": 1, "qualified": false}}),
+        serde_json::json!({"form": "binary", "operation": "add", "left": {"index": 1, "qualified": false}, "right": {"index": 1, "qualified": false}}),
+    ] {
+        let mut data = empty_native_data();
+        let raw = carrier_record();
+        let payload = serde_json::from_value::<crate::design::PmDcExpressionPayload>(serde_json::json!({
+            "save_version_major": 1, "header_value": 0, "header_id": 0,
+            "unit": {"index": 1, "qualified": false}, "kind": kind
+        })).expect("expression payload");
+        data.pm_dc_expressions.push(super::Located::new(
+            payload,
+            crate::record_identity::RecordTypeId::try_from(raw.type_id.as_str().to_owned()).expect("type id"),
+            cadmpeg_ir::ids::IdentityKey::encode_segment("t"),
+            0,
+        ));
+        data.records.push(raw);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One raw-record index slot and one expression uniqueness slot. References
+        // stay in their record and allocate no collection slots.
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut findings = Vec::new();
+        validate_design(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings).expect("references resolve");
+        assert!(findings.is_empty());
+    }
+}
