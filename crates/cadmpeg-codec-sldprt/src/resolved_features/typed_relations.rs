@@ -33,7 +33,7 @@ use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
 };
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::nonblank_literal;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
@@ -2390,45 +2390,6 @@ fn relation_owner_curve_entities(
     Ok(entities)
 }
 
-fn charge_typed_endpoint_work(
-    ctx: &DecodeContext<'_>,
-    len: usize,
-    factor: u64,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let work = u64_from_index(len)
-        .checked_add(1)
-        .and_then(|work| work.checked_mul(factor))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, operation)
-}
-
-fn charge_typed_endpoint_roster(
-    ctx: &DecodeContext<'_>,
-    owner: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_work(512, operation)?;
-    for marker in markers {
-        charge_typed_endpoint_work(
-            ctx,
-            marker.feature_ref.as_deref().map_or(0, str::len),
-            8,
-            operation,
-        )?;
-        charge_typed_endpoint_work(
-            ctx,
-            owner.feature_ref.as_deref().map_or(0, str::len),
-            8,
-            operation,
-        )?;
-        charge_typed_endpoint_work(ctx, marker.id().len(), 8, operation)?;
-        charge_typed_endpoint_work(ctx, owner.id().len(), 8, operation)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 pub(super) fn line_endpoint_markers<'a>(
     ctx: &DecodeContext<'_>,
@@ -2514,7 +2475,7 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
-    if let Some(endpoints) = extended_direct_object_line_endpoints(payload, curve, markers) {
+    if let Some(endpoints) = extended_direct_object_line_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
     }
     let endpoints = line_endpoint_markers_from(ctx, curve, markers_by_id, markers)?;
@@ -2562,17 +2523,17 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
             return Ok(endpoints);
         }
     }
-    if let Some(endpoints) = compact_legacy_object_line_endpoints(payload, curve, markers) {
+    if let Some(endpoints) = compact_legacy_object_line_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = extended_wide_selected_axis_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    if let Some(endpoints) = inline_arc_endpoint_markers(payload, curve, markers) {
+    if let Some(endpoints) = inline_arc_endpoint_markers(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) =
-        compact_legacy_142_profile_curve_endpoint_markers(payload, curve, markers)
+        compact_legacy_142_profile_curve_endpoint_markers(ctx, payload, curve, markers)?
     {
         return copy_endpoint_markers(ctx, &endpoints);
     }
@@ -2601,20 +2562,23 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    if let Some(endpoints) = current_coordinate_linked_line_endpoints(payload, curve, markers) {
+    if let Some(endpoints) = current_coordinate_linked_line_endpoints(ctx, payload, curve, markers)?
+    {
         return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = coordinate_centered_line_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    if let Some(endpoints) = legacy_terminal_profile_indexed_endpoints(payload, curve, markers) {
+    if let Some(endpoints) =
+        legacy_terminal_profile_indexed_endpoints(ctx, payload, curve, markers)?
+    {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    let endpoints = consecutive_legacy_profile_line_endpoints(payload, curve, markers);
+    let endpoints = consecutive_legacy_profile_line_endpoints(ctx, payload, curve, markers)?;
     if endpoints.len() == 2 {
         return Ok(endpoints);
     }
-    if let Some(pair) = coordinate_profile_line_endpoints(payload, curve, markers_by_id) {
+    if let Some(pair) = coordinate_profile_line_endpoints(ctx, payload, curve, markers_by_id)? {
         copy_endpoint_markers(ctx, &pair)
     } else {
         Ok(endpoints)
@@ -2622,11 +2586,59 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
 }
 
 fn coordinate_profile_line_endpoints<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
-) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = usize::try_from(curve.offset()).ok()?;
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT coordinate profile line endpoints";
+    if !coordinate_profile_line(payload, curve) {
+        return Ok(None);
+    }
+    let feature = curve.feature_ref.as_deref();
+    let mut point = None;
+    for link in ctx.admit_iter(curve.links(), OPERATION)? {
+        if ctx.equal(link.entity_ref.as_str(), curve.id(), OPERATION)? {
+            continue;
+        }
+        let Some(linked) = ctx
+            .get_hash_map(markers_by_id, link.entity_ref.as_str(), OPERATION)?
+            .copied()
+        else {
+            return Ok(None);
+        };
+        if !ctx.equal(&linked.feature_ref.as_deref(), &feature, OPERATION)? {
+            return Ok(None);
+        }
+        match linked.kind() {
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                if linked.coordinates_m.is_none() || point.replace(linked).is_some() {
+                    return Ok(None);
+                }
+            }
+            SketchInputKind::Relation(_) => {}
+            SketchInputKind::LineOrCircle
+            | SketchInputKind::Arc
+            | SketchInputKind::Native(_)
+            | SketchInputKind::NativeHandle(_) => return Ok(None),
+        }
+    }
+    let Some(point) = point else {
+        return Ok(None);
+    };
+    Ok(match (curve.coordinates_m, point.coordinates_m) {
+        (Some(curve_point), Some(linked_point)) if curve_point.get() != linked_point.get() => {
+            Some([curve, point])
+        }
+        _ => None,
+    })
+}
+
+/// Whether the curve is a coordinate-bearing current profile line.
+fn coordinate_profile_line(payload: &[u8], curve: &SketchInputEntity) -> bool {
+    let Some(offset) = usize::try_from(curve.offset()).ok() else {
+        return false;
+    };
     if curve.kind() != SketchInputKind::LineOrCircle
         || curve.coordinates_m.is_none()
         || !matches!(
@@ -2638,92 +2650,111 @@ fn coordinate_profile_line_endpoints<'a>(
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 64..offset + 66) != Some(&[0x1e, 0x00])
     {
-        return None;
+        return false;
     }
-    let mut point = None;
-    for link in curve
-        .links()
-        .iter()
-        .filter(|link| link.entity_ref != curve.id())
-    {
-        let linked = markers_by_id.get(link.entity_ref.as_str()).copied()?;
-        if linked.feature_ref != curve.feature_ref {
-            return None;
-        }
-        match linked.kind() {
-            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
-                if linked.coordinates_m.is_none() || point.replace(linked).is_some() {
-                    return None;
-                }
-            }
-            SketchInputKind::Relation(_) => {}
-            SketchInputKind::LineOrCircle
-            | SketchInputKind::Arc
-            | SketchInputKind::Native(_)
-            | SketchInputKind::NativeHandle(_) => return None,
-        }
-    }
-    let point = point?;
-    (curve.coordinates_m?.get() != point.coordinates_m?.get()).then_some([curve, point])
+    true
+}
+
+/// The one marker of the owner's feature that `matches` accepts, when exactly
+/// one does. The search stops at a second match.
+fn unique_feature_marker<'a>(
+    ctx: &DecodeContext<'_>,
+    markers: &[&'a SketchInputEntity],
+    owner: &SketchInputEntity,
+    operation: &'static str,
+    matches: impl Fn(&SketchInputEntity) -> bool,
+) -> Result<Option<&'a SketchInputEntity>, CodecError> {
+    let feature = owner.feature_ref.as_deref();
+    let mut candidates = markers.iter().copied();
+    let mut next = || {
+        ctx.find_by(
+            &mut candidates,
+            |marker| {
+                Ok(matches(marker)
+                    && ctx.equal(&marker.feature_ref.as_deref(), &feature, operation)?)
+            },
+            operation,
+        )
+    };
+    let Some(first) = next()? else {
+        return Ok(None);
+    };
+    Ok(next()?.is_none().then_some(first))
+}
+
+fn is_coordinate_point(marker: &SketchInputEntity) -> bool {
+    marker.coordinates_m.is_some()
+        && matches!(
+            marker.kind(),
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+        )
+}
+
+/// Two endpoints with distinct identities and distinct coordinates.
+fn distinct_endpoints<'a>(
+    ctx: &DecodeContext<'_>,
+    endpoints: [&'a SketchInputEntity; 2],
+    operation: &'static str,
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    Ok((endpoints[0].coordinates_m != endpoints[1].coordinates_m
+        && !ctx.equal(endpoints[0].id(), endpoints[1].id(), operation)?)
+    .then_some(endpoints))
 }
 
 pub(super) fn extended_direct_object_line_endpoints<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Option<[&'a SketchInputEntity; 2]> {
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT extended direct object line endpoints";
     if curve.kind() != SketchInputKind::LineOrCircle {
-        return None;
+        return Ok(None);
     }
-    let offset = usize::try_from(curve.offset()).ok()?;
-    let endpoint_ids = extended_direct_object_line_endpoint_ids(payload, offset)?;
+    let Some(endpoint_ids) = usize::try_from(curve.offset())
+        .ok()
+        .and_then(|offset| extended_direct_object_line_endpoint_ids(payload, offset))
+    else {
+        return Ok(None);
+    };
     let resolve = |id| {
-        let mut candidates = markers.iter().copied().filter(|marker| {
-            marker.feature_ref == curve.feature_ref
-                && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
+        unique_feature_marker(ctx, markers, curve, OPERATION, |marker| {
+            is_coordinate_point(marker)
                 && if id == 0 {
                     marker.object_index().is_none()
                 } else {
                     marker.object_index() == Some(id)
                 }
-        });
-        let marker = candidates.next()?;
-        candidates.next().is_none().then_some(marker)
+        })
     };
-    let endpoints = [resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?];
-    (endpoints[0].id() != endpoints[1].id()
-        && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
-        .then_some(endpoints)
+    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+        return Ok(None);
+    };
+    distinct_endpoints(ctx, [first, second], OPERATION)
 }
 
 pub(super) fn compact_legacy_object_line_endpoints<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = usize::try_from(curve.offset()).ok()?;
-    let endpoint_ids = compact_legacy_code_one_line_endpoint_indices(payload, offset)?;
-    let resolve = |id| {
-        let mut candidates = markers.iter().copied().filter(|marker| {
-            marker.feature_ref == curve.feature_ref
-                && marker.object_index() == Some(id)
-                && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-        });
-        let marker = candidates.next()?;
-        candidates.next().is_none().then_some(marker)
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT compact legacy object line endpoints";
+    let Some(endpoint_ids) = usize::try_from(curve.offset())
+        .ok()
+        .and_then(|offset| compact_legacy_code_one_line_endpoint_indices(payload, offset))
+    else {
+        return Ok(None);
     };
-    let endpoints = [resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?];
-    (endpoints[0].id() != endpoints[1].id()
-        && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
-        .then_some(endpoints)
+    let resolve = |id| {
+        unique_feature_marker(ctx, markers, curve, OPERATION, |marker| {
+            marker.object_index() == Some(id) && is_coordinate_point(marker)
+        })
+    };
+    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+        return Ok(None);
+    };
+    distinct_endpoints(ctx, [first, second], OPERATION)
 }
 
 fn extended_wide_selected_axis_endpoints<'a>(
@@ -2733,7 +2764,6 @@ fn extended_wide_selected_axis_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT extended wide selected axis endpoints";
-    charge_typed_endpoint_roster(ctx, curve, markers, OPERATION)?;
     let encoded = (|| {
         let offset = usize::try_from(curve.offset()).ok()?;
         if curve.kind() != SketchInputKind::LineOrCircle
@@ -2768,22 +2798,16 @@ fn extended_wide_selected_axis_endpoints<'a>(
         return Ok(None);
     };
     let resolve_object = |index| {
-        let mut candidates = markers.iter().copied().filter(|marker| {
-            marker.feature_ref == curve.feature_ref
-                && marker.object_index() == Some(index)
-                && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-        });
-        let candidate = candidates.next()?;
-        candidates.next().is_none().then_some(candidate)
+        unique_feature_marker(ctx, markers, curve, OPERATION, |marker| {
+            marker.object_index() == Some(index) && is_coordinate_point(marker)
+        })
     };
-    let object_endpoints = encoded.map(|index| resolve_object(index + 1));
-    if let [Some(first), Some(second)] = object_endpoints {
-        if first.id() != second.id() && first.coordinates_m != second.coordinates_m {
-            return Ok(Some([first, second]));
+    if let (Some(first), Some(second)) = (
+        resolve_object(encoded[0] + 1)?,
+        resolve_object(encoded[1] + 1)?,
+    ) {
+        if let Some(endpoints) = distinct_endpoints(ctx, [first, second], OPERATION)? {
+            return Ok(Some(endpoints));
         }
     }
     let indices = encoded.map(|index| usize::try_from(index).ok()?.checked_sub(1));
@@ -2804,12 +2828,10 @@ fn extended_wide_selected_axis_endpoints<'a>(
         OPERATION,
     )?;
     sort_endpoint_markers(ctx, &mut points, OPERATION)?;
-    Ok((|| {
-        let endpoints = [*points.get(first_index)?, *points.get(second_index)?];
-        (endpoints[0].id() != endpoints[1].id()
-            && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
-            .then_some(endpoints)
-    })())
+    let (Some(first), Some(second)) = (points.get(first_index), points.get(second_index)) else {
+        return Ok(None);
+    };
+    distinct_endpoints(ctx, [*first, *second], OPERATION)
 }
 
 pub(super) fn legacy_marker104_arc_endpoints<'a>(
@@ -2819,7 +2841,6 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT legacy marker104 arc endpoints";
-    ctx.charge_work(512, OPERATION)?;
     let endpoint_ids = (|| {
         let offset = usize::try_from(curve.offset()).ok()?;
         if curve.kind() != SketchInputKind::Arc
@@ -2846,38 +2867,15 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
     let Some(endpoint_ids) = endpoint_ids else {
         return Ok(None);
     };
-    for marker in markers {
-        charge_typed_endpoint_work(
-            ctx,
-            marker.feature_ref.as_deref().map_or(0, str::len),
-            4,
-            OPERATION,
-        )?;
-        charge_typed_endpoint_work(
-            ctx,
-            curve.feature_ref.as_deref().map_or(0, str::len),
-            4,
-            OPERATION,
-        )?;
-        ctx.charge_work(128, OPERATION)?;
-    }
-    Ok((|| {
-        let resolve = |id| {
-            let mut candidates = markers.iter().copied().filter(|marker| {
-                marker.feature_ref == curve.feature_ref
-                    && marker.object_index() == Some(id)
-                    && marker.coordinates_m.is_some()
-                    && matches!(
-                        marker.kind(),
-                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                    )
-            });
-            let candidate = candidates.next()?;
-            candidates.next().is_none().then_some(candidate)
-        };
-        let endpoints = [resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?];
-        (endpoints[0].coordinates_m != endpoints[1].coordinates_m).then_some(endpoints)
-    })())
+    let resolve = |id| {
+        unique_feature_marker(ctx, markers, curve, OPERATION, |marker| {
+            marker.object_index() == Some(id) && is_coordinate_point(marker)
+        })
+    };
+    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+        return Ok(None);
+    };
+    Ok((first.coordinates_m != second.coordinates_m).then_some([first, second]))
 }
 
 fn one_based_point_roster_line_endpoint_markers<'a>(
@@ -2887,7 +2885,6 @@ fn one_based_point_roster_line_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT one based point roster line endpoint markers";
-    charge_typed_endpoint_roster(ctx, curve, markers, OPERATION)?;
     let indices = (|| {
         let offset = usize::try_from(curve.offset()).ok()?;
         if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
@@ -2913,16 +2910,22 @@ fn one_based_point_roster_line_endpoint_markers<'a>(
         if indices[0] == indices[1] {
             return None;
         }
-        if markers.iter().any(|marker| {
-            marker.feature_ref == curve.feature_ref && marker.kind() == SketchInputKind::Arc
-        }) {
-            return None;
-        }
         Some(indices)
     })();
     let Some(indices) = indices else {
         return Ok(None);
     };
+    let feature = curve.feature_ref.as_deref();
+    if ctx.any_by(
+        markers,
+        |marker| {
+            Ok(marker.kind() == SketchInputKind::Arc
+                && ctx.equal(&marker.feature_ref.as_deref(), &feature, OPERATION)?)
+        },
+        OPERATION,
+    )? {
+        return Ok(None);
+    }
     let mut points = collect_endpoint_markers(
         ctx,
         markers.iter().copied(),
@@ -2937,10 +2940,10 @@ fn one_based_point_roster_line_endpoint_markers<'a>(
         OPERATION,
     )?;
     sort_endpoint_markers(ctx, &mut points, OPERATION)?;
-    Ok((|| {
-        let endpoints = [*points.get(indices[0])?, *points.get(indices[1])?];
-        (endpoints[0].id() != endpoints[1].id()).then_some(endpoints)
-    })())
+    let (Some(first), Some(second)) = (points.get(indices[0]), points.get(indices[1])) else {
+        return Ok(None);
+    };
+    Ok((!ctx.equal(first.id(), second.id(), OPERATION)?).then_some([*first, *second]))
 }
 
 fn legacy_point_roster_line_endpoint_markers<'a>(
@@ -2950,7 +2953,6 @@ fn legacy_point_roster_line_endpoint_markers<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT legacy point roster line endpoint markers";
-    charge_typed_endpoint_roster(ctx, curve, markers, OPERATION)?;
     let indices = (|| {
         let offset = usize::try_from(curve.offset()).ok()?;
         if curve.kind() != SketchInputKind::LineOrCircle
@@ -3003,100 +3005,100 @@ fn legacy_point_roster_line_endpoint_markers<'a>(
         OPERATION,
     )?;
     sort_endpoint_markers(ctx, &mut points, OPERATION)?;
-    Ok((|| {
-        let endpoints = [*points.get(indices[0])?, *points.get(indices[1])?];
-        (endpoints[0].id() != endpoints[1].id()
-            && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
-            .then_some(endpoints)
-    })())
+    let (Some(first), Some(second)) = (points.get(indices[0]), points.get(indices[1])) else {
+        return Ok(None);
+    };
+    distinct_endpoints(ctx, [*first, *second], OPERATION)
 }
 
 pub(super) fn legacy_terminal_profile_indexed_endpoints<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = usize::try_from(curve.offset()).ok()?;
-    let endpoint_offset = legacy_terminal_profile_endpoint_offset(payload, offset)?;
-    let endpoint = |relative| Some(u32::from(View::u16_le_at(payload, offset + relative)?));
-    let endpoint_ids = [endpoint(endpoint_offset)?, endpoint(endpoint_offset + 2)?];
-    if endpoint_ids[0].checked_add(1) != Some(endpoint_ids[1]) {
-        return None;
-    }
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT legacy terminal profile endpoints";
+    let endpoint_ids = usize::try_from(curve.offset()).ok().and_then(|offset| {
+        let endpoint_offset = legacy_terminal_profile_endpoint_offset(payload, offset)?;
+        let endpoint = |relative| Some(u32::from(View::u16_le_at(payload, offset + relative)?));
+        let endpoint_ids = [endpoint(endpoint_offset)?, endpoint(endpoint_offset + 2)?];
+        (endpoint_ids[0].checked_add(1) == Some(endpoint_ids[1])).then_some(endpoint_ids)
+    });
+    let Some(endpoint_ids) = endpoint_ids else {
+        return Ok(None);
+    };
     let resolve = |id| {
-        let mut candidates = markers.iter().copied().filter(|marker| {
-            marker.feature_ref == curve.feature_ref
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-                && marker.coordinates_m.is_some()
+        unique_feature_marker(ctx, markers, curve, OPERATION, |marker| {
+            is_coordinate_point(marker)
                 && (marker.local_id() == Some(id)
                     || marker.object_index().and_then(|index| index.checked_add(1)) == Some(id))
-        });
-        let candidate = candidates.next()?;
-        candidates.next().is_none().then_some(candidate)
+        })
     };
-    let resolved = endpoint_ids.map(resolve);
-    let [Some(first), Some(second)] = resolved else {
-        return None;
+    let (Some(first), Some(second)) = (resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?) else {
+        return Ok(None);
     };
-    (first.id() != second.id()).then_some([first, second])
+    Ok((!ctx.equal(first.id(), second.id(), OPERATION)?).then_some([first, second]))
 }
 
 fn inline_arc_endpoint_markers<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     arc: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Option<[&'a SketchInputEntity; 2]> {
-    let offset = usize::try_from(arc.offset()).ok()?;
-    let [_, start, end] = inline_arc_coordinates(payload, offset)?;
-    let endpoint = |coordinates: cadmpeg_ir::units::FiniteVector<2>| {
-        let mut candidates = markers.iter().copied().filter(|marker| {
-            marker.feature_ref == arc.feature_ref
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-                && marker.coordinates_m.is_some_and(|point| {
-                    same_dimension_length(point[0], coordinates[0])
-                        && same_dimension_length(point[1], coordinates[1])
-                })
-        });
-        let candidate = candidates.next()?;
-        candidates.next().is_none().then_some(candidate)
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT inline arc endpoints";
+    let Some([_, start, end]) = usize::try_from(arc.offset())
+        .ok()
+        .and_then(|offset| inline_arc_coordinates(payload, offset))
+    else {
+        return Ok(None);
     };
-    let endpoints = [endpoint(start)?, endpoint(end)?];
-    (endpoints[0].id() != endpoints[1].id()).then_some(endpoints)
+    coordinate_endpoint_pair(ctx, markers, arc, [start, end], OPERATION)
+}
+
+/// The two point markers of the owner's feature at the two coordinates, each
+/// the only one there, with distinct identities.
+fn coordinate_endpoint_pair<'a>(
+    ctx: &DecodeContext<'_>,
+    markers: &[&'a SketchInputEntity],
+    owner: &SketchInputEntity,
+    coordinates: [cadmpeg_ir::units::FiniteVector<2>; 2],
+    operation: &'static str,
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    let resolve = |coordinates: cadmpeg_ir::units::FiniteVector<2>| {
+        unique_feature_marker(ctx, markers, owner, operation, |marker| {
+            matches!(
+                marker.kind(),
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) && marker.coordinates_m.is_some_and(|point| {
+                same_dimension_length(point[0], coordinates[0])
+                    && same_dimension_length(point[1], coordinates[1])
+            })
+        })
+    };
+    let (Some(first), Some(second)) = (resolve(coordinates[0])?, resolve(coordinates[1])?) else {
+        return Ok(None);
+    };
+    Ok((!ctx.equal(first.id(), second.id(), operation)?).then_some([first, second]))
 }
 
 fn compact_legacy_142_profile_curve_endpoint_markers<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Option<[&'a SketchInputEntity; 2]> {
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT compact legacy 142 profile endpoints";
     if curve.kind() != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
-        return None;
+        return Ok(None);
     }
-    let offset = usize::try_from(curve.offset()).ok()?;
-    let [start, end] = compact_legacy_142_profile_curve_endpoints(payload, offset)?;
-    let resolve = |coordinates: cadmpeg_ir::units::FiniteVector<2>| {
-        let mut candidates = markers.iter().copied().filter(|marker| {
-            marker.feature_ref == curve.feature_ref
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-                && marker.coordinates_m.is_some_and(|point| {
-                    same_dimension_length(point[0], coordinates[0])
-                        && same_dimension_length(point[1], coordinates[1])
-                })
-        });
-        let candidate = candidates.next()?;
-        candidates.next().is_none().then_some(candidate)
+    let Some(endpoints) = usize::try_from(curve.offset())
+        .ok()
+        .and_then(|offset| compact_legacy_142_profile_curve_endpoints(payload, offset))
+    else {
+        return Ok(None);
     };
-    let endpoints = [resolve(start)?, resolve(end)?];
-    (endpoints[0].id() != endpoints[1].id()).then_some(endpoints)
+    coordinate_endpoint_pair(ctx, markers, curve, endpoints, OPERATION)
 }
 
 pub(super) fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: usize) -> bool {
@@ -3130,10 +3132,46 @@ pub(super) fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: u
 }
 
 fn current_coordinate_linked_line_endpoints<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     line: &'a SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Option<[&'a SketchInputEntity; 2]> {
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT current coordinate linked line endpoints";
+    let Some(local_id) = current_coordinate_linked_line_local_id(payload, line) else {
+        return Ok(None);
+    };
+    // A local-link endpoint can select a coordinate-bearing curve marker before
+    // the binding pass promotes it to a profile vertex. Keep that candidate in
+    // the graph; the binding pass retains it as a curve only when it resolves
+    // its own two endpoints.
+    let mut candidates = Vec::new();
+    for marker in ctx.admit_iter(markers, OPERATION)?.copied() {
+        if marker.local_id() == Some(local_id)
+            && marker.coordinates_m.is_some()
+            && matches!(
+                marker.kind(),
+                SketchInputKind::Point
+                    | SketchInputKind::ConstrainedPoint
+                    | SketchInputKind::LineOrCircle
+                    | SketchInputKind::Arc
+            )
+            && !ctx.equal(marker.id(), line.id(), OPERATION)?
+        {
+            ctx.push_vec(&mut candidates, marker, OPERATION)?;
+        }
+    }
+    let Some(endpoint) = unique_feature_marker(ctx, &candidates, line, OPERATION, |_| true)? else {
+        return Ok(None);
+    };
+    Ok(Some([line, endpoint]))
+}
+
+/// The local identity a current coordinate-linked line names as its endpoint.
+fn current_coordinate_linked_line_local_id(
+    payload: &[u8],
+    line: &SketchInputEntity,
+) -> Option<u32> {
     let offset = usize::try_from(line.offset()).ok()?;
     let cell = payload.get(offset + 86..offset + 98)?;
     let kind = operand_kind(cell[..2].try_into().ok()?)?;
@@ -3160,26 +3198,7 @@ fn current_coordinate_linked_line_endpoints<'a>(
     {
         return None;
     }
-    let local_id = u32::from(View::u16_le_at(cell, 2)?);
-    // A local-link endpoint can select a coordinate-bearing curve marker before
-    // the binding pass promotes it to a profile vertex. Keep that candidate in
-    // the graph; the binding pass retains it as a curve only when it resolves
-    // its own two endpoints.
-    let mut endpoints = markers.iter().copied().filter(|marker| {
-        marker.feature_ref == line.feature_ref
-            && marker.id() != line.id()
-            && marker.local_id() == Some(local_id)
-            && marker.coordinates_m.is_some()
-            && matches!(
-                marker.kind(),
-                SketchInputKind::Point
-                    | SketchInputKind::ConstrainedPoint
-                    | SketchInputKind::LineOrCircle
-                    | SketchInputKind::Arc
-            )
-    });
-    let endpoint = endpoints.next()?;
-    endpoints.next().is_none().then_some([line, endpoint])
+    Some(u32::from(View::u16_le_at(cell, 2)?))
 }
 
 fn coordinate_centered_line_endpoints<'a>(
@@ -3189,7 +3208,6 @@ fn coordinate_centered_line_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT coordinate centered line endpoints";
-    charge_typed_endpoint_roster(ctx, line, markers, OPERATION)?;
     let center = (|| {
         let offset = usize::try_from(line.offset()).ok()?;
         let [center_u, center_v] = coordinate_centered_line_center(payload, offset)?.get();
@@ -3264,12 +3282,14 @@ fn coordinate_centered_line_center(
 }
 
 fn consecutive_legacy_profile_line_endpoints<'a>(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     line: &'a SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Vec<&'a SketchInputEntity> {
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT consecutive legacy profile line endpoints";
     let Some(offset) = usize::try_from(line.offset()).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if line.kind() != SketchInputKind::LineOrCircle
         || line.coordinates_m.is_none()
@@ -3278,15 +3298,21 @@ fn consecutive_legacy_profile_line_endpoints<'a>(
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || marker_profile_curve_role(payload, offset) != Some(1)
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let Some(next) = markers
-        .iter()
-        .copied()
-        .filter(|marker| marker.feature_ref == line.feature_ref && marker.offset() > line.offset())
-        .min_by_key(|marker| marker.offset())
-    else {
-        return Vec::new();
+    // The first marker of the line's feature after the line.
+    let feature = line.feature_ref.as_deref();
+    let mut next: Option<&SketchInputEntity> = None;
+    for marker in ctx.admit_iter(markers, OPERATION)?.copied() {
+        if marker.offset() > line.offset()
+            && next.is_none_or(|next| marker.offset() < next.offset())
+            && ctx.equal(&marker.feature_ref.as_deref(), &feature, OPERATION)?
+        {
+            next = Some(marker);
+        }
+    }
+    let Some(next) = next else {
+        return Ok(Vec::new());
     };
     if next.coordinates_m.is_none()
         || !matches!(
@@ -3300,18 +3326,24 @@ fn consecutive_legacy_profile_line_endpoints<'a>(
             .ok()
             .is_none_or(|next_offset| !sketch_marker_prefix_at(payload, next_offset))
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    vec![line, next]
+    let mut endpoints = Vec::new();
+    for endpoint in [line, next] {
+        ctx.push_vec(&mut endpoints, endpoint, OPERATION)?;
+    }
+    Ok(endpoints)
 }
 
 pub(super) fn legacy_terminal_indexed_profile_line(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
-) -> bool {
+) -> Result<bool, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT legacy terminal indexed profile line";
     let Some(offset) = usize::try_from(curve.offset()).ok() else {
-        return false;
+        return Ok(false);
     };
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -3328,19 +3360,24 @@ pub(super) fn legacy_terminal_indexed_profile_line(
             .checked_add(84)
             .is_some_and(|at| sketch_marker_prefix_at(payload, at))
     {
-        return false;
+        return Ok(false);
     }
-    markers.iter().copied().any(|sibling| {
-        let Some(sibling_offset) = usize::try_from(sibling.offset()).ok() else {
-            return false;
-        };
-        sibling.feature_ref == curve.feature_ref
-            && sibling.offset() < curve.offset()
-            && sibling.kind() == SketchInputKind::LineOrCircle
-            && marker_native_code(payload, sibling_offset) == Some(0)
-            && legacy_extended_profile_curve_kind(payload, sibling_offset)
-                == Some(SketchInputKind::LineOrCircle)
-    })
+    let feature = curve.feature_ref.as_deref();
+    ctx.any_by(
+        markers,
+        |sibling| {
+            let Some(sibling_offset) = usize::try_from(sibling.offset()).ok() else {
+                return Ok(false);
+            };
+            Ok(sibling.offset() < curve.offset()
+                && sibling.kind() == SketchInputKind::LineOrCircle
+                && marker_native_code(payload, sibling_offset) == Some(0)
+                && legacy_extended_profile_curve_kind(payload, sibling_offset)
+                    == Some(SketchInputKind::LineOrCircle)
+                && ctx.equal(&sibling.feature_ref.as_deref(), &feature, OPERATION)?)
+        },
+        OPERATION,
+    )
 }
 
 #[cfg(test)]
