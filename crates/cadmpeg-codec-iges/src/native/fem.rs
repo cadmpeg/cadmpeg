@@ -4,11 +4,10 @@
 use crate::directory::DirectoryEntry;
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{record_by_sequence, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::Serialize;
-use std::collections::BTreeMap;
 
 const FEM_NOTE_FORMS: &[i64] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 105];
 const FEM_RESULT_FORM_MAX: i64 = 34;
@@ -105,14 +104,14 @@ pub(in crate::native) enum NativeFemEntity {
 
 pub(super) fn build(
     directory: &[DirectoryEntry],
-    records: &BTreeMap<u32, &ParameterRecord>,
+    records: &[ParameterRecord],
     resolver: &ParameterResolver<'_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeFemEntity>, CodecError> {
     let mut result = Vec::new();
     for entry in ctx.admit_iter(directory, "iges FEM directory scan")?.filter(|entry| is_fem(entry)) {
         ctx.reserve_vec(&mut result, 1, "iges FEM native entities")?;
-        let record = records.get(&entry.sequence).copied();
+        let record = record_by_sequence(records, entry.sequence, ctx)?;
         let native = match entry.entity_type {
             134 => node(entry, record, resolver, ctx)?,
             136 => finite_element(entry, record, resolver, ctx)?,
@@ -390,7 +389,7 @@ fn nodal_displacement_rotation(
                 )?;
                 let mut translations = ctx.collection_vec(case_count, "iges FEM translations")?;
                 let mut rotations = ctx.collection_vec(case_count, "iges FEM rotations")?;
-                for case in 0..case_count {
+                for case in ctx.admit_iter(0..case_count, "iges FEM displacement case scan")? {
                     let values = base + 2 + case * 6;
                     translations.push([
                         record_number(record, values),
@@ -694,14 +693,13 @@ mod tests {
         use crate::test_support::directory_target;
         use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        use std::collections::BTreeMap;
 
         let directory = [directory_target(1, 116)];
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         crate::test_support::with_policy_context(&[], &policy, |ctx| {
             let resolver = ParameterResolver::new(&[], ctx).unwrap();
-            assert!(matches!(super::build(&directory, &BTreeMap::new(), &resolver, ctx),
+            assert!(matches!(super::build(&directory, &[], &resolver, ctx),
                 Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "iges FEM directory scan"
@@ -709,7 +707,7 @@ mod tests {
         });
         crate::test_support::with_service_context(&[], |ctx| {
             let resolver = ParameterResolver::new(&[], ctx).unwrap();
-            assert!(super::build(&directory, &BTreeMap::new(), &resolver, ctx).unwrap().is_empty());
+            assert!(super::build(&directory, &[], &resolver, ctx).unwrap().is_empty());
         });
     }
 
@@ -720,11 +718,10 @@ mod tests {
         use crate::test_support::directory_target;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        use std::collections::BTreeMap;
 
         let directory = [directory_target(1, 134), directory_target(3, 136)];
         let element = integer_record(3, &[136, 1, 1, 1, 0]);
-        let records = BTreeMap::from([(3, &element)]);
+        let records = [element];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 4;
@@ -759,11 +756,10 @@ mod tests {
         use crate::test_support::directory_target;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        use std::collections::BTreeMap;
 
         let directory = [directory_target(1, 138)];
         let displacement = integer_record(1, &[138, 1, 0, 1, 1, 0, 1, 2, 3, 4, 5, 6]);
-        let records = BTreeMap::from([(1, &displacement)]);
+        let records = [displacement];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 5;
@@ -798,7 +794,6 @@ mod tests {
         use crate::test_support::directory_target;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        use std::collections::BTreeMap;
 
         let directory = [directory_target(1, 134)];
         let arena = DecodeArena::new();
@@ -807,7 +802,7 @@ mod tests {
             4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::NativeFemEntity>());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
-        let result = build(&directory, &BTreeMap::new(), &resolver, &ctx);
+        let result = build(&directory, &[], &resolver, &ctx);
         assert!(matches!(
             result,
             Err(CodecError::ResourceLimit(limit))
@@ -822,7 +817,7 @@ mod tests {
             .expect("test context");
         let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
         assert_eq!(
-            build(&directory, &BTreeMap::new(), &resolver, &ctx)
+            build(&directory, &[], &resolver, &ctx)
                 .expect("FEM entity")
                 .len(),
             1
@@ -837,7 +832,6 @@ mod tests {
         use crate::test_support::directory_target;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        use std::collections::BTreeMap;
 
         let directory = [directory_target(1, 136)];
         let tokens = [
@@ -850,7 +844,7 @@ mod tests {
         .map(|value| Token { value, span: 0..0 })
         .collect();
         let element = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), 4, tokens, Vec::new());
-        let records = BTreeMap::from([(1, &element)]);
+        let records = [element];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 3 + 4 * cadmpeg_core::decode::u64_from_index(
@@ -887,7 +881,6 @@ mod tests {
         use crate::test_support::directory_target;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
-        use std::collections::BTreeMap;
 
         let directory = [directory_target(1, 134)];
         let arena = DecodeArena::new();
@@ -895,7 +888,7 @@ mod tests {
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
         let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
-        let result = build(&directory, &BTreeMap::new(), &resolver, &ctx);
+        let result = build(&directory, &[], &resolver, &ctx);
         assert!(matches!(
             result,
             Err(CodecError::ResourceLimit(limit))
@@ -910,7 +903,7 @@ mod tests {
             .expect("test context");
         let resolver = ParameterResolver::new(&directory, &ctx).expect("directory index");
         assert_eq!(
-            build(&directory, &BTreeMap::new(), &resolver, &ctx)
+            build(&directory, &[], &resolver, &ctx)
                 .expect("FEM entity")
                 .len(),
             1

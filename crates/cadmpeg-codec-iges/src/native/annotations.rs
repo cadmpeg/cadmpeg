@@ -6,18 +6,17 @@
 
 use super::OverdeclaredCounts;
 
-use crate::directory::{DirectoryEntry, UseFlag};
+use crate::directory::{entry_by_sequence, DirectoryEntry, UseFlag};
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
 use crate::global::GlobalTable;
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{record_by_sequence, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::Serialize;
-use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(super) struct NativeTextRun {
@@ -193,7 +192,7 @@ struct Subject<'a, 'ctx> {
     form: i64,
     record: Option<&'a ParameterRecord>,
     primary_end: usize,
-    entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
+    entries: &'a [DirectoryEntry],
     parameter_resolver: &'a ParameterResolver<'a, 'ctx>,
     ctx: &'a DecodeContext<'ctx>,
     v5_null_string_rule: bool,
@@ -395,8 +394,7 @@ impl Subject<'_, '_> {
                 },
             )?
             .map(|sequence| {
-                self.entries
-                    .get(&sequence)
+                entry_by_sequence(self.entries, sequence, self.ctx)?
                     .filter(|target| target.entity_type == 214)
                     .map_or_else(
                         || self.entity_link_id(sequence),
@@ -714,29 +712,25 @@ fn sectioned_area(
 
 pub(super) fn build(
     directory: &[DirectoryEntry],
-    indexes: (
-        &BTreeMap<u32, &ParameterRecord>,
-        &BTreeMap<u32, &DirectoryEntry>,
-    ),
+    records: &[ParameterRecord],
     parameter_resolver: &ParameterResolver<'_, '_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
-    let (by_directory, entries) = indexes;
     ctx.try_collect_retained_with::<_, _, CodecError>(
         ctx.admit_iter(directory, "iges native annotation scan")?
             .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind))),
         "iges native annotation slots",
         |(entry, kind)| -> Result<NativeAnnotation, CodecError> {
-            let record = by_directory.get(&entry.sequence).copied();
+            let record = record_by_sequence(records, entry.sequence, ctx)?;
             let subject = Subject {
                 sequence: entry.sequence,
                 form: entry.form,
                 record,
                 primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
-                entries,
+                entries: directory,
                 parameter_resolver,
                 ctx,
                 v5_null_string_rule: global_table == GlobalTable::V5_0
