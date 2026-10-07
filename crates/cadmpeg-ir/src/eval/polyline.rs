@@ -5,54 +5,85 @@ use super::admission::EvaluationAdmission;
 use super::rational::finite_lanes;
 use super::{difference_quotient, EvaluationFailure};
 use crate::features::{FinitePoint3, FiniteVector3};
-use crate::geometry::sampled::PolylineCurve;
-use crate::math::Point3;
-use crate::scalar::{FiniteReal, SegmentPosition};
+use crate::math::{Point3, Vector3};
+use crate::scalar::{ExtendedReal, FiniteReal, SegmentPosition};
+use crate::topology::ParameterInterval;
 
-pub(super) struct PolylineEvaluationSamples<'ctx> {
-    pub(super) points: Vec<FinitePoint3>,
-    pub(super) parameters: Vec<FiniteReal>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-}
-
-/// The polyline's samples with the parameterization it evaluates on.
-///
-/// A sample row carries its own parameter, so the two lists this returns agree
-/// by construction. An unparameterized polyline evaluates on its sample index.
-pub(super) fn polyline_samples<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-    polyline: &PolylineCurve,
-) -> Result<Option<PolylineEvaluationSamples<'ctx>>, cadmpeg_core::CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "IR polyline inversion samples")?;
-    let points = storage
-        .with_storage(|| ctx.collect_vec(polyline.points(), "IR polyline inversion points"))?;
-    let mut parameters = Vec::new();
-    ctx.reserve_scoped_vec(
-        &mut storage,
-        &mut parameters,
-        points.len(),
-        "IR polyline inversion parameters",
-    )?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(points.len()),
-        "IR polyline inversion parameter scan",
-    )?;
-    match polyline.parameters() {
-        Some(values) => parameters.extend(values),
-        None => {
-            for index in 0..points.len() {
-                let Some(parameter) = FiniteReal::from_index(index) else {
-                    return Ok(None);
-                };
-                parameters.push(parameter);
+/// Select the nearest-seed parameter of an admitted polyline without copying its rows.
+pub(super) fn parameter_near_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    polyline: &crate::geometry::sampled::PolylineCurve,
+    point: Point3,
+    tolerance: f64,
+    seed: FiniteReal,
+) -> Result<Option<FiniteReal>, cadmpeg_core::CodecError> {
+    if polyline.point_count() < 2 {
+        return Ok(None);
+    }
+    let mut best_candidate: Option<FiniteReal> = None;
+    for segment in ctx.admit_iter(0..polyline.point_count() - 1, "IR polyline inversion segment scan")? {
+        let Some((parameter_start, parameter_end)) = polyline.parameter_at(segment)
+            .zip(polyline.parameter_at(segment + 1)) else {
+            return Ok(None);
+        };
+        let [parameter_start, parameter_end] = [parameter_start.get(), parameter_end.get()];
+        let parameter_width = parameter_end - parameter_start;
+        if parameter_width == 0.0 {
+            continue;
+        }
+        let Some((start, end)) = polyline.point_at(segment).zip(polyline.point_at(segment + 1)) else {
+            return Ok(None);
+        };
+        let (start, end) = (start.get(), end.get());
+        let direction = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+        let offset = Vector3::new(point.x - start.x, point.y - start.y, point.z - start.z);
+        let length = direction.x.hypot(direction.y).hypot(direction.z);
+        if !length.is_finite() {
+            continue;
+        }
+        // A width or length that overflows leaves a NaN fraction, which has no
+        // candidate.
+        let fraction = if length == 0.0 {
+            if offset.x.hypot(offset.y).hypot(offset.z) > tolerance {
+                continue;
+            }
+            ExtendedReal::new((seed.get() - parameter_start) / parameter_width)
+        } else {
+            let unit = Vector3::new(
+                direction.x / length,
+                direction.y / length,
+                direction.z / length,
+            );
+            ExtendedReal::new(offset.dot(unit) / length)
+        };
+        let Some(fraction) = fraction else {
+            continue;
+        };
+        let fraction = ParameterInterval::UNIT.project(fraction).get();
+        let candidate = parameter_start + fraction * parameter_width;
+        let mapped = Point3::new(
+            start.x + fraction * direction.x,
+            start.y + fraction * direction.y,
+            start.z + fraction * direction.z,
+        );
+        let error = (mapped.x - point.x)
+            .hypot(mapped.y - point.y)
+            .hypot(mapped.z - point.z);
+        if let Some(candidate) = FiniteReal::new(candidate) {
+            if error.is_finite()
+                && error <= tolerance
+                && best_candidate.is_none_or(|best| {
+                    (candidate.get() - seed.get())
+                        .abs()
+                        .total_cmp(&(best.get() - seed.get()).abs())
+                        == std::cmp::Ordering::Less
+                })
+            {
+                best_candidate = Some(candidate);
             }
         }
     }
-    Ok(Some(PolylineEvaluationSamples {
-        points,
-        parameters,
-        _storage: storage,
-    }))
+    Ok(best_candidate)
 }
 
 /// The point of a sampled polyline at `t`, interpolated on the first
@@ -232,4 +263,57 @@ mod tests {
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
         );
     }
+
+
+#[test]
+fn polyline_inverse_borrows_sample_rows_without_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    use crate::scalar::FiniteReal;
+    for parameterized in [false, true] {
+        let points = [0.0, 1.0, 2.0, 3.0].map(|x| Point3::new(x, 0.0, 0.0));
+        let samples = if parameterized {
+            PolylineSamples::Parameterized {
+                vertices: points.into_iter().zip([6.0, 4.0, 2.0, 0.0])
+                    .map(|(point, parameter)| PolylineVertex { point, parameter })
+                    .collect::<Vec<_>>().try_into().unwrap(),
+            }
+        } else {
+            PolylineSamples::Unparameterized { points: points.to_vec().try_into().unwrap() }
+        };
+        let curve = PolylineCurve::new(samples, 0.0,
+            &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
+        let expected = FiniteReal::new(if parameterized { 1.0 } else { 2.5 }).unwrap();
+        let run = |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = super::parameter_near_point(
+                &ctx, &curve, Point3::new(2.5, 0.0, 0.0), 0.0, expected,
+            );
+            match &result {
+                Ok(value) => {
+                    assert_eq!(*value, Some(expected));
+                    ctx.finish_session().unwrap();
+                }
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                    assert!(matches!(ctx.finish_session(),
+                        Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit));
+                }
+                Err(error) => panic!("unexpected polyline inversion error: {error}"),
+            }
+            result
+        };
+        // The best-candidate search visits the three segments exactly once.
+        assert_eq!(run(3).unwrap(), Some(expected));
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, "IR polyline inversion segment scan", run,
+        );
+    }
+}
+
 }

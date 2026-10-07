@@ -63,7 +63,7 @@ mod sweep_law;
 mod test_support;
 use basis::fill_bspline_basis;
 use depth::{ModelEvaluationDepthGuard, ModelEvaluationIdentity};
-use polyline::{polyline_point, polyline_samples, polyline_tangent};
+use polyline::{polyline_point, polyline_tangent};
 use priority_queue::PriorityQueue;
 use rational::{finite_lanes, Homogeneous};
 use sketch_offset::{clamped_nurbs_pcurve_endpoint_frames, fitted_nurbs_offset_candidate};
@@ -5727,24 +5727,11 @@ fn direct_curve_parameter_near_point(
                 }
             }
             SolvedCurveGeometry::Polyline(polyline) => {
-                let samples = match polyline_samples(ctx, polyline) {
-                    Ok(Some(samples)) => samples,
+                match polyline::parameter_near_point(ctx, polyline, point, tolerance, seed) {
+                    Ok(Some(parameter)) => parameter,
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
-                };
-                if let Err(error) = ctx.charge_work(
-                    u64_from_index(samples.points.len()),
-                    "IR polyline inversion segment scan",
-                ) {
-                    return Some(Err(error));
                 }
-                polyline_parameter_near_point(
-                    &samples.points,
-                    &samples.parameters,
-                    point,
-                    tolerance,
-                    seed,
-                )?
             }
             SolvedCurveGeometry::Transformed(placed) => {
                 let (basis_point, tolerance_scale) =
@@ -5803,75 +5790,6 @@ fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, 
         .then_some((coordinates.get(), tolerance_scale))
 }
 
-fn polyline_parameter_near_point(
-    points: &[FinitePoint3],
-    parameters: &[FiniteReal],
-    point: Point3,
-    tolerance: f64,
-    seed: FiniteReal,
-) -> Option<FiniteReal> {
-    if points.len() < 2 {
-        return None;
-    }
-    let mut best_candidate: Option<FiniteReal> = None;
-    for (segment, parameter_range) in parameters.windows(2).enumerate() {
-        let [parameter_start, parameter_end] = [parameter_range[0].get(), parameter_range[1].get()];
-        let parameter_width = parameter_end - parameter_start;
-        if parameter_width == 0.0 {
-            continue;
-        }
-        let start = points[segment].get();
-        let end = points[segment + 1].get();
-        let direction = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
-        let offset = Vector3::new(point.x - start.x, point.y - start.y, point.z - start.z);
-        let length = direction.x.hypot(direction.y).hypot(direction.z);
-        if !length.is_finite() {
-            continue;
-        }
-        // A width or length that overflows leaves a NaN fraction, which has no
-        // candidate.
-        let fraction = if length == 0.0 {
-            if offset.x.hypot(offset.y).hypot(offset.z) > tolerance {
-                continue;
-            }
-            ExtendedReal::new((seed.get() - parameter_start) / parameter_width)
-        } else {
-            let unit = Vector3::new(
-                direction.x / length,
-                direction.y / length,
-                direction.z / length,
-            );
-            ExtendedReal::new(offset.dot(unit) / length)
-        };
-        let Some(fraction) = fraction else {
-            continue;
-        };
-        let fraction = ParameterInterval::UNIT.project(fraction).get();
-        let candidate = parameter_start + fraction * parameter_width;
-        let mapped = Point3::new(
-            start.x + fraction * direction.x,
-            start.y + fraction * direction.y,
-            start.z + fraction * direction.z,
-        );
-        let error = (mapped.x - point.x)
-            .hypot(mapped.y - point.y)
-            .hypot(mapped.z - point.z);
-        if let Some(candidate) = FiniteReal::new(candidate) {
-            if error.is_finite()
-                && error <= tolerance
-                && best_candidate.is_none_or(|best| {
-                    (candidate.get() - seed.get())
-                        .abs()
-                        .total_cmp(&(best.get() - seed.get()).abs())
-                        == Ordering::Less
-                })
-            {
-                best_candidate = Some(candidate);
-            }
-        }
-    }
-    best_candidate
-}
 
 fn curve_point_evaluation(
     scratch: &decode::Scratch<'_, '_>,
