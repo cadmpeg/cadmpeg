@@ -285,14 +285,14 @@ fn feature_ordering_releases_scratch_identity_indexes() {
             &[],
             operation,
             |ctx| {
-                let (ordinals, cycles, _storage) = super::super::feature_ordinals(
+                let ordering = super::super::feature_ordinals(
                     ctx,
                     std::slice::from_ref(&object),
                     &BTreeMap::new(),
                     &std::collections::HashMap::new(),
                 )?;
-                assert_eq!(ordinals.len(), 1);
-                assert!(cycles.is_empty());
+                assert_eq!(ordering.ordinals.len(), 1);
+                assert!(ordering.cycle_affected.is_empty());
                 ctx.format_scoped(format_args!("{marker}"), operation)
                     .map(|(text, _storage)| text)
             },

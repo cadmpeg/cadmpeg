@@ -1076,11 +1076,10 @@ fn design_constraint_parameter_admissions_refuse_at_matching_limits() {
     };
     let sketch = cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#one")
         .expect("valid sketch identity");
-    for operation in ["fcstd constraint parameter name"] {
-        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
-            parse_constraints(ctx, &object, &[&property], &sketch, &[])
-        });
-    }
+    let operation = "fcstd constraint parameter name";
+    crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+        parse_constraints(ctx, &object, &[&property], &sketch, &[])
+    });
     let _error =
         crate::test_support::materialized_refusal_at("fcstd constraint expression path", |ctx| {
             parse_constraints(ctx, &object, &[&property], &sketch, &[])
