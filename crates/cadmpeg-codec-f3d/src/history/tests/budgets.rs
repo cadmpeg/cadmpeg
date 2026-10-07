@@ -4,10 +4,6 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::{
-    history_topology_work_budget_exceeded, HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY,
-};
-
 #[test]
 fn face_operand_recipe_index_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -1397,106 +1393,6 @@ fn history_record_collection_refuses_work_limit() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
-}
-
-#[test]
-fn history_record_reference_count_refuses_work_limit() {
-    let operation = "count F3D history record references";
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        operation,
-        0,
-        |ctx| {
-            let bytes = one_framed_history_record();
-            super::super::decode_history_records(
-                ctx,
-                &bytes,
-                0,
-                None,
-                "history",
-                "state",
-                cadmpeg_asm::kernel_header::RefWidth::Four,
-            )
-            .map(|_| ())
-        },
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-    ));
-}
-
-#[test]
-fn history_binding_work_budget_charges_state_record_cross_product() {
-    let desktop = cadmpeg_core::decode::ResourceLimits::desktop();
-    let desktop_entries = desktop.max_work_units / HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY;
-    assert!(!history_topology_work_budget_exceeded(
-        [usize::try_from(desktop_entries).expect("desktop entry budget fits usize")],
-        &desktop
-    ));
-    assert!(history_topology_work_budget_exceeded(
-        [usize::try_from(desktop_entries + 1).expect("desktop entry overflow fits usize")],
-        &desktop
-    ));
-    assert!(history_topology_work_budget_exceeded(
-        [usize::MAX, 1],
-        &desktop
-    ));
-
-    let service = cadmpeg_core::decode::ResourceLimits::service();
-    let service_entries = service.max_work_units / HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY;
-    assert!(!history_topology_work_budget_exceeded(
-        [usize::try_from(service_entries).expect("service entry budget fits usize")],
-        &service
-    ));
-    assert!(history_topology_work_budget_exceeded(
-        [usize::try_from(service_entries + 1).expect("service entry overflow fits usize")],
-        &service
-    ));
-}
-
-#[test]
-fn history_complete_table_binding_refuses_materialized_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = super::super::HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY - 1;
-    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap()
-        .0;
-    let error = super::super::admit_complete_table_binding_budget(
-        &ctx,
-        [1_usize].into_iter(),
-        &policy.limits,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-        if refusal.operation == "bind F3D complete history topology bytes")
-    );
-}
-
-#[test]
-fn history_complete_table_binding_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY - 1;
-    let ctx = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap()
-        .0;
-    let error = super::super::admit_complete_table_binding_budget(
-        &ctx,
-        [1_usize].into_iter(),
-        &policy.limits,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
-        if refusal.operation == "bind F3D complete history topology work")
-    );
 }
 
 fn one_graph_history_with_board_and_record() -> crate::history_records::AsmHistory {

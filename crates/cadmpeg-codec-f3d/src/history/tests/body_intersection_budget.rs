@@ -371,8 +371,15 @@ fn historical_treatment_carrier_face_scan_refuses_work() {
         operation,
         0,
         |ctx| {
-            super::super::treatment_edge_candidates(ctx, None, &[], &result, &preceding, &[])
-                .map(|_| ())
+            super::super::treatment_edge_candidates::<true>(
+                ctx,
+                None,
+                &[],
+                &result,
+                &preceding,
+                &[],
+            )
+            .map(|_| ())
         },
     );
     assert!(matches!(

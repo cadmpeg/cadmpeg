@@ -3,8 +3,7 @@
 
 use crate::history::{
     bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
-    complete_table_binding_budget_exceeded, historical_brep_source,
-    select_legacy_extrude_face_candidate, LegacyFaceResolution,
+    historical_brep_source, select_legacy_extrude_face_candidate, LegacyFaceResolution,
 };
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -586,29 +585,6 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());
     assert!(rejected[0].resolved_face_slots.is_empty());
-}
-
-#[test]
-fn history_binding_budget_charges_materialized_state_tables() {
-    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
-    limits.max_materialized_bytes = 1920;
-    assert!(!complete_table_binding_budget_exceeded([5, 5], &limits));
-    assert!(complete_table_binding_budget_exceeded([10, 1], &limits));
-    assert!(complete_table_binding_budget_exceeded(
-        [usize::MAX, 1],
-        &limits,
-    ));
-
-    let desktop = cadmpeg_core::decode::ResourceLimits::desktop();
-    let service = cadmpeg_core::decode::ResourceLimits::service();
-    assert!(!complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &desktop,
-    ));
-    assert!(complete_table_binding_budget_exceeded(
-        [18_000_000],
-        &service,
-    ));
 }
 
 #[test]

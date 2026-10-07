@@ -94,7 +94,11 @@ fn project(
 
 #[test]
 fn input_body_members_refuse_collection_limit() {
-    let error = project(0, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input bodies",
+        |cap| project(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D input bodies")
@@ -103,7 +107,11 @@ fn input_body_members_refuse_collection_limit() {
 
 #[test]
 fn input_face_members_refuse_collection_limit() {
-    let error = project(2, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input faces",
+        |cap| project(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D input faces")
@@ -112,7 +120,11 @@ fn input_face_members_refuse_collection_limit() {
 
 #[test]
 fn input_edge_members_refuse_collection_limit() {
-    let error = project(4, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input edges",
+        |cap| project(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D input edges")
@@ -121,7 +133,11 @@ fn input_edge_members_refuse_collection_limit() {
 
 #[test]
 fn input_vertex_members_refuse_collection_limit() {
-    let error = project(6, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input vertices",
+        |cap| project(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D input vertices")
@@ -130,7 +146,11 @@ fn input_vertex_members_refuse_collection_limit() {
 
 #[test]
 fn input_topologies_refuse_collection_limit() {
-    let error = project(8, u64::MAX).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input topologies",
+        |cap| project(cap, u64::MAX),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D input topologies")
@@ -152,7 +172,16 @@ fn input_identity_refuses_retained_limit() {
 
 #[test]
 fn input_projection_preserves_member_order() {
-    let projected = project(9, u64::MAX).unwrap();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D input topologies",
+        |cap| project(cap, u64::MAX),
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected input topology collection refusal");
+    };
+    let admitted_items = limit.used.checked_add(limit.additional).unwrap();
+    let projected = project(admitted_items, u64::MAX).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(
         projected[0].vertices.as_slice()[0].as_str(),
