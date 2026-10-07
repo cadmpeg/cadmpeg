@@ -398,10 +398,7 @@ pub(super) fn feature_body_set_selection(
         .into_selection(ctx);
     }
     let mut bodies = Vec::new();
-    for root in ctx
-        .admit_iter(&roots, "NX body selection local roots")?
-        .copied()
-    {
+    for root in ctx.admit_iter(&roots, "NX body selection local roots")? {
         ctx.reserve_scoped_vec(
             &mut reservation,
             &mut bodies,
