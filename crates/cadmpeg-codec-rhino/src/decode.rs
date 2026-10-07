@@ -691,7 +691,7 @@ impl<'a> DecodeContext<'a> {
         let Some((id, links)) = self.session.unknown_links_mut(source_order) else {
             return Ok(false);
         };
-        let ctx = self.expand.ctx();
+        let ctx: &cadmpeg_core::decode::DecodeContext<'_> = self.expand.ctx();
         let mut storage = ctx.reserve_scoped(0, "Rhino incoming link scratch")?;
         let mut additions = BTreeSet::new();
         for link in ctx
