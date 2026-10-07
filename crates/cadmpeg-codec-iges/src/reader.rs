@@ -101,11 +101,9 @@ fn insert_source_attribute(
 fn append_summary_notes(
     ctx: &DecodeContext<'_>,
     notes: &mut Vec<String>,
-    additional: Vec<String>,
+    mut additional: Vec<String>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(notes, additional.len(), "iges combined summary notes")?;
-    notes.extend(additional);
-    Ok(())
+    ctx.append_vec(notes, &mut additional, "iges combined summary notes")
 }
 
 fn push_occurrence_loss(
@@ -123,10 +121,7 @@ fn push_occurrence_loss(
         "iges occurrence loss kind",
     )?;
     let note = code.note(message);
-    if let Some(entry) = directory
-        .iter()
-        .find(|entry| entry.sequence == source_sequence)
-    {
+    if let Some(entry) = directory::entry_by_sequence(directory, source_sequence, ctx)? {
         losses.push(note.with_provenance(entry.admitted_loss_provenance(ctx)?));
     } else {
         losses.push(note);
@@ -143,7 +138,11 @@ fn attributed_sequences(
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<u32>, CodecError> {
         if rendered.len() > 1 && rendered.starts_with('0')
-            || !rendered.bytes().all(|byte| byte.is_ascii_digit())
+            || !ctx.all_by(
+                rendered.as_bytes(),
+                |byte| Ok(byte.is_ascii_digit()),
+                "iges attributed loss sequence digits",
+            )?
         {
             return Ok(None);
         }
@@ -153,7 +152,7 @@ fn attributed_sequences(
     }
 
     let mut attributed = BTreeSet::new();
-    for loss in losses {
+    for loss in ctx.admit_iter(losses, "iges attributed loss records")? {
         let Some(tag) = loss
             .provenance
             .as_ref()
@@ -161,17 +160,17 @@ fn attributed_sequences(
         else {
             continue;
         };
-        let mut sequence = match tag.strip_prefix("directory_entry:D") {
-            Some(rendered) => rendered_sequence(rendered, ctx)?,
-            None => None,
-        };
+        let mut sequence =
+            match ctx.strip_prefix(tag, "directory_entry:D", "iges attributed loss tag")? {
+                Some(rendered) => rendered_sequence(rendered, ctx)?,
+                None => None,
+            };
         if sequence.is_none() {
-            sequence = tag
-                .split_once(':')
-                .and_then(|(head, _)| head.strip_prefix('D'))
-                .map(|rendered| rendered_sequence(rendered, ctx))
-                .transpose()?
-                .flatten();
+            if let Some((head, _)) = ctx.split_once(tag, ":", "iges attributed loss tag")? {
+                if let Some(rendered) = head.strip_prefix('D') {
+                    sequence = rendered_sequence(rendered, ctx)?;
+                }
+            }
         }
         if let Some(sequence) = sequence {
             ctx.insert_btree_set(&mut attributed, sequence, "iges attributed loss sequences")?;
@@ -180,38 +179,34 @@ fn attributed_sequences(
     Ok(attributed)
 }
 
-fn projection_directory(
+/// The directory without entries whose Parameter Data is quarantined, held
+/// for the decode under its own reservation. The filter keeps sequence order.
+fn projection_directory<'ctx>(
     directory: &[directory::DirectoryEntry],
     quarantined: &BTreeSet<u32>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<directory::DirectoryEntry>>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<Option<(Vec<directory::DirectoryEntry>, ScopedReservation<'ctx>)>, CodecError> {
     if quarantined.is_empty() {
         return Ok(None);
     }
-    let mut projected = Vec::new();
-    for entry in directory
-        .iter()
-        .filter(|entry| !quarantined.contains(&entry.sequence))
-    {
-        ctx.reserve_vec(&mut projected, 1, "iges projected directory entries")?;
-        projected.push(entry.clone());
-    }
-    Ok(Some(projected))
+    let (mut projected, storage) =
+        ctx.temporary_vec(directory.len(), "iges projected directory entries")?;
+    projected.extend(
+        ctx.admit_iter(directory, "iges projected directory entries")?
+            .filter(|entry| !quarantined.contains(&entry.sequence))
+            .copied(),
+    );
+    Ok(Some((projected, storage)))
 }
 
 fn quarantined_parameter_sequences(
     records: &[parameter::QuarantinedParameterRecord],
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u32>, CodecError> {
-    let mut sequences = BTreeSet::new();
-    for record in records {
-        ctx.insert_btree_set(
-            &mut sequences,
-            record.sequence,
-            "iges quarantined parameter sequence index",
-        )?;
-    }
-    Ok(sequences)
+    ctx.collect_btree_set(
+        records.iter().map(|record| record.sequence),
+        "iges quarantined parameter sequence index",
+    )
 }
 
 fn source_fidelity(
@@ -232,15 +227,21 @@ fn source_fidelity(
     Ok(fidelity)
 }
 
+/// Attribute a generic loss to every nonnull entry that is outside the read
+/// envelope or that no projection decoded, consumed or already attributed, and
+/// add each one to `attributed`.
 fn append_generic_losses(
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     directory: &[directory::DirectoryEntry],
     projection: &entities::geometry::Projection,
-    attributed: &BTreeSet<u32>,
+    attributed: &mut BTreeSet<u32>,
     global_table: global::GlobalTable,
 ) -> Result<(), CodecError> {
-    for entry in directory.iter().filter(|entry| entry.entity_type != 0) {
+    for entry in ctx
+        .admit_iter(directory, "iges generic loss directory entries")?
+        .filter(|entry| entry.entity_type != 0)
+    {
         let admitted =
             crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table);
         if admitted
@@ -279,6 +280,7 @@ fn append_generic_losses(
             code.note(message)
                 .with_provenance(entry.admitted_loss_provenance(ctx)?),
         );
+        ctx.insert_btree_set(attributed, entry.sequence, "iges attributed loss sequences")?;
     }
     Ok(())
 }
@@ -312,11 +314,12 @@ fn annotate_representation(
         return Ok(());
     }
     summary.container_kind = representation.container_kind();
-    if let Some(note) = summary
-        .notes
-        .iter_mut()
-        .find(|note| note.starts_with("source_bytes="))
-    {
+    let source_note = ctx.position_by(
+        &summary.notes,
+        |note| Ok(note.starts_with("source_bytes=")),
+        "iges normalized source byte note",
+    )?;
+    if let Some(note) = source_note.and_then(|index| summary.notes.get_mut(index)) {
         *note = ctx.format_retained(
             format_args!("source_bytes={source_size}"),
             "iges normalized source byte note",
@@ -340,11 +343,12 @@ fn mark_quarantined_placements(
     directory: &[directory::DirectoryEntry],
     quarantined: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
-    for entry in directory.iter().filter(|entry| {
-        matches!(entry.entity_type, 408 | 420)
-            && entry.form == 0
-            && quarantined.contains(&entry.sequence)
-    }) {
+    for sequence in ctx.admit_iter(quarantined, "iges quarantined placement sequences")? {
+        let Some(entry) = directory::entry_by_sequence(directory, *sequence, ctx)?
+            .filter(|entry| matches!(entry.entity_type, 408 | 420) && entry.form == 0)
+        else {
+            continue;
+        };
         ctx.insert_btree_map(
             &mut projection.placement_rejections,
             entry.sequence,
@@ -361,11 +365,23 @@ enum ParseMode {
     Inspect,
 }
 
-fn parameter_tokens(records: &[parameter::ParameterRecord]) -> u64 {
-    records
-        .iter()
-        .map(|record| cadmpeg_core::decode::u64_from_index(record.tokens().len()))
-        .sum()
+fn parameter_tokens(
+    records: &[parameter::ParameterRecord],
+    ctx: &DecodeContext<'_>,
+) -> Result<u64, CodecError> {
+    ctx.fold(
+        records,
+        0_u64,
+        |total, record| {
+            total
+                .checked_add(cadmpeg_core::decode::u64_from_index(record.tokens().len()))
+                .ok_or_else(|| {
+                    cadmpeg_core::decode::refuse_local_limit("iges parameter tokens", u64::MAX, 1)
+                        .into()
+                })
+        },
+        "iges parameter token census",
+    )
 }
 
 struct PhysicalParse<'a, 'ctx> {
@@ -388,28 +404,13 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         ctx: &'ctx DecodeContext<'_>,
         mode: ParseMode,
     ) -> Result<Self, CodecError> {
-        let (card_scan, card_storage, parameter_parse) = match mode {
-            ParseMode::Decode => (
-                "iges_card_scan",
-                "iges_card_storage",
-                "iges_parameter_parse",
-            ),
-            ParseMode::Inspect => (
-                "iges_inspect_card_scan",
-                "iges_inspect_card_storage",
-                "iges_inspect_parameter_parse",
-            ),
+        let card_storage = match mode {
+            ParseMode::Decode => "iges_card_storage",
+            ParseMode::Inspect => "iges_inspect_card_storage",
         };
-        charge_work(
-            ctx,
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            card_scan,
-        )?;
-        let scan_storage = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            card_storage,
-        )?;
-        let scan = card::scan_with_context(bytes, ctx)?;
+        // The card framing borrows the source and is dropped with this parse.
+        let mut scan_storage = ctx.reserve_scoped(0, card_storage)?;
+        let scan = scan_storage.with_storage(|| card::scan_with_context(bytes, ctx))?;
         let (global, mut global_losses) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =
             directory::parse(&scan, global.global_table(ctx)?, ctx)?;
@@ -432,13 +433,12 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             parameter::uses_double_precision(&parameters),
             ctx,
         )?;
-        ctx.reserve_vec(
+        let mut conditional_losses = conditional_losses;
+        ctx.append_vec(
             &mut global_losses,
-            conditional_losses.len(),
+            &mut conditional_losses,
             "iges combined global loss notes",
         )?;
-        global_losses.extend(conditional_losses);
-        charge_work(ctx, parameter_tokens(&parameters), parameter_parse)?;
         let references = graph::build(&directory, ctx)?;
         let mut scan = scan;
         let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
@@ -464,12 +464,11 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             ctx.reserve_vec(&mut losses, 1, "iges admission loss slots")?;
             losses.push(loss);
         }
-        ctx.reserve_vec(
+        ctx.append_vec(
             &mut losses,
-            self.global_losses.len(),
+            &mut self.global_losses,
             "iges admission loss slots",
         )?;
-        losses.extend(std::mem::take(&mut self.global_losses));
         if matches!(self.global.global_table(ctx)?, global::GlobalTable::V4_0) {
             let post_terminate_count = self.scan.post_terminate_count();
             if post_terminate_count > 0 {
@@ -490,13 +489,19 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
 
     fn record_losses(&self, ctx: &DecodeContext<'_>) -> Result<Vec<LossNote>, CodecError> {
         let mut losses = self.framing_recoveries.notes(ctx)?;
-        for record in &self.quarantined_directory {
-            ctx.reserve_vec(&mut losses, 1, "iges record loss slots")?;
-            losses.push(record.loss_note(ctx)?);
+        for record in ctx.admit_iter(&self.quarantined_directory, "iges record loss slots")? {
+            ctx.push_vec(
+                &mut losses,
+                record.loss_note(ctx)?,
+                "iges record loss slots",
+            )?;
         }
-        for record in &self.quarantined_parameters {
-            ctx.reserve_vec(&mut losses, 1, "iges record loss slots")?;
-            losses.push(record.loss_note(ctx)?);
+        for record in ctx.admit_iter(&self.quarantined_parameters, "iges record loss slots")? {
+            ctx.push_vec(
+                &mut losses,
+                record.loss_note(ctx)?,
+                "iges record loss slots",
+            )?;
         }
         Ok(losses)
     }
@@ -511,13 +516,12 @@ pub(crate) fn inspect(
     let mut parse = PhysicalParse::run(window, ctx, ParseMode::Inspect)?;
     let primary = crate::dialect::classify(ctx, representation, &parse.global)?;
     let mut losses = parse.admission_losses(ctx)?;
-    let record_losses = parse.record_losses(ctx)?;
-    ctx.reserve_vec(
+    let mut record_losses = parse.record_losses(ctx)?;
+    ctx.append_vec(
         &mut losses,
-        record_losses.len(),
+        &mut record_losses,
         "iges combined record losses",
     )?;
-    losses.extend(record_losses);
     let mut summary = card::summarize(&parse.scan, primary, ctx)?;
     append_summary_notes(ctx, &mut summary.notes, parse.global.summary_notes(ctx)?)?;
     append_summary_notes(
@@ -580,8 +584,12 @@ fn decode_with_occurrence_limits(
         quarantined_parameter_sequences(&parse.quarantined_parameters, ctx)?;
     let projected_directory =
         projection_directory(&parse.directory, &quarantined_parameter_sequences, ctx)?;
-    let projected_directory = projected_directory.as_deref().unwrap_or(&parse.directory);
-    let parameter_tokens = parameter_tokens(&parse.parameters);
+    let projected_directory = projected_directory
+        .as_ref()
+        .map_or(parse.directory.as_slice(), |(entries, _)| {
+            entries.as_slice()
+        });
+    let parameter_tokens = parameter_tokens(&parse.parameters, ctx)?;
     let source_fidelity = source_fidelity(source_bytes, ctx)?;
 
     let primary = crate::dialect::classify(ctx, representation, &parse.global)?;
@@ -649,9 +657,13 @@ fn decode_with_occurrence_limits(
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses(ctx)?;
     if invalid_resolution
-        && !losses.iter().any(|loss| {
-            loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()
-        })
+        && !ctx.any_by(
+            &losses,
+            |loss| {
+                Ok(loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code())
+            },
+            "iges substituted context loss search",
+        )?
     {
         ctx.reserve_vec(&mut losses, 1, "iges substituted context loss slot")?;
         let message = ctx.format_retained(
@@ -667,27 +679,23 @@ fn decode_with_occurrence_limits(
         )?;
         losses.push(code.note(message));
     }
-    ctx.reserve_vec(
+    ctx.append_vec(
         &mut losses,
-        projection.losses.len(),
+        &mut projection.losses,
         "iges combined projection losses",
     )?;
-    losses.extend(std::mem::take(&mut projection.losses));
-    let graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
-    ctx.reserve_vec(
+    let mut graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
+    ctx.append_vec(&mut losses, &mut graph_losses, "iges combined graph losses")?;
+    let mut record_losses = parse.record_losses(ctx)?;
+    ctx.append_vec(
         &mut losses,
-        graph_losses.len(),
-        "iges combined graph losses",
-    )?;
-    losses.extend(graph_losses);
-    let record_losses = parse.record_losses(ctx)?;
-    ctx.reserve_vec(
-        &mut losses,
-        record_losses.len(),
+        &mut record_losses,
         "iges combined record losses",
     )?;
-    losses.extend(record_losses);
-    for source_sequence in product_occurrence_expansion.malformed_definition_sequences {
+    for source_sequence in ctx.admit_iter(
+        product_occurrence_expansion.malformed_definition_sequences,
+        "iges occurrence loss sequences",
+    )? {
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrenceRootInferenceBlocked,
             format_args!("IGES product occurrence root inference was suppressed because a definition member list is malformed"),
@@ -695,7 +703,10 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
-    for source_sequence in product_occurrence_expansion.malformed_placement_sequences {
+    for source_sequence in ctx.admit_iter(
+        product_occurrence_expansion.malformed_placement_sequences,
+        "iges occurrence loss sequences",
+    )? {
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::OccurrencePlacementMalformed,
             format_args!("IGES product occurrence expansion omitted an instance or member with malformed placement data"),
@@ -706,8 +717,10 @@ fn decode_with_occurrence_limits(
     for native::AmbiguousParameterBoundary {
         sequence: source_sequence,
         ambiguity,
-    } in ambiguous_parameter_boundaries
-    {
+    } in ctx.admit_iter(
+        ambiguous_parameter_boundaries,
+        "iges parameter boundary losses",
+    )? {
         let (candidate_count, kind) = match ambiguity {
             native::ParameterBoundaryAmbiguity::EquallyValid(count) => (count, "equally valid"),
             native::ParameterBoundaryAmbiguity::Structural(count) => (count, "structural"),
@@ -722,7 +735,7 @@ fn decode_with_occurrence_limits(
         )?;
     }
     for (source_sequence, crate::parameter::OverdeclaredCount { declared, present }) in
-        overdeclared_counts
+        ctx.admit_iter(overdeclared_counts, "iges overdeclared count losses")?
     {
         push_occurrence_loss(ctx, &mut losses,
             IgesLossCode::ParameterCountOverdeclared,
@@ -733,7 +746,10 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         )?;
     }
-    for (source_sequence, refusal) in unstatable_attribute_tables {
+    for (source_sequence, refusal) in ctx.admit_iter(
+        unstatable_attribute_tables,
+        "iges attribute table count losses",
+    )? {
         push_occurrence_loss(
             ctx,
             &mut losses,
@@ -747,14 +763,16 @@ fn decode_with_occurrence_limits(
         )?;
     }
     let global_table = parse.global.global_table(ctx)?;
-    if !ctx.container_only() {
-        let attributed_before_generic = attributed_sequences(&losses, ctx)?;
+    let attributed = if ctx.container_only() {
+        BTreeSet::new()
+    } else {
+        let mut attributed = attributed_sequences(&losses, ctx)?;
         append_generic_losses(
             ctx,
             &mut losses,
             &parse.directory,
             &projection,
-            &attributed_before_generic,
+            &mut attributed,
             global_table,
         )?;
         charge_work(
@@ -763,16 +781,11 @@ fn decode_with_occurrence_limits(
             "iges_semantic_validation",
         )?;
         reject_invalid_semantic_ir(&ir)?;
-    }
-    let attributed = if ctx.container_only() {
-        BTreeSet::new()
-    } else {
-        attributed_sequences(&losses, ctx)?
+        attributed
     };
     let mut transfer_ledger = TransferLedger::default();
-    for entry in parse
-        .directory
-        .iter()
+    for entry in ctx
+        .admit_iter(&parse.directory, "iges transfer ledger directory records")?
         .filter(|entry| entry.entity_type != 0)
     {
         let attributed_loss = attributed.contains(&entry.sequence);
@@ -804,7 +817,10 @@ fn decode_with_occurrence_limits(
         )?;
         record_retained_transfer(ctx, &mut transfer_ledger, source, target, note)?;
     }
-    for record in &parse.quarantined_directory {
+    for record in ctx.admit_iter(
+        &parse.quarantined_directory,
+        "iges transfer ledger quarantined records",
+    )? {
         let source = ctx.format_retained(
             format_args!("D{}", record.sequence),
             "iges transfer ledger quarantine source",
@@ -817,7 +833,10 @@ fn decode_with_occurrence_limits(
             "quarantined directory record retained; typed Directory fields were not recovered",
         )?;
     }
-    for record in &parse.quarantined_parameters {
+    for record in ctx.admit_iter(
+        &parse.quarantined_parameters,
+        "iges transfer ledger quarantined records",
+    )? {
         let source = ctx.format_retained(
             format_args!("D{}:parameter", record.sequence),
             "iges transfer ledger quarantine source",
@@ -859,10 +878,12 @@ fn decode_with_occurrence_limits(
     )?;
     drop(verification_index);
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
+        ctx.insert_btree_map(
+            &mut source.attributes,
             cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
             document_digest,
-        );
+            "iges document digest attribute",
+        )?;
     }
     let mut body = DecodeBody::new(if ctx.container_only() {
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}

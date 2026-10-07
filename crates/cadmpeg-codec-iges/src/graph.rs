@@ -9,7 +9,7 @@ use crate::card::{CardScan, Section};
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
@@ -757,39 +757,17 @@ pub(crate) fn losses(
     parameters: &[ParameterRecord],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
-    let scan_work = u64_from_index(scan.lines.len())
-        .checked_mul(2)
-        .ok_or_else(|| refuse_local_limit("iges graph loss offset scans", u64::MAX, 1))?;
-    ctx.charge_work(scan_work, "iges graph loss offset scans")?;
+    // A card's sequence is its position in its section, so a section slice
+    // answers an offset lookup by index.
+    let directory_cards = scan.section(Section::Directory);
+    let parameter_cards = scan.section(Section::Parameter);
+    let card_offset = |cards: &[crate::card::Card<'_>], sequence: u32| {
+        let index = usize::try_from(sequence).ok()?.checked_sub(1)?;
+        cards.get(index).map(|card| card.line.offset)
+    };
     let mut index_storage = ctx.reserve_scoped(0, "IGES graph loss indices")?;
-    let mut directory_offsets = BTreeMap::new();
-    for (sequence, line) in scan.section(Section::Directory) {
-        index_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut directory_offsets,
-                sequence,
-                line.offset,
-                "iges graph loss directory offsets",
-            )
-        })?;
-    }
-    let mut parameter_lines = BTreeMap::new();
-    for (sequence, line) in scan.section(Section::Parameter) {
-        index_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut parameter_lines,
-                sequence,
-                line.offset,
-                "iges graph loss parameter offsets",
-            )
-        })?;
-    }
     let mut records = BTreeMap::new();
-    ctx.charge_work(
-        u64_from_index(parameters.len()),
-        "iges graph loss record index",
-    )?;
-    for record in parameters {
+    for record in ctx.admit_iter(parameters, "iges graph loss record index")? {
         index_storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut records,
@@ -800,10 +778,9 @@ pub(crate) fn losses(
         })?;
     }
     let mut losses = Vec::new();
-    for (source, edges) in graph {
-        ctx.charge_work(u64_from_index(edges.len()), "iges graph loss edge scan")?;
-        for edge in edges
-            .iter()
+    for (source, edges) in ctx.admit_iter(graph, "iges graph loss sources")? {
+        for edge in ctx
+            .admit_iter(edges, "iges graph loss edge scan")?
             .filter(|edge| !matches!(edge.resolution, Resolution::Resolved(_)))
         {
             ctx.reserve_vec(&mut losses, 1, "iges graph loss notes")?;
@@ -812,8 +789,7 @@ pub(crate) fn losses(
                 let span = record.tokens().get(index)?.span.start;
                 let card = u32::try_from(span / 64).ok()?;
                 let sequence = record.line_range.start.checked_add(card)?;
-                let offset = parameter_lines
-                    .get(&sequence)?
+                let offset = card_offset(parameter_cards, sequence)?
                     .checked_add(cadmpeg_core::decode::u64_from_index(span % 64))?;
                 Some((offset, index))
             });
@@ -826,9 +802,7 @@ pub(crate) fn losses(
                     )?,
                 ))
             } else {
-                directory_offsets
-                    .get(source)
-                    .copied()
+                card_offset(directory_cards, *source)
                     .map(|offset| {
                         ctx.format_retained(format_args!("D{source}"), "iges graph loss tag")
                             .map(|tag| (offset, tag))

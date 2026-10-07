@@ -109,7 +109,9 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
     plan.write_to(&mut written).unwrap();
     let (global, _) =
         crate::test_support::parse_global(&crate::test_support::scan(&written).unwrap()).unwrap();
-    let context = crate::test_support::with_service_context(&[], |ctx| global.length_context(ctx)).unwrap().unwrap();
+    let context = crate::test_support::with_service_context(&[], |ctx| global.length_context(ctx))
+        .unwrap()
+        .unwrap();
     assert_eq!(context.minimum_resolution_mm(), 0.01);
 
     let round_trip = IgesCodec
@@ -360,8 +362,8 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
     crate::test_support::parse_global(&scan).unwrap();
     let global_text = scan
         .section(crate::card::Section::Global)
-        .map(|(_, line)| line)
-        .flat_map(|line| line.payload.iter().take(72).copied())
+        .iter()
+        .flat_map(|card| card.line.payload.iter().take(72).copied())
         .collect::<Vec<_>>();
     let global_text = String::from_utf8(global_text)
         .expect("generated Global record is ASCII")
@@ -1707,7 +1709,9 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
     plan.write_to(&mut written).unwrap();
     let (global, _) =
         crate::test_support::parse_global(&crate::test_support::scan(&written).unwrap()).unwrap();
-    let context = crate::test_support::with_service_context(&[], |ctx| global.length_context(ctx)).unwrap().unwrap();
+    let context = crate::test_support::with_service_context(&[], |ctx| global.length_context(ctx))
+        .unwrap()
+        .unwrap();
     assert_eq!(context.minimum_resolution_mm(), 0.25);
 
     let round_trip = IgesCodec

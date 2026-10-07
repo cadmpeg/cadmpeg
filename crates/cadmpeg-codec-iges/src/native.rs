@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned `native.iges` physical cards and entity records.
 
-use crate::card::{CardScan, ScannedLine, Section};
+use crate::card::{CardScan, PhysicalLine, Section};
 
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
@@ -20,7 +20,7 @@ use crate::parameter::{
     OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
     Token, TokenValue, TrailingPointerAnalysis,
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -51,7 +51,9 @@ impl ProductOccurrenceLimits {
 
 struct NativeCard<'a> {
     index: usize,
-    line: &'a ScannedLine,
+    line: &'a PhysicalLine<'a>,
+    /// The section and sequence of a framed card; trailing records have none.
+    card: Option<(Section, u32)>,
 }
 
 struct CardId(usize);
@@ -100,13 +102,8 @@ impl Serialize for NativeCard<'_> {
             section: Option<Section>,
             sequence: Option<u32>,
         }
-        let (section, sequence) = match self.line {
-            ScannedLine::Card {
-                section, sequence, ..
-            } => (Some(*section), Some(*sequence)),
-            ScannedLine::Trailing(_) => (None, None),
-        };
-        let line = self.line.physical();
+        let (section, sequence) = self.card.unzip();
+        let line = self.line;
         Wire {
             id: CardId(
                 self.index
@@ -114,7 +111,7 @@ impl Serialize for NativeCard<'_> {
                     .ok_or_else(|| serde::ser::Error::custom("IGES card index exceeds usize"))?,
             ),
             offset: line.offset,
-            payload: &line.payload,
+            payload: line.payload,
             line_ending: line.line_ending(),
             section,
             sequence,
@@ -2352,12 +2349,22 @@ fn index_native_inputs<'a>(
             .iter()
             .map(NativeQuarantinedRecord::Parameter),
     );
-    let mut cards = ctx.collection_vec(scan.lines.len(), "iges native card slots")?;
+    let framed = scan.cards();
+    let trailing = scan.trailing();
+    let card_count = framed
+        .len()
+        .checked_add(trailing.len())
+        .ok_or_else(|| refuse_local_limit("iges native card slots", u64::MAX, 1))?;
+    let mut cards = ctx.collection_vec(card_count, "iges native card slots")?;
     cards.extend(
-        scan.lines
-            .iter()
+        ctx.admit_iter(framed, "iges native card slots")?
+            .map(|card| (&card.line, Some((card.section, card.sequence))))
+            .chain(
+                ctx.admit_iter(trailing, "iges native card slots")?
+                    .map(|line| (line, None)),
+            )
             .enumerate()
-            .map(|(index, line)| NativeCard { index, line }),
+            .map(|(index, (line, card))| NativeCard { index, line, card }),
     );
     let mut by_directory = BTreeMap::new();
     for record in parameters {
@@ -2418,7 +2425,9 @@ pub(crate) fn store(
         boundary_vertex_derivations,
     } = inputs;
     ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(scan.lines.len()),
+        cadmpeg_core::decode::u64_from_index(scan.cards().len())
+            .checked_add(cadmpeg_core::decode::u64_from_index(scan.trailing().len()))
+            .ok_or_else(|| refuse_local_limit("iges_native_entities", u64::MAX, 1))?,
         "iges_native_entities",
     )?;
     let NativeInputIndexes {
@@ -5246,9 +5255,7 @@ pub(crate) fn store(
                                         ReferenceExpectation::Named(
                                             ExpectationLabel::NonAssociativityOrType402Form7,
                                         ),
-                                        |target| {
-                                            flow_join_target_valid(target, global_table)
-                                        },
+                                        |target| flow_join_target_valid(target, global_table),
                                     )
                                 })
                                 .transpose()?
@@ -6235,10 +6242,7 @@ pub(crate) fn store(
                 .and_then(|record| record.count_with_stride_before(1, width, end))
                 .and_then(|view_count| {
                     let entity_count = record.and_then(|record| {
-                        crate::parameter::view_visibility_entity_count(
-                            record,
-                            global_table,
-                        )
+                        crate::parameter::view_visibility_entity_count(record, global_table)
                     })?;
                     let entity_start = 3_usize.checked_add(view_count.checked_mul(width)?)?;
                     let finish = entity_start.checked_add(entity_count)?;

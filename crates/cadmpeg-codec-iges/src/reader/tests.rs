@@ -227,14 +227,14 @@ fn reader_generic_loss_refuses_slot_and_message_limits() {
 
     let (directory, table) = directory_fixture();
     let projection = crate::entities::geometry::Projection::default();
-    let attributed = std::collections::BTreeSet::new();
+    let mut attributed = std::collections::BTreeSet::new();
     let mut losses = Vec::new();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),
+        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &mut attributed, table),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "iges generic loss slots"
@@ -247,7 +247,7 @@ fn reader_generic_loss_refuses_slot_and_message_limits() {
     );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &attributed, table),
+        super::append_generic_losses(&ctx, &mut losses, &directory, &projection, &mut attributed, table),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "iges generic loss message"
@@ -260,7 +260,7 @@ fn reader_generic_loss_refuses_slot_and_message_limits() {
         &mut losses,
         &directory,
         &projection,
-        &attributed,
+        &mut attributed,
         table,
     )
     .unwrap();
@@ -703,12 +703,12 @@ fn decode_enforces_each_iges_session_resource_dimension() {
     assert_refusal(
         |limits| limits.max_materialized_bytes = 1,
         ResourceDimension::MaterializedBytes,
-        "iges_card_storage",
+        "iges_cards",
     );
     assert_refusal(
         |limits| limits.max_retained_bytes = 1,
         ResourceDimension::RetainedBytes,
-        "iges physical card payload",
+        "iges_global_stream",
     );
     assert_refusal(
         |limits| limits.max_entities = 0,
@@ -739,19 +739,26 @@ fn decode_enforces_each_iges_session_resource_dimension() {
         ResourceDimension::CollectionItems,
         "iges_cards",
     );
-    let source_len = cadmpeg_core::decode::u64_from_index(point_file().len());
-    // Classification admits a 512-byte read window and each read-loop probe.
-    // A short input also admits its remaining window before the EOF read.
-    let prefix_work = if source_len < 512 {
-        1 + 512 + 1 + (512 - source_len)
-    } else {
-        1 + 512
-    };
-    assert_refusal(
-        |limits| limits.max_work_units = prefix_work,
+    let bytes = point_file();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "iges_card_scan",
+        "iges physical line endings",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_work_units = cap;
+            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &options.policy)
+                .map(|_| ())
+                .map_err(|failure| match failure {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("{other:#?}"),
+                })
+        },
     );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.additional == cadmpeg_core::decode::u64_from_index(bytes.len())
+    ));
 }
 
 #[test]
@@ -841,18 +848,22 @@ fn attributed_loss_index_refuses_node_limit() {
 fn attributed_loss_sequence_parse_refusal_propagates() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // The tag contains one sequence digit and no earlier work charge.
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    // The tag contains one sequence digit.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges attributed loss sequence",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::attributed_sequences(&[tagged_loss("D7:parameter")], &ctx).map(|_| ())
+        },
+    );
     assert!(matches!(
-        super::attributed_sequences(&[tagged_loss("D7:parameter")], &ctx),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.used == 0
-                && limit.additional == 1
-                && limit.operation == "iges attributed loss sequence"
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 1
     ));
 }
 
@@ -866,7 +877,9 @@ fn projected_directory_refuses_entry_limit() {
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
-    let (directory, _) = crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx).unwrap();
+    let (directory, _) =
+        crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx)
+            .unwrap();
     let quarantined = std::collections::BTreeSet::from([99]);
 
     let arena = DecodeArena::new();
@@ -882,7 +895,7 @@ fn projected_directory_refuses_entry_limit() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let projected = super::projection_directory(&directory, &quarantined, &ctx)
+    let (projected, _storage) = super::projection_directory(&directory, &quarantined, &ctx)
         .unwrap()
         .unwrap();
     assert_eq!(projected.len(), directory.len());

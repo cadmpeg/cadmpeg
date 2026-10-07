@@ -2844,7 +2844,10 @@ fn layout_hollerith(
         return Ok(None);
     }
     let count_text = ctx
-        .validate_utf8(&bytes[start..cursor], "iges parameter layout Hollerith count")?
+        .validate_utf8(
+            &bytes[start..cursor],
+            "iges parameter layout Hollerith count",
+        )?
         .map_err(|_| CodecError::Malformed("IGES Hollerith count is not ASCII".into()))?;
     let count = ctx
         .parse_text::<usize>(count_text, "iges parameter layout Hollerith number")?
@@ -2963,7 +2966,7 @@ pub(crate) struct ParameterAssembly {
     pub(crate) recoveries: FramingRecoveries,
 }
 
-fn back_pointer(line: &PhysicalLine) -> Option<u32> {
+fn back_pointer(line: &PhysicalLine<'_>) -> Option<u32> {
     let field = line.payload.get(64..72)?;
     if field.first() != Some(&b' ') {
         return None;
@@ -3192,7 +3195,9 @@ fn macro_integer(
         Ok(text) => text,
         Err(_) => return Ok(None),
     };
-    Ok(ctx.parse_text::<i64>(text, "iges macro integer value")?.ok())
+    Ok(ctx
+        .parse_text::<i64>(text, "iges macro integer value")?
+        .ok())
 }
 
 fn macro_keyword(bytes: &[u8], span: &Range<usize>, keyword: &[u8]) -> bool {
@@ -3261,8 +3266,13 @@ pub(crate) fn macro_parameter_data_with_context(
                 .first()
                 .cloned()
                 .ok_or((ParameterDefect::MacroHeaderMalformed, start))?;
-            let (entity_type_span, first_delimiter, after_entity_type) =
-                macro_next_field(bytes, first.start, parameter_delimiter, record_delimiter, ctx)?;
+            let (entity_type_span, first_delimiter, after_entity_type) = macro_next_field(
+                bytes,
+                first.start,
+                parameter_delimiter,
+                record_delimiter,
+                ctx,
+            )?;
             if first_delimiter != parameter_delimiter
                 || macro_integer(bytes, &entity_type_span, ctx)? != Some(306)
             {
@@ -3284,8 +3294,13 @@ pub(crate) fn macro_parameter_data_with_context(
             {
                 return Err((ParameterDefect::MacroHeaderMalformed, keyword_span.start).into());
             }
-            let (defined_type_span, defined_type_delimiter, after_defined_type) =
-                macro_next_field(bytes, after_keyword, parameter_delimiter, record_delimiter, ctx)?;
+            let (defined_type_span, defined_type_delimiter, after_defined_type) = macro_next_field(
+                bytes,
+                after_keyword,
+                parameter_delimiter,
+                record_delimiter,
+                ctx,
+            )?;
             if defined_type_delimiter == record_delimiter {
                 return Err((
                     ParameterDefect::MacroArgumentListMissing,
@@ -3398,10 +3413,7 @@ struct DecimalShape {
     double_precision: bool,
 }
 
-fn decimal_shape(
-    text: &[u8],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<DecimalShape>, CodecError> {
+fn decimal_shape(text: &[u8], ctx: &DecodeContext<'_>) -> Result<Option<DecimalShape>, CodecError> {
     let mut start = 0;
     if matches!(text.first(), Some(b'+' | b'-')) {
         start = 1;
@@ -3786,7 +3798,7 @@ struct OwnedParameterBytes {
 
 fn owned_bytes(
     cards: &[u32],
-    lines: &BTreeMap<u32, &PhysicalLine>,
+    lines: &BTreeMap<u32, &PhysicalLine<'_>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<OwnedParameterBytes, CodecError> {
     let (byte_count, card_count) = cards
@@ -3819,7 +3831,7 @@ fn owned_bytes(
 fn stream_offset(
     offset: usize,
     cards: &[u32],
-    lines: &BTreeMap<u32, &PhysicalLine>,
+    lines: &BTreeMap<u32, &PhysicalLine<'_>>,
 ) -> Option<u64> {
     let line = lines.get(cards.get(offset / 64)?)?;
     line.offset
@@ -3829,7 +3841,7 @@ fn stream_offset(
 fn quarantine(
     entry: &DirectoryEntry,
     cards: &[u32],
-    lines: &BTreeMap<u32, &PhysicalLine>,
+    lines: &BTreeMap<u32, &PhysicalLine<'_>>,
     defect: ParameterDefect,
     failing_offset: Option<usize>,
     ctx: &DecodeContext<'_>,
@@ -3889,7 +3901,7 @@ struct Ownership<'a> {
 /// conflict between the two statements quarantines both entities.
 fn resolve_ownership<'a>(
     directory: &'a [DirectoryEntry],
-    lines: &BTreeMap<u32, &PhysicalLine>,
+    lines: &BTreeMap<u32, &PhysicalLine<'_>>,
     back_pointers: &BTreeMap<u32, Option<u32>>,
     recoveries: &mut FramingRecoveries,
     ctx: &DecodeContext<'_>,
@@ -4090,8 +4102,13 @@ pub(crate) fn assemble_with_context(
 ) -> Result<ParameterAssembly, CodecError> {
     let global_table = global.global_table(ctx)?;
     let mut lines = BTreeMap::new();
-    for (sequence, line) in scan.section(Section::Parameter) {
-        ctx.insert_btree_map(&mut lines, sequence, line, "iges parameter lines")?;
+    for card in ctx.admit_iter(scan.section(Section::Parameter), "iges parameter lines")? {
+        ctx.insert_btree_map(
+            &mut lines,
+            card.sequence,
+            &card.line,
+            "iges parameter lines",
+        )?;
     }
     let mut back_pointers = BTreeMap::new();
     for (sequence, line) in &lines {
