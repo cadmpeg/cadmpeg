@@ -75,6 +75,16 @@ pub(crate) fn summary(
     definition: DefId,
     receiver: Option<Ty<'_>>,
 ) -> Option<Summary> {
+    if ["is_array", "is_object"].iter().any(|method| {
+        types::physical_inherent_method(tcx, definition, "serde_json", &["value", "Value"], method)
+    }) {
+        return Some(Summary {
+            allocation: Allocation::None,
+            work: Work::Fixed,
+            zero_operand: None,
+            empty_operand: None,
+        });
+    }
     let crate_name = tcx.crate_name(definition.krate);
     let name = tcx.opt_item_name(definition)?;
     let path = tcx.def_path_str(definition);
@@ -177,7 +187,23 @@ pub(crate) fn summary(
             ("serde_json", "eq" | "ne" | "cmp" | "partial_cmp" | "lt" | "le" | "gt" | "ge") => {
                 (Allocation::None, Work::Comparison)
             }
+            ("serde_json", "next")
+                if value.is_some_and(|value| {
+                    matches!(value.kind(), ty::Adt(owner, _) if
+                        ["Iter", "IntoIter"].iter().any(|name|
+                            types::physical_item_path(tcx, owner.did(), "serde_json", &["map", name])))
+                }) && tcx.opt_parent(definition).is_some_and(|parent| {
+                    matches!(tcx.def_kind(parent), rustc_hir::def::DefKind::Impl { of_trait: true })
+                        && types::physical_item_path(
+                            tcx,
+                            tcx.impl_trait_ref(parent).skip_binder().def_id,
+                            "core",
+                            &["iter", "traits", "iterator", "Iterator"],
+                        )
+                }) => (Allocation::None, Work::Fixed),
             ("serde_json", "index" | "index_mut") => (Allocation::None, Work::Argument(1)),
+            // Constructing a map iterator visits nothing; its steps are admitted.
+            ("serde_json", "iter" | "into_iter") => (Allocation::None, Work::Fixed),
             ("roxmltree", "eq" | "ne") => (Allocation::None, Work::Fixed),
             ("serde_json", "fmt") => (Allocation::None, Work::Receiver),
             ("serde_json", "serialize" | "to_value" | "from_value" | "to_vec") => {
@@ -221,6 +247,9 @@ pub(crate) fn summary(
             ("encoding_rs", "for_label") => (Allocation::None, Work::Argument(0)),
             ("encoding_rs", "decode" | "decode_without_bom_handling") => {
                 (Allocation::Input(1), Work::Argument(1))
+            }
+            ("encoding_rs", "decode_to_string_without_replacement") => {
+                (Allocation::None, Work::Argument(1))
             }
             ("encoding_rs", "decode_to_utf8_without_replacement") => {
                 (Allocation::None, Work::Argument(1))
@@ -385,6 +414,7 @@ pub(crate) fn summary(
                     | "from_u32"
                     | "hypot"
                     | "ilog10"
+                    | "ilog"
                     | "ilog2"
                     | "is_alphabetic"
                     | "is_alphanumeric"
@@ -646,9 +676,6 @@ pub(crate) fn summary(
         "push_str" | "extend" | "extend_from_slice" | "append" => {
             (Allocation::Growth, Work::Argument(1))
         }
-        "retain" if owner.is_some_and(|owner| matches!(owner.as_str(), "HashMap" | "HashSet")) => {
-            (Allocation::None, Work::Capacity)
-        }
         "insert" if keyed => (Allocation::Growth, Work::Argument(1)),
         "insert" | "resize" | "resize_with" => (Allocation::Growth, Work::Receiver),
         "contains_key" | "get" | "get_mut" | "contains" | "remove" if keyed => {
@@ -687,9 +714,9 @@ pub(crate) fn summary(
         | "binary_search_by_key"
         | "retain"
         | "drain"
-        | "clear"
-        | "truncate"
         | "remove" => (Allocation::None, Work::Receiver),
+        // Releasing values is paid by the charges that admitted them.
+        "clear" | "truncate" => (Allocation::None, Work::Fixed),
         "new"
             if ![
                 "vec::Vec",

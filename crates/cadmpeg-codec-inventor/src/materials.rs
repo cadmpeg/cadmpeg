@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Protein appearance catalog projection without inferred topology bindings.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -55,19 +55,19 @@ pub(crate) fn project_catalog(
     });
     let records = records_storage
         .with_storage(|| ctx.try_collect_vec(records, "Inventor material record references"))?;
-    let mut guid_counts: HashMap<&str, usize> = HashMap::new();
+    let mut guid_counts: BTreeMap<&str, usize> = BTreeMap::new();
     let mut guid_counts_storage = ctx.reserve_scoped(0, "Inventor material GUID counts")?;
     for record in ctx.admit_iter(&records, "Inventor material GUID count records")? {
         let guid = record.guid.as_str();
         guid_counts_storage.with_storage(|| {
             if let Some(count) =
-                ctx.get_mut_hash_map(&mut guid_counts, guid, "Inventor material GUID counts")?
+                ctx.get_mut_btree_map(&mut guid_counts, guid, "Inventor material GUID counts")?
             {
                 *count = count
                     .checked_add(1)
                     .ok_or_else(|| CodecError::Malformed("Protein GUID count overflows".into()))?;
             } else {
-                ctx.insert_hash_map(
+                ctx.insert_btree_map(
                     &mut guid_counts,
                     guid,
                     1_usize,
@@ -98,7 +98,7 @@ pub(crate) fn project_catalog(
     let mut textures = BTreeMap::new();
     let mut untyped_distance_properties = 0_usize;
     for record in ctx.admit_iter(&records, "Inventor material texture records")? {
-        if ctx.get_hash_map(
+        if ctx.get_btree_map(
             &guid_counts,
             record.guid.as_str(),
             "Inventor unique material GUID lookup",

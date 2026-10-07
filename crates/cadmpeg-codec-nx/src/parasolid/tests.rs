@@ -16,7 +16,12 @@ use crate::test_support::test_streams::parasolid_group_partition_stream;
 use crate::test_support::test_streams::partition_stream;
 
 fn token(text: &str) -> cadmpeg_parasolid::OwnedSchemaToken {
-    cadmpeg_parasolid::OwnedSchemaToken::parse(&cadmpeg_test_support::service_decode_context(), text.into()).expect("service token admission").expect("the fixture text is a schema token")
+    cadmpeg_parasolid::OwnedSchemaToken::parse(
+        &cadmpeg_test_support::service_decode_context(),
+        text.into(),
+    )
+    .expect("service token admission")
+    .expect("the fixture text is a schema token")
 }
 
 #[test]

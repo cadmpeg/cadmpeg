@@ -31,18 +31,21 @@ impl DecodeContext<'_> {
         self.charge_key(right, 1, operation)?;
         Ok(left.cmp(right))
     }
-    /// Tests slice membership through the single position-search implementation.
+    /// Tests slice membership, charging each visited slot before its charged
+    /// comparison.
     pub fn contains<T: DecodeCost + PartialEq>(
         &self,
         values: &[T],
         value: &T,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
-        self.any_by(
-            values,
-            |candidate| self.equal(candidate, value, operation),
-            operation,
-        )
+        for candidate in values {
+            self.charge_work(1, operation)?;
+            if self.equal(candidate, value, operation)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
     /// Admits key work before `HashMap::get`.
     pub fn get_hash_map<'values, K, Q, V, S>(
@@ -203,7 +206,7 @@ impl DecodeContext<'_> {
         Q: DecodeCost + Ord + ?Sized,
     {
         self.charge_key(key, Self::tree_comparisons(values.len()), operation)?;
-        self.admit_tree_mutation::<K, V>(values.len(), operation)?;
+        self.admit_tree_removal_work::<K, V>(values.len(), operation)?;
         Ok(values.remove(key))
     }
     /// Admits key work before `BTreeSet::contains`.
@@ -258,7 +261,7 @@ impl DecodeContext<'_> {
         Q: DecodeCost + Ord + ?Sized,
     {
         self.charge_key(key, Self::tree_comparisons(values.len()), operation)?;
-        self.admit_tree_mutation::<K, ()>(values.len(), operation)?;
+        self.admit_tree_removal_work::<K, ()>(values.len(), operation)?;
         Ok(values.remove(key))
     }
     /// Admits the query key before borrowing the stored key and value.
@@ -291,43 +294,6 @@ impl DecodeContext<'_> {
         self.charge_key(key, 1, operation)?;
         Ok(values.remove_entry(key))
     }
-    /// Tests set separation through admitted traversal and complete-key lookup.
-    pub fn is_disjoint_hash_set<T: DecodeCost + Eq + Hash, S: BuildHasher>(
-        &self,
-        left: &HashSet<T, S>,
-        right: &HashSet<T, S>,
-        operation: &'static str,
-    ) -> Result<bool, CodecError> {
-        let (source, target) = if left.len() <= right.len() {
-            (left, right)
-        } else {
-            (right, left)
-        };
-        for value in self.admit_iter(source, operation)? {
-            if self.contains_hash_set(target, value, operation)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-    /// Tests set containment through admitted traversal and complete-key lookup.
-    pub fn is_subset_hash_set<T: DecodeCost + Eq + Hash, S: BuildHasher>(
-        &self,
-        left: &HashSet<T, S>,
-        right: &HashSet<T, S>,
-        operation: &'static str,
-    ) -> Result<bool, CodecError> {
-        if left.len() > right.len() {
-            return Ok(false);
-        }
-        let (source, target) = (left, right);
-        for value in self.admit_iter(source, operation)? {
-            if !self.contains_hash_set(target, value, operation)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
     /// Admits the query key before borrowing the stored key and value.
     pub fn get_key_value_btree_map<'values, K, Q, V>(
         &self,
@@ -354,7 +320,7 @@ impl DecodeContext<'_> {
         Q: DecodeCost + Ord + ?Sized,
     {
         self.charge_key(key, Self::tree_comparisons(values.len()), operation)?;
-        self.admit_tree_mutation::<K, V>(values.len(), operation)?;
+        self.admit_tree_removal_work::<K, V>(values.len(), operation)?;
         Ok(values.remove_entry(key))
     }
     /// Tests set separation through admitted traversal and complete-key lookup.

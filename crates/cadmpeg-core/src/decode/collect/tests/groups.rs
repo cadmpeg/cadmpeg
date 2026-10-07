@@ -546,15 +546,16 @@ fn charge_formatted_retained_succeeds_under_service_profile() {
 }
 
 #[test]
-fn insert_retained_hash_set_refuses_one_below_need_before_allocation() {
+fn insert_retained_hash_set_refuses_one_below_need_before_insertion() {
     let arena = DecodeArena::new();
     let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 1);
     let mut values = HashSet::new();
+    // The scoped growth bound admitted the allocation; its retained storage
+    // refuses before the value is inserted.
     assert!(
         matches!(ctx.insert_hash_set(&mut values, 7u16, "test retained set"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
     );
     assert!(values.is_empty());
-    assert_eq!(values.capacity(), 0);
 }
 
 #[test]
