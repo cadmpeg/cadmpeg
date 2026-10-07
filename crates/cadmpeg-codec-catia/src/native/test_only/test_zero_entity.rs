@@ -393,7 +393,7 @@ pub(super) fn validate_zero_entity_endpoint_pair_candidates(
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let expected = crate::test_support::with_service_context(|ctx| {
-        zero_entity_endpoint_pair_candidates(ctx, derived_zero_entity_endpoint_pairs(runs))
+        zero_entity_endpoint_pair_candidates(ctx, &derived_zero_entity_endpoint_pairs(runs))
     })
     .expect("test endpoint pairs fit the service profile");
     if endpoint_pairs != expected {

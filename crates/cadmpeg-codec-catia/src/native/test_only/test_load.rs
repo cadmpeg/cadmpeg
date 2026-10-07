@@ -33,11 +33,11 @@ use crate::native::schema_configuration_chain::{
 };
 use crate::native::{
     definition_schema_selections, derive_reference_signature_cohorts, design_object_id,
-    design_objects, entity_class_index, entity_suffix_framing, entity_suffix_schema_selection,
-    entity_suffix_value, entity_value_schema_selections, object_production, range_interval,
-    reference_signature, semantic_entity_indices, store_projection, terminal_null_entity_id,
-    value_production, visit_payload_references, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
-    CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
+    design_objects, entity_suffix_framing, entity_suffix_schema_selection, entity_suffix_value,
+    entity_value_schema_selections, object_production, range_interval, reference_signature,
+    service_semantic_indices, store_projection, terminal_null_entity_id, value_production,
+    visit_payload_references, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog, CatiaCatalogEntry,
+    CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
     CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
     CatiaConsolidatedEdgeRun, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
     CatiaConsolidatedLineProfile, CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint,
@@ -50,7 +50,7 @@ use crate::native::{
     CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
     CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
     CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
-    CatiaZeroEntityVertexIncidence,
+    CatiaZeroEntityVertexIncidence, GraphIncidences,
 };
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
@@ -188,19 +188,11 @@ impl CatiaNative {
             graph.records.sort_by_key(|record| record.ordinal);
         }
         let class_graphs = graphs.clone();
-        let entity_classes_by_graph_identity =
-            crate::test_support::with_service_context(|ctx| entity_class_index(ctx, &class_graphs))
+        let (entity_classes_by_graph_identity, semantic) =
+            service_semantic_indices(&class_graphs, &entity_records)
                 .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
-        let (
-            relation_expressions,
-            relation_expression_entities,
-            entities_by_graph_identity,
-            terminal_nulls_by_graph,
-            parameter_bindings,
-        ) = crate::test_support::with_service_context(|ctx| {
-            semantic_entity_indices(ctx, &entity_records, &entity_classes_by_graph_identity)
-        })
-        .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
+        let entities_by_graph_identity = &semantic.entities;
+        let terminal_nulls_by_graph = &semantic.maxima;
         let expected_reference_signature_cohorts =
             crate::test_support::with_service_context(|ctx| {
                 derive_reference_signature_cohorts(ctx, &entity_records)
@@ -216,10 +208,11 @@ impl CatiaNative {
                 derive_schema_configuration_row_chains(
                     ctx,
                     &entity_records,
+                    |index| entity_records[index].schema_configuration_row_link(),
                     &CatiaEntityReferenceIndex {
-                        entities: &entities_by_graph_identity,
+                        entities: entities_by_graph_identity,
                         classes: &entity_classes_by_graph_identity,
-                        maxima: &terminal_nulls_by_graph,
+                        maxima: terminal_nulls_by_graph,
                     },
                 )
             })
@@ -264,9 +257,9 @@ impl CatiaNative {
                                         production,
                                         &graph.id,
                                         &CatiaEntityReferenceIndex {
-                                            entities: &entities_by_graph_identity,
+                                            entities: entities_by_graph_identity,
                                             classes: &entity_classes_by_graph_identity,
-                                            maxima: &terminal_nulls_by_graph,
+                                            maxima: terminal_nulls_by_graph,
                                         },
                                     )
                                 })
@@ -298,7 +291,8 @@ impl CatiaNative {
                     || graph_entities.iter().any(|entity| {
                         let expected = crate::test_support::with_service_context(|ctx| {
                             let fields = entity.value_fields_charged(ctx)?;
-                            value_production(ctx, entity, &graph.records, &fields)
+                            let mut incidences = GraphIncidences::new(ctx, &graph.records)?;
+                            value_production(ctx, entity, &mut incidences, &fields)
                         });
                         expected
                             .as_ref()
@@ -306,11 +300,7 @@ impl CatiaNative {
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_value()
-                            != crate::test_support::with_service_context(|ctx| {
-                                entity_suffix_value(ctx, entity.record_suffix())
-                            })
-                            .expect("service profile admits suffix validation")
-                            .as_ref()
+                            != entity_suffix_value(entity.record_suffix()).as_ref()
                     })
                     || graph_entities.iter().any(|entity| {
                         let expected = crate::test_support::with_service_context(|ctx| {
@@ -335,8 +325,7 @@ impl CatiaNative {
                                 entity.value_payload(),
                                 &entity.value_schema_selections,
                                 entity.suffix_value(),
-                                &graph.records,
-                                &graph.id,
+                                &mut GraphIncidences::new(ctx, &graph.records)?,
                                 entity.entity_id,
                             )
                         });
@@ -357,13 +346,13 @@ impl CatiaNative {
                                         entity,
                                         object,
                                         &CatiaEntityReferenceIndex {
-                                            entities: &entities_by_graph_identity,
+                                            entities: entities_by_graph_identity,
                                             classes: &entity_classes_by_graph_identity,
-                                            maxima: &terminal_nulls_by_graph,
+                                            maxima: terminal_nulls_by_graph,
                                         },
-                                        &relation_expressions,
-                                        &relation_expression_entities,
-                                        &parameter_bindings,
+                                        &semantic.relation_expressions,
+                                        &semantic.relation_expression_entities,
+                                        &semantic.parameter_bindings,
                                     )
                                 })
                                 .ok()

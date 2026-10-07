@@ -56,14 +56,14 @@ fn converted_zero_support_runs(
 
 #[test]
 fn native_relation_dependencies_collector_preserves_work_refusal() {
-    let candidate = crate::native::CatiaEntityReference::resolved_or_unresolved(
-        10,
-        Some("entity-10".to_string()),
-        Some("parameter".to_string()),
-    );
+    let candidate = crate::native::CatiaParameterBinding {
+        entity_id: 10,
+        entity: "entity-10",
+        class_name: Some("parameter"),
+    };
     let bindings = std::collections::HashMap::from([(
-        "graph".to_string(),
-        std::collections::HashMap::from([("#1_".to_string(), vec![candidate])]),
+        "graph",
+        std::collections::HashMap::from([("#1_", vec![candidate])]),
     )]);
     assert_source_work_refusal(
         "catia_native_dependencies",
