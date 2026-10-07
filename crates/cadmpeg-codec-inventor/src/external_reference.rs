@@ -7,6 +7,37 @@ use cadmpeg_core::CodecError;
 
 use crate::rse::DocumentKind;
 
+// Each section version is one u16.
+const MIN_SECTION_VERSION_BYTES: usize = 2;
+// Two u16 states, one UTF-16 count word and one u16 trailer.
+const MIN_LOD_TOC_BYTES: usize = 2 + 2 + 4 + 2;
+// Two UTF-16 count words.
+const MIN_HEADER_PAIR_BYTES: usize = 4 + 4;
+// Three string counts, library id/state, group count, two state words,
+// two 16-byte ids and four u32 values.
+const MIN_REFERENCE_BYTES: usize = 3 * 4 + 4 + 2 + 4 + 2 * 2 + 2 * 16 + 4 * 4;
+// Three u16 values.
+const MIN_REFERENCE_STATE_GROUP_BYTES: usize = 3 * 2;
+// Three u32 values, FILETIME, three string counts, library id, state and eight bytes.
+const MIN_EMBEDDED_REFERENCE_BYTES: usize = 3 * 4 + 8 + 3 * 4 + 4 + 2 + 8;
+// Four u32 values and title marker, five header bytes, two section state/count
+// pairs, setting count, ten export bytes and an empty export count word.
+const MIN_OCCURRENCE_BYTES: usize = 5 * 4 + 5 + 2 * (4 + 4) + 4 + 10 + 4;
+// Presence, tag, state word, repeated tag, one-byte value and trailer word.
+const MIN_OCCURRENCE_PROPERTY_BYTES: usize = 1 + 1 + 4 + 1 + 1 + 4;
+// Name count, sixteen-byte id and value count.
+const MIN_OCCURRENCE_SETTING_BYTES: usize = 4 + 16 + 4;
+// Name count, item count and repeated count, twelve-byte trailer.
+const MIN_OCCURRENCE_EXPORT_BYTES: usize = 4 + 4 + 4 + 12;
+// Presence, tag, value count and trailer word.
+const MIN_OCCURRENCE_ITEM_BYTES: usize = 1 + 1 + 4 + 4;
+// Repeated tag and one-byte value.
+const MIN_OCCURRENCE_VALUE_BYTES: usize = 1 + 1;
+// Prefix, name count, two state words, prefix count, parameter count and suffix.
+const MIN_MODEL_STATE_BYTES: usize = 1 + 4 + 2 * 2 + 4 + 4 + 77;
+// Name count, tag, kind, state, value count and trailer.
+const MIN_MODEL_STATE_PARAMETER_BYTES: usize = 4 + 1 + 2 + 2 + 4 + 2;
+
 #[derive(Debug)]
 pub(crate) enum UfrxState<'a> {
     Absent,
@@ -175,6 +206,7 @@ fn parse_stream_grammar<'a>(
             "UFRxDoc section-version table is too short".into(),
         ));
     }
+    cursor.fits(section_count, MIN_SECTION_VERSION_BYTES, "section-version count")?;
     let mut section_versions =
         ctx.vector_storage(section_count, "admit UFRxDoc section-version entries")?;
     for _ in ctx.admit_iter(&(0..section_count), "admit UFRxDoc section-version entries")? {
@@ -200,6 +232,7 @@ fn parse_stream_grammar<'a>(
     cursor.u16("original file-name state")?;
 
     let lod_toc_count = cursor.count32("LOD table count", 65_536)?;
+    cursor.fits(lod_toc_count, MIN_LOD_TOC_BYTES, "LOD table count")?;
     for _ in ctx.admit_iter(&(0..lod_toc_count), "admit UFRxDoc LOD table entries")? {
         cursor.u16("LOD entry kind")?;
         cursor.u16("LOD entry state")?;
@@ -208,6 +241,7 @@ fn parse_stream_grammar<'a>(
     }
 
     let pair_count = cursor.count32("header pair count", 65_536)?;
+    cursor.fits(pair_count, MIN_HEADER_PAIR_BYTES, "header pair count")?;
     for _ in ctx.admit_iter(&(0..pair_count), "admit UFRxDoc header pairs")? {
         cursor.skip_utf16(ctx, "header pair key", 65_536)?;
         cursor.skip_utf16(ctx, "header pair value", 65_536)?;
@@ -299,6 +333,7 @@ fn parse_stream_grammar<'a>(
     let reference_count = cursor.count32("external-reference count", 1_000_000)?;
     let caption = cursor.utf16(ctx, "external-reference caption", 65_536)?;
     cursor.u32("external-reference table state")?;
+    cursor.fits(reference_count, MIN_REFERENCE_BYTES, "external-reference count")?;
     let mut references =
         ctx.vector_storage(reference_count, "admit Inventor external references")?;
     for _ in ctx.admit_iter(&(0..reference_count), "admit Inventor external references")? {
@@ -314,6 +349,7 @@ fn parse_stream_grammar<'a>(
         }
         let display_name = cursor.utf16(ctx, "reference display name", 65_536)?;
         let state_count = cursor.count32("reference state-group count", 65_536)?;
+        cursor.fits(state_count, MIN_REFERENCE_STATE_GROUP_BYTES, "reference state-group count")?;
         let mut state_groups = ctx.vector_storage(
             state_count,
             "admit Inventor external-reference state groups",
@@ -408,6 +444,9 @@ fn parse_embedded_references<'a>(
     section_version: u16,
 ) -> Result<Vec<InventorEmbeddedReference<'a>>, CodecError> {
     let count = cursor.count32("embedded-reference count", 1_000_000)?;
+    // Section version 7 adds one u32 extended value.
+    let minimum = MIN_EMBEDDED_REFERENCE_BYTES + if section_version >= 7 { 4 } else { 0 };
+    cursor.fits(count, minimum, "embedded-reference count")?;
     let mut references = ctx.vector_storage(count, "admit UFRxDoc embedded references")?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc embedded references")? {
         let start = cursor.position();
@@ -466,6 +505,14 @@ fn parse_occurrences<'a>(
     save_year: u16,
 ) -> Result<Vec<UfrxOccurrence<'a>>, CodecError> {
     let count = cursor.count32("occurrence count", 1_000_000)?;
+    // The extended header replaces five bytes with a marker and three u32
+    // states. Legacy versions 20 and 21 each add a byte; saves from 2015
+    // add one export padding byte.
+    let header_extra = if section_version >= 28 { 9 } else {
+        usize::from(section_version >= 20) + usize::from(section_version >= 21)
+    };
+    let minimum = MIN_OCCURRENCE_BYTES + header_extra + usize::from(save_year >= 2015);
+    cursor.fits(count, minimum, "occurrence count")?;
     let mut occurrences = ctx.vector_storage(count, "admit UFRxDoc occurrences")?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrences")? {
         let start = cursor.position();
@@ -484,7 +531,6 @@ fn parse_occurrences<'a>(
         let header_padding_words = if section_version >= 28 {
             let mut padding_words = 0_u8;
             loop {
-                ctx.charge_work(1, "scan UFRx occurrence extended-header padding")?;
                 if cursor.peek_u16("occurrence extended-header padding")? != 0 {
                     break;
                 }
@@ -562,6 +608,7 @@ fn parse_occurrence_section(
 ) -> Result<(), CodecError> {
     cursor.u32("occurrence section state")?;
     let count = cursor.count32("occurrence section property count", 65_536)?;
+    cursor.fits(count, MIN_OCCURRENCE_PROPERTY_BYTES, "occurrence section property count")?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence properties")? {
         cursor.boolean("occurrence property presence")?;
         let tag = cursor.u8("occurrence property tag")?;
@@ -578,6 +625,7 @@ fn parse_occurrence_settings(
     cursor: &mut Cursor<'_>,
 ) -> Result<(), CodecError> {
     let count = cursor.count32("occurrence setting count", 65_536)?;
+    cursor.fits(count, MIN_OCCURRENCE_SETTING_BYTES, "occurrence setting count")?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence settings")? {
         cursor.skip_utf16(ctx, "occurrence setting name", 65_536)?;
         cursor.take(16, "occurrence setting id")?;
@@ -611,6 +659,8 @@ fn parse_occurrence_export(
             cursor.skip_utf8(ctx, "occurrence export value", 65_536)?;
         } else {
             let count = cursor.count32("occurrence export count", 65_536)?;
+            let minimum = MIN_OCCURRENCE_EXPORT_BYTES + usize::from(save_year >= 2018);
+            cursor.fits(count, minimum, "occurrence export count")?;
             for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence exports")? {
                 cursor.skip_utf16(ctx, "occurrence export name", 65_536)?;
                 parse_occurrence_items(ctx, cursor)?;
@@ -637,10 +687,12 @@ fn parse_occurrence_items(
             "UFRxDoc occurrence export item counts differ: {count} and {repeated}"
         )));
     }
+    cursor.fits(count, MIN_OCCURRENCE_ITEM_BYTES, "occurrence export item count")?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc occurrence export items")? {
         cursor.boolean("occurrence export item presence")?;
         let tag = cursor.u8("occurrence export item tag")?;
         let value_count = cursor.count32("occurrence export item value count", 65_536)?;
+        cursor.fits(value_count, MIN_OCCURRENCE_VALUE_BYTES, "occurrence export item value count")?;
         for _ in ctx.admit_iter(&(0..value_count), "admit UFRxDoc occurrence export values")? {
             require_tag(cursor.u8("occurrence export repeated tag")?, tag)?;
             parse_occurrence_item_value(ctx, cursor, tag)?;
@@ -734,6 +786,7 @@ fn parse_model_states<'a>(
     cursor: &mut Cursor<'_>,
     count: usize,
 ) -> Result<Vec<UfrxModelState<'a>>, CodecError> {
+    cursor.fits(count, MIN_MODEL_STATE_BYTES, "model-state count")?;
     let mut states = ctx.vector_storage(count, "admit UFRxDoc model states")?;
     for _ in ctx.admit_iter(&(0..count), "admit UFRxDoc model states")? {
         let prefix = cursor.u8("model-state prefix")?;
@@ -744,6 +797,7 @@ fn parse_model_states<'a>(
         ];
         let prefix_count = cursor.u32("model-state prefix count")?;
         let parameter_count = cursor.count32("model-state parameter count", 1_000_000)?;
+        cursor.fits(parameter_count, MIN_MODEL_STATE_PARAMETER_BYTES, "model-state parameter count")?;
         let mut parameters =
             ctx.vector_storage(parameter_count, "admit UFRxDoc model-state parameters")?;
         for _ in ctx.admit_iter(
@@ -796,6 +850,7 @@ fn parse_schema_table(
     let mut cursor = Cursor::new(source);
     let schema = cursor.u16("schema")?;
     let section_count = cursor.count16("section-version count", 256)?;
+    cursor.fits(section_count, MIN_SECTION_VERSION_BYTES, "section-version count")?;
     let mut section_versions =
         ctx.vector_storage(section_count, "admit UFRxDoc section-version entries")?;
     for _ in ctx.admit_iter(&(0..section_count), "admit UFRxDoc section-version entries")? {
@@ -864,6 +919,13 @@ impl<'a> Cursor<'a> {
         crate::reader::u32(&mut view, field)
     }
 
+    /// Checks the unread payload before admitting storage or traversal.
+    fn fits(&self, count: usize, minimum: usize, field: &'static str) -> Result<(), CodecError> {
+        self.view.counted(cadmpeg_core::decode::u64_from_index(count), minimum)
+            .map(|_| ())
+            .ok_or_else(|| CodecError::malformed(format_args!("UFRxDoc {field} exceeds remaining payload")))
+    }
+
     fn count16(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
         let value = usize::from(self.u16(field)?);
         if value > maximum {
@@ -918,9 +980,8 @@ impl<'a> Cursor<'a> {
             CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
         })?;
         let bytes = self.take(len, field)?;
-        let units = bytes
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+        let mut units = View::over_retained(bytes);
+        let units = std::iter::from_fn(move || units.u16_le());
         if ctx.all_by(
             char::decode_utf16(units),
             |character| Ok(character.is_ok()),
@@ -973,10 +1034,168 @@ mod tests {
         parse_occurrences, parse_schema_table, parse_stream, Cursor, UfrxState,
     };
     use crate::rse::DocumentKind;
+
     use crate::test_support::truncation::{displayed_truncation, located_truncation};
     use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    fn assert_impossible_count(
+        bytes: &[u8], field: &str, visits: u64,
+        parse: impl FnOnce(&DecodeContext<'_>, View<'_>) -> Result<(), CodecError>,
+    ) {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_work_units = visits;
+        let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("count fixture");
+        let error = parse(&ctx, root).expect_err("count does not fit the unread payload");
+        assert!(matches!(error, CodecError::Malformed(ref detail)
+            if detail == &format!("UFRxDoc {field} exceeds remaining payload")), "{error:?}");
+    }
+
+    #[test]
+    fn schema_table_rejects_impossible_ufrx_count() {
+        let mut bytes = Vec::new();
+        push_u16(&mut bytes, 11);
+        push_u16(&mut bytes, 5);
+        bytes.extend_from_slice(&[0; 9]);
+        assert_impossible_count(&bytes, "section-version count", 0,
+            |ctx, root| parse_schema_table(ctx, root).map(|_| ()));
+    }
+
+    #[test]
+    fn embedded_references_reject_impossible_ufrx_count() {
+        for (version, minimum) in [(0, super::MIN_EMBEDDED_REFERENCE_BYTES), (7, super::MIN_EMBEDDED_REFERENCE_BYTES + 4)] {
+            let mut bytes = 1_u32.to_le_bytes().to_vec();
+            bytes.resize(4 + minimum - 1, 0);
+            assert_impossible_count(&bytes, "embedded-reference count", 0,
+                |ctx, root| parse_embedded_references(ctx, root, &mut Cursor::new(root), version).map(|_| ()));
+        }
+    }
+
+    #[test]
+    fn occurrences_reject_impossible_ufrx_count() {
+        for (version, year, extra) in [(0, 0, 0), (20, 2015, 2), (21, 2015, 3), (28, 2015, 10)] {
+            let mut bytes = 1_u32.to_le_bytes().to_vec();
+            bytes.resize(4 + super::MIN_OCCURRENCE_BYTES + extra - 1, 0);
+            assert_impossible_count(&bytes, "occurrence count", 0,
+                |ctx, root| parse_occurrences(ctx, root, &mut Cursor::new(root), version, year).map(|_| ()));
+        }
+    }
+
+    #[test]
+    fn occurrence_properties_reject_impossible_ufrx_count() {
+        let mut bytes = vec![0; 4];
+        push_u32(&mut bytes, 1);
+        bytes.resize(8 + super::MIN_OCCURRENCE_PROPERTY_BYTES - 1, 0);
+        assert_impossible_count(&bytes, "occurrence section property count", 0,
+            |ctx, root| super::parse_occurrence_section(ctx, &mut Cursor::new(root)));
+    }
+
+    #[test]
+    fn occurrence_settings_reject_impossible_ufrx_count() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        bytes.resize(4 + super::MIN_OCCURRENCE_SETTING_BYTES - 1, 0);
+        assert_impossible_count(&bytes, "occurrence setting count", 0,
+            |ctx, root| super::parse_occurrence_settings(ctx, &mut Cursor::new(root)));
+    }
+
+    #[test]
+    fn occurrence_exports_reject_impossible_ufrx_count() {
+        for (year, prefix, minimum) in [(0, 10, super::MIN_OCCURRENCE_EXPORT_BYTES), (2018, 11, super::MIN_OCCURRENCE_EXPORT_BYTES + 1)] {
+            let mut bytes = vec![0; prefix];
+            push_u32(&mut bytes, 2);
+            bytes.resize(prefix + 4 + 2 * minimum - 1, 0);
+            assert_impossible_count(&bytes, "occurrence export count", 0,
+                |ctx, root| super::parse_occurrence_export(ctx, &mut Cursor::new(root), year));
+        }
+    }
+
+    #[test]
+    fn occurrence_items_reject_impossible_ufrx_count() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        push_u32(&mut bytes, 1);
+        bytes.resize(8 + super::MIN_OCCURRENCE_ITEM_BYTES - 1, 0);
+        assert_impossible_count(&bytes, "occurrence export item count", 0,
+            |ctx, root| super::parse_occurrence_items(ctx, &mut Cursor::new(root)));
+    }
+
+    #[test]
+    fn occurrence_values_reject_impossible_ufrx_count() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        push_u32(&mut bytes, 1);
+        bytes.extend_from_slice(&[0, 7]);
+        push_u32(&mut bytes, 3);
+        bytes.extend_from_slice(&[0; 4]);
+        // The one outer item visit is admitted; three tag/value pairs need
+        // six unread bytes and only four remain. No inner visit is admitted.
+        assert_impossible_count(&bytes, "occurrence export item value count", 1,
+            |ctx, root| super::parse_occurrence_items(ctx, &mut Cursor::new(root)));
+    }
+
+    #[test]
+    fn model_states_reject_impossible_ufrx_count() {
+        let bytes = vec![0; super::MIN_MODEL_STATE_BYTES - 1];
+        assert_impossible_count(&bytes, "model-state count", 0,
+            |ctx, root| super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ()));
+    }
+
+    #[test]
+    fn model_parameters_reject_impossible_ufrx_count() {
+        let mut bytes = vec![0; 1 + 4 + 4 + 4];
+        push_u32(&mut bytes, 6);
+        bytes.extend_from_slice(&[0; 77]);
+        // One model-state visit reaches six parameters. Their 15-byte minima
+        // need 90 bytes; only the 77-byte suffix remains.
+        assert_impossible_count(&bytes, "model-state parameter count", 1,
+            |ctx, root| super::parse_model_states(ctx, root, &mut Cursor::new(root), 1).map(|_| ()));
+    }
+
+    #[test]
+    fn header_tables_reject_impossible_ufrx_counts() {
+        // The synthetic schema-11 header has 4 declaration bytes, 46 version
+        // bytes, 32 save bytes, an 18-byte comment, 32 origin bytes,
+        // 36 identity bytes, a 30-byte file name and a two-byte state.
+        let lod_table_offset = 4 + 46 + 32 + 18 + 32 + 36 + 30 + 2;
+        let (_, invariant_offset) = fixture(11);
+        for (field, offset, original, count) in [
+            ("LOD table count", lod_table_offset, 0, 65_536),
+            ("header pair count", lod_table_offset + 4, 0, 65_536),
+            ("external-reference count", invariant_offset + 2 + 4 + 4 + 4, 1, 1_000_000),
+            // After the table count: caption 24 + state 4 + path 48 + library
+            // id 4 + library name 18 + library state 2 + display name 22.
+            ("reference state-group count", invariant_offset + 2 + 4 + 4 + 4 + 4 + 24 + 4 + 48 + 4 + 18 + 2 + 22, 0, 65_536),
+        ] {
+            let (mut bytes, _) = fixture(11);
+            assert_eq!(View::u32_le_at(&bytes, offset), Some(original));
+            bytes[offset..offset + 4].copy_from_slice(&u32::to_le_bytes(count));
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // Only the 23 section-version entries precede these tables.
+            policy.limits.max_collection_items = 23;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+            let error = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly).expect_err("count cannot fit");
+            assert!(matches!(error, CodecError::Malformed(ref detail)
+                if detail == &format!("UFRxDoc {field} exceeds remaining payload")), "{field}: {error:?}");
+        }
+    }
+
+    #[test]
+    fn occurrence_padding_scan_uses_bounded_constant_work() {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        push_occurrence(&mut bytes, 28, 2020, 9, 17, "");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Only the one occurrence visit varies with input. The padding scan
+        // checks at most nine u16 words and stores no collection.
+        policy.limits.max_work_units = 1;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+        let occurrences = parse_occurrences(&ctx, root, &mut Cursor::new(root), 28, 2020).expect("one admitted visit");
+        assert_eq!(occurrences[0].header_padding_words, 2);
+        assert!(matches!(ctx.charge_work(1, "probe visits"), Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits && limit.used == 1 && limit.additional == 1));
+    }
 
     #[test]
     fn ufrx_unknown_property_tags_refuse_retained_limit_before_format() {
