@@ -185,7 +185,7 @@ impl Token {
 /// (the tokens after the name chain), and byte extent within the stream.
 #[derive(Debug, Clone)]
 pub struct Record {
-    /// `RecordTable` index. `asmheader` is index 0.
+    /// `RecordTable` index. The first framed record has index 0.
     pub index: usize,
     /// Full `-`-joined record name, e.g. `cone-surface`, `body`.
     pub name: String,
@@ -882,15 +882,8 @@ mod tests {
     #[test]
     fn sab_lex_refuses_utf8_validation_work() {
         let bytes = b"\x0d\x05point";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("source fits input policy");
-        let Err(CodecError::ResourceLimit(refusal)) = super::lex(&ctx, bytes, 0, RefWidth::Eight)
-        else {
-            panic!("UTF-8 validation must refuse before scanning text");
-        };
+        let refusal = crate::test_support::resource_limit_at(bytes, ResourceDimension::WorkUnits,
+            "validate SAB token text", |ctx| super::lex(ctx, bytes, 0, RefWidth::Eight));
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.operation, "validate SAB token text");
         // The identifier contains five bytes to validate.

@@ -232,8 +232,8 @@ impl crate::nurbs::subtypes::SubtypeScope<'_> {
     /// Byte offsets of the B-spline markers the scope itself owns, relative to
     /// the scope's own start.
     ///
-    /// Total: the unbalanced stream that [`owned_marker_positions`] refuses is
-    /// a state this type cannot hold.
+    /// The caller uses the scope's framing integer width. In that width,
+    /// the scope's opening and closing delimiters balance.
     pub(super) fn owned_marker_positions(
         &self,
         ctx: &DecodeContext<'_>,
@@ -295,67 +295,73 @@ pub(super) fn construction_marker_positions(
     b: &[u8],
     int_width: RefWidth,
 ) -> Result<Option<Vec<usize>>, CodecError> {
-    let (positions, _storage) = ctx.with_scoped_storage("ASM construction marker scratch", || -> Result<Option<Vec<usize>>, CodecError> {
-        let mut fallback = Vec::new();
-        let mut current = Vec::new();
-        let mut candidate = Vec::new();
-        let mut candidates = 0usize;
-        let mut depth = 0usize;
-        let mut construction = false;
-        let mut leading_scope = b.first() == Some(&0x0f);
-        let mut pos = 0usize;
-        let mut complete = true;
-        while pos < b.len() {
-            ctx.charge_work(1, "scan ASM construction marker token")?;
-            match b[pos] {
-                0x0f => {
-                    if depth == 0 {
-                        current.clear();
-                        construction = if matches!(b.get(pos + 1), Some(0x0d | 0x0e)) {
-                            b.get(pos + 2).and_then(|length| b.get(pos + 3..pos + 3 + usize::from(*length)))
-                                .is_some_and(|name| name != b"ref")
-                        } else { false };
-                    }
-                    depth += 1;
+    let mut fallback = Some(ctx.temporary_vec(0, "ASM fallback byte spline markers")?);
+    let mut current = ctx.temporary_vec(0, "ASM construction byte spline markers")?;
+    let mut candidate = None;
+    let mut candidates = 0usize;
+    let mut depth = 0usize;
+    let mut construction = false;
+    let mut current_has_marker = false;
+    let mut leading_scope = b.first() == Some(&0x0f);
+    let mut pos = 0usize;
+    let mut complete = true;
+    while pos < b.len() {
+        ctx.charge_work(1, "scan ASM construction marker token")?;
+        match b[pos] {
+            0x0f => {
+                if depth == 0 {
+                    current.0.clear();
+                    current_has_marker = false;
+                    construction = if matches!(b.get(pos + 1), Some(0x0d | 0x0e)) {
+                        b.get(pos + 2).and_then(|length| b.get(pos + 3..pos + 3 + usize::from(*length)))
+                            .is_some_and(|name| name != b"ref")
+                    } else { false };
                 }
-                0x10 => {
-                    let Some(next) = depth.checked_sub(1) else { return Ok(None); };
-                    depth = next;
-                    if depth == 0 {
-                        leading_scope = false;
-                        if construction && !current.is_empty() {
-                            candidates += 1;
-                            if candidates == 1 { std::mem::swap(&mut candidate, &mut current); }
-                        }
-                        construction = false;
-                    }
-                }
-                _ if marker_at(b, pos).is_some() => {
-                    if !construction && depth == usize::from(leading_scope) {
-                        ctx.push_vec(&mut fallback, pos, "ASM fallback byte spline markers")?;
-                    }
-                    if depth == 1 && construction {
-                        ctx.push_vec(&mut current, pos, "ASM construction byte spline markers")?;
-                    }
-                }
-                _ => {}
+                depth += 1;
             }
-            let Some(next) = crate::nurbs::subtypes::next_token(b, pos, int_width) else {
-                complete = false;
-                break;
-            };
-            pos = next;
+            0x10 => {
+                let Some(next) = depth.checked_sub(1) else { return Ok(None); };
+                depth = next;
+                if depth == 0 {
+                    leading_scope = false;
+                    if construction && current_has_marker {
+                        candidates += 1;
+                        fallback = None;
+                        candidate = if candidates == 1 {
+                            Some(std::mem::replace(&mut current, ctx.temporary_vec(0, "ASM construction byte spline markers")?))
+                        } else { None };
+                    }
+                    construction = false;
+                }
+            }
+            _ if marker_at(b, pos).is_some() => {
+                if !construction && depth == usize::from(leading_scope) {
+                    if let Some((markers, storage)) = &mut fallback {
+                        ctx.push_scoped_vec(storage, markers, pos, "ASM fallback byte spline markers")?;
+                    }
+                }
+                if depth == 1 && construction {
+                    current_has_marker = true;
+                    if candidates == 0 {
+                        ctx.push_scoped_vec(&mut current.1, &mut current.0, pos, "ASM construction byte spline markers")?;
+                    }
+                }
+            }
+            _ => {}
         }
-        Ok(match candidates {
-            0 if complete && depth == 0 => Some(fallback),
-            0 => None,
-            1 => Some(candidate),
-            _ => Some(Vec::new()),
-        })
-    })?;
-    positions.map(|positions| {
-        ctx.collect_retained_vec(positions, "retain ASM construction markers")
-    }).transpose()
+        let Some(next) = crate::nurbs::subtypes::next_token(b, pos, int_width) else {
+            complete = false;
+            break;
+        };
+        pos = next;
+    }
+    let selected = match candidates {
+        0 if complete && depth == 0 => fallback,
+        0 => None,
+        1 => candidate,
+        _ => return Ok(Some(Vec::new())),
+    };
+    selected.map(|(positions, _storage)| ctx.collect_retained_vec(positions, "retain ASM construction markers")).transpose()
 }
 
 /// Bounds for the shared ASM NURBS knot expansion check.
@@ -657,6 +663,20 @@ mod marker_ownership_tests {
     ) -> Result<Option<Vec<usize>>, CodecError> {
         let (out, balanced) = walk_owned_markers(ctx, b, int_width)?;
         Ok(balanced.then_some(out))
+    }
+
+    #[test]
+    fn ambiguous_byte_caches_do_not_materialize_later_marker_lists() {
+        let mut bytes = vec![0x0f, 0x0d, 1, b'x'];
+        bytes.extend_from_slice(NUBS_MARKER);
+        bytes.push(0x10);
+        bytes.extend_from_within(..);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        policy.limits.max_retained_bytes = 0;
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        assert_eq!(super::construction_marker_positions(&ctx, &bytes, RefWidth::Four).unwrap(), Some(Vec::new()));
     }
 
     #[test]
