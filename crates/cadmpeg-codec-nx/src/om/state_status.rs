@@ -180,15 +180,15 @@ pub(super) fn operation_state_status_row_at<'a>(
     opaque_lane_starts: Option<&[usize]>,
 ) -> Result<Option<OperationStateStatus<'a>>, cadmpeg_core::CodecError> {
     let Some(status_code) =
-        OperationStateIndex::read_at(bytes, at, base_offset).and_then(|index| index.token())
+        OperationStateIndex::read_at(bytes, at, base_offset).and_then(OperationStateIndex::token)
     else {
         return Ok(None);
     };
     let Some(object_at) = at.checked_add(status_code.raw().len()) else {
         return Ok(None);
     };
-    let Some(object_index) =
-        OperationStateIndex::read_at(bytes, object_at, base_offset).and_then(|index| index.token())
+    let Some(object_index) = OperationStateIndex::read_at(bytes, object_at, base_offset)
+        .and_then(OperationStateIndex::token)
     else {
         return Ok(None);
     };
