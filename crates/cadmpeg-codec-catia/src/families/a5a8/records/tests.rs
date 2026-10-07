@@ -148,6 +148,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
             inner_start,
             inner_end,
             inner_object_id,
+            &mut crate::families::a5a8::records::A8ExternalGridSites::default(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("service decode")
@@ -162,6 +163,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
             inner_start,
             inner_end - 1,
             inner_object_id,
+            &mut crate::families::a5a8::records::A8ExternalGridSites::default(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("service decode")
@@ -658,6 +660,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
             ctx,
             &bytes,
             &header,
+            &mut crate::families::a5a8::records::A8ExternalGridSites::default(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("service decode")
@@ -688,7 +691,8 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
 #[test]
 fn a8_external_grid_range_refuses_collection_limit_before_retention() {
     let bytes = a8_elided_surface_stream();
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+    // The support index admits one group and its first member first.
+    let limited = crate::test_support::with_collection_limit(2, |ctx| {
         crate::families::a5a8::records::a8_external_grid_ranges(ctx, &bytes)
     });
     assert!(matches!(limited,
@@ -714,11 +718,13 @@ fn a8_external_grid_poles_refuse_collection_limit_before_materialization() {
     })
     .try_into()
     .expect("one elided header");
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+    // The support index admits one group and its first member first.
+    let limited = crate::test_support::with_collection_limit(2, |ctx| {
         crate::families::a5a8::records::a8_surface_from_external_grid(
             ctx,
             &bytes,
             &header,
+            &mut crate::families::a5a8::records::A8ExternalGridSites::default(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
     });
@@ -730,6 +736,7 @@ fn a8_external_grid_poles_refuse_collection_limit_before_materialization() {
             ctx,
             &bytes,
             &header,
+            &mut crate::families::a5a8::records::A8ExternalGridSites::default(),
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -830,6 +837,7 @@ fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_gri
                 ctx,
                 &bytes,
                 header,
+                &mut crate::families::a5a8::records::A8ExternalGridSites::default(),
                 &mut crate::nurbs::LaneRefusals::new(),
             )
             .expect("service decode")
@@ -1563,6 +1571,7 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
                 .expect("service decode")
         })
         .map(|weights| weights
+            .concat()
             .into_iter()
             .map(cadmpeg_ir::scalar::NonZeroReal::get)
             .collect::<Vec<_>>()),
@@ -1577,12 +1586,6 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
 fn a5_surface_poles_refuse_collection_limit_before_materialization() {
     let bytes = a5_surface_stream();
     assert_a5_surface_collection_refusal(&bytes, 16, "catia_a5_surface_poles");
-}
-
-#[test]
-fn a5_surface_rows_refuse_collection_limit_before_materialization() {
-    let bytes = a5_surface_stream();
-    assert_a5_surface_collection_refusal(&bytes, 20, "catia_a5_surface_pole_rows");
 }
 
 #[test]
@@ -1650,6 +1653,7 @@ fn a5_weight_program_reads_zero_prefixed_complete_grid() {
                 .expect("service decode")
         })
         .map(|weights| weights
+            .concat()
             .into_iter()
             .map(cadmpeg_ir::scalar::NonZeroReal::get)
             .collect::<Vec<_>>()),
@@ -1864,7 +1868,7 @@ fn a5_rolling_ball_limit_refuses_jet_and_pole_allocations() {
         (0, "catia A5 rolling ball positions"),
         (2, "catia A5 rolling ball first jets"),
         (4, "catia A5 rolling ball second jets"),
-        (6, "catia A5 rolling ball knots"),
+        (6, "catia_a5_jet_knot_projection"),
     ] {
         assert!(matches!(
             crate::test_support::with_collection_limit(cap, run),

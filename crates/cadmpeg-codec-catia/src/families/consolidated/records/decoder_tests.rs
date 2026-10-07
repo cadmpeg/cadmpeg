@@ -1083,7 +1083,7 @@ fn fixed_owner_boundary_indexes_and_nested_targets_refuse_collection_limits() {
         "catia_owner_boundary_endpoints",
         "catia_owner_boundary_face_nodes",
         "catia_owner_boundary_record_indices",
-        "catia_owner_boundary_record_sources",
+        "catia_consolidated_run_starts",
         "catia_owner_boundary_target_entries",
         "catia_owner_boundary_target_groups",
         "catia_owner_boundary_cycles",

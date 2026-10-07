@@ -357,20 +357,28 @@ fn b2_long61_member_scan_propagates_caller_work_refusal() {
 }
 
 #[test]
-fn b2_revolution_identity_scan_propagates_caller_work_refusal() {
+fn b2_revolution_profile_lookups_propagate_caller_work_refusal() {
     let bytes = b2_resolved_revolution_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    // Two record admissions (2 + 2), two circle collector steps, and one outer collector step.
-    crate::test_support::with_work_limit(7, |ctx| {
-        let result = crate::families::b2::records::b2_resolved_revolutions_from_records(
-            ctx, &bytes, &records,
-        );
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
-            panic!("revolution identity scan work refusal required")
-        };
-        assert_eq!(limit.operation, "catia_b2_revolution_identity_profiles");
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-    });
+    for operation in [
+        "catia_b2_revolution_profile_index",
+        "catia_b2_revolution_identity_lookup",
+    ] {
+        let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+            let result = crate::families::b2::records::b2_resolved_revolutions_from_records(
+                ctx, &bytes, &records,
+            );
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        });
+        assert!(matches!(
+            refused,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == operation
+        ));
+    }
 }
 
 #[test]
@@ -430,10 +438,10 @@ fn b2_cone_face_byte_scan_propagates_caller_work_refusal() {
 }
 
 #[test]
-fn counted_owner_index_collection_propagates_work_refusal() {
+fn adjacent_counted_owner_parse_propagates_work_refusal() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let operation = "catia_b2_counted_owner_index";
+    let operation = "catia_b2_counted_owner_references";
     let mut run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let result = crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
             ctx, &bytes, &records,

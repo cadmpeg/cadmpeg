@@ -5064,7 +5064,7 @@ mod tests {
     }
 
     #[test]
-    fn a5_guide_scratch_points_refuse_materialized_limit() {
+    fn a5_guide_scratch_lanes_are_materialized_storage() {
         let bytes = crate::test_support::test_a5a8::a5_guide_curve_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -5082,10 +5082,32 @@ mod tests {
             )
             .map(|_| ir.model.curves.len())
         };
-        let refused = crate::test_support::with_materialized_limit(0, run);
+        // The guide sites are built in scoped storage before they are retained;
+        // the solver lanes are scratch released when it returns. Every
+        // materialized boundary on the way to completion is one of them.
+        let mut cap = 0;
+        let mut refusals = std::collections::BTreeSet::new();
+        let curves = loop {
+            match crate::test_support::with_materialized_limit(cap, run) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                    refusals.insert(limit.operation);
+                    let need = limit.used + limit.additional;
+                    assert!(need > cap, "materialized sweep must progress");
+                    cap = need;
+                }
+                other => break other.expect("the sweep ends in a decoded guide"),
+            }
+        };
+        assert_eq!(curves, 1);
+        assert!(refusals.contains("catia_a5_guide_sites"), "{refusals:?}");
         assert!(
-            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia A5 guide points")
+            refusals
+                .iter()
+                .all(|operation| operation.starts_with("catia_a5_guide")
+                    || operation.starts_with("catia A5 guide")
+                    || operation.starts_with("catia_freeform")
+                    || operation.starts_with("catia quintic")),
+            "{refusals:?}"
         );
         assert_eq!(
             crate::test_support::with_service_context(run)

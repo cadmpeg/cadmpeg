@@ -1135,6 +1135,7 @@ fn parse_from_records_with_class21(
             "catia_b5_opaque_surfaces",
         )?;
     }
+    let mut external_grids = crate::families::a5a8::records::A8ExternalGridSites::default();
     for frame in ctx.admit_iter(frames, "catia_b5_class21_candidate_frame_scan")? {
         let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
             ctx,
@@ -1142,6 +1143,7 @@ fn parse_from_records_with_class21(
             frame.start,
             frame.end,
             frame.object_id,
+            &mut external_grids,
             refusal,
         )?
         else {
@@ -2296,6 +2298,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<BTreeMap<u32, B5Surface>, CodecError> {
     let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
+    let mut external_grids = crate::families::a5a8::records::A8ExternalGridSites::default();
     for frame in ctx.admit_iter(frames, "catia_b5_targeted_surface_frame_scan")? {
         let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
             ctx,
@@ -2303,6 +2306,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
             frame.start,
             frame.end,
             frame.object_id,
+            &mut external_grids,
             refusal,
         )?
         else {
