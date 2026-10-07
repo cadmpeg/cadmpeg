@@ -1272,7 +1272,11 @@ fn user_string_records(
     Ok(records)
 }
 
-enum UserStringSource { Object, Attributes }
+#[derive(Clone, Copy)]
+enum UserStringSource {
+    Object,
+    Attributes,
+}
 
 fn read_user_string_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1284,8 +1288,14 @@ fn read_user_string_records(
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<UserStringRecord>, CodecError> {
     let (label, selection) = match source {
-        UserStringSource::Object => ("object user-string userdata", crate::objects::UserStringSelection::All),
-        UserStringSource::Attributes => ("object-attributes user-string userdata", crate::objects::UserStringSelection::ExcludeFirstTempObject),
+        UserStringSource::Object => (
+            "object user-string userdata",
+            crate::objects::UserStringSelection::All,
+        ),
+        UserStringSource::Attributes => (
+            "object-attributes user-string userdata",
+            crate::objects::UserStringSelection::ExcludeFirstTempObject,
+        ),
     };
     let Some(payload_range) = payload_range else {
         return Ok(Vec::new());
@@ -2104,7 +2114,13 @@ fn parse_light_record_attributes(
         let is_user_string =
             descriptor.class_uuid == USER_STRING_LIST && descriptor.item_uuid == USER_STRING_LIST;
         if is_user_string {
-            match parse_user_string_list(ctx, data, descriptor.payload_range.clone(), archive, crate::objects::UserStringSelection::ValidateOnly) {
+            match parse_user_string_list(
+                ctx,
+                data,
+                descriptor.payload_range.clone(),
+                archive,
+                crate::objects::UserStringSelection::ValidateOnly,
+            ) {
                 Ok(_) => {}
                 Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
                 Err(_) => {
@@ -2224,7 +2240,7 @@ fn optional_malformed<T>(value: Result<T, FramingError>) -> Result<Option<T>, Co
 fn append_file_reference_diagnostics(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
-    diagnostics: Diagnostics,
+    diagnostics: &Diagnostics,
     source_offset: usize,
 ) -> Result<(), FramingError> {
     for diagnostic in ctx
@@ -2325,11 +2341,11 @@ fn parse_texture(
                 if matches!(error, FramingError::Resource(_)) {
                     return Err(error);
                 }
-                append_file_reference_diagnostics(ctx, losses, diagnostics, source_offset)?;
+                append_file_reference_diagnostics(ctx, losses, &diagnostics, source_offset)?;
                 return Err(error);
             }
         };
-        append_file_reference_diagnostics(ctx, losses, diagnostics, value.source_range.start)?;
+        append_file_reference_diagnostics(ctx, losses, &diagnostics, value.source_range.start)?;
         Some(TextureFileReference {
             full_path: value.full_path,
             relative_path: value.relative_path,
@@ -4320,7 +4336,9 @@ fn parse_embedded_image(
         buffer_offset: cadmpeg_core::decode::u64_from_index(buffer_offset),
         buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer_end - buffer_offset),
         buffer_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-            ctx, &data[buffer_offset..buffer_end], "Rhino image SHA-256",
+            ctx,
+            &data[buffer_offset..buffer_end],
+            "Rhino image SHA-256",
         )?),
     })
 }
@@ -4475,9 +4493,13 @@ fn parse_windows_bitmap(
         important_colors,
         pixel_buffer_offset: cadmpeg_core::decode::u64_from_index(pixel_buffer_offset),
         pixel_buffer_byte_len: cadmpeg_core::decode::u64_from_index(buffer.len()),
-        pixel_buffer_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
-            ctx, buffer, "Rhino Windows bitmap SHA-256",
-        )?),
+        pixel_buffer_sha256: String::from(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
+                ctx,
+                buffer,
+                "Rhino Windows bitmap SHA-256",
+            )?,
+        ),
     })
 }
 
@@ -5132,7 +5154,7 @@ fn admit_group_member(
 ) -> Result<(), CodecError> {
     let members = workspace.with_storage(|| {
         ctx.entry_hash_map(group_members, group, "Rhino group member keys")
-            .map(|entry| entry.or_default())
+            .map(std::collections::hash_map::Entry::or_default)
     })?;
     let link = ctx.format_retained(
         format_args!("rhino:object:record#{source_order:06}"),

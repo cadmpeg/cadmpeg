@@ -802,10 +802,9 @@ fn history_resource_error(
 ) -> Result<CodecError, cadmpeg_core::CodecError> {
     Ok(match error {
         FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
-        other => CodecError::Malformed(ctx.format_retained(
-            format_args!("{}", other),
-            "Rhino history_resource_error text",
-        )?),
+        other => CodecError::Malformed(
+            ctx.format_retained(format_args!("{other}"), "Rhino history_resource_error text")?,
+        ),
     })
 }
 
@@ -2333,7 +2332,7 @@ pub(crate) fn project(
         })?;
         ids.push(FeatureId::mint(feature_id).or_else(|error| {
             Err(ProjectionError::Admission(ctx.format_retained(
-                format_args!("{}", error),
+                format_args!("{error}"),
                 "Rhino project text",
             )?))
         })?);
@@ -2380,7 +2379,7 @@ pub(crate) fn project(
     }
     let mut dropped_dependencies = 0;
     for (index, record) in ctx
-        .admit_iter(&records[..], "Rhino project traversal")
+        .admit_iter(records, "Rhino project traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -2567,7 +2566,7 @@ pub(crate) fn project(
             .map_err(ProjectionError::Codec)?;
         let feature_id = FeatureId::mint(feature_id_text).or_else(|error| {
             Err(ProjectionError::Admission(ctx.format_retained(
-                format_args!("{}", error),
+                format_args!("{error}"),
                 "Rhino project text",
             )?))
         })?;
@@ -2625,7 +2624,7 @@ pub(crate) fn project(
         .namespace_mut("rhino")
         .set_arena_from(ctx, "history_records", native)
         .or_else(|error| {
-            let detail = ctx.format_retained(format_args!("{}", error), "Rhino project text")?;
+            let detail = ctx.format_retained(format_args!("{error}"), "Rhino project text")?;
             Err(match cadmpeg_core::CodecError::from(error) {
                 resource @ cadmpeg_core::CodecError::ResourceLimit(_) => {
                     ProjectionError::Codec(resource)

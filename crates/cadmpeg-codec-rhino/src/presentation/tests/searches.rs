@@ -110,21 +110,35 @@ fn group_memberships_without_a_unique_group_do_not_format_output_links() {
 fn dimension_child_digest_admits_source_bytes_before_hashing() {
     use crate::chunks::{ArchiveVersion, BoundedReader};
     for size in [1, 137] {
-        let bytes = crate::test_support::test_dump::anonymous_chunk(ArchiveVersion::V8, 0, &vec![0x55; size]);
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino dimension child SHA-256", |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-            let result = crate::presentation::named_child(&ctx, &bytes, &mut reader, ArchiveVersion::V8).map_err(|error| match error {
-                FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
-                other => panic!("valid child failed: {other:?}"),
-            });
-            if let Err(CodecError::ResourceLimit(limit)) = &result { assert_eq!(ctx.resource_refusal().as_ref(), Some(limit)); }
-            result
-        });
-        let CodecError::ResourceLimit(limit) = error else { panic!("digest work refusal"); };
+        let bytes = crate::test_support::test_dump::anonymous_chunk(
+            ArchiveVersion::V8,
+            0,
+            &vec![0x55; size],
+        );
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "Rhino dimension child SHA-256",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+                let result =
+                    crate::presentation::named_child(&ctx, &bytes, &mut reader, ArchiveVersion::V8)
+                        .map_err(|error| match error {
+                            FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+                            other => panic!("valid child failed: {other:?}"),
+                        });
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("digest work refusal");
+        };
         assert_eq!(limit.additional, u64::try_from(bytes.len()).unwrap());
     }
 }
