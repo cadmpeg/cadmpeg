@@ -1004,19 +1004,6 @@ fn evaluate_parameter_expressions(
     Ok(())
 }
 
-fn insert_parameter_value(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashMap<ParameterId, ParameterValue>,
-    id: &ParameterId,
-    value: &ParameterValue,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "index SLDPRT parameter values";
-    let id = copy_parameter_id(ctx, id)?;
-    let value = value.try_clone_for_decode(ctx, "retain SLDPRT parameter value text")?;
-    ctx.insert_hash_map(values, id, value, OPERATION)?;
-    Ok(())
-}
-
 pub(crate) fn parameters_with_unresolved_references(
     ctx: &DecodeContext<'_>,
     parameters: &[DesignParameter],
@@ -1061,49 +1048,23 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     aliases: &ParameterAliases,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
-    if parameters.is_empty() {
-        return Ok(0);
-    }
-    let (mut states, _states_storage) = ctx
-        .with_scoped_storage("collect SLDPRT parameter value states", || {
-            parameter_value_states(ctx, parameters, configurations, false)
-        })?;
+    if parameters.is_empty() { return Ok(0); }
+    let (values, _values_storage) = parameter_value_index(ctx, parameters)?;
     let mut count = 0;
-    for parameter in ctx.admit_iter(
-        parameters,
-        "scan SLDPRT parameters_with_unevaluable_expressions values",
-    )? {
+    for parameter in ctx.admit_iter(parameters, "scan SLDPRT parameters_with_unevaluable_expressions values")? {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
-        let mut states = states.iter_mut();
-        while let Some(values) =
-            ctx.next_charged(&mut states, "check SLDPRT parameter evaluation")?
-        {
-            let own = ctx.remove_entry_hash_map(
-                values,
-                &parameter.id,
-                "check SLDPRT parameter evaluation",
-            )?;
-            let (evaluated, _evaluation_storage) =
-                ctx.with_scoped_storage("check SLDPRT parameter evaluation", || {
-                    match ParameterExpressionParser::new(
-                        ctx,
-                        &parameter.expression,
-                        aliases,
-                        &*values,
-                    )
-                    .parse()?
-                    {
-                        Some(value) => Ok(Some(value)),
-                        None => text_parameter_literal(ctx, &parameter.name, &parameter.expression),
-                    }
-                })?;
-            if let Some((id, value)) = own {
-                ctx.insert_hash_map(values, id, value, "check SLDPRT parameter evaluation")?;
-            }
-            if evaluated.is_none() {
-                count += 1;
-                break;
-            }
+        let mut states = configurations.is_empty().then_some(None).into_iter()
+            .chain(configurations.iter().map(Some));
+        while let Some(configuration) = ctx.next_charged(&mut states, "check SLDPRT parameter evaluation")? {
+            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage("check SLDPRT parameter evaluation", || {
+                match ParameterExpressionParser::new(ctx, &parameter.expression, aliases, eval::ParameterValues::Validation {
+                    values: &values, configuration, excluded: &parameter.id,
+                }).parse()? {
+                    Some(value) => Ok(Some(value)),
+                    None => text_parameter_literal(ctx, &parameter.name, &parameter.expression),
+                }
+            })?;
+            if evaluated.is_none() { count += 1; break; }
         }
     }
     Ok(count)
@@ -1144,81 +1105,62 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
     aliases: &ParameterAliases,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
-    if parameters.is_empty() {
-        return Ok(0);
-    }
-    let (mut states, _states_storage) = ctx
-        .with_scoped_storage("collect SLDPRT parameter value states", || {
-            parameter_value_states(ctx, parameters, configurations, true)
-        })?;
+    if parameters.is_empty() { return Ok(0); }
+    let (values, _values_storage) = parameter_value_index(ctx, parameters)?;
     let mut count = 0;
-    for parameter in ctx
-        .admit_iter(parameters, "scan SLDPRT parameter dependencies")?
-        .filter(|parameter| !parameter.dependencies.is_empty())
-    {
+    for parameter in ctx.admit_iter(parameters, "scan SLDPRT parameter dependencies")?
+        .filter(|parameter| !parameter.dependencies.is_empty()) {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
-        let mut states = states.iter_mut();
-        while let Some(values) =
-            ctx.next_charged(&mut states, "check SLDPRT evaluated parameter coherence")?
-        {
-            let own = ctx.remove_entry_hash_map(
-                values,
-                &parameter.id,
-                "check SLDPRT parameter evaluation",
-            )?;
-            let (evaluated, _evaluation_storage) =
-                ctx.with_scoped_storage("check SLDPRT evaluated parameter coherence", || {
-                    ParameterExpressionParser::new(ctx, &parameter.expression, aliases, &*values)
-                        .parse()
-                })?;
-            let incoherent =
-                own.as_ref()
-                    .zip(evaluated.as_ref())
-                    .is_some_and(|((_, actual), evaluated)| {
-                        !equivalent_parameter_values(actual, evaluated)
-                    });
-            if let Some((id, value)) = own {
-                ctx.insert_hash_map(values, id, value, "check SLDPRT parameter evaluation")?;
-            }
-            if incoherent {
-                count += 1;
-                break;
+        let mut states = std::iter::once(None).chain(configurations.iter().map(Some));
+        while let Some(configuration) = ctx.next_charged(&mut states, "check SLDPRT evaluated parameter coherence")? {
+            let actual = configuration_parameter_value(ctx, &values, configuration, &parameter.id)?;
+            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage("check SLDPRT evaluated parameter coherence", || {
+                ParameterExpressionParser::new(ctx, &parameter.expression, aliases, eval::ParameterValues::Validation {
+                    values: &values, configuration, excluded: &parameter.id,
+                }).parse()
+            })?;
+            if actual.zip(evaluated.as_ref()).is_some_and(|(actual, evaluated)| !equivalent_parameter_values(actual, evaluated)) {
+                count += 1; break;
             }
         }
     }
     Ok(count)
 }
 
-fn parameter_value_states(
-    ctx: &DecodeContext<'_>,
-    parameters: &[DesignParameter],
-    configurations: &[cadmpeg_ir::features::DesignConfiguration],
-    include_global: bool,
-) -> Result<Vec<HashMap<ParameterId, ParameterValue>>, CodecError> {
-    let make_state = |configuration: Option<&cadmpeg_ir::features::DesignConfiguration>| -> Result<_, CodecError> {
+pub(super) type ParameterValueIndex<'a> = HashMap<&'a ParameterId, &'a ParameterValue>;
+
+/// Stated model values in source order; a repeated identity replaces its value.
+fn parameter_value_index<'values, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    parameters: &'values [DesignParameter],
+) -> Result<(ParameterValueIndex<'values>, ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("collect SLDPRT parameter value states", || {
         let mut values = HashMap::new();
         for parameter in ctx.admit_iter(parameters, "collect SLDPRT parameter value state")? {
-            if let Some(value) = &parameter.value { insert_parameter_value(ctx, &mut values, &parameter.id, value)?; }
-        }
-        if let Some(configuration) = configuration {
-            for (id, value) in ctx.admit_iter(&configuration.parameter_values, "scan SLDPRT parameter_value_states values")? { insert_parameter_value(ctx, &mut values, id, value)?; }
+            if let Some(value) = &parameter.value {
+                ctx.insert_hash_map(&mut values, &parameter.id, value, "collect SLDPRT parameter value states")?;
+            }
         }
         Ok(values)
+    })
+}
+
+/// A configuration value overrides the stated model value of the same identity.
+pub(super) fn configuration_parameter_value<'values>(
+    ctx: &DecodeContext<'_>,
+    values: &ParameterValueIndex<'values>,
+    configuration: Option<&'values cadmpeg_ir::features::DesignConfiguration>,
+    id: &ParameterId,
+) -> Result<Option<&'values ParameterValue>, CodecError> {
+    const OPERATION: &str = "check SLDPRT parameter evaluation";
+    let local = match configuration {
+        Some(configuration) => ctx.get_btree_map(&configuration.parameter_values, id, OPERATION)?,
+        None => None,
     };
-    let mut states = Vec::new();
-    if include_global || configurations.is_empty() {
-        let state = make_state(None)?;
-        ctx.reserve_vec(&mut states, 1, "collect SLDPRT parameter value states")?;
-        states.push(state);
+    match local {
+        Some(value) => Ok(Some(value)),
+        None => Ok(ctx.get_hash_map(values, &id, OPERATION)?.copied()),
     }
-    for configuration in
-        ctx.admit_iter(configurations, "scan SLDPRT parameter_value_states values")?
-    {
-        let state = make_state(Some(configuration))?;
-        ctx.reserve_vec(&mut states, 1, "collect SLDPRT parameter value states")?;
-        states.push(state);
-    }
-    Ok(states)
 }
 
 fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) -> bool {

@@ -38,19 +38,19 @@ pub(super) struct ParameterExpressionParser<'a, 'ctx, 'arena> {
     blocked: Option<&'a ParameterId>,
 }
 
-/// Value snapshots or positions in the parameter model currently being evaluated.
+/// Borrowed validation layers or positions in the model being evaluated.
 pub(super) enum ParameterValues<'a> {
+    #[cfg(test)]
     Stored(&'a HashMap<ParameterId, ParameterValue>),
+    Validation {
+        values: &'a super::ParameterValueIndex<'a>,
+        configuration: Option<&'a cadmpeg_ir::features::DesignConfiguration>,
+        excluded: &'a ParameterId,
+    },
     Indexed {
         parameters: &'a [DesignParameter],
         positions: &'a HashMap<ParameterId, usize>,
     },
-}
-
-impl<'a> From<&'a HashMap<ParameterId, ParameterValue>> for ParameterValues<'a> {
-    fn from(values: &'a HashMap<ParameterId, ParameterValue>) -> Self {
-        Self::Stored(values)
-    }
 }
 
 pub(super) enum ParameterEvaluation {
@@ -84,14 +84,14 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         ctx: &'ctx DecodeContext<'arena>,
         input: &'a str,
         aliases: ParameterAliasView<'a>,
-        values: impl Into<ParameterValues<'a>>,
+        values: ParameterValues<'a>,
     ) -> Self {
         Self {
             ctx,
             input,
             offset: 0,
             aliases: ParameterAliasMap::Layered(aliases),
-            values: values.into(),
+            values,
             blocked: None,
         }
     }
@@ -108,7 +108,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             input,
             offset: 0,
             aliases: ParameterAliasMap::Flat(aliases),
-            values: values.into(),
+            values: ParameterValues::Stored(values),
             blocked: None,
         }
     }
@@ -306,9 +306,17 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 .and_then(Option::as_ref)
                 .ok_or(ExpressionFailure::NoValue)?;
             let value = match &self.values {
+                #[cfg(test)]
                 ParameterValues::Stored(values) => {
                     self.ctx
                         .get_hash_map(values, id, "look up SLDPRT hash key")?
+                }
+                ParameterValues::Validation { values, configuration, excluded } => {
+                    if self.ctx.equal(id, *excluded, "check SLDPRT parameter evaluation")? {
+                        None
+                    } else {
+                        super::configuration_parameter_value(self.ctx, values, *configuration, id)?
+                    }
                 }
                 ParameterValues::Indexed {
                     parameters,
