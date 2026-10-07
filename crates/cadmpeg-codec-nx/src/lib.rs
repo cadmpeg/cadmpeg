@@ -150,10 +150,10 @@ impl CodecBackend for NxCodec {
         });
         Ok(match admitted {
             Ok(_) => Vec::new(),
+            Err(cadmpeg_ir::native::NativeConvertError::Resource(
+                error @ CodecError::ResourceLimit(_),
+            )) => return Err(error),
             Err(error) => {
-                if let Some(limit) = ctx.resource_refusal() {
-                    return Err(CodecError::ResourceLimit(limit));
-                }
                 let message =
                     ctx.format_retained(format_args!("{error}"), "NX native validation message")?;
                 vec![cadmpeg_ir::report::check::Finding {
