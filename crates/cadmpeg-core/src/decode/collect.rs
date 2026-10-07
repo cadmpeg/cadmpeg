@@ -1304,27 +1304,21 @@ impl DecodeContext<'_> {
         len: usize,
         operation: &'static str,
     ) -> Result<u64, ResourceLimit> {
+        let nodes = self.tree_node_increase(len, operation)?;
+        self.tree_node_bytes::<K, V>(nodes, operation)
+    }
+
+    /// How much one insertion raises the node bound (n - 1) / 5 + 1.
+    fn tree_node_increase(
+        &self,
+        len: usize,
+        operation: &'static str,
+    ) -> Result<usize, ResourceLimit> {
         let next = len
             .checked_add(1)
             .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
         let before = if len == 0 { 0 } else { (len - 1) / 5 + 1 };
-        let nodes = (next - 1) / 5 + 1 - before;
-        self.tree_node_bytes::<K, V>(nodes, operation)
-    }
-
-    // An insertion can split every node on its path and add a new root; a
-    // removal can rebalance every node on its path. The path has at most the
-    // tree's height in nodes.
-    fn tree_mutation_bytes<K, V>(
-        &self,
-        len: usize,
-        operation: &'static str,
-    ) -> Result<u64, ResourceLimit> {
-        let nodes = usize::try_from(Self::tree_height(len))
-            .ok()
-            .and_then(|height| height.checked_add(1))
-            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
-        self.tree_node_bytes::<K, V>(nodes, operation)
+        Ok((next - 1) / 5 + 1 - before)
     }
 
     fn tree_node_bytes<K, V>(
@@ -1345,14 +1339,57 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.retained_size_overflow_limit(operation))
     }
 
-    // Four node passes cover slot shifts, splits or merges and parent-link repairs.
-    pub(super) fn admit_tree_mutation<K, V>(
+    // Work is counted in node passes: one pass is the node byte bound, the
+    // most a slot shift within one node moves. A split moves at most one
+    // node's contents into its new sibling and shifts its parent's slots: two
+    // passes. A merge moves at most one node's contents into its sibling and
+    // shifts the parent's slots, and a steal shifts two nodes: two passes
+    // each. Every split creates a node, and every node a tree holds beyond its
+    // first was created by a split since the tree was empty, or since a merge
+    // freed a node. A tree of n entries holds at most (n - 1) / 5 + 1 nodes,
+    // so the splits so far are at most the increases of that bound over the
+    // insertions so far plus the nodes merges have freed. An insertion
+    // therefore pays one shift and two passes for each node its length adds
+    // to the bound. A removal pays one shift, one steal, and for every level
+    // of the tree a merge and the split that may later recreate its node.
+    // Each charge precedes its operation, so the charged total covers the
+    // work at every point. Std's eager merges let alternating insertions and
+    // removals split and merge a whole path each time, which the per-level
+    // removal charge pays for.
+    pub(super) fn admit_tree_insertion<K, V>(
         &self,
         len: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let bytes = self.tree_mutation_bytes::<K, V>(len, operation)?;
-        self.charge_work(self.cost_product(bytes, 4, operation)?, operation)
+        let added = self.tree_node_increase(len, operation)?;
+        let passes = added
+            .checked_mul(2)
+            .and_then(|passes| passes.checked_add(1))
+            .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+        let bytes = self.tree_node_bytes::<K, V>(passes, operation)?;
+        self.charge_work(bytes, operation)
+    }
+
+    /// Admits the shift, steal and per-level merge work of one B-tree removal,
+    /// as `admit_tree_insertion` states. A tree of at most ten entries is one
+    /// node, which a removal only shifts.
+    pub(super) fn admit_tree_removal_work<K, V>(
+        &self,
+        len: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let height = usize::try_from(Self::tree_height(len))
+            .map_err(|_| self.retained_size_overflow_limit(operation))?;
+        let passes = if height <= 1 {
+            Some(1)
+        } else {
+            height
+                .checked_mul(4)
+                .and_then(|passes| passes.checked_add(3))
+        }
+        .ok_or_else(|| self.retained_size_overflow_limit(operation))?;
+        let bytes = self.tree_node_bytes::<K, V>(passes, operation)?;
+        self.charge_work(bytes, operation)
     }
 
     /// Admits the backing nodes for one ordered entry whose slot is already charged.
@@ -1361,7 +1398,7 @@ impl DecodeContext<'_> {
         len: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.admit_tree_mutation::<K, V>(len, operation)?;
+        self.admit_tree_insertion::<K, V>(len, operation)?;
         self.charge_retained(self.tree_growth_bytes::<K, V>(len, operation)?, operation)
     }
 
