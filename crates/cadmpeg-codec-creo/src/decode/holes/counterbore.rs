@@ -490,7 +490,7 @@ fn terminal_corner_envelope(
         return Ok(None);
     };
     Ok(unique_surface_parameter_record(ctx, scan, row)?
-        .and_then(|record| record.type24_terminal_corner_envelope()))
+        .and_then(crate::surface::SurfaceParameterRecord::type24_terminal_corner_envelope))
 }
 
 fn counterbore_source_corner_envelopes(
@@ -938,7 +938,7 @@ fn counterbore_source_boundary_circle(
         &scan.curves.topology_rows,
         |row| row.id,
     )?;
-    Ok((|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+    (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
         let boundary_for =
             |cylinder_id: u32| -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
                 Ok({
@@ -995,9 +995,11 @@ fn counterbore_source_boundary_circle(
                 .into_iter()
                 .map(f64::abs)
                 .fold(1.0, f64::max);
-                { let Some(value) = ((alignment - 1.0).abs() <= EPS_COUNTERBORE_GEOMETRY
+                if !((alignment - 1.0).abs() <= EPS_COUNTERBORE_GEOMETRY
                     && distance <= EPS_COUNTERBORE_GEOMETRY * scale)
-                    .then_some(()) else { return Ok(None); }; value };
+                {
+                    return Ok(None);
+                }
                 Ok(Some((other, center, axis)))
             }) { let Some(numbered_identity_candidate) = numbered_identity_candidate? else { continue; }; if numbered_identity_unique.is_some() { numbered_identity_unique = None; break; } numbered_identity_unique = Some(numbered_identity_candidate); }
                     numbered_identity_unique
@@ -1029,7 +1031,7 @@ fn counterbore_source_boundary_circle(
             }
         }
         Ok(Some(first))
-    })()?)
+    })()
 }
 
 pub(in crate::decode) fn counterbore_source_patch_geometries(

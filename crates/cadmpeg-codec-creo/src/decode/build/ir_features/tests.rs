@@ -915,7 +915,7 @@ fn combined_feature_output_membership_refuses_work_and_preserves_service_outputs
             )?;
             Ok((
                 feature_count,
-                ir.model.features[0].evaluation.outputs().to_vec(),
+                ir.model.features[0].evaluation.outputs().clone(),
             ))
         },
     );

@@ -243,13 +243,7 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         || !ctx.all_by(
             &(frame_records)[..],
             |(surface_id, frame)| -> Result<bool, cadmpeg_core::CodecError> {
-                Ok(cylinder_frame_agrees_with_model(
-                    ctx,
-                    ir,
-                    *surface_id,
-                    frame,
-                    source_carriers,
-                )?)
+                cylinder_frame_agrees_with_model(ctx, ir, *surface_id, frame, source_carriers)
             },
             "creo numbered identity candidate scan",
         )?

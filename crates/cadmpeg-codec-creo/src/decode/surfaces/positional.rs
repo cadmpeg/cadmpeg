@@ -96,7 +96,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         };
         let envelopes = [first_row, second_row].map(|row| {
             Ok(unique_surface_parameter_record(ctx, scan, row)?
-                .and_then(|record| record.type26_five_coordinate_envelope()))
+                .and_then(crate::surface::SurfaceParameterRecord::type26_five_coordinate_envelope))
         });
         let [first_envelope, second_envelope]: [Result<_, cadmpeg_core::CodecError>; 2] = envelopes;
         let (Some(first_envelope), Some(second_envelope)) = (first_envelope?, second_envelope?)

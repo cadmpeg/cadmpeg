@@ -125,10 +125,7 @@ pub(super) fn thicken_feature_definition(
             "creo thicken native selection",
         )?;
         let mut faces = Vec::new();
-        for surface_id in ctx
-            .admit_iter(&source_ids, "creo thicken source face IDs")?
-            .copied()
-        {
+        for surface_id in ctx.admit_iter(&source_ids, "creo thicken source face IDs")? {
             let text = ctx.format_retained(
                 format_args!("creo:visibgeom:face#{surface_id}"),
                 "creo thicken face IDs",
@@ -1272,7 +1269,7 @@ pub(in super::super) fn preceding_features_establish_body(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(ctx.any_by(
+    ctx.any_by(
         &ir.model.features,
         |feature| {
             Ok(feature.suppressed != Some(true)
@@ -1291,7 +1288,7 @@ pub(in super::super) fn preceding_features_establish_body(
                     )))
         },
         "creo prior feature body lookup",
-    )?)
+    )
 }
 
 pub(in super::super) fn section_sweep_boolean_operation(

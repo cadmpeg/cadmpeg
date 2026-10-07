@@ -72,7 +72,9 @@ impl cadmpeg_core::decode::cost::DecodeCost for FeatureParameterFrame {
             &(
                 &self.kind,
                 &self.body,
-                self.decoded_values.as_ref().map(|value| value.as_raw()),
+                self.decoded_values
+                    .as_ref()
+                    .map(cadmpeg_ir::units::FiniteVector::as_raw),
                 &self.offset,
             ),
             ctx,
@@ -2271,7 +2273,9 @@ impl cadmpeg_core::decode::cost::DecodeCost for FeatureSavedConic {
                     &self.endpoints,
                     &self.parameters,
                     &self.coefficients,
-                    self.local_system.as_ref().map(|value| value.as_raw()),
+                    self.local_system
+                        .as_ref()
+                        .map(cadmpeg_ir::units::FiniteVector::as_raw),
                     &self.body,
                 ),
                 (&self.offset,),

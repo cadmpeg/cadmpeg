@@ -347,7 +347,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for ReferenceConic {
                     self.coefficient_2.get(),
                 ),
                 (
-                    self.local_system.map(|system| system.get()),
+                    self.local_system.map(cadmpeg_ir::units::FiniteVector::get),
                     &self.body,
                     &self.offset,
                 ),

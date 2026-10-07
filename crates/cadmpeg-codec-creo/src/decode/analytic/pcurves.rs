@@ -2023,11 +2023,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
             ctx.retain_vec(
                 domain,
                 |candidate| {
-                    Ok(ctx.any_by(
+                    ctx.any_by(
                         points,
                         |point| Ok(agree(*candidate, *point)),
                         "creo pcurve vertex point agreement",
-                    )?)
+                    )
                 },
                 "creo pcurve vertex domain retention",
             )?;
@@ -2048,11 +2048,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
                 ctx.retain_vec(
                     entry.get_mut(),
                     |point| {
-                        Ok(ctx.any_by(
+                        ctx.any_by(
                             candidates,
                             |candidate| Ok(agree(*point, *candidate)),
                             "creo analytic vertex candidate agreement",
-                        )?)
+                        )
                     },
                     "creo analytic domain retention",
                 )?;
@@ -2084,11 +2084,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
             ctx.retain_vec(
                 domain,
                 |candidate| {
-                    Ok(ctx.all_by(
+                    ctx.all_by(
                         curves,
                         |curve| Ok(curve_contains_points(curve, [*candidate, *candidate])),
                         "creo incident curve vertex checks",
-                    )?)
+                    )
                 },
                 "creo incident analytic domain retention",
             )?;

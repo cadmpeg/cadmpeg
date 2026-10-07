@@ -383,7 +383,7 @@ fn topology_limit_error(
                 super::feature_result_topology(
                     &trial_ctx,
                     &tables,
-                    &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                    &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
                     &curve_rows,
                     17,
                 )
@@ -395,7 +395,7 @@ fn topology_limit_error(
     let error = super::feature_result_topology(
         &ctx,
         &tables,
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         &curve_rows,
         17,
     )
@@ -472,7 +472,7 @@ fn feature_result_distinctness_refuses_work_limit() {
             super::feature_result_topology(
                 &ctx,
                 &tables,
-                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
                 &[],
                 17,
             )
@@ -565,14 +565,14 @@ fn result_surface_limit_error(limit: u64, by_feature: bool, operation: &'static 
         super::feature_result_surface_ids_by_feature(
             &ctx,
             &tables,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         )
         .map(|_| ())
     } else {
         super::feature_result_surface_ids(
             &ctx,
             &tables,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             17,
         )
         .map(|_| ())
@@ -613,14 +613,14 @@ fn feature_result_surface_roster_preserves_order() {
         let ids = super::feature_result_surface_ids(
             ctx,
             &tables,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
             17,
         )?;
         assert_eq!(ids, Some(vec![201]));
         let by_feature = super::feature_result_surface_ids_by_feature(
             ctx,
             &tables,
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         )?;
         assert_eq!(by_feature.get(&17), Some(&vec![201]));
         Ok::<(), cadmpeg_core::CodecError>(())
@@ -1083,7 +1083,7 @@ fn feature_result_identity_validation_refuses_at_work_boundaries() {
             feature_result_topology(
                 ctx,
                 &tables,
-                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+                &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
                 &[],
                 17,
             )

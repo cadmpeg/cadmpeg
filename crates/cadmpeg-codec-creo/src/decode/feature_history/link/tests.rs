@@ -223,7 +223,7 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
             11,
             &[crate::surface::SurfaceKind::Plane],
             std::slice::from_ref(&table),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         )?);
         assert!(!section_entity_is_generated_profile(
             ctx,
@@ -232,7 +232,7 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
             11,
             &[crate::surface::SurfaceKind::Plane],
             std::slice::from_ref(&malformed),
-            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+            &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
         )?);
         Ok::<(), CodecError>(())
     })
@@ -249,7 +249,7 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
         11,
         &[crate::surface::SurfaceKind::Plane],
         std::slice::from_ref(&table),
-        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.to_vec()),
+        &crate::surface::unique_rows::UniqueIdRows::from_rows(rows.clone()),
     )
     .expect_err("feature table lookup exceeds the work limit");
     assert!(

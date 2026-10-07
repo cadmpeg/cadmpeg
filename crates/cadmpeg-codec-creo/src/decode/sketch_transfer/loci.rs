@@ -767,9 +767,10 @@ pub(super) fn section_skamp_same_coordinate(
                 .chain(&second_point)
                 .map(|coordinate| coordinate.abs())
                 .fold(1.0, f64::max);
-            if !((first_point[coordinate.index()] - second_point[coordinate.index()]).abs()
-                <= EPS_LOCUS_COORDINATE * scale)
-            {
+            if !crate::vecmath::within(
+                (first_point[coordinate.index()] - second_point[coordinate.index()]).abs(),
+                EPS_LOCUS_COORDINATE * scale,
+            ) {
                 return Ok(None);
             }
         }

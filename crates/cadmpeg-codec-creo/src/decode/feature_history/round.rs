@@ -329,10 +329,9 @@ pub(in super::super) fn paired_five_coordinate_sphere_center(
             &other_axial,
             |other| Ok(close(*candidate, *other)),
             "creo paired sphere matching axial coordinates",
-        )? {
-            if center_z.replace(*candidate).is_some() {
-                return Ok(None);
-            }
+        )? && center_z.replace(*candidate).is_some()
+        {
+            return Ok(None);
         }
     }
     let Some(center_z) = center_z else {
@@ -685,11 +684,11 @@ fn legacy_round_radius_agrees(
         .map(f64::abs)
         .chain(std::iter::once(radius.abs()))
         .fold(1.0, f64::max);
-    Ok(ctx.all_by(
+    ctx.all_by(
         &samples,
         |sample| Ok((sample - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale),
         "creo legacy round radius samples",
-    )?)
+    )
 }
 
 fn complete_direct_placed_cylinder_radius_agreement(
@@ -886,7 +885,10 @@ pub(in super::super) fn round_support_radius(
         let Some(normal) = normalize(plane.normal) else {
             return Ok(None);
         };
-        if !(dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL) {
+        if !crate::vecmath::within(
+            dot(first_cap_normal, normal).abs(),
+            EPS_ROUND_SUPPORT_ORTHOGONAL,
+        ) {
             return Ok(None);
         }
     }
@@ -1114,7 +1116,10 @@ fn resolved_round_support_planes<'a>(
         let Some(normal) = normalize(plane.normal) else {
             return Ok(None);
         };
-        if !(dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL) {
+        if !crate::vecmath::within(
+            dot(first_cap_normal, normal).abs(),
+            EPS_ROUND_SUPPORT_ORTHOGONAL,
+        ) {
             return Ok(None);
         }
         resolved_count = resolved_count.checked_add(1).ok_or_else(|| {
@@ -1253,11 +1258,11 @@ pub(in super::super) fn differing_positive_lengths(
         .copied()
         .map(f64::abs)
         .fold(first.abs().max(1.0), f64::max);
-    Ok(ctx.any_by(
+    ctx.any_by(
         values,
         |value| Ok((*value - first).abs() > EPS_GEOMETRY_AGREEMENT * scale),
         "creo positive length agreement",
-    )?)
+    )
 }
 
 pub(in super::super) fn unique_positive_length(
@@ -1316,7 +1321,7 @@ fn equal_distance_chamfer_setback(
                 continue;
             };
             let denominator = dot(axis, normal);
-            if !(denominator.abs() >= 1.0 - EPS_DENOMINATOR_ALIGNMENT) {
+            if !crate::vecmath::within(1.0 - EPS_DENOMINATOR_ALIGNMENT, denominator.abs()) {
                 continue;
             }
             let displacement = [

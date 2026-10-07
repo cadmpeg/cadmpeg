@@ -729,7 +729,7 @@ impl SectionCoordinateEquation {
     ) -> Result<Self, CodecError> {
         let mut equation = Self::default();
         ctx.insert_btree_map(&mut equation.terms, (first, coordinate), -1.0, operation)?;
-        if first != second {}
+
         *ctx.entry_btree_map(&mut equation.terms, (second, coordinate), operation)?
             .or_default() += 1.0;
         equation.rhs = delta;
@@ -1076,7 +1076,10 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     continue;
                 };
                 let scale = lhs.abs().max(equation.rhs.abs()).max(1.0);
-                if !((lhs - equation.rhs).abs() <= EPS_SOLUTION_AGREEMENT * scale) {
+                if !crate::vecmath::within(
+                    (lhs - equation.rhs).abs(),
+                    EPS_SOLUTION_AGREEMENT * scale,
+                ) {
                     equations_valid = false;
                     break;
                 }

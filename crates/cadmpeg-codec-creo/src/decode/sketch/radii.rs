@@ -348,32 +348,36 @@ pub(in crate::decode) fn resolved_section_radii(
             }
         }
     }
-    // discarded-value: The visitor runs through every active SKAMP row.
-    let _ = visit_section_skamps::<()>(ctx, definition, true, |skamp| {
-        let [first, second] = skamp.items.as_slice() else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        if skamp.kind != 6 || first.sense != 0 || second.sense != 0 {
-            return Ok(ControlFlow::Continue(()));
-        }
-        let Some(first_radius) = section_skamp_radius_source(ctx, definition, first)? else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        let Some(second_radius) = section_skamp_radius_source(ctx, definition, second)? else {
-            return Ok(ControlFlow::Continue(()));
-        };
-        match (first_radius, second_radius) {
-            (SectionRadiusSource::Reference(first), SectionRadiusSource::Reference(second)) => {
-                link_radii(ctx, &mut adjacency, first, second)?;
+    let ControlFlow::Continue(()) = visit_section_skamps::<std::convert::Infallible>(
+        ctx,
+        definition,
+        true,
+        |skamp| {
+            let [first, second] = skamp.items.as_slice() else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            if skamp.kind != 6 || first.sense != 0 || second.sense != 0 {
+                return Ok(ControlFlow::Continue(()));
             }
-            (SectionRadiusSource::Reference(reference), SectionRadiusSource::Value(value))
-            | (SectionRadiusSource::Value(value), SectionRadiusSource::Reference(reference)) => {
-                append_radius_candidate(ctx, &mut candidates, reference, value.get())?;
+            let Some(first_radius) = section_skamp_radius_source(ctx, definition, first)? else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            let Some(second_radius) = section_skamp_radius_source(ctx, definition, second)? else {
+                return Ok(ControlFlow::Continue(()));
+            };
+            match (first_radius, second_radius) {
+                (SectionRadiusSource::Reference(first), SectionRadiusSource::Reference(second)) => {
+                    link_radii(ctx, &mut adjacency, first, second)?;
+                }
+                (SectionRadiusSource::Reference(reference), SectionRadiusSource::Value(value))
+                | (SectionRadiusSource::Value(value), SectionRadiusSource::Reference(reference)) => {
+                    append_radius_candidate(ctx, &mut candidates, reference, value.get())?;
+                }
+                (SectionRadiusSource::Value(_), SectionRadiusSource::Value(_)) => {}
             }
-            (SectionRadiusSource::Value(_), SectionRadiusSource::Value(_)) => {}
-        }
-        Ok(ControlFlow::Continue(()))
-    })?;
+            Ok(ControlFlow::Continue(()))
+        },
+    )?;
     // Every radius identifier in key order; each component starts from the
     // smallest identifier no earlier component reached.
     let mut seeds = BTreeSet::new();

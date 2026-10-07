@@ -21,8 +21,9 @@ pub(in super::super) fn section_entity_external_ids(
     };
     let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
     let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
-    // discarded-value: The visitor continues through every semantic saved entity.
-    let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |entity| {
         let Some(internal_id) = saved_section_entity_identity(entity).0 else {
             return Ok(ControlFlow::Continue(()));
         };
@@ -294,8 +295,9 @@ pub(in super::super) fn unique_saved_section_internal_ids(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
     let mut counts = BTreeMap::new();
-    // discarded-value: The visitor continues through every semantic saved entity.
-    let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |entity| {
         let Some(internal_id) = saved_section_entity_identity(entity).0 else {
             return Ok(ControlFlow::Continue(()));
         };
@@ -360,7 +362,7 @@ fn saved_section_entity_is_elided_prototype(
     else {
         return Ok(false);
     };
-    Ok(ctx.any_by(
+    ctx.any_by(
         &saved.entities,
         |candidate| {
             Ok(
@@ -369,7 +371,7 @@ fn saved_section_entity_is_elided_prototype(
             )
         },
         "creo saved section prototype rows",
-    )?)
+    )
 }
 
 pub(in super::super) fn visit_semantic_saved_section_entities<'definition, B>(
@@ -432,8 +434,9 @@ pub(in super::super) fn materialized_saved_section_external_ids(
     let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
     let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
     let mut external_ids = BTreeSet::new();
-    // discarded-value: The visitor continues through every semantic saved entity.
-    let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |entity| {
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |entity| {
         let materializes = match entity {
             crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
                 saved_spline_sketch_geometry(ctx, spline, refusal)?.is_some()

@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Affine and nonlinear solving of relation equation blocks.
 
-use super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::{
+    copy_expression_value, expression_identifier_end, infer_solve_variable_dimensions,
+    parse_relation_expression, quantity_parts_ref, quantity_value, relation_unit, AffineValue,
+    CurveExpressionActivation, CurveExpressionRecord, CurveExpressionSolveBlock,
+    CurveExpressionValue, ExpressionValue, RelationDimension, RelationEvaluationContext,
+    EPS_LINEAR_SYSTEM_COEFFICIENT, EPS_LINEAR_SYSTEM_RESIDUAL,
+};
 
 pub(super) const MAX_NONLINEAR_SOLVE_VARIABLES: usize = 8;
 pub(super) const MAX_NONLINEAR_SOLVE_ITERATIONS: usize = 64;
@@ -84,19 +92,19 @@ pub(super) fn nonlinear_equations_are_smooth(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    Ok(ctx.all_by(
+    ctx.all_by(
         &block.equations,
         |equation| {
             Ok({
                 ctx.all_by(
                     &[equation.left.as_str(), equation.right.as_str()],
-                    |expression| Ok(nonlinear_expression_is_smooth(ctx, expression)?),
+                    |expression| nonlinear_expression_is_smooth(ctx, expression),
                     "creo relation comparison traversal",
                 )?
             })
         },
         "creo relation comparison traversal",
-    )?)
+    )
 }
 
 pub(super) fn nonlinear_expression_is_smooth(
@@ -142,11 +150,7 @@ pub(super) fn nonlinear_expression_is_smooth(
                         "tanh", "log", "ln", "exp", "pow", "sqrt",
                     ],
                     |candidate| {
-                        Ok(ctx.eq_ignore_ascii_case(
-                            name,
-                            candidate,
-                            "creo relation text comparison",
-                        )?)
+                        ctx.eq_ignore_ascii_case(name, candidate, "creo relation text comparison")
                     },
                     "creo relation comparison traversal",
                 )?;

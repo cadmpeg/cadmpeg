@@ -570,14 +570,14 @@ pub(in super::super) fn transfer_hole_cylinders(
                 &hole.cylinder_rows,
                 "creo simple hole cylinder rows traversal",
             )? {
-                transfer_hole_cylinder(*row, hole.geometry)?;
+                transfer_hole_cylinder(row, hole.geometry)?;
             }
         }
         if let Some(rows) = &counterbore {
             for (row, geometry) in
                 ctx.admit_iter(rows, "creo counterbore patch cylinder rows traversal")?
             {
-                transfer_hole_cylinder(*row, *geometry)?;
+                transfer_hole_cylinder(row, *geometry)?;
             }
         }
     }

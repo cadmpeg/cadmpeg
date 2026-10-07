@@ -803,8 +803,9 @@ pub(super) fn transfer_section_entities(
     }
     let mut saved_section_geometries = Vec::new();
     let mut generated_saved_geometries = Vec::new();
-    // discarded-value: The visitor continues through every semantic saved entity.
-    let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |saved| {
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |saved| {
         let Some((internal_id, geometry, offset)) = saved_section_entity_geometry(saved) else {
             return Ok(ControlFlow::Continue(()));
         };
@@ -922,8 +923,9 @@ pub(super) fn transfer_section_entities(
         saved_section_geometries.push((internal_id, external_id, geometry, offset, curve_id));
         Ok(ControlFlow::Continue(()))
     })?;
-    // discarded-value: The visitor continues through every semantic saved entity.
-    let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |saved| {
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |saved| {
         let crate::feature::definitions::FeatureSavedEntity::Spline(spline) = saved else {
             return Ok(ControlFlow::Continue(()));
         };
@@ -1079,8 +1081,9 @@ pub(super) fn transfer_section_entities(
         }
         Ok(ControlFlow::Continue(()))
     })?;
-    // discarded-value: The visitor continues through every semantic saved entity.
-    let _ = visit_semantic_saved_section_entities::<()>(ctx, definition, |saved| {
+    let ControlFlow::Continue(()) = visit_semantic_saved_section_entities::<
+        std::convert::Infallible,
+    >(ctx, definition, |saved| {
         let Some((entity, offset)) = unresolved_saved_section_entity(
             ctx,
             definition,

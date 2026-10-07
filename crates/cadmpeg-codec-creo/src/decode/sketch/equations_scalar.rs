@@ -1387,7 +1387,10 @@ fn scalar_equality_values_for_components(
                             for &sample in
                                 ctx.admit_iter(samples, "creo scalar equality comparisons")?
                             {
-                                if !((sample - first).abs() <= EPS_SCALAR_EQUALITY * scale) {
+                                if !crate::vecmath::within(
+                                    (sample - first).abs(),
+                                    EPS_SCALAR_EQUALITY * scale,
+                                ) {
                                     agrees = false;
                                     break 'components;
                                 }

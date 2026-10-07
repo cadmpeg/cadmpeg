@@ -2071,11 +2071,10 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                 ) && unique_segment_ids.contains(&segment.external_id)
                     && (segment.point_ids() == [equation.first, equation.second]
                         || segment.point_ids() == [equation.second, equation.first])
+                    && line_external_id.replace(segment.external_id).is_some()
                 {
-                    if line_external_id.replace(segment.external_id).is_some() {
-                        ambiguous_line_external_id = true;
-                        break;
-                    }
+                    ambiguous_line_external_id = true;
+                    break;
                 }
             }
             if ambiguous_line_external_id {
@@ -2095,11 +2094,10 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                     if unique_segment_ids.contains(&segment.external_id)
                         && (segment.point_ids == [Some(equation.first), Some(equation.second)]
                             || segment.point_ids == [Some(equation.second), Some(equation.first)])
+                        && line_external_id.replace(segment.external_id).is_some()
                     {
-                        if line_external_id.replace(segment.external_id).is_some() {
-                            ambiguous_line_external_id = true;
-                            break;
-                        }
+                        ambiguous_line_external_id = true;
+                        break;
                     }
                 }
             }
@@ -2119,11 +2117,10 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                 {
                     if unique_segment_ids.contains(&segment.external_id)
                         && matches!([equation.first, equation.second], [0, 1] | [1, 0])
+                        && line_external_id.replace(segment.external_id).is_some()
                     {
-                        if line_external_id.replace(segment.external_id).is_some() {
-                            ambiguous_line_external_id = true;
-                            break;
-                        }
+                        ambiguous_line_external_id = true;
+                        break;
                     }
                 }
             }
@@ -2751,10 +2748,9 @@ pub(in super::super) fn section_dimension_constraints(
                                         segment.kind,
                                         crate::feature::definitions::FeatureSegmentKind::Arc(_)
                                     ) && segment.radius_ref == Some(radius_id)
+                                        && external_id.replace(segment.external_id).is_some()
                                     {
-                                        if external_id.replace(segment.external_id).is_some() {
-                                            return Ok(None);
-                                        }
+                                        return Ok(None);
                                     }
                                 }
                                 if let Some(table) = definition.segments.as_ref() {
