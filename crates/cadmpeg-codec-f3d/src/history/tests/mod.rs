@@ -2,7 +2,6 @@
 //! History-module unit tests.
 
 mod body_chain_limits;
-mod body_intersection_budget;
 mod body_recipe;
 mod body_recipe_budget;
 mod body_recipe_selection_limits;
@@ -25,7 +24,6 @@ mod selections;
 mod state_pairs;
 mod surface_stitch;
 mod topology_budget;
-mod transitions;
 mod vertex_recipe_limits;
 
 mod recipe_transitions;

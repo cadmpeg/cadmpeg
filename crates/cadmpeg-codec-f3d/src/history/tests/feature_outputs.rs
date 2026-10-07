@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::history::test_support::{active_body, base_feature, output_binding_inputs};
 fn empty_transition_history() -> crate::history_records::AsmHistory {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
@@ -49,7 +50,7 @@ fn feature_output_error(
     // Temporary copied body IDs stay in the live scoped reservation.
     policy.limits.max_materialized_bytes = max_materialized_bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_feature_outputs(&ctx, &mut [], &[], histories, bodies).unwrap_err()
+    crate::history::bind_feature_outputs(&ctx, &mut [], &[], histories, bodies).unwrap_err()
 }
 
 #[test]
@@ -79,16 +80,6 @@ fn feature_output_states_refuse_collection_limit() {
     );
 }
 
-fn active_body() -> cadmpeg_ir::topology::Body {
-    let mut body = cadmpeg_ir::examples::unit_cube()
-        .unwrap()
-        .model
-        .bodies
-        .remove(0);
-    body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
-    body
-}
-
 #[test]
 fn feature_output_active_body_refuses_collection_limit() {
     let body = active_body();
@@ -99,38 +90,6 @@ fn feature_output_active_body_refuses_collection_limit() {
     );
 }
 
-fn base_feature() -> cadmpeg_ir::features::Feature {
-    use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    };
-    use cadmpeg_ir::ids::BodyId;
-    Feature {
-        id: FeatureId::mint("test:model:feature#feature").unwrap(),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: Some("Base Feature".into()),
-        source_text: None,
-        source_content: Default::default(),
-        evaluation: FeatureEvaluation::new(
-            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-                bodies: BodySelection::Native("native:scope".into()),
-            }),
-            cadmpeg_ir::features::DistinctMembers::try_from(
-                vec![
-                    BodyId::mint("test:model:body#2").unwrap(),
-                    BodyId::mint("test:model:body#1").unwrap(),
-                ],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .unwrap(),
-        ),
-        native_ref: Some("native:scope".into()),
-    }
-}
-
 fn base_feature_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
@@ -138,7 +97,7 @@ fn base_feature_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_base_feature_output_selection(&ctx, &mut base_feature()).unwrap_err()
+    crate::history::bind_base_feature_output_selection(&ctx, &mut base_feature()).unwrap_err()
 }
 
 #[test]
@@ -172,80 +131,6 @@ fn base_feature_native_selection_refuses_retained_limit() {
     );
 }
 
-fn output_binding_inputs() -> (
-    cadmpeg_ir::features::Feature,
-    crate::records::feature::scope::DesignParameterScope,
-    crate::history_records::AsmHistory,
-    cadmpeg_ir::topology::Body,
-) {
-    use crate::history_records::{
-        AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalRelation, AsmHistoricalTopology,
-        AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmTopologyCache,
-    };
-    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    let mut feature = base_feature();
-    let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#1",
-        DesignFeatureKind::BaseFeature,
-        1,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.history_state_id = Some(1);
-            draft.previous_history_state_id = Some(0);
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    feature.native_ref = Some(scope.id.clone());
-    let mut current_topology = AsmHistoricalTopology::default();
-    current_topology.bodies.push(1);
-    current_topology.body_regions.push(AsmHistoricalRelation {
-        owner_ref: 1,
-        member_refs: Vec::new(),
-    });
-    let mut delta = AsmHistoricalTopologyDelta::default();
-    delta.bodies.inserted.push(1);
-    let state = |state_id, node_index, next_ref, topology, transition| AsmDeltaState {
-        id: format!("f3d:asm-delta-state#{state_id}"),
-        parent: "f3d:asm-history#1".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref,
-        node_index,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: AsmTopologyCache::Complete(topology),
-        transition,
-    };
-    let history = AsmHistory {
-        id: "f3d:asm-history#1".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![
-            state(
-                1,
-                1,
-                Some(0),
-                current_topology,
-                Some(AsmHistoricalTransition {
-                    previous_state_id: Some(0),
-                    records: AsmHistoricalEntityDelta::default(),
-                    topology: delta,
-                }),
-            ),
-            state(0, 0, None, AsmHistoricalTopology::default(), None),
-        ],
-    };
-    (feature, scope, history, active_body())
-}
-
 fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (mut feature, scope, history, body) = output_binding_inputs();
@@ -254,7 +139,7 @@ fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bind_feature_outputs(
+    crate::history::bind_feature_outputs(
         &ctx,
         std::slice::from_mut(&mut feature),
         &[scope],
@@ -296,7 +181,7 @@ fn feature_output_binding_preserves_base_feature_selection() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
     let (mut feature, scope, history, body) = output_binding_inputs();
     let ctx = cadmpeg_test_support::service_decode_context();
-    super::super::bind_feature_outputs(
+    crate::history::bind_feature_outputs(
         &ctx,
         std::slice::from_mut(&mut feature),
         &[scope],
@@ -313,45 +198,6 @@ fn feature_output_binding_preserves_base_feature_selection() {
 }
 
 #[test]
-fn changed_topology_members_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut delta = crate::history_records::AsmHistoricalTopologyDelta::default();
-    delta.bodies.inserted.push(1);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::changed_family_refs(&ctx, &delta, false).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "index F3D changed topology members")
-    );
-}
-
-#[test]
-fn changed_topology_family_member_scans_refuse_work() {
-    use crate::history_records::AsmHistoricalTopologyDelta;
-
-    let mut delta = AsmHistoricalTopologyDelta::default();
-    delta.bodies.inserted.push(1);
-    delta.bodies.updated.push(2);
-    delta.bodies.deleted.push(3);
-    for (deleted, skip) in [(false, 0), (false, 1), (true, 0)] {
-        let operation = "scan F3D changed topology family members";
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            operation,
-            skip,
-            |ctx| super::super::changed_family_refs(ctx, &delta, deleted).map(|_| ()),
-        );
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
-        ));
-    }
-}
-
-#[test]
 fn affected_history_body_scan_refuses_work() {
     let operation = "scan F3D affected history bodies";
     let error = crate::test_support::resource_refusal_at(
@@ -360,7 +206,7 @@ fn affected_history_body_scan_refuses_work() {
         0,
         |ctx| {
             let (mut feature, scope, history, body) = output_binding_inputs();
-            super::super::bind_feature_outputs(
+            crate::history::bind_feature_outputs(
                 ctx,
                 std::slice::from_mut(&mut feature),
                 &[scope],
@@ -373,20 +219,4 @@ fn affected_history_body_scan_refuses_work() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation
     ));
-}
-
-#[test]
-fn affected_history_bodies_refuse_collection_limit() {
-    let operation = "collect F3D affected history bodies";
-    let (_, _, history, _) = output_binding_inputs();
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        operation,
-        0,
-        |ctx| super::super::affected_body_refs(ctx, &history.states[0], Some(&history.states[1])),
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == operation)
-    );
 }

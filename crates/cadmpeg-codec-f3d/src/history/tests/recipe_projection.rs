@@ -299,15 +299,15 @@ fn edge_recipe_reference_scans_and_membership_propagate_work_refusal() {
     };
     let changed = std::collections::HashSet::from([7]);
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::history::edge_recipe_reference_context(
+        crate::history::topology::edge_recipe_reference_context(
             ctx,
             2,
             &reference,
-            crate::history::EdgeBoundaryContext {
+            crate::history::topology::EdgeBoundaryContext {
                 topology: &topology,
                 boundary_edges: &[7, 99],
             },
-            crate::history::EdgeBoundaryContext {
+            crate::history::topology::EdgeBoundaryContext {
                 topology: &topology,
                 boundary_edges: &[7, 98],
             },

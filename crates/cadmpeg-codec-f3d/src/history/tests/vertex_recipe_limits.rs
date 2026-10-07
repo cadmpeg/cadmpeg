@@ -57,7 +57,7 @@ fn select(
     policy.limits.max_collection_items = max_items;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let index = super::super::boundary_vertex_index(&ctx, &topology)?;
+    let index = super::super::topology::boundary_vertex_index(&ctx, &topology)?;
     super::super::vertex_recipe_candidate(&ctx, &recipe, &topology, &index)
 }
 
