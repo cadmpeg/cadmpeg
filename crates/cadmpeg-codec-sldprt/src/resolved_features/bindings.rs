@@ -2053,11 +2053,7 @@ pub(super) fn normalize_indexed_curve_entities(
         let markers = collect_binding_vec(ctx, lane.sketch_entities.iter())?;
         let mut terminal = HashSet::new();
         for curve in &markers {
-            ctx.charge_work(
-                u64_from_index(markers.len()),
-                "scan SLDPRT terminal profile lines",
-            )?;
-            if legacy_terminal_indexed_profile_line(&lane.native_payload, curve, &markers) {
+            if legacy_terminal_indexed_profile_line(ctx, &lane.native_payload, curve, &markers)? {
                 ctx.reserve_set(&mut terminal, 1, SCALAR_BINDING_INDEX)?;
                 terminal.insert(copy_binding_text(ctx, curve.id())?);
             }

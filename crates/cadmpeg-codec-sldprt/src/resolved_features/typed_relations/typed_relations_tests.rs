@@ -35,15 +35,28 @@ fn compact_legacy_coordinate_line_ends_at_the_following_marker_coordinate() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        consecutive_legacy_profile_line_endpoints(&payload, &entities[0], &markers)
-            .iter()
-            .map(|marker| marker
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get))
-            .collect::<Vec<_>>(),
+        consecutive_legacy_profile_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get))
+        .collect::<Vec<_>>(),
         vec![Some([1.25, -2.5]), Some([3.0, 4.0])]
     );
-    assert!(consecutive_legacy_profile_line_endpoints(&payload, &entities[1], &markers).is_empty());
+    assert!(consecutive_legacy_profile_line_endpoints(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &entities[1],
+        &markers
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -183,7 +196,13 @@ fn current_coordinate_line_uses_its_single_local_link() {
         Some([4.0, 5.0]),
     );
     assert_eq!(
-        current_coordinate_linked_line_endpoints(&payload, &line, &[&line, &endpoint]),
+        current_coordinate_linked_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &line,
+            &[&line, &endpoint]
+        )
+        .unwrap(),
         Some([&line, &endpoint])
     );
 }
@@ -234,7 +253,13 @@ fn current_coordinate_line_accepts_a_coordinate_bearing_curve_vertex() {
         Some([4.0, 5.0]),
     );
     assert_eq!(
-        current_coordinate_linked_line_endpoints(&payload, &line, &[&line, &endpoint]),
+        current_coordinate_linked_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &line,
+            &[&line, &endpoint]
+        )
+        .unwrap(),
         Some([&line, &endpoint])
     );
 }
@@ -492,15 +517,19 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
     );
 
     assert!(legacy_terminal_indexed_profile_line(
+        &cadmpeg_test_support::service_decode_context(),
         &payload,
         &terminal,
         &[&sibling, &terminal],
-    ));
+    )
+    .unwrap());
     assert!(!legacy_terminal_indexed_profile_line(
+        &cadmpeg_test_support::service_decode_context(),
         &payload,
         &terminal,
         &[&terminal],
-    ));
+    )
+    .unwrap());
 }
 
 #[test]

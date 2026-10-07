@@ -810,10 +810,12 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
     );
     assert_eq!(
         compact_legacy_object_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
             &payload,
             &markers[6],
             &markers.iter().collect::<Vec<_>>(),
         )
+        .unwrap()
         .map(|endpoints| [endpoints[0].id(), endpoints[1].id()]),
         Some(["top-right", "top-left"])
     );
