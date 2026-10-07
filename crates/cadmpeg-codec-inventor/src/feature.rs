@@ -261,26 +261,21 @@ impl Serialize for ClassId {
 }
 
 impl ClassId {
-    fn from_text(ctx: &DecodeContext<'_>, value: &str) -> Result<Self, CodecError> {
-        let invalid = || {
-            Ok::<_, CodecError>(CodecError::Malformed(ctx.copy_retained_text(
-                "class_id must contain 32 lowercase hexadecimal digits",
-                "retain Inventor invalid feature class identity",
-            )?))
-        };
+    fn from_text(value: &str) -> Result<Self, CodecError> {
+        let invalid = || CodecError::malformed(
+            "class_id must contain 32 lowercase hexadecimal digits"
+        );
         if value.len() != 32 {
-            return Err(invalid()?);
+            return Err(invalid());
         }
         // One pass over the 32 digits validates and decodes them.
         let mut bytes = [0; 16];
-        for (index, digit) in ctx
-            .admit_iter(value.as_bytes(), "decode Inventor feature class identity")?
-            .enumerate()
+        for (index, digit) in value.as_bytes().iter().enumerate()
         {
             let nibble = match digit {
                 b'0'..=b'9' => *digit - b'0',
                 b'a'..=b'f' => *digit - b'a' + 10,
-                _ => return Err(invalid()?),
+                _ => return Err(invalid()),
             };
             if index % 2 == 0 {
                 bytes[index / 2] = nibble << 4;
@@ -350,7 +345,7 @@ impl PmDcFeatureLabelPayloadWire {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<PmDcFeatureLabelPayload, CodecError> {
-        let class_id = ClassId::from_text(ctx, &self.class_id)?;
+        let class_id = ClassId::from_text(&self.class_id)?;
         PmDcFeatureLabelPayload::new(
             ctx,
             self.save_version_major,
@@ -375,10 +370,7 @@ impl PmDcFeatureLabelPayload {
     ) -> Result<Self, CodecError> {
         let name = ctx.validate_nonblank_text(name, "validate Inventor feature label name")?;
         let Ok(name) = NonBlankString::try_from(name) else {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                "name must not be empty",
-                "retain Inventor invalid feature label name",
-            )?));
+            return Err(CodecError::malformed("name must not be empty"));
         };
         Ok(Self {
             save_version_major,
@@ -637,14 +629,12 @@ fn parse_pattern_feature(
                 )?;
             }
             if version > 20 {
-                ctx.charge_collection_items(6, "admit Inventor pattern feature extension values")?;
-                ctx.reserve_capacity(
-                    &mut extension_values,
-                    6,
-                    "admit Inventor pattern feature extension values",
-                )?;
                 for _ in 0..6 {
-                    extension_values.push(cursor.u32("pattern-feature extension value")?);
+                    ctx.push_vec(
+                        &mut extension_values,
+                        cursor.u32("pattern-feature extension value")?,
+                        "admit Inventor pattern feature extension values",
+                    )?;
                 }
             }
             for _ in 0..2 {
@@ -1835,9 +1825,6 @@ fn project_chamfer(
     if let Err(error) = admit_projected_feature(ctx, source, label, "chamfer") {
         return Some(Err(error));
     }
-    if let Err(error) = ctx.charge_collection_items(1, "collect Inventor chamfer group") {
-        return Some(Err(error));
-    }
     let groups = cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
         edges: EdgeSelection::Native(option_result_value!(edges.id(ctx))),
         spec: ChamferSpec::Distance { distance },
@@ -1974,9 +1961,6 @@ fn project_hole(
         Err(error) => return Some(Err(error)),
     };
     if let Err(error) = admit_projected_feature(ctx, source, label, "hole") {
-        return Some(Err(error));
-    }
-    if let Err(error) = ctx.charge_collection_items(1, "project Inventor hole placement") {
         return Some(Err(error));
     }
     Some(Ok((
@@ -2147,9 +2131,6 @@ fn feature_result(
             "generated Inventor feature result identity is invalid",
         )));
     };
-    if let Err(error) = ctx.charge_collection_items(1, "project Inventor feature result topology") {
-        return Some(Err(error));
-    }
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature result topology") {
         return Some(Err(error));
     }
@@ -2174,16 +2155,16 @@ fn closed_edge_items(
     if items.references().is_empty() {
         return Ok(false);
     }
-    for reference in ctx.admit_iter(items.references(), "check Inventor closed edge items")? {
-        let Some(property) = resolve_property(ctx, token, reference.index(), index)? else {
-            return Ok(false);
-        };
-        if !matches!(&property.kind, PmDcFeaturePropertyKind::EdgeItem { index_references, .. } if !index_references.values().is_empty())
-        {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    ctx.all_by(
+        items.references(),
+        |reference| {
+            let Some(property) = resolve_property(ctx, token, reference.index(), index)? else {
+                return Ok(false);
+            };
+            Ok(matches!(&property.kind, PmDcFeaturePropertyKind::EdgeItem { index_references, .. } if !index_references.values().is_empty()))
+        },
+        "check Inventor closed edge items",
+    )
 }
 
 fn slot_property<'a>(
@@ -2530,6 +2511,29 @@ mod tests {
     }
 
     #[test]
+    fn feature_result_fixed_record_uses_no_extra_collection_slot() {
+        let source = test_feature(0, 1, &[(0, 1)]);
+        let properties = [
+            test_property(1, PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::ObjectCollection,
+                items: reference_list(&[3]),
+            }),
+            test_property(2, PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) }),
+        ];
+        let index = test_projection_index(&properties, &[], &[], &[], &[], &[], &[], &[]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One stored body member and one uniqueness-index slot use two slots.
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let (_, result) = super::feature_result(&ctx, &source, 0, &index)
+            .expect("result candidate").expect("fixed record adds no collection entry");
+        assert_eq!(result.bodies().len(), 1);
+        assert!(matches!(ctx.charge_collection_items(1, "probe"),
+            Err(CodecError::ResourceLimit(limit)) if limit.used == 2));
+    }
+
+    #[test]
     fn feature_result_refuses_entity_limit_before_creation() {
         let source = test_feature(0, 1, &[(0, 1)]);
         let properties = [
@@ -2624,6 +2628,27 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("service projection context");
         assert!(super::feature_result(&ctx, &source, 0, &index).is_none());
+    }
+
+    #[test]
+    fn feature_label_errors_do_not_retain_error_text() {
+        let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
+        for (name, class_id) in [("", "ab".repeat(16)), ("valid", "z".repeat(32))] {
+            let wire = PmDcFeatureLabelPayloadWire {
+                save_version_major: label.save_version_major,
+                header: label.header.clone(),
+                index: label.index,
+                participants: label.participants.clone(),
+                name: name.to_owned(),
+                class_id,
+            };
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_work_units = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            assert!(matches!(wire.into_record(&ctx), Err(CodecError::Malformed(_))));
+        }
     }
 
     #[test]
@@ -3368,7 +3393,8 @@ mod tests {
     fn pattern_feature_extension_values_refuse_collection_limit_before_allocation() {
         let bytes = pattern_feature_bytes(21, PmDcPatternFamily::Mirror);
         let mut policy = DecodePolicy::service();
-        // Two participants and eleven property slots precede the six-slot extension admission.
+        // Two participants, eleven property slots and five extension pushes
+        // use 2 + 11 + 5 = 18 slots before the sixth extension push.
         policy.limits.max_collection_items = 2 + 11 + 6 - 1;
         let arena = DecodeArena::new();
         let (ctx, source) =
@@ -3378,7 +3404,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "admit Inventor pattern feature extension values"
-                    && limit.used == 13
+                    && limit.used == 18
         ));
         let (ctx, source) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
@@ -3390,6 +3416,20 @@ mod tests {
                 .len(),
             6
         );
+    }
+
+    #[test]
+    fn closed_edge_items_stops_at_first_missing_reference() {
+        let items = reference_list(&[0, 1, 2, 3]);
+        let index = test_projection_index(&[], &[], &[], &[], &[], &[], &[], &[]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The null first reference stops validation after one source step.
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(!super::closed_edge_items(&ctx, "generated", &items, &index).expect("early rejection"));
+        assert!(matches!(ctx.charge_work(1, "probe"),
+            Err(CodecError::ResourceLimit(limit)) if limit.used == 1));
     }
 
     #[test]
@@ -3507,6 +3547,12 @@ mod tests {
                 .expect("service fixture record identity")]
         );
 
+        let mut policy = DecodePolicy::service();
+        // One feature admission, one fillet group, one body member and one uniqueness slot.
+        policy.limits.max_collection_items = 4;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(project_fillet(&limited, &fillet, &label, &index).expect("candidate").is_ok());
+
         let raw_distance = raw_parameter(40);
         let neutral_distance = neutral_parameter(
             &raw_distance,
@@ -3581,6 +3627,11 @@ mod tests {
         let (projected, _) = project_chamfer(&ctx, &chamfer, &label, &index)
             .expect("chamfer candidate")
             .expect("chamfer projection");
+        let mut policy = DecodePolicy::service();
+        // One feature admission, one body member and one uniqueness slot; the group is fixed.
+        policy.limits.max_collection_items = 3;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(project_chamfer(&limited, &chamfer, &label, &index).expect("candidate").is_ok());
         assert!(matches!(
             projected.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Chamfer {
@@ -3980,6 +4031,11 @@ mod tests {
         let (projected, _) = project_hole(&ctx, &feature, &label, &index)
             .expect("hole candidate")
             .expect("hole projection");
+        let mut policy = DecodePolicy::service();
+        // One feature admission, one body member and one uniqueness slot; placement is fixed.
+        policy.limits.max_collection_items = 3;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(project_hole(&limited, &feature, &label, &index).expect("candidate").is_ok());
         assert!(matches!(
             projected.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements,
@@ -4178,7 +4234,7 @@ mod tests {
     fn class_id_admits_only_the_canonical_lowercase_spelling() {
         let lower = "ab".repeat(16);
         let ctx = cadmpeg_test_support::service_decode_context();
-        let class_id = ClassId::from_text(&ctx, &lower).expect("lowercase class id");
+        let class_id = ClassId::from_text(&lower).expect("lowercase class id");
         assert_eq!(
             class_id
                 .into_text(&ctx, "retain Inventor class id test text")
@@ -4186,7 +4242,7 @@ mod tests {
             lower
         );
         let upper = "AB".repeat(16);
-        assert!(ClassId::from_text(&ctx, &upper).is_err());
+        assert!(ClassId::from_text(&upper).is_err());
     }
 
     #[test]
