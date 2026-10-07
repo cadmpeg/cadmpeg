@@ -61,7 +61,7 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                 && !parameters.contains_key("Radius")
                 && !parameters.keys().try_fold(false, |found, name| {
                     Ok::<_, cadmpeg_core::CodecError>(
-                        found || (indexed_name(self.ctx, name.as_str(), "Radius")?),
+                        found || (indexed_name(name.as_str(), "Radius")),
                     )
                 })?;
             match radius {
@@ -81,8 +81,8 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                         .filter_map(|(name, value)| {
                             let keep = (|| -> Result<bool, CodecError> {
                                 Ok(name.as_str() != "Radius"
-                                    && !indexed_name(self.ctx, name.as_str(), "Radius")?
-                                    && !indexed_name(self.ctx, name.as_str(), "Position")?)
+                                    && !indexed_name(name.as_str(), "Radius")
+                                    && !indexed_name(name.as_str(), "Position"))
                             })();
                             match keep {
                                 Ok(true) => Some(Ok((name, value))),
@@ -122,8 +122,8 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                         .filter_map(|(name, value)| {
                             let keep = (|| -> Result<bool, CodecError> {
                                 Ok(name.as_str() != "Radius"
-                                    && !indexed_name(self.ctx, name.as_str(), "Radius")?
-                                    && !indexed_name(self.ctx, name.as_str(), "Position")?)
+                                    && !indexed_name(name.as_str(), "Radius")
+                                    && !indexed_name(name.as_str(), "Position"))
                             })();
                             match keep {
                                 Ok(true) => Some(Ok((name, value))),

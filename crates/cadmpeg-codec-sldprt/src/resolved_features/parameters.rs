@@ -477,15 +477,16 @@ fn scalar_unit_from_feature_parameter(
             "find SLDPRT sketch dimension",
         )?;
     if source_sketch_dimension {
-        ctx.charge_work(
-            u64_from_index(expression.len()),
-            "parse SLDPRT sketch dimension angle",
+        crate::history::literals::admit_literal(
+            ctx,
+            expression,
+            "classify SLDPRT sketch dimension",
         )?;
         return if crate::history::literals::parse_angle_rad(expression).is_some() {
             Ok(Some(ScalarUnit::Angle))
         } else {
             Ok(
-                crate::history::literals::parse_dimension_display_length(ctx, expression)?
+                crate::history::literals::parse_dimension_display_length(expression)
                     .map(|_| ScalarUnit::Length),
             )
         };

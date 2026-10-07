@@ -214,17 +214,17 @@ fn scoped_reallocation_admits_old_and_new_buffers_together() {
 #[test]
 fn hash_reallocation_admits_both_bucket_allocations_before_growth() {
     let bytes = |buckets: usize| buckets * std::mem::size_of::<u64>() + 15 + buckets + 16;
-    // A set sized for three admits storage for six, eight buckets. Growing it
-    // to four admits storage for eight, sixteen buckets, less the four-bucket
-    // storage of its counted capacity, and keeps that sixteen-bucket bound live
-    // for the old table while the new one is filled.
-    let admitted = bytes(8) + bytes(16) - bytes(4);
-    let overlap = bytes(16);
+    // A set sized for three retains four buckets. Growing it to four holds
+    // storage for eight, sixteen buckets, beside the old table while the new
+    // one is allocated, then retains eight buckets in all.
+    let admitted = bytes(4);
+    let bound = bytes(16);
+    let grown = bytes(8);
     for fits in [false, true] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes =
-            u64::try_from(admitted + overlap - usize::from(!fits)).expect("bound");
+            u64::try_from(admitted + bound - usize::from(!fits)).expect("bound");
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let (mut values, mut storage) = ctx.temporary_set::<u64>(3, "initial").expect("initial");
@@ -235,10 +235,13 @@ fn hash_reallocation_admits_both_bucket_allocations_before_growth() {
             growth.expect("both tables admitted");
             assert!(values.capacity() > capacity);
             let _probe = ctx
-                .reserve_scoped(u64::try_from(overlap).expect("bound"), "released overlap")
-                .expect("old table released");
+                .reserve_scoped(
+                    u64::try_from(admitted + bound - grown).expect("bound"),
+                    "released bound",
+                )
+                .expect("growth bound released");
         } else {
-            let CodecError::ResourceLimit(first) = growth.expect_err("overlap refuses") else {
+            let CodecError::ResourceLimit(first) = growth.expect_err("bound refuses") else {
                 panic!("refusal")
             };
             assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
@@ -246,7 +249,7 @@ fn hash_reallocation_admits_both_bucket_allocations_before_growth() {
                 (first.used, first.additional),
                 (
                     u64::try_from(admitted).expect("bound"),
-                    u64::try_from(overlap).expect("bound")
+                    u64::try_from(bound).expect("bound")
                 )
             );
             assert_eq!(values.capacity(), capacity);
@@ -302,14 +305,16 @@ fn hash_growth_after_removals_admits_the_real_allocation() {
         next += 1;
     }
     assert!(values.len() > 14_336 / 2);
+    let before = ctx.budget.retained_used();
     ctx.insert_hash_set(&mut values, next, "grow")
         .expect("grow");
-    // Hashbrown resized from the real capacity to 32768 buckets.
+    // Hashbrown resized from the real capacity to 32768 buckets; this growth
+    // alone admits the new table's storage beyond the 16384-bucket storage of
+    // the old counted capacity, which earlier growth already admitted.
     assert_eq!(values.capacity(), 28_672);
-    let CodecError::ResourceLimit(limit) =
-        ctx.charge_retained(u64::MAX, "probe").expect_err("probe")
-    else {
-        panic!("refusal")
-    };
-    assert!(limit.used >= u64::try_from(bytes(32_768)).expect("bound"));
+    assert_eq!(
+        ctx.budget.retained_used() - before,
+        u64::try_from(bytes(32_768) - bytes(16_384)).expect("bound")
+    );
+    assert!(ctx.budget.retained_used() >= u64::try_from(bytes(32_768)).expect("bound"));
 }
