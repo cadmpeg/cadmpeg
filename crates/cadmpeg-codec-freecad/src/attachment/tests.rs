@@ -110,8 +110,7 @@ fn attachment_map_mode_invalid_index_refuses_at_retained_limit() {
         "App::PropertyEnumeration",
         vec![enum_value("Integer", Some("bad-index"))],
     );
-    crate::test_support::assert_retained_refusal_at(
-        &[],
+    crate::test_support::materialized_refusal_at(
         "FreeCAD attachment invalid map-mode index",
         |ctx| super::map_mode_value(ctx, &property),
     );
@@ -460,12 +459,56 @@ fn attachment_map_mode_parse_propagates_work_refusal() {
             .to_string(),
         "5"
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits work policy");
-    assert!(matches!(super::map_mode_value(&ctx, &property),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD attachment map-mode parse"));
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD attachment map-mode parse",
+        |ctx| super::map_mode_value(ctx, &property),
+    );
+}
+
+#[test]
+fn attachment_map_mode_lookup_refuses_at_work_boundary() {
+    let property = diagnostic_property(
+        "App::PropertyEnumeration",
+        vec![enum_value("Integer", Some("5"))],
+    );
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD attachment map-mode lookup",
+        |ctx| super::map_mode_value(ctx, &property),
+    );
+}
+
+#[test]
+fn attachment_support_value_search_stops_at_first_invalid_tag() {
+    let property = diagnostic_property(
+        "App::PropertyLinkSubList",
+        vec![
+            enum_value("LinkSubList", None),
+            enum_value("Other", None),
+            enum_value("Link", None),
+        ],
+    );
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert!(matches!(
+            super::support_links(ctx, &property),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            ctx.charge_work(u64::MAX, "probe").unwrap_err()
+        else {
+            panic!("work refusal");
+        };
+        // One support value visit, followed by the two diagnostic formatting passes.
+        let message = format!(
+            "attachment property {} requires one LinkSubList value",
+            property.id
+        );
+        assert_eq!(
+            limit.used,
+            1 + 2 * cadmpeg_core::decode::u64_from_index(message.len())
+        );
+    });
 }

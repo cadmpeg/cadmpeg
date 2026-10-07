@@ -215,15 +215,32 @@ pub(crate) struct JointConnectorRecord {
 }
 
 fn admit_joint_identities(id: String, object: String) -> Result<(Identity, Identity), String> {
-    let id = Identity::new(id).map_err(|_| "joint id is invalid".to_owned())?;
-    let object = Identity::new(object).map_err(|_| "joint object is invalid".to_owned())?;
+    match admit_joint_identities_with(id, object, |_, _| Ok::<(), std::convert::Infallible>(())) {
+        Ok(result) => result.map_err(str::to_owned),
+        Err(never) => match never {},
+    }
+}
+
+fn admit_joint_identities_with<E>(
+    id: String,
+    object: String,
+    mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
+) -> Result<Result<(Identity, Identity), &'static str>, E> {
+    admit(id.len(), "FCStd joint identity admission")?;
+    let Ok(id) = Identity::new(id) else {
+        return Ok(Err("joint id is invalid"));
+    };
+    admit(object.len(), "FCStd joint identity admission")?;
+    let Ok(object) = Identity::new(object) else {
+        return Ok(Err("joint object is invalid"));
+    };
     if !id.as_str().starts_with("fcstd:native:joint#") {
-        return Err("joint id must name an FCStd native joint".to_owned());
+        return Ok(Err("joint id must name an FCStd native joint"));
     }
     if !object.as_str().starts_with("fcstd:native:object#") {
-        return Err("joint object must name an FCStd native object".to_owned());
+        return Ok(Err("joint object must name an FCStd native object"));
     }
-    Ok((id, object))
+    Ok(Ok((id, object)))
 }
 
 impl JointRecord {
@@ -234,16 +251,10 @@ impl JointRecord {
         body: JointBody,
         parameters: BTreeMap<String, String>,
     ) -> Result<Self, CodecError> {
-        // Identity admission scans separators, key bytes, whitespace and namespace.
-        for value in [&id, &object] {
-            let work = cadmpeg_core::decode::u64_from_index(value.len())
-                .checked_mul(4)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("FCStd joint identity admission", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(work, "FCStd joint identity admission")?;
-        }
-        let (id, object) = admit_joint_identities(id, object).map_err(CodecError::Malformed)?;
+        let (id, object) = admit_joint_identities_with(id, object, |length, operation| {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+        })?
+        .map_err(CodecError::malformed)?;
         let parameters = JointParameters::from_raw_charged(ctx, parameters, id.as_str())?;
         Ok(Self {
             id,
@@ -569,30 +580,23 @@ mod tests {
 
     #[test]
     fn joint_identity_grammar_scans_refuse_at_small_work_allowance() {
-        crate::test_support::with_service_context(&[], |ctx| {
-            ctx.charge_work(
-                ctx.policy().limits.max_work_units - 60,
-                "reserve joint identity work",
-            )
-            .expect("leave a small allowance");
-            let error = JointRecord::try_new(
-                ctx,
-                "fcstd:native:joint#Joint".to_owned(),
-                "fcstd:native:object#Joint".to_owned(),
-                JointBody::Grounded {
-                    reference: None,
-                    placement: super::FiniteFrame::default(),
-                },
-                BTreeMap::new(),
-            )
-            .expect_err("grammar scans exceed allowance");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "FCStd joint identity admission"
-                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && Some(limit) == ctx.resource_refusal())
-            );
-        });
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "FCStd joint identity admission",
+            |ctx| {
+                JointRecord::try_new(
+                    ctx,
+                    "fcstd:native:joint#Joint".to_owned(),
+                    "fcstd:native:object#Joint".to_owned(),
+                    JointBody::Grounded {
+                        reference: None,
+                        placement: super::FiniteFrame::default(),
+                    },
+                    BTreeMap::new(),
+                )
+            },
+        );
     }
 
     #[test]
