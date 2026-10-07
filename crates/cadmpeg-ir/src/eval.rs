@@ -337,14 +337,19 @@ fn rational_surface_patches_with_budget<'ctx>(
     let (weights, _weight_storage) = match surface.pole_grid() {
         NurbsPoleGrid::Polynomial { rows } => {
             for row in ctx.admit_iter(rows, "IR surface control row visit")? {
-                points.extend(ctx.admit_iter(row, "IR surface control point copy")?.copied());
+                points.extend(
+                    ctx.admit_iter(row, "IR surface control point copy")?
+                        .copied(),
+                );
             }
             (None, None)
         }
         NurbsPoleGrid::Rational { rows } => {
             let mut weights = Vec::new();
             let storage = ctx.reserve_temporary_vec(
-                &mut weights, control_count, "IR surface control weights",
+                &mut weights,
+                control_count,
+                "IR surface control weights",
             )?;
             for row in ctx.admit_iter(rows, "IR surface control row visit")? {
                 for pole in ctx.admit_iter(row, "IR surface control point copy")? {
@@ -380,8 +385,10 @@ fn rational_surface_patches_with_budget<'ctx>(
                 ctx.reserve_temporary_vec(&mut values, u_count, "IR surface u row")?;
             (reservation, values)
         };
-        controls.extend(ctx.admit_iter(0..u_count, "IR surface u row copy")?
-            .map(|u| homogeneous_controls[u * v_count + v]));
+        controls.extend(
+            ctx.admit_iter(0..u_count, "IR surface u row copy")?
+                .map(|u| homogeneous_controls[u * v_count + v]),
+        );
         let Some(spans) = homogeneous_spans(ctx, u_degree, surface.u_knots(), &controls)? else {
             return Ok(None);
         };
@@ -416,8 +423,10 @@ fn rational_surface_patches_with_budget<'ctx>(
                     ctx.reserve_temporary_vec(&mut values, v_count, "IR surface v row")?;
                 (reservation, values)
             };
-            controls.extend(ctx.admit_iter(&u_spans_by_v, "IR surface v row copy")?
-                .map(|spans| spans[u_span].controls[u_control]));
+            controls.extend(
+                ctx.admit_iter(&u_spans_by_v, "IR surface v row copy")?
+                    .map(|spans| spans[u_span].controls[u_control]),
+            );
             let Some(spans) = homogeneous_spans(ctx, v_degree, surface.v_knots(), &controls)?
             else {
                 return Ok(None);
@@ -432,7 +441,10 @@ fn rational_surface_patches_with_budget<'ctx>(
         )? {
             return Ok(None);
         }
-        for (v_span, &v_domain) in ctx.admit_iter(&*v_domains, "IR surface v domain visit")?.enumerate() {
+        for (v_span, &v_domain) in ctx
+            .admit_iter(&*v_domains, "IR surface v domain visit")?
+            .enumerate()
+        {
             let (control_scratch, mut controls) = {
                 let mut values = Vec::new();
                 let reservation = ctx.reserve_temporary_vec(
@@ -443,7 +455,10 @@ fn rational_surface_patches_with_budget<'ctx>(
                 (reservation, values)
             };
             for spans in ctx.admit_iter(&v_spans_by_u, "IR surface patch row visit")? {
-                controls.extend(ctx.admit_iter(&*spans[v_span].controls, "IR surface patch control copy")?.copied());
+                controls.extend(
+                    ctx.admit_iter(&*spans[v_span].controls, "IR surface patch control copy")?
+                        .copied(),
+                );
             }
             ctx.charge_work_limit(1, "IR surface patch append")?;
             patches.push(RationalBezierSurfacePatch {
@@ -532,8 +547,10 @@ fn rational_patch_parameter_segment<'ctx>(
             )?;
             (reservation, values)
         };
-        controls.extend(ctx.admit_iter(0..=patch.u_degree, "IR rational surface u row copy")?
-            .map(|u| patch.controls[u * (patch.v_degree + 1) + v]));
+        controls.extend(
+            ctx.admit_iter(0..=patch.u_degree, "IR rational surface u row copy")?
+                .map(|u| patch.controls[u * (patch.v_degree + 1) + v]),
+        );
         let Some(line) = bezier::restrict_homogeneous_bezier(ctx, &controls, u_range.0, u_range.1)?
         else {
             return Ok(None);
@@ -562,7 +579,10 @@ fn rational_patch_parameter_segment<'ctx>(
             )?;
             (reservation, values)
         };
-        controls.extend(ctx.admit_iter(&u_lines, "IR rational surface v row copy")?.map(|row| row[u]));
+        controls.extend(
+            ctx.admit_iter(&u_lines, "IR rational surface v row copy")?
+                .map(|row| row[u]),
+        );
         let Some(line) = bezier::restrict_homogeneous_bezier(ctx, &controls, v_range.0, v_range.1)?
         else {
             return Ok(None);
@@ -579,29 +599,40 @@ fn rational_patch_parameter_segment<'ctx>(
             ctx.reserve_temporary_vec(&mut values, count, "IR rational surface diagonal")?;
         (reservation, values)
     };
-    diagonal.extend(ctx.admit_iter(0..count, "IR rational surface diagonal fill")?.map(|_| [0.0; 4]));
+    diagonal.extend(
+        ctx.admit_iter(0..count, "IR rational surface diagonal fill")?
+            .map(|_| [0.0; 4]),
+    );
     let mut u = 0;
-    if !ctx.all_by_limit(&restricted, |row| {
-        let mut v = 0;
-        let valid = ctx.all_by_limit(row, |control| {
-            let index = u + v;
-            let (Some(u_factor), Some(v_factor), Some(denominator)) = (
-                bezier::binomial_coefficient(ctx, patch.u_degree, u)?,
-                bezier::binomial_coefficient(ctx, patch.v_degree, v)?,
-                bezier::binomial_coefficient(ctx, degree, index)?,
-            ) else {
-                return Ok(false);
-            };
-            let factor = u_factor * v_factor / denominator;
-            for axis in 0..4 {
-                diagonal[index][axis] += factor * control[axis];
-            }
-            v += 1;
-            Ok(true)
-        }, "IR rational surface diagonal coefficient")?;
-        u += 1;
-        Ok(valid)
-    }, "IR rational surface diagonal row visit")? {
+    if !ctx.all_by_limit(
+        &restricted,
+        |row| {
+            let mut v = 0;
+            let valid = ctx.all_by_limit(
+                row,
+                |control| {
+                    let index = u + v;
+                    let (Some(u_factor), Some(v_factor), Some(denominator)) = (
+                        bezier::binomial_coefficient(ctx, patch.u_degree, u)?,
+                        bezier::binomial_coefficient(ctx, patch.v_degree, v)?,
+                        bezier::binomial_coefficient(ctx, degree, index)?,
+                    ) else {
+                        return Ok(false);
+                    };
+                    let factor = u_factor * v_factor / denominator;
+                    for axis in 0..4 {
+                        diagonal[index][axis] += factor * control[axis];
+                    }
+                    v += 1;
+                    Ok(true)
+                },
+                "IR rational surface diagonal coefficient",
+            )?;
+            u += 1;
+            Ok(valid)
+        },
+        "IR rational surface diagonal row visit",
+    )? {
         return Ok(None);
     }
     if !ctx.all_by_limit(
@@ -674,31 +705,35 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
             "IR rational surface segment splits",
         )?;
         splits.extend([0.0, 1.0]);
-        if !ctx.all_by(&patches.rows, |patch| {
-            let [u_lower, u_upper] = patch.u_domain.finite_endpoints();
-            let [v_lower, v_upper] = patch.v_domain.finite_endpoints();
-            for (boundary, start, end) in [
-                (u_lower, first_u, last_u),
-                (u_upper, first_u, last_u),
-                (v_lower, first_v, last_v),
-                (v_upper, first_v, last_v),
-            ] {
-                if start.get().min(end.get()) < boundary.get()
-                    && boundary.get() < start.get().max(end.get())
-                {
-                    let Some(parameter) =
-                        finite_or_refusal(difference_quotient(boundary, start, end, start))?
-                            .map(FiniteReal::get)
-                    else {
-                        return Ok(false);
-                    };
-                    if 0.0 < parameter && parameter < 1.0 {
-                        splits.push(parameter);
+        if !ctx.all_by(
+            &patches.rows,
+            |patch| {
+                let [u_lower, u_upper] = patch.u_domain.finite_endpoints();
+                let [v_lower, v_upper] = patch.v_domain.finite_endpoints();
+                for (boundary, start, end) in [
+                    (u_lower, first_u, last_u),
+                    (u_upper, first_u, last_u),
+                    (v_lower, first_v, last_v),
+                    (v_upper, first_v, last_v),
+                ] {
+                    if start.get().min(end.get()) < boundary.get()
+                        && boundary.get() < start.get().max(end.get())
+                    {
+                        let Some(parameter) =
+                            finite_or_refusal(difference_quotient(boundary, start, end, start))?
+                                .map(FiniteReal::get)
+                        else {
+                            return Ok(false);
+                        };
+                        if 0.0 < parameter && parameter < 1.0 {
+                            splits.push(parameter);
+                        }
                     }
                 }
-            }
-            Ok(true)
-        }, "IR surface segment boundary scan")? {
+                Ok(true)
+            },
+            "IR surface segment boundary scan",
+        )? {
             return Ok(None);
         }
         // Equal finite split parameters are indistinguishable before deduplication.
@@ -714,43 +749,48 @@ pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
         )?;
         splits.dedup();
         let mut bound = 0.0_f64;
-        if !ctx.all_by(splits.windows(2), |range| {
-            let middle = 0.5 * (range[0] + range[1]);
-            let parameter_point = |parameter: f64| {
-                Some(FinitePoint2::from_coordinates(
-                    crate::math::interpolate(first.u, last.u, parameter)?,
-                    crate::math::interpolate(first.v, last.v, parameter)?,
-                ))
-            };
-            let Some(midpoint) = parameter_point(middle) else {
-                return Ok(false);
-            };
-            let Some(patch) = patches.patch_at_parameters(ctx, midpoint)? else {
-                return Ok(false);
-            };
-            let Some(start) = parameter_point(range[0]) else {
-                return Ok(false);
-            };
-            let Some(end) = parameter_point(range[1]) else {
-                return Ok(false);
-            };
-            let Some(controls) = rational_patch_parameter_segment(ctx, patch, start, end)? else {
-                return Ok(false);
-            };
-            let Some(piece_bound) = bezier::rational_curve_chord_bound(
-                ctx,
-                &controls,
-                [
-                    bezier::point_on_chord(chord, range[0]),
-                    bezier::point_on_chord(chord, range[1]),
-                ],
-            )?
-            else {
-                return Ok(false);
-            };
-            bound = bound.max(piece_bound);
-            Ok(true)
-        }, "IR surface segment interval scan")? {
+        if !ctx.all_by(
+            splits.windows(2),
+            |range| {
+                let middle = 0.5 * (range[0] + range[1]);
+                let parameter_point = |parameter: f64| {
+                    Some(FinitePoint2::from_coordinates(
+                        crate::math::interpolate(first.u, last.u, parameter)?,
+                        crate::math::interpolate(first.v, last.v, parameter)?,
+                    ))
+                };
+                let Some(midpoint) = parameter_point(middle) else {
+                    return Ok(false);
+                };
+                let Some(patch) = patches.patch_at_parameters(ctx, midpoint)? else {
+                    return Ok(false);
+                };
+                let Some(start) = parameter_point(range[0]) else {
+                    return Ok(false);
+                };
+                let Some(end) = parameter_point(range[1]) else {
+                    return Ok(false);
+                };
+                let Some(controls) = rational_patch_parameter_segment(ctx, patch, start, end)?
+                else {
+                    return Ok(false);
+                };
+                let Some(piece_bound) = bezier::rational_curve_chord_bound(
+                    ctx,
+                    &controls,
+                    [
+                        bezier::point_on_chord(chord, range[0]),
+                        bezier::point_on_chord(chord, range[1]),
+                    ],
+                )?
+                else {
+                    return Ok(false);
+                };
+                bound = bound.max(piece_bound);
+                Ok(true)
+            },
+            "IR surface segment interval scan",
+        )? {
             return Ok(None);
         }
         Ok(Some(bound))
@@ -849,11 +889,17 @@ fn split_rational_surface_patch<'ctx>(
             (reservation, values)
         };
         if split_u {
-            controls.extend(ctx.admit_iter(0..=degree, "IR surface patch split line copy")?
-                .map(|index| patch.controls[index * (patch.v_degree + 1) + line]));
+            controls.extend(
+                ctx.admit_iter(0..=degree, "IR surface patch split line copy")?
+                    .map(|index| patch.controls[index * (patch.v_degree + 1) + line]),
+            );
         } else {
-            let row = &patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)];
-            controls.extend(ctx.admit_iter(row, "IR surface patch split line copy")?.copied());
+            let row =
+                &patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)];
+            controls.extend(
+                ctx.admit_iter(row, "IR surface patch split line copy")?
+                    .copied(),
+            );
         }
         let Some(split) = bezier::split_homogeneous_bezier_midpoint(ctx, &controls)? else {
             return Ok(None);
@@ -1158,15 +1204,19 @@ fn complete_nurbs_surface_starts<'ctx>(
                 consider_upper(candidate)?;
             }
         }
-        if !ctx.all_by_limit(&patches.rows, |patch| {
-            let Some(candidate) =
-                refined_upper(center(patch), patch.u_domain.into(), patch.v_domain.into())?
-            else {
-                return Ok(false);
-            };
-            consider_upper(candidate)?;
-            Ok(true)
-        }, "IR surface upper patch visit")? {
+        if !ctx.all_by_limit(
+            &patches.rows,
+            |patch| {
+                let Some(candidate) =
+                    refined_upper(center(patch), patch.u_domain.into(), patch.v_domain.into())?
+                else {
+                    return Ok(false);
+                };
+                consider_upper(candidate)?;
+                Ok(true)
+            },
+            "IR surface upper patch visit",
+        )? {
             return Ok(None);
         }
     }
@@ -1181,7 +1231,11 @@ fn complete_nurbs_surface_starts<'ctx>(
     }
     let mut queue = PriorityQueue::new(ctx)?;
     let mut sequence = 0usize;
-    let SurfacePatches { rows, _storage: patch_storage, .. } = patches;
+    let SurfacePatches {
+        rows,
+        _storage: patch_storage,
+        ..
+    } = patches;
     for patch in rows {
         ctx.charge_work_limit(1, "IR surface queue patch visit")?;
         let Some((lower_bound, diameter)) =
@@ -1343,7 +1397,10 @@ fn complete_nurbs_surface_starts<'ctx>(
             starts.push(parameters);
         }
     }
-    starts.extend(ctx.admit_iter(&best_upper_parameters, "IR surface upper parameter copy")?.copied());
+    starts.extend(
+        ctx.admit_iter(&best_upper_parameters, "IR surface upper parameter copy")?
+            .copied(),
+    );
     Ok((!starts.is_empty()).then_some(ScopedRows::new(starts, start_scratch)))
 }
 
@@ -1559,7 +1616,7 @@ pub fn nurbs_surface_parameter_near_point<'ctx, 'arena: 'ctx>(
                     return Ok(None);
                 };
                 for v_index in 0..=COARSE_GRID {
-                                        let Some(v_index) = f64_from_index(v_index) else {
+                    let Some(v_index) = f64_from_index(v_index) else {
                         return Ok(None);
                     };
                     let Some(v) =
@@ -1591,7 +1648,7 @@ pub fn nurbs_surface_parameter_near_point<'ctx, 'arena: 'ctx>(
     };
     let distance = |left: Point3| left.distance(point);
     for _ in 0..MAX_ITERATIONS {
-                let Some(partials) = finite_or_refusal(nurbs_surface_partials(
+        let Some(partials) = finite_or_refusal(nurbs_surface_partials(
             admission,
             surface,
             parameters.u,
@@ -1616,7 +1673,7 @@ pub fn nurbs_surface_parameter_near_point<'ctx, 'arena: 'ctx>(
         let mut scale = FiniteReal::ONE;
         let mut accepted = false;
         for _ in 0..MAX_LINE_SEARCH_STEPS {
-                        let candidate = FinitePoint2::from_coordinates(
+            let candidate = FinitePoint2::from_coordinates(
                 u_domain.project(ExtendedReal::stepped(u, scale, step_u)),
                 v_domain.project(ExtendedReal::stepped(v, scale, step_v)),
             );
@@ -1869,7 +1926,10 @@ pub fn nurbs_pcurve_parameter_domain(
     crate::topology::IncreasingParameterInterval::new([lower, upper])
 }
 
-const ADJACENT_PAIR: std::num::NonZeroUsize = std::num::NonZeroUsize::MIN.saturating_add(1);
+const ADJACENT_PAIR: std::num::NonZeroUsize = match std::num::NonZeroUsize::new(2) {
+    Some(width) => width,
+    None => panic!("adjacent row window width must be nonzero"),
+};
 const NURBS_SEARCH_MAX_INTERVALS: usize = 512;
 const MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS: usize = 12;
 
@@ -2060,7 +2120,7 @@ fn nurbs_curve_parameter_near_point_newton(
             parameter_interval_containing(ctx, search.boundaries, seed)?.unwrap_or(search.domain);
         let mut parameter = window.project(ExtendedReal::from_finite(seed));
         for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
-                        let Some(position) = finite_or_refusal(nurbs_curve_point_evaluation(
+            let Some(position) = finite_or_refusal(nurbs_curve_point_evaluation(
                 &scratch,
                 curve.degree(),
                 curve.knots(),
@@ -2253,7 +2313,10 @@ fn bounded_nearest_intervals<'ctx>(
     CodecError,
 > {
     let mut nearest = PriorityQueue::new(ctx)?;
-    for pair in ctx.admit_iter(boundaries, "IR curve inversion interval visit")?.windows(ADJACENT_PAIR) {
+    for pair in ctx
+        .admit_iter(boundaries, "IR curve inversion interval visit")?
+        .windows(ADJACENT_PAIR)
+    {
         if pair[0] >= pair[1] {
             continue;
         }
@@ -5345,33 +5408,31 @@ fn model_curve_parameter_near_point_with_tolerance(
                 | SolvedSurfaceGeometry::Cone(_)
                 | SolvedSurfaceGeometry::Sphere(_)
                 | SolvedSurfaceGeometry::Torus(_),
-            ) => {
-                analytic_surface_parameters(&surface.geometry, point)
-                    .map(Point2::from)
-                    .and_then(|mut uv| {
-                        if direction.v == 0.0 && direction.u != 0.0 {
-                            let expected = origin.u + direction.u * seed;
-                            uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
-                                * std::f64::consts::TAU;
-                            Some((uv.u - origin.u) / direction.u)
-                        } else if direction.u == 0.0
-                            && direction.v != 0.0
-                            && matches!(
-                                surface.geometry.solved(),
-                                Some(SolvedSurfaceGeometry::Torus(_))
-                            )
-                        {
-                            let expected = origin.v + direction.v * seed;
-                            uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
-                                * std::f64::consts::TAU;
-                            Some((uv.v - origin.v) / direction.v)
-                        } else if direction.u == 0.0 && direction.v != 0.0 {
-                            Some((uv.v - origin.v) / direction.v)
-                        } else {
-                            None
-                        }
-                    })
-            }
+            ) => analytic_surface_parameters(&surface.geometry, point)
+                .map(Point2::from)
+                .and_then(|mut uv| {
+                    if direction.v == 0.0 && direction.u != 0.0 {
+                        let expected = origin.u + direction.u * seed;
+                        uv.u += ((expected - uv.u) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        Some((uv.u - origin.u) / direction.u)
+                    } else if direction.u == 0.0
+                        && direction.v != 0.0
+                        && matches!(
+                            surface.geometry.solved(),
+                            Some(SolvedSurfaceGeometry::Torus(_))
+                        )
+                    {
+                        let expected = origin.v + direction.v * seed;
+                        uv.v += ((expected - uv.v) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                        Some((uv.v - origin.v) / direction.v)
+                    } else if direction.u == 0.0 && direction.v != 0.0 {
+                        Some((uv.v - origin.v) / direction.v)
+                    } else {
+                        None
+                    }
+                }),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
                 let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
                     if direction.u == 0.0 && direction.v != 0.0 {
@@ -5451,7 +5512,7 @@ fn helix_parameter_near_point(
     definition: &ProceduralCurveDefinition,
 ) -> Result<Option<FiniteReal>, CodecError> {
     let _depth = ctx.enter_nested("IR helix inverse evaluation")?;
-        let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
+    let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return Ok(None);
     };
     let [start, end] = helix_payload.angle_range().finite_components();
@@ -5470,7 +5531,7 @@ fn helix_parameter_near_point(
 
     let mut parameter = seed;
     for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
-                let Some(differential) =
+        let Some(differential) =
             finite_or_refusal(helix_differential(definition, parameter.get()))?
         else {
             return Ok(None);
@@ -5503,7 +5564,7 @@ fn helix_parameter_near_point(
         parameter = next;
     }
 
-        let Some(differential) = finite_or_refusal(helix_differential(definition, parameter.get()))?
+    let Some(differential) = finite_or_refusal(helix_differential(definition, parameter.get()))?
     else {
         return Ok(None);
     };
@@ -5544,7 +5605,7 @@ fn direct_curve_parameter_near_point(
     admitted_tolerance: NonNegativeLength,
 ) -> Result<Option<FiniteReal>, CodecError> {
     let _depth = ctx.enter_nested("IR direct curve inversion depth")?;
-        let result = (|| -> Option<Result<FiniteReal, CodecError>> {
+    let result = (|| -> Option<Result<FiniteReal, CodecError>> {
         let tolerance = admitted_tolerance.get();
         let components = |origin: Point3, axis: Vector3, reference: Vector3| -> (f64, f64, f64) {
             let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
@@ -5682,7 +5743,6 @@ fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, 
         .is_finite()
         .then_some((coordinates.get(), tolerance_scale))
 }
-
 
 fn curve_point_evaluation(
     scratch: &decode::Scratch<'_, '_>,
