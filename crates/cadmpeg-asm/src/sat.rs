@@ -594,7 +594,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 return Err(StreamError {
                     format: StreamFormat::Text,
                     offset: rec_start,
-                    reason: record_error_reason(ctx, &name, "has no `#` terminator")?,
+                    reason: record_error_reason(ctx, name, "has no `#` terminator")?,
                 }
                 .into());
             };
@@ -605,7 +605,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                         offset: at,
                         reason: record_error_reason(
                             ctx,
-                            &name,
+                            name,
                             "terminates inside a subtype scope",
                         )?,
                     }
@@ -622,7 +622,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                         offset: at,
                         reason: record_error_reason(
                             ctx,
-                            &name,
+                            name,
                             "closes an unopened subtype scope",
                         )?,
                     }
@@ -838,7 +838,7 @@ const CURV_DIR: &[(&str, i64)] = &[("left", 0), ("right", 2)];
 macro_rules! push_token {
     ($cur:ident, $out:expr, $token:expr) => {{
         let token = $token;
-        $cur.push_token($out, token);
+        $cur.push_token($out, PendingToken::Value(token));
     }};
 }
 
@@ -904,7 +904,7 @@ fn length_cm(value: f64, scale: f64) -> Option<f64> {
 }
 
 impl<'a> Cur<'a, '_, '_> {
-    fn push_token(&mut self, out: &mut Vec<PendingToken<'a>>, token: Token) {
+    fn push_token(&mut self, out: &mut Vec<PendingToken<'a>>, token: PendingToken<'a>) {
         if self.resource.is_some() {
             return;
         }
@@ -912,37 +912,26 @@ impl<'a> Cur<'a, '_, '_> {
             self.resource = Some(error);
             return;
         }
-        out.push(PendingToken::Value(token));
-    }
-
-    fn push_text_token(&mut self, out: &mut Vec<PendingToken<'a>>, value: &'a str, string: bool) {
-        if self.resource.is_some() {
-            return;
-        }
-        if let Err(error) = self.ctx.reserve_vec(out, 1, "type SAT tokens") {
-            self.resource = Some(error);
-            return;
-        }
-        out.push(PendingToken::Text(value, string));
+        out.push(token);
     }
 
     /// Type a field by its written shape when no record grammar matches.
     fn push_lexical_token(&mut self, out: &mut Vec<PendingToken<'a>>, prim: &'a Prim<'a>) {
         match prim {
-            Prim::Integer(value) => self.push_token(out, Token::Long(*value)),
-            Prim::Real(value) => self.push_token(out, Token::Double(*value)),
-            Prim::Ref(index) => self.push_token(out, Token::Ref(*index)),
-            Prim::Str(value) => self.push_text_token(out, value, true),
-            Prim::Open => self.push_token(out, Token::SubtypeOpen),
-            Prim::Close => self.push_token(out, Token::SubtypeClose),
+            Prim::Integer(value) => self.push_token(out, PendingToken::Value(Token::Long(*value))),
+            Prim::Real(value) => self.push_token(out, PendingToken::Value(Token::Double(*value))),
+            Prim::Ref(index) => self.push_token(out, PendingToken::Value(Token::Ref(*index))),
+            Prim::Str(value) => self.push_token(out, PendingToken::Text(value, true)),
+            Prim::Open => self.push_token(out, PendingToken::Value(Token::SubtypeOpen)),
+            Prim::Close => self.push_token(out, PendingToken::Value(Token::SubtypeClose)),
             Prim::Word(word) => match *word {
                 "forward" | "single" | "forward_v" | "I" | "F" | "out" => {
-                    self.push_token(out, Token::False);
+                    self.push_token(out, PendingToken::Value(Token::False));
                 }
                 "reversed" | "double" | "reverse_v" | "T" | "in" => {
-                    self.push_token(out, Token::True);
+                    self.push_token(out, PendingToken::Value(Token::True));
                 }
-                _ => self.push_text_token(out, word, false),
+                _ => self.push_token(out, PendingToken::Text(word, false)),
             },
         }
     }
@@ -1072,14 +1061,14 @@ impl<'a> Cur<'a, '_, '_> {
             return None;
         }
         let out_mark = out.len();
-        self.push_token(out, Token::Long(i64::try_from(count).ok()?));
+        self.push_token(out, PendingToken::Value(Token::Long(i64::try_from(count).ok()?)));
         for _ in 0..count {
             let Some(value) = self.num() else {
                 self.pos = mark;
                 out.truncate(out_mark);
                 return None;
             };
-            self.push_token(out, Token::Double(value));
+            self.push_token(out, PendingToken::Value(Token::Double(value)));
         }
         Some(())
     }
@@ -1129,7 +1118,7 @@ fn take_slot<'a>(
         }
         Slot::S => match cur.bump()? {
             Prim::Str(value) => {
-                cur.push_text_token(out, value, true);
+                cur.push_token(out, PendingToken::Text(value, true));
                 Some(())
             }
             _ => None,
@@ -1297,7 +1286,7 @@ fn bs_curve_block<'a>(cur: &mut Cur<'a, '_, '_>, kind: BsKind, out: &mut Vec<Pen
         "nurbs" => true,
         _ => return None,
     };
-    cur.push_text_token(out, marker, false);
+    cur.push_token(out, PendingToken::Text(marker, false));
     let degree = cur.long()?;
     push_token!(cur, out, Token::Long(degree));
     cur.enum_word(CLOSURE, out)?;
@@ -1336,7 +1325,7 @@ fn bs_surface_block<'a>(cur: &mut Cur<'a, '_, '_>, out: &mut Vec<PendingToken<'a
         "nurbs" => true,
         _ => return None,
     };
-    cur.push_text_token(out, marker, false);
+    cur.push_token(out, PendingToken::Text(marker, false));
     let degree_u = cur.long()?;
     let degree_v = cur.long()?;
     push_token!(cur, out, Token::Long(degree_u));
@@ -1403,11 +1392,11 @@ fn exact_int_cur_tail<'a>(cur: &mut Cur<'a, '_, '_>, out: &mut Vec<PendingToken<
     push_token!(cur, out, Token::Double(cur.length(tolerance)?));
     for _ in 0..2 {
         cur.word_is("null_surface")?;
-        cur.push_text_token(out, "null_surface", false);
+        cur.push_token(out, PendingToken::Text("null_surface", false));
     }
     for _ in 0..2 {
         cur.word_is("nullbs")?;
-        cur.push_text_token(out, "nullbs", false);
+        cur.push_token(out, PendingToken::Text("nullbs", false));
     }
     cur.opt_bound(out)?;
     cur.opt_bound(out)?;
@@ -1443,7 +1432,7 @@ fn exp_par_cur_tail<'a>(
     if cur.word_is("spline").is_none() {
         return Ok(None);
     }
-    cur.push_text_token(out, "spline", false);
+    cur.push_token(out, PendingToken::Text("spline", false));
     let Some(sense) = cur.word() else {
         return Ok(None);
     };
@@ -1520,12 +1509,12 @@ fn nullable_surface<'a>(
     match word {
         "null_surface" => {
             cur.bump();
-            cur.push_text_token(out, "null_surface", false);
+            cur.push_token(out, PendingToken::Text("null_surface", false));
             Ok(Some(()))
         }
         "spline" => {
             cur.bump();
-            cur.push_text_token(out, "spline", false);
+            cur.push_token(out, PendingToken::Text("spline", false));
             if sense_word(cur, out).is_none() || type_subtype_tabled(cur, out)?.is_none() {
                 return Ok(None);
             }
@@ -1538,7 +1527,7 @@ fn nullable_surface<'a>(
         }
         "plane" => {
             cur.bump();
-            cur.push_text_token(out, "plane", false);
+            cur.push_token(out, PendingToken::Text("plane", false));
             for slot in [Slot::P, Slot::VUnit, Slot::VLen, Slot::UvSense] {
                 if take_slot(cur, slot, out)?.is_none() {
                     return Ok(None);
@@ -1553,7 +1542,7 @@ fn nullable_surface<'a>(
         }
         "cone" => {
             cur.bump();
-            cur.push_text_token(out, "cone", false);
+            cur.push_token(out, PendingToken::Text("cone", false));
             for slot in [Slot::P, Slot::VUnit, Slot::VLen, Slot::D] {
                 if take_slot(cur, slot, out)?.is_none() {
                     return Ok(None);
@@ -1576,7 +1565,7 @@ fn nullable_surface<'a>(
         }
         "sphere" => {
             cur.bump();
-            cur.push_text_token(out, "sphere", false);
+            cur.push_token(out, PendingToken::Text("sphere", false));
             for slot in [Slot::P, Slot::DLen, Slot::VUnit, Slot::VUnit, Slot::UvSense] {
                 if take_slot(cur, slot, out)?.is_none() {
                     return Ok(None);
@@ -1591,7 +1580,7 @@ fn nullable_surface<'a>(
         }
         "torus" => {
             cur.bump();
-            cur.push_text_token(out, "torus", false);
+            cur.push_token(out, PendingToken::Text("torus", false));
             for slot in [
                 Slot::P,
                 Slot::VUnit,
@@ -1620,7 +1609,7 @@ fn nullable_surface<'a>(
 fn nullable_bs2<'a>(cur: &mut Cur<'a, '_, '_>, out: &mut Vec<PendingToken<'a>>) -> Option<()> {
     if matches!(cur.peek(), Some(Prim::Word(word)) if *word == "nullbs") {
         cur.bump();
-        cur.push_text_token(out, "nullbs", false);
+        cur.push_token(out, PendingToken::Text("nullbs", false));
         return Some(());
     }
     bs_curve_block(cur, BsKind::Parameter, out)
@@ -1721,7 +1710,7 @@ fn cyl_spl_sur_tail<'a>(
     if cur.word_is("intcurve").is_none() {
         return Ok(None);
     }
-    cur.push_text_token(out, "intcurve", false);
+    cur.push_token(out, PendingToken::Text("intcurve", false));
     if sense_word(cur, out).is_none() || type_subtype_tabled(cur, out)?.is_none() {
         return Ok(None);
     }
@@ -1799,7 +1788,7 @@ fn type_subtype_tabled<'a>(
         out.truncate(out_mark);
         return Ok(None);
     };
-    cur.push_text_token(out, name, false);
+    cur.push_token(out, PendingToken::Text(name, false));
     let matched = match name {
         "ref" => Ok(cur
             .long()
@@ -1993,30 +1982,31 @@ fn type_record(
     prims: &[Prim<'_>],
     scale: f64,
 ) -> Result<Vec<Token>, TypedRecordFailure> {
-    let (pending, _storage) = ctx.with_scoped_storage("SAT typing attempts", || {
-        for slots in head_shapes(head) {
-                if let Some(tokens) = try_shape(ctx, prims, scale, slots)? {
-                    return Ok(tokens);
-                }
-            }
-            let mut cur = Cur {
-                prims,
-                pos: 0,
-                scale,
-                failure: None,
-                resource: None,
-                ctx,
-            };
+    let mut selected = None;
+    for slots in head_shapes(head) {
+        let (candidate, storage) = ctx.with_scoped_storage("SAT typing attempt", || {
+            try_shape(ctx, prims, scale, slots)
+        })?;
+        if let Some(tokens) = candidate {
+            selected = Some((tokens, storage));
+            break;
+        }
+    }
+    let (pending, _storage) = match selected {
+        Some(selected) => selected,
+        None => ctx.with_scoped_storage("SAT lexical typing", || {
+            let mut cur = Cur { prims, pos: 0, scale, failure: None, resource: None, ctx };
             let mut tokens = Vec::new();
-            for prim in ctx.admit_iter(prims, "type SAT fallback primitives")
-                .map_err(|error| TypedRecordFailure::Resource(error.into()))? {
+            ctx.find_map(prims, |prim| {
                 cur.push_lexical_token(&mut tokens, prim);
-            }
+                Ok(cur.resource.is_some().then_some(()))
+            }, "type SAT fallback primitives").map_err(TypedRecordFailure::Resource)?;
             if let Some(error) = cur.resource {
                 return Err(TypedRecordFailure::Resource(error));
             }
             Ok(tokens)
-    })?;
+        })?,
+    };
     ctx.try_collect_retained_with(pending, "retain SAT typed tokens", |token| {
         Ok(match token {
             PendingToken::Value(token) => token,
@@ -2435,6 +2425,24 @@ mod tests {
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
             assert_eq!(refusal.operation, "retain SAT typed string");
         }
+    }
+
+    #[test]
+    fn failed_sat_shape_releases_scratch_before_the_next_attempt() {
+        let prims = [Prim::Ref(-1), Prim::Integer(-1), Prim::Ref(-1),
+            Prim::Ref(-1), Prim::Ref(-1), Prim::Ref(-1), Prim::Ref(-1), Prim::Ref(-1),
+            Prim::Word("forward"), Prim::Word("double"), Prim::Word("T")];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        let capacity = prims.len().next_power_of_two();
+        // Growth keeps the previous allocation live until the new one exists.
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+            (capacity + capacity / 2) * std::mem::size_of::<super::PendingToken<'_>>());
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        let tokens = super::type_record(&ctx, "face", &prims, 10.0)
+            .unwrap_or_else(|_| panic!("one live grammar buffer fits the scratch limit"));
+        assert_eq!(tokens.len(), 11);
+        assert_eq!(&tokens[8..], &[Token::False, Token::True, Token::True]);
     }
 
     #[test]

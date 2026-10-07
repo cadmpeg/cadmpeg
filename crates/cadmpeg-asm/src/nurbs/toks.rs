@@ -407,17 +407,17 @@ pub(super) fn find_owned_subtype_marker<'n>(
     toks: &[Token],
     names: &[&'n str],
 ) -> Option<Result<(usize, &'n str), cadmpeg_core::CodecError>> {
+    if names.is_empty() { return None; }
     let mut depth = 0usize;
     let mut best = None;
     let walked = ctx.find_map(toks.iter().enumerate(), |(pos, token)| {
         match token {
             Token::SubtypeOpen => {
-                if depth == 0 {
+                if depth == 0 && best.is_none_or(|(rank, _, _)| rank != 0) {
+                    let priorities = &names[..best.map_or(names.len(), |(rank, _, _)| rank)];
                     if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1) {
-                        if let Some(rank) = ctx.position_by(names, |candidate| ctx.equal_bytes(candidate.as_bytes(), name.as_bytes(), "match ASM construction name"), "find ASM construction priority")? {
-                            if best.is_none_or(|(previous, _, _)| rank < previous) {
-                                best = Some((rank, pos, names[rank]));
-                            }
+                        if let Some(rank) = ctx.position_by(priorities, |candidate| ctx.equal_bytes(candidate.as_bytes(), name.as_bytes(), "match ASM construction name"), "find ASM construction priority")? {
+                            best = Some((rank, pos, names[rank]));
                         }
                     }
                 }
@@ -506,7 +506,7 @@ pub(super) fn cache_scope<'a>(
                     cache = Some(&toks[start..=pos]);
                 }
             }
-            _ if depth == 1 && construction => marker |= marker_at(toks, pos).is_some(),
+            _ if depth == 1 && construction && !marker => marker = marker_at(toks, pos).is_some(),
             _ => {}
         }
         Ok(None)
@@ -1076,6 +1076,17 @@ mod tests {
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         assert_eq!(table.span(0).unwrap().tokens(), &complete[1..]);
         assert_eq!(table.span(1).unwrap().interior(), &[ident("child")]);
+    }
+
+    #[test]
+    fn an_empty_construction_name_query_needs_no_token_walk() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let ctx = DecodeContext::new(&arena, &policy, false);
+        let tokens = [Token::SubtypeOpen, ident("exactcur"), Token::SubtypeClose];
+        assert!(super::find_owned_subtype_marker(&ctx, &tokens, &[]).is_none());
     }
 
     #[test]

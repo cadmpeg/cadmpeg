@@ -184,41 +184,20 @@ fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
 mod tests {
     #[test]
     fn binary_header_product_string_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
-
+        use cadmpeg_core::decode::ResourceDimension;
         let bytes = [0x07, 3, b'a', b'b', b'c'];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("source fits input limit");
-        let Err(error) = super::read_string_region(&ctx, &bytes, 0) else {
-            panic!("product string must exceed retained limit");
-        };
-        let CodecError::ResourceLimit(refusal) = error else {
-            panic!("expected resource refusal, got {error:?}");
-        };
+        let refusal = crate::test_support::resource_limit_at(&bytes, ResourceDimension::RetainedBytes,
+            "retain kernel header product string", |ctx| super::read_string_region(ctx, &bytes, 0));
         assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(refusal.operation, "retain kernel header product string");
     }
 
     #[test]
     fn binary_header_scan_refuses_utf8_validation_work() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        use cadmpeg_core::CodecError;
-
+        use cadmpeg_core::decode::ResourceDimension;
         let bytes = [0x07, 3, b'a', b'b', b'c'];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("source fits input limit");
-        let Err(CodecError::ResourceLimit(refusal)) =
-            super::scan_string_region(&ctx, &bytes, 0)
-        else {
-            panic!("UTF-8 validation must exceed work limit");
-        };
+        let refusal = crate::test_support::resource_limit_at(&bytes, ResourceDimension::WorkUnits,
+            "validate kernel header product string", |ctx| super::scan_string_region(ctx, &bytes, 0));
         assert_eq!(refusal.operation, "validate kernel header product string");
     }
 
