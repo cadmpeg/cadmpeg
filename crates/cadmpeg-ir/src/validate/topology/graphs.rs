@@ -383,7 +383,10 @@ pub(in crate::validate) fn check_shell_connectivity(
         }
     }
     let mut neighbors = BorrowedIdentities::build(ctx, |_| Ok(()))?;
-    for incident_faces in faces_by_edge.values("shell incidence group scan")?.chain(faces_by_vertex.values("shell incidence group scan")?) {
+    for incident_faces in faces_by_edge
+        .values("shell incidence group scan")?
+        .chain(faces_by_vertex.values("shell incidence group scan")?)
+    {
         for face in incident_faces.identities("shell incidence face scan")? {
             for other in incident_faces.identities("shell neighbor face scan")? {
                 ctx.charge_work(

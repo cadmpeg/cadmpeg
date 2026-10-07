@@ -57,7 +57,9 @@ impl Sha256Digest {
 
     fn validate_text(text: &str) -> Result<(), InvalidSha256Digest> {
         if text.len() == 64
-            && text.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+            && text
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
         {
             Ok(())
         } else {
@@ -184,9 +186,15 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let digest = Sha256Digest::from_bytes_for_decode(&ctx, [0x5a; 32], "completed hash").unwrap();
+        let digest =
+            Sha256Digest::from_bytes_for_decode(&ctx, [0x5a; 32], "completed hash").unwrap();
         assert_eq!(digest, Sha256Digest::from_bytes([0x5a; 32]));
-        assert_eq!(digest.try_clone_for_decode(&ctx, "completed hash clone").unwrap(), digest);
+        assert_eq!(
+            digest
+                .try_clone_for_decode(&ctx, "completed hash clone")
+                .unwrap(),
+            digest
+        );
         ctx.finish_session().unwrap();
     }
 
