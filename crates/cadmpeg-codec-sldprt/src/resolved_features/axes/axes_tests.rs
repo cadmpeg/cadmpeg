@@ -818,7 +818,26 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     );
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &lane.native_payload, &lane.sketch_entities[3], &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers, crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &lane.native_payload).unwrap()).unwrap()); result }
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let result = roster_curve_endpoint_markers(
+                &ctx,
+                &lane.native_payload,
+                &lane.sketch_entities[3],
+                &markers,
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                    &ctx,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &ctx,
+                        &lane.native_payload,
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            );
+            result
+        }
         .unwrap()
         .into_iter()
         .map(crate::records::SketchInputEntity::id)

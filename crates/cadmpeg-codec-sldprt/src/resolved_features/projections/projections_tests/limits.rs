@@ -236,7 +236,13 @@ fn display_relation_synthesis_preserves_reference_parameter() {
 fn duplicate_display_parameter_candidates_release_owned_fields() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (mut parameters, features, lanes) = display_relation_synthesis_fixture();
-    synthesize_display_relation_parameters(&cadmpeg_test_support::service_decode_context(), &mut parameters, &features, &lanes).unwrap();
+    synthesize_display_relation_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut parameters,
+        &features,
+        &lanes,
+    )
+    .unwrap();
     assert_eq!(parameters.len(), 1);
     // Keep the identity collision while removing the earlier relation-property shortcut.
     parameters[0].properties.clear();

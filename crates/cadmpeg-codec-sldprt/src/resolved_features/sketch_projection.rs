@@ -56,20 +56,26 @@ pub(crate) fn sketches(
             continue;
         }
         let source_stream = source.source_stream();
-        let (native_ref, _reference_storage) = ctx.with_scoped_storage("hold SLDPRT sketch native reference", || ctx.format_retained(
-            format_args!(
-                "sldprt:feature-input:resolved-features#{}",
-                source.ordinal()
-            ),
-            "retain SLDPRT sketch native reference",
-        ))?;
+        let (native_ref, _reference_storage) =
+            ctx.with_scoped_storage("hold SLDPRT sketch native reference", || {
+                ctx.format_retained(
+                    format_args!(
+                        "sldprt:feature-input:resolved-features#{}",
+                        source.ordinal()
+                    ),
+                    "retain SLDPRT sketch native reference",
+                )
+            })?;
         for (stream_ordinal, stream) in ctx
             .admit_iter(source.ps_streams(), "project SLDPRT section streams")?
             .enumerate()
         {
             let brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
-            let (configuration, _configuration_storage) = ctx.with_scoped_storage("hold SLDPRT sketch configuration", || configuration(ctx, section))?;
+            let (configuration, _configuration_storage) = ctx
+                .with_scoped_storage("hold SLDPRT sketch configuration", || {
+                    configuration(ctx, section)
+                })?;
             project_brep(
                 ctx,
                 &brep,
@@ -166,12 +172,19 @@ fn project_brep(
         let origin = plane_surface.origin().get();
         let normal = plane_surface.frame().axis().as_raw();
         let u_axis = plane_surface.frame().reference().as_raw();
-        let (sketch_id, sketch_id_storage) = ctx.with_scoped_storage("build SLDPRT projected sketch identity", || mint_formatted::<SketchId>(
-            ctx,
-            format_args!("sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"),
-            "retain SLDPRT projected sketch ID",
-        ))?;
-        let Some(sketch_id) = sketch_id else { continue; };
+        let (sketch_id, sketch_id_storage) =
+            ctx.with_scoped_storage("build SLDPRT projected sketch identity", || {
+                mint_formatted::<SketchId>(
+                    ctx,
+                    format_args!(
+                        "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
+                    ),
+                    "retain SLDPRT projected sketch ID",
+                )
+            })?;
+        let Some(sketch_id) = sketch_id else {
+            continue;
+        };
         let Ok(placement) =
             cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, *normal, *u_axis)
         else {
@@ -227,7 +240,9 @@ fn project_brep(
                     &edge.id,
                     "resolve SLDPRT sketch_projection keys",
                 )? {
-                    ctx.with_scoped_storage("hold SLDPRT profile entity identity", || id.try_clone_for_decode(ctx, "retain SLDPRT sketch entity ID"))?
+                    ctx.with_scoped_storage("hold SLDPRT profile entity identity", || {
+                        id.try_clone_for_decode(ctx, "retain SLDPRT sketch entity ID")
+                    })?
                 } else {
                     let (id, id_storage) = ctx.with_scoped_storage("hold SLDPRT profile entity identity", || mint_formatted::<SketchEntityId>(
                         ctx,
@@ -237,7 +252,9 @@ fn project_brep(
                         ),
                         "retain SLDPRT sketch entity ID",
                     ))?;
-                    let Some(id) = id else { continue; };
+                    let Some(id) = id else {
+                        continue;
+                    };
                     let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
                     let projected = project_edge(
                         ctx,

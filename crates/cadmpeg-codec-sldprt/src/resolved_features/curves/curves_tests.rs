@@ -1204,9 +1204,15 @@ fn linked_semicircle_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
-    let error =
-        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, &mut entities_storage, EPS_REFUSAL_GEOMETRY)
-            .unwrap_err();
+    let error = resolve_two_center_semicircle_profile(
+        &ctx,
+        &payload,
+        &markers,
+        &mut entities,
+        &mut entities_storage,
+        EPS_REFUSAL_GEOMETRY,
+    )
+    .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "collect SLDPRT semicircle records"));
@@ -1250,7 +1256,15 @@ fn linked_semicircle_records_close_a_two_center_profile() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
     let mut entities_storage = ctx.reserve_scoped(0, "collect test entities").unwrap();
-    resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, &mut entities_storage, EPS_REFUSAL_GEOMETRY).unwrap();
+    resolve_two_center_semicircle_profile(
+        &ctx,
+        &payload,
+        &markers,
+        &mut entities,
+        &mut entities_storage,
+        EPS_REFUSAL_GEOMETRY,
+    )
+    .unwrap();
 
     assert_eq!(
         entities

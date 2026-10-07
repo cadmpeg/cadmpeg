@@ -510,7 +510,18 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         histories[0].features[0].properties.get("Face"),
         Some(&"sldprt:feature-input:single-face-ref:7:220".to_string())
     );
-    let selections = compact_surface_selections(&identity_ctx, &histories, crate::resolved_features::selections::SelectionHistory::new(&identity_ctx, &histories).unwrap().for_lane(&identity_ctx, &lane).unwrap(), &lane, &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap()).unwrap();
+    let selections = compact_surface_selections(
+        &identity_ctx,
+        &histories,
+        crate::resolved_features::selections::SelectionHistory::new(&identity_ctx, &histories)
+            .unwrap()
+            .for_lane(&identity_ctx, &lane)
+            .unwrap(),
+        &lane,
+        &crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane)
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].offset, 220);
 }

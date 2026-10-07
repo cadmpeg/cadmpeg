@@ -82,7 +82,9 @@ fn invalid_component_prefix_does_not_visit_the_remaining_count() {
     const OPERATION: &str = "decode SLDPRT mixed component path";
     let payload = [0; 2000];
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, OPERATION, |limit| {
+        ResourceDimension::WorkUnits,
+        OPERATION,
+        |limit| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
@@ -90,12 +92,18 @@ fn invalid_component_prefix_does_not_visit_the_remaining_count() {
             super::super::compact_mixed_component_path(&ctx, &payload, 0, 100, false, OPERATION)
         },
     );
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal");
+    };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = limit.used + limit.additional;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(super::super::compact_mixed_component_path(&ctx, &payload, 0, 100, false, OPERATION).unwrap(), None);
+    assert_eq!(
+        super::super::compact_mixed_component_path(&ctx, &payload, 0, 100, false, OPERATION)
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -108,7 +116,11 @@ fn rejected_component_storage_is_released_between_candidates() {
     policy.limits.max_materialized_bytes = 16384;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        assert_eq!(super::super::compact_mixed_component_path(&ctx, &[0; 2000], 0, 100, false, OPERATION).unwrap(), None);
+        assert_eq!(
+            super::super::compact_mixed_component_path(&ctx, &[0; 2000], 0, 100, false, OPERATION)
+                .unwrap(),
+            None
+        );
     }
 }
 
@@ -134,7 +146,10 @@ fn ambiguous_edge_path_storage_is_released_between_projections() {
     policy.limits.max_materialized_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        assert_eq!(super::super::compact_edge_component_path_at(&ctx, &payload, marker).unwrap(), None);
+        assert_eq!(
+            super::super::compact_edge_component_path_at(&ctx, &payload, marker).unwrap(),
+            None
+        );
     }
 }
 
@@ -160,6 +175,9 @@ fn rejected_sketch_surface_trailer_releases_component_storage() {
     policy.limits.max_materialized_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        assert_eq!(super::super::compact_sketch_surface_component_path_at(&ctx, &payload, marker).unwrap(), None);
+        assert_eq!(
+            super::super::compact_sketch_surface_component_path_at(&ctx, &payload, marker).unwrap(),
+            None
+        );
     }
 }

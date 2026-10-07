@@ -273,9 +273,18 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
     let retained = input_owned_edge_selections(
         &ctx,
         vec![
-            (selection(0, Some("input")), ctx.reserve_scoped(0, "test edge selection").unwrap()),
-            (selection(1, None), ctx.reserve_scoped(0, "test edge selection").unwrap()),
-            (selection(2, Some("input")), ctx.reserve_scoped(0, "test edge selection").unwrap()),
+            (
+                selection(0, Some("input")),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
+            (
+                selection(1, None),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
+            (
+                selection(2, Some("input")),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
         ],
     )
     .unwrap();
@@ -290,8 +299,14 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
     let retained = input_owned_edge_selections(
         &ctx,
         vec![
-            (selection(3, None), ctx.reserve_scoped(0, "test edge selection").unwrap()),
-            (selection(4, None), ctx.reserve_scoped(0, "test edge selection").unwrap()),
+            (
+                selection(3, None),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
+            (
+                selection(4, None),
+                ctx.reserve_scoped(0, "test edge selection").unwrap(),
+            ),
         ],
     )
     .unwrap();

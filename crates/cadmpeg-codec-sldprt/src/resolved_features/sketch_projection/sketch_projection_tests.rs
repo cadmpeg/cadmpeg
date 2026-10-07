@@ -253,13 +253,7 @@ fn slot_cycle_refuses_retained_limit() {
             let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
             let mut entities = entities.clone();
             let slots = super::super::curves::SlotReferences::new(&ctx, &payload)?;
-            resolve_slot_marker_arcs(
-                &ctx,
-                &slots,
-                &markers,
-                &mut entities,
-                EPS_REFUSAL_GEOMETRY,
-            )
+            resolve_slot_marker_arcs(&ctx, &slots, &markers, &mut entities, EPS_REFUSAL_GEOMETRY)
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
