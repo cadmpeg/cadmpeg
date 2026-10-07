@@ -7,7 +7,7 @@ use std::fmt;
 use serde::de::DeserializeOwned;
 
 use cadmpeg_asm::brep::records::FaceNativeKey;
-use cadmpeg_core::decode::{cost::DecodeCost, scan::AdmittedIter, DecodeContext};
+use cadmpeg_core::decode::{cost::DecodeCost, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     report::{
@@ -44,7 +44,7 @@ use crate::native::{
     SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
     UnpairedSegmentRecord,
 };
-use crate::pmdc::{PmDcReference, PmDcReferenceList};
+use crate::pmdc::PmDcReferenceList;
 use crate::record_identity::{Located, LocatedWire, RecordPayload};
 use crate::record_issue::RecordIssue;
 
@@ -462,34 +462,6 @@ fn validate_design(
         }
     }
     for unit in ctx.admit_iter(&data.pm_dc_units, "validate Inventor PmDc units")? {
-        let (references, _references_storage) =
-            ctx.with_scoped_storage("collect Inventor PmDc unit references", || {
-                match &unit.kind {
-                    PmDcUnitKind::Definition {
-                        numerators,
-                        denominators,
-                        derived,
-                        ..
-                    } => {
-                        let numerators = ctx.admit_iter(
-                            numerators.references(),
-                            "visit Inventor PmDc unit numerator references",
-                        )?;
-                        let denominators = ctx.admit_iter(
-                            denominators.references(),
-                            "visit Inventor PmDc unit denominator references",
-                        )?;
-                        ctx.collect_vec(
-                            numerators
-                                .map(|reference| reference.index())
-                                .chain(denominators.map(|reference| reference.index()))
-                                .chain(std::iter::once(derived.index())),
-                            "collect Inventor PmDc unit references",
-                        )
-                    }
-                    PmDcUnitKind::Base { .. } => Ok(Vec::new()),
-                }
-            })?;
         let key = (
             unit.identity.segment_token.as_str(),
             unit.identity.record_ordinal,
@@ -502,13 +474,29 @@ fn validate_design(
             )?,
             None => false,
         };
-        if !record_matches
-            || !ctx.all_by(
-                &references,
-                |reference| resolves(unit.identity.segment_token.as_str(), *reference),
-                "resolve Inventor PmDc unit references",
-            )?
-        {
+        let token = unit.identity.segment_token.as_str();
+        // A unit definition's references are checked where they lie.
+        let references_resolve = record_matches
+            && match &unit.kind {
+                PmDcUnitKind::Definition {
+                    numerators,
+                    denominators,
+                    derived,
+                    ..
+                } => {
+                    ctx.all_by(
+                        numerators.references(),
+                        |reference| resolves(token, reference.index()),
+                        "resolve Inventor PmDc unit references",
+                    )? && ctx.all_by(
+                        denominators.references(),
+                        |reference| resolves(token, reference.index()),
+                        "resolve Inventor PmDc unit references",
+                    )? && resolves(token, derived.index())?
+                }
+                PmDcUnitKind::Base { .. } => true,
+            };
+        if !references_resolve {
             push_finding(
                 ctx,
                 findings,
@@ -615,19 +603,20 @@ fn validate_sketches(
             None => Ok(false),
         }
     };
+    let reference_resolves = |token: &str, reference: u32| {
+        if reference == 0 {
+            return Ok(true);
+        }
+        ctx.contains_key_hash_map(
+            &raw,
+            &(token, reference - 1),
+            "resolve Inventor PmDc sketch reference",
+        )
+    };
     let references_resolve = |token: &str, references: &[u32], operation| {
         ctx.all_by(
             references,
-            |reference| {
-                if *reference == 0 {
-                    return Ok(true);
-                }
-                ctx.contains_key_hash_map(
-                    &raw,
-                    &(token, reference - 1),
-                    "resolve Inventor PmDc sketch reference",
-                )
-            },
+            |reference| reference_resolves(token, *reference),
             operation,
         )
     };
@@ -693,70 +682,37 @@ fn validate_sketches(
     )?;
     for sketch in ctx.admit_iter(&data.pm_dc_sketches, "validate Inventor PmDc sketches")? {
         let token = sketch.identity.segment_token.as_str();
-        let entity_references = ctx.admit_iter(
-            sketch.entities.references(),
-            "resolve Inventor PmDc sketch entity references",
-        )?;
-        let mut auxiliary_lists = ctx.admit_iter(
-            sketch.auxiliary.as_slice(),
-            "visit Inventor PmDc sketch auxiliary lists",
-        )?;
-        let mut auxiliary_references: Option<AdmittedIter<std::slice::Iter<'_, PmDcReference>>> =
-            None;
-        let auxiliary_references = std::iter::from_fn(|| {
-            (|| -> Result<Option<u32>, CodecError> {
-                loop {
-                    ctx.charge_work(1, "visit Inventor PmDc sketch auxiliary reference iterator")?;
-                    if let Some(references) = auxiliary_references.as_mut() {
-                        if let Some(reference) = references.next() {
-                            return Ok(Some(reference.index()));
-                        }
-                        auxiliary_references = None;
-                    }
-                    let Some(list) = auxiliary_lists.next() else {
-                        return Ok(None);
-                    };
-                    auxiliary_references = Some(ctx.admit_iter(
-                        list.references(),
-                        "resolve Inventor PmDc sketch auxiliary references",
-                    )?);
-                }
-            })()
-            .transpose()
-        });
         let header_references = [
             sketch.header.next.index(),
             sketch.header.context.index(),
             sketch.transform.index(),
             sketch.direction.index(),
         ];
-        let header_references = ctx.admit_iter(
-            &header_references,
-            "visit Inventor PmDc sketch header references",
-        )?;
-        let mut references_storage =
-            ctx.reserve_scoped(0, "collect Inventor PmDc sketch references")?;
-        let references = references_storage.with_storage(|| {
-            ctx.try_collect_vec(
-                header_references
-                    .copied()
-                    .map(Ok)
-                    .chain(entity_references.map(|reference| Ok(reference.index())))
-                    .chain(auxiliary_references),
-                "collect Inventor PmDc sketch references",
-            )
-        })?;
-        let record_matches = record_is_exact(
+        // Each reference source is checked where it lies, stopping at the
+        // first reference that does not resolve.
+        let references_match = record_is_exact(
             token,
             sketch.identity.record_ordinal,
             sketch.identity.type_id.as_str(),
+        )? && references_resolve(
+            token,
+            &header_references,
+            "resolve Inventor PmDc sketch references",
+        )? && ctx.all_by(
+            sketch.entities.references(),
+            |reference| reference_resolves(token, reference.index()),
+            "resolve Inventor PmDc sketch entity references",
+        )? && ctx.all_by(
+            sketch.auxiliary.as_slice(),
+            |list| {
+                ctx.all_by(
+                    list.references(),
+                    |reference| reference_resolves(token, reference.index()),
+                    "resolve Inventor PmDc sketch auxiliary references",
+                )
+            },
+            "visit Inventor PmDc sketch auxiliary lists",
         )?;
-        let references_match = record_matches
-            && references_resolve(
-                token,
-                &references,
-                "resolve Inventor PmDc sketch references",
-            )?;
         if !references_match {
             push_finding(
                 ctx,
