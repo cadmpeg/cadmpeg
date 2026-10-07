@@ -4,6 +4,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use cadmpeg_core::decode::cost::DecodeCost;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -97,6 +100,18 @@ pub enum Check {
     Counts,
 }
 
+impl DecodeCost for Check {
+    const FIXED_BYTES: Option<u64> = Some(u64_from_index(std::mem::size_of::<Self>()));
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        Ok(u64_from_index(std::mem::size_of::<Self>()))
+    }
+}
+
 impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
@@ -181,3 +196,17 @@ impl ValidationReport {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_entity, String, "entity");
+
+#[cfg(test)]
+mod tests {
+    use super::Check;
+    use cadmpeg_core::decode::cost::DecodeCost;
+
+    #[test]
+    fn check_has_fixed_comparison_cost() {
+        assert_eq!(
+            <Check as DecodeCost>::FIXED_BYTES,
+            Some(u64::try_from(std::mem::size_of::<Check>()).expect("test size fits"))
+        );
+    }
+}

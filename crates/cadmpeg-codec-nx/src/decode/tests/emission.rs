@@ -409,7 +409,7 @@ fn decode_retains_topology_owned_point_at_origin() {
     assert_eq!(
         graph
             .get(NodeKind::Point, 11)
-            .and_then(|node| crate::test_support::with_decode_context(|ctx| node.point_position(ctx)).unwrap())
+            .and_then(crate::topology::Node::point_position)
             .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
     );
@@ -1124,30 +1124,55 @@ mod document_metadata;
 
 mod intersection_charts;
 
+/// The least work cap at which point-candidate collection completes.
+fn minimal_point_candidate_work(stream: &[u8]) -> u64 {
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, stream))
+            .unwrap();
+    let mut cap = 0;
+    loop {
+        let result = crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = cap,
+            |ctx| ordered_point_candidates(ctx, &graph).map(|candidates| candidates.len()),
+        );
+        match result {
+            Ok(count) => {
+                assert_eq!(count, 1);
+                return cap;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits =>
+            {
+                let next = limit.used + limit.additional;
+                assert!(next > cap);
+                cap = next;
+            }
+            Err(error) => panic!("point candidates must refuse only work: {error:?}"),
+        }
+    }
+}
+
 #[test]
 fn graph_analytic_candidates_do_not_scan_discarded_fallbacks() {
-    let stream = single_point_candidate_stream();
-    let graph =
-        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
-            .unwrap();
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            // One candidate visit and four passes over its empty-tree node bound.
-            let node =
-                11 * std::mem::size_of::<(
-                    usize,
-                    (cadmpeg_ir::features::FinitePoint3, &crate::topology::Node),
-                )>() + 18 * std::mem::size_of::<usize>();
-            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(1 + 4 * node);
-        },
-        |ctx| {
-            let candidates = ordered_point_candidates(ctx, &graph).unwrap();
-            assert_eq!(candidates.len(), 1);
-            assert_eq!(
-                candidates[0].0.get(),
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
-            );
-        },
+    let point_only = single_point_candidate_stream();
+    let mut with_other_carriers = single_point_candidate_stream();
+    let mut plane = record(50, 91);
+    put_ref(&mut plane, 2, 6);
+    plane[18] = b'+';
+    put_vec3(&mut plane, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
+    with_other_carriers.extend_from_slice(&plane);
+    let mut line = record(30, 67);
+    put_ref(&mut line, 2, 9);
+    line[18] = b'+';
+    put_vec3(&mut line, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut line, 43, [1.0, 0.0, 0.0]);
+    with_other_carriers.extend_from_slice(&line);
+
+    assert_eq!(
+        minimal_point_candidate_work(&point_only),
+        minimal_point_candidate_work(&with_other_carriers)
     );
 }

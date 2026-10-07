@@ -194,11 +194,11 @@ impl DecodeContext<'_> {
 
     /// Admits the source traversal before visiting any element. Iterator adapters
     /// run on the admitted result; callbacks admit their own child work.
-    pub fn admit_iter<'values, S: IterSource + ?Sized>(
+    pub fn admit_iter<S: IterSource>(
         &self,
-        values: &'values S,
+        values: S,
         operation: &'static str,
-    ) -> Result<AdmittedIter<S::Iter<'values>>, super::ResourceLimit> {
+    ) -> Result<AdmittedIter<S::Iter>, super::ResourceLimit> {
         let bound = match values.visit_bound() {
             Ok(bound) => bound,
             Err(VisitBoundError::ExceedsU64) => {
@@ -211,38 +211,45 @@ impl DecodeContext<'_> {
         })
     }
 
-    /// Returns the first matching position. Each visited slot is admitted before
-    /// the predicate runs. The predicate admits its own input-sized child work.
-    pub fn position_by<T>(
+    /// Returns the first matching position. Each source step, including the
+    /// end probe, is charged before it advances, so an early match pays only
+    /// for the visits it made. Callers supply a fixed-step source or adapters
+    /// over admitted bases. The predicate admits its own input-sized child work.
+    pub fn position_by<I: IntoIterator>(
         &self,
-        values: &[T],
-        mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        values: I,
+        mut predicate: impl FnMut(I::Item) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<Option<usize>, CodecError> {
-        for (index, value) in values.iter().enumerate() {
-            self.charge_work(1, operation)?;
-            if predicate(value)? {
-                return Ok(Some(index));
-            }
-        }
-        Ok(None)
+        let mut index = 0;
+        self.search(
+            values,
+            |value| {
+                if predicate(value)? {
+                    return Ok(Some(index));
+                }
+                index += 1;
+                Ok(None)
+            },
+            operation,
+        )
     }
 
-    /// Tests for a match, charging only slots visited by position search.
-    pub fn any_by<T>(
+    /// Tests for a match, charging only the visited steps.
+    pub fn any_by<I: IntoIterator>(
         &self,
-        values: &[T],
-        predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        values: I,
+        predicate: impl FnMut(I::Item) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         Ok(self.position_by(values, predicate, operation)?.is_some())
     }
 
-    /// Tests every value until a predicate fails.
-    pub fn all_by<T>(
+    /// Tests every value until a predicate fails, charging only the visited steps.
+    pub fn all_by<I: IntoIterator>(
         &self,
-        values: &[T],
-        mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        values: I,
+        mut predicate: impl FnMut(I::Item) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         Ok(self
@@ -254,41 +261,52 @@ impl DecodeContext<'_> {
             .is_none())
     }
 
-    /// Borrows the first matching value without retaining new storage.
-    pub fn find_by<'values, T>(
+    /// Returns the first matching item, charging only the visited steps.
+    pub fn find_by<I: IntoIterator>(
         &self,
-        values: &'values [T],
-        predicate: impl FnMut(&T) -> Result<bool, CodecError>,
+        values: I,
+        mut predicate: impl FnMut(&I::Item) -> Result<bool, CodecError>,
         operation: &'static str,
-    ) -> Result<Option<&'values T>, CodecError> {
-        Ok(self
-            .position_by(values, predicate, operation)?
-            .and_then(|index| values.get(index)))
+    ) -> Result<Option<I::Item>, CodecError> {
+        self.search(
+            values,
+            |value| Ok(predicate(&value)?.then_some(value)),
+            operation,
+        )
     }
 
-    /// Maps values until a result is present; callbacks admit child construction.
-    pub fn find_map<T, U>(
+    /// Maps items until a result is present, charging only the visited steps;
+    /// callbacks admit child construction.
+    pub fn find_map<I: IntoIterator, U>(
         &self,
-        values: &[T],
-        mut map: impl FnMut(&T) -> Result<Option<U>, CodecError>,
+        values: I,
+        map: impl FnMut(I::Item) -> Result<Option<U>, CodecError>,
         operation: &'static str,
     ) -> Result<Option<U>, CodecError> {
-        let mut found = None;
-        let _position = self.position_by(
-            values,
-            |value| {
-                found = map(value)?;
-                Ok(found.is_some())
-            },
-            operation,
-        )?;
-        Ok(found)
+        self.search(values, map, operation)
+    }
+
+    /// Steps the source until `visit` returns a result, charging every step
+    /// including the end probe.
+    fn search<I: IntoIterator, U>(
+        &self,
+        values: I,
+        mut visit: impl FnMut(I::Item) -> Result<Option<U>, CodecError>,
+        operation: &'static str,
+    ) -> Result<Option<U>, CodecError> {
+        let mut input = values.into_iter();
+        while let Some(value) = self.next_charged(&mut input, operation)? {
+            if let Some(found) = visit(value)? {
+                return Ok(Some(found));
+            }
+        }
+        Ok(None)
     }
 
     /// Counts a sealed source after admitting its complete traversal.
-    pub fn count<S: IterSource + ?Sized>(
+    pub fn count<S: IterSource>(
         &self,
-        values: &S,
+        values: S,
         operation: &'static str,
     ) -> Result<usize, CodecError> {
         Ok(self.admit_iter(values, operation)?.count())
@@ -441,16 +459,18 @@ impl DecodeContext<'_> {
         )
     }
 
-    /// Searches from the end; callbacks admit input-sized child work.
+    /// Searches from the end, charging each visited slot before its predicate;
+    /// callbacks admit input-sized child work.
     pub fn rposition_by<T>(
         &self,
         values: &[T],
         mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<Option<usize>, CodecError> {
-        for (reverse_index, value) in self.admit_iter(values, operation)?.rev().enumerate() {
+        for (index, value) in values.iter().enumerate().rev() {
+            self.charge_work(1, operation)?;
             if predicate(value)? {
-                return Ok(Some(values.len() - reverse_index - 1));
+                return Ok(Some(index));
             }
         }
         Ok(None)
@@ -546,12 +566,13 @@ impl DecodeContext<'_> {
 
 #[cfg(test)]
 mod tests {
+    mod iteration;
     use crate::decode::iter_source::IterSource;
     use crate::decode::ResourceFailure;
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
 
-    fn assert_range_overflow<S: IterSource + ?Sized>(source: &S, prior_work: u64) {
+    fn assert_range_overflow<S: IterSource>(source: S, prior_work: u64) {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
@@ -1029,8 +1050,8 @@ mod tests {
 
     #[test]
     fn overflowing_range_bounds_fuse_at_the_work_limit() {
-        assert_range_overflow(&(0_u64..=u64::MAX), 0);
-        assert_range_overflow(&(0_u128..=u128::MAX), u64::MAX);
+        assert_range_overflow(0_u64..=u64::MAX, 0);
+        assert_range_overflow(0_u128..=u128::MAX, u64::MAX);
     }
 
     #[test]
@@ -1055,8 +1076,8 @@ mod tests {
     }
 
     #[test]
-    fn iteration_sources_charge_text_bytes_and_hash_capacity() {
-        use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+    fn iteration_sources_charge_text_bytes() {
+        use std::collections::{BTreeMap, BTreeSet, VecDeque};
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
@@ -1065,10 +1086,6 @@ mod tests {
         let queue = VecDeque::from([1, 2]);
         let tree = BTreeMap::from([(1, 2)]);
         let ordered = BTreeSet::from([1, 2]);
-        let mut map = HashMap::with_capacity(100);
-        map.insert(1, 2);
-        let mut set = HashSet::with_capacity(100);
-        set.insert(1);
         assert_eq!(
             ctx.admit_iter(&vector, "vector").expect("vector").count(),
             2
@@ -1084,18 +1101,13 @@ mod tests {
                 .count(),
             2
         );
-        assert_eq!(ctx.admit_iter(&map, "map").expect("map").count(), 1);
-        assert_eq!(ctx.admit_iter(&set, "set").expect("set").count(), 1);
         let CodecError::ResourceLimit(limit) =
             ctx.charge_work(u64::MAX, "probe").expect_err("probe")
         else {
             panic!("resource refusal");
         };
-        // Nine collection slots, four text bytes, and both hash capacity scans.
-        assert_eq!(
-            limit.used,
-            13 + super::u64_from_index(map.capacity() + set.capacity())
-        );
+        // Nine collection slots and four text bytes.
+        assert_eq!(limit.used, 13);
     }
 
     #[test]
@@ -1133,7 +1145,7 @@ mod tests {
             .all_by(&values, |value| Ok(*value == 1), "all")
             .expect("all"));
         assert_eq!(
-            ctx.find_by(&values, |value| Ok(*value == 2), "find")
+            ctx.find_by(&values, |value| Ok(**value == 2), "find")
                 .expect("find"),
             Some(&2)
         );
@@ -1157,7 +1169,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
         let values = [(1, 0), (3, 1), (1, 2), (3, 3)];
-        assert_eq!(ctx.count(&values, "count").expect("count"), 4);
+        assert_eq!(ctx.count(values.as_slice(), "count").expect("count"), 4);
         assert_eq!(
             ctx.sum(
                 &[1_u64, 2, 3],

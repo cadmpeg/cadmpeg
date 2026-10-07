@@ -2,9 +2,9 @@
 //! Geometry decode, active-body selection, and inactive-topology prune.
 
 use super::emit::{
-    annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology,
-    retain_unknown_stream_data, retain_unresolved_topology_carriers, source_meta, surface_tag,
-    unknown_stream_metadata,
+    annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology, keep_marks,
+    procedural_curve_owners, retain_marked, retain_unknown_stream_data,
+    retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream_metadata,
 };
 use super::geometry_work::{
     GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
@@ -33,7 +33,7 @@ use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::loss::NxLossCode;
 use crate::topology::{Graph, Node};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -47,8 +47,8 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
-    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+    BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
+    ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
@@ -60,7 +60,7 @@ pub(super) fn ordered_point_candidates<'a>(
     ctx: &DecodeContext<'_>,
     graph: &'a Graph,
 ) -> Result<Vec<(FinitePoint3, &'a Node)>, CodecError> {
-    ordered_fixed_candidates(ctx, graph, [NodeKind::Point], |node| node.point_position(ctx))
+    ordered_fixed_candidates(ctx, graph, [NodeKind::Point], Node::point_position)
 }
 
 pub(super) fn ordered_surface_candidates<'a>(
@@ -77,7 +77,7 @@ pub(super) fn ordered_surface_candidates<'a>(
             NodeKind::Sphere,
             NodeKind::Torus,
         ],
-        |node| node.surface_geometry(ctx),
+        Node::surface_geometry,
     )
 }
 
@@ -89,32 +89,37 @@ pub(super) fn ordered_curve_candidates<'a>(
         ctx,
         graph,
         [NodeKind::Line, NodeKind::Circle, NodeKind::Ellipse],
-        |node| node.curve_geometry(ctx),
+        Node::curve_geometry,
     )
 }
 
-fn ordered_fixed_candidates<'a, T>(
+fn ordered_fixed_candidates<'a, T, const KINDS: usize>(
     ctx: &DecodeContext<'_>,
     graph: &'a Graph,
-    kinds: impl IntoIterator<Item = NodeKind>,
-    graph_value: impl Fn(&Node) -> Result<Option<T>, CodecError>,
+    kinds: [NodeKind; KINDS],
+    graph_value: impl Fn(&Node) -> Option<T>,
 ) -> Result<Vec<(T, &'a Node)>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "nx analytic candidate index")?;
     let mut candidates = BTreeMap::new();
     for kind in kinds {
-    for node in graph.of_kind(ctx, kind)? {
-        ctx.charge_work(1, "scan NX analytic candidates")?;
-        if let Some(value) = graph_value(node)? {
-            ctx.insert_btree_map(
-                &mut candidates,
-                node.pos(),
-                (value, node),
-                "nx analytic candidate index",
-            )?;
+        for node in graph.of_kind(kind) {
+            ctx.charge_work(1, "scan NX analytic candidates")?;
+            if let Some(value) = graph_value(node) {
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut candidates,
+                        node.pos(),
+                        (value, node),
+                        "nx analytic candidate index",
+                    )
+                })?;
+            }
         }
     }
+    let mut ordered = ctx.vector_storage(candidates.len(), "nx ordered analytic candidates")?;
+    for (_, candidate) in ctx.admit_iter(candidates, "nx ordered analytic candidates")? {
+        ctx.push_vec(&mut ordered, candidate, "nx ordered analytic candidates")?;
     }
-    let mut ordered = ctx.collection_vec(candidates.len(), "nx ordered analytic candidates")?;
-    ordered.extend(candidates.into_values());
     Ok(ordered)
 }
 
@@ -140,6 +145,7 @@ pub(super) fn try_decode_geometry(
     let mut unknowns = Vec::new();
     let mut stream_unknowns = Vec::new();
     let mut counts = Counts::default();
+    let mut selection_storage = ctx.reserve_scoped(0, "nx active body selection scratch")?;
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
@@ -150,34 +156,43 @@ pub(super) fn try_decode_geometry(
         .rmfastload_object_id_table()
         .map(|(_, table)| table.object_ids.as_slice())
         .unwrap_or_default();
-    for (si, stream) in scan.streams.iter().enumerate() {
+    for (si, stream) in ctx
+        .admit_iter(&scan.streams, "nx geometry body node streams")?
+        .enumerate()
+    {
         if stream.kind().is_parasolid() {
-            for (body, nodes) in
-                topology_body_node_ids(ctx, si, &parsed.stream(si).view_for_geometry().graph)?
-            {
-                ctx.insert_btree_map(
-                    &mut body_node_ids,
-                    body,
-                    nodes,
-                    "nx geometry body node index",
-                )?;
+            let stream_bodies = selection_storage.with_storage(|| {
+                topology_body_node_ids(ctx, si, &parsed.stream(si).view_for_geometry().graph)
+            })?;
+            for (body, nodes) in ctx.admit_iter(stream_bodies, "nx geometry body node index")? {
+                selection_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut body_node_ids,
+                        body,
+                        nodes,
+                        "nx geometry body node index",
+                    )
+                })?;
             }
         }
     }
-    let rmfastload_selected = rmfastload_selected_bodies(ctx, &body_node_ids, rmfastload_ids)?;
+    let rmfastload_selected = selection_storage
+        .with_storage(|| rmfastload_selected_bodies(ctx, &body_node_ids, rmfastload_ids))?;
     let allow_terminal_lineage =
         rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected);
     let rmfastload_preselection = if body_node_ids.len() > 1
         && !rmfastload_selected.is_empty()
         && rmfastload_selected.len() < body_node_ids.len()
     {
-        rmfastload_stream_indices(ctx, &rmfastload_selected)?.map(|streams| {
-            (
-                rmfastload_selected,
-                streams,
-                "rmfastload_object_id_membership",
-            )
-        })
+        selection_storage
+            .with_storage(|| rmfastload_stream_indices(ctx, &rmfastload_selected))?
+            .map(|streams| {
+                (
+                    rmfastload_selected,
+                    streams,
+                    "rmfastload_object_id_membership",
+                )
+            })
     } else {
         None
     };
@@ -190,51 +205,67 @@ pub(super) fn try_decode_geometry(
     } else {
         None
     };
-    let mut emitted_body_ids = BTreeSet::new();
-    for body in body_node_ids.keys() {
-        ctx.insert_btree_set(
-            &mut emitted_body_ids,
-            body.try_clone_for_decode(ctx, "nx emitted terminal body identity")?,
-            "nx emitted terminal body index",
-        )?;
-    }
     let terminal_preselection = match terminal_lineage.as_ref() {
-        Some(lineage) => crate::native::model::terminal_feature_body_ids(
-            ctx,
-            &emitted_body_ids,
-            &lineage.bindings,
-            &lineage.statuses,
-        )?
-        .filter(|selected| selected.len() < body_node_ids.len())
-        .map(|selected| {
-            rmfastload_stream_indices(ctx, &selected).map(|streams| {
-                streams.map(|streams| (selected, streams, "terminal_feature_body_lineage"))
-            })
-        })
-        .transpose()?
-        .flatten(),
+        Some(lineage) => {
+            let mut emitted_body_ids = BTreeSet::new();
+            for body in ctx
+                .admit_iter(&body_node_ids, "nx emitted terminal body index")?
+                .map(|(body, _)| body)
+            {
+                selection_storage.with_storage(|| {
+                    let body =
+                        body.try_clone_for_decode(ctx, "nx emitted terminal body identity")?;
+                    ctx.insert_btree_set(
+                        &mut emitted_body_ids,
+                        body,
+                        "nx emitted terminal body index",
+                    )
+                })?;
+            }
+            let selected = selection_storage.with_storage(|| {
+                crate::native::model::terminal_feature_body_ids(
+                    ctx,
+                    &emitted_body_ids,
+                    &lineage.bindings,
+                    &lineage.statuses,
+                )
+            })?;
+            match selected.filter(|selected| selected.len() < body_node_ids.len()) {
+                Some(selected) => selection_storage
+                    .with_storage(|| rmfastload_stream_indices(ctx, &selected))?
+                    .map(|streams| (selected, streams, "terminal_feature_body_lineage")),
+                None => None,
+            }
+        }
         None => None,
     };
     let preselection = rmfastload_preselection.or(terminal_preselection);
-    let chart_count = scan
-        .streams
-        .iter()
+    let stream_is_selected = |si: usize| -> Result<bool, CodecError> {
+        match &preselection {
+            Some((_, selected, _)) => {
+                ctx.contains_btree_set(selected, &si, "nx preselected geometry streams")
+            }
+            None => Ok(true),
+        }
+    };
+    let mut chart_count = 0usize;
+    for (si, stream) in ctx
+        .admit_iter(&scan.streams, "nx completion chart count")?
         .enumerate()
-        .filter(|(si, stream)| {
-            stream.kind().is_parasolid()
-                && preselection
-                    .as_ref()
-                    .is_none_or(|(_, selected, _)| selected.contains(si))
-        })
-        .map(|(si, _)| {
-            parsed
-                .stream(si)
-                .view_for_geometry()
-                .intersections
-                .curves
-                .len()
-        })
-        .sum::<usize>();
+    {
+        if stream.kind().is_parasolid() && stream_is_selected(si)? {
+            chart_count = chart_count
+                .checked_add(
+                    parsed
+                        .stream(si)
+                        .view_for_geometry()
+                        .intersections
+                        .curves
+                        .len(),
+                )
+                .ok_or_else(|| ctx.refuse_codec_limit("nx completion chart count", 0, 1))?;
+        }
+    }
     let transfer_limit = completion_transfer_budget_limit(ctx, chart_count)?;
     let support_uv_limit = support_uv_completion_budget_limit(ctx, chart_count)?;
     let exact_transfer_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(
@@ -268,6 +299,7 @@ pub(super) fn try_decode_geometry(
     );
     let mut support_uv_lane_geometry_exhausted = false;
     let mut intersection_index = IntersectionIncidenceIndex::default();
+    let mut witness_storage = ctx.reserve_scoped(0, "nx model endpoint witnesses")?;
     let mut model_endpoint_witnesses = EndpointWitnesses::new();
     let mut completion_streams = Vec::new();
     let container_stream = StreamHandle::new(
@@ -276,7 +308,10 @@ pub(super) fn try_decode_geometry(
         "allocate annotation stream handle",
     )?;
 
-    for (si, stream) in scan.streams.iter().enumerate() {
+    for (si, stream) in ctx
+        .admit_iter(&scan.streams, "nx geometry streams")?
+        .enumerate()
+    {
         if !stream.kind().is_parasolid() {
             continue;
         }
@@ -286,15 +321,8 @@ pub(super) fn try_decode_geometry(
         support_uv_geometry_budget.clear_blend_frame_cache();
         coupled_support_uv_geometry_budget.clear_blend_frame_cache();
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();
-        if preselection
-            .as_ref()
-            .is_some_and(|(_, selected, _)| !selected.contains(&si))
-        {
+        if !stream_is_selected(si)? {
             let unknown_index = unknowns.len();
-            {
-                ctx.reserve_vec(&mut unknowns, 1, "nx geometry unknown streams")?;
-                ctx.reserve_vec(&mut stream_unknowns, 1, "nx geometry unknown indices")
-            }?;
             let unknown = unknown_stream_metadata(ctx, si, stream)?;
             annotations.note(
                 ctx,
@@ -304,8 +332,12 @@ pub(super) fn try_decode_geometry(
                 Some(stream.kind().label()),
             )?;
             annotations.exactness(ctx, unknown.id().as_str(), Exactness::Derived)?;
-            unknowns.push(unknown);
-            stream_unknowns.push((si, unknown_index));
+            ctx.push_vec(&mut unknowns, unknown, "nx geometry unknown streams")?;
+            ctx.push_vec(
+                &mut stream_unknowns,
+                (si, unknown_index),
+                "nx geometry unknown indices",
+            )?;
             continue;
         }
         let crate::nurbs::Parsed {
@@ -314,16 +346,16 @@ pub(super) fn try_decode_geometry(
             pcurves: nurbs_pcurves,
             refusals: nurbs_refusals,
         } = parsed.parse_nurbs(ctx, si)?;
-        for refusal in nurbs_refusals {
-            ctx.reserve_vec(&mut carrier_refusals, 1, "nx carrier refusal losses")?;
+        for refusal in ctx.admit_iter(&nurbs_refusals, "nx carrier refusal losses")? {
             super::charge_loss_code(ctx, NxLossCode::CarrierLanesUnpaired)?;
-            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(ctx.format_retained(
+            let note = NxLossCode::CarrierLanesUnpaired.note(ctx.format_retained(
                 format_args!(
                     "parasolid#{si} {} at byte {} states no carrier: {}",
                     refusal.family, refusal.pos, refusal.error
                 ),
                 "nx carrier refusal loss text",
-            )?));
+            )?);
+            ctx.push_vec(&mut carrier_refusals, note, "nx carrier refusal losses")?;
         }
         let view = parsed.stream(si).view_for_geometry();
         let stream_name = ctx.format_retained(
@@ -335,9 +367,13 @@ pub(super) fn try_decode_geometry(
             cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
             "allocate annotation stream handle",
         )?;
-        ctx.reserve_vec(&mut completion_streams, 1, "nx completion streams")?;
-        completion_streams.push((si, source_stream.clone()));
+        ctx.push_vec(
+            &mut completion_streams,
+            (si, source_stream.clone()),
+            "nx completion streams",
+        )?;
         let graph = &view.graph;
+        let mut stream_storage = ctx.reserve_scoped(0, "nx geometry stream scratch")?;
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
         let mut curves_by_xmt = BTreeMap::new();
@@ -356,8 +392,10 @@ pub(super) fn try_decode_geometry(
         // The model is accumulated across streams. Completion must not retry
         // unresolved curves that an earlier stream already admitted.
         let procedural_start = ir.model.procedural_curves.len();
-        for (pi, (position, node)) in ordered_point_candidates(ctx, graph)?
-            .into_iter()
+        let point_candidates =
+            stream_storage.with_storage(|| ordered_point_candidates(ctx, graph))?;
+        for (pi, &(position, node)) in ctx
+            .admit_iter(&point_candidates, "nx geometry points")?
             .enumerate()
         {
             let pid: PointId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("pt"), pi)?;
@@ -371,23 +409,29 @@ pub(super) fn try_decode_geometry(
                 "POINT",
             )?;
             annotations.derived(ctx, pid.as_str(), "position")?;
-            ctx.reserve_vec(&mut ir.model.points, 1, "nx geometry points")?;
-            ir.model.points.push(Point::new(
+            stream_storage.with_storage(|| {
+                let key = pid.try_clone_for_decode(ctx, "nx point node index")?;
+                ctx.insert_btree_map(&mut points_by_xmt, node.xmt(), key, "nx point node index")
+            })?;
+            let point = Point::new(
                 pid.try_clone_for_decode(ctx, "nx geometry point identity")?,
                 position,
                 None,
-            ));
-            ctx.reserve_vec(&mut ir.model.vertices, 1, "nx geometry point vertices")?;
-            ir.model.vertices.push(Vertex {
-                id: vid.try_clone_for_decode(ctx, "nx point vertex identity")?,
-                point: pid.try_clone_for_decode(ctx, "nx vertex point identity")?,
+            );
+            ctx.push_vec(&mut ir.model.points, point, "nx geometry points")?;
+            let vertex = Vertex {
+                id: vid,
+                point: pid,
                 tolerance: None,
-            });
-            ctx.insert_btree_map(&mut points_by_xmt, node.xmt(), pid, "nx point node index")?;
+            };
+            ctx.push_vec(&mut ir.model.vertices, vertex, "nx geometry point vertices")?;
             counts.points += 1;
         }
-        for (fi, (geometry, node)) in ordered_surface_candidates(ctx, graph)?
-            .into_iter()
+        drop(point_candidates);
+        let surface_candidates =
+            stream_storage.with_storage(|| ordered_surface_candidates(ctx, graph))?;
+        for (fi, (geometry, node)) in ctx
+            .admit_iter(surface_candidates, "nx geometry surfaces")?
             .enumerate()
         {
             match &geometry {
@@ -421,20 +465,26 @@ pub(super) fn try_decode_geometry(
                 })?),
             )?;
             annotations.derived(ctx, id.as_str(), "geometry")?;
-            ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx geometry surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id: id.try_clone_for_decode(ctx, "nx geometry surface identity")?,
+            stream_storage.with_storage(|| {
+                let key = id.try_clone_for_decode(ctx, "nx surface node index")?;
+                ctx.insert_btree_map(
+                    &mut surfaces_by_xmt,
+                    node.xmt(),
+                    key,
+                    "nx surface node index",
+                )
+            })?;
+            let surface = Surface {
+                id,
                 geometry,
                 source_object: None,
-            });
-            ctx.insert_btree_map(
-                &mut surfaces_by_xmt,
-                node.xmt(),
-                id,
-                "nx surface node index",
-            )?;
+            };
+            ctx.push_vec(&mut ir.model.surfaces, surface, "nx geometry surfaces")?;
         }
-        for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
+        for (fi, surf) in ctx
+            .admit_iter(nurbs_surfaces, "nx geometry NURBS surfaces")?
+            .enumerate()
+        {
             counts.nurbs_surfaces += 1;
             let id: SurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-surf"), fi)?;
@@ -446,20 +496,23 @@ pub(super) fn try_decode_geometry(
                 Some("B_SPLINE_SURFACE"),
             )?;
             annotations.derived(ctx, id.as_str(), "geometry")?;
-            ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx geometry surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id: id.try_clone_for_decode(ctx, "nx NURBS surface identity")?,
+            if let Some(node) = graph.at_pos(surf.pos) {
+                stream_storage.with_storage(|| {
+                    let key = id.try_clone_for_decode(ctx, "nx surface node index")?;
+                    ctx.insert_btree_map(
+                        &mut surfaces_by_xmt,
+                        node.xmt(),
+                        key,
+                        "nx surface node index",
+                    )
+                })?;
+            }
+            let surface = Surface {
+                id,
                 geometry: surf.geometry,
                 source_object: None,
-            });
-            if let Some(node) = graph.at_pos(surf.pos) {
-                ctx.insert_btree_map(
-                    &mut surfaces_by_xmt,
-                    node.xmt(),
-                    id,
-                    "nx surface node index",
-                )?;
-            }
+            };
+            ctx.push_vec(&mut ir.model.surfaces, surface, "nx geometry surfaces")?;
         }
         let saved_offset_carriers = saved_offset_carriers(
             ctx,
@@ -470,18 +523,32 @@ pub(super) fn try_decode_geometry(
             ir.tolerances.linear,
             &adaptive_geometry_budget,
         )?;
-        for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
-            let Some(support_ref) = surfaces_by_xmt.get(&offset.state.support()) else {
+        for (oi, offset) in ctx
+            .admit_iter(&view.offset_surfaces, "nx offset surfaces")?
+            .copied()
+            .enumerate()
+        {
+            let Some(support_ref) = ctx.get_btree_map(
+                &surfaces_by_xmt,
+                &offset.state.support(),
+                "nx surface node index",
+            )?
+            else {
                 continue;
             };
             let support: SurfaceId = support_ref.try_clone_for_decode(ctx, "nx offset support")?;
             let procedural_id: ProceduralSurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("offset"), oi)?;
-            let (surface_id, cache_fit_tolerance) = if let Some((surface, fit_tolerance)) =
-                saved_offset_carriers.get(&offset.xmt)
-            {
+            let saved = ctx.get_btree_map(
+                &saved_offset_carriers,
+                &offset.xmt,
+                "nx saved offset carriers",
+            )?;
+            let (surface_id, cache_fit_tolerance) = if let Some((surface, fit_tolerance)) = saved {
                 (
-                    surface.try_clone_for_decode(ctx, "nx saved offset surface")?,
+                    stream_storage.with_storage(|| {
+                        surface.try_clone_for_decode(ctx, "nx saved offset surface")
+                    })?,
                     Some(*fit_tolerance),
                 )
             } else {
@@ -495,9 +562,11 @@ pub(super) fn try_decode_geometry(
                     Some("OFFSET_SURF"),
                 )?;
                 annotations.derived(ctx, surface_id.as_str(), "geometry")?;
-                ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx offset surfaces")?;
-                ir.model.surfaces.push(Surface {
-                    id: surface_id.try_clone_for_decode(ctx, "nx offset surface identity")?,
+                let owner = stream_storage.with_storage(|| {
+                    surface_id.try_clone_for_decode(ctx, "nx offset construction owner")
+                })?;
+                let surface = Surface {
+                    id: surface_id,
                     geometry: SurfaceGeometry::Procedural {
                         construction: procedural_id
                             .try_clone_for_decode(ctx, "nx offset construction identity")?,
@@ -524,8 +593,9 @@ pub(super) fn try_decode_geometry(
                         layer: None,
                         instance_path: Vec::new(),
                     }),
-                });
-                (surface_id, None)
+                };
+                ctx.push_vec(&mut ir.model.surfaces, surface, "nx offset surfaces")?;
+                (owner, None)
             };
             annotations.note(
                 ctx,
@@ -555,22 +625,26 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
-            let _attached = ir.model.add_procedural_surface(
-                ctx,
-                &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?,
-                procedural,
-            )?;
+            let _attached = ir
+                .model
+                .add_procedural_surface(ctx, &surface_id, procedural)?;
 
-            ctx.insert_btree_map(
-                &mut surfaces_by_xmt,
-                offset.xmt,
-                surface_id,
-                "nx surface node index",
-            )?;
+            stream_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut surfaces_by_xmt,
+                    offset.xmt,
+                    surface_id,
+                    "nx surface node index",
+                )
+            })?;
             counts.offset_surfaces += 1;
         }
 
-        for (bi, blend) in view.blend_surfaces.iter().copied().enumerate() {
+        for (bi, blend) in ctx
+            .admit_iter(&view.blend_surfaces, "nx blend surfaces")?
+            .copied()
+            .enumerate()
+        {
             let surface_id: SurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("blend-surf"), bi)?;
             let procedural_id: ProceduralSurfaceId =
@@ -583,9 +657,11 @@ pub(super) fn try_decode_geometry(
                 Some("BLEND_SURF"),
             )?;
             annotations.derived(ctx, surface_id.as_str(), "geometry")?;
-            ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx blend surfaces")?;
-            ir.model.surfaces.push(Surface {
-                id: surface_id.try_clone_for_decode(ctx, "nx blend surface identity")?,
+            let owner = stream_storage.with_storage(|| {
+                surface_id.try_clone_for_decode(ctx, "nx blend construction owner")
+            })?;
+            let surface = Surface {
+                id: surface_id,
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id
                         .try_clone_for_decode(ctx, "nx blend construction identity")?,
@@ -610,7 +686,8 @@ pub(super) fn try_decode_geometry(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
-            });
+            };
+            ctx.push_vec(&mut ir.model.surfaces, surface, "nx blend surfaces")?;
             annotations.note(
                 ctx,
                 procedural_id.as_str(),
@@ -623,7 +700,7 @@ pub(super) fn try_decode_geometry(
 
             let attached = ir.model.add_procedural_surface(
                 ctx,
-                &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?,
+                &owner,
                 ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Blend(
@@ -644,39 +721,51 @@ pub(super) fn try_decode_geometry(
                 ),
             )?;
             if attached.is_ok() {
-                ctx.reserve_vec(&mut pending_blend_supports, 1, "nx pending blend supports")?;
-                pending_blend_supports.push((
-                    procedural_index,
-                    blend.state.support_xmts(),
-                    blend.state.offsets(),
-                ));
+                ctx.push_scoped_vec(
+                    &mut stream_storage,
+                    &mut pending_blend_supports,
+                    (
+                        procedural_index,
+                        blend.state.support_xmts(),
+                        blend.state.offsets(),
+                    ),
+                    "nx pending blend supports",
+                )?;
                 if blend.state.spine_xmt() > 1 {
-                    ctx.reserve_vec(&mut pending_blend_spines, 1, "nx pending blend spines")?;
-                    pending_blend_spines.push((procedural_index, blend.state.spine_xmt()));
+                    ctx.push_scoped_vec(
+                        &mut stream_storage,
+                        &mut pending_blend_spines,
+                        (procedural_index, blend.state.spine_xmt()),
+                        "nx pending blend spines",
+                    )?;
                 }
             }
-            ctx.insert_btree_map(
-                &mut surfaces_by_xmt,
-                blend.xmt,
-                surface_id,
-                "nx surface node index",
-            )?;
+            stream_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut surfaces_by_xmt,
+                    blend.xmt,
+                    owner,
+                    "nx surface node index",
+                )
+            })?;
             counts.blend_surfaces += 1;
         }
-        for (procedural_index, support_xmts, offsets) in pending_blend_supports {
-            let [first, second] = [0, 1].map(|side| {
-                surfaces_by_xmt
-                    .get(&support_xmts[side])
-                    .map(|surface| surface.try_clone_for_decode(ctx, "nx blend support identity"))
-                    .transpose()
-                    .map(|surface| {
-                        surface.map(|surface| BlendSupport {
-                            surface,
-                            reversed: offsets[side].is_sign_negative(),
-                        })
-                    })
-            });
-            let supports = [first?, second?];
+        for &(procedural_index, support_xmts, offsets) in
+            ctx.admit_iter(&pending_blend_supports, "nx pending blend supports")?
+        {
+            let mut supports = [None, None];
+            for (side, support) in supports.iter_mut().enumerate() {
+                if let Some(surface) = ctx.get_btree_map(
+                    &surfaces_by_xmt,
+                    &support_xmts[side],
+                    "nx surface node index",
+                )? {
+                    *support = Some(BlendSupport {
+                        surface: surface.try_clone_for_decode(ctx, "nx blend support identity")?,
+                        reversed: offsets[side].is_sign_negative(),
+                    });
+                }
+            }
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
@@ -687,8 +776,10 @@ pub(super) fn try_decode_geometry(
             });
         }
 
-        for (ci, (geometry, node)) in ordered_curve_candidates(ctx, graph)?
-            .into_iter()
+        let curve_candidates =
+            stream_storage.with_storage(|| ordered_curve_candidates(ctx, graph))?;
+        for (ci, (geometry, node)) in ctx
+            .admit_iter(curve_candidates, "nx geometry curves")?
             .enumerate()
         {
             match &geometry {
@@ -719,15 +810,18 @@ pub(super) fn try_decode_geometry(
                 })?),
             )?;
             annotations.derived(ctx, id.as_str(), "geometry")?;
-            ctx.reserve_vec(&mut ir.model.curves, 1, "nx geometry curves")?;
-            ir.model.curves.push(Curve {
-                id: id.try_clone_for_decode(ctx, "nx geometry curve identity")?,
+            stream_storage.with_storage(|| {
+                let key = id.try_clone_for_decode(ctx, "nx curve node index")?;
+                ctx.insert_btree_map(&mut curves_by_xmt, node.xmt(), key, "nx curve node index")
+            })?;
+            let curve = Curve {
+                id,
                 geometry,
                 source_object: None,
-            });
-            ctx.insert_btree_map(&mut curves_by_xmt, node.xmt(), id, "nx curve node index")?;
+            };
+            ctx.push_vec(&mut ir.model.curves, curve, "nx geometry curves")?;
         }
-        for (ci, crv) in nurbs_curves.into_iter().enumerate() {
+        for (ci, crv) in ctx.admit_iter(nurbs_curves, "nx NURBS curves")?.enumerate() {
             counts.nurbs_curves += 1;
             let id: CurveId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-crv"), ci)?;
@@ -739,18 +833,24 @@ pub(super) fn try_decode_geometry(
                 Some("B_SPLINE_CURVE"),
             )?;
             annotations.derived(ctx, id.as_str(), "geometry")?;
-            ctx.reserve_vec(&mut ir.model.curves, 1, "nx NURBS curves")?;
-            ir.model.curves.push(Curve {
-                id: id.try_clone_for_decode(ctx, "nx NURBS curve identity")?,
+            if let Some(node) = graph.at_pos(crv.pos) {
+                stream_storage.with_storage(|| {
+                    let key = id.try_clone_for_decode(ctx, "nx curve node index")?;
+                    ctx.insert_btree_map(&mut curves_by_xmt, node.xmt(), key, "nx curve node index")
+                })?;
+            }
+            let curve = Curve {
+                id,
                 geometry: crv.geometry,
                 source_object: None,
-            });
-            if let Some(node) = graph.at_pos(crv.pos) {
-                ctx.insert_btree_map(&mut curves_by_xmt, node.xmt(), id, "nx curve node index")?;
-            }
+            };
+            ctx.push_vec(&mut ir.model.curves, curve, "nx NURBS curves")?;
         }
 
-        for (pi, pcurve) in nurbs_pcurves.into_iter().enumerate() {
+        for (pi, pcurve) in ctx
+            .admit_iter(nurbs_pcurves, "nx NURBS pcurves")?
+            .enumerate()
+        {
             let id: PcurveId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("pcurve"), pi)?;
             annotations.note(
@@ -761,116 +861,116 @@ pub(super) fn try_decode_geometry(
                 Some("B_CURVE_2D"),
             )?;
             annotations.derived(ctx, id.as_str(), "geometry")?;
-            ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx NURBS pcurves")?;
-            ir.model.pcurves.push(Pcurve {
-                id: id.try_clone_for_decode(ctx, "nx NURBS pcurve identity")?,
+            if let Some(node) = graph.at_pos(pcurve.pos) {
+                stream_storage.with_storage(|| {
+                    let key = id.try_clone_for_decode(ctx, "nx pcurve node index")?;
+                    ctx.insert_btree_map(
+                        &mut pcurves_by_xmt,
+                        node.xmt(),
+                        key,
+                        "nx pcurve node index",
+                    )
+                })?;
+            }
+            let pcurve = Pcurve {
+                id,
                 geometry: pcurve.geometry,
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
-            });
-            if let Some(node) = graph.at_pos(pcurve.pos) {
-                ctx.insert_btree_map(&mut pcurves_by_xmt, node.xmt(), id, "nx pcurve node index")?;
-            }
+            };
+            ctx.push_vec(&mut ir.model.pcurves, pcurve, "nx NURBS pcurves")?;
         }
-        let intersection_scan = view.intersections.try_clone_for_decode(ctx)?;
+        let intersections = &view.intersections;
         counts
             .intersection_rejections
-            .extend(intersection_scan.rejected);
-        let intersection_constructions = intersection_scan.constructions;
+            .extend(intersections.rejected);
         let mut charted_intersections = BTreeMap::new();
-        for curve in intersection_scan.curves {
-            ctx.insert_btree_map(
-                &mut charted_intersections,
-                curve.xmt,
-                curve,
-                "nx charted intersection index",
-            )?;
+        for curve in ctx.admit_iter(&intersections.curves, "nx charted intersection index")? {
+            stream_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut charted_intersections,
+                    curve.xmt,
+                    curve,
+                    "nx charted intersection index",
+                )
+            })?;
         }
         let mut uncharted_intersections = BTreeMap::new();
-        for curve in intersection_scan.uncharted {
-            ctx.insert_btree_map(
-                &mut uncharted_intersections,
-                curve.xmt,
-                curve,
-                "nx uncharted intersection index",
-            )?;
+        for curve in ctx.admit_iter(&intersections.uncharted, "nx uncharted intersection index")? {
+            stream_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut uncharted_intersections,
+                    curve.xmt,
+                    curve,
+                    "nx uncharted intersection index",
+                )
+            })?;
         }
-        let intersection_support_uv = {
-            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, ctx)?;
-            intersection_constructions
-                .iter()
-                .map(
-                    |construction| -> Result<Option<_>, cadmpeg_core::CodecError> {
-                        let Some(charted) = charted_intersections.get(&construction.xmt) else {
-                            return Ok(None);
-                        };
-                        let mut support_uv = validate_serialized_support_uv_with_index(
-                            ctx,
-                            &model_index,
-                            &crate::decode::support_uv::SerializedSupportUvFit {
-                                surfaces_by_xmt: &surfaces_by_xmt,
-                                supports: [
-                                    Some(charted.primary_support),
-                                    charted.secondary_support,
-                                ],
-                                points: &charted.samples.points_charged(ctx)?,
-                                fit_tolerance: charted.fit_tolerance.get(),
-                                lanes: &charted.support_uv,
-                            },
-                            &serialized_support_uv_geometry_budget,
-                        )?;
-                        if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
-                            ctx,
-                            &model_index,
-                            &crate::decode::support_uv::SerializedSupportUvFit {
-                                surfaces_by_xmt: &surfaces_by_xmt,
-                                supports: [
-                                    Some(charted.primary_support),
-                                    charted.secondary_support,
-                                ],
-                                points: &charted.samples.points_charged(ctx)?,
-                                fit_tolerance: charted.fit_tolerance.get(),
-                                lanes: &charted.ext_support_uv,
-                            },
-                            &serialized_support_uv_geometry_budget,
-                        )? {
-                            for side in 0..2 {
-                                if support_uv[side].is_none() {
-                                    support_uv[side] = ext_support_uv[side]
-                                        .as_ref()
-                                        .map(|lane| {
-                                            crate::intersection::SupportUvLane::from_checked(
-                                                ctx.copy_slice(
-                                                    lane.as_slice(),
-                                                    "NX solved support-UV lane copy",
-                                                )?,
-                                                lane.as_slice().len(),
-                                            )
-                                            .ok_or_else(|| {
-                                                CodecError::malformed(
-                                                    "NX copied support-UV lane count",
-                                                )
-                                            })
-                                        })
-                                        .transpose()?;
-                                }
+        let mut intersection_support_uv = BTreeMap::new();
+        {
+            let mut index_storage = ctx.reserve_scoped(0, "nx intersection support model index")?;
+            let model_index = index_storage
+                .with_storage_limit(|| cadmpeg_ir::index::ModelIndex::new_model_only(&ir, ctx))?;
+            for construction in ctx.admit_iter(
+                &intersections.constructions,
+                "nx intersection support UV index",
+            )? {
+                let Some(&charted) = ctx.get_btree_map(
+                    &charted_intersections,
+                    &construction.xmt,
+                    "nx charted intersection index",
+                )?
+                else {
+                    continue;
+                };
+                let mut sample_storage = ctx.reserve_scoped(0, "nx intersection chart points")?;
+                let points = sample_storage.with_storage(|| charted.samples.points_charged(ctx))?;
+                let support_uv = stream_storage.with_storage(|| {
+                    let mut support_uv = validate_serialized_support_uv_with_index(
+                        ctx,
+                        &model_index,
+                        &crate::decode::support_uv::SerializedSupportUvFit {
+                            surfaces_by_xmt: &surfaces_by_xmt,
+                            supports: [Some(charted.primary_support), charted.secondary_support],
+                            points: &points,
+                            fit_tolerance: charted.fit_tolerance.get(),
+                            lanes: &charted.support_uv,
+                        },
+                        &serialized_support_uv_geometry_budget,
+                    )?;
+                    if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
+                        ctx,
+                        &model_index,
+                        &crate::decode::support_uv::SerializedSupportUvFit {
+                            surfaces_by_xmt: &surfaces_by_xmt,
+                            supports: [Some(charted.primary_support), charted.secondary_support],
+                            points: &points,
+                            fit_tolerance: charted.fit_tolerance.get(),
+                            lanes: &charted.ext_support_uv,
+                        },
+                        &serialized_support_uv_geometry_budget,
+                    )? {
+                        for side in 0..2 {
+                            if support_uv[side].is_none() {
+                                support_uv[side] =
+                                    copy_support_uv_lane(ctx, ext_support_uv[side].as_ref())?;
                             }
                         }
-                        Ok(Some((construction.xmt, support_uv)))
-                    },
-                )
-                .try_fold(BTreeMap::new(), |mut values, admitted| {
-                    if let Some((xmt, support_uv)) = admitted? {
-                        ctx.insert_btree_map(
-                            &mut values,
-                            xmt,
-                            support_uv,
-                            "nx intersection support UV index",
-                        )?;
                     }
-                    Ok::<_, cadmpeg_core::CodecError>(values)
-                })?
-        };
-        for (ci, construction) in intersection_constructions.into_iter().enumerate() {
+                    ctx.insert_btree_map(
+                        &mut intersection_support_uv,
+                        construction.xmt,
+                        support_uv,
+                        "nx intersection support UV index",
+                    )
+                    .map(drop)
+                });
+                support_uv?;
+            }
+        }
+        for (ci, construction) in ctx
+            .admit_iter(&intersections.constructions, "nx intersection curves")?
+            .enumerate()
+        {
             let curve_id: CurveId = scope.id_charged(
                 ctx,
                 &cadmpeg_ir::identity_component!("intersection-crv"),
@@ -878,90 +978,107 @@ pub(super) fn try_decode_geometry(
             )?;
             let procedural_id: ProceduralCurveId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("intersection"), ci)?;
-            let unknown_id: UnknownId = IdScope::container().id_charged(
-                ctx,
-                &cadmpeg_ir::identity_component!("parasolid"),
-                si,
-            )?;
-            let charted = charted_intersections.get(&construction.xmt);
-            let uncharted = if let Some(uncharted) = uncharted_intersections.get(&construction.xmt)
-            {
-                let [first, second] = uncharted
-                    .supports
-                    .references()
-                    .map(|xmt| surfaces_by_xmt.get(&u32::from(xmt)));
-                if let [Some(first), Some(second)] = [first, second] {
-                    cadmpeg_ir::geometry::TolerantIntersectionConstruction::from_parts(
-                        [
-                            first.try_clone_for_decode(ctx, "nx uncharted first support")?,
-                            second.try_clone_for_decode(ctx, "nx uncharted second support")?,
-                        ],
-                        uncharted.endpoints,
-                        uncharted.tolerance.into(),
-                    )
-                    .ok()
-                } else {
-                    None
+            let charted = ctx
+                .get_btree_map(
+                    &charted_intersections,
+                    &construction.xmt,
+                    "nx charted intersection index",
+                )?
+                .copied();
+            let uncharted = match ctx.get_btree_map(
+                &uncharted_intersections,
+                &construction.xmt,
+                "nx uncharted intersection index",
+            )? {
+                Some(uncharted) => {
+                    let [first, second] = uncharted.supports.references();
+                    let first = ctx.get_btree_map(
+                        &surfaces_by_xmt,
+                        &u32::from(first),
+                        "nx surface node index",
+                    )?;
+                    let second = ctx.get_btree_map(
+                        &surfaces_by_xmt,
+                        &u32::from(second),
+                        "nx surface node index",
+                    )?;
+                    if let (Some(first), Some(second)) = (first, second) {
+                        cadmpeg_ir::geometry::TolerantIntersectionConstruction::from_parts(
+                            [
+                                first.try_clone_for_decode(ctx, "nx uncharted first support")?,
+                                second.try_clone_for_decode(ctx, "nx uncharted second support")?,
+                            ],
+                            uncharted.endpoints,
+                            uncharted.tolerance.into(),
+                        )
+                        .ok()
+                    } else {
+                        None
+                    }
                 }
+                None => None,
+            };
+            let unknown_id: Option<UnknownId> = if charted.is_none() && uncharted.is_none() {
+                Some(IdScope::container().id_charged(
+                    ctx,
+                    &cadmpeg_ir::identity_component!("parasolid"),
+                    si,
+                )?)
             } else {
                 None
             };
+            let support_uv = ctx.get_btree_map(
+                &intersection_support_uv,
+                &construction.xmt,
+                "nx intersection support UV index",
+            )?;
+            let mut sample_storage = ctx.reserve_scoped(0, "nx intersection chart samples")?;
+            let parameters = match charted {
+                Some(charted) => {
+                    Some(sample_storage.with_storage(|| charted.samples.parameters_charged(ctx))?)
+                }
+                None => None,
+            };
             if let Some(charted) = charted {
-                if let Some(support_uv) = intersection_support_uv.get(&construction.xmt) {
+                if let Some(support_uv) = support_uv {
                     for (side, lane) in support_uv.iter().enumerate() {
                         if lane.is_some() {
-                            ctx.insert_btree_set(
-                                &mut validated_support_uv_lanes,
-                                (
-                                    procedural_id.try_clone_for_decode(
-                                        ctx,
-                                        "nx validated support UV construction",
-                                    )?,
-                                    side,
-                                ),
-                                "nx validated support UV lanes",
-                            )?;
+                            stream_storage.with_storage(|| {
+                                let construction = procedural_id.try_clone_for_decode(
+                                    ctx,
+                                    "nx validated support UV construction",
+                                )?;
+                                ctx.insert_btree_set(
+                                    &mut validated_support_uv_lanes,
+                                    (construction, side),
+                                    "nx validated support UV lanes",
+                                )
+                            })?;
                         }
                     }
                 }
-                let [value_first, value_second] = [0, 1].map(|side| {
-                    charted.support_uv[side]
-                        .as_ref()
-                        .map(|lane| {
-                            crate::intersection::SupportUvLane::from_checked(
-                                ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
-                                lane.as_slice().len(),
-                            )
-                            .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
-                        })
-                        .transpose()
-                });
-                let [ext_first, ext_second] = [0, 1].map(|side| {
-                    charted.ext_support_uv[side]
-                        .as_ref()
-                        .map(|lane| {
-                            crate::intersection::SupportUvLane::from_checked(
-                                ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
-                                lane.as_slice().len(),
-                            )
-                            .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
-                        })
-                        .transpose()
-                });
-                ctx.reserve_vec(
-                    &mut pending_ext11_support_uv,
-                    1,
-                    "nx pending EXT11 support UV",
-                )?;
-                pending_ext11_support_uv.push((
-                    procedural_id.try_clone_for_decode(ctx, "nx pending EXT11 construction")?,
-                    charted.samples.clone_charged(ctx)?,
-                    charted.fit_tolerance.get(),
-                    SerializedSupportUv {
-                        values: [value_first?, value_second?],
-                        ext11: [ext_first?, ext_second?],
-                    },
-                ));
+                stream_storage.with_storage(|| {
+                    let pending = (
+                        procedural_id.try_clone_for_decode(ctx, "nx pending EXT11 construction")?,
+                        charted.samples.clone_charged(ctx)?,
+                        charted.fit_tolerance.get(),
+                        SerializedSupportUv {
+                            values: [
+                                copy_support_uv_lane(ctx, charted.support_uv[0].as_ref())?,
+                                copy_support_uv_lane(ctx, charted.support_uv[1].as_ref())?,
+                            ],
+                            ext11: [
+                                copy_support_uv_lane(ctx, charted.ext_support_uv[0].as_ref())?,
+                                copy_support_uv_lane(ctx, charted.ext_support_uv[1].as_ref())?,
+                            ],
+                        },
+                    );
+                    ctx.push_vec(
+                        &mut pending_ext11_support_uv,
+                        pending,
+                        "nx pending EXT11 support UV",
+                    )
+                })?;
             }
             annotations.note(
                 ctx,
@@ -975,38 +1092,46 @@ pub(super) fn try_decode_geometry(
             } else {
                 annotations.exactness(ctx, curve_id.as_str(), Exactness::Unknown)?;
             }
-            ctx.reserve_vec(&mut ir.model.curves, 1, "nx intersection curves")?;
-            ir.model.curves.push(Curve {
-                id: curve_id.try_clone_for_decode(ctx, "nx intersection curve identity")?,
-                geometry: if let Some(charted) = charted {
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                            ctx,
-                            1,
-                            linear_knots(
-                                &charted.samples.parameters_charged(ctx)?,
-                                &adaptive_geometry_budget,
-                            )?,
-                            charted.samples.points_charged(ctx)?,
-                            None,
-                            false,
-                        )?
-                        .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                    ))
-                } else if uncharted.is_some() {
-                    CurveGeometry::Procedural {
-                        construction: procedural_id
-                            .try_clone_for_decode(ctx, "nx intersection construction identity")?,
-                        cache: None,
+            let geometry = match (charted, &parameters) {
+                (Some(charted), Some(parameters)) => {
+                    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                        ctx,
+                        1,
+                        linear_knots(parameters, &adaptive_geometry_budget)?,
+                        charted.samples.points_charged(ctx)?,
+                        None,
+                        false,
+                    )?;
+                    match curve {
+                        Ok(curve) => CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                        Err(error) => {
+                            return Err(CodecError::Malformed(ctx.format_retained(
+                                format_args!("{error}"),
+                                "nx intersection chart carrier error",
+                            )?));
+                        }
                     }
-                } else {
-                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: Some(
-                            unknown_id
-                                .try_clone_for_decode(ctx, "nx unknown intersection record")?,
-                        ),
-                    })
+                }
+                _ if uncharted.is_some() => CurveGeometry::Procedural {
+                    construction: procedural_id
+                        .try_clone_for_decode(ctx, "nx intersection construction identity")?,
+                    cache: None,
                 },
+                _ => CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                    record: unknown_id
+                        .as_ref()
+                        .map(|unknown| {
+                            unknown.try_clone_for_decode(ctx, "nx unknown intersection record")
+                        })
+                        .transpose()?,
+                }),
+            };
+            let owner = stream_storage.with_storage(|| {
+                curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")
+            })?;
+            let curve = Curve {
+                id: curve_id,
+                geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: cadmpeg_core::text::NonBlankString::for_decode(
@@ -1026,7 +1151,8 @@ pub(super) fn try_decode_geometry(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
-            });
+            };
+            ctx.push_vec(&mut ir.model.curves, curve, "nx intersection curves")?;
             annotations.note(
                 ctx,
                 procedural_id.as_str(),
@@ -1039,31 +1165,14 @@ pub(super) fn try_decode_geometry(
             } else {
                 annotations.exactness(ctx, procedural_id.as_str(), Exactness::Unknown)?;
             }
-            let definition = if let Some(charted) = charted {
-                let support_uv = if let Some(lanes) = intersection_support_uv.get(&construction.xmt)
-                {
-                    let [first, second] = [0, 1].map(|side| {
-                        lanes[side]
-                            .as_ref()
-                            .map(|lane| {
-                                crate::intersection::SupportUvLane::from_checked(
-                                    ctx.copy_slice(
-                                        lane.as_slice(),
-                                        "NX solved support-UV lane copy",
-                                    )?,
-                                    lane.as_slice().len(),
-                                )
-                                .ok_or_else(|| {
-                                    CodecError::malformed("NX copied support-UV lane count")
-                                })
-                            })
-                            .transpose()
-                    });
-                    [first?, second?]
-                } else {
-                    [None, None]
+            let definition = if let (Some(charted), Some(parameters)) = (charted, &parameters) {
+                let support_uv = match support_uv {
+                    Some(lanes) => [
+                        copy_support_uv_lane(ctx, lanes[0].as_ref())?,
+                        copy_support_uv_lane(ctx, lanes[1].as_ref())?,
+                    ],
+                    None => [None, None],
                 };
-                let parameters = charted.samples.parameters_charged(ctx)?;
                 let first = intersection_side(
                     ctx,
                     &ir,
@@ -1103,10 +1212,12 @@ pub(super) fn try_decode_geometry(
             } else {
                 ProceduralCurveDefinition::Unknown {
                     native_kind: Some("nx:intersection".into()),
-                    record: Some(unknown_id),
+                    record: unknown_id,
                     cache: None,
                 }
             };
+            drop(parameters);
+            drop(sample_storage);
             let mut definition = definition;
             if let Some(charted) = charted {
                 definition
@@ -1117,22 +1228,24 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            let _attached = ir.model.add_procedural_curve(
-                ctx,
-                &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?,
-                procedural,
-            )?;
+            let _attached = ir.model.add_procedural_curve(ctx, &owner, procedural)?;
 
-            ctx.insert_btree_map(
-                &mut curves_by_xmt,
-                construction.xmt,
-                curve_id,
-                "nx curve node index",
-            )?;
+            stream_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut curves_by_xmt,
+                    construction.xmt,
+                    owner,
+                    "nx curve node index",
+                )
+            })?;
             counts.intersection_curves += 1;
         }
-        for (procedural_index, spine_xmt) in pending_blend_spines {
-            let Some(spine_ref) = curves_by_xmt.get(&spine_xmt) else {
+        for &(procedural_index, spine_xmt) in
+            ctx.admit_iter(&pending_blend_spines, "nx pending blend spines")?
+        {
+            let Some(spine_ref) =
+                ctx.get_btree_map(&curves_by_xmt, &spine_xmt, "nx curve node index")?
+            else {
                 continue;
             };
             let spine = spine_ref.try_clone_for_decode(ctx, "nx blend spine identity")?;
@@ -1145,195 +1258,37 @@ pub(super) fn try_decode_geometry(
                 }
             });
         }
-        let trimmed_curves = &view.trimmed_curves;
-        let mut normalized_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
         let mut invalid_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
-        let mut curve_indices: BTreeMap<CurveId, usize> = BTreeMap::new();
-        for (index, curve) in ir.model.curves.iter().enumerate() {
-            ctx.insert_btree_map(
-                &mut curve_indices,
-                curve
-                    .id
-                    .try_clone_for_decode(ctx, "nx curve index identity")?,
-                index,
-                "nx curve identity index",
-            )?;
-        }
-        let mut surface_indices: BTreeMap<SurfaceId, usize> = BTreeMap::new();
-        for (index, surface) in ir.model.surfaces.iter().enumerate() {
-            ctx.insert_btree_map(
-                &mut surface_indices,
-                surface
-                    .id
-                    .try_clone_for_decode(ctx, "nx surface index identity")?,
-                index,
-                "nx surface identity index",
-            )?;
-        }
-        let mut pcurve_indices: BTreeMap<PcurveId, usize> = BTreeMap::new();
-        for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
-            ctx.insert_btree_map(
-                &mut pcurve_indices,
-                pcurve
-                    .id
-                    .try_clone_for_decode(ctx, "nx pcurve index identity")?,
-                index,
-                "nx pcurve identity index",
-            )?;
-        }
-        let surface_curves = &view.surface_curves;
-        loop {
-            let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
-            for trim in trimmed_curves {
-                if let Some(basis_ref) = curves_by_xmt.get(&trim.state.basis()) {
-                    let basis = basis_ref.try_clone_for_decode(ctx, "nx trimmed curve identity")?;
-                    let parameters = curve_indices
-                        .get(&basis)
-                        .and_then(|index| ir.model.curves.get(*index))
-                        .and_then(|curve| {
-                            canonical_trim_range(&curve.geometry, trim.state.parameters())
-                        });
-                    ctx.insert_btree_map(
-                        &mut curves_by_xmt,
-                        trim.xmt,
-                        basis,
-                        "nx trimmed curve index",
-                    )?;
-                    if let Some(parameters) = parameters {
-                        ctx.insert_btree_map(
-                            &mut trim_ranges,
-                            trim.xmt,
-                            parameters,
-                            "nx curve trim ranges",
-                        )?;
-                    }
-                }
-                if let Some(pcurve_ref) = pcurves_by_xmt.get(&trim.state.basis()) {
-                    let pcurve =
-                        pcurve_ref.try_clone_for_decode(ctx, "nx trimmed pcurve identity")?;
-                    ctx.insert_btree_map(
-                        &mut pcurves_by_xmt,
-                        trim.xmt,
-                        pcurve,
-                        "nx trimmed pcurve index",
-                    )?;
-                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.state.basis()) {
-                        let support =
-                            support.try_clone_for_decode(ctx, "nx trimmed pcurve support")?;
-                        ctx.insert_btree_map(
-                            &mut pcurve_supports_by_xmt,
-                            trim.xmt,
-                            support,
-                            "nx trimmed pcurve supports",
-                        )?;
-                    }
-                    ctx.insert_btree_map(
-                        &mut trim_ranges,
-                        trim.xmt,
-                        trim.state.parameters(),
-                        "nx curve trim ranges",
-                    )?;
-                }
-            }
-            for surface_curve in surface_curves {
-                if let Some(pcurve_ref) = pcurves_by_xmt.get(&surface_curve.state.pcurve()) {
-                    let pcurve: PcurveId =
-                        pcurve_ref.try_clone_for_decode(ctx, "nx surface pcurve identity")?;
-                    if !normalized_pcurves.contains(&pcurve) {
-                        let support = surfaces_by_xmt
-                            .get(&surface_curve.state.surface())
-                            .and_then(|id| surface_indices.get(id))
-                            .and_then(|index| ir.model.surfaces.get(*index))
-                            .map(|surface| &surface.geometry);
-                        let normalized = if let (Some(support), Some(carrier)) = (
-                            support,
-                            pcurve_indices
-                                .get(&pcurve)
-                                .and_then(|index| ir.model.pcurves.get_mut(*index)),
-                        ) {
-                            normalize_pcurve_parameters(ctx, &mut carrier.geometry, support)?
-                                .is_some()
-                        } else {
-                            false
-                        };
-                        if !normalized {
-                            pcurves_by_xmt.remove(&surface_curve.state.pcurve());
-                            ctx.insert_btree_set(
-                                &mut invalid_pcurves,
-                                pcurve.try_clone_for_decode(ctx, "nx invalid pcurves")?,
-                                "nx invalid pcurves",
-                            )?;
-                            continue;
-                        }
-                        ctx.insert_btree_set(
-                            &mut normalized_pcurves,
-                            pcurve.try_clone_for_decode(ctx, "nx normalized pcurves")?,
-                            "nx normalized pcurves",
-                        )?;
-                    }
-                    if let Some(carrier) = pcurve_indices
-                        .get(&pcurve)
-                        .and_then(|index| ir.model.pcurves.get_mut(*index))
-                    {
-                        let fit_tolerance = decoded_tolerance(
-                            surface_curve.state.tolerance().get(),
-                        )
-                        .map(|tolerance| {
-                            cadmpeg_ir::geometry::FitTolerance::from(
-                                cadmpeg_ir::scalar::NonNegativeReal::from(tolerance),
-                            )
-                        });
-                        match &mut carrier.metadata {
-                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::General {
-                                form: metadata,
-                            } => metadata.set_fit_tolerance(fit_tolerance),
-                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline {
-                                form: inline,
-                            } => {
-                                if let Some(fit_tolerance) = fit_tolerance {
-                                    inline.set_fit_tolerance(fit_tolerance);
-                                }
-                            }
-                        }
-                    }
-                    ctx.insert_btree_map(
-                        &mut pcurves_by_xmt,
-                        surface_curve.xmt,
-                        pcurve,
-                        "nx surface pcurve index",
-                    )?;
-                    if let Some(support) = surfaces_by_xmt.get(&surface_curve.state.surface()) {
-                        ctx.insert_btree_map(
-                            &mut pcurve_supports_by_xmt,
-                            surface_curve.xmt,
-                            support.try_clone_for_decode(ctx, "nx surface pcurve support")?,
-                            "nx surface pcurve supports",
-                        )?;
-                    }
-                }
-                if let Some(original) = surface_curve
-                    .state
-                    .original()
-                    .and_then(|original| curves_by_xmt.get(&original))
-                {
-                    let original =
-                        original.try_clone_for_decode(ctx, "nx surface curve identity")?;
-                    ctx.insert_btree_map(
-                        &mut curves_by_xmt,
-                        surface_curve.xmt,
-                        original,
-                        "nx surface curve index",
-                    )?;
-                }
-            }
-            if curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len() == mapped {
-                break;
-            }
-        }
+        map_stream_carriers(
+            ctx,
+            &mut stream_storage,
+            &mut ir,
+            &view.trimmed_curves,
+            &view.surface_curves,
+            CarrierMaps {
+                surfaces: &surfaces_by_xmt,
+                curves: &mut curves_by_xmt,
+                pcurves: &mut pcurves_by_xmt,
+                pcurve_supports: &mut pcurve_supports_by_xmt,
+                trim_ranges: &mut trim_ranges,
+            },
+            &mut invalid_pcurves,
+        )?;
         if !invalid_pcurves.is_empty() {
-            ir.model
-                .pcurves
-                .retain(|candidate| !invalid_pcurves.contains(&candidate.id));
+            let marks = keep_marks(
+                ctx,
+                &mut stream_storage,
+                &ir.model.pcurves,
+                |candidate| {
+                    Ok(!ctx.contains_btree_set(
+                        &invalid_pcurves,
+                        &candidate.id,
+                        "nx invalid pcurves",
+                    )?)
+                },
+                "nx invalid pcurves",
+            )?;
+            retain_marked(&mut ir.model.pcurves, marks);
             intersection_index.reindex_pcurves_after_prune(ctx, &ir)?;
         }
         retain_unresolved_topology_carriers(
@@ -1346,6 +1301,7 @@ pub(super) fn try_decode_geometry(
                 curves: &mut curves_by_xmt,
                 pcurves: &pcurves_by_xmt,
                 source_stream: &source_stream,
+                storage: &mut stream_storage,
             },
             &mut annotations,
         )?;
@@ -1447,17 +1403,12 @@ pub(super) fn try_decode_geometry(
             &mut validated_endpoint_witnesses,
             completed_endpoint_witnesses,
         )?;
-        copy_endpoint_witnesses(
-            ctx,
-            &mut model_endpoint_witnesses,
-            &validated_endpoint_witnesses,
-        )?;
         attach_completed_intersection_pcurves_for_stream_with_budget(
             ctx,
             &mut ir,
             crate::decode::support_uv::IntersectionStream {
                 graph,
-                scope: &IdScope::stream_charged(ctx, si)?,
+                scope: &scope,
                 coedge_start: intersection_starts.coedges,
                 procedural_start: intersection_starts.procedural_curves,
                 source_stream: source_stream.clone(),
@@ -1466,26 +1417,30 @@ pub(super) fn try_decode_geometry(
             &mut annotations,
             &completion_geometry_budget,
         )?;
+        witness_storage.with_storage(|| {
+            extend_endpoint_witnesses(
+                ctx,
+                &mut model_endpoint_witnesses,
+                validated_endpoint_witnesses,
+            )
+        })?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
-        {
-            ctx.reserve_vec(&mut unknowns, 1, "nx geometry unknown streams")?;
-            ctx.reserve_vec(&mut stream_unknowns, 1, "nx geometry unknown indices")
-        }?;
         let mut unknown = unknown_stream_metadata(ctx, si, stream)?;
-        for surface in &ir.model.surfaces[first_surface..] {
-            ctx.push_vec(
-                unknown.links_mut(),
-                ctx.copy_retained_text(surface.id.as_str(), "nx unknown entity link text")?,
-                "nx unknown entity links",
-            )?;
+        for surface in ctx.admit_iter(
+            ir.model.surfaces.get(first_surface..).unwrap_or_default(),
+            "nx unknown entity links",
+        )? {
+            let link =
+                ctx.copy_retained_text(surface.id.as_str(), "nx unknown entity link text")?;
+            ctx.push_vec(unknown.links_mut(), link, "nx unknown entity links")?;
         }
-        for curve in &ir.model.curves[first_curve..] {
-            ctx.push_vec(
-                unknown.links_mut(),
-                ctx.copy_retained_text(curve.id.as_str(), "nx unknown entity link text")?,
-                "nx unknown entity links",
-            )?;
+        for curve in ctx.admit_iter(
+            ir.model.curves.get(first_curve..).unwrap_or_default(),
+            "nx unknown entity links",
+        )? {
+            let link = ctx.copy_retained_text(curve.id.as_str(), "nx unknown entity link text")?;
+            ctx.push_vec(unknown.links_mut(), link, "nx unknown entity links")?;
         }
         annotations.note(
             ctx,
@@ -1495,21 +1450,31 @@ pub(super) fn try_decode_geometry(
             Some(stream.kind().label()),
         )?;
         annotations.exactness(ctx, unknown.id().as_str(), Exactness::Derived)?;
-        unknowns.push(unknown);
-        stream_unknowns.push((si, unknown_index));
+        ctx.push_vec(&mut unknowns, unknown, "nx geometry unknown streams")?;
+        ctx.push_vec(
+            &mut stream_unknowns,
+            (si, unknown_index),
+            "nx geometry unknown indices",
+        )?;
     }
 
     intersection_index.complete_from_model(ctx, &mut ir)?;
-    let mut completion_sources =
-        ctx.collection_vec(completion_streams.len(), "nx completion sources")?;
-    for (si, source_stream) in &completion_streams {
-        completion_sources.push(IntersectionCompletionSource {
-            scope: IdScope::stream_charged(ctx, *si)?,
+    let mut completion_storage = ctx.reserve_scoped(0, "nx completion sources")?;
+    let mut completion_sources = Vec::new();
+    for (si, source_stream) in ctx.admit_iter(&completion_streams, "nx completion sources")? {
+        let source = IntersectionCompletionSource {
+            scope: completion_storage.with_storage(|| IdScope::stream_charged(ctx, *si))?,
             graph: parsed.stream(*si).view_for_geometry().graph.as_ref(),
             source_stream: source_stream.clone(),
             coedge_start: 0,
             procedural_start: 0,
-        });
+        };
+        ctx.push_scoped_vec(
+            &mut completion_storage,
+            &mut completion_sources,
+            source,
+            "nx completion sources",
+        )?;
     }
     attach_completed_intersection_pcurves_for_model_with_budget(
         ctx,
@@ -1519,6 +1484,8 @@ pub(super) fn try_decode_geometry(
         &model_endpoint_witnesses,
         &completion_geometry_budget,
     )?;
+    drop(completion_sources);
+    drop(completion_storage);
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
         return Ok(None);
@@ -1541,11 +1508,7 @@ pub(super) fn try_decode_geometry(
         terminal_lineage,
     )?;
     let mut active_body_selection = if let Some((selected, _, source)) = &preselection {
-        let selected_hits = selected
-            .iter()
-            .filter_map(|body| body_node_ids.get(body))
-            .map(BTreeSet::len)
-            .sum::<usize>();
+        let selected_hits = selected_hit_count(ctx, selected, &body_node_ids)?;
         apply_preselected_active_body_selection(
             ctx,
             &mut ir,
@@ -1573,26 +1536,12 @@ pub(super) fn try_decode_geometry(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     }
-    for (si, unknown_index) in stream_unknowns {
+    for &(si, unknown_index) in ctx.admit_iter(&stream_unknowns, "nx retained unknown streams")? {
         retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;
     }
     prune_unreferenced_unknown_carriers(ctx, &mut ir)?;
     finalize_point_topology(ctx, &mut ir, &mut annotations)?;
-    let mut referenced_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
-    for coedge in &ir.model.coedges {
-        for pcurve in &coedge.pcurves {
-            ctx.insert_btree_set(
-                &mut referenced_pcurves,
-                pcurve
-                    .pcurve
-                    .try_clone_for_decode(ctx, "nx referenced pcurves")?,
-                "nx referenced pcurves",
-            )?;
-        }
-    }
-    ir.model
-        .pcurves
-        .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
+    retain_referenced_pcurves(ctx, &mut ir)?;
     retain_live_unknown_links(ctx, &ir, &mut unknowns, &mut annotations)?;
     let mut annotations = annotations.build();
     retain_live_annotations(ctx, &ir, &unknowns, &mut annotations)?;
@@ -1638,12 +1587,7 @@ pub(super) fn try_decode_geometry(
         &model,
     )?;
     for losses in [carrier_refusals, topology_losses, native_losses] {
-        ctx.reserve_vec(
-            &mut report.losses,
-            losses.len(),
-            "nx geometry report losses",
-        )?;
-        report.losses.extend(losses);
+        ctx.extend_vec(&mut report.losses, losses, "nx geometry report losses")?;
     }
     report_untransferred_streams(
         ctx,
@@ -1654,53 +1598,427 @@ pub(super) fn try_decode_geometry(
     Ok(Some((ir, report, annotations, unknowns)))
 }
 
+/// Copy one solved support-UV lane into new storage.
+fn copy_support_uv_lane(
+    ctx: &DecodeContext<'_>,
+    lane: Option<&crate::intersection::SupportUvLane>,
+) -> Result<Option<crate::intersection::SupportUvLane>, CodecError> {
+    lane.map(|lane| {
+        crate::intersection::SupportUvLane::from_checked(
+            ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+            lane.as_slice().len(),
+        )
+        .ok_or_else(|| CodecError::malformed("NX copied support-UV lane count"))
+    })
+    .transpose()
+}
+
+/// The stream's carrier lookup tables that trimmed and surface curves extend.
+struct CarrierMaps<'m> {
+    surfaces: &'m BTreeMap<u32, SurfaceId>,
+    curves: &'m mut BTreeMap<u32, CurveId>,
+    pcurves: &'m mut BTreeMap<u32, PcurveId>,
+    pcurve_supports: &'m mut BTreeMap<u32, SurfaceId>,
+    trim_ranges: &'m mut BTreeMap<u32, [f64; 2]>,
+}
+
+/// Map trimmed and surface curves to the carriers they reuse, normalize the
+/// parameters of each pcurve once against its support surface, and collect
+/// the pcurves that cannot be normalized. A pass repeats until it maps no new
+/// carrier; each pass admits both curve lists.
+fn map_stream_carriers(
+    ctx: &DecodeContext<'_>,
+    storage: &mut ScopedReservation<'_>,
+    ir: &mut CadIr,
+    trimmed_curves: &[crate::topology::TrimmedCurve],
+    surface_curves: &[crate::topology::SurfaceCurve],
+    maps: CarrierMaps<'_>,
+    invalid_pcurves: &mut BTreeSet<PcurveId>,
+) -> Result<(), CodecError> {
+    let CarrierMaps {
+        surfaces: surfaces_by_xmt,
+        curves: curves_by_xmt,
+        pcurves: pcurves_by_xmt,
+        pcurve_supports: pcurve_supports_by_xmt,
+        trim_ranges,
+    } = maps;
+    let mut normalized_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
+    let mut curve_indices: BTreeMap<&CurveId, usize> = BTreeMap::new();
+    for (index, curve) in ctx
+        .admit_iter(&ir.model.curves, "nx curve identity index")?
+        .enumerate()
+    {
+        storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut curve_indices,
+                &curve.id,
+                index,
+                "nx curve identity index",
+            )
+        })?;
+    }
+    let mut surface_indices: BTreeMap<&SurfaceId, usize> = BTreeMap::new();
+    for (index, surface) in ctx
+        .admit_iter(&ir.model.surfaces, "nx surface identity index")?
+        .enumerate()
+    {
+        storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut surface_indices,
+                &surface.id,
+                index,
+                "nx surface identity index",
+            )
+        })?;
+    }
+    let mut pcurve_indices: BTreeMap<PcurveId, usize> = BTreeMap::new();
+    for (index, pcurve) in ctx
+        .admit_iter(&ir.model.pcurves, "nx pcurve identity index")?
+        .enumerate()
+    {
+        storage.with_storage(|| {
+            let id = pcurve
+                .id
+                .try_clone_for_decode(ctx, "nx pcurve index identity")?;
+            ctx.insert_btree_map(&mut pcurve_indices, id, index, "nx pcurve identity index")
+        })?;
+    }
+    let curves = &ir.model.curves;
+    let surfaces = &ir.model.surfaces;
+    let pcurves = &mut ir.model.pcurves;
+    loop {
+        ctx.charge_work(1, "nx geometry carrier mapping pass")?;
+        let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
+        for trim in ctx.admit_iter(trimmed_curves, "nx trimmed curve mapping")? {
+            if let Some(basis) =
+                ctx.get_btree_map(curves_by_xmt, &trim.state.basis(), "nx curve node index")?
+            {
+                let parameters =
+                    match ctx.get_btree_map(&curve_indices, basis, "nx curve identity index")? {
+                        Some(&index) => curves.get(index).and_then(|curve| {
+                            canonical_trim_range(&curve.geometry, trim.state.parameters())
+                        }),
+                        None => None,
+                    };
+                let basis = storage.with_storage(|| {
+                    basis.try_clone_for_decode(ctx, "nx trimmed curve identity")
+                })?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(curves_by_xmt, trim.xmt, basis, "nx trimmed curve index")
+                })?;
+                if let Some(parameters) = parameters {
+                    storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            trim_ranges,
+                            trim.xmt,
+                            parameters,
+                            "nx curve trim ranges",
+                        )
+                    })?;
+                }
+            }
+            if let Some(pcurve) =
+                ctx.get_btree_map(pcurves_by_xmt, &trim.state.basis(), "nx pcurve node index")?
+            {
+                let pcurve = storage.with_storage(|| {
+                    pcurve.try_clone_for_decode(ctx, "nx trimmed pcurve identity")
+                })?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        pcurves_by_xmt,
+                        trim.xmt,
+                        pcurve,
+                        "nx trimmed pcurve index",
+                    )
+                })?;
+                if let Some(support) = ctx.get_btree_map(
+                    pcurve_supports_by_xmt,
+                    &trim.state.basis(),
+                    "nx pcurve supports",
+                )? {
+                    let support = storage.with_storage(|| {
+                        support.try_clone_for_decode(ctx, "nx trimmed pcurve support")
+                    })?;
+                    storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            pcurve_supports_by_xmt,
+                            trim.xmt,
+                            support,
+                            "nx trimmed pcurve supports",
+                        )
+                    })?;
+                }
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        trim_ranges,
+                        trim.xmt,
+                        trim.state.parameters(),
+                        "nx curve trim ranges",
+                    )
+                })?;
+            }
+        }
+        for surface_curve in ctx.admit_iter(surface_curves, "nx surface curve mapping")? {
+            if let Some(pcurve_ref) = ctx.get_btree_map(
+                pcurves_by_xmt,
+                &surface_curve.state.pcurve(),
+                "nx pcurve node index",
+            )? {
+                let pcurve: PcurveId = storage.with_storage(|| {
+                    pcurve_ref.try_clone_for_decode(ctx, "nx surface pcurve identity")
+                })?;
+                let pcurve_index =
+                    ctx.get_btree_map(&pcurve_indices, &pcurve, "nx pcurve identity index")?;
+                if !ctx.contains_btree_set(&normalized_pcurves, &pcurve, "nx normalized pcurves")? {
+                    let support = match ctx.get_btree_map(
+                        surfaces_by_xmt,
+                        &surface_curve.state.surface(),
+                        "nx surface node index",
+                    )? {
+                        Some(id) => ctx
+                            .get_btree_map(&surface_indices, id, "nx surface identity index")?
+                            .and_then(|index| surfaces.get(*index))
+                            .map(|surface| &surface.geometry),
+                        None => None,
+                    };
+                    let carrier = pcurve_index.and_then(|index| pcurves.get_mut(*index));
+                    let normalized = if let (Some(support), Some(carrier)) = (support, carrier) {
+                        normalize_pcurve_parameters(ctx, &mut carrier.geometry, support)?.is_some()
+                    } else {
+                        false
+                    };
+                    if !normalized {
+                        ctx.remove_btree_map(
+                            pcurves_by_xmt,
+                            &surface_curve.state.pcurve(),
+                            "nx pcurve node index",
+                        )?;
+                        storage.with_storage(|| {
+                            ctx.insert_btree_set(invalid_pcurves, pcurve, "nx invalid pcurves")
+                        })?;
+                        continue;
+                    }
+                    storage.with_storage(|| {
+                        let pcurve = pcurve.try_clone_for_decode(ctx, "nx normalized pcurves")?;
+                        ctx.insert_btree_set(
+                            &mut normalized_pcurves,
+                            pcurve,
+                            "nx normalized pcurves",
+                        )
+                    })?;
+                }
+                if let Some(carrier) = pcurve_index.and_then(|index| pcurves.get_mut(*index)) {
+                    let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance().get())
+                        .map(|tolerance| {
+                            cadmpeg_ir::geometry::FitTolerance::from(
+                                cadmpeg_ir::scalar::NonNegativeReal::from(tolerance),
+                            )
+                        });
+                    match &mut carrier.metadata {
+                        cadmpeg_ir::geometry::pcurve::PcurveMetadata::General {
+                            form: metadata,
+                        } => metadata.set_fit_tolerance(fit_tolerance),
+                        cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline {
+                            form: inline,
+                        } => {
+                            if let Some(fit_tolerance) = fit_tolerance {
+                                inline.set_fit_tolerance(fit_tolerance);
+                            }
+                        }
+                    }
+                }
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        pcurves_by_xmt,
+                        surface_curve.xmt,
+                        pcurve,
+                        "nx surface pcurve index",
+                    )
+                })?;
+                if let Some(support) = ctx.get_btree_map(
+                    surfaces_by_xmt,
+                    &surface_curve.state.surface(),
+                    "nx surface node index",
+                )? {
+                    storage.with_storage(|| {
+                        let support =
+                            support.try_clone_for_decode(ctx, "nx surface pcurve support")?;
+                        ctx.insert_btree_map(
+                            pcurve_supports_by_xmt,
+                            surface_curve.xmt,
+                            support,
+                            "nx surface pcurve supports",
+                        )
+                    })?;
+                }
+            }
+            if let Some(original) = surface_curve.state.original() {
+                if let Some(original) =
+                    ctx.get_btree_map(curves_by_xmt, &original, "nx curve node index")?
+                {
+                    let original = storage.with_storage(|| {
+                        original.try_clone_for_decode(ctx, "nx surface curve identity")
+                    })?;
+                    storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            curves_by_xmt,
+                            surface_curve.xmt,
+                            original,
+                            "nx surface curve index",
+                        )
+                    })?;
+                }
+            }
+        }
+        if curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len() == mapped {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Drop pcurves that no coedge references.
+fn retain_referenced_pcurves(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "nx referenced pcurves")?;
+    let mut referenced_pcurves = BTreeSet::new();
+    for coedge in ctx.admit_iter(&ir.model.coedges, "nx referenced pcurves")? {
+        for pcurve in ctx.admit_iter(&coedge.pcurves, "nx referenced pcurves")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut referenced_pcurves,
+                    &pcurve.pcurve,
+                    "nx referenced pcurves",
+                )
+            })?;
+        }
+    }
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.pcurves,
+        |pcurve| ctx.contains_btree_set(&referenced_pcurves, &pcurve.id, "nx referenced pcurves"),
+        "nx referenced pcurves",
+    )?;
+    drop(referenced_pcurves);
+    retain_marked(&mut ir.model.pcurves, marks);
+    Ok(())
+}
+
+/// Count the topology node identities of the selected bodies.
+fn selected_hit_count(
+    ctx: &DecodeContext<'_>,
+    selected: &BTreeSet<BodyId>,
+    body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
+) -> Result<usize, CodecError> {
+    let mut hits = 0usize;
+    for body in ctx.admit_iter(selected, "nx selected body hits")? {
+        if let Some(nodes) = ctx.get_btree_map(body_node_ids, body, "nx selected body hits")? {
+            hits = hits
+                .checked_add(nodes.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("nx selected body hits", 0, 1))?;
+        }
+    }
+    Ok(hits)
+}
+
 fn extend_endpoint_witnesses(
     ctx: &DecodeContext<'_>,
     target: &mut EndpointWitnesses,
     source: EndpointWitnesses,
 ) -> Result<(), CodecError> {
-    for (key, witnesses) in source {
-        ctx.admit_btree_entry(target, &key, "nx endpoint witness index")?;
-        let target_witnesses = match target.entry(key) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
-        };
-        ctx.reserve_vec(
-            target_witnesses,
-            witnesses.len(),
-            "nx endpoint witness merge",
-        )?;
-        target_witnesses.extend(witnesses);
+    for (key, witnesses) in ctx.admit_iter(source, "nx endpoint witness merge")? {
+        match ctx.get_mut_btree_map(target, &key, "nx endpoint witness index")? {
+            Some(target_witnesses) => {
+                ctx.extend_vec(target_witnesses, witnesses, "nx endpoint witness merge")?;
+            }
+            None => {
+                ctx.insert_btree_map(target, key, witnesses, "nx endpoint witness index")?;
+            }
+        }
     }
     Ok(())
 }
 
-fn copy_endpoint_witnesses(
+/// Add every surface and curve reachable from the used carriers through
+/// procedural constructions: offset and blend supports, blend spines, and
+/// intersection and surface-curve sides. A pass repeats until it adds no
+/// carrier; each pass admits both construction arenas.
+fn reach_procedural_carriers<'m>(
     ctx: &DecodeContext<'_>,
-    target: &mut EndpointWitnesses,
-    source: &EndpointWitnesses,
+    storage: &mut ScopedReservation<'_>,
+    carriers: (&[Surface], &[Curve]),
+    constructions: (&'m [ProceduralSurface], &'m [ProceduralCurve]),
+    used_surfaces: &mut BTreeSet<&'m SurfaceId>,
+    used_curves: &mut BTreeSet<&'m CurveId>,
+    operation: &'static str,
 ) -> Result<(), CodecError> {
-    for ((curve, surface), witnesses) in source {
-        let key = (
-            curve.try_clone_for_decode(ctx, "nx endpoint witness curve")?,
-            surface.try_clone_for_decode(ctx, "nx endpoint witness surface")?,
-        );
-        ctx.admit_btree_entry(target, &key, "nx model endpoint witness index")?;
-        let target_witnesses = match target.entry(key) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
-        };
-        ctx.reserve_vec(
-            target_witnesses,
-            witnesses.len(),
-            "nx model endpoint witnesses",
-        )?;
-        for (geometry, range, endpoints) in witnesses {
-            target_witnesses.push((
-                geometry.try_clone_for_decode(ctx, "nx endpoint witness geometry")?,
-                *range,
-                *endpoints,
-            ));
+    let (surfaces, curves) = carriers;
+    let (procedural_surfaces, procedural_curves) = constructions;
+    // A construction carried by more than one carrier has no owner.
+    let (surface_owners, _surface_owner_storage) = ctx.unique_index(
+        ctx.admit_iter(surfaces, "nx procedural surface owners")?
+            .filter_map(|surface| Some((surface.geometry.procedural_construction()?, &surface.id))),
+        "nx procedural surface owners",
+    )?;
+    let (curve_owners, _curve_owner_storage) = procedural_curve_owners(ctx, curves)?;
+    loop {
+        ctx.charge_work(1, operation)?;
+        let previous = (used_surfaces.len(), used_curves.len());
+        for procedural in ctx.admit_iter(procedural_surfaces, operation)? {
+            let Some(Some(owner)) = ctx.get_hash_map(
+                &surface_owners,
+                &procedural.id,
+                "nx procedural surface owners",
+            )?
+            else {
+                continue;
+            };
+            if !ctx.contains_btree_set(used_surfaces, *owner, operation)? {
+                continue;
+            }
+            match procedural.definition() {
+                ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                    let support = definition_payload.support();
+                    storage
+                        .with_storage(|| ctx.insert_btree_set(used_surfaces, support, operation))?;
+                }
+                ProceduralSurfaceDefinition::Blend(definition_payload) => {
+                    for support in definition_payload.supports().iter().flatten() {
+                        storage.with_storage(|| {
+                            ctx.insert_btree_set(used_surfaces, &support.surface, operation)
+                        })?;
+                    }
+                    if let Some(spine) = definition_payload.spine() {
+                        storage
+                            .with_storage(|| ctx.insert_btree_set(used_curves, spine, operation))?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for procedural in ctx.admit_iter(procedural_curves, operation)? {
+            let Some(Some(owner)) =
+                ctx.get_hash_map(&curve_owners, &procedural.id, "nx procedural curve owners")?
+            else {
+                continue;
+            };
+            if !ctx.contains_btree_set(used_curves, *owner, operation)? {
+                continue;
+            }
+            let sides = match procedural.definition() {
+                ProceduralCurveDefinition::Intersection { context, .. } => context.sides(),
+                ProceduralCurveDefinition::SurfaceCurve { family } => family.context().sides(),
+                _ => continue,
+            };
+            for side in sides {
+                if let Some(surface) = &side.surface {
+                    storage
+                        .with_storage(|| ctx.insert_btree_set(used_surfaces, surface, operation))?;
+                }
+            }
+        }
+        if previous == (used_surfaces.len(), used_curves.len()) {
+            break;
         }
     }
     Ok(())
@@ -1710,115 +2028,56 @@ fn prune_unreferenced_unknown_carriers(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
 ) -> Result<(), CodecError> {
-    let mut used_surfaces: BTreeSet<SurfaceId> = BTreeSet::new();
-    for face in &ir.model.faces {
-        ctx.insert_btree_set(
-            &mut used_surfaces,
-            face.surface.try_clone_for_decode(ctx, "nx used surfaces")?,
-            "nx used surfaces",
-        )?;
+    const SURFACES: &str = "nx used surfaces";
+    const CURVES: &str = "nx used curves";
+    let mut storage = ctx.reserve_scoped(0, "nx used carriers")?;
+    let mut used_surfaces = BTreeSet::new();
+    for face in ctx.admit_iter(&ir.model.faces, SURFACES)? {
+        storage
+            .with_storage(|| ctx.insert_btree_set(&mut used_surfaces, &face.surface, SURFACES))?;
     }
-    let mut used_curves: BTreeSet<CurveId> = BTreeSet::new();
-    for edge in &ir.model.edges {
+    let mut used_curves = BTreeSet::new();
+    for edge in ctx.admit_iter(&ir.model.edges, CURVES)? {
         if let Some(curve) = edge.curve() {
-            ctx.insert_btree_set(
-                &mut used_curves,
-                curve.try_clone_for_decode(ctx, "nx used curves")?,
-                "nx used curves",
-            )?;
+            storage.with_storage(|| ctx.insert_btree_set(&mut used_curves, curve, CURVES))?;
         }
     }
-    loop {
-        let previous = (used_surfaces.len(), used_curves.len());
-        for procedural in &ir.model.procedural_surfaces {
-            let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
-                continue;
-            };
-            if !used_surfaces.contains(owner) {
-                continue;
-            }
-            match procedural.definition() {
-                ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                    let support = definition_payload.support();
-                    ctx.insert_btree_set(
-                        &mut used_surfaces,
-                        support.try_clone_for_decode(ctx, "nx used surfaces")?,
-                        "nx used surfaces",
-                    )?;
-                }
-                ProceduralSurfaceDefinition::Blend(definition_payload) => {
-                    let supports = definition_payload.supports();
-                    let spine = definition_payload.spine();
-
-                    for support in supports.iter().flatten() {
-                        ctx.insert_btree_set(
-                            &mut used_surfaces,
-                            support
-                                .surface
-                                .try_clone_for_decode(ctx, "nx used surfaces")?,
-                            "nx used surfaces",
-                        )?;
-                    }
-                    if let Some(spine) = spine {
-                        ctx.insert_btree_set(
-                            &mut used_curves,
-                            spine.try_clone_for_decode(ctx, "nx used curves")?,
-                            "nx used curves",
-                        )?;
-                    }
-                }
-                _ => {}
-            }
-        }
-        for procedural in &ir.model.procedural_curves {
-            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
-                continue;
-            };
-            if !used_curves.contains(owner) {
-                continue;
-            }
-            match procedural.definition() {
-                ProceduralCurveDefinition::Intersection { context, .. } => {
-                    for side in context.sides() {
-                        if let Some(surface) = &side.surface {
-                            ctx.insert_btree_set(
-                                &mut used_surfaces,
-                                surface.try_clone_for_decode(ctx, "nx used surfaces")?,
-                                "nx used surfaces",
-                            )?;
-                        }
-                    }
-                }
-                ProceduralCurveDefinition::SurfaceCurve { family } => {
-                    for side in family.context().sides() {
-                        if let Some(surface) = &side.surface {
-                            ctx.insert_btree_set(
-                                &mut used_surfaces,
-                                surface.try_clone_for_decode(ctx, "nx used surfaces")?,
-                                "nx used surfaces",
-                            )?;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        if previous == (used_surfaces.len(), used_curves.len()) {
-            break;
-        }
-    }
-    ir.model.surfaces.retain(|surface| {
-        !matches!(
-            surface.geometry,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
-        ) || used_surfaces.contains(&surface.id)
-    });
-    ir.model.curves.retain(|curve| {
-        !matches!(
-            curve.geometry,
-            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-        ) || used_curves.contains(&curve.id)
-    });
+    reach_procedural_carriers(
+        ctx,
+        &mut storage,
+        (&ir.model.surfaces, &ir.model.curves),
+        (&ir.model.procedural_surfaces, &ir.model.procedural_curves),
+        &mut used_surfaces,
+        &mut used_curves,
+        "nx unknown carrier reachability pass",
+    )?;
+    let surface_marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.surfaces,
+        |surface| {
+            Ok(!matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+            ) || ctx.contains_btree_set(&used_surfaces, &surface.id, SURFACES)?)
+        },
+        SURFACES,
+    )?;
+    let curve_marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.curves,
+        |curve| {
+            Ok(!matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+            ) || ctx.contains_btree_set(&used_curves, &curve.id, CURVES)?)
+        },
+        CURVES,
+    )?;
+    drop((used_surfaces, used_curves));
+    retain_marked(&mut ir.model.surfaces, surface_marks);
+    retain_marked(&mut ir.model.curves, curve_marks);
     Ok(())
 }
 
@@ -1828,11 +2087,13 @@ fn retain_live_annotations(
     unknowns: &[UnknownRecord],
     annotations: &mut cadmpeg_ir::Annotations,
 ) -> Result<(), CodecError> {
+    const IDS: &str = "nx live annotation identities";
+    let mut storage = ctx.reserve_scoped(0, IDS)?;
     let mut ids = BTreeSet::new();
     macro_rules! add_ids {
         ($($arena:expr),+ $(,)?) => {
-            $(for entity in &$arena {
-                ctx.insert_btree_set(&mut ids, ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?, "nx live annotation identities")?;
+            $(for entity in ctx.admit_iter(&$arena, IDS)? {
+                storage.with_storage(|| ctx.insert_btree_set(&mut ids, entity.id.as_str(), IDS))?;
             })+
         };
     }
@@ -1853,31 +2114,10 @@ fn retain_live_annotations(
         ir.model.procedural_curves,
         ir.model.features,
     );
-    for unknown in unknowns {
-        ctx.insert_btree_set(
-            &mut ids,
-            ctx.copy_retained_text(unknown.id().as_str(), "nx live annotation identity text")?,
-            "nx live annotation identities",
-        )?;
+    for unknown in ctx.admit_iter(unknowns, IDS)? {
+        storage.with_storage(|| ctx.insert_btree_set(&mut ids, unknown.id().as_str(), IDS))?;
     }
-    let mut keep = |id: &str| {
-        let work = ids
-            .len()
-            .checked_add(1)
-            .and_then(|count| {
-                id.len()
-                    .checked_add(1)
-                    .and_then(|bytes| count.checked_mul(bytes))
-            })
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("nx annotation identity lookup", u64::MAX - 1, u64::MAX)
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(work),
-            "nx annotation identity lookup",
-        )?;
-        Ok(ids.contains(id))
-    };
+    let mut keep = |id: &str| ctx.contains_btree_set(&ids, id, "nx annotation identity lookup");
     annotations.retain_provenance(ctx, &mut keep)?;
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(ctx, keep)?;
@@ -1891,44 +2131,30 @@ fn retain_live_unknown_links(
     unknowns: &mut [UnknownRecord],
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const IDS: &str = "nx live annotation identities";
+    let mut storage = ctx.reserve_scoped(0, IDS)?;
     let mut ids = BTreeSet::new();
-    for entity in &ir.model.surfaces {
-        ctx.insert_btree_set(
-            &mut ids,
-            ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?,
-            "nx live annotation identities",
-        )?;
+    macro_rules! add_ids {
+        ($($arena:expr),+ $(,)?) => {
+            $(for entity in ctx.admit_iter(&$arena, IDS)? {
+                storage.with_storage(|| ctx.insert_btree_set(&mut ids, entity.id.as_str(), IDS))?;
+            })+
+        };
     }
-    for entity in &ir.model.curves {
-        ctx.insert_btree_set(
-            &mut ids,
-            ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?,
-            "nx live annotation identities",
+    add_ids!(
+        ir.model.surfaces,
+        ir.model.curves,
+        ir.model.pcurves,
+        ir.model.procedural_surfaces,
+        ir.model.procedural_curves,
+    );
+    for index in ctx.admit_iter(&(0..unknowns.len()), "nx live unknown links")? {
+        let unknown = &mut unknowns[index];
+        ctx.retain_vec(
+            unknown.links_mut(),
+            |link| ctx.contains_btree_set(&ids, link.as_str(), "nx live unknown links"),
+            "nx live unknown links",
         )?;
-    }
-    for entity in &ir.model.pcurves {
-        ctx.insert_btree_set(
-            &mut ids,
-            ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?,
-            "nx live annotation identities",
-        )?;
-    }
-    for entity in &ir.model.procedural_surfaces {
-        ctx.insert_btree_set(
-            &mut ids,
-            ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?,
-            "nx live annotation identities",
-        )?;
-    }
-    for entity in &ir.model.procedural_curves {
-        ctx.insert_btree_set(
-            &mut ids,
-            ctx.copy_retained_text(entity.id.as_str(), "nx live annotation identity text")?,
-            "nx live annotation identities",
-        )?;
-    }
-    for unknown in unknowns.iter_mut() {
-        unknown.links_mut().retain(|link| ids.contains(link));
         if !unknown.links().is_empty() {
             annotations.derived(ctx, unknown.id().as_str(), "links")?;
         }
@@ -1936,128 +2162,220 @@ fn retain_live_unknown_links(
     Ok(())
 }
 
+/// Topology parts that one body's shells reach in a stream graph.
+#[derive(Default)]
+struct BodyTopology {
+    ids: BTreeSet<u32>,
+    edges: BTreeSet<u32>,
+    vertices: BTreeSet<u32>,
+    edge_nodes: usize,
+    vertex_nodes: usize,
+    complete: bool,
+}
+
+/// Owners of one record identity, grouped once per topology level.
+type NodeOwners = BTreeMap<u32, BTreeSet<u32>>;
+
 pub(super) fn topology_body_node_ids(
     ctx: &DecodeContext<'_>,
     stream_index: usize,
     graph: &Graph,
 ) -> Result<BTreeMap<BodyId, BTreeSet<u32>>, CodecError> {
+    const OWNERS: &str = "nx topology body owners";
     let scope = IdScope::stream_charged(ctx, stream_index)?;
-    let mut body_xmts = BTreeSet::new();
+    let mut storage = ctx.reserve_scoped(0, OWNERS)?;
+    let mut bodies = BTreeMap::<u32, BodyTopology>::new();
     for shell in graph.body_shape_shells(ctx)? {
-        let shell = shell?;
         if let Some(body_xmt) = shell
             .shell_fields()
             .and_then(|fields| fields.body.map(u32::from))
         {
-            ctx.insert_btree_set(&mut body_xmts, body_xmt, "nx topology body nodes")?;
+            if !ctx.contains_key_btree_map(&bodies, &body_xmt, "nx topology body nodes")? {
+                let body = BodyTopology {
+                    complete: true,
+                    ..BodyTopology::default()
+                };
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(&mut bodies, body_xmt, body, "nx topology body nodes")
+                })?;
+            }
         }
     }
-    let mut bodies = BTreeMap::new();
-    'body: for body_xmt in body_xmts {
-        let mut shells = BTreeSet::new();
-        for shell in graph.of_kind(ctx, NodeKind::Shell)? {
-            if shell
-                .shell_fields()
-                .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
-            {
-                ctx.insert_btree_set(&mut shells, shell.xmt(), "nx topology body shells")?;
-            }
+    let mut shell_owners = NodeOwners::new();
+    for shell in graph.of_kind(NodeKind::Shell) {
+        ctx.charge_work(1, "nx topology body shells")?;
+        let Some(body) = shell
+            .shell_fields()
+            .and_then(|fields| fields.body.map(u32::from))
+        else {
+            continue;
+        };
+        if ctx.contains_key_btree_map(&bodies, &body, "nx topology body shells")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_group_set(
+                    &mut shell_owners,
+                    shell.xmt(),
+                    body,
+                    "nx topology body shells",
+                    "nx topology body shells",
+                )
+            })?;
         }
-        let mut faces = Vec::new();
-        let mut face_xmts = BTreeSet::new();
-        for face in graph.of_kind(ctx, NodeKind::Face)? {
-            if face.face_fields().is_some_and(|fields| {
-                fields
-                    .shell
-                    .is_some_and(|target| shells.contains(&u32::from(target)))
-            }) {
-                ctx.reserve_vec(&mut faces, 1, "nx topology body faces")?;
-                faces.push(face);
-                ctx.insert_btree_set(&mut face_xmts, face.xmt(), "nx topology body face nodes")?;
+    }
+    let mut face_owners = NodeOwners::new();
+    for face in graph.of_kind(NodeKind::Face) {
+        ctx.charge_work(1, "nx topology body faces")?;
+        let Some(shell) = face.face_fields().and_then(|fields| fields.shell) else {
+            continue;
+        };
+        let Some(owners) =
+            ctx.get_btree_map(&shell_owners, &u32::from(shell), "nx topology body faces")?
+        else {
+            continue;
+        };
+        for &body_xmt in ctx.admit_iter(owners, "nx topology body faces")? {
+            let Some(body) = ctx.get_mut_btree_map(&mut bodies, &body_xmt, OWNERS)? else {
+                continue;
+            };
+            match face.u32_at(4) {
+                Some(id) if body.complete => {
+                    ctx.insert_btree_set(&mut body.ids, id, "nx topology body identities")?;
+                }
+                Some(_) => {}
+                None => body.complete = false,
             }
+            storage.with_storage(|| {
+                ctx.insert_btree_group_set(
+                    &mut face_owners,
+                    face.xmt(),
+                    body_xmt,
+                    "nx topology body face nodes",
+                    "nx topology body face nodes",
+                )
+            })?;
         }
-        let mut loops = BTreeSet::new();
-        for loop_ in graph.of_kind(ctx, NodeKind::Loop)? {
-            if loop_.loop_fields().is_some_and(|fields| {
-                fields
-                    .face
-                    .is_some_and(|target| face_xmts.contains(&u32::from(target)))
-            }) {
-                ctx.insert_btree_set(&mut loops, loop_.xmt(), "nx topology body loops")?;
-            }
+    }
+    let mut loop_owners = NodeOwners::new();
+    for loop_ in graph.of_kind(NodeKind::Loop) {
+        ctx.charge_work(1, "nx topology body loops")?;
+        let Some(face) = loop_.loop_fields().and_then(|fields| fields.face) else {
+            continue;
+        };
+        let Some(owners) =
+            ctx.get_btree_map(&face_owners, &u32::from(face), "nx topology body loops")?
+        else {
+            continue;
+        };
+        for &body_xmt in ctx.admit_iter(owners, "nx topology body loops")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_group_set(
+                    &mut loop_owners,
+                    loop_.xmt(),
+                    body_xmt,
+                    "nx topology body loops",
+                    "nx topology body loops",
+                )
+            })?;
         }
-        let mut fins = Vec::new();
-        for fin in graph.of_kind(ctx, NodeKind::Fin)? {
-            if fin.fin_fields().is_some_and(|fields| {
-                fields
-                    .loop_xmt
-                    .is_some_and(|target| loops.contains(&u32::from(target)))
-            }) {
-                ctx.reserve_vec(&mut fins, 1, "nx topology body fins")?;
-                fins.push(fin);
-            }
-        }
-        let mut edge_xmts = BTreeSet::new();
-        let mut vertex_xmts = BTreeSet::new();
-        for fin in fins {
-            let Some(fields) = fin.fin_fields() else {
+    }
+    let mut edge_owners = NodeOwners::new();
+    let mut vertex_owners = NodeOwners::new();
+    for fin in graph.of_kind(NodeKind::Fin) {
+        ctx.charge_work(1, "nx topology body fins")?;
+        let Some(fields) = fin.fin_fields() else {
+            continue;
+        };
+        let Some(loop_xmt) = fields.loop_xmt else {
+            continue;
+        };
+        let Some(owners) =
+            ctx.get_btree_map(&loop_owners, &u32::from(loop_xmt), "nx topology body fins")?
+        else {
+            continue;
+        };
+        for &body_xmt in ctx.admit_iter(owners, "nx topology body fins")? {
+            let Some(body) = ctx.get_mut_btree_map(&mut bodies, &body_xmt, OWNERS)? else {
                 continue;
             };
             let (Some(edge), Some(vertex)) = (fields.edge, fields.vertex) else {
-                continue 'body;
+                body.complete = false;
+                continue;
             };
-            ctx.insert_btree_set(
-                &mut edge_xmts,
-                u32::from(edge),
-                "nx topology body edge nodes",
-            )?;
-            ctx.insert_btree_set(
-                &mut vertex_xmts,
-                u32::from(vertex),
-                "nx topology body vertex nodes",
-            )?;
+            if !body.complete {
+                continue;
+            }
+            let (edge, vertex) = (u32::from(edge), u32::from(vertex));
+            storage.with_storage(|| {
+                ctx.insert_btree_set(&mut body.edges, edge, "nx topology body edge nodes")?;
+                ctx.insert_btree_set(&mut body.vertices, vertex, "nx topology body vertex nodes")?;
+                ctx.insert_btree_group_set(
+                    &mut edge_owners,
+                    edge,
+                    body_xmt,
+                    "nx topology body edge nodes",
+                    "nx topology body edge nodes",
+                )?;
+                ctx.insert_btree_group_set(
+                    &mut vertex_owners,
+                    vertex,
+                    body_xmt,
+                    "nx topology body vertex nodes",
+                    "nx topology body vertex nodes",
+                )
+            })?;
         }
-        let mut ids = BTreeSet::new();
-        for face in faces {
-            let Some(id) = face.u32_at(4) else {
-                continue 'body;
+    }
+    for (kind, owners) in [
+        (NodeKind::Edge, &edge_owners),
+        (NodeKind::Vertex, &vertex_owners),
+    ] {
+        for node in graph.of_kind(kind) {
+            ctx.charge_work(1, "nx topology body edge and vertex nodes")?;
+            let Some(node_owners) = ctx.get_btree_map(
+                owners,
+                &node.xmt(),
+                "nx topology body edge and vertex nodes",
+            )?
+            else {
+                continue;
             };
-            ctx.insert_btree_set(&mut ids, id, "nx topology body identities")?;
-        }
-        let mut edge_count = 0;
-        for edge in graph.of_kind(ctx, NodeKind::Edge)? {
-            if edge_xmts.contains(&edge.xmt()) {
-                edge_count += 1;
-                let Some(id) = edge.u32_at(4) else {
-                    continue 'body;
+            for &body_xmt in
+                ctx.admit_iter(node_owners, "nx topology body edge and vertex nodes")?
+            {
+                let Some(body) = ctx.get_mut_btree_map(&mut bodies, &body_xmt, OWNERS)? else {
+                    continue;
                 };
-                ctx.insert_btree_set(&mut ids, id, "nx topology body identities")?;
+                if kind == NodeKind::Edge {
+                    body.edge_nodes += 1;
+                } else {
+                    body.vertex_nodes += 1;
+                }
+                match node.u32_at(4) {
+                    Some(id) if body.complete => {
+                        ctx.insert_btree_set(&mut body.ids, id, "nx topology body identities")?;
+                    }
+                    Some(_) => {}
+                    None => body.complete = false,
+                }
             }
         }
-        if edge_count != edge_xmts.len() {
-            continue;
-        }
-        let mut vertex_count = 0;
-        for vertex in graph.of_kind(ctx, NodeKind::Vertex)? {
-            if vertex_xmts.contains(&vertex.xmt()) {
-                vertex_count += 1;
-                let Some(id) = vertex.u32_at(4) else {
-                    continue 'body;
-                };
-                ctx.insert_btree_set(&mut ids, id, "nx topology body identities")?;
-            }
-        }
-        if vertex_count != vertex_xmts.len() {
+    }
+    let mut topology_bodies = BTreeMap::new();
+    for (body_xmt, body) in ctx.admit_iter(bodies, "nx topology body index")? {
+        if !body.complete
+            || body.edge_nodes != body.edges.len()
+            || body.vertex_nodes != body.vertices.len()
+        {
             continue;
         }
         ctx.insert_btree_map(
-            &mut bodies,
+            &mut topology_bodies,
             scope.id_charged::<BodyId>(ctx, &cadmpeg_ir::identity_component!("body"), body_xmt)?,
-            ids,
+            body.ids,
             "nx topology body index",
         )?;
     }
-    Ok(bodies)
+    Ok(topology_bodies)
 }
 
 /// Return body images whose complete topology node sets are inside the active
@@ -2069,13 +2387,16 @@ pub(super) fn rmfastload_selected_bodies(
     body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
     rmfastload_ids: &[u32],
 ) -> Result<BTreeSet<BodyId>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "nx rmfastload active node ids")?;
     let mut active = BTreeSet::new();
-    for id in rmfastload_ids {
-        ctx.insert_btree_set(&mut active, *id, "nx rmfastload active node ids")?;
+    for &id in ctx.admit_iter(rmfastload_ids, "nx rmfastload active node ids")? {
+        storage.with_storage(|| {
+            ctx.insert_btree_set(&mut active, id, "nx rmfastload active node ids")
+        })?;
     }
     let mut selected = BTreeSet::new();
-    for (body, ids) in body_node_ids {
-        if !ids.is_empty() && ids.is_subset(&active) {
+    for (body, ids) in ctx.admit_iter(body_node_ids, "nx rmfastload selected bodies")? {
+        if !ids.is_empty() && ctx.is_subset_btree_set(ids, &active, "nx rmfastload membership")? {
             ctx.insert_btree_set(
                 &mut selected,
                 body.try_clone_for_decode(ctx, "nx rmfastload selected body identity")?,
@@ -2100,17 +2421,19 @@ pub(super) fn rmfastload_stream_indices(
     ctx: &DecodeContext<'_>,
     selected: &BTreeSet<BodyId>,
 ) -> Result<Option<BTreeSet<usize>>, CodecError> {
+    const STREAMS: &str = "nx rmfastload stream indices";
     let mut streams = BTreeSet::new();
-    for body in selected {
-        let Some(index) = body
-            .as_str()
-            .strip_prefix("nx:s")
-            .and_then(|text| text.split_once(':'))
-            .and_then(|(text, _)| text.parse().ok())
-        else {
+    for body in ctx.admit_iter(selected, STREAMS)? {
+        let Some(text) = ctx.strip_prefix(body.as_str(), "nx:s", STREAMS)? else {
             return Ok(None);
         };
-        ctx.insert_btree_set(&mut streams, index, "nx rmfastload stream indices")?;
+        let Some((text, _)) = ctx.split_once(text, ":", STREAMS)? else {
+            return Ok(None);
+        };
+        let Ok(index) = ctx.parse_text::<usize>(text, "nx rmfastload stream index")? else {
+            return Ok(None);
+        };
+        ctx.insert_btree_set(&mut streams, index, STREAMS)?;
     }
     Ok(Some(streams))
 }
@@ -2125,17 +2448,20 @@ fn apply_preselected_active_body_selection(
     if selected.is_empty() {
         return Ok(false);
     }
-    let mut emitted = BTreeSet::new();
-    for body in &ir.model.bodies {
-        ctx.insert_btree_set(
-            &mut emitted,
-            body.id
-                .try_clone_for_decode(ctx, "nx emitted body selection")?,
-            "nx emitted body selection",
-        )?;
-    }
-    if !selected.is_subset(&emitted) {
-        return Ok(false);
+    {
+        let mut storage = ctx.reserve_scoped(0, "nx emitted body selection")?;
+        let mut emitted = BTreeSet::new();
+        for body in ctx.admit_iter(&ir.model.bodies, "nx emitted body selection")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_set(&mut emitted, &body.id, "nx emitted body selection")
+            })?;
+        }
+        for body in selected {
+            ctx.charge_work(1, "nx emitted body selection")?;
+            if !ctx.contains_btree_set(&emitted, body, "nx emitted body selection")? {
+                return Ok(false);
+            }
+        }
     }
     prune_inactive_topology(ctx, ir, selected)?;
     if let Some(source) = &mut ir.source {
@@ -2189,15 +2515,13 @@ pub(super) fn select_active_body(
     if rmfastload_ids.is_empty() || ir.model.bodies.len() <= 1 {
         return Ok(false);
     }
-    let selected = rmfastload_selected_bodies(ctx, body_node_ids, rmfastload_ids)?;
+    let mut storage = ctx.reserve_scoped(0, "nx rmfastload selected bodies")?;
+    let selected =
+        storage.with_storage(|| rmfastload_selected_bodies(ctx, body_node_ids, rmfastload_ids))?;
     if selected.is_empty() {
         return Ok(false);
     }
-    let selected_hits = selected
-        .iter()
-        .filter_map(|body| body_node_ids.get(body))
-        .map(BTreeSet::len)
-        .sum::<usize>();
+    let selected_hits = selected_hit_count(ctx, &selected, body_node_ids)?;
     apply_preselected_active_body_selection(
         ctx,
         ir,
@@ -2215,24 +2539,27 @@ fn select_terminal_feature_bodies(
     if ir.model.bodies.len() <= 1 {
         return Ok(false);
     }
+    let mut storage = ctx.reserve_scoped(0, "nx terminal body selection index")?;
     let mut emitted = BTreeSet::new();
-    for body in &ir.model.bodies {
-        ctx.insert_btree_set(
-            &mut emitted,
-            body.id
-                .try_clone_for_decode(ctx, "nx terminal body selection identity")?,
-            "nx terminal body selection index",
-        )?;
+    for body in ctx.admit_iter(&ir.model.bodies, "nx terminal body selection index")? {
+        storage.with_storage(|| {
+            let body = body
+                .id
+                .try_clone_for_decode(ctx, "nx terminal body selection identity")?;
+            ctx.insert_btree_set(&mut emitted, body, "nx terminal body selection index")
+        })?;
     }
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
     // retained body images are all final, not that lineage was unresolved.
-    let Some(selected) = crate::native::model::terminal_feature_body_ids(
-        ctx,
-        &emitted,
-        &model.segments.body_bindings,
-        &model.segments.body_lineage_statuses,
-    )?
+    let Some(selected) = storage.with_storage(|| {
+        crate::native::model::terminal_feature_body_ids(
+            ctx,
+            &emitted,
+            &model.segments.body_bindings,
+            &model.segments.body_lineage_statuses,
+        )
+    })?
     else {
         return Ok(false);
     };
@@ -2250,257 +2577,259 @@ fn prune_inactive_topology(
     ir: &mut CadIr,
     selected: &BTreeSet<BodyId>,
 ) -> Result<(), CodecError> {
-    ir.model.bodies.retain(|body| selected.contains(&body.id));
-    ir.model
-        .regions
-        .retain(|region| selected.contains(&region.body));
-    let mut regions: BTreeSet<RegionId> = BTreeSet::new();
-    for region in &ir.model.regions {
-        ctx.insert_btree_set(
-            &mut regions,
-            region.id.try_clone_for_decode(ctx, "nx active regions")?,
-            "nx active regions",
-        )?;
+    let mut storage = ctx.reserve_scoped(0, "nx active topology")?;
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.bodies,
+        |body| ctx.contains_btree_set(selected, &body.id, "nx active bodies"),
+        "nx active bodies",
+    )?;
+    retain_marked(&mut ir.model.bodies, marks);
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.regions,
+        |region| ctx.contains_btree_set(selected, &region.body, "nx active regions"),
+        "nx active regions",
+    )?;
+    retain_marked(&mut ir.model.regions, marks);
+    let mut regions = BTreeSet::new();
+    for region in ctx.admit_iter(&ir.model.regions, "nx active regions")? {
+        storage
+            .with_storage(|| ctx.insert_btree_set(&mut regions, &region.id, "nx active regions"))?;
     }
-    ir.model
-        .shells
-        .retain(|shell| regions.contains(&shell.region));
-    let mut shells: BTreeSet<ShellId> = BTreeSet::new();
-    for shell in &ir.model.shells {
-        ctx.insert_btree_set(
-            &mut shells,
-            shell.id.try_clone_for_decode(ctx, "nx active shells")?,
-            "nx active shells",
-        )?;
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.shells,
+        |shell| ctx.contains_btree_set(&regions, &shell.region, "nx active shells"),
+        "nx active shells",
+    )?;
+    drop(regions);
+    retain_marked(&mut ir.model.shells, marks);
+    let mut shells = BTreeSet::new();
+    for shell in ctx.admit_iter(&ir.model.shells, "nx active shells")? {
+        storage
+            .with_storage(|| ctx.insert_btree_set(&mut shells, &shell.id, "nx active shells"))?;
     }
-    ir.model.faces.retain(|face| shells.contains(&face.shell));
-    let mut faces: BTreeSet<FaceId> = BTreeSet::new();
-    for face in &ir.model.faces {
-        ctx.insert_btree_set(
-            &mut faces,
-            face.id.try_clone_for_decode(ctx, "nx active faces")?,
-            "nx active faces",
-        )?;
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.faces,
+        |face| ctx.contains_btree_set(&shells, &face.shell, "nx active faces"),
+        "nx active faces",
+    )?;
+    drop(shells);
+    retain_marked(&mut ir.model.faces, marks);
+    let mut faces = BTreeSet::new();
+    for face in ctx.admit_iter(&ir.model.faces, "nx active faces")? {
+        storage.with_storage(|| ctx.insert_btree_set(&mut faces, &face.id, "nx active faces"))?;
     }
-    ir.model.loops.retain(|loop_| faces.contains(&loop_.face));
-    let mut loops: BTreeSet<LoopId> = BTreeSet::new();
-    for loop_ in &ir.model.loops {
-        ctx.insert_btree_set(
-            &mut loops,
-            loop_.id.try_clone_for_decode(ctx, "nx active loops")?,
-            "nx active loops",
-        )?;
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.loops,
+        |loop_| ctx.contains_btree_set(&faces, &loop_.face, "nx active loops"),
+        "nx active loops",
+    )?;
+    drop(faces);
+    retain_marked(&mut ir.model.loops, marks);
+    let mut loops = BTreeSet::new();
+    for loop_ in ctx.admit_iter(&ir.model.loops, "nx active loops")? {
+        storage.with_storage(|| ctx.insert_btree_set(&mut loops, &loop_.id, "nx active loops"))?;
     }
-    ir.model
-        .coedges
-        .retain(|coedge| loops.contains(&coedge.owner_loop));
-    let mut edges: BTreeSet<EdgeId> = BTreeSet::new();
-    for coedge in &ir.model.coedges {
-        ctx.insert_btree_set(
-            &mut edges,
-            coedge.edge.try_clone_for_decode(ctx, "nx active edges")?,
-            "nx active edges",
-        )?;
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.coedges,
+        |coedge| ctx.contains_btree_set(&loops, &coedge.owner_loop, "nx active coedges"),
+        "nx active coedges",
+    )?;
+    drop(loops);
+    retain_marked(&mut ir.model.coedges, marks);
+    let mut edges = BTreeSet::new();
+    for coedge in ctx.admit_iter(&ir.model.coedges, "nx active edges")? {
+        storage
+            .with_storage(|| ctx.insert_btree_set(&mut edges, &coedge.edge, "nx active edges"))?;
     }
-    for shell in &ir.model.shells {
-        for edge in shell.wire_edges() {
-            ctx.insert_btree_set(
-                &mut edges,
-                edge.try_clone_for_decode(ctx, "nx active edges")?,
-                "nx active edges",
-            )?;
+    for shell in ctx.admit_iter(&ir.model.shells, "nx active edges")? {
+        for edge in ctx.admit_iter(shell.wire_edges(), "nx active edges")? {
+            storage.with_storage(|| ctx.insert_btree_set(&mut edges, edge, "nx active edges"))?;
         }
     }
-    ir.model.edges.retain(|edge| edges.contains(&edge.id));
-    let mut vertices: BTreeSet<VertexId> = BTreeSet::new();
-    for edge in &ir.model.edges {
-        ctx.insert_btree_set(
-            &mut vertices,
-            edge.start.try_clone_for_decode(ctx, "nx active vertices")?,
-            "nx active vertices",
-        )?;
-        ctx.insert_btree_set(
-            &mut vertices,
-            edge.end.try_clone_for_decode(ctx, "nx active vertices")?,
-            "nx active vertices",
-        )?;
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.edges,
+        |edge| ctx.contains_btree_set(&edges, &edge.id, "nx active edges"),
+        "nx active edges",
+    )?;
+    drop(edges);
+    retain_marked(&mut ir.model.edges, marks);
+    let mut vertices = BTreeSet::new();
+    for edge in ctx.admit_iter(&ir.model.edges, "nx active vertices")? {
+        storage.with_storage(|| {
+            ctx.insert_btree_set(&mut vertices, &edge.start, "nx active vertices")?;
+            ctx.insert_btree_set(&mut vertices, &edge.end, "nx active vertices")
+        })?;
     }
-    for shell in &ir.model.shells {
-        for vertex in shell.free_vertices() {
-            ctx.insert_btree_set(
-                &mut vertices,
-                vertex.try_clone_for_decode(ctx, "nx active vertices")?,
-                "nx active vertices",
-            )?;
+    for shell in ctx.admit_iter(&ir.model.shells, "nx active vertices")? {
+        for vertex in ctx.admit_iter(shell.free_vertices(), "nx active vertices")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_set(&mut vertices, vertex, "nx active vertices")
+            })?;
         }
     }
-    ir.model
-        .vertices
-        .retain(|vertex| vertices.contains(&vertex.id));
-    let mut points: BTreeSet<PointId> = BTreeSet::new();
-    for vertex in &ir.model.vertices {
-        ctx.insert_btree_set(
-            &mut points,
-            vertex.point.try_clone_for_decode(ctx, "nx active points")?,
-            "nx active points",
-        )?;
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.vertices,
+        |vertex| ctx.contains_btree_set(&vertices, &vertex.id, "nx active vertices"),
+        "nx active vertices",
+    )?;
+    drop(vertices);
+    retain_marked(&mut ir.model.vertices, marks);
+    let mut points = BTreeSet::new();
+    for vertex in ctx.admit_iter(&ir.model.vertices, "nx active points")? {
+        storage.with_storage(|| {
+            ctx.insert_btree_set(&mut points, &vertex.point, "nx active points")
+        })?;
     }
-    ir.model.points.retain(|point| points.contains(&point.id));
+    let marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.points,
+        |point| ctx.contains_btree_set(&points, &point.id, "nx active points"),
+        "nx active points",
+    )?;
+    drop(points);
+    retain_marked(&mut ir.model.points, marks);
+    drop(storage);
     prune_inactive_geometry(ctx, ir)?;
     Ok(())
 }
 
 fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
-    let mut surfaces: BTreeSet<SurfaceId> = BTreeSet::new();
-    for face in &ir.model.faces {
-        ctx.insert_btree_set(
-            &mut surfaces,
-            face.surface
-                .try_clone_for_decode(ctx, "nx active surfaces")?,
-            "nx active surfaces",
-        )?;
+    let mut storage = ctx.reserve_scoped(0, "nx active geometry")?;
+    let mut surfaces = BTreeSet::new();
+    for face in ctx.admit_iter(&ir.model.faces, "nx active surfaces")? {
+        storage.with_storage(|| {
+            ctx.insert_btree_set(&mut surfaces, &face.surface, "nx active surfaces")
+        })?;
     }
-    let mut curves: BTreeSet<CurveId> = BTreeSet::new();
-    for edge in &ir.model.edges {
+    let mut curves = BTreeSet::new();
+    for edge in ctx.admit_iter(&ir.model.edges, "nx active curves")? {
         if let Some(curve) = edge.curve() {
-            ctx.insert_btree_set(
-                &mut curves,
-                curve.try_clone_for_decode(ctx, "nx active curves")?,
-                "nx active curves",
-            )?;
+            storage
+                .with_storage(|| ctx.insert_btree_set(&mut curves, curve, "nx active curves"))?;
         }
     }
-    let mut pcurves: BTreeSet<PcurveId> = BTreeSet::new();
-    for coedge in &ir.model.coedges {
-        for pcurve in &coedge.pcurves {
-            ctx.insert_btree_set(
-                &mut pcurves,
-                pcurve
-                    .pcurve
-                    .try_clone_for_decode(ctx, "nx active pcurves")?,
-                "nx active pcurves",
-            )?;
+    let mut pcurves = BTreeSet::new();
+    for coedge in ctx.admit_iter(&ir.model.coedges, "nx active pcurves")? {
+        for pcurve in ctx.admit_iter(&coedge.pcurves, "nx active pcurves")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_set(&mut pcurves, &pcurve.pcurve, "nx active pcurves")
+            })?;
         }
     }
+    reach_procedural_carriers(
+        ctx,
+        &mut storage,
+        (&ir.model.surfaces, &ir.model.curves),
+        (&ir.model.procedural_surfaces, &ir.model.procedural_curves),
+        &mut surfaces,
+        &mut curves,
+        "nx active geometry reachability pass",
+    )?;
 
-    loop {
-        let old_surface_count = surfaces.len();
-        let old_curve_count = curves.len();
-        for procedural in &ir.model.procedural_surfaces {
-            let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
-                continue;
-            };
-            if !surfaces.contains(owner) {
-                continue;
-            }
-            match procedural.definition() {
-                ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                    let support = definition_payload.support();
-                    ctx.insert_btree_set(
-                        &mut surfaces,
-                        support.try_clone_for_decode(ctx, "nx active surfaces")?,
-                        "nx active surfaces",
-                    )?;
-                }
-                ProceduralSurfaceDefinition::Blend(definition_payload) => {
-                    let supports = definition_payload.supports();
-                    let spine = definition_payload.spine();
-
-                    for support in supports.iter().flatten() {
-                        ctx.insert_btree_set(
-                            &mut surfaces,
-                            support
-                                .surface
-                                .try_clone_for_decode(ctx, "nx active surfaces")?,
-                            "nx active surfaces",
-                        )?;
-                    }
-                    if let Some(spine) = spine {
-                        ctx.insert_btree_set(
-                            &mut curves,
-                            spine.try_clone_for_decode(ctx, "nx active curves")?,
-                            "nx active curves",
-                        )?;
-                    }
-                }
-                _ => {}
-            }
-        }
-        for procedural in &ir.model.procedural_curves {
-            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
-                continue;
-            };
-            if !curves.contains(owner) {
-                continue;
-            }
-            match procedural.definition() {
-                ProceduralCurveDefinition::Intersection { context, .. } => {
-                    for side in context.sides() {
-                        if let Some(surface) = &side.surface {
-                            ctx.insert_btree_set(
-                                &mut surfaces,
-                                surface.try_clone_for_decode(ctx, "nx active surfaces")?,
-                                "nx active surfaces",
-                            )?;
-                        }
-                    }
-                }
-                ProceduralCurveDefinition::SurfaceCurve { family } => {
-                    for side in family.context().sides() {
-                        if let Some(surface) = &side.surface {
-                            ctx.insert_btree_set(
-                                &mut surfaces,
-                                surface.try_clone_for_decode(ctx, "nx active surfaces")?,
-                                "nx active surfaces",
-                            )?;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        if surfaces.len() == old_surface_count && curves.len() == old_curve_count {
-            break;
-        }
-    }
-
-    let mut surface_constructions: BTreeSet<ProceduralSurfaceId> = BTreeSet::new();
-    for surface in &ir.model.surfaces {
-        if surfaces.contains(&surface.id) {
+    let mut surface_constructions = BTreeSet::new();
+    for surface in ctx.admit_iter(&ir.model.surfaces, "nx active surface constructions")? {
+        if ctx.contains_btree_set(&surfaces, &surface.id, "nx active surface constructions")? {
             if let Some(construction) = surface.geometry.procedural_construction() {
-                ctx.insert_btree_set(
-                    &mut surface_constructions,
-                    construction.try_clone_for_decode(ctx, "nx active surface constructions")?,
-                    "nx active surface constructions",
-                )?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut surface_constructions,
+                        construction,
+                        "nx active surface constructions",
+                    )
+                })?;
             }
         }
     }
-    let mut curve_constructions: BTreeSet<ProceduralCurveId> = BTreeSet::new();
-    for curve in &ir.model.curves {
-        if curves.contains(&curve.id) {
+    let mut curve_constructions = BTreeSet::new();
+    for curve in ctx.admit_iter(&ir.model.curves, "nx active curve constructions")? {
+        if ctx.contains_btree_set(&curves, &curve.id, "nx active curve constructions")? {
             if let Some(construction) = curve.geometry.procedural_construction() {
-                ctx.insert_btree_set(
-                    &mut curve_constructions,
-                    construction.try_clone_for_decode(ctx, "nx active curve constructions")?,
-                    "nx active curve constructions",
-                )?;
+                storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut curve_constructions,
+                        construction,
+                        "nx active curve constructions",
+                    )
+                })?;
             }
         }
     }
-    ir.model
-        .procedural_surfaces
-        .retain(|procedural| surface_constructions.contains(&procedural.id));
-    ir.model
-        .procedural_curves
-        .retain(|procedural| curve_constructions.contains(&procedural.id));
-    ir.model
-        .surfaces
-        .retain(|surface| surfaces.contains(&surface.id));
-    ir.model.curves.retain(|curve| curves.contains(&curve.id));
-    ir.model
-        .pcurves
-        .retain(|pcurve| pcurves.contains(&pcurve.id));
+    let procedural_surface_marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.procedural_surfaces,
+        |procedural| {
+            ctx.contains_btree_set(
+                &surface_constructions,
+                &procedural.id,
+                "nx active procedural surfaces",
+            )
+        },
+        "nx active procedural surfaces",
+    )?;
+    let procedural_curve_marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.procedural_curves,
+        |procedural| {
+            ctx.contains_btree_set(
+                &curve_constructions,
+                &procedural.id,
+                "nx active procedural curves",
+            )
+        },
+        "nx active procedural curves",
+    )?;
+    let surface_marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.surfaces,
+        |surface| ctx.contains_btree_set(&surfaces, &surface.id, "nx active surfaces"),
+        "nx active surfaces",
+    )?;
+    let curve_marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.curves,
+        |curve| ctx.contains_btree_set(&curves, &curve.id, "nx active curves"),
+        "nx active curves",
+    )?;
+    let pcurve_marks = keep_marks(
+        ctx,
+        &mut storage,
+        &ir.model.pcurves,
+        |pcurve| ctx.contains_btree_set(&pcurves, &pcurve.id, "nx active pcurves"),
+        "nx active pcurves",
+    )?;
+    drop((
+        surfaces,
+        curves,
+        pcurves,
+        surface_constructions,
+        curve_constructions,
+    ));
+    retain_marked(&mut ir.model.procedural_surfaces, procedural_surface_marks);
+    retain_marked(&mut ir.model.procedural_curves, procedural_curve_marks);
+    retain_marked(&mut ir.model.surfaces, surface_marks);
+    retain_marked(&mut ir.model.curves, curve_marks);
+    retain_marked(&mut ir.model.pcurves, pcurve_marks);
     Ok(())
 }
 
@@ -2509,20 +2838,27 @@ fn finalize_point_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let mut referenced_points: BTreeSet<PointId> = BTreeSet::new();
-    for vertex in &ir.model.vertices {
-        ctx.insert_btree_set(
-            &mut referenced_points,
-            vertex
-                .point
-                .try_clone_for_decode(ctx, "nx referenced point identity")?,
+    if !ir.model.bodies.is_empty() {
+        let mut storage = ctx.reserve_scoped(0, "nx referenced points")?;
+        let mut referenced_points = BTreeSet::new();
+        for vertex in ctx.admit_iter(&ir.model.vertices, "nx referenced points")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut referenced_points,
+                    &vertex.point,
+                    "nx referenced points",
+                )
+            })?;
+        }
+        let marks = keep_marks(
+            ctx,
+            &mut storage,
+            &ir.model.points,
+            |point| ctx.contains_btree_set(&referenced_points, &point.id, "nx referenced points"),
             "nx referenced points",
         )?;
-    }
-    if !ir.model.bodies.is_empty() {
-        ir.model
-            .points
-            .retain(|point| referenced_points.contains(&point.id));
+        drop(referenced_points);
+        retain_marked(&mut ir.model.points, marks);
         return Ok(());
     }
 
@@ -2548,17 +2884,16 @@ fn finalize_point_topology(
     }
 
     let point_count = ir.model.points.len();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(point_count),
-        "nx point topology free vertices",
-    )?;
-    let mut free_vertices = ctx.collection_vec(point_count, "nx point topology vertices")?;
+    let mut free_vertices = ctx.vector_storage(point_count, "nx point topology free vertices")?;
     ctx.reserve_capacity(
         &mut ir.model.vertices,
         point_count,
         "nx point topology vertices",
     )?;
-    for (index, point) in ir.model.points.iter().enumerate() {
+    for (index, point) in ctx
+        .admit_iter(&ir.model.points, "nx point topology vertices")?
+        .enumerate()
+    {
         let vertex_id: VertexId =
             derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-vertex"), index)?;
         annotations.note(
@@ -2569,14 +2904,19 @@ fn finalize_point_topology(
             Some("derived_point_topology"),
         )?;
         annotations.exactness(ctx, vertex_id.as_str(), Exactness::Inferred)?;
-        ir.model.vertices.push(Vertex {
+        let vertex = Vertex {
             id: vertex_id.try_clone_for_decode(ctx, "nx point vertex identity copy")?,
             point: point
                 .id
                 .try_clone_for_decode(ctx, "nx point reference identity")?,
             tolerance: None,
-        });
-        free_vertices.push(vertex_id);
+        };
+        ctx.push_vec(&mut ir.model.vertices, vertex, "nx point topology vertices")?;
+        ctx.push_vec(
+            &mut free_vertices,
+            vertex_id,
+            "nx point topology free vertices",
+        )?;
     }
     ctx.reserve_vec(&mut ir.model.shells, 1, "nx point topology shells")?;
     ir.model.shells.push(
@@ -2619,114 +2959,122 @@ fn finalize_point_topology(
 }
 
 fn classify_body_kinds(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
-    let mut region_bodies: BTreeMap<RegionId, BodyId> = BTreeMap::new();
-    for region in &ir.model.regions {
-        ctx.insert_btree_map(
-            &mut region_bodies,
-            region
-                .id
-                .try_clone_for_decode(ctx, "nx body classification relation identity")?,
-            region
-                .body
-                .try_clone_for_decode(ctx, "nx body classification owner identity")?,
-            "nx body classification relations",
-        )?;
+    const RELATIONS: &str = "nx body classification relations";
+    let mut storage = ctx.reserve_scoped(0, RELATIONS)?;
+    let mut region_bodies = BTreeMap::new();
+    for region in ctx.admit_iter(&ir.model.regions, RELATIONS)? {
+        storage.with_storage(|| {
+            ctx.insert_btree_map(&mut region_bodies, &region.id, &region.body, RELATIONS)
+        })?;
     }
-    let mut shell_bodies: BTreeMap<ShellId, BodyId> = BTreeMap::new();
-    for shell in &ir.model.shells {
-        if let Some(body) = region_bodies.get(&shell.region) {
-            ctx.insert_btree_map(
-                &mut shell_bodies,
-                shell
-                    .id
-                    .try_clone_for_decode(ctx, "nx body classification relation identity")?,
-                body.try_clone_for_decode(ctx, "nx body classification owner identity")?,
-                "nx body classification relations",
-            )?;
+    let mut shell_bodies = BTreeMap::new();
+    for shell in ctx.admit_iter(&ir.model.shells, RELATIONS)? {
+        if let Some(&body) = ctx.get_btree_map(&region_bodies, &shell.region, RELATIONS)? {
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut shell_bodies, &shell.id, body, RELATIONS)
+            })?;
         }
     }
-    let mut face_bodies: BTreeMap<FaceId, BodyId> = BTreeMap::new();
-    for face in &ir.model.faces {
-        if let Some(body) = shell_bodies.get(&face.shell) {
-            ctx.insert_btree_map(
-                &mut face_bodies,
-                face.id
-                    .try_clone_for_decode(ctx, "nx body classification relation identity")?,
-                body.try_clone_for_decode(ctx, "nx body classification owner identity")?,
-                "nx body classification relations",
-            )?;
+    let mut face_bodies = BTreeMap::new();
+    for face in ctx.admit_iter(&ir.model.faces, RELATIONS)? {
+        if let Some(&body) = ctx.get_btree_map(&shell_bodies, &face.shell, RELATIONS)? {
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut face_bodies, &face.id, body, RELATIONS)
+            })?;
         }
     }
-    let mut loop_bodies: BTreeMap<LoopId, BodyId> = BTreeMap::new();
-    for loop_ in &ir.model.loops {
-        if let Some(body) = face_bodies.get(&loop_.face) {
-            ctx.insert_btree_map(
-                &mut loop_bodies,
-                loop_
-                    .id
-                    .try_clone_for_decode(ctx, "nx body classification relation identity")?,
-                body.try_clone_for_decode(ctx, "nx body classification owner identity")?,
-                "nx body classification relations",
-            )?;
+    let mut loop_bodies = BTreeMap::new();
+    for loop_ in ctx.admit_iter(&ir.model.loops, RELATIONS)? {
+        if let Some(&body) = ctx.get_btree_map(&face_bodies, &loop_.face, RELATIONS)? {
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut loop_bodies, &loop_.id, body, RELATIONS)
+            })?;
         }
     }
-    let mut coedge_bodies: BTreeMap<CoedgeId, BodyId> = BTreeMap::new();
-    for coedge in &ir.model.coedges {
-        if let Some(body) = loop_bodies.get(&coedge.owner_loop) {
-            ctx.insert_btree_map(
-                &mut coedge_bodies,
-                coedge
-                    .id
-                    .try_clone_for_decode(ctx, "nx body classification relation identity")?,
-                body.try_clone_for_decode(ctx, "nx body classification owner identity")?,
-                "nx body classification relations",
-            )?;
+    let mut coedge_bodies = BTreeMap::new();
+    for coedge in ctx.admit_iter(&ir.model.coedges, RELATIONS)? {
+        if let Some(&body) = ctx.get_btree_map(&loop_bodies, &coedge.owner_loop, RELATIONS)? {
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut coedge_bodies, &coedge.id, body, RELATIONS)
+            })?;
         }
     }
-    let mut edge_uses = BTreeMap::<BodyId, BTreeMap<EdgeId, usize>>::new();
-    for coedge in &ir.model.coedges {
-        let Some(body) = coedge_bodies.get(&coedge.id) else {
+    let mut edge_uses = BTreeMap::<&BodyId, BTreeMap<&EdgeId, usize>>::new();
+    for coedge in ctx.admit_iter(&ir.model.coedges, "nx body classification edge uses")? {
+        let Some(&body) = ctx.get_btree_map(&coedge_bodies, &coedge.id, RELATIONS)? else {
             continue;
         };
-        if !edge_uses.contains_key(body) {
-            ctx.insert_btree_map(
-                &mut edge_uses,
-                body.try_clone_for_decode(ctx, "nx body classification edge owner identity")?,
-                BTreeMap::new(),
-                "nx body classification edge owners",
-            )?;
+        if !ctx.contains_key_btree_map(&edge_uses, body, "nx body classification edge owners")? {
+            storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut edge_uses,
+                    body,
+                    BTreeMap::new(),
+                    "nx body classification edge owners",
+                )
+            })?;
         }
-        let Some(edges) = edge_uses.get_mut(body) else {
+        let Some(edges) =
+            ctx.get_mut_btree_map(&mut edge_uses, body, "nx body classification edge owners")?
+        else {
             return Err(CodecError::malformed(
                 "NX body classification owner missing",
             ));
         };
-        if !edges.contains_key(&coedge.edge) {
-            ctx.insert_btree_map(
-                edges,
-                coedge
-                    .edge
-                    .try_clone_for_decode(ctx, "nx body classification edge identity")?,
-                0,
-                "nx body classification edge uses",
-            )?;
+        match ctx.get_mut_btree_map(edges, &coedge.edge, "nx body classification edge uses")? {
+            Some(count) => {
+                *count = count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("nx body classification edge uses", 0, 1)
+                })?;
+            }
+            None => {
+                storage.with_storage(|| {
+                    ctx.insert_btree_map(edges, &coedge.edge, 1, "nx body classification edge uses")
+                })?;
+            }
         }
-        let Some(count) = edges.get_mut(&coedge.edge) else {
-            return Err(CodecError::malformed("NX body classification edge missing"));
-        };
-        *count = count
-            .checked_add(1)
-            .ok_or_else(|| ctx.refuse_codec_limit("nx body classification edge uses", 0, 1))?;
     }
-    for body in &mut ir.model.bodies {
-        body.kind = if edge_uses
-            .get(&body.id)
-            .is_some_and(|uses| !uses.is_empty() && uses.values().all(|use_count| *use_count == 2))
-        {
-            BodyKind::Solid
-        } else {
-            BodyKind::Sheet
+    let mut kinds = Vec::new();
+    for body in ctx.admit_iter(&ir.model.bodies, "nx body classification kinds")? {
+        let solid = match ctx.get_btree_map(&edge_uses, &body.id, "nx body classification kinds")? {
+            Some(uses) if !uses.is_empty() => {
+                let mut every_edge_twice = true;
+                for &use_count in uses.values() {
+                    ctx.charge_work(1, "nx body classification kinds")?;
+                    if use_count != 2 {
+                        every_edge_twice = false;
+                        break;
+                    }
+                }
+                every_edge_twice
+            }
+            _ => false,
         };
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut kinds,
+            if solid {
+                BodyKind::Solid
+            } else {
+                BodyKind::Sheet
+            },
+            "nx body classification kinds",
+        )?;
+    }
+    drop((
+        region_bodies,
+        shell_bodies,
+        face_bodies,
+        loop_bodies,
+        coedge_bodies,
+        edge_uses,
+    ));
+    let mut kinds = kinds.into_iter();
+    for index in ctx.admit_iter(&(0..ir.model.bodies.len()), "nx body classification kinds")? {
+        let (Some(body), Some(kind)) = (ir.model.bodies.get_mut(index), kinds.next()) else {
+            break;
+        };
+        body.kind = kind;
     }
     Ok(())
 }

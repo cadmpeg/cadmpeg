@@ -65,7 +65,7 @@ impl FeatureSwp104LeadingBranch {
         resolve: impl Fn(PayloadIndexToken) -> Result<Option<String>, cadmpeg_core::CodecError>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         if source_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(branch.byte_len(ctx)?))
+            .checked_add(cadmpeg_core::decode::u64_from_index(branch.byte_len()))
             .is_none()
         {
             return Ok(None);

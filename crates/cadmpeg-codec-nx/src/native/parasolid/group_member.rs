@@ -5,8 +5,6 @@ use super::ParasolidGroupMember;
 use crate::deltas::record_family::RecordFamily;
 use crate::topology::Graph;
 use serde::{Deserialize, Serialize};
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::native) enum GroupNodeFamily {
@@ -72,24 +70,22 @@ impl GroupMemberTarget {
         })
     }
 
-    pub(super) fn resolve(self, ctx: &DecodeContext<'_>, graph: &Graph, member_xmt: u32) -> Result<Self, CodecError> {
+    pub(super) fn resolve(self, graph: &Graph, member_xmt: u32) -> Self {
         match self {
-            Self::Fin => Ok(Self::Fin),
+            Self::Fin => Self::Fin,
             Self::Node {
                 family, node_id, ..
             } => {
-                let current_xmt = match graph
+                let current_xmt = graph
                     .get(family.kind(), member_xmt)
                     .filter(|node| node.node_id() == Some(node_id))
-                    .map(crate::topology::Node::xmt) {
-                    Some(xmt) => Some(xmt),
-                    None => graph.unique_xmt_by_node_id(ctx, family.kind(), node_id)?,
-                };
-                Ok(Self::Node {
+                    .map(crate::topology::Node::xmt)
+                    .or_else(|| graph.unique_xmt_by_node_id(family.kind(), node_id));
+                Self::Node {
                     family,
                     node_id,
                     current_xmt,
-                })
+                }
             }
         }
     }

@@ -101,13 +101,16 @@ impl<F: ScalarFrame, O> FramedScalarRun<F, O> {
     pub(crate) fn try_map_locations<P>(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut map: impl FnMut(u64, O) -> Option<P>,
+        mut map: impl FnMut(u64, O) -> Result<Option<P>, cadmpeg_core::CodecError>,
     ) -> Result<Option<FramedScalarRun<F, P>>, cadmpeg_core::CodecError> {
         let mut at = self.offset + self.form.prefix_len();
         let values = self.values.try_map_charged(ctx, |(atom, location)| {
             let offset = at;
             at += atom.width();
-            Some((atom, map(offset, location)?))
+            let Some(location) = map(offset, location)? else {
+                return Ok(None);
+            };
+            Ok(Some((atom, location)))
         })?;
         let Some(values) = values else {
             return Ok(None);

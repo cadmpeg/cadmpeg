@@ -99,15 +99,18 @@ impl NameField<&str, usize, ()> {
     pub(crate) fn into_native(
         self,
         ctx: &DecodeContext<'_>,
-        source_offset: impl FnOnce(u64) -> Option<u64>,
+        source_offset: impl FnOnce(u64) -> Result<Option<u64>, CodecError>,
     ) -> Result<Option<NameField<String>>, CodecError> {
         let Some(offset) = u64::try_from(self.offset()).ok() else {
             return Ok(None);
         };
-        let code = self.code().map(|code| CompactIndexTarget {
-            atom: code.atom,
-            target: source_offset(u64_from_index(code.offset)),
-        });
+        let code = match self.code() {
+            Some(code) => Some(CompactIndexTarget {
+                atom: code.atom,
+                target: source_offset(u64_from_index(code.offset))?,
+            }),
+            None => None,
+        };
         let mut value = ctx.retained_string(self.value.len(), "NX native name field")?;
         ctx.append_retained(&mut value, self.value, "NX admitted text append")?;
         Ok(NameField::from_wire(ctx, value, offset, code)?.ok())
@@ -244,7 +247,7 @@ mod tests {
         let bytes = [0x66, 128, 1, 3, 3, b'A', 0];
         let field = scan_test(&bytes).pop().unwrap();
         let native = crate::test_support::with_decode_context(|ctx| {
-            field.clone().into_native(ctx, |_| Some(900))
+            field.clone().into_native(ctx, |_| Ok(Some(900)))
         })
         .unwrap()
         .unwrap();
@@ -253,7 +256,7 @@ mod tests {
         assert_eq!(*native.code().unwrap().target, Some(900));
         assert_eq!(native.value(), "A");
         let unmapped =
-            crate::test_support::with_decode_context(|ctx| field.into_native(ctx, |_| None))
+            crate::test_support::with_decode_context(|ctx| field.into_native(ctx, |_| Ok(None)))
                 .unwrap()
                 .unwrap();
         assert_eq!(*unmapped.code().unwrap().target, None);

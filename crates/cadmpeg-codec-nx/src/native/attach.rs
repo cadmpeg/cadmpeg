@@ -103,7 +103,7 @@ use crate::container::EntryContent;
 use crate::decode::ids::{extended_id, native_entity_key, IdScope};
 use crate::decode::Scan;
 use crate::native::history::{
-    active_feature_closure_for_decode, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
+    active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
     NATIVE_PRIMARY_BODY_OBJECT_INDEX,
 };
 use crate::native::om::display_color::{
@@ -148,7 +148,7 @@ fn attach_container_payloads(
         if !content.retains_opaque_payload()
             || (typed_native == TypedNative::Available
                 && content == EntryContent::SaveToggleInfo
-                && has_complete_saved_toggle_stream(&scan.container))
+                && has_complete_saved_toggle_stream(ctx, &scan.container)?)
         {
             continue;
         }
@@ -1301,7 +1301,7 @@ fn attach_jpeg_preview_assets(
         };
         let native_ref: UnknownId =
             IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
-        if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
+        if crate::decode::jpeg::jpeg_dimensions(ctx, bytes)?.is_none() {
             annotations.note(
                 ctx,
                 native_ref.as_str(),
@@ -1574,7 +1574,7 @@ fn attach_current_feature_states(
                 .try_clone_for_decode(ctx, "NX current body identity")
         })?);
     }
-    let Ok(active_features) = active_feature_closure_for_decode(ctx, ir, &current_bodies)? else {
+    let Ok(active_features) = active_feature_closure(ctx, ir, &current_bodies)? else {
         return Ok(());
     };
     for (_, &index) in ctx.admit_iter(&active_features, "NX active feature traversal")? {
@@ -1608,8 +1608,7 @@ fn attach_active_configuration_feature_states(
     {
         return Ok(());
     }
-    let Ok(active_features) = active_feature_closure_for_decode(ctx, ir, configuration_bodies)?
-    else {
+    let Ok(active_features) = active_feature_closure(ctx, ir, configuration_bodies)? else {
         return Ok(());
     };
     let mut states = BTreeMap::new();
@@ -3309,7 +3308,7 @@ fn attach_feature_operations(
         if let Some(feature_property_records) = ctx.get_btree_map(&segment_body_operands_by_operation, label.id.as_str(), "NX admitted map lookup")? {
             for operand in ctx.admit_iter(feature_property_records, "NX feature property record traversal")? {
                 if let Some(writer) =
-                    body_writer_history.native_writer(canonical_body(operand.operand.atom.value()))
+                    body_writer_history.native_writer(ctx, canonical_body(operand.operand.atom.value()))?
                 {
                     push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
                 }
@@ -3320,7 +3319,7 @@ fn attach_feature_operations(
                 let Some(data_block) = operand.operand_data_block.as_deref() else {
                     continue;
                 };
-                let Some(writer) = body_writer_history.offset_store_writer(data_block) else {
+                let Some(writer) = body_writer_history.offset_store_writer(ctx, data_block)? else {
                     continue;
                 };
                 push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
@@ -4740,29 +4739,32 @@ fn attach_feature_operations(
         };
         let body_reference_count = ctx.get_btree_map(&body_reference_occurrences_by_operation, label.id.as_str(), "NX admitted map lookup")?
             .map_or(0, Vec::len);
-        let block_op = new_body_boolean_op(&NewBodyEvidence {
-            has_complete_projection: block_projection.is_some(),
-            has_complete_primitive_construction: match ctx.get_btree_map(&block_constructions_by_operation, label.id.as_str(), "NX admitted map lookup")? {
-                Some(construction) => match ctx.get_btree_map(&block_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")?.map(Vec::as_slice) {
-                    Some([payload]) => match &payload.owner {
-                        crate::native::features::FeatureConstructionOwner::Block { construction: owner } => ctx.equal(owner, &construction.id, "NX block construction payload owner equality")?,
+        let block_op = new_body_boolean_op(
+            ctx,
+            &NewBodyEvidence {
+                has_complete_projection: block_projection.is_some(),
+                has_complete_primitive_construction: match ctx.get_btree_map(&block_constructions_by_operation, label.id.as_str(), "NX admitted map lookup")? {
+                    Some(construction) => match ctx.get_btree_map(&block_construction_payloads_by_operation, label.id.as_str(), "NX admitted map lookup")?.map(Vec::as_slice) {
+                        Some([payload]) => match &payload.owner {
+                            crate::native::features::FeatureConstructionOwner::Block { construction: owner } => ctx.equal(owner, &construction.id, "NX block construction payload owner equality")?,
+                            _ => false,
+                        },
                         _ => false,
                     },
-                    _ => false,
+                    None => false,
                 },
-                None => false,
+                outputs: &outputs,
+                body_reference_count,
+                provisional_feature: initial_body_id.as_ref(),
+                native_primary_body,
+                offset_store_primary_body,
+                history: &body_writer_history,
             },
-            outputs: &outputs,
-            body_reference_count,
-            provisional_feature: initial_body_id.as_ref(),
-            native_primary_body,
-            offset_store_primary_body,
-            history: &body_writer_history,
-        });
-        let sphere_op = sphere_projection
-            .as_ref()
-            .map_or(BooleanOp::Unresolved, |_| {
-                new_body_boolean_op(&NewBodyEvidence {
+        )?;
+        let sphere_op = if sphere_projection.is_some() {
+            new_body_boolean_op(
+                ctx,
+                &NewBodyEvidence {
                     has_complete_projection: true,
                     has_complete_primitive_construction: true,
                     outputs: sphere_outputs,
@@ -4771,8 +4773,11 @@ fn attach_feature_operations(
                     native_primary_body,
                     offset_store_primary_body,
                     history: &body_writer_history,
-                })
-            });
+                },
+            )?
+        } else {
+            BooleanOp::Unresolved
+        };
         if sphere_op == BooleanOp::NewBody && outputs.is_empty() {
             if let Some((body, _, _)) = &sphere_projection {
                 ctx.reserve_vec(&mut outputs, 1, "NX sphere output bodies")?;
@@ -4795,7 +4800,7 @@ fn attach_feature_operations(
                             bodies.retain(|body| !outputs.contains(body));
                         }
                     });
-                body_writer_history.retract_outputs(&initial_feature.id, &outputs);
+                body_writer_history.retract_outputs(ctx, &initial_feature.id, &outputs)?;
             }
         }
         body_writer_history.extend_primary_dependencies(
@@ -4920,11 +4925,12 @@ fn attach_feature_operations(
                 output_kinds.push(body.kind);
             }
             let op = extrude_boolean_op(
+                ctx,
                 &body_writer_history,
                 native_primary_body,
                 offset_store_primary_body,
                 &output_kinds,
-            );
+            )?;
             let construction_profile = ctx.get_btree_map(&extrude_construction_profiles_by_operation, label.id.as_str(), "NX admitted map lookup")?
                 .map(|profile| profile.id.as_str());
             let structured_construction = ctx.get_btree_map(&extrude_32_constructions_by_operation, label.id.as_str(), "NX admitted map lookup")?
@@ -7907,14 +7913,21 @@ fn extrude_feature_definition(
 }
 
 fn extrude_boolean_op(
+    ctx: &DecodeContext<'_>,
     history: &BodyWriterHistory,
     native_primary_body: Option<u32>,
     offset_store_primary_body: Option<&str>,
     output_kinds: &[cadmpeg_ir::topology::BodyKind],
-) -> BooleanOp {
+) -> Result<BooleanOp, CodecError> {
     let has_previous_writer =
         if native_primary_body.is_some() || offset_store_primary_body.is_some() {
-            history.has_preceding_writer(None, native_primary_body, offset_store_primary_body, &[])
+            history.has_preceding_writer(
+                ctx,
+                None,
+                native_primary_body,
+                offset_store_primary_body,
+                &[],
+            )?
         } else {
             true
         };
@@ -7924,9 +7937,9 @@ fn extrude_boolean_op(
             [cadmpeg_ir::topology::BodyKind::Solid | cadmpeg_ir::topology::BodyKind::Sheet]
         )
     {
-        BooleanOp::NewBody
+        Ok(BooleanOp::NewBody)
     } else {
-        BooleanOp::Unresolved
+        Ok(BooleanOp::Unresolved)
     }
 }
 
@@ -8447,7 +8460,7 @@ fn feature_body_outputs(
     segment_bindings: &[crate::native::segments::SegmentBodyBinding],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<Vec<BodyId>, CodecError> {
-    if crate::native::segments::unique_segment_body_binding(object_index, segment_bindings)
+    if crate::native::segments::unique_segment_body_binding(ctx, object_index, segment_bindings)?
         .is_none()
     {
         return Ok(Vec::new());

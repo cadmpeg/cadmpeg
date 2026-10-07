@@ -516,14 +516,18 @@ pub(crate) fn project_parameters(
     let mut projected_storage = ctx.reserve_scoped(0, "project Inventor parameter")?;
     let mut unresolved = 0usize;
     for parameter in ctx.admit_iter(&inventory.parameters, "visit Inventor design items")? {
-        if !ctx.contains_key_hash_map(
-            &parameters,
-            &(
-                parameter.identity.segment_token.as_str(),
-                parameter.identity.record_ordinal,
-            ),
-            "access Inventor design records",
-        )? {
+        if ctx
+            .get_hash_map(
+                &parameters,
+                &(
+                    parameter.identity.segment_token.as_str(),
+                    parameter.identity.record_ordinal,
+                ),
+                "access Inventor design records",
+            )?
+            .and_then(Option::as_ref)
+            .is_none()
+        {
             unresolved += 1;
             continue;
         }

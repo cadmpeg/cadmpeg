@@ -454,7 +454,7 @@ fn order_expression_dependencies(
             }
             let mut dependencies_ready = true;
             for name in crate::native::om::expression_parameter_names(ctx, &expression.expression) {
-                    let name = name?;
+                let name = name?;
                 let mut dependency = None;
                 let mut ambiguous = false;
                 for (candidate_index, candidate) in expressions.iter().enumerate() {

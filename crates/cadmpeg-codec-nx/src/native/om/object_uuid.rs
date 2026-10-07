@@ -99,8 +99,10 @@ pub(in crate::native) fn object_uuid_values(
 ) -> Result<Vec<ObjectUuidValue>, CodecError> {
     const FRAME_LEN: usize = 2 + 36 + 1;
     let mut values = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX object uuid input sections")?
+        .enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;
@@ -136,7 +138,8 @@ pub(in crate::native) fn object_uuid_values(
         };
         let section_ordinal_u32 = u32::try_from(section_ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx OM UUID section ordinal", 0, u64::MAX))?;
-        for value in crate::om::uuid_string_values(ctx, storage, first.offset)? {
+        let uuid_values = crate::om::uuid_string_values(ctx, storage, first.offset)?;
+        for value in ctx.admit_iter(uuid_values, "NX object uuid uuid values visits")? {
             let Some(frame_end) = value.offset.checked_add(FRAME_LEN) else {
                 continue;
             };
@@ -167,10 +170,16 @@ pub(in crate::native) fn object_uuid_values(
             };
             ctx.reserve_vec(&mut values, 1, "NX OM UUID values")?;
             let id = uuid_value_id(ctx, section_ordinal, value.offset)?;
-            let uuid = crate::canonical_uuid::CanonicalUuid::from_wire(ctx,
+            let uuid = match crate::canonical_uuid::CanonicalUuid::new(
                 ctx.copy_retained_text(value.value.as_str(), "retain NX OM UUID text")?,
-            )?
-            .map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
+            ) {
+                Ok(uuid) => uuid,
+                Err(error) => {
+                    return Err(CodecError::InvalidInput(
+                        ctx.copy_retained_text(error, "NX OM UUID error")?,
+                    ))
+                }
+            };
             let source_entry =
                 ctx.copy_retained_text(&entry.name, "retain NX OM UUID source entry")?;
             values.push(ObjectUuidValue {
