@@ -1668,15 +1668,21 @@ mod tests {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut refusals = Vec::new();
             if curve {
-                assert!(scan_curve_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
+                assert!(scan_curve_carriers(&ctx, &bytes, &mut refusals)
+                    .unwrap()
+                    .is_empty());
             } else {
-                assert!(scan_surface_carriers(&ctx, &bytes, &mut refusals).unwrap().is_empty());
+                assert!(scan_surface_carriers(&ctx, &bytes, &mut refusals)
+                    .unwrap()
+                    .is_empty());
             }
             assert!(refusals.is_empty());
-            let _storage = ctx.reserve_scoped(
-                policy.limits.max_materialized_bytes,
-                "test released spline source storage",
-            ).expect("no source table storage remains charged");
+            let _storage = ctx
+                .reserve_scoped(
+                    policy.limits.max_materialized_bytes,
+                    "test released spline source storage",
+                )
+                .expect("no source table storage remains charged");
         }
     }
 
@@ -1704,7 +1710,7 @@ mod tests {
     }
 
     #[test]
-    fn parasolid_scalar_array_values_refuse_collection_limit_before_allocation() {
+    fn parasolid_scalar_array_values_refuse_collection_limit_before_value_insertion() {
         let bytes = crate::test_support::parasolid::f64_array(0x2d, 12, &[0.0, 1.0, 2.0]);
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::CollectionItems,
@@ -1737,7 +1743,7 @@ mod tests {
     }
 
     #[test]
-    fn parasolid_integer_array_values_refuse_collection_limit_before_allocation() {
+    fn parasolid_integer_array_values_refuse_collection_limit_before_value_insertion() {
         let bytes = crate::test_support::parasolid::u16_array(12, &[1, 2, 3]);
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::CollectionItems,
