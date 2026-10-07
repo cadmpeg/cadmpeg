@@ -160,7 +160,10 @@ fn section_axis_line_carrier(
             .ok()
             .map(|points| points.0)
     })?;
-    section_axis_line_carrier_with_points(&variable_points, segment)
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_axis_line_carrier_with_points(ctx, &variable_points, segment)
+    })
+    .expect("admitted axis line carrier")
 }
 
 #[cfg(test)]

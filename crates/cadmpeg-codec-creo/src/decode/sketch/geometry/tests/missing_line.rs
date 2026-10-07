@@ -165,7 +165,16 @@ fn run_definition(
     saved_section_missing_line_geometry(&ctx, definition)
 }
 
-fn assert_item_refusal(limit: u64, operation: &'static str) {
+fn assert_item_refusal(operation: &'static str) {
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some(operation),
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            run(&policy)
+        },
+    );
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
     let error = run(&policy).expect_err("missing-line collection exceeds cap");
@@ -179,27 +188,27 @@ fn assert_item_refusal(limit: u64, operation: &'static str) {
 
 #[test]
 fn missing_line_refuses_trimmed_id_tree_node() {
-    assert_item_refusal(0, "creo missing-line trimmed ID nodes");
+    assert_item_refusal("creo missing-line trimmed ID nodes");
 }
 
 #[test]
 fn missing_line_refuses_saved_geometry_vec_growth() {
-    assert_item_refusal(1, "creo missing-line saved geometries");
+    assert_item_refusal("creo missing-line saved geometries");
 }
 
 #[test]
 fn missing_line_refuses_ordered_id_tree_node() {
-    assert_item_refusal(2, "creo missing-line ordered ID nodes");
+    assert_item_refusal("creo missing-line ordered ID nodes");
 }
 
 #[test]
 fn missing_line_refuses_geometry_id_tree_node() {
-    assert_item_refusal(3, "creo missing-line geometry ID nodes");
+    assert_item_refusal("creo missing-line geometry ID nodes");
 }
 
 #[test]
 fn missing_line_refuses_endpoint_vec_growth() {
-    assert_item_refusal(5, "creo missing-line endpoints");
+    assert_item_refusal("creo missing-line endpoints");
 }
 
 #[test]

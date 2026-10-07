@@ -8,7 +8,8 @@ use super::definitions::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SegmentRow {
@@ -107,7 +108,12 @@ impl SegmentRow {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SegmentRows {
     rows: Vec<SegmentRow>,
+    /// Row position of each identifier in key order; a repeated identifier
+    /// keeps a `None` marker.
     identities: BTreeMap<u32, Option<usize>>,
+    /// The same positions for keyed lookup: a probe of a `u32` key is
+    /// constant work, so lookups need no context.
+    positions: HashMap<u32, Option<usize>>,
 }
 
 impl cadmpeg_core::decode::cost::DecodeCost for SegmentRows {
@@ -152,7 +158,11 @@ impl SegmentRows {
         rows: Vec<SegmentRow>,
     ) -> Result<Self, CodecError> {
         let mut identities = BTreeMap::new();
-        for (ordinal, row) in rows.iter().enumerate() {
+        let mut positions = HashMap::new();
+        for (ordinal, row) in ctx
+            .admit_iter(&rows, "creo segment identity rows")?
+            .enumerate()
+        {
             let external_id = row.external_id();
             match ctx.entry_btree_map(
                 &mut identities,
@@ -166,8 +176,20 @@ impl SegmentRows {
                     entry.insert(None);
                 }
             }
+            match ctx.entry_hash_map(&mut positions, external_id, "creo segment identity index")? {
+                Entry::Vacant(entry) => {
+                    entry.insert(Some(ordinal));
+                }
+                Entry::Occupied(mut entry) => {
+                    *entry.get_mut() = None;
+                }
+            }
         }
-        Ok(Self { rows, identities })
+        Ok(Self {
+            rows,
+            identities,
+            positions,
+        })
     }
 
     #[cfg(test)]
@@ -182,6 +204,10 @@ impl SegmentRows {
                 entry.insert(None);
             }
         }
+        self.positions
+            .entry(id)
+            .and_modify(|position| *position = None)
+            .or_insert(Some(ordinal));
         self.rows.push(row);
     }
 
@@ -200,11 +226,11 @@ impl SegmentRows {
     }
 
     pub(crate) fn get(&self, id: u32) -> Option<&SegmentRow> {
-        self.rows.get((*self.identities.get(&id)?)?)
+        self.rows.get((*self.positions.get(&id)?)?)
     }
 
     pub(crate) fn contains_id(&self, id: u32) -> bool {
-        self.identities.contains_key(&id)
+        self.positions.contains_key(&id)
     }
 
     #[cfg(test)]

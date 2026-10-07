@@ -18,7 +18,7 @@ use super::super::sketch::intersect::{
     resolved_trim_vertex_coordinates, trimmed_section_segment_geometry_with_missing_line,
 };
 use super::super::sketch::radii::{
-    resolved_section_radii, section_axis_reference_line_geometry, trim_segment_id,
+    resolved_section_radii, section_axis_reference_line_geometry, trim_segment_ids,
 };
 use super::super::sketch::skamp::section_segment_rows;
 use super::super::sketch_ids::{
@@ -275,12 +275,14 @@ pub(in super::super) fn transfer_sketches(
         let radii = resolved_section_radii(ctx, definition)?;
         let missing_line_geometry = saved_section_missing_line_geometry(ctx, definition)?;
         let mut solved = BTreeSet::new();
-        if let Some(table) = definition.trim_entities.as_ref() {
-            for row in ctx.admit_iter(&table.rows, "creo solved section trim rows")? {
-                if let Some(id) = trim_segment_id(ctx, definition, row)? {
-                    ctx.insert_btree_set(&mut solved, id, "creo solved section segment ID nodes")?;
-                }
-            }
+        for id in ctx
+            .admit_iter(
+                trim_segment_ids(ctx, definition)?,
+                "creo solved section trim rows",
+            )?
+            .flatten()
+        {
+            ctx.insert_btree_set(&mut solved, id, "creo solved section segment ID nodes")?;
         }
         let trim_vertex_coordinates =
             resolved_trim_vertex_coordinates(ctx, definition, &points, &radii)?;

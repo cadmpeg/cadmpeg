@@ -844,15 +844,21 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .checked_add(1)
                                 .is_some_and(|expected| expected == result.entity_id)
                             && match definition.trim_entities.as_ref() {
-                                Some(table) if table.has_unique_external_ids() => defer_resource(
-                                    ctx.admit_iter(
-                                        &table.rows,
-                                        "creo SKAMP projected trim row search",
-                                    )
-                                    .map_err(cadmpeg_core::CodecError::from),
-                                    &resource_error,
-                                )?
-                                .any(|row| row.external_id == result.entity_id),
+                                Some(table)
+                                    if defer_resource(
+                                        table.has_unique_external_ids(ctx),
+                                        &resource_error,
+                                    )? =>
+                                {
+                                    defer_resource(
+                                        ctx.any_by(
+                                            &table.rows,
+                                            |row| Ok(row.external_id == result.entity_id),
+                                            "creo SKAMP projected trim row search",
+                                        ),
+                                        &resource_error,
+                                    )?
+                                }
                                 _ => false,
                             } =>
                     {

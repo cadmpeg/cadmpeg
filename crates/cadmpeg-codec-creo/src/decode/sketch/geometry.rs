@@ -15,7 +15,7 @@ use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefini
 use cadmpeg_ir::units::FinitePoint2;
 
 use super::super::sketch_ids::sketch_entity_id_admitted;
-use super::radii::trim_segment_id;
+use super::radii::trim_segment_ids;
 use super::skamp::section_line_entity_fixed_coordinate;
 use crate::decode::sketch_transfer::identity::{
     saved_section_internal_id_is_unique, saved_section_ordinary_geometry_allowed,
@@ -396,15 +396,32 @@ pub(in crate::decode) fn saved_section_line_geometry(
         }
     }
     if internal_id.is_none() && order_table.is_complete() {
-        if let (Some(trimmed), Some(segment_table)) = (
-            definition.trim_entities.as_ref().filter(|table| {
-                table.has_complete_bucket_frame() && table.has_unique_external_ids()
-            }),
+        let trimmed = match definition.trim_entities.as_ref() {
+            Some(table)
+                if table.has_unique_external_ids(ctx)?
+                    && table.has_complete_bucket_frame(ctx)? =>
+            {
+                Some(table)
+            }
+            _ => None,
+        };
+        if let (Some(_), Some(segment_table)) = (
+            trimmed,
             definition
                 .segments
                 .as_ref()
                 .filter(|table| table.is_complete()),
         ) {
+            let mut trimmed_ids = BTreeSet::new();
+            for id in ctx
+                .admit_iter(
+                    trim_segment_ids(ctx, definition)?,
+                    "creo saved line trim rows",
+                )?
+                .flatten()
+            {
+                ctx.insert_btree_set(&mut trimmed_ids, id, "creo saved line trim nodes")?;
+            }
             // The one trimmed line the order table leaves out, if exactly one.
             let missing = crate::decode::uniqueness::exactly_one_by(
                 ctx,
@@ -419,13 +436,10 @@ pub(in crate::decode) fn saved_section_line_geometry(
                     ) {
                         return Ok(false);
                     }
-                    let is_trimmed = ctx.any_by(
-                        &trimmed.rows,
-                        |row| {
-                            Ok(trim_segment_id(ctx, definition, row)?
-                                == Some(candidate.external_id))
-                        },
-                        "creo saved line trim rows",
+                    let is_trimmed = ctx.contains_btree_set(
+                        &trimmed_ids,
+                        &candidate.external_id,
+                        "creo saved line trim lookup",
                     )?;
                     Ok(is_trimmed
                         && !ctx.any_by(
@@ -1039,18 +1053,22 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     let Some(trim) = definition.trim_entities.as_ref() else {
         return Ok(None);
     };
-    if !trim.has_complete_bucket_frame() || !trim.has_unique_external_ids() {
+    if !trim.has_complete_bucket_frame(ctx)? || !trim.has_unique_external_ids(ctx)? {
         return Ok(None);
     }
     let mut trimmed_external_ids = BTreeSet::new();
-    for row in ctx.admit_iter(&trim.rows, "creo missing-line trim rows")? {
-        if let Some(id) = trim_segment_id(ctx, definition, row)? {
-            ctx.insert_btree_set(
-                &mut trimmed_external_ids,
-                id,
-                "creo missing-line trimmed ID nodes",
-            )?;
-        }
+    for id in ctx
+        .admit_iter(
+            trim_segment_ids(ctx, definition)?,
+            "creo missing-line trim rows",
+        )?
+        .flatten()
+    {
+        ctx.insert_btree_set(
+            &mut trimmed_external_ids,
+            id,
+            "creo missing-line trimmed ID nodes",
+        )?;
     }
     let Some(SegmentRow::Ordinary(missing)) = crate::decode::uniqueness::exactly_one_by(
         ctx,
