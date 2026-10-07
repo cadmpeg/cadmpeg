@@ -264,7 +264,7 @@ pub(crate) fn transfer(
         let mut definition = if is_spreadsheet(&object.type_name) {
             ctx.push_vec(
                 &mut ir.model.spreadsheets,
-                spreadsheets::append_spreadsheet(ctx, &mut ir.model.parameters, object, &owned)?,
+                spreadsheets::append_spreadsheet(ctx, &mut ir.model.parameters, object, owned)?,
                 "fcstd design spreadsheets",
             )?;
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
@@ -272,13 +272,13 @@ pub(crate) fn transfer(
                 children: TreeChildren::default(),
             })
         } else if is_body(&object.type_name) {
-            body_definition(ctx, &owned, &feature_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            body_definition(ctx, owned, &feature_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_datum(&object.type_name) {
-            datum_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            datum_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_sketch(&object.type_name) {
-            let decoded = parse_sketch(ctx, object, &owned)?;
+            let decoded = parse_sketch(ctx, object, owned)?;
             let sketch = decoded.sketch;
             let sketch_id = sketch
                 .id
@@ -313,62 +313,62 @@ pub(crate) fn transfer(
         } else if is_stored_geometry_feature(&object.type_name) {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
         } else if object.type_name == "PartDesign::FeatureBase" {
-            feature_base_definition(ctx, &owned, &feature_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            feature_base_definition(ctx, owned, &feature_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_imported_geometry(&object.type_name) {
-            imported_geometry_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            imported_geometry_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_part_construction_geometry(&object.type_name) {
-            part_construction_geometry_definition(ctx, &object.type_name, &owned, entries)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            part_construction_geometry_definition(ctx, &object.type_name, owned, entries)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_primitive(&object.type_name) {
-            primitive_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            primitive_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_boolean(&object.type_name) {
-            match boolean_definition(ctx, &object.type_name, &owned)? {
+            match boolean_definition(ctx, &object.type_name, owned)? {
                 Some(definition) => definition,
                 None if object.type_name != "PartDesign::Boolean" => {
-                    match cached_shape_definition(ctx, &owned)? {
+                    match cached_shape_definition(ctx, owned)? {
                         Some(definition) => definition,
-                        None => native_definition(ctx, &object.type_name, &owned)?,
+                        None => native_definition(ctx, &object.type_name, owned)?,
                     }
                 }
-                None => native_definition(ctx, &object.type_name, &owned)?,
+                None => native_definition(ctx, &object.type_name, owned)?,
             }
         } else if is_loft(&object.type_name) {
-            match loft_definition(ctx, &object.type_name, &owned, &sketch_ids)? {
+            match loft_definition(ctx, &object.type_name, owned, &sketch_ids)? {
                 Some(definition) => definition,
-                None => match cached_shape_definition(ctx, &owned)? {
+                None => match cached_shape_definition(ctx, owned)? {
                     Some(definition) => definition,
-                    None => native_definition(ctx, &object.type_name, &owned)?,
+                    None => native_definition(ctx, &object.type_name, owned)?,
                 },
             }
         } else if is_sweep(&object.type_name) {
-            sweep_definition(ctx, &object.type_name, &owned, &sketch_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            sweep_definition(ctx, &object.type_name, owned, &sketch_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_helical_sweep(&object.type_name) {
             helical_sweep_definition(
                 ctx,
                 &object.type_name,
                 object.id(),
-                &owned,
+                owned,
                 &sketch_ids,
                 &object_by_id,
                 &properties_by_owner,
             )?
-            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
-            parametric_helix_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            parametric_helix_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_binder(&object.type_name) {
-            binder_definition(ctx, &object.type_name, &owned, &feature_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            binder_definition(ctx, &object.type_name, owned, &feature_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_pattern(&object.type_name) {
             pattern_definition(
                 ctx,
                 &object.type_name,
                 object.id(),
-                &owned,
+                owned,
                 &feature_ids,
                 PatternSources {
                     objects,
@@ -378,30 +378,32 @@ pub(crate) fn transfer(
                     entries,
                 },
             )?
-            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::Scale" {
-            scale_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            scale_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_hole(&object.type_name) {
             hole_definition(
                 ctx,
                 object.id(),
-                &owned,
+                owned,
                 &sketch_ids,
                 &object_by_id,
                 &properties_by_owner,
                 program_version,
             )?
-            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_extrusion(&object.type_name) {
-            let profile = match profile_ref(ctx, object.id(), &owned, &sketch_ids)? {
-                ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => ctx
-                    .find_map(
-                        &["Profile", "Sketch", "Base", "Source"],
-                        |name| property(ctx, &owned, name),
-                        "fcstd design unresolved profile property",
-                    )?
-                    .map_or_else(
+            let profile = match profile_ref(ctx, object.id(), owned, &sketch_ids)? {
+                ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => {
+                    let mut selected = None;
+                    for name in ["Profile", "Sketch", "Base", "Source"] {
+                        if let Some(candidate) = property(ctx, owned, name)? {
+                            selected = Some(candidate);
+                            break;
+                        }
+                    }
+                    selected.map_or_else(
                         || {
                             ctx.copy_retained_text(object.id(), "fcstd unresolved profile identity")
                                 .map(|id| ProfileRef::Planar(PlanarProfileRef::Unresolved(id)))
@@ -410,7 +412,8 @@ pub(crate) fn transfer(
                             ctx.copy_retained_text(&property.id, "fcstd native profile identity")
                                 .map(|id| ProfileRef::Planar(PlanarProfileRef::Native(id)))
                         },
-                    )?,
+                    )?
+                }
                 profile => profile,
             };
             let profile_normal = match profile_target(ctx, owned)? {
@@ -434,70 +437,70 @@ pub(crate) fn transfer(
             extrusion_definition(
                 ctx,
                 &object.type_name,
-                &owned,
+                owned,
                 profile,
                 profile_normal,
                 &ir.model.sketches,
             )?
-            .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_revolution(&object.type_name) {
-            revolution_definition(ctx, &object.type_name, object.id(), &owned, &sketch_ids)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            revolution_definition(ctx, &object.type_name, object.id(), owned, &sketch_ids)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if matches!(
             object.type_name.as_str(),
             "PartDesign::Thickness" | "Part::Thickness"
         ) {
-            thickness_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            thickness_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if matches!(object.type_name.as_str(), "Part::Offset" | "Part::Offset2D") {
-            offset_shape_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            offset_shape_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if matches!(
             object.type_name.as_str(),
             "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
         ) {
-            derived_shape_definition(ctx, &object.type_name, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            derived_shape_definition(ctx, &object.type_name, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::RuledSurface" {
-            ruled_surface_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            ruled_surface_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::Section" {
-            section_shape_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            section_shape_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::Mirroring" {
-            mirror_shape_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            mirror_shape_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "Part::ProjectOnSurface" {
-            project_on_surface_definition(ctx, &owned)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            project_on_surface_definition(ctx, owned)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if object.type_name == "PartDesign::Draft" {
-            draft_definition(ctx, &owned, &object_by_id, &properties_by_owner)?
-                .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            draft_definition(ctx, owned, &object_by_id, &properties_by_owner)?
+                .map_or_else(|| native_definition(ctx, &object.type_name, owned), Ok)?
         } else if is_fillet(&object.type_name) {
-            match fillet_definition(ctx, &object.type_name, &owned, entries)? {
+            match fillet_definition(ctx, &object.type_name, owned, entries)? {
                 Some(definition) => definition,
-                None => match cached_shape_definition(ctx, &owned)? {
+                None => match cached_shape_definition(ctx, owned)? {
                     Some(definition) => definition,
-                    None => native_definition(ctx, &object.type_name, &owned)?,
+                    None => native_definition(ctx, &object.type_name, owned)?,
                 },
             }
         } else if is_chamfer(&object.type_name) {
-            match chamfer_definition(ctx, &object.type_name, &owned, entries, program_version)? {
+            match chamfer_definition(ctx, &object.type_name, owned, entries, program_version)? {
                 Some(definition) => definition,
-                None => match cached_shape_definition(ctx, &owned)? {
+                None => match cached_shape_definition(ctx, owned)? {
                     Some(definition) => definition,
-                    None => native_definition(ctx, &object.type_name, &owned)?,
+                    None => native_definition(ctx, &object.type_name, owned)?,
                 },
             }
         } else {
-            native_definition(ctx, &object.type_name, &owned)?
+            native_definition(ctx, &object.type_name, owned)?
         };
         if ctx.contains_btree_set(
             &cycle_affected,
             object.id().as_str(),
             "fcstd design cycle object lookup",
         )? {
-            definition = native_definition(ctx, &object.type_name, &owned)?;
+            definition = native_definition(ctx, &object.type_name, owned)?;
         }
         let mut semantic_dependencies = Vec::new();
         let mut semantic_storage = ctx.reserve_scoped(0, "fcstd semantic dependency storage")?;
@@ -514,8 +517,8 @@ pub(crate) fn transfer(
                 }
             }
         }
-        let definition = post_processed_definition(ctx, definition, &object.type_name, &owned)?;
-        append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
+        let definition = post_processed_definition(ctx, definition, &object.type_name, owned)?;
+        append_operation_parameters(ctx, &mut ir.model.parameters, object, owned)?;
         let mut outputs = Vec::new();
         let owned_payloads = ctx
             .get_btree_map(
@@ -525,18 +528,13 @@ pub(crate) fn transfer(
             )?
             .map_or(&[][..], Vec::as_slice);
         for payload in ctx.admit_iter(owned_payloads, "fcstd design body payloads")? {
-            let (prefix, _prefix_storage) =
-                ctx.with_scoped_storage("fcstd design body output prefix storage", || {
-                    crate::native::model_id_charged_at(
-                        ctx,
-                        "body",
-                        &payload.id,
-                        "",
-                        "fcstd design body output prefix",
-                    )
-                })?;
+            let prefix = BodyOutputPrefix::new(ctx, payload)?;
             for body in ctx.admit_iter(&body_ids, "fcstd design body output candidates")? {
-                if !ctx.starts_with(body.as_str(), &prefix, "fcstd design body output prefix")? {
+                if !ctx.starts_with(
+                    body.as_str(),
+                    &prefix.text,
+                    "fcstd design body output prefix",
+                )? {
                     continue;
                 }
                 ctx.push_vec(
@@ -655,7 +653,7 @@ pub(crate) fn transfer(
                 } else {
                     ctx.get_hash_map(
                         &ordinal_by_feature,
-                        &dependency,
+                        dependency,
                         "fcstd design semantic dependency ordinal lookup",
                     )?
                     .is_some_and(|ordinal| *ordinal < object_ordinal)
@@ -686,9 +684,9 @@ pub(crate) fn transfer(
                 id,
                 ordinal: object_ordinal,
                 name: Some(ctx.copy_retained_text(object.name(), "fcstd feature name")?),
-                suppressed: bool_property(ctx, &owned, "Suppressed")?,
+                suppressed: bool_property(ctx, owned, "Suppressed")?,
                 dependencies: dependency_members,
-                source_properties: feature_state(ctx, object.id(), &owned)?,
+                source_properties: feature_state(ctx, object.id(), owned)?,
                 source_tag: Some(
                     ctx.copy_retained_text(&object.type_name, "fcstd feature source type")?,
                 ),
@@ -787,6 +785,31 @@ pub(crate) fn transfer(
         }
     }
     Ok(cycle_affected)
+}
+
+/// A body identity prefix and the reservation for its temporary text.
+struct BodyOutputPrefix<'ctx> {
+    text: String,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> BodyOutputPrefix<'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        payload: &crate::brep::ShapePayloadRecord,
+    ) -> Result<Self, CodecError> {
+        let key = ctx
+            .split_once(&payload.id, "#", "fcstd design body output identity key")?
+            .map_or(payload.id.as_str(), |(_, key)| key);
+        let (text, storage) = ctx.format_scoped(
+            format_args!("fcstd:model:body#{key}:"),
+            "fcstd design body output prefix",
+        )?;
+        Ok(Self {
+            text,
+            _storage: storage,
+        })
+    }
 }
 
 fn body_membership_property<'a>(
@@ -969,6 +992,7 @@ fn feature_ordinals<'ctx, 'a>(
         "fcstd design source ordinals sort",
     )?;
     let mut emitted = BTreeSet::new();
+    let mut ordinal_storage = ctx.reserve_scoped(0, "fcstd design ordinal result storage")?;
     let mut ordinals = HashMap::new();
     let mut cycle_affected = BTreeSet::new();
 
@@ -1161,7 +1185,9 @@ fn feature_ordinals<'ctx, 'a>(
                 &mut emitted,
                 next.id().as_str(),
                 "fcstd design emitted objects",
-            )?;
+            )
+        })?;
+        ordinal_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut ordinals,
                 next.id().as_str(),
@@ -1170,7 +1196,7 @@ fn feature_ordinals<'ctx, 'a>(
             )
         })?;
     }
-    Ok((ordinals, cycle_affected, storage))
+    Ok((ordinals, cycle_affected, ordinal_storage))
 }
 
 /// Apply an operation's shape-refinement and boolean-tolerance controls.
@@ -3363,7 +3389,9 @@ fn bind_parameter_dependencies<'ctx>(
     objects: &[ObjectRecord],
     cycle_affected_features: &BTreeSet<FeatureId>,
 ) -> Result<(BTreeSet<FeatureId>, ScopedReservation<'ctx>), CodecError> {
-    let (dependencies, _dependency_storage) =
+    let mut dependency_storage =
+        ctx.reserve_scoped(0, "fcstd parameter dependency result storage")?;
+    let (dependencies, candidate_storage) =
         ctx.with_scoped_storage("fcstd parameter dependency candidates", || {
             let mut object_names = HashMap::new();
             for object in ctx.admit_iter(objects, "fcstd parameter dependency objects")? {
@@ -3445,82 +3473,85 @@ fn bind_parameter_dependencies<'ctx>(
                 }),
                 "fcstd unique qualified candidates",
             )?;
-            let mut dependencies =
-                ctx.vector_storage(parameters.len(), "fcstd parameter dependency results")?;
-            for parameter in
-                ctx.admit_iter(parameters.as_slice(), "fcstd parameter dependency scan")?
-            {
-                let owner_cycle = match parameter.owner.as_ref() {
-                    Some(owner) => ctx.contains_btree_set(
-                        cycle_affected_features,
-                        owner,
-                        "fcstd parameter dependency cycle owner",
-                    )?,
-                    None => false,
-                };
-                if owner_cycle {
+            dependency_storage.with_storage(|| {
+                let mut dependencies =
+                    ctx.vector_storage(parameters.len(), "fcstd parameter dependency results")?;
+                for parameter in
+                    ctx.admit_iter(parameters.as_slice(), "fcstd parameter dependency scan")?
+                {
+                    let owner_cycle = match parameter.owner.as_ref() {
+                        Some(owner) => ctx.contains_btree_set(
+                            cycle_affected_features,
+                            owner,
+                            "fcstd parameter dependency cycle owner",
+                        )?,
+                        None => false,
+                    };
+                    if owner_cycle {
+                        ctx.push_vec(
+                            &mut dependencies,
+                            None,
+                            "fcstd parameter dependency results",
+                        )?;
+                        continue;
+                    }
+                    let mut found = BTreeSet::new();
+                    expression_identifiers_until(
+                        ctx,
+                        &parameter.expression,
+                        "fcstd parameter expression identifiers",
+                        |identifier| {
+                            let qualified_dependency = ctx
+                                .get_hash_map(
+                                    &qualified,
+                                    identifier,
+                                    "fcstd qualified dependency lookup",
+                                )?
+                                .and_then(Option::as_ref)
+                                .copied();
+                            let dependency = if qualified_dependency.is_some() {
+                                qualified_dependency
+                            } else if let Some(owner) = parameter.owner.as_ref() {
+                                let key = (owner, identifier);
+                                ctx.get_hash_map(&local, &key, "fcstd local dependency lookup")?
+                                    .and_then(Option::as_ref)
+                                    .copied()
+                            } else {
+                                None
+                            };
+                            if let Some(dependency) = dependency {
+                                if !ctx.equal(
+                                    dependency,
+                                    &parameter.id,
+                                    "fcstd parameter self dependency check",
+                                )? && !ctx.contains_btree_set(
+                                    &found,
+                                    dependency,
+                                    "fcstd parameter dependency duplicate lookup",
+                                )? {
+                                    ctx.insert_btree_set(
+                                        &mut found,
+                                        dependency.try_clone_for_decode(
+                                            ctx,
+                                            "fcstd scratch dependency identity",
+                                        )?,
+                                        "fcstd parameter dependencies",
+                                    )?;
+                                }
+                            }
+                            Ok(true)
+                        },
+                    )?;
                     ctx.push_vec(
                         &mut dependencies,
-                        None,
+                        Some(found),
                         "fcstd parameter dependency results",
                     )?;
-                    continue;
                 }
-                let mut found = BTreeSet::new();
-                expression_identifiers_until(
-                    ctx,
-                    &parameter.expression,
-                    "fcstd parameter expression identifiers",
-                    |identifier| {
-                        let qualified_dependency = ctx
-                            .get_hash_map(
-                                &qualified,
-                                identifier,
-                                "fcstd qualified dependency lookup",
-                            )?
-                            .and_then(Option::as_ref)
-                            .copied();
-                        let dependency = if qualified_dependency.is_some() {
-                            qualified_dependency
-                        } else if let Some(owner) = parameter.owner.as_ref() {
-                            let key = (owner, identifier);
-                            ctx.get_hash_map(&local, &key, "fcstd local dependency lookup")?
-                                .and_then(Option::as_ref)
-                                .copied()
-                        } else {
-                            None
-                        };
-                        if let Some(dependency) = dependency {
-                            if !ctx.equal(
-                                dependency,
-                                &parameter.id,
-                                "fcstd parameter self dependency check",
-                            )? && !ctx.contains_btree_set(
-                                &found,
-                                dependency,
-                                "fcstd parameter dependency duplicate lookup",
-                            )? {
-                                ctx.insert_btree_set(
-                                    &mut found,
-                                    dependency.try_clone_for_decode(
-                                        ctx,
-                                        "fcstd scratch dependency identity",
-                                    )?,
-                                    "fcstd parameter dependencies",
-                                )?;
-                            }
-                        }
-                        Ok(true)
-                    },
-                )?;
-                ctx.push_vec(
-                    &mut dependencies,
-                    Some(found),
-                    "fcstd parameter dependency results",
-                )?;
-            }
-            Ok::<_, CodecError>(dependencies)
+                Ok::<_, CodecError>(dependencies)
+            })
         })?;
+    drop(candidate_storage);
     for index in ctx.admit_iter(
         &(0..parameters.len()),
         "fcstd parameter dependency materialization",
@@ -3546,7 +3577,7 @@ fn bind_parameter_dependencies<'ctx>(
         };
     }
     drop(dependencies);
-    drop(_dependency_storage);
+    drop(dependency_storage);
 
     let mut owner_ordinal_storage =
         ctx.reserve_scoped(0, "fcstd owner ordinal grouping storage")?;

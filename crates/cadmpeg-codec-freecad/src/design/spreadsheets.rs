@@ -489,25 +489,23 @@ fn offset_cell_address(
     rows: u32,
     columns: u32,
 ) -> Result<Option<String>, CodecError> {
-    Ok((|| -> Result<Option<String>, CodecError> {
-        let (row, mut column) = required!(cell_address(ctx, address)?);
-        let row = required!(row.checked_add(rows));
-        column = required!(column.checked_add(columns));
-        // Seven base-26 letters hold every nonzero u32 column index.
-        let mut label = [0_u8; 7];
-        let mut start = label.len();
-        while column > 0 {
-            start = required!(start.checked_sub(1));
-            column -= 1;
-            label[start] = b'A' + required!(u8::try_from(column % 26).ok());
-            column /= 26;
-        }
-        let letters = required!(std::str::from_utf8(&label[start..]).ok());
-        Ok(Some(ctx.format_retained(
-            format_args!("{letters}{row}"),
-            "fcstd spreadsheet cell address",
-        )?))
-    })()?)
+    let (row, mut column) = required!(cell_address(ctx, address)?);
+    let row = required!(row.checked_add(rows));
+    column = required!(column.checked_add(columns));
+    // Seven base-26 letters hold every nonzero u32 column index.
+    let mut label = [0_u8; 7];
+    let mut start = label.len();
+    while column > 0 {
+        start = required!(start.checked_sub(1));
+        column -= 1;
+        label[start] = b'A' + required!(u8::try_from(column % 26).ok());
+        column /= 26;
+    }
+    let letters = required!(std::str::from_utf8(&label[start..]).ok());
+    Ok(Some(ctx.format_retained(
+        format_args!("{letters}{row}"),
+        "fcstd spreadsheet cell address",
+    )?))
 }
 
 fn cell_address(ctx: &DecodeContext<'_>, address: &str) -> Result<Option<(u32, u32)>, CodecError> {
