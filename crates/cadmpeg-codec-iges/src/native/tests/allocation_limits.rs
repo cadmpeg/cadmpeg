@@ -313,7 +313,7 @@ fn native_display_definition_refuses_retained_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, _) = crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx).unwrap();
-    let graph = crate::graph::build(&directory, &parse_ctx).unwrap();
+    let (graph, _reference_storage) = crate::graph::build(&directory, &parse_ctx).unwrap();
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

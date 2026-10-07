@@ -396,6 +396,7 @@ struct PhysicalParse<'a, 'ctx> {
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
     _global_storage: ScopedReservation<'ctx>,
+    _reference_storage: ScopedReservation<'ctx>,
     _scan_storage: ScopedReservation<'ctx>,
 }
 
@@ -440,7 +441,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &mut conditional_losses,
             "iges combined global loss notes",
         )?;
-        let references = graph::build(&directory, ctx)?;
+        let (references, reference_storage) = graph::build(&directory, ctx)?;
         let mut scan = scan;
         let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
         framing_recoveries.merge(parameter_recoveries, ctx)?;
@@ -456,6 +457,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             framing_recoveries,
             references,
             _global_storage: global_storage,
+            _reference_storage: reference_storage,
             _scan_storage: scan_storage,
         })
     }
@@ -626,6 +628,7 @@ fn decode_with_occurrence_limits(
     let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
+        reference_storage: _parameter_reference_storage,
         occurrence_expansion: product_occurrence_expansion,
         ambiguous_parameter_boundaries,
         overdeclared_counts,

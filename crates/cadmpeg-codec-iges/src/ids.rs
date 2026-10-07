@@ -142,7 +142,7 @@ impl fmt::Display for Piece {
     }
 }
 
-const INLINE_PIECES: usize = 8;
+const INLINE_PIECES: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StemPieces {
@@ -501,18 +501,20 @@ mod tests {
     #[test]
     fn generated_identity_minters_charge_before_rendering_each_kind() {
         let stem = Stem::directory(1_u32);
-        let mut low_policy = DecodePolicy::service();
-        low_policy.limits.max_retained_bytes = 0;
-        let low_arena = DecodeArena::new();
-        let (low_ctx, _) =
-            DecodeContext::from_root_bytes(&[], &low_arena, &low_policy).expect("test setup");
         let service_arena = DecodeArena::new();
         let service_policy = DecodePolicy::service();
         let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &service_arena, &service_policy)
             .expect("test setup");
         macro_rules! check {
             ($old:ident, $admitted:ident) => {
-                assert!(matches!(super::$admitted(&stem, &low_ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges generated identity"));
+                let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges generated identity", |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_retained_bytes = cap;
+                    let arena = DecodeArena::new();
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    super::$admitted(&stem, &ctx)
+                });
+                assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges generated identity"));
                 assert_eq!(super::$admitted(&stem, &service_ctx).expect("test setup").as_str(), super::$old(&stem).as_str());
             };
         }
@@ -556,6 +558,17 @@ mod tests {
             "face-D1"
         );
         assert_eq!(Stem::number(-1_i64).to_string(), "-1");
+    }
+    #[test]
+    fn decoded_brep_pcurve_stem_uses_inline_parts() {
+        let stem = Stem::directory(u32::MAX)
+            .child(u32::MAX)
+            .child(u32::MAX)
+            .slot(usize::MAX)
+            .slot(usize::MAX);
+        assert!(matches!(stem.pieces, StemPieces::Inline { .. }));
+        assert_eq!(stem.origin(), Some(u32::MAX));
+        assert_eq!(stem.to_string(), format!("D4294967295:D4294967295:D4294967295:{0}:{0}", usize::MAX));
     }
     #[test]
     fn directory_lookup_text_refuses_utf8_scan() {

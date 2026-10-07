@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Value<'bytes> {
     Omitted,
     String(&'bytes [u8]),
@@ -139,7 +139,7 @@ enum SuppliedReal {
 struct RawGlobal<'bytes> {
     parameter_delimiter: u8,
     record_delimiter: u8,
-    values: Vec<Value<'bytes>>,
+    values: [Value<'bytes>; 26],
     field_count: usize,
 }
 
@@ -757,8 +757,7 @@ fn parse_raw<'bytes>(bytes: &'bytes [u8], ctx: &DecodeContext<'_>) -> Result<Raw
         }
     }
 
-    let mut values = ctx.collection_vec(26, "iges_global_fields")?;
-    values.resize_with(26, || Value::Omitted);
+    let mut values = [Value::Omitted; 26];
     let mut field_count = 2_usize;
     let mut field_steps = std::iter::repeat(());
     loop {
@@ -798,7 +797,7 @@ pub(crate) fn parse<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<(ResolvedGlobal, Vec<LossNote>, ScopedReservation<'ctx>), CodecError> {
     let (bytes, _stream_storage) = global_bytes(scan, ctx)?;
-    let (raw, _raw_storage) = ctx.with_scoped_storage("IGES raw Global values", || parse_raw(&bytes, ctx))?;
+    let raw = parse_raw(&bytes, ctx)?;
     resolve(raw, ctx)
 }
 
@@ -925,7 +924,7 @@ const fn enumerated_unit_name(flag: i64) -> Option<&'static str> {
 
 struct Resolution<'ctx, 'arena, 'bytes> {
     ctx: &'ctx DecodeContext<'arena>,
-    values: Vec<Value<'bytes>>,
+    values: [Value<'bytes>; 26],
     losses: Vec<LossNote>,
 }
 
@@ -981,7 +980,7 @@ fn recovered_real_text(
 
 impl Resolution<'_, '_, '_> {
     fn apply_string_policy(&mut self, global_table: GlobalTable) -> Result<(), CodecError> {
-        for value in self.ctx.admit_iter(&mut self.values, "iges global string fields")? {
+        for value in &mut self.values {
             let Value::String(bytes) = value else {
                 continue;
             };
@@ -1103,7 +1102,9 @@ impl Resolution<'_, '_, '_> {
     }
 
     fn charge_recovered_real(&mut self, index: usize, value: f64) -> Result<(), CodecError> {
-        let source = self.declaration_text(index)?;
+        let (source, _source_storage) = self.ctx.with_scoped_storage(
+            "IGES recovered Global declaration", || self.declaration_text(index),
+        )?;
         let note = recovered_real_loss_note(self.ctx, index, &source, value)?;
         self.ctx
             .reserve_vec(&mut self.losses, 1, "iges global loss notes")?;
