@@ -5138,7 +5138,7 @@ struct BrepCarrierDraft<'a> {
     _storage: cadmpeg_core::decode::ScopedReservation<'a>,
     c3: HashMap<usize, cadmpeg_ir::ids::CurveId>,
     surfaces: HashMap<usize, StagedBrepSurface>,
-    child_cause: Option<String>,
+    child_cause: Option<(String, cadmpeg_core::decode::ScopedReservation<'a>)>,
 }
 
 struct StagedBrepSurface {
@@ -5336,7 +5336,7 @@ ctx, &mesh.tessellation.id,
                     Ok(id) => id,
                     Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                     Err(error) => {
-                        if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped_text(arena_storage,
+                        if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped(
                             format_args!("C3 slot {index}: {error}"),
                             "Rhino Brep fallback cause",
                         )?); }
@@ -5346,14 +5346,14 @@ ctx, &mesh.tessellation.id,
                 if retain_slot_lookup { carrier_storage.with_storage(|| ctx.insert_hash_map(&mut c3, index, id, "Rhino Brep C3 slots"))?; }
             }
             Ok(_) => {
-                if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped_text(arena_storage,
+                if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped(
                     format_args!("C3 slot {index} is not a curve"),
                     "Rhino Brep fallback cause",
                 )?); }
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped_text(arena_storage,
+                if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped(
                     format_args!("C3 slot {index}: {error}"),
                     "Rhino Brep fallback cause",
                 )?); }
@@ -5391,7 +5391,7 @@ ctx, &mesh.tessellation.id,
                     })?) {
                         Ok(key) => key,
                         Err(error) => {
-                            if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped_text(arena_storage,
+                            if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped(
                                 format_args!("surface slot {index}: {error}"),
                                 "Rhino Brep fallback cause",
                             )?); }
@@ -5453,21 +5453,21 @@ ctx, &id,
                 }
                 Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
                 Err(error) => {
-                    if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped_text(arena_storage,
+                    if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped(
                         format_args!("surface slot {index}: {error}"),
                         "Rhino Brep fallback cause",
                     )?); }
                 }
             },
             Ok(_) => {
-                if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped_text(arena_storage,
+                if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped(
                     format_args!("surface slot {index} is not a surface"),
                     "Rhino Brep fallback cause",
                 )?); }
             }
             Err(error @ crate::curves::GeometryError::Codec(_)) => return Err(error),
             Err(error) => {
-                if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped_text(arena_storage,
+                if retain_slot_lookup { child_cause = Some(expand.ctx().format_scoped(
                     format_args!("surface slot {index}: {error}"),
                     "Rhino Brep fallback cause",
                 )?); }
@@ -5540,7 +5540,7 @@ fn stage_brep(input: BrepTransferInput<'_>, arena_storage: &mut cadmpeg_core::de
         mesh_budget,
     }, true, &mut *arena_storage,)?;
     let ctx = expand.ctx();
-    if let Some(cause) = child_cause {
+    if let Some((cause, _cause_storage)) = child_cause {
         return finish_brep_fallback(ctx, staged, cause, &mut *arena_storage,);
     }
     let DecodedPcurves {
