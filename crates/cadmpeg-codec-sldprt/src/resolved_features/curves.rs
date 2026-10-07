@@ -17,7 +17,7 @@ use super::scalars::ObjectNames;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -149,6 +149,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
     payload: &[u8],
     markers: &[&SketchInputEntity],
     entities: &mut Vec<SketchEntity>,
+    entities_storage: &mut ScopedReservation<'_>,
     tolerance: f64,
 ) -> Result<(), CodecError> {
     fn order_endpoints(
@@ -420,15 +421,15 @@ pub(super) fn resolve_two_center_semicircle_profile(
     .into_iter()
     .enumerate()
     {
+        let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end })
+        else {
+            continue;
+        };
         let Some(id) = super::profiles::mint_formatted::<SketchEntityId>(
             ctx,
             format_args!("sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"),
             "format SLDPRT semicircle line identity",
         )?
-        else {
-            continue;
-        };
-        let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end })
         else {
             continue;
         };
@@ -444,7 +445,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
         }
         let sketch_copy =
             sketch.try_clone_for_decode(ctx, "copy SLDPRT semicircle line sketch identity")?;
-        ctx.reserve_vec(entities, 1, "append SLDPRT semicircle line")?;
+        entities_storage.with_storage(|| ctx.reserve_vec(entities, 1, "append SLDPRT semicircle line"))?;
         entities
             .push(SketchEntity::new(id, sketch_copy, geometry).with_endpoint_refs(endpoint_refs));
     }
