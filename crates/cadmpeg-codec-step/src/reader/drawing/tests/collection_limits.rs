@@ -195,12 +195,18 @@ fn drawing_source_type_text_refuses_retained_limit() {
 }
 
 #[test]
-fn drawing_native_target_identity_copy_refuses_retained_limit() {
-    drawing_retained_refuses_with_typed(
-        TYPED_TARGET_SOURCE,
-        "step_drawing_native_target_identity_copy",
-        &[3],
-    );
+fn drawing_native_target_identity_copy_refuses_work_limit() {
+    // The copied identity is scratch; its sixteen-byte copy work is cumulative.
+    let source = format!("{HEADER}{TYPED_TARGET_SOURCE}{TAIL}");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("exchange");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "step_drawing_native_target_identity_copy", |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).expect("root");
+        super::super::decode(&exchange, &mut cadmpeg_ir::document::CadIr::empty(), &HashSet::from([3]), &BTreeMap::new(), &ctx).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::WorkUnits && refusal.operation == "step_drawing_native_target_identity_copy"));
 }
 
 #[test]
@@ -346,12 +352,13 @@ fn wrapper_refuses_collection(operation: &str) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
             .expect("root fits collection policy");
-        matches!(
+        let refused = matches!(
             super::super::wrapper_target_resolution(1, &targets, &exchange, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
-        )
+        );
+        refused
     });
     assert!(refused, "no collection limit refused {operation}");
 }
@@ -428,7 +435,7 @@ fn drawing_ambiguous_identity_copy_refuses_collection_limit() {
 }
 
 #[test]
-fn drawing_ambiguous_identity_text_refuses_retained_limit() {
+fn drawing_ambiguous_identity_text_refuses_materialized_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
@@ -439,17 +446,15 @@ fn drawing_ambiguous_identity_text_refuses_retained_limit() {
             .into_iter()
             .collect(),
     )]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-        .expect("root fits retained policy");
-    assert!(matches!(
-        super::super::target_resolution(1, &targets, &HashSet::from([1]), &exchange, &BTreeMap::new(), &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_drawing_ambiguous_identity_text"
-    ));
+    // Ambiguity identities are scratch; source bytes and prior work stay admitted.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_drawing_ambiguous_identity_text", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).expect("root");
+        super::super::target_resolution(1, &targets, &HashSet::from([1]), &exchange, &BTreeMap::new(), &ctx).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_drawing_ambiguous_identity_text"));
 }
 
 #[test]

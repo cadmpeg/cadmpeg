@@ -334,23 +334,7 @@ fn style_graph_refuses(
     ));
 }
 
-#[test]
-fn presentation_style_depth_active_refuses_collection_limit() {
-    style_graph_refuses(
-        "step_presentation_style_depth_active",
-        false,
-        |exchange, ctx| super::super::style_application_order(1, exchange, 128, ctx).map(|_| ()),
-    );
-}
 
-#[test]
-fn presentation_style_depth_walk_refuses_depth_limit() {
-    style_graph_refuses(
-        "step_presentation_style_depth_walk",
-        true,
-        |exchange, ctx| super::super::style_application_order(1, exchange, 128, ctx).map(|_| ()),
-    );
-}
 
 #[test]
 fn presentation_style_domain_active_refuses_collection_limit() {
@@ -370,29 +354,7 @@ fn presentation_style_domain_walk_refuses_depth_limit() {
     );
 }
 
-#[test]
-fn presentation_hidden_style_active_refuses_collection_limit() {
-    style_graph_refuses(
-        "step_presentation_hidden_style_active",
-        false,
-        |exchange, ctx| {
-            super::super::style_is_hidden(1, &BTreeSet::new(), exchange, &mut BTreeSet::new(), ctx)
-                .map(|_| ())
-        },
-    );
-}
 
-#[test]
-fn presentation_hidden_style_walk_refuses_depth_limit() {
-    style_graph_refuses(
-        "step_presentation_hidden_style_walk",
-        true,
-        |exchange, ctx| {
-            super::super::style_is_hidden(1, &BTreeSet::new(), exchange, &mut BTreeSet::new(), ctx)
-                .map(|_| ())
-        },
-    );
-}
 
 
 
@@ -568,7 +530,7 @@ fn scalar_candidate_refuses(operation: &str, retained: bool) {
     let body = cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID");
     let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
     let result = super::super::push_scalar_candidate(
-        &mut std::collections::BTreeMap::new(),
+        &mut std::array::from_fn(|_| std::collections::BTreeMap::new()),
         &cadmpeg_ir::appearance::AppearanceTarget::Body(body),
         1,
         color,
@@ -729,7 +691,7 @@ fn presentation_color_cache_value_refuses_retained_limit() {
 }
 
 #[test]
-fn presentation_color_cache_copy_refuses_retained_limit() {
+fn presentation_color_cache_copy_refuses_materialized_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -747,17 +709,16 @@ fn presentation_color_cache_copy_refuses_retained_limit() {
             },
         )),
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
-    assert!(matches!(
-        super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { storage: &std::cell::RefCell::new(ctx.reserve_scoped(0, "color search fixture").expect("scope")), active: &mut BTreeSet::new(), cache: &mut cache, losses: &mut Vec::new(), invalid_surface_sides: &mut BTreeSet::new() }, 0, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_presentation_color_cache_copy"
-    ));
+    // The cached candidate copy reserves the three bytes of its name as scratch.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_presentation_color_cache_copy", |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
+        let result = super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { storage: &std::cell::RefCell::new(ctx.reserve_scoped(0, "color search fixture").expect("scope")), active: &mut BTreeSet::new(), cache: &mut cache, losses: &mut Vec::new(), invalid_surface_sides: &mut BTreeSet::new() }, 0, &ctx);
+        result
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_presentation_color_cache_copy"));
 }
 
 

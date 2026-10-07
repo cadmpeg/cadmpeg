@@ -87,12 +87,13 @@ fn decode_loss_notes_refuse_collection_limit() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(DIAGNOSTIC_LOSS_LIMIT_SOURCE, &arena, &policy)
             .expect("root fits collection policy");
-        matches!(
+        let refused = matches!(
             super::StepDecodeSession::new(&exchange, &diagnostics, &ctx, super::DecodeMode::Inspect),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_decode_loss_notes"
-        )
+        );
+        refused
     });
     assert!(refused, "no collection limit refused decode loss note");
 }
@@ -155,12 +156,13 @@ fn decode_reference_notes_refuse_collection_limit() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(REFERENCE_NOTE_LIMIT_SOURCE, &arena, &policy)
             .expect("root fits collection policy");
-        matches!(
+        let refused = matches!(
             super::StepDecodeSession::new(&exchange, &diagnostics, &ctx, super::DecodeMode::Inspect),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_decode_reference_notes"
-        )
+        );
+        refused
     });
     assert!(refused, "no collection limit refused reference note");
 }

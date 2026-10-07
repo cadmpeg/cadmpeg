@@ -1743,3 +1743,5 @@ fn nonfinite_pmi_placement_refuses_real_overflow() {
         if message.contains("finite binary64 range"))
     );
 }
+
+mod target_indices;

@@ -111,28 +111,30 @@ pmi_string_limit_test!(
 );
 
 #[test]
-fn annotation_text_refuses_retained_limit() {
+// Candidate names and text live in scratch storage; the selected output text is charged separately.
+fn annotation_text_refuses_materialized_limit() {
     let source = source("#1=TEXT_LITERAL('annotation text',$,'left',.RIGHT.,$);");
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid text exchange");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         "step_string_text",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                 .expect("root fits retained policy");
             let mut visited = BTreeSet::new();
             let mut candidates = BTreeMap::new();
+            let mut storage = ctx.reserve_scoped(0, "text fixture").expect("scope");
             let mut losses = Vec::<LossNote>::new();
             super::super::collect_annotation_text(
                 1,
                 &exchange,
                 &mut visited,
-                &mut candidates,
+                (&mut candidates, &mut storage),
                 &mut losses,
                 0,
                 &ctx,
@@ -141,29 +143,27 @@ fn annotation_text_refuses_retained_limit() {
     );
     assert!(
         matches!(Err::<(), CodecError>(error), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
+            if refusal.dimension == ResourceDimension::MaterializedBytes
                 && refusal.operation == "step_string_text")
     );
 }
 
 #[test]
-fn measure_item_name_refuses_retained_limit() {
+fn measure_item_name_refuses_materialized_limit() {
     let source = source("#1=(MEASURE_REPRESENTATION_ITEM() REPRESENTATION_ITEM('measure name'));");
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid measure exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-        .expect("root fits retained policy");
     let record = exchange.records().get(&1).expect("measure record");
-    assert!(matches!(
-        super::super::measure_item_name(1, record, &exchange, &mut Vec::new(), &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_string_text"
-    ));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_string_text", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).expect("root");
+        let mut storage = ctx.reserve_scoped(0, "measure fixture").expect("scope");
+        super::super::measure_item_name(1, record, &exchange, &mut Vec::new(), (&ctx, &mut storage))
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_string_text"));
 }
 
 fn annotation_collection_result(limit: u64, consume_text: bool) -> Result<(), CodecError> {
@@ -177,6 +177,7 @@ fn annotation_collection_result(limit: u64, consume_text: bool) -> Result<(), Co
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("root fits collection policy");
     let mut visited = BTreeSet::new();
+    let mut storage = ctx.reserve_scoped(0, "text fixture").expect("scope");
     let mut losses = Vec::new();
     if consume_text {
         super::super::find_annotation_text(
@@ -193,7 +194,7 @@ fn annotation_collection_result(limit: u64, consume_text: bool) -> Result<(), Co
             1,
             &exchange,
             &mut visited,
-            &mut BTreeMap::new(),
+            (&mut BTreeMap::new(), &mut storage),
             &mut losses,
             0,
             &ctx,
@@ -256,8 +257,9 @@ fn characteristic_measure_values_refuse_collection_limit() {
     let value = crate::parse::Value::Real(
         cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture"),
     );
+    let mut storage = ctx.reserve_scoped(0, "value fixture").expect("scope");
     assert!(matches!(
-        super::super::characteristic_measure_values(&super::super::MeasureParameters::Items(std::slice::from_ref(&value)), &exchange, &mut measurements, &ctx),
+        super::super::characteristic_measure_values(&super::super::MeasureParameters::Items(std::slice::from_ref(&value)), &exchange, &mut measurements, &mut storage, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_pmi_measure_values"
@@ -282,8 +284,9 @@ fn characteristic_value_map_refuses_collection_limit() {
             return false;
         };
         let mut losses = Vec::new();
+        let mut storage = ctx.reserve_scoped(0, "characteristic fixture").expect("scope");
         matches!(
-            super::super::characteristic_values(&exchange, &geometry.value, &mut losses, 64, &ctx),
+            super::super::characteristic_values(&exchange, &geometry.value, &mut losses, 64, &mut storage, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_pmi_characteristic_values"

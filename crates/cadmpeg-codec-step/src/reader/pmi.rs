@@ -22,7 +22,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text_charged;
+use super::{decode_text_charged, decode_text_scoped};
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
@@ -87,7 +87,7 @@ pub(super) fn decode(
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let graph_limit = super::record_graph_limit(ctx);
     let characteristic_values =
-        characteristic_values(exchange, geometry, &mut losses, graph_limit, ctx)?;
+        characteristic_values(exchange, geometry, &mut losses, graph_limit, &mut scratch_storage, ctx)?;
     for (id, record) in exchange.entities(ctx, "DATUM")? {
         let identification = record.partial(ctx, "DATUM")?.and_then(|partial| partial.parameters.get(0))
             .map(|value| {
@@ -769,6 +769,7 @@ pub(super) fn decode(
         )?;
         // Placement identity is the carrier key; the transform value cannot
         // make two source carriers one semantic carrier.
+        let mut placement_storage = ctx.reserve_scoped(0, "STEP annotation placement scratch")?;
         let mut placement_candidates = BTreeMap::new();
         let mut placement_visited = BTreeMap::new();
         for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
@@ -778,7 +779,7 @@ pub(super) fn decode(
             )? {
                 for reference in references(parameter, ctx) {
                     let reference = reference?;
-                    collect_placement_candidates(
+                    placement_storage.with_storage(|| collect_placement_candidates(
                         reference,
                         exchange,
                         geometry,
@@ -786,7 +787,7 @@ pub(super) fn decode(
                         &mut placement_candidates,
                         0,
                         ctx,
-                    )?;
+                    ))?;
                 }
             }
         }
@@ -875,8 +876,8 @@ pub(super) fn decode(
     }
 
     resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed, ctx)?;
-    let points_by_source = point_sources(ir, ctx)?;
-    let curves_by_source = curve_sources(ir, ctx)?;
+    let (points_by_source, _point_storage) = ctx.with_scoped_storage("STEP PMI point source scratch", || point_sources(ir, ctx))?;
+    let (curves_by_source, _curve_storage) = ctx.with_scoped_storage("STEP PMI curve source scratch", || curve_sources(ir, ctx))?;
     let geometry_sources = GeometrySources {
         points: &points_by_source,
         curves: &curves_by_source,
@@ -1000,18 +1001,8 @@ fn resolve_feature_for_datum_target_relationships(
     typed: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let (mut target_indices, mut target_storage) = ctx.with_scoped_storage("STEP PMI target indices", || {
-        let mut indices = BTreeMap::<usize, BTreeSet<(u8, String)>>::new();
-        for (index, annotation) in ctx.admit_iter(&ir.model.pmi, "STEP PMI target index traversal")?.enumerate() {
-            let mut keys = BTreeSet::new();
-            for target in ctx.admit_iter(match &annotation.definition { PmiDefinition::DatumTarget { basis, .. } => basis.as_slice(), _ => &[] }, "STEP PMI existing target traversal")? {
-                let (lane, identity) = target_key(target);
-                ctx.insert_btree_set(&mut keys, (lane, ctx.copy_retained_text(identity, "STEP PMI target index identity")?), "STEP PMI target index members")?;
-            }
-            ctx.insert_btree_map(&mut indices, index, keys, "STEP PMI target index groups")?;
-        }
-        Ok::<_, CodecError>(indices)
-    })?;
+    let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
+    let mut target_storage = ctx.reserve_scoped(0, "STEP PMI target indices")?;
 
     for (id, record) in exchange.entities(ctx, "FEATURE_FOR_DATUM_TARGET_RELATIONSHIP")? {
         let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
@@ -1024,15 +1015,12 @@ fn resolve_feature_for_datum_target_relationships(
         let PmiDefinition::DatumTarget { basis, .. } = &mut annotation.definition else {
             continue;
         };
+        let (source_id, _source_storage) = ctx.with_scoped_storage("STEP datum basis source", || super::step_source_id(ctx, relating))?;
+        let seen = target_index(&mut target_indices, &mut target_storage, annotation_index.get(), basis, ctx)?;
         push_target(
-            ctx.get_mut_btree_map(&mut target_indices, &annotation_index.get(), "STEP PMI annotation target index")?.ok_or_else(|| CodecError::malformed("STEP annotation target index is absent"))?,
-            &mut target_storage,
-            basis,
-            PmiTarget::ShapeAspect {
-                source_id: super::step_source_id(ctx, relating)?,
-            },
-            ctx,
-            "step_pmi_datum_basis_targets",
+            (seen, &mut target_storage), basis, (8, source_id.as_str()),
+            || Ok(PmiTarget::ShapeAspect { source_id: source_id.try_clone_for_decode(ctx, "step_pmi_datum_basis_identity")? }),
+            ctx, "step_pmi_datum_basis_targets",
         )?;
         super::claim_records(ctx, typed, [id, relating], "step_pmi_typed_claims")?;
     }
@@ -1049,18 +1037,8 @@ fn resolve_geometric_item_usages(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP resolve_geometric_item_usages scratch")?;
-    let (mut target_indices, mut target_storage) = ctx.with_scoped_storage("STEP PMI target indices", || {
-        let mut indices = BTreeMap::<usize, BTreeSet<(u8, String)>>::new();
-        for (index, annotation) in ctx.admit_iter(&ir.model.pmi, "STEP PMI target index traversal")?.enumerate() {
-            let mut keys = BTreeSet::new();
-            for target in ctx.admit_iter(annotation.targets.as_slice(), "STEP PMI existing target traversal")? {
-                let (lane, identity) = target_key(target);
-                ctx.insert_btree_set(&mut keys, (lane, ctx.copy_retained_text(identity, "STEP PMI target index identity")?), "STEP PMI target index members")?;
-            }
-            ctx.insert_btree_map(&mut indices, index, keys, "STEP PMI target index groups")?;
-        }
-        Ok::<_, CodecError>(indices)
-    })?;
+    let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
+    let mut target_storage = ctx.reserve_scoped(0, "STEP PMI target indices")?;
 
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
     for (&annotation_id, record) in ctx.admit_iter(
@@ -1165,7 +1143,7 @@ fn resolve_geometric_item_usages(
         if annotation_indices.is_empty() {
             continue;
         }
-        let targets = topology_targets(identified_item, topology, geometry_sources, ctx)?;
+        let (targets, _target_storage) = ctx.with_scoped_storage("STEP geometric usage target scratch", || topology_targets(identified_item, topology, geometry_sources, ctx))?;
         if targets.is_empty() {
             continue;
         }
@@ -1175,13 +1153,11 @@ fn resolve_geometric_item_usages(
                 &(targets)[..],
                 "STEP resolve geometric item usages traversal",
             )? {
+                let seen = target_index(&mut target_indices, &mut target_storage, annotation_index.get(), &annotation.targets, ctx)?;
                 push_target(
-            ctx.get_mut_btree_map(&mut target_indices, &annotation_index.get(), "STEP PMI annotation target index")?.ok_or_else(|| CodecError::malformed("STEP annotation target index is absent"))?,
-            &mut target_storage,
-                    &mut annotation.targets,
-                    copy_pmi_target(target, ctx, "step_pmi_geometric_usage_identity")?,
-                    ctx,
-                    "step_pmi_geometric_usage_targets",
+                    (seen, &mut target_storage), &mut annotation.targets, target_key(target),
+                    || copy_pmi_target(target, ctx, "step_pmi_geometric_usage_identity"),
+                    ctx, "step_pmi_geometric_usage_targets",
                 )?;
             }
         }
@@ -1203,83 +1179,59 @@ fn topology_targets(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PmiTarget>, CodecError> {
     let mut targets = Vec::new();
-    let mut seen = BTreeSet::new();
+    let mut seen: TargetIndex = std::array::from_fn(|_| BTreeSet::new());
     let mut scratch = ctx.reserve_scoped(0, "STEP PMI topology target index")?;
     if let Some(items) = ctx.get_btree_map(&topology.body_by_root, &id, "STEP pmi topology.body_by_root get")? {
         for body in ctx.admit_iter(items, "STEP optional collection traversal")? {
-            let body = body.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
             push_target(
-                &mut seen,
-                &mut scratch,
-                &mut targets,
-                PmiTarget::Body { body },
-                ctx,
-                "step_pmi_topology_targets",
+                (&mut seen, &mut scratch), &mut targets, (0, body.as_str()),
+                || Ok(PmiTarget::Body { body: body.try_clone_for_decode(ctx, "step_pmi_topology_identity")? }),
+                ctx, "step_pmi_topology_targets",
             )?;
         }
     }
     if let Some(items) = ctx.get_btree_map(&topology.faces_by_source, &id, "STEP pmi topology.faces_by_source get")? {
         for face in ctx.admit_iter(items, "STEP optional collection traversal")? {
-            let face = face.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
             push_target(
-                &mut seen,
-                &mut scratch,
-                &mut targets,
-                PmiTarget::Face { face },
-                ctx,
-                "step_pmi_topology_targets",
+                (&mut seen, &mut scratch), &mut targets, (1, face.as_str()),
+                || Ok(PmiTarget::Face { face: face.try_clone_for_decode(ctx, "step_pmi_topology_identity")? }),
+                ctx, "step_pmi_topology_targets",
             )?;
         }
     }
     if let Some(items) = ctx.get_btree_map(&topology.edges_by_source, &id, "STEP pmi topology.edges_by_source get")? {
         for edge in ctx.admit_iter(items, "STEP optional collection traversal")? {
-            let edge = edge.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
             push_target(
-                &mut seen,
-                &mut scratch,
-                &mut targets,
-                PmiTarget::Edge { edge },
-                ctx,
-                "step_pmi_topology_targets",
+                (&mut seen, &mut scratch), &mut targets, (2, edge.as_str()),
+                || Ok(PmiTarget::Edge { edge: edge.try_clone_for_decode(ctx, "step_pmi_topology_identity")? }),
+                ctx, "step_pmi_topology_targets",
             )?;
         }
     }
     if let Some(items) = ctx.get_btree_map(&topology.vertices_by_source, &id, "STEP pmi topology.vertices_by_source get")? {
         for vertex in ctx.admit_iter(items, "STEP optional collection traversal")? {
-            let vertex = vertex.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
             push_target(
-                &mut seen,
-                &mut scratch,
-                &mut targets,
-                PmiTarget::Vertex { vertex },
-                ctx,
-                "step_pmi_topology_targets",
+                (&mut seen, &mut scratch), &mut targets, (3, vertex.as_str()),
+                || Ok(PmiTarget::Vertex { vertex: vertex.try_clone_for_decode(ctx, "step_pmi_topology_identity")? }),
+                ctx, "step_pmi_topology_targets",
             )?;
         }
     }
     if let Some(items) = ctx.get_btree_map(&geometry_sources.points, &id, "STEP pmi geometry_sources.points get")? {
         for point in ctx.admit_iter(items, "STEP optional collection traversal")? {
-            let point = point.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
             push_target(
-                &mut seen,
-                &mut scratch,
-                &mut targets,
-                PmiTarget::Point { point },
-                ctx,
-                "step_pmi_topology_targets",
+                (&mut seen, &mut scratch), &mut targets, (4, point.as_str()),
+                || Ok(PmiTarget::Point { point: point.try_clone_for_decode(ctx, "step_pmi_topology_identity")? }),
+                ctx, "step_pmi_topology_targets",
             )?;
         }
     }
     if let Some(items) = ctx.get_btree_map(&geometry_sources.curves, &id, "STEP pmi geometry_sources.curves get")? {
         for curve in ctx.admit_iter(items, "STEP optional collection traversal")? {
-            let curve = curve.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
             push_target(
-                &mut seen,
-                &mut scratch,
-                &mut targets,
-                PmiTarget::Curve { curve },
-                ctx,
-                "step_pmi_topology_targets",
+                (&mut seen, &mut scratch), &mut targets, (5, curve.as_str()),
+                || Ok(PmiTarget::Curve { curve: curve.try_clone_for_decode(ctx, "step_pmi_topology_identity")? }),
+                ctx, "step_pmi_topology_targets",
             )?;
         }
     }
@@ -1300,23 +1252,44 @@ fn target_key(target: &PmiTarget) -> (u8, &str) {
     }
 }
 
-fn push_target(
-    seen: &mut BTreeSet<(u8, String)>,
+// Each lane corresponds to one PmiTarget variant; identities compare within that lane.
+type TargetIndex = [BTreeSet<String>; 9];
+
+fn target_index<'a>(
+    indices: &'a mut BTreeMap<usize, TargetIndex>,
     storage: &mut ScopedReservation<'_>,
+    index: usize,
+    targets: &[PmiTarget],
+    ctx: &DecodeContext<'_>,
+) -> Result<&'a mut TargetIndex, CodecError> {
+    match storage.with_storage(|| ctx.entry_btree_map(indices, index, "STEP PMI target index groups"))? {
+        std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            let mut keys: TargetIndex = std::array::from_fn(|_| BTreeSet::new());
+            for target in ctx.admit_iter(targets, "STEP PMI existing target traversal")? {
+                let (lane, identity) = target_key(target);
+                storage.with_storage(|| ctx.insert_btree_set(&mut keys[usize::from(lane)], ctx.copy_retained_text(identity, "STEP PMI target index identity")?, "STEP PMI target index members"))?;
+            }
+            Ok(entry.insert(keys))
+        }
+    }
+}
+
+fn push_target(
+    (seen, storage): (&mut TargetIndex, &mut ScopedReservation<'_>),
     targets: &mut Vec<PmiTarget>,
-    target: PmiTarget,
+    (lane, identity): (u8, &str),
+    make_target: impl FnOnce() -> Result<PmiTarget, CodecError>,
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let (lane, identity) = target_key(&target);
-    let (key, key_storage) = ctx.with_scoped_storage("STEP PMI candidate key", || {
-        Ok::<_, CodecError>((lane, ctx.copy_retained_text(identity, "STEP PMI candidate identity")?))
-    })?;
-    if !ctx.contains_btree_set(seen, &key, "STEP PMI target identity membership")? {
+    let seen = &mut seen[usize::from(lane)];
+    if !ctx.contains_btree_set(seen, identity, "STEP PMI target identity membership")? {
         ctx.reserve_vec(targets, 1, operation)?;
+        let target = make_target()?;
         storage.with_storage(|| {
-            ctx.insert_btree_set(seen, key, "STEP PMI target identity index")?;
-            key_storage.commit()
+            let key = ctx.copy_retained_text(identity, "STEP PMI target index identity")?;
+            ctx.insert_btree_set(seen, key, "STEP PMI target identity index")
         })?;
         targets.push(target);
     }
@@ -1764,14 +1737,15 @@ fn find_annotation_text(
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "STEP annotation text scratch")?;
     let mut candidates = BTreeMap::new();
-    collect_annotation_text(id, exchange, visited, &mut candidates, losses, depth, ctx)?;
+    collect_annotation_text(id, exchange, visited, (&mut candidates, &mut storage), losses, depth, ctx)?;
     match candidates.len() {
         0 => Ok(None),
         1 => {
             let Some((text_id, text)) = ctx.admit_iter(candidates, "STEP PMI singleton annotation text")?.next() else { return Ok(None); };
             ctx.insert_btree_set(used, text_id, "step_pmi_annotation_text_used")?;
-            Ok(Some(text))
+            Ok(Some(ctx.copy_retained_text(&text, "step_string_text")?))
         }
         count => {
             ctx.push_vec(losses, StepLossCode::PresentationAnnotationTextUnordered.note(format!(
@@ -1786,7 +1760,7 @@ fn collect_annotation_text(
     id: u64,
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
-    candidates: &mut BTreeMap<u64, String>,
+    (candidates, storage): (&mut BTreeMap<u64, String>, &mut ScopedReservation<'_>),
     losses: &mut Vec<LossNote>,
     depth: usize,
     ctx: &DecodeContext<'_>,
@@ -1795,7 +1769,7 @@ fn collect_annotation_text(
         return Ok(());
     }
     let _depth_guard = ctx.enter_nested("step_pmi_annotation_text_walk")?;
-    ctx.insert_btree_set(visited, id, "step_pmi_annotation_text_visited")?;
+    storage.with_storage(|| ctx.insert_btree_set(visited, id, "step_pmi_annotation_text_visited"))?;
     let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP pmi record get")? else {
         return Ok(());
     };
@@ -1803,16 +1777,14 @@ fn collect_annotation_text(
         || -> Result<_, CodecError> { Ok(record.partial(ctx, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")?.and_then(|partial| partial.parameters.first())) },
         |value| Ok(Some(value)),
     )? {
-        if let Some(text) = decode_text_charged(
+        if let Some(text) = decode_text_scoped(
             exchange,
             value,
             losses,
             id,
-            "PMI annotation text",
-            StepLossCode::MetadataStringInvalid,
-            ctx,
+            ("PMI annotation text", StepLossCode::MetadataStringInvalid), ctx, storage,
         )? {
-            ctx.insert_btree_map(candidates, id, text, "step_pmi_annotation_text_candidates")?;
+            storage.with_storage(|| ctx.insert_btree_map(candidates, id, text, "step_pmi_annotation_text_candidates"))?;
         }
     }
     for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
@@ -1826,7 +1798,7 @@ fn collect_annotation_text(
                     reference,
                     exchange,
                     visited,
-                    candidates,
+                    (candidates, storage),
                     losses,
                     depth + 1,
                     ctx,
@@ -1886,6 +1858,7 @@ fn targets(
     ids: impl IntoIterator<Item = Result<u64, CodecError>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PmiTarget>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "STEP target identity scratch")?;
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
     for id in ids {
@@ -1893,7 +1866,7 @@ fn targets(
         if ctx.contains_btree_set(&seen, &id, "STEP pmi seen contains")? {
             continue;
         }
-        ctx.insert_btree_set(&mut seen, id, "step_pmi_target_ids")?;
+        storage.with_storage(|| ctx.insert_btree_set(&mut seen, id, "step_pmi_target_ids"))?;
 
         ctx.reserve_vec(&mut targets, 1, "step_pmi_target_items")?;
         targets.push(PmiTarget::ShapeAspect {
@@ -2261,6 +2234,7 @@ fn characteristic_values(
     geometry: &GeometryData,
     losses: &mut Vec<LossNote>,
     graph_limit: usize,
+    storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
@@ -2314,7 +2288,8 @@ fn characteristic_values(
             };
         let parameters = representation_items
             .map_or(MeasureParameters::Record(record), MeasureParameters::Items);
-        let values = characteristic_measure_values(&parameters, exchange, &mut measurements, ctx)?;
+        let mut value_storage = ctx.reserve_scoped(0, "STEP characteristic value scratch")?;
+        let values = characteristic_measure_values(&parameters, exchange, &mut measurements, &mut value_storage, ctx)?;
         let mut named_count = 0usize;
         let mut named_first = None;
         for (name, value) in ctx.admit_iter(&values[..], "STEP characteristic values traversal")? {
@@ -2347,11 +2322,11 @@ fn characteristic_values(
             None
         };
         if let Some(selected) = selected {
-            ctx.insert_btree_map(&mut result,
+            storage.with_storage(|| ctx.insert_btree_map(&mut result,
                 characteristic,
                 selected,
                 "step_pmi_characteristic_values",
-            )?;
+            ))?;
         }
     }
     Ok(result)
@@ -2395,11 +2370,12 @@ fn characteristic_measure_values(
     parameters: &MeasureParameters<'_>,
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_>,
+    storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<(Option<String>, PmiValue)>, CodecError> {
     let mut measure_ids = BTreeSet::new();
     parameters.visit(ctx, |parameter| {
-        collect_measure_ids(
+        storage.with_storage(|| collect_measure_ids(
             parameter,
             exchange,
             &mut BTreeSet::new(),
@@ -2407,23 +2383,23 @@ fn characteristic_measure_values(
             measurements.graph_limit,
             &mut measure_ids,
             ctx,
-        )
+        ))
     })?;
     let mut values = Vec::new();
     for id in ctx.admit_iter(measure_ids, "STEP pmi measure_ids traversal")? {
         if let Some(value) = measure(&Value::Reference(id), exchange, measurements, ctx)? {
             let name = ctx.get_btree_map(exchange.records(), &id, "STEP pmi record get")?
-                .map(|record| measure_item_name(id, record, exchange, measurements.losses, ctx))
+                .map(|record| measure_item_name(id, record, exchange, measurements.losses, (ctx, storage)))
                 .transpose()?
                 .flatten();
-            ctx.reserve_vec(&mut values, 1, "step_pmi_measure_values")?;
+            storage.with_storage(|| ctx.reserve_vec(&mut values, 1, "step_pmi_measure_values"))?;
             values.push((name, value));
         }
     }
     if values.is_empty() {
         parameters.visit(ctx, |parameter| {
             if let Some(value) = measure(parameter, exchange, measurements, ctx)? {
-                ctx.reserve_vec(&mut values, 1, "step_pmi_measure_values")?;
+                storage.with_storage(|| ctx.reserve_vec(&mut values, 1, "step_pmi_measure_values"))?;
                 values.push((None, value));
             }
             Ok(())
@@ -2514,7 +2490,7 @@ fn measure_item_name(
     record: &RawRecord,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
+    (ctx, storage): (&DecodeContext<'_>, &mut ScopedReservation<'_>),
 ) -> Result<Option<String>, CodecError> {
     Ok(record
         .partial(ctx, "REPRESENTATION_ITEM")?
@@ -2530,14 +2506,12 @@ fn measure_item_name(
             |value| Ok(Some(value)),
         )?
         .map(|value| {
-            decode_text_charged(
+            decode_text_scoped(
                 exchange,
                 value,
                 losses,
                 id,
-                "measure item name",
-                StepLossCode::MetadataStringInvalid,
-                ctx,
+                ("measure item name", StepLossCode::MetadataStringInvalid), ctx, storage,
             )
         })
         .transpose()?

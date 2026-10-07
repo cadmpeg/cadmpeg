@@ -130,6 +130,7 @@ struct StepDecodeSession<'ctx, 'arena> {
     source_attributes: BTreeMap<NonBlankString, String>,
     body: DecodeBody,
     typed_records: HashSet<u64>,
+    typed_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     admitted_ir_entities: u64,
     ctx: &'ctx DecodeContext<'arena>,
 }
@@ -215,6 +216,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             source_attributes: attributes,
             body,
             typed_records: HashSet::new(),
+            typed_storage: ctx.reserve_scoped(0, "STEP session typed record index")?,
             admitted_ir_entities: 0,
             ctx,
         })
@@ -242,21 +244,20 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             .ctx
             .admit_iter(std::mem::take(&mut outcome.claims), "step_stage_claims")?
         {
-            self.ctx
-                .insert_hash_set(&mut self.typed_records, id, "step_stage_claims")?;
+            self.typed_storage.with_storage(|| self.ctx.insert_hash_set(&mut self.typed_records, id, "step_stage_claims"))?;
         }
         self.ctx.reserve_vec(
             &mut self.body.losses,
             outcome.losses.len(),
             "step_stage_losses",
         )?;
-        self.body.losses.append(&mut outcome.losses);
+        self.body.losses.extend(self.ctx.admit_iter(std::mem::take(&mut outcome.losses), "STEP stage loss transfer")?);
         self.ctx.reserve_vec(
             &mut self.body.notes,
             outcome.notes.len(),
             "step_stage_notes",
         )?;
-        self.body.notes.append(&mut outcome.notes);
+        self.body.notes.extend(self.ctx.admit_iter(std::mem::take(&mut outcome.notes), "STEP stage note transfer")?);
         Ok(())
     }
 
@@ -1498,10 +1499,25 @@ fn decode_text_charged(
     code: StepLossCode,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "step_string_text")?;
+    let text = decode_text_scoped(exchange, value, losses, record_id, (field, code), ctx, &mut storage)?;
+    storage.commit()?;
+    Ok(text)
+}
+
+fn decode_text_scoped(
+    exchange: &Exchange,
+    value: &Value,
+    losses: &mut Vec<LossNote>,
+    record_id: u64,
+    (field, code): (&str, StepLossCode),
+    ctx: &DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+) -> Result<Option<String>, CodecError> {
     let Value::String(bytes) = value else {
         return Ok(None);
     };
-    match exchange.decode_string_with_context(bytes, ctx) {
+    match storage.with_storage(|| exchange.decode_string_with_context(bytes, ctx)) {
         Ok(text) => Ok(Some(text)),
         Err(crate::strings::StringDecodeFailure::Invalid(error)) => {
             let message = ctx.format_retained(

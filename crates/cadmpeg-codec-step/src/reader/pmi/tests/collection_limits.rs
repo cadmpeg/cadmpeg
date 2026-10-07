@@ -481,18 +481,12 @@ fn target_slot_refusal(operation: &'static str) -> CodecError {
         .expect("empty root fits collection policy");
     let mut scratch = ctx.reserve_scoped(0, "STEP target index setup").unwrap();
     super::super::push_target(
-        &mut std::collections::BTreeSet::new(),
-        &mut scratch,
-        &mut Vec::new(),
-        cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
-            source_id: crate::reader::step_source_id(
-                &cadmpeg_test_support::service_decode_context(),
-                1,
-            )
-            .unwrap(),
-        },
-        &ctx,
-        operation,
+        (&mut std::array::from_fn(|_| std::collections::BTreeSet::new()), &mut scratch),
+        &mut Vec::new(), (8, "#1"),
+        || Ok(cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
+            source_id: crate::reader::step_source_id(&cadmpeg_test_support::service_decode_context(), 1).unwrap(),
+        }),
+        &ctx, operation,
     )
     .expect_err("target slot exceeds collection limit")
 }

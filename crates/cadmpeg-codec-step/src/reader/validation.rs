@@ -12,7 +12,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text_charged;
+use super::decode_text_scoped;
 use super::geometry::GeometryData;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
@@ -64,18 +64,19 @@ pub(super) fn decode(
         let Some(property) = record.partial(ctx, "PROPERTY_DEFINITION")? else {
             continue;
         };
+        let mut name_storage = ctx.reserve_scoped(0, "STEP validation property name scratch")?;
         let name = property
             .parameters
             .first()
             .map(|value| {
-                decode_text_charged(
+                decode_text_scoped(
                     exchange,
                     value,
                     &mut losses,
                     id,
-                    "validation property name",
-                    StepLossCode::MetadataStringInvalid,
+                    ("validation property name", StepLossCode::MetadataStringInvalid),
                     ctx,
+                    &mut name_storage,
                 )
             })
             .transpose()?
@@ -88,14 +89,14 @@ pub(super) fn decode(
                 .parameters
                 .get(1)
                 .map(|value| {
-                    decode_text_charged(
+                    decode_text_scoped(
                         exchange,
                         value,
                         &mut losses,
                         id,
-                        "validation property description",
-                        StepLossCode::MetadataStringInvalid,
+                        ("validation property description", StepLossCode::MetadataStringInvalid),
                         ctx,
+                        &mut scratch_storage,
                     )
                 })
                 .transpose()?
