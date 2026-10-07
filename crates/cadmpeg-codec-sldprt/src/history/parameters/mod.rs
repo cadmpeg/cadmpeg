@@ -1048,23 +1048,53 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     aliases: &ParameterAliases,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
-    if parameters.is_empty() { return Ok(0); }
+    if parameters.is_empty() {
+        return Ok(0);
+    }
     let (values, _values_storage) = parameter_value_index(ctx, parameters)?;
     let mut count = 0;
-    for parameter in ctx.admit_iter(parameters, "scan SLDPRT parameters_with_unevaluable_expressions values")? {
+    for parameter in ctx.admit_iter(
+        parameters,
+        "scan SLDPRT parameters_with_unevaluable_expressions values",
+    )? {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
-        let mut states = configurations.is_empty().then_some(None).into_iter()
+        let mut states = configurations
+            .is_empty()
+            .then_some(None)
+            .into_iter()
             .chain(configurations.iter().map(Some));
-        while let Some(configuration) = ctx.next_charged(&mut states, "check SLDPRT parameter evaluation")? {
-            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage("check SLDPRT parameter evaluation", || -> Result<_, CodecError> {
-                match ParameterExpressionParser::new(ctx, &parameter.expression, aliases, eval::ParameterValues::Validation {
-                    values: &values, configuration, excluded: &parameter.id,
-                }).parse_borrowed()? {
-                    Some(value) => Ok(Some(value)),
-                    None => Ok(text_parameter_literal(ctx, &parameter.name, &parameter.expression)?.map(std::borrow::Cow::Owned)),
-                }
-            })?;
-            if evaluated.is_none() { count += 1; break; }
+        while let Some(configuration) =
+            ctx.next_charged(&mut states, "check SLDPRT parameter evaluation")?
+        {
+            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage(
+                "check SLDPRT parameter evaluation",
+                || -> Result<_, CodecError> {
+                    match ParameterExpressionParser::new(
+                        ctx,
+                        &parameter.expression,
+                        aliases,
+                        eval::ParameterValues::Validation {
+                            values: &values,
+                            configuration,
+                            excluded: &parameter.id,
+                        },
+                    )
+                    .parse_borrowed()?
+                    {
+                        Some(value) => Ok(Some(value)),
+                        None => Ok(text_parameter_literal(
+                            ctx,
+                            &parameter.name,
+                            &parameter.expression,
+                        )?
+                        .map(std::borrow::Cow::Owned)),
+                    }
+                },
+            )?;
+            if evaluated.is_none() {
+                count += 1;
+                break;
+            }
         }
     }
     Ok(count)
@@ -1105,22 +1135,49 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
     aliases: &ParameterAliases,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
-    if parameters.is_empty() { return Ok(0); }
+    if !ctx.any_by(
+        parameters,
+        |parameter| Ok(!parameter.dependencies.is_empty()),
+        "find SLDPRT parameters with evaluated dependencies",
+    )? {
+        return Ok(0);
+    }
     let (values, _values_storage) = parameter_value_index(ctx, parameters)?;
     let mut count = 0;
-    for parameter in ctx.admit_iter(parameters, "scan SLDPRT parameter dependencies")?
-        .filter(|parameter| !parameter.dependencies.is_empty()) {
+    for parameter in ctx
+        .admit_iter(parameters, "scan SLDPRT parameter dependencies")?
+        .filter(|parameter| !parameter.dependencies.is_empty())
+    {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
         let mut states = std::iter::once(None).chain(configurations.iter().map(Some));
-        while let Some(configuration) = ctx.next_charged(&mut states, "check SLDPRT evaluated parameter coherence")? {
-            let actual = configuration_parameter_value(ctx, &values, configuration, &parameter.id)?;
-            let (evaluated, _evaluation_storage) = ctx.with_scoped_storage("check SLDPRT evaluated parameter coherence", || {
-                ParameterExpressionParser::new(ctx, &parameter.expression, aliases, eval::ParameterValues::Validation {
-                    values: &values, configuration, excluded: &parameter.id,
-                }).parse_borrowed()
-            })?;
-            if actual.zip(evaluated.as_ref()).is_some_and(|(actual, evaluated)| !equivalent_parameter_values(actual, evaluated.as_ref())) {
-                count += 1; break;
+        while let Some(configuration) =
+            ctx.next_charged(&mut states, "check SLDPRT evaluated parameter coherence")?
+        {
+            let Some(actual) =
+                configuration_parameter_value(ctx, &values, configuration, &parameter.id)?
+            else {
+                continue;
+            };
+            let (evaluated, _evaluation_storage) =
+                ctx.with_scoped_storage("check SLDPRT evaluated parameter coherence", || {
+                    ParameterExpressionParser::new(
+                        ctx,
+                        &parameter.expression,
+                        aliases,
+                        eval::ParameterValues::Validation {
+                            values: &values,
+                            configuration,
+                            excluded: &parameter.id,
+                        },
+                    )
+                    .parse_borrowed()
+                })?;
+            if evaluated
+                .as_ref()
+                .is_some_and(|evaluated| !equivalent_parameter_values(actual, evaluated.as_ref()))
+            {
+                count += 1;
+                break;
             }
         }
     }
@@ -1138,7 +1195,12 @@ fn parameter_value_index<'values, 'ctx>(
         let mut values = HashMap::new();
         for parameter in ctx.admit_iter(parameters, "collect SLDPRT parameter value state")? {
             if let Some(value) = &parameter.value {
-                ctx.insert_hash_map(&mut values, &parameter.id, value, "collect SLDPRT parameter value states")?;
+                ctx.insert_hash_map(
+                    &mut values,
+                    &parameter.id,
+                    value,
+                    "collect SLDPRT parameter value states",
+                )?;
             }
         }
         Ok(values)
