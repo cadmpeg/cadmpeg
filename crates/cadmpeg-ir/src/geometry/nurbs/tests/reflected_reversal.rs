@@ -1,43 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::scalar::FiniteReal;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 #[test]
 fn reflected_reversal_preserves_the_carrier_on_every_work_refusal() {
     let original = super::curve();
     let knot_count = u64::try_from(original.knots().len()).expect("knots");
-    let pole_swaps = u64::try_from(original.pole_count() / 2).expect("pole swaps");
-    let knot_swaps = knot_count / 2;
-    let total = knot_count * 2 + pole_swaps + knot_swaps;
+    // The validation search includes its end probe. Mutation visits both complete lanes once.
+    let total = knot_count * 2 + 1 + u64::try_from(original.pole_count()).expect("poles");
     let start = FiniteReal::new(2.).expect("finite fixture domain start");
     let end = FiniteReal::new(5.).expect("finite fixture domain end");
-    for cap in 0..total {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut reversed = original.clone();
-        let Err(CodecError::ResourceLimit(limit)) =
-            reversed.reverse_parameterization_in_range(&ctx, start, end)
-        else {
-            panic!("validation and all mutation work require admission");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        let operation = if cap < knot_count {
-            "IR NURBS reflected knot validation"
-        } else if cap < knot_count + pole_swaps {
-            "IR NURBS reflected pole reversal"
-        } else if cap < knot_count + pole_swaps + knot_swaps {
-            "IR NURBS reflected knot reversal"
-        } else {
-            "IR NURBS reflected knot edit"
-        };
-        assert_eq!(limit.operation, operation);
-        assert_eq!(reversed, original);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
+    for operation in ["IR NURBS reflected knot validation", "IR NURBS reflected knot reversal", "IR NURBS reflected pole reversal"] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
+            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
+                let mut reversed = original.clone();
+                let result = reversed.reverse_parameterization_in_range(ctx, start, end);
+                assert_eq!(reversed, original);
+                result
+            }));
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

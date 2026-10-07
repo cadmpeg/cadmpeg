@@ -72,7 +72,6 @@ fn admitted_pcurve_point_replacement_preserves_weights_and_rejects_short_lanes()
 fn pcurve_pole_replacement_refuses_before_mutation_and_needs_no_storage() {
     use crate::units::FinitePoint2;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     let setup = cadmpeg_test_support::service_decode_context();
     let polynomial = PcurveNurbs::from_lanes(
@@ -90,27 +89,16 @@ fn pcurve_pole_replacement_refuses_before_mutation_and_needs_no_storage() {
         FinitePoint2::new(Point2::new(7., 8.)).unwrap(),
     ];
     for original in [pcurve(), polynomial] {
-        for cap in 0..2 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut edited = original.clone();
-            let Err(CodecError::ResourceLimit(limit)) =
-                edited.replace_admitted_control_points(&positions, &ctx)
-            else {
-                panic!("replacement requires work");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, "IR pcurve pole replacement");
-            assert_eq!(edited, original);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
-        }
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "IR pcurve pole replacement",
+            |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
+                let mut edited = original.clone();
+                let result = edited.replace_admitted_control_points(&positions, ctx);
+                assert_eq!(edited, original);
+                result
+            }));
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 2;
+        policy.limits.max_work_units = 4;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_collection_items = 0;
@@ -941,3 +929,5 @@ fn a_conic_pcurve_reversed_about_zero_negates_only_its_second_axis() {
 }
 
 mod line_parameters;
+
+mod budget;

@@ -30,44 +30,30 @@ pub fn positive_controls<'ctx, P: PoleValue<FinitePoint3>>(
     }
     let mut scale = 1.0;
     if let Some(weights) = weights {
-        for weight in weights {
-            ctx.charge_work_limit(1, "Bezier positive weight validation")?;
-            if !weight.is_finite() || *weight <= 0.0 {
-                return Ok(None);
-            }
-        }
-        scale = 0.0_f64;
-        for weight in weights {
-            ctx.charge_work_limit(1, "Bezier positive weight scale")?;
-            scale = scale.max(*weight);
-        }
+        if !ctx.all_by_limit(weights, |weight| Ok(weight.is_finite() && *weight > 0.0),
+            "Bezier positive weight validation")? { return Ok(None); }
+        scale = ctx.admit_iter(weights, "Bezier positive weight scale")?
+            .fold(0.0_f64, |scale, weight| scale.max(*weight));
     }
     let (storage, mut output) = {
         let mut values = Vec::new();
         let reservation = ctx.reserve_temporary_vec(&mut values, points.len(), operation)?;
         (reservation, values)
     };
-    for (index, point) in points.iter().enumerate() {
-        ctx.charge_work_limit(1, "Bezier positive control conversion")?;
+    let mut index = 0;
+    if !ctx.all_by_limit(points, |point| {
         let weight = weights.map_or(1.0, |weights| weights[index]) / scale;
-        let Some(point) = point.admit() else {
-            return Ok(None);
-        };
+        index += 1;
+        let Some(point) = point.admit() else { return Ok(false); };
         let point = point.get();
-        if weight == 0.0 {
-            return Ok(None);
-        }
+        if weight == 0.0 { return Ok(false); }
         let result = [weight * point.x, weight * point.y, weight * point.z, weight];
         if result.iter().any(|value| !value.is_finite())
-            || [point.x, point.y, point.z]
-                .iter()
-                .zip(result)
-                .any(|(raw, product)| *raw != 0.0 && product == 0.0)
-        {
-            return Ok(None);
-        }
+            || [point.x, point.y, point.z].iter().zip(result)
+                .any(|(raw, product)| *raw != 0.0 && product == 0.0) { return Ok(false); }
         output.push(result);
-    }
+        Ok(true)
+    }, "Bezier positive control conversion")? { return Ok(None); }
     Ok(Some(ScopedRows::new(output, storage)))
 }
 
@@ -83,8 +69,9 @@ fn knot_multiplicity(
     knots: &[f64],
     value: f64,
 ) -> Result<usize, ResourceLimit> {
-    ctx.charge_work_limit(u64_from_index(knots.len()), "Bezier knot multiplicity scan")?;
-    Ok(knots.iter().filter(|knot| **knot == value).count())
+    let lower = ctx.partition_point_limit(knots, |knot| Ok(*knot < value), "Bezier knot multiplicity scan")?;
+    let upper = ctx.partition_point_limit(&knots[lower..], |knot| Ok(*knot == value), "Bezier knot multiplicity scan")?;
+    Ok(upper)
 }
 
 fn insert_knot<const DIMENSION: usize>(
@@ -96,17 +83,8 @@ fn insert_knot<const DIMENSION: usize>(
     let Some(last) = working.controls.len().checked_sub(1) else {
         return Ok(None);
     };
-    let mut span = None;
-    for (index, knot) in working.knots.iter().enumerate().rev() {
-        ctx.charge_work_limit(1, "Bezier insertion span search")?;
-        if *knot <= value {
-            span = Some(index);
-            break;
-        }
-    }
-    let Some(span) = span else {
-        return Ok(None);
-    };
+    let upper = ctx.partition_point_limit(&working.knots, |knot| Ok(*knot <= value), "Bezier insertion span search")?;
+    let Some(span) = upper.checked_sub(1) else { return Ok(None); };
     let multiplicity = knot_multiplicity(ctx, &working.knots, value)?;
     let Some(first) = span.checked_sub(degree) else {
         return Ok(None);
@@ -133,7 +111,7 @@ fn insert_knot<const DIMENSION: usize>(
         "Bezier inserted knot",
     )?;
     ctx.charge_work_limit(
-        u64_from_index(last - tail + 2),
+        u64_from_index(last - tail + 1),
         "Bezier insertion control shift",
     )?;
     working.controls.push([0.0; DIMENSION]);
@@ -154,7 +132,7 @@ fn insert_knot<const DIMENSION: usize>(
         });
     }
     ctx.charge_work_limit(
-        u64_from_index(working.knots.len() - span),
+        u64_from_index(working.knots.len() - span - 1),
         "Bezier inserted knot shift",
     )?;
     working.knots.insert(span + 1, value);
@@ -180,24 +158,17 @@ pub fn homogeneous_spans<'ctx, const DIMENSION: usize>(
     if degree >= count || knots.len() != expected_knots {
         return Ok(None);
     }
-    for knot in knots {
-        ctx.charge_work_limit(1, "Bezier finite knot scan")?;
-        if !knot.is_finite() {
-            return Ok(None);
-        }
+    if !ctx.all_by_limit(knots, |knot| Ok(knot.is_finite()), "Bezier finite knot scan")? {
+        return Ok(None);
     }
-    for pair in knots.windows(2) {
-        ctx.charge_work_limit(1, "Bezier knot order scan")?;
-        if pair[0] > pair[1] {
-            return Ok(None);
-        }
-    }
-    for value in controls.iter().flatten() {
-        ctx.charge_work_limit(1, "Bezier finite control scan")?;
-        if !value.is_finite() {
-            return Ok(None);
-        }
-    }
+    let mut previous = knots[0];
+    if !ctx.all_by_limit(&knots[1..], |knot| {
+        let ordered = previous <= *knot;
+        previous = *knot;
+        Ok(ordered)
+    }, "Bezier knot order scan")? { return Ok(None); }
+    if !ctx.all_by_limit(controls, |control| Ok(control.iter().all(|value| value.is_finite())),
+        "Bezier finite control scan")? { return Ok(None); }
     let domain = [knots[degree], knots[count]];
     if domain[0] >= domain[1] {
         return Ok(None);
@@ -216,16 +187,14 @@ pub fn homogeneous_spans<'ctx, const DIMENSION: usize>(
         knots.len(),
         "Bezier knot copy",
     )?;
-    ctx.charge_work_limit(u64_from_index(knots.len()), "Bezier knot copy")?;
-    working.knots.extend_from_slice(knots);
+    working.knots.extend(ctx.admit_iter(knots, "Bezier knot copy")?.copied());
     ctx.reserve_scoped_vec_limit(
         &mut working.control_storage,
         &mut working.controls,
         count,
         "Bezier working controls",
     )?;
-    ctx.charge_work_limit(u64_from_index(count), "Bezier working control copy")?;
-    working.controls.extend_from_slice(controls);
+    working.controls.extend(ctx.admit_iter(controls, "Bezier working control copy")?.copied());
     for endpoint in domain {
         while knot_multiplicity(ctx, &working.knots, endpoint)? < degree + 1 {
             if insert_knot(ctx, degree, &mut working, endpoint)?.is_none() {
@@ -233,44 +202,22 @@ pub fn homogeneous_spans<'ctx, const DIMENSION: usize>(
             }
         }
     }
-    let (_internal_storage, mut internal) = {
-        let mut values = Vec::new();
-        let reservation =
-            ctx.reserve_temporary_vec(&mut values, working.knots.len(), "Bezier internal knots")?;
-        (reservation, values)
-    };
-    for knot in &working.knots {
-        ctx.charge_work_limit(1, "Bezier internal knot scan")?;
-        if domain[0] < *knot && *knot < domain[1] {
-            ctx.charge_work_limit(1, "Bezier internal knot copy")?;
+    let mut internal_storage = ctx.reserve_scoped_limit(0, "Bezier internal knots")?;
+    let mut internal = Vec::new();
+    for knot in ctx.admit_iter(&working.knots, "Bezier internal knot scan")? {
+        if domain[0] < *knot && *knot < domain[1] && internal.last() != Some(knot) {
+            ctx.reserve_scoped_vec_limit(&mut internal_storage, &mut internal, 1, "Bezier internal knots")?;
             internal.push(*knot);
         }
     }
-    if !internal.is_empty() {
-        ctx.charge_work_limit(
-            u64_from_index(internal.len() - 1),
-            "Bezier internal knot deduplication",
-        )?;
-        internal.dedup();
-    }
-    for knot in &internal {
-        ctx.charge_work_limit(1, "Bezier internal knot visit")?;
+    for knot in ctx.admit_iter(&internal, "Bezier internal knot visit")? {
         while knot_multiplicity(ctx, &working.knots, *knot)? < degree {
-            if insert_knot(ctx, degree, &mut working, *knot)?.is_none() {
-                return Ok(None);
-            }
+            if insert_knot(ctx, degree, &mut working, *knot)?.is_none() { return Ok(None); }
         }
     }
     let mut storage = ctx.reserve_scoped_limit(0, "Bezier spans")?;
     let mut spans = Vec::new();
-    ctx.reserve_scoped_vec_limit(
-        &mut storage,
-        &mut spans,
-        working.controls.len() - degree,
-        "Bezier spans",
-    )?;
-    for span in degree..working.controls.len() {
-        ctx.charge_work_limit(1, "Bezier active span visit")?;
+    for span in ctx.admit_iter(degree..working.controls.len(), "Bezier active span visit")? {
         let interval = [working.knots[span], working.knots[span + 1]];
         if interval[0] < interval[1] && interval[0] >= domain[0] && interval[1] <= domain[1] {
             let mut span_controls = Vec::new();
@@ -280,8 +227,8 @@ pub fn homogeneous_spans<'ctx, const DIMENSION: usize>(
                 degree + 1,
                 "Bezier span controls",
             )?;
-            ctx.charge_work_limit(u64_from_index(degree + 1), "Bezier span control copy")?;
-            span_controls.extend_from_slice(&working.controls[span - degree..=span]);
+            span_controls.extend(ctx.admit_iter(&working.controls[span - degree..=span], "Bezier span control copy")?.copied());
+            ctx.reserve_scoped_vec_limit(&mut storage, &mut spans, 1, "Bezier spans")?;
             spans.push(HomogeneousBezierSpan {
                 domain: interval,
                 controls: span_controls,
@@ -320,32 +267,31 @@ pub fn boundaries_within_resolution(
     {
         return Ok(None);
     }
-    for control in first.iter().chain(second) {
-        ctx.charge_work_limit(1, "IR Bezier boundary finite control visit")?;
-        if control.iter().any(|value| !value.is_finite()) || control[3] <= 0.0 {
-            return Ok(None);
-        }
+    for controls in [first, second] {
+        if !ctx.all_by_limit(controls, |control| Ok(control.iter().all(|value| value.is_finite()) && control[3] > 0.0),
+            "IR Bezier boundary finite control visit")? { return Ok(None); }
     }
     let degree = first.len() - 1;
     let product_degree = value!(degree.checked_mul(2));
     let binomial = |n: usize, k: usize| -> Result<Option<f64>, ResourceLimit> {
         let k = k.min(n - k);
-        ctx.charge_work_limit(u64_from_index(k), "IR Bezier boundary binomial factors")?;
-        Ok((1..=k).try_fold(1.0, |value, factor| {
-            Some(
-                value * cadmpeg_core::convert::f64_from_index(n - k + factor)?
-                    / cadmpeg_core::convert::f64_from_index(factor)?,
-            )
-        }))
+        let mut result = 1.0;
+        for factor in 1..=k {
+            ctx.charge_work_limit(1, "IR Bezier boundary binomial factors")?;
+            let (Some(numerator), Some(denominator)) = (
+                cadmpeg_core::convert::f64_from_index(n - k + factor),
+                cadmpeg_core::convert::f64_from_index(factor),
+            ) else { return Ok(None); };
+            result = result * numerator / denominator;
+        }
+        Ok(Some(result))
     };
     let mut first_weight = f64::INFINITY;
-    for control in first {
-        ctx.charge_work_limit(1, "IR Bezier boundary first weight visit")?;
+    for control in ctx.admit_iter(first, "IR Bezier boundary first weight visit")? {
         first_weight = first_weight.min(control[3]);
     }
     let mut second_weight = f64::INFINITY;
-    for control in second {
-        ctx.charge_work_limit(1, "IR Bezier boundary second weight visit")?;
+    for control in ctx.admit_iter(second, "IR Bezier boundary second weight visit")? {
         second_weight = second_weight.min(control[3]);
     }
     let mut threshold = ExactSignedSum::default();
@@ -360,14 +306,13 @@ pub fn boundaries_within_resolution(
         ctx.charge_work_limit(1, "IR Bezier boundary product coefficient")?;
         let mut cross = [ExactSignedSum::default(); 3];
         // A control pair contributes when its indices sum to the product index.
-        for (first_index, first_control) in first.iter().enumerate() {
+        let end = index.min(degree);
+        let start = index - end;
+        for first_index in start..=end {
             ctx.charge_work_limit(1, "IR Bezier boundary control pair")?;
-            let Some(second_index) = index.checked_sub(first_index) else {
-                break;
-            };
-            let Some(second_control) = second.get(second_index) else {
-                continue;
-            };
+            let first_control = &first[first_index];
+            let second_index = index - first_index;
+            let second_control = &second[second_index];
             let coefficient = value!(binomial(degree, first_index)?)
                 * value!(binomial(degree, second_index)?)
                 / value!(binomial(product_degree, index)?);
@@ -397,28 +342,30 @@ pub fn boundaries_within_resolution(
 #[cfg(test)]
 mod tests {
     use super::{boundaries_within_resolution, homogeneous_spans};
+    fn work_refusal(operation: &str, run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::decode::ResourceLimit>) {
+        cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = run(&ctx);
+            if let Err(ref limit) = result {
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == *limit));
+            }
+            result.map_err(Into::into)
+        });
+    }
+
     #[test]
     fn bezier_extraction_admits_each_pass_and_holds_output_storage() {
-        const WORK: u64 = 36;
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let knots = [0.0, 0.0, 1.0, 1.0];
         let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
-        // Four finite knots, three order comparisons, eight finite coordinates,
-        // six copied rows, eight multiplicity comparisons, four internal-knot
-        // visits, one active-span visit and two output-row copies.
-        for cap in 0..WORK {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let limit =
-                homogeneous_spans(&ctx, 1, &knots, &controls).expect_err("every pass needs work");
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.limit, cap);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
+        for operation in ["Bezier finite knot scan", "Bezier knot order scan", "Bezier finite control scan",
+            "Bezier knot copy", "Bezier working control copy", "Bezier knot multiplicity scan",
+            "Bezier internal knot scan", "Bezier active span visit", "Bezier span control copy"] {
+            work_refusal(operation, |ctx| homogeneous_spans(ctx, 1, &knots, &controls).map(|_| ()));
         }
         for dimension in [
             ResourceDimension::MaterializedBytes,
@@ -440,7 +387,6 @@ mod tests {
             );
         }
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = WORK;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 4096;
         policy.limits.max_recursion_depth = 0;
@@ -473,81 +419,15 @@ mod tests {
 
     #[test]
     fn bezier_knot_insertion_preserves_every_caller_work_refusal() {
-        const FIXED_WORK: u64 = 76;
-        const FOUR_SLOT_MOVE: u64 =
-            4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>());
-        const FIVE_SLOT_MOVE: u64 =
-            5 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>());
-        const FOUR_SLOT_WORK: u64 = FIXED_WORK + FOUR_SLOT_MOVE;
-        const MAX_WORK: u64 = FIXED_WORK + FIVE_SLOT_MOVE;
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let knots = [-1.0, 0.0, 1.0, 2.0];
         let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
-        // Scans and input copies use 21 units; endpoint multiplicities,
-        // searches and shifts use 44; internal-knot scanning uses 6; and
-        // active-span visits and output-row copies use 5. Knot-vector growth
-        // can also move 0, 4, or 5 f64 slots: the initial capacity is at least
-        // 4, and the two insertions need slots 5 and 6. Work is therefore the
-        // fixed amount, the fixed amount plus four moved slots, or the fixed
-        // amount plus five moved slots. MAX_WORK covers each capacity branch.
-        for cap in 0..FIXED_WORK {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let limit = homogeneous_spans(&ctx, 1, &knots, &controls)
-                .expect_err("unclamped endpoint insertion needs caller work");
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.limit, cap);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
+        for operation in ["Bezier insertion span search", "Bezier insertion control shift",
+            "Bezier inserted knot shift",
+            "Bezier span control copy"] {
+            work_refusal(operation, |ctx| homogeneous_spans(ctx, 1, &knots, &controls).map(|_| ()));
         }
-
-        // At the fixed-work cap, the no-growth allocator branch succeeds.
-        // Capacity 4 instead charges 32 moved knot bytes and refuses the next
-        // multiplicity scan; capacity 5 charges 40 moved bytes on the second
-        // insertion and refuses that reservation.
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = FIXED_WORK;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 4096;
-        policy.limits.max_recursion_depth = 0;
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let refusal = match homogeneous_spans(&ctx, 1, &knots, &controls) {
-            Ok(Some(output)) => {
-                assert_eq!(output.len(), 1);
-                assert_eq!(output[0].domain, [0.0, 1.0]);
-                assert_eq!(output[0].controls, controls);
-                drop(output);
-                None
-            }
-            Err(limit) => {
-                assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(limit.limit, FIXED_WORK);
-                assert!(
-                    (limit.used == 75
-                        && limit.additional == 5
-                        && limit.operation == "Bezier knot multiplicity scan")
-                        || (limit.used == 55
-                            && limit.additional == FIVE_SLOT_MOVE
-                            && limit.operation == "Bezier inserted knot")
-                );
-                Some(limit)
-            }
-            Ok(None) => panic!("valid unclamped endpoints produce an active span"),
-        };
-        match refusal {
-            Some(limit) => assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            ),
-            None => ctx.finish_session().expect("fixed insertion work"),
-        }
-
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = MAX_WORK;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 4096;
         policy.limits.max_recursion_depth = 0;
@@ -566,26 +446,15 @@ mod tests {
         drop(reuse);
         ctx.finish_session().expect("admitted insertion");
 
-        let arena = DecodeArena::new();
-        let (probe_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let probe_output = homogeneous_spans(&probe_ctx, 1, &knots, &controls)
-            .expect("bounded insertion work")
-            .expect("one active span");
-        drop(probe_output);
-        let actual = probe_ctx
-            .charge_work_limit(MAX_WORK + 1, "test bounded Bezier insertion work")
-            .expect_err("the probe exceeds the caller's work limit");
-        assert_eq!(actual.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(actual.limit, MAX_WORK);
-        assert_eq!(actual.additional, MAX_WORK + 1);
-        assert!(matches!(
-            actual.used,
-            FIXED_WORK | FOUR_SLOT_WORK | MAX_WORK
-        ));
-        assert!(matches!(
-            probe_ctx.finish_session(),
-            Err(CodecError::ResourceLimit(limit)) if limit == actual
-        ));
+
+    }
+
+    #[test]
+    fn bezier_interpolation_preserves_caller_work_refusal() {
+        work_refusal("Bezier insertion control interpolation", |ctx| homogeneous_spans(
+            ctx, 2, &[-1., -1., 0., 1., 2., 2.],
+            &[[0., 0., 0., 1.], [1., 1., 0., 1.], [2., 0., 0., 1.]],
+        ).map(|_| ()));
     }
 
     #[test]
@@ -595,28 +464,8 @@ mod tests {
         use cadmpeg_core::CodecError;
         let points = [Point3::new(0.0, 1.0, 2.0), Point3::new(3.0, 4.0, 5.0)];
         let weights = [2.0, 1.0];
-        for cap in 0..6 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let limit =
-                super::positive_controls(&ctx, &points, Some(&weights), "Bezier positive controls")
-                    .expect_err("weight scans and conversion need work");
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(
-                limit.operation,
-                if cap < 2 {
-                    "Bezier positive weight validation"
-                } else if cap < 4 {
-                    "Bezier positive weight scale"
-                } else {
-                    "Bezier positive control conversion"
-                }
-            );
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
+        for operation in ["Bezier positive weight validation", "Bezier positive weight scale", "Bezier positive control conversion"] {
+            work_refusal(operation, |ctx| super::positive_controls(ctx, &points, Some(&weights), "Bezier positive controls").map(|_| ()));
         }
         for dimension in [
             ResourceDimension::MaterializedBytes,
@@ -660,24 +509,15 @@ mod tests {
 
     #[test]
     fn boundary_certificate_preserves_every_caller_work_refusal() {
-        const WORK: u64 = 19;
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
+        const WORK: u64 = 17;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
-        // Four finite visits, four weight visits, three coefficients, six pair
-        // visits and two binomial factors for the middle coefficient.
-        for cap in 0..WORK {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let limit = boundaries_within_resolution(&ctx, &controls, &controls, 0.0)
-                .expect_err("each certificate visit needs caller work");
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.limit, cap);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
+        // Four finite visits, four weight visits, three coefficients, four contributing
+        // control pairs and two binomial factors.
+        for operation in ["IR Bezier boundary finite control visit", "IR Bezier boundary first weight visit",
+            "IR Bezier boundary second weight visit", "IR Bezier boundary product coefficient",
+            "IR Bezier boundary control pair", "IR Bezier boundary binomial factors"] {
+            work_refusal(operation, |ctx| boundaries_within_resolution(ctx, &controls, &controls, 0.0).map(|_| ()));
         }
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = WORK;
@@ -784,5 +624,33 @@ mod tests {
             assert_eq!(actual.controls, expected.controls);
             assert_eq!(actual.domain.map(|t| t / 1e308), expected.domain);
         }
+    }
+
+    #[test]
+    fn bezier_internal_knots_reserve_only_distinct_kept_values() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use crate::geometry::nurbs::bezier::homogeneous_spans;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let knots = [0., 0., 0.5, 0.5, 1., 1.];
+        let controls = [[0., 0., 0., 1.], [1., 0., 0., 1.], [2., 0., 0., 1.], [3., 0., 0., 1.]];
+        let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, "Bezier internal knots",
+            |cap| crate::geometry::tests::budget::with_limit(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems, cap,
+                |ctx| homogeneous_spans(ctx, 1, &knots, &controls).map(|_| ()).map_err(Into::into)));
+        assert!(matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.additional < cadmpeg_core::decode::u64_from_index(knots.len())));
+        let spans = homogeneous_spans(&ctx, 1, &knots, &controls).unwrap().unwrap();
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].domain, [0., 0.5]);
+        assert_eq!(spans[1].domain, [0.5, 1.]);
+        assert_eq!(spans[0].controls, controls[..2]);
+        assert_eq!(spans[1].controls, controls[2..]);
+        drop(spans);
+        ctx.finish_session().unwrap();
     }
 }

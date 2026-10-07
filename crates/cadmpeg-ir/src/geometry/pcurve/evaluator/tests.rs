@@ -82,42 +82,28 @@ fn evaluator_lanes_admit_each_copy_and_release_both_lanes() {
 #[test]
 fn evaluator_lanes_preserve_storage_and_slot_refusals() {
     let source = poles(true);
-    for (dimension, slots, operation) in [
-        (
-            ResourceDimension::MaterializedBytes,
-            4,
-            "evaluator point copy",
-        ),
-        (
-            ResourceDimension::CollectionItems,
-            0,
-            "evaluator point copy",
-        ),
-        (
-            ResourceDimension::CollectionItems,
-            2,
-            "evaluator weight copy",
-        ),
+    for (dimension, operation) in [
+        (ResourceDimension::MaterializedBytes, "evaluator point copy"),
+        (ResourceDimension::CollectionItems, "evaluator point copy"),
+        (ResourceDimension::CollectionItems, "evaluator weight copy"),
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = slots;
-        if dimension == ResourceDimension::MaterializedBytes {
-            policy.limits.max_materialized_bytes = 0;
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let original = PcurveEvaluatorLanes::new(
-            &ctx,
-            &source,
-            "evaluator point copy",
-            "evaluator weight copy",
-        )
-        .unwrap_err();
-        assert_eq!(original.dimension, dimension);
-        assert_eq!(original.operation, operation);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            if dimension == ResourceDimension::CollectionItems {
+                policy.limits.max_collection_items = cap;
+            } else {
+                assert_eq!(dimension, ResourceDimension::MaterializedBytes);
+                policy.limits.max_materialized_bytes = cap;
+            }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = PcurveEvaluatorLanes::new(&ctx, &source,
+                "evaluator point copy", "evaluator weight copy").map(|_| ());
+            if let Err(ref limit) = result {
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+            }
+            result.map_err(Into::into)
+        });
     }
 }
 

@@ -43,11 +43,9 @@ impl PcurveGeometry {
 }
 
 fn scale_pole(
-    ctx: &DecodeContext<'_>,
     point: &mut FinitePoint2,
     [u_scale, v_scale]: [f64; 2],
-) -> Result<(), ScalingError> {
-    ctx.charge_work(1, "IR pcurve pole coordinate scaling work")?;
+) -> Result<(), &'static str> {
     let raw = point.get();
     *point = FinitePoint2::new(Point2::new(raw.u * u_scale, raw.v * v_scale))
         .ok_or("control_points contains a non-finite point")?;
@@ -59,7 +57,7 @@ fn scale_in_place(
     geometry: &mut PcurveGeometry,
     scales: [f64; 2],
 ) -> Result<(), ScalingError> {
-    ctx.charge_work(1, "IR pcurve coordinate scaling work")?;
+    ctx.charge_work(0, "IR pcurve coordinate scaling work")?;
     let [u_scale, v_scale] = scales;
     let scale = |point: Point2| Point2::new(point.u * u_scale, point.v * v_scale);
     let isotropic = u_scale == v_scale;
@@ -131,21 +129,17 @@ fn scale_in_place(
             )?)
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            match &mut nurbs.poles {
-                PcurveNurbsPoles::Polynomial { points } => {
-                    for point in points {
-                        scale_pole(ctx, point, scales)?;
-                    }
-                }
-                PcurveNurbsPoles::Rational { points } => {
-                    for pole in points {
-                        scale_pole(ctx, &mut pole.point, scales)?;
-                    }
-                }
-            }
+            let refusal = match &mut nurbs.poles {
+                PcurveNurbsPoles::Polynomial { points } => ctx.find_map(points.iter_mut(),
+                    |point| Ok(scale_pole(point, scales).err()), "IR pcurve pole coordinate scaling work")?,
+                PcurveNurbsPoles::Rational { points } => ctx.find_map(points.iter_mut(),
+                    |pole| Ok(scale_pole(&mut pole.point, scales).err()), "IR pcurve pole coordinate scaling work")?,
+            };
+            if let Some(error) = refusal { return Err(error.into()); }
             return Ok(());
         }
         PcurveGeometry::Trimmed(trimmed) => {
+            ctx.charge_work(1, "IR pcurve coordinate scaling work")?;
             let _depth = ctx.enter_nested("IR pcurve coordinate scaling nesting")?;
             scale_in_place(ctx, &mut trimmed.basis, scales)?;
             return Ok(());
@@ -156,6 +150,7 @@ fn scale_in_place(
                     "offset coordinate scaling must be isotropic",
                 ));
             }
+            ctx.charge_work(1, "IR pcurve coordinate scaling work")?;
             let _depth = ctx.enter_nested("IR pcurve coordinate scaling nesting")?;
             scale_in_place(ctx, &mut offset.basis, scales)?;
             offset.distance = FiniteReal::new(offset.distance.get() * u_scale)
@@ -173,6 +168,7 @@ fn scale_in_place(
             rows[1][0] *= v_scale.get() / u_scale.get();
             rows[1][2] *= v_scale.get();
             let transform = Transform2::affine(rows).ok_or("scaled pcurve transform is invalid")?;
+            ctx.charge_work(1, "IR pcurve coordinate scaling work")?;
             let _depth = ctx.enter_nested("IR pcurve coordinate scaling nesting")?;
             scale_in_place(ctx, &mut placed.basis, scales)?;
             placed.transform = transform;

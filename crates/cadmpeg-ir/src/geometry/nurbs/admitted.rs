@@ -75,8 +75,19 @@ impl super::NurbsAdmission for DecodeContext<'_> {
             .map_err(Into::into)
     }
 
-    fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error> {
-        self.charge_work(count, operation).map_err(Into::into)
+    fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
+        &self, values: S, operation: &'static str,
+    ) -> Result<impl Iterator<Item = <S::Iter as Iterator>::Item>, Self::Error> {
+        DecodeContext::admit_iter(self, values, operation)
+            .map_err(|limit| ConstructionError::Resource(limit.into()))
+    }
+
+    fn find_by<'a, T>(
+        &self, values: &'a [T], operation: &'static str,
+        mut predicate: impl FnMut(&T) -> bool,
+    ) -> Result<Option<&'a T>, Self::Error> {
+        DecodeContext::find_by(self, values, |value| Ok(predicate(value)), operation)
+            .map_err(Into::into)
     }
 
     fn structure(&self, message: std::fmt::Arguments<'_>) -> Result<Self::Error, Self::Error> {
@@ -119,7 +130,7 @@ impl super::BsplineSurface {
         ctx: &DecodeContext<'_>,
         scale: crate::scalar::PositiveReal,
     ) -> Result<Result<(), NurbsError>, CodecError> {
-        scale_points(ctx, self.control_points.iter_mut().flatten(), scale)
+        scale_grid(ctx, &mut self.control_points, |point| point, scale)
     }
 }
 
@@ -155,22 +166,34 @@ impl NurbsSurface {
     }
 }
 
-fn scale_points<'a>(
+fn scale_points<T>(
     ctx: &DecodeContext<'_>,
-    points: impl Iterator<Item = &'a mut FinitePoint3>,
+    points: &mut [T],
+    point: impl Fn(&mut T) -> &mut FinitePoint3,
     scale: crate::scalar::PositiveReal,
 ) -> Result<Result<(), NurbsError>, CodecError> {
-    for point in points {
-        ctx.charge_work(1, "IR NURBS unit scaling work")?;
+    let error = ctx.find_map(points.iter_mut(), |value| {
+        let point = point(value);
         let Some(scaled) = point.scaled(scale) else {
-            return Ok(Err(NurbsError::Structure(ctx.copy_retained_text(
-                "control_points contains a non-finite point",
-                "IR NURBS refusal text",
+            return Ok(Some(NurbsError::Structure(ctx.copy_retained_text(
+                "control_points contains a non-finite point", "IR NURBS refusal text",
             )?)));
         };
         *point = scaled;
-    }
-    Ok(Ok(()))
+        Ok(None)
+    }, "IR NURBS unit scaling work")?;
+    Ok(error.map_or(Ok(()), Err))
+}
+
+fn scale_grid<T>(
+    ctx: &DecodeContext<'_>, rows: &mut [Vec<T>],
+    point: impl Fn(&mut T) -> &mut FinitePoint3,
+    scale: crate::scalar::PositiveReal,
+) -> Result<Result<(), NurbsError>, CodecError> {
+    let error = ctx.find_map(rows.iter_mut(), |row| {
+        Ok(scale_points(ctx, row, &point, scale)?.err())
+    }, "IR NURBS unit scaling rows")?;
+    Ok(error.map_or(Ok(()), Err))
 }
 
 impl NurbsCurve {
@@ -180,9 +203,9 @@ impl NurbsCurve {
         scale: crate::scalar::PositiveReal,
     ) -> Result<Result<(), NurbsError>, CodecError> {
         match &mut self.poles {
-            NurbsPoles3::Polynomial { points } => scale_points(ctx, points.iter_mut(), scale),
+            NurbsPoles3::Polynomial { points } => scale_points(ctx, points, |point| point, scale),
             NurbsPoles3::Rational { points } => {
-                scale_points(ctx, points.iter_mut().map(|pole| &mut pole.point), scale)
+                scale_points(ctx, points, |pole| &mut pole.point, scale)
             }
         }
     }
@@ -196,16 +219,45 @@ impl NurbsSurface {
     ) -> Result<Result<(), NurbsError>, CodecError> {
         match &mut self.poles {
             NurbsPoleGrid::Polynomial { rows } => {
-                scale_points(ctx, rows.iter_mut().flatten(), scale)
+                scale_grid(ctx, rows, |point| point, scale)
             }
-            NurbsPoleGrid::Rational { rows } => scale_points(
-                ctx,
-                rows.iter_mut().flatten().map(|pole| &mut pole.point),
-                scale,
-            ),
+            NurbsPoleGrid::Rational { rows } => scale_grid(ctx, rows, |pole| &mut pole.point, scale),
         }
     }
 }
 
 #[cfg(test)]
 mod tests;
+
+/// Validate a deterministic pole map before admitting its in-place mutation pass.
+pub(in crate::geometry) fn map_positions<T, P: Copy, E>(
+    ctx: &DecodeContext<'_>, points: &mut [T],
+    get: impl Fn(&T) -> P,
+    set: impl Fn(&mut T, P),
+    map: impl Fn(usize, P) -> Result<P, E>,
+) -> Result<Result<(), E>, CodecError> {
+    if let Some(error) = ctx.find_map(points.iter().enumerate(),
+        |(index, point)| Ok(map(index, get(point)).err()), "IR pole edit validation")? {
+        return Ok(Err(error));
+    }
+    for (index, point) in ctx.admit_iter(points, "IR pole edit mutation")?.enumerate() {
+        match map(index, get(point)) {
+            Ok(value) => set(point, value),
+            Err(error) => return Ok(Err(error)),
+        }
+    }
+    Ok(Ok(()))
+}
+
+/// Find the first refused position without charging later rows or mutation.
+pub(super) fn validate_grid_positions<T, P: Copy, E>(
+    ctx: &DecodeContext<'_>, rows: &[Vec<T>], get: impl Fn(&T) -> P,
+    map: impl Fn(usize, P) -> Result<P, E>,
+) -> Result<Option<E>, CodecError> {
+    let mut index = 0;
+    ctx.find_map(rows, |row| ctx.find_map(row, |point| {
+        let result = map(index, get(point));
+        index += 1;
+        Ok(result.err())
+    }, "IR pole edit validation"), "IR pole edit validation rows")
+}
