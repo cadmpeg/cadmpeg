@@ -1461,7 +1461,7 @@ pub(crate) fn decode_inner_2d(
     Ok(result)
 }
 
-fn read_polycurve_2d(
+pub(crate) fn read_polycurve_2d(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
@@ -1524,19 +1524,6 @@ fn read_polycurve_2d(
         end_parameter,
         warnings: Diagnostics::new(),
     })
-}
-
-/// Consumes one legacy Brep C2 polycurve payload and returns its byte range.
-pub(crate) fn consume_legacy_polycurve_2d(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    reader: &mut BoundedReader<'_>,
-    archive: ArchiveVersion,
-) -> Result<Range<usize>, GeometryError> {
-    let start = reader.position();
-    // discarded-value: the payload is consumed for the byte range the caller returns; the decoded curve has no reader
-    let _ = read_polycurve_2d(ctx, data, reader, archive, 0)?;
-    Ok(start..reader.position())
 }
 
 fn read_point(
@@ -1890,7 +1877,7 @@ fn read_circle(
     })
 }
 
-fn read_polycurve(
+pub(crate) fn read_polycurve(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
@@ -1961,20 +1948,6 @@ fn read_polycurve(
         end_parameter,
         warnings: Diagnostics::new(),
     })
-}
-
-/// Consumes one legacy Brep C3 polycurve payload and returns its byte range.
-pub(crate) fn consume_legacy_polycurve(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    reader: &mut BoundedReader<'_>,
-    scale: MillimeterScale,
-    archive: ArchiveVersion,
-) -> Result<Range<usize>, GeometryError> {
-    let start = reader.position();
-    // discarded-value: the payload is consumed for the byte range the caller returns; the decoded curve has no reader
-    let _ = read_polycurve(ctx, data, reader, scale, archive, 0)?;
-    Ok(start..reader.position())
 }
 
 fn read_polycurve_parameters(

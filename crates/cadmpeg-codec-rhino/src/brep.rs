@@ -4,7 +4,7 @@
 //! Stops at a validated native representation; no topology IDs or IR carriers.
 
 use crate::loss::Diagnostics;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -1287,15 +1287,14 @@ fn parse_legacy_major2(
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..trim_count {
         ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
-        let curve_range =
-            crate::curves::consume_legacy_polycurve_2d(ctx, bytes, &mut reader, archive)?;
-        let decoded = crate::curves::decode_2d(
-            ctx,
-            bytes,
-            crate::curves::POLYCURVE,
-            curve_range.clone(),
-            archive,
-        )?;
+        let start = reader.position();
+        let mut curve_storage = ctx.reserve_scoped(0, "Rhino legacy Brep curve scratch")?;
+        let decoded = curve_storage.with_storage(|| {
+            let _depth = ctx.enter_nested("Rhino C2 curve tree")?;
+            crate::curves::read_polycurve_2d(ctx, bytes, &mut reader, archive, 0)
+                .map(|curve| crate::curves::DecodedGeometry::Curve { curve })
+        })?;
+        let curve_range = start..reader.position();
         let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
         c2_meta.push(LegacyCurveMeta {
             range: curve_range,
@@ -1311,21 +1310,14 @@ fn parse_legacy_major2(
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..edge_count {
         ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
-        let curve_range = crate::curves::consume_legacy_polycurve(
-            ctx,
-            bytes,
-            &mut reader,
-            crate::settings::MillimeterScale::IDENTITY,
-            archive,
-        )?;
-        let decoded = crate::curves::decode(
-            ctx,
-            bytes,
-            crate::curves::POLYCURVE,
-            curve_range.clone(),
-            crate::settings::MillimeterScale::IDENTITY,
-            archive,
-        )?;
+        let start = reader.position();
+        let mut curve_storage = ctx.reserve_scoped(0, "Rhino legacy Brep curve scratch")?;
+        let decoded = curve_storage.with_storage(|| {
+            let _depth = ctx.enter_nested("Rhino curve tree")?;
+            crate::curves::read_polycurve(ctx, bytes, &mut reader, crate::settings::MillimeterScale::IDENTITY, archive, 0)
+                .map(|curve| crate::curves::DecodedGeometry::Curve { curve })
+        })?;
+        let curve_range = start..reader.position();
         let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
         c3_meta.push(LegacyCurveMeta {
             range: curve_range,
@@ -1721,29 +1713,20 @@ fn parse_legacy_major2(
             vertices[vertex].edges.push(edge.index);
         }
     }
-    for edge in ctx
-        .admit_iter(&edges[..], "Rhino parse legacy major2 traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
-        for trim_index in ctx
-            .admit_iter(&edge.trims[..], "Rhino parse legacy major2 traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+    for edge in ctx.admit_iter(&edges[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)? {
+        let mut loop_counts = BTreeMap::new();
+        let mut loop_storage = ctx.reserve_scoped(0, "Rhino legacy edge loop counts")?;
+        for trim_index in ctx.admit_iter(&edge.trims[..], "Rhino legacy edge loop indexing").map_err(cadmpeg_core::CodecError::from)? {
             let trim_index = slot(ctx, *trim_index, trims.len(), "legacy Brep edge trim")?;
-            let loop_index = trims[trim_index].loop_index;
-            let same_loop = ctx
-                .admit_iter(&edge.trims[..], "Rhino parse legacy major2 traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .filter_map(|other| position(Some(*other)))
-                .filter(|other| trims[*other].loop_index == loop_index)
-                .count();
-            trims[trim_index].trim_type = if edge.trims.len() == 1 {
-                RawTrimKind::Boundary
-            } else if same_loop > 1 {
-                RawTrimKind::Seam
-            } else {
-                RawTrimKind::Mated
-            };
+            loop_storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+                *ctx.entry_btree_map(&mut loop_counts, trims[trim_index].loop_index, "Rhino legacy edge loop counts")?.or_insert(0_usize) += 1;
+                Ok(())
+            })?;
+        }
+        for trim_index in ctx.admit_iter(&edge.trims[..], "Rhino parse legacy major2 traversal").map_err(cadmpeg_core::CodecError::from)? {
+            let trim_index = slot(ctx, *trim_index, trims.len(), "legacy Brep edge trim")?;
+            let same_loop = ctx.get_btree_map(&loop_counts, &trims[trim_index].loop_index, "Rhino legacy edge loop counts")?.copied().unwrap_or(0);
+            trims[trim_index].trim_type = if edge.trims.len() == 1 { RawTrimKind::Boundary } else if same_loop > 1 { RawTrimKind::Seam } else { RawTrimKind::Mated };
         }
     }
     for (vertex_index, vertex) in ctx.admit_iter(&mut vertices[..], "Rhino legacy vertex tolerance traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
@@ -1900,12 +1883,9 @@ fn legacy_decoded_curve_endpoints(
     };
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            let control_points = nurbs.control_points();
-            let first = control_points
-                .first()
+            let first = nurbs.pole_rows().point_at(0)
                 .ok_or_else(|| error(offset, "legacy Brep curve has no first pole"))?;
-            let last = control_points
-                .last()
+            let last = nurbs.pole_rows().point_at(nurbs.pole_count().saturating_sub(1))
                 .ok_or_else(|| error(offset, "legacy Brep curve has no last pole"))?;
             Ok([[first.x, first.y, first.z], [last.x, last.y, last.z]])
         }
@@ -3247,18 +3227,17 @@ fn validate_edge_incidences(
 
 fn unique(ctx: &DecodeContext<'_>, values: &[i32], label: &str) -> Result<(), GeometryError> {
     let mut seen = HashSet::new();
+    let mut storage = ctx.reserve_scoped(0, "Rhino Brep unique references")?;
     for value in ctx
         .admit_iter(values, "Rhino unique traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
-        if seen.contains(value) {
+        if !storage.with_storage(|| ctx.insert_hash_set(&mut seen, *value, "Rhino Brep unique references"))? {
             return Err(GeometryError::unpositioned(ctx.format_retained(
                 format_args!("{label} reference is duplicated"),
                 "Rhino unique text",
             )?));
         }
-        ctx.reserve_set(&mut seen, 1, "Rhino Brep unique references")?;
-        seen.insert(*value);
     }
     Ok(())
 }

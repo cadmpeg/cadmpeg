@@ -351,7 +351,8 @@ pub(crate) fn decode(
             )?;
         }
     }
-    let faces = read_faces(expand.ctx(), &mut reader, vertex_count, face_count)?;
+    let mut face_storage = expand.ctx().reserve_scoped(0, "Rhino mesh face scratch")?;
+    let faces = face_storage.with_storage(|| read_faces(expand.ctx(), &mut reader, vertex_count, face_count))?;
     let mut ngon_count = 0;
     if major == 1 {
         read_raw_channels(
@@ -394,7 +395,10 @@ pub(crate) fn decode(
                 expand.ctx(),
                 CHANNEL_SURFACE_PARAMETERS,
                 16,
-                bytes.into_owned(),
+                match bytes {
+                    Cow::Owned(bytes) => bytes,
+                    Cow::Borrowed(bytes) => expand.ctx().copy_retained(bytes, "rhino_mesh_buffer")?,
+                },
             )?);
         }
     }
@@ -739,23 +743,14 @@ fn native_proxy_fingerprint(
     vertices: &[[FiniteBinary32; 3]],
     ctx: &DecodeContext<'_>,
 ) -> Result<MeshProxyFingerprint, CodecError> {
-    let bytes = u64_from_index(faces.len())
-        .checked_mul(16)
-        .and_then(|face_bytes| {
-            u64_from_index(vertices.len())
-                .checked_mul(12)
-                .and_then(|vertex_bytes| face_bytes.checked_add(vertex_bytes))
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("Rhino mesh proxy SHA-1", u64::MAX, u64::MAX))?;
-    ctx.charge_work(bytes, "Rhino mesh proxy SHA-1")?;
     let mut face_digest = Sha1::new();
-    for face in ctx.admit_iter(faces, "Rhino native proxy fingerprint traversal")? {
+    for face in ctx.admit_iter(faces, "Rhino mesh proxy SHA-1")? {
         for index in face {
             face_digest.update(index.to_ne_bytes());
         }
     }
     let mut vertex_digest = Sha1::new();
-    for vertex in ctx.admit_iter(vertices, "Rhino native proxy fingerprint traversal")? {
+    for vertex in ctx.admit_iter(vertices, "Rhino mesh proxy SHA-1")? {
         for coordinate in vertex {
             vertex_digest.update(coordinate.get().to_ne_bytes());
         }
@@ -1070,7 +1065,10 @@ fn read_compressed_channels(
                     expand.ctx(),
                     kind,
                     spec.item_size,
-                    bytes.into_owned(),
+                    match bytes {
+                    Cow::Owned(bytes) => bytes,
+                    Cow::Borrowed(bytes) => expand.ctx().copy_retained(bytes, "rhino_mesh_buffer")?,
+                },
                 )?);
             }
         }
@@ -1195,7 +1193,7 @@ fn read_buffer<'a>(
                         "compressed buffer body escapes the archive bytes",
                     )
                 })?;
-            if !expand.ctx().equal_bytes(
+            if !std::ptr::eq(source.window(), body) && !expand.ctx().equal_bytes(
                 source.window(),
                 body,
                 "Rhino compressed mesh source equality",
@@ -1210,9 +1208,6 @@ fn read_buffer<'a>(
                     ),
                 ));
             }
-            expand
-                .ctx()
-                .charge_retained(u64_from_index(declared), "rhino_mesh_buffer")?;
             let (view, compressed) = inflate(expand, source, declared)?;
             document_budget.used = admitted_document_bytes;
             if compressed != chunk.body().len() {
@@ -1548,30 +1543,31 @@ fn read_v5_double_vertices(
         }
         .into());
     }
-    let mut values = ctx
-        .collection_vec(array_count, "Rhino V5 mesh double vertex values")
-        .map_err(crate::curves::GeometryError::from)?;
-    for _ in 0..array_count {
-        ctx.charge_work(1, "Rhino mesh read_v5_double_vertices records")?;
-        values.push([reader.f64()?, reader.f64()?, reader.f64()?]);
-    }
-    reader.skip_remaining()?;
-    if values.len() != float_vertices.len() {
+    if array_count != float_vertices.len() {
         return Ok(None);
     }
-    let mut finite = ctx
-        .collection_vec(values.len(), "Rhino V5 mesh admitted double vertices")
-        .map_err(crate::curves::GeometryError::from)?;
-    for point in ctx
-        .admit_iter(&values[..], "Rhino read v5 double vertices traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
-        let Some(point) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
-            return Ok(None);
+    let mut finite = ctx.collection_vec(array_count, "Rhino V5 mesh admitted double vertices")?;
+    let mut read_failure = None;
+    let synchronized = ctx.all_by(float_vertices, |float| {
+        let point = match (|| -> Result<_, FramingError> {
+            Ok([reader.f64()?, reader.f64()?, reader.f64()?])
+        })() {
+            Ok(point) => point,
+            Err(error) => { read_failure = Some(error); return Ok(false); }
         };
-        finite.push(point);
-    }
-    Ok(v5_synchronization_ok(ctx, &values, float_vertices)?.then_some(finite))
+        let Some(admitted) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
+            return Ok(false);
+        };
+        if !point.iter().zip(float).all(|(double, float)| cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())) {
+            return Ok(false);
+        }
+        finite.push(admitted);
+        Ok(true)
+    }, "Rhino mesh read_v5_double_vertices records")?;
+    if let Some(error) = read_failure { return Err(error.into()); }
+    if !synchronized { return Ok(None); }
+    reader.skip_remaining()?;
+    Ok(Some(finite))
 }
 
 /// Reads the V4/V5 legacy mesh n-gon userdata list.
@@ -1694,48 +1690,38 @@ fn parse_f32_points(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<[FiniteBinary32; 3]>, GeometryError> {
-    if !bytes.len().is_multiple_of(12) {
-        return Err(GeometryError::unpositioned(
-            "invalid f32 point channel length",
-        ));
-    }
-    let mut view = View::over_retained(bytes);
-    let count = bytes.len() / 12;
-    let mut points = ctx
-        .collection_vec(count, "Rhino mesh f32 points")
-        .map_err(crate::curves::GeometryError::from)?;
-    for _ in 0..count {
-        ctx.charge_work(1, "Rhino mesh parse_f32_points records")?;
-        let point = [view.f32_le(), view.f32_le(), view.f32_le()];
-        let [Some(x), Some(y), Some(z)] = point else {
-            return Err(GeometryError::unpositioned(
-                "invalid f32 point channel length",
-            ));
-        };
-        let [x, y, z] = [x, y, z].map(FiniteBinary32::new);
-        let (Some(x), Some(y), Some(z)) = (x, y, z) else {
-            return Err(GeometryError::unpositioned(
-                "f32 point channel contains nonfinite values",
-            ));
-        };
-        points.push([x, y, z]);
-    }
-    Ok(points)
+    parse_f32_records(ctx, bytes, "Rhino mesh f32 points", |point| point)
 }
 
 fn parse_f32_vectors(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<FiniteVector3>, GeometryError> {
-    let points = parse_f32_points(ctx, bytes)?;
-    let mut vectors = ctx
-        .collection_vec(points.len(), "Rhino mesh f32 normals")
-        .map_err(crate::curves::GeometryError::from)?;
-    vectors.extend(
-        ctx.admit_iter(points, "Rhino mesh normal projection").map_err(CodecError::from)?
-            .map(|p| FiniteVector3::from_components(p[0].into(), p[1].into(), p[2].into())),
-    );
-    Ok(vectors)
+    parse_f32_records(ctx, bytes, "Rhino mesh f32 normals", |point| FiniteVector3::from_components(point[0].into(), point[1].into(), point[2].into()))
+}
+
+fn parse_f32_records<T>(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+    project: impl Fn([FiniteBinary32; 3]) -> T,
+) -> Result<Vec<T>, GeometryError> {
+    if !bytes.len().is_multiple_of(12) {
+        return Err(GeometryError::unpositioned("invalid f32 point channel length"));
+    }
+    let mut view = View::over_retained(bytes);
+    let mut values = ctx.collection_vec(bytes.len() / 12, operation)?;
+    for _ in 0..bytes.len() / 12 {
+        ctx.charge_work(1, "Rhino mesh f32 records")?;
+        let [Some(x), Some(y), Some(z)] = [view.f32_le(), view.f32_le(), view.f32_le()] else {
+            return Err(GeometryError::unpositioned("invalid f32 point channel length"));
+        };
+        let [Some(x), Some(y), Some(z)] = [x, y, z].map(FiniteBinary32::new) else {
+            return Err(GeometryError::unpositioned("f32 point channel contains nonfinite values"));
+        };
+        values.push(project([x, y, z]));
+    }
+    Ok(values)
 }
 
 fn parse_f64_points(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<[f64; 3]>, GeometryError> {
@@ -1783,21 +1769,6 @@ fn synchronization_ok(
     )
 }
 
-fn v5_synchronization_ok(
-    ctx: &DecodeContext<'_>,
-    double: &[[f64; 3]],
-    float: &[[FiniteBinary32; 3]],
-) -> Result<bool, CodecError> {
-    ctx.all_by(
-        double.iter().zip(float.iter()),
-        |(double, float)| {
-            Ok(double.iter().zip(float).all(|(double, float)| {
-                cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())
-            }))
-        },
-        "Rhino V5 synchronized double vertices",
-    )
-}
 
 fn channel(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -2025,8 +1996,13 @@ mod tests {
     #[test]
     fn raw_mesh_normal_collection_refusal_is_not_a_warning() {
         let raw = raw_channels_with_one_vertex([true, false, false, false]);
+        // One vertex and one projected normal are the only numeric collections.
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "Rhino mesh f32 normals",
+            |cap| {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
+        policy.limits.max_collection_items = cap;
         let refused = with_expand_policy(&raw, policy, |expand| {
             let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
             read_raw_channels(
@@ -2038,13 +2014,14 @@ mod tests {
                 &mut Vec::new(),
                 &mut Diagnostics::new(),
             )
-            .expect_err("normal output exceeds two collection items")
+            .expect_err("normal output exceeds the collection limit")
         });
-        assert!(matches!(
-            refused,
-            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "Rhino mesh f32 normals"
-        ));
+        match refused {
+            GeometryError::Codec(error) => Err::<(), _>(error),
+            error => panic!("unexpected refusal: {error:?}"),
+        }
+            },
+        );
     }
 
     #[test]
@@ -2385,12 +2362,14 @@ mod tests {
         let payload_start = bytes.len();
         bytes.extend(v5_double_userdata_payload(&points));
         let descriptor = v5_double_userdata_descriptor(payload_start..bytes.len());
-        for (limit, operation) in [
-            (6, "Rhino V5 mesh double vertex values"),
-            (9, "Rhino V5 mesh admitted double vertices"),
-        ] {
+        // The three admitted vertices are read and validated directly; no raw array exists.
+        let operation = "Rhino V5 mesh admitted double vertices";
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit;
+            policy.limits.max_collection_items = cap;
             let refused = with_expand_policy(&bytes, policy, |expand| {
                 decode(
                     expand,
@@ -2413,12 +2392,12 @@ mod tests {
                 )
                 .expect_err("double vertex collection exceeds its item limit")
             });
-            assert!(matches!(
-                refused,
-                GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.operation == operation
-            ));
-        }
+            match refused {
+                GeometryError::Codec(error) => Err::<(), _>(error),
+                error => panic!("unexpected refusal: {error:?}"),
+            }
+            },
+        );
     }
 
     #[test]
