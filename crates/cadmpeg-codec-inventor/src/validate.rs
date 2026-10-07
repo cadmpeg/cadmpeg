@@ -392,42 +392,6 @@ fn validate_design(
         &data.pm_dc_expressions,
         "validate Inventor PmDc expressions",
     )? {
-        let (mut references, mut references_storage) =
-            ctx.temporary_vec(0, "collect Inventor PmDc expression references")?;
-        references_storage.with_storage(|| {
-            ctx.push_vec(
-                &mut references,
-                expression.unit.index(),
-                "collect Inventor PmDc expression references",
-            )
-        })?;
-        match &expression.kind {
-            PmDcExpressionKind::Value { .. } => {}
-            PmDcExpressionKind::ParameterReference { operand, .. }
-            | PmDcExpressionKind::Unary { operand, .. } => {
-                references_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut references,
-                        operand.index(),
-                        "collect Inventor PmDc expression references",
-                    )
-                })?;
-            }
-            PmDcExpressionKind::Binary { left, right, .. } => {
-                references_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut references,
-                        left.index(),
-                        "collect Inventor PmDc expression references",
-                    )?;
-                    ctx.push_vec(
-                        &mut references,
-                        right.index(),
-                        "collect Inventor PmDc expression references",
-                    )
-                })?;
-            }
-        }
         let key = (
             expression.identity.segment_token.as_str(),
             expression.identity.record_ordinal,
@@ -440,13 +404,18 @@ fn validate_design(
             )?,
             None => false,
         };
-        if !record_matches
-            || !ctx.all_by(
-                &references,
-                |reference| resolves(expression.identity.segment_token.as_str(), *reference),
-                "resolve Inventor PmDc expression references",
-            )?
-        {
+        let token = expression.identity.segment_token.as_str();
+        let references_match = record_matches
+            && resolves(token, expression.unit.index())?
+            && match &expression.kind {
+                PmDcExpressionKind::Value { .. } => true,
+                PmDcExpressionKind::ParameterReference { operand, .. }
+                | PmDcExpressionKind::Unary { operand, .. } => resolves(token, operand.index())?,
+                PmDcExpressionKind::Binary { left, right, .. } => {
+                    resolves(token, left.index())? && resolves(token, right.index())?
+                }
+            };
+        if !references_match {
             push_finding(
                 ctx,
                 findings,
