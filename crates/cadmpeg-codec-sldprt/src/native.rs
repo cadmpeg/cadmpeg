@@ -441,7 +441,10 @@ impl SldprtNative {
                 "load SLDPRT sketch entities",
             )?;
         }
-        for wire in entity_wires {
+        for wire in ctx
+            .admit_iter(entity_wires, "load SLDPRT sketch entities")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             let Some(payload) = ctx
                 .get_hash_map(
                     &(lane_payloads),
