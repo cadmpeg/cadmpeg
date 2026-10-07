@@ -1253,3 +1253,40 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
         assert!((range[1] / d - 0.9).abs() < 16. * f64::EPSILON);
     }
 }
+
+#[test]
+fn surface_scale_index_tracks_appends_and_duplicate_owners() {
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let mut ir = CadIr::empty();
+        let owner = SurfaceId::mint("test:model:surface#owner").expect("identity");
+        let construction = ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
+            .expect("identity");
+        let surface = Surface {
+            id: owner.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        };
+        ir.model.surfaces.push(surface);
+        ir.model.add_procedural_surface(
+            &cadmpeg_ir::document::admission::StandardAdmission,
+            &owner,
+            ProceduralSurface::new(construction, ProceduralSurfaceDefinition::DegenerateTorus {
+                select_outer: true,
+            }, None),
+        ).expect("construction admission").expect("valid construction");
+        let (mut index, mut storage) = SurfaceScaleIndex::build(&CadIr::empty(), ctx)
+            .expect("empty index");
+        storage.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
+            index.add_surface(&ir.model.surfaces[0], 0, ctx)?;
+            index.add_procedural(&ir.model.procedural_surfaces[0], 0, ctx)
+        }).expect("appended records");
+        assert_eq!(index.surface(&ir, ctx, &owner).expect("lookup").map(|s| &s.id), Some(&owner));
+        assert!(index.owned_procedural(&ir, ctx, &owner).expect("lookup").is_some());
+        ir.model.surfaces.push(ir.model.surfaces[0].clone());
+        storage.with_storage(|| index.add_surface(&ir.model.surfaces[1], 1, ctx))
+            .expect("duplicate owner");
+        assert!(index.owned_procedural(&ir, ctx, &owner).expect("lookup").is_none());
+        let (rebuilt, _rebuilt_storage) = SurfaceScaleIndex::build(&ir, ctx).expect("rebuilt index");
+        assert!(rebuilt.owned_procedural(&ir, ctx, &owner).expect("lookup").is_none());
+    });
+}
