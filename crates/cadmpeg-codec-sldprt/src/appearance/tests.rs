@@ -637,22 +637,21 @@ fn appearance_face_class_search_refuses_without_assignments() {
     )
     .unwrap();
 
-    let mut policy = DecodePolicy::service();
-    // Payload scan, one validated and copied name byte, 64 source bytes and each face.
-    policy.limits.max_work_units = u64::try_from(payload.len() + 66 + faces.len()).unwrap();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::display_assignments(
-        &ctx,
-        scan.sections(&cadmpeg_test_support::service_decode_context())
-            .unwrap()
-            .next()
-            .unwrap(),
-        &faces,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "match SLDPRT face appearance classes")
+    let section = scan
+        .sections(&cadmpeg_test_support::service_decode_context())
+        .unwrap()
+        .next()
+        .unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "match SLDPRT appearance classes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::display_assignments(&ctx, section, &faces)
+        },
     );
 }
 
