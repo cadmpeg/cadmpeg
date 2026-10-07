@@ -394,39 +394,48 @@ pub(super) fn project(
             continue;
         };
         let mut tuple_storage = ctx.reserve_scoped(0, "iges copious tuple scratch")?;
-        let Some(values) = tuple_storage.with_storage(|| ctx.collect_options(
-            (tuple_start..tuple_end).map(|index| record.number(index).and_then(FiniteReal::new)),
-            "iges copious tuple values",
-        ))?
-        else {
-            push_copious_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("tuple array is truncated or non-finite"),
-            )?;
-            continue;
-        };
-        let definition_points =
-            tuple_storage.with_storage(|| ctx.collect_indexed_vec(tuple_count, "iges copious definition points", |index| {
-                let tuple = &values[index * tuple_width..(index + 1) * tuple_width];
-                let z = match common_z {
-                    Some(z) => z,
-                    None => tuple[2],
+        let mut definition_points = Vec::new();
+        let mut tuples_valid = true;
+        let mut indices = (tuple_start..tuple_end).step_by(tuple_width);
+        while let Some(start) = ctx.next_charged(&mut indices, "iges copious tuple traversal")? {
+            let mut tuple = [FiniteReal::ZERO; 6];
+            for (offset, value) in tuple.iter_mut().enumerate().take(tuple_width) {
+                let Some(number) = record.number(start + offset).and_then(FiniteReal::new) else {
+                    tuples_valid = false;
+                    break;
                 };
-                Ok(Point3::new(
-                    tuple[0].get() * factor,
-                    tuple[1].get() * factor,
-                    z.get() * factor,
-                ))
-            }))?;
-        let Some(positions) = ctx.collect_options(
+                *value = number;
+            }
+            if !tuples_valid { break }
+            let z = common_z.unwrap_or(tuple[2]);
+            tuple_storage.with_storage(|| ctx.reserve_vec(&mut definition_points, 1, "iges copious definition points"))?;
+            definition_points.push(Point3::new(tuple[0].get() * factor, tuple[1].get() * factor, z.get() * factor));
+        }
+        if !tuples_valid {
+            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple array is truncated or non-finite"))?;
+            continue;
+        }
+        let projects_as_points = matches!(entry.form, 1..=3)
+            || (matches!(entry.form, 11..=13) && tuple_count == 1
+                && matches!(global.global_table(), GlobalTable::V4_0));
+        let positions = if projects_as_points || presentation_form(entry.form) {
+            tuple_storage.with_storage(|| ctx.collect_options(
+            definition_points
+                .iter()
+                .copied()
+                .map(|point| transform.apply_point(point)),
+            "iges copious positioned points",
+        ))?
+        } else {
+            ctx.collect_options(
             definition_points
                 .iter()
                 .copied()
                 .map(|point| transform.apply_point(point)),
             "iges copious positioned points",
         )?
+        };
+        let Some(positions) = positions
         else {
             push_copious_loss(
                 ctx,
@@ -449,10 +458,6 @@ pub(super) fn project(
             )?;
             continue;
         }
-        let projects_as_points = matches!(entry.form, 1..=3)
-            || (matches!(entry.form, 11..=13)
-                && tuple_count == 1
-                && matches!(global.global_table(), GlobalTable::V4_0));
         if projects_as_points {
             for (index, position) in ctx.admit_iter(positions, "iges copious point projection")?.enumerate() {
                 let point = crate::ids::point_admitted(

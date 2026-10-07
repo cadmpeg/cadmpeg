@@ -962,38 +962,40 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
 
 #[test]
 fn network_connectivity_uses_versioned_null_pointer_rules() {
+crate::test_support::with_service_context(&[], |ctx| {
     let definition = [Some(1_u32)];
     let instance = [None];
     assert!(network_connectivity_valid(
         &definition,
         &instance,
         GlobalTable::V5_0
-    ));
+    , ctx).unwrap());
     assert!(!network_connectivity_valid(
         &definition,
         &instance,
         GlobalTable::V4_0
-    ));
+    , ctx).unwrap());
     assert!(network_connectivity_valid(
         &definition,
         &[Some(3)],
         GlobalTable::V4_0
-    ));
+    , ctx).unwrap());
     assert!(!network_connectivity_valid(
         &definition,
         &[],
         GlobalTable::V5_0
-    ));
+    , ctx).unwrap());
     assert!(!network_connectivity_valid(
         &[None],
         &[Some(3)],
         GlobalTable::V5_0
-    ));
+    , ctx).unwrap());
     assert!(network_connectivity_valid(
         &[None],
         &[None],
         GlobalTable::V5_0
-    ));
+    , ctx).unwrap());
+});
 }
 
 #[test]
