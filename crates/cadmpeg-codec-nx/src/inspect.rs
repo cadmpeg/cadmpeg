@@ -412,7 +412,7 @@ fn insert_summary_attribute(
     ctx.try_reserve_retained_text(&mut rendered, value_len, "nx summary attribute text")?;
     match value {
         SummaryValue::Text(text) => {
-            ctx.append_retained(&mut rendered, text, "NX admitted text append")?
+            ctx.append_retained(&mut rendered, text, "NX admitted text append")?;
         }
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")
             .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?,

@@ -68,14 +68,14 @@ fn legacy_header_search_does_not_charge_unread_trailing_bytes() {
     let mut bytes = b"PS".to_vec();
     bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
     bytes.extend_from_slice(description);
-    bytes.resize(bytes.len() + 8192, 0);
+    bytes.extend((0..8192).map(|_| 0));
     crate::test_support::with_decode_context_over(
         &bytes,
         |policy| {
             // One magic window, every description byte plus its end probe,
             // and the first transmit-marker window.
             policy.limits.max_work_units =
-                cadmpeg_core::decode::u64_from_index(description.len() + 3)
+                cadmpeg_core::decode::u64_from_index(description.len() + 3);
         },
         |ctx| assert_eq!(super::legacy_stream_start(ctx, &bytes, 0).unwrap(), Some(0)),
     );
@@ -602,7 +602,7 @@ fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_paras
         &file,
         |policy| {
             policy.limits.max_decompressed_bytes_total =
-                cadmpeg_core::decode::u64_from_index(expanded_bytes)
+                cadmpeg_core::decode::u64_from_index(expanded_bytes);
         },
         |ctx| {
             let root = cadmpeg_core::decode::View::over_retained(&file);
@@ -900,7 +900,7 @@ fn fixed_attribute_owner_flags_need_no_decode_admission() {
 #[test]
 fn numeric_validation_stops_at_first_nonfinite_value() {
     let mut bytes = f64::NAN.to_be_bytes().to_vec();
-    bytes.extend(std::iter::repeat_n(0, 8 * 4095));
+    bytes.extend((0..8 * 4095).map(|_| 0));
     crate::test_support::with_decode_context_over(
         &bytes,
         |policy| policy.limits.max_work_units = 1,
@@ -918,7 +918,7 @@ fn numeric_validation_stops_at_first_nonfinite_value() {
 #[test]
 fn unicode_validation_stops_at_first_unpaired_low_surrogate() {
     let mut bytes = vec![0xdc, 0];
-    bytes.extend(std::iter::repeat_n(0, 2 * 4095));
+    bytes.extend((0..2 * 4095).map(|_| 0));
     crate::test_support::with_decode_context_over(
         &bytes,
         |policy| policy.limits.max_work_units = 1,

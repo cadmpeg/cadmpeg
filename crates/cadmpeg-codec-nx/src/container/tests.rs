@@ -1056,7 +1056,7 @@ fn cached_section_reader_traversal_refuses_at_its_named_boundary() {
     crate::test_support::resource_refusal_at(
         &[],
         ResourceDimension::WorkUnits,
-        "visit NX cached section readers",
+        "visit NX framed cached section readers",
         |ctx| container.om_sections(ctx),
     );
 }
