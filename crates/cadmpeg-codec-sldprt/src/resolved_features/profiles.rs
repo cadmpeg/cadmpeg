@@ -43,7 +43,7 @@ use super::projections::bind_circular_profile_by_dimension;
 use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::transforms::sketch_frame_marker_transform;
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -402,6 +402,7 @@ pub(crate) fn bind_sketch_profiles(
         }
     }
     for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut starts_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut starts = Vec::<(u64, usize, &crate::records::Feature)>::new();
         for feature in ctx
@@ -415,7 +416,7 @@ pub(crate) fn bind_sketch_profiles(
             )? {
                 continue;
             }
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = object_names.of(ctx, feature)? else {
                 continue;
             };
             let ordinal = starts.len();
@@ -742,9 +743,10 @@ pub(crate) fn project_compact_sketch_profiles(
     let lane_frames =
         lane_frames_storage.with_storage(|| LaneFrameIndex::new(ctx, features, histories))?;
     for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut plane_frames_storage = ctx.reserve_scoped(0, OPERATION)?;
-        let plane_frames =
-            plane_frames_storage.with_storage(|| lane_frames.lane_frames(ctx, histories, lane))?;
+        let plane_frames = plane_frames_storage
+            .with_storage(|| lane_frames.lane_frames(ctx, histories, &object_names))?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let (markers_by_owner, _markers_by_owner_storage) = group_by_owner(
             ctx,
@@ -771,7 +773,7 @@ pub(crate) fn project_compact_sketch_profiles(
             if ctx.contains_hash_set(&metadata_ids, feature.id.as_str(), OPERATION)? {
                 continue;
             }
-            let start = match feature_object_name(feature, lane) {
+            let start = match object_names.of(ctx, feature)? {
                 Some(name) => Some(name.offset),
                 None => first_owned_marker_offset(
                     ctx,
@@ -1729,9 +1731,10 @@ pub(crate) fn project_marker_backed_sketches(
     let mut replaced_storage = ctx.reserve_scoped(0, "remove prior SLDPRT marker sketches")?;
     let mut replaced = HashSet::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut plane_frames_storage = ctx.reserve_scoped(0, "resolve SLDPRT feature frames")?;
-        let plane_frames =
-            plane_frames_storage.with_storage(|| lane_frames.lane_frames(ctx, histories, lane))?;
+        let plane_frames = plane_frames_storage
+            .with_storage(|| lane_frames.lane_frames(ctx, histories, &object_names))?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let mut markers_by_id_storage = ctx.reserve_scoped(0, "index SLDPRT profile markers")?;
         let mut markers_by_id = HashMap::new();
@@ -1779,7 +1782,7 @@ pub(crate) fn project_marker_backed_sketches(
             )? {
                 continue;
             }
-            let start = match feature_object_name(feature, lane) {
+            let start = match object_names.of(ctx, feature)? {
                 Some(name) => Some(name.offset),
                 None => first_owned_marker_offset(
                     ctx,
@@ -3281,6 +3284,7 @@ pub(crate) fn project_sketch_block_profiles(
         })?;
     }
     for lane in ctx.admit_iter(lanes, "scan SLDPRT profiles records")? {
+        let object_names = ObjectNames::new(ctx, lane)?;
         for (history_index, history) in ctx
             .admit_iter(histories, "scan SLDPRT profiles records")?
             .enumerate()
@@ -3292,7 +3296,7 @@ pub(crate) fn project_sketch_block_profiles(
                 .admit_iter(&history.features[..], "scan SLDPRT profiles records")?
                 .enumerate()
             {
-                let Some(name) = feature_object_name(feature, lane) else {
+                let Some(name) = object_names.of(ctx, feature)? else {
                     continue;
                 };
                 let is_metadata = match metadata[history_index][ordinal] {
