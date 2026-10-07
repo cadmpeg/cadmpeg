@@ -504,6 +504,14 @@ pub(crate) fn annotations(
         Ord::cmp,
         "sort SWIFT annotation provenance",
     )?;
+    let (mut offsets, _offsets_storage) =
+        ctx.with_scoped_storage("SWIFT annotation provenance owners", || {
+            ctx.alloc_filled(
+                projected.len(),
+                None,
+                "allocate SWIFT annotation provenance owners",
+            )
+        })?;
     for (reference, entity) in ctx
         .admit_iter(
             &root.annotations.references,
@@ -527,8 +535,6 @@ pub(crate) fn annotations(
             },
             "locate SWIFT annotation provenance",
         )?;
-        let (mut positions, mut positions_storage) =
-            ctx.scoped_vector_storage(0, "SWIFT provenance matches")?;
         let mut remaining = indexed
             .get(start..)
             .ok_or_else(|| CodecError::malformed("invalid SWIFT provenance index"))?
@@ -542,31 +548,36 @@ pub(crate) fn annotations(
                 break;
             };
             if suffix.is_empty() || suffix.starts_with(':') {
-                positions_storage.with_storage(|| {
-                    ctx.push_vec(&mut positions, position, "collect SWIFT provenance matches")
-                })?;
+                let offset = offsets
+                    .get_mut(position)
+                    .ok_or_else(|| CodecError::malformed("invalid SWIFT provenance position"))?;
+                *offset = Some(u64_from_index(entity.offset));
             }
         }
-        ctx.sort_unstable_by(
-            &mut positions,
-            |position| position,
-            Ord::cmp,
-            "order SWIFT provenance matches",
-        )?;
-        for position in ctx.admit_iter(positions, "emit SWIFT annotation provenance")? {
-            let annotation = projected
-                .get(position)
-                .ok_or_else(|| CodecError::malformed("invalid SWIFT provenance position"))?;
-            crate::annotations::note(
-                ctx,
-                annotations,
-                annotation.id.as_str(),
-                &stream,
-                u64_from_index(entity.offset),
-                "swift_gdt_analysis",
-                cadmpeg_ir::Exactness::ByteExact,
-            )?;
+    }
+    let mut previous = None;
+    for &(id, position) in ctx.admit_iter(&indexed, "emit SWIFT annotation provenance")? {
+        if let Some(previous) = previous {
+            if ctx.equal(id, previous, "deduplicate SWIFT annotation provenance")? {
+                continue;
+            }
         }
+        previous = Some(id);
+        let Some(offset) = *offsets
+            .get(position)
+            .ok_or_else(|| CodecError::malformed("invalid SWIFT provenance position"))?
+        else {
+            continue;
+        };
+        crate::annotations::note(
+            ctx,
+            annotations,
+            id,
+            &stream,
+            offset,
+            "swift_gdt_analysis",
+            cadmpeg_ir::Exactness::ByteExact,
+        )?;
     }
     Ok(projected)
 }
