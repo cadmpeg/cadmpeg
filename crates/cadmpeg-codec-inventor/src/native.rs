@@ -958,12 +958,11 @@ impl PmGraphicsStyleCollectionRecord {
                                 "check Inventor graphics style collection ordinal",
                             )?;
                         if canonical {
-                            let digits = ctx
-                                .admit_iter(
-                                    ordinal.as_bytes(),
-                                    "scan Inventor graphics style collection ordinal",
-                                )?
-                                .all(u8::is_ascii_digit);
+                            let digits = ctx.all_by(
+                                ordinal.as_bytes(),
+                                |byte| Ok(byte.is_ascii_digit()),
+                                "scan Inventor graphics style collection ordinal",
+                            )?;
                             if digits {
                                 ctx.parse_text::<u32>(
                                     ordinal,

@@ -17,12 +17,11 @@ struct Identifier16(NonBlankString);
 impl Identifier16 {
     fn try_new(ctx: &DecodeContext<'_>, value: String) -> Result<Self, CodecError> {
         if value.len() != 32
-            || !ctx
-                .admit_iter(
-                    value.as_bytes(),
-                    "validate Inventor UFRx sixteen-byte identifier",
-                )?
-                .all(u8::is_ascii_hexdigit)
+            || !ctx.all_by(
+                value.as_bytes(),
+                |byte| Ok(byte.is_ascii_hexdigit()),
+                "validate Inventor UFRx sixteen-byte identifier",
+            )?
         {
             return Err(CodecError::Malformed(
                 "identifier must contain 32 hexadecimal digits".into(),
@@ -47,13 +46,11 @@ struct NonzeroDocumentId(Identifier16);
 
 impl NonzeroDocumentId {
     fn try_new(ctx: &DecodeContext<'_>, value: Identifier16) -> Result<Option<Self>, CodecError> {
-        if ctx
-            .admit_iter(
-                value.as_str().as_bytes(),
-                "validate nonzero Inventor UFRx document identifier",
-            )?
-            .all(|byte| *byte == b'0')
-        {
+        if ctx.all_by(
+            value.as_str().as_bytes(),
+            |byte| Ok(*byte == b'0'),
+            "validate nonzero Inventor UFRx document identifier",
+        )? {
             Ok(None)
         } else {
             Ok(Some(Self(value)))
@@ -889,12 +886,11 @@ impl ExternalReferenceRecordWire {
                 "retain Inventor UFRx external conversion issue",
             )?);
         }
-        let digits = ctx
-            .admit_iter(
-                suffix.as_bytes(),
-                "validate Inventor UFRx external reference ordinal digits",
-            )?
-            .all(u8::is_ascii_digit);
+        let digits = ctx.all_by(
+            suffix.as_bytes(),
+            |byte| Ok(byte.is_ascii_digit()),
+            "validate Inventor UFRx external reference ordinal digits",
+        )?;
         if !digits {
             return Err(malformed(
                 ctx,
