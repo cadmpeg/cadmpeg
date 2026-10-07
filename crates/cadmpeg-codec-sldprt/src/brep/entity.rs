@@ -134,14 +134,20 @@ impl<'ctx> ReferenceRuns<'ctx> {
                 p += 3;
             };
             for p in ctx.admit_iter(path, INDEX)? {
-                self.storage.with_storage(|| ctx.insert_btree_map(&mut self.tails, p, tail, INDEX))?;
+                self.storage
+                    .with_storage(|| ctx.insert_btree_map(&mut self.tails, p, tail, INDEX))?;
             }
             match tail {
-                ReferenceTail::Terminated(end) => return Ok(Some((References {
-                    at: at + 1,
-                    count: (end - 1 - at) / 3,
-                    stride: 3,
-                }, end))),
+                ReferenceTail::Terminated(end) => {
+                    return Ok(Some((
+                        References {
+                            at: at + 1,
+                            count: (end - 1 - at) / 3,
+                            stride: 3,
+                        },
+                        end,
+                    )))
+                }
                 ReferenceTail::Invalid => return Ok(None),
                 ReferenceTail::Bare => {}
             }
@@ -152,7 +158,14 @@ impl<'ctx> ReferenceRuns<'ctx> {
         if count > 0 && View::u16_be_at(body, end - 2).is_none() {
             return Ok(None);
         }
-        Ok(Some((References { at, count, stride: 2 }, end)))
+        Ok(Some((
+            References {
+                at,
+                count,
+                stride: 2,
+            },
+            end,
+        )))
     }
 }
 
@@ -264,15 +277,17 @@ struct LinkedColor {
 }
 
 impl LinkedColor {
-    fn frame(&mut self, framed: FramedColor) {
+    fn frame(&mut self, framed: FramedColor, agreed: bool) {
         if framed.parent_seq > self.current.parent_seq {
             *self = Self {
                 current: framed,
-                agreed: true,
+                agreed,
             };
         } else if framed.parent_seq == self.current.parent_seq {
-            self.agreed &= framed.color == self.current.color;
-            if (framed.parent_order, framed.offset) < (self.current.parent_order, self.current.offset) {
+            self.agreed &= agreed && framed.color == self.current.color;
+            if (framed.parent_order, framed.offset)
+                < (self.current.parent_order, self.current.offset)
+            {
                 self.current = framed;
             }
         }
@@ -281,60 +296,155 @@ impl LinkedColor {
 
 type LinkedColors = HashMap<(u16, u16), LinkedColor>;
 
-/// Reduce the colors each entity frames in the record run after it to the
-/// current color of every linked face. The table is decode scratch held under
-/// the returned reservation.
+/// First color and agreement of one attribute in a record suffix.
+#[derive(Clone, Copy)]
+struct RunColor {
+    color: Color,
+    offset: usize,
+    agreed: bool,
+}
+
+/// Reduce each color suffix once, then bind its distinct attributes to parents.
+/// The returned reservation holds the face/color index.
 fn linked_colors<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     body: &[u8],
     entities: &[EntityRecord],
 ) -> Result<(LinkedColors, ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
+    use std::cmp::Reverse;
+    type Stamp = (Reverse<u32>, usize);
+    type ReferenceStarts = BTreeMap<usize, (References, Stamp)>;
     const INDEX: &str = "index Parasolid color run parents";
     let mut storage = ctx.reserve_scoped(0, "hold Parasolid linked colors")?;
     let mut run_storage = ctx.reserve_scoped(0, INDEX)?;
-    let mut pending = BTreeMap::<usize, BTreeMap<u16, (u32, usize)>>::new();
-    let mut colors = LinkedColors::new();
-    for (order, parent) in ctx.admit_iter(entities, "scan Parasolid linked color parents")?.enumerate() {
+    let mut parents = BTreeMap::<usize, BTreeMap<u16, Stamp>>::new();
+    let mut references = BTreeMap::<(usize, usize, usize), ReferenceStarts>::new();
+    let mut records = BTreeMap::<usize, (u16, Color, usize)>::new();
+    for (order, parent) in ctx
+        .admit_iter(entities, "scan Parasolid linked color parents")?
+        .enumerate()
+    {
         if color_record(body, parent.end).is_none() {
             continue;
         }
-        let faces = run_storage.with_storage(|| ctx.entry_btree_map(&mut pending, parent.end, INDEX))?
+        let stamp = (Reverse(parent.seq), order);
+        let faces = run_storage
+            .with_storage(|| ctx.entry_btree_map(&mut parents, parent.end, INDEX))?
             .or_default();
-        for index in ctx.admit_iter(0..parent.refs.count, "collect Parasolid linked face references")? {
-            let Some(face) = parent.refs.get(body, index) else { continue; };
-            let entry = run_storage.with_storage(|| ctx.entry_btree_map(faces, face, "collect Parasolid linked face references"))?;
-            let previous = entry.or_insert((parent.seq, order));
-            if parent.seq > previous.0 { *previous = (parent.seq, order); }
+        run_storage.with_storage(|| {
+            ctx.entry_btree_map(faces, parent.attr, "collect Parasolid parent face reference")
+        })?
+        .and_modify(|previous| *previous = (*previous).min(stamp))
+        .or_insert(stamp);
+        if parent.refs.count > 0 {
+            // Runs with the same end and stride are suffixes of one cell lane.
+            let end = parent.refs.at + parent.refs.count * parent.refs.stride;
+            let starts = run_storage.with_storage(|| {
+                ctx.entry_btree_map(&mut references, (parent.end, parent.refs.stride, end), INDEX)
+            })?.or_default();
+            run_storage.with_storage(|| ctx.entry_btree_map(starts, parent.refs.at, INDEX))?
+                .and_modify(|(_, previous)| *previous = (*previous).min(stamp))
+                .or_insert((parent.refs, stamp));
         }
-        let entry = run_storage.with_storage(|| ctx.entry_btree_map(faces, parent.attr, "collect Parasolid parent face reference"))?;
-        let previous = entry.or_insert((parent.seq, order));
-        if parent.seq > previous.0 { *previous = (parent.seq, order); }
+        let mut at = parent.end;
+        loop {
+            if ctx.contains_key_btree_map(&records, &at, INDEX)? {
+                break;
+            }
+            ctx.charge_work(1, "scan Parasolid linked colors")?;
+            let Some(record) = color_record(body, at) else {
+                break;
+            };
+            run_storage.with_storage(|| ctx.insert_btree_map(&mut records, at, record, INDEX))?;
+            at = record.2;
+        }
     }
-    // Starts precede their successors. Merge all parents of one record before
-    // framing it, then move their face bindings to the next record.
-    while let Some(at) = ctx.find_map(pending.iter(), |(&at, _)| Ok(Some(at)), INDEX)? {
-        let Some(faces) = ctx.remove_btree_map(&mut pending, &at, INDEX)? else { continue; };
-        ctx.charge_work(1, "scan Parasolid linked colors")?;
-        let Some((color_attr, color, end)) = color_record(body, at) else { continue; };
-        for (&face_attr, &(parent_seq, parent_order)) in ctx.admit_iter(&faces, "frame Parasolid linked colors")? {
-            if face_attr <= 1 { continue; }
-            let framed = FramedColor { color, offset: at, parent_seq, parent_order };
-            storage.with_storage(|| ctx.entry_hash_map(&mut colors, (face_attr, color_attr), "collect Parasolid linked colors"))?
-                .and_modify(|linked| linked.frame(framed))
-                .or_insert(LinkedColor { current: framed, agreed: true });
+    // A parent starts contributing at its first reference. Keep the best
+    // stamp seen so far and visit each cell of a shared lane once.
+    for (&(color_start, _, _), starts) in ctx.admit_iter(&references, INDEX)? {
+        let mut events = starts.iter();
+        let Some((&first, &(refs, first_stamp))) = ctx.next_charged(&mut events, INDEX)? else {
+            continue;
+        };
+        let mut stamp = first_stamp;
+        let mut next = ctx.next_charged(&mut events, INDEX)?;
+        let Some(faces) = ctx.get_mut_btree_map(&mut parents, &color_start, INDEX)? else {
+            continue;
+        };
+        for index in ctx.admit_iter(0..refs.count, "collect Parasolid linked face references")? {
+            let at = first + index * refs.stride;
+            while let Some((&start, &(_, parent_stamp))) = next {
+                if start > at {
+                    break;
+                }
+                stamp = stamp.min(parent_stamp);
+                next = ctx.next_charged(&mut events, INDEX)?;
+            }
+            let Some(face) = refs.get(body, index) else { continue; };
+            run_storage.with_storage(|| {
+                ctx.entry_btree_map(faces, face, "collect Parasolid linked face references")
+            })?
+            .and_modify(|previous| *previous = (*previous).min(stamp))
+            .or_insert(stamp);
         }
-        match run_storage.with_storage(|| ctx.entry_btree_map(&mut pending, end, INDEX))? {
-            std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(faces); }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let target = entry.get_mut();
-                for (face, parent) in ctx.admit_iter(faces, "merge Parasolid color run parents")? {
-                    let previous = run_storage.with_storage(|| ctx.entry_btree_map(target, face, INDEX))?.or_insert(parent);
-                    if parent.0 > previous.0 || (parent.0 == previous.0 && parent.1 < previous.1) {
-                        *previous = parent;
-                    }
+    }
+    let mut colors = LinkedColors::new();
+    let mut summaries = BTreeMap::<usize, BTreeMap<u16, RunColor>>::new();
+    // The escape changes record length by one byte. The tag excludes two
+    // valid starts one byte apart, so each suffix has at most one predecessor.
+    // Move its reduction to that predecessor instead of copying or replaying it.
+    for (&at, &(attr, color, end)) in ctx
+        .admit_iter(&records, "reduce Parasolid color runs")?
+        .rev()
+    {
+        let mut summary = ctx
+            .remove_btree_map(&mut summaries, &end, INDEX)?
+            .unwrap_or_default();
+        run_storage
+            .with_storage(|| ctx.entry_btree_map(&mut summary, attr, INDEX))?
+            .and_modify(|run| {
+                run.agreed &= run.color == color;
+                run.color = color;
+                run.offset = at;
+            })
+            .or_insert(RunColor {
+                color,
+                offset: at,
+                agreed: true,
+            });
+        if let Some(faces) = ctx.get_btree_map(&parents, &at, INDEX)? {
+            for (&face_attr, &(Reverse(parent_seq), parent_order)) in
+                ctx.admit_iter(faces, "frame Parasolid linked colors")?
+            {
+                if face_attr <= 1 {
+                    continue;
+                }
+                for (&color_attr, run) in
+                    ctx.admit_iter(&summary, "frame Parasolid reduced colors")?
+                {
+                    let framed = FramedColor {
+                        color: run.color,
+                        offset: run.offset,
+                        parent_seq,
+                        parent_order,
+                    };
+                    storage
+                        .with_storage(|| {
+                            ctx.entry_hash_map(
+                                &mut colors,
+                                (face_attr, color_attr),
+                                "collect Parasolid linked colors",
+                            )
+                        })?
+                        .and_modify(|linked| linked.frame(framed, run.agreed))
+                        .or_insert(LinkedColor {
+                            current: framed,
+                            agreed: run.agreed,
+                        });
                 }
             }
         }
+        run_storage.with_storage(|| ctx.insert_btree_map(&mut summaries, at, summary, INDEX))?;
     }
     Ok((colors, storage))
 }
@@ -436,17 +546,22 @@ pub(crate) fn scan_metadata(
 #[cfg(test)]
 mod tests {
     use super::{
-        attribute_slot_count, linked_colors, scan_entities, scan_metadata, EntityRecord, ReferenceRuns,
-        References,
+        attribute_slot_count, linked_colors, scan_entities, scan_metadata, EntityRecord,
+        ReferenceRuns, References,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     const FACE_COLOR_FAMILY: &str = "SDL/TYSA_COLOUR";
 
-    fn refs(ctx: &DecodeContext<'_>, body: &[u8], at: usize, count: usize, prefixed: bool) -> Result<Option<(References, usize)>, cadmpeg_core::CodecError> {
+    fn refs(
+        ctx: &DecodeContext<'_>,
+        body: &[u8],
+        at: usize,
+        count: usize,
+        prefixed: bool,
+    ) -> Result<Option<(References, usize)>, cadmpeg_core::CodecError> {
         ReferenceRuns::new(ctx)?.refs(ctx, body, at, count, prefixed)
     }
-
 
     fn values(body: &[u8], refs: References) -> Vec<u16> {
         (0..refs.count)
@@ -532,7 +647,10 @@ mod tests {
         let (head, end) = runs.refs(&ctx, &bytes, 0, 0, true).unwrap().unwrap();
         assert_eq!((values(&bytes, head), end), (vec![2, 3, 4], 10));
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, "scan prefixed Parasolid entity references", None);
+            ResourceDimension::WorkUnits,
+            "scan prefixed Parasolid entity references",
+            None,
+        );
         let (tail, end) = runs.refs(&ctx, &bytes, 3, 0, true).unwrap().unwrap();
         assert_eq!((values(&bytes, tail), end), (vec![3, 4], 10));
     }
@@ -541,17 +659,28 @@ mod tests {
     fn shared_color_run_keeps_highest_parent_sequence() {
         let bytes = color(800, [0.25, 0.5, 0.75], false);
         let parents = [1, 4, 2].map(|seq| EntityRecord {
-            attr: 700, seq, disc: 16,
-            refs: References { at: 0, count: 0, stride: 2 }, end: 0,
+            attr: 700,
+            seq,
+            disc: 16,
+            refs: References {
+                at: 0,
+                count: 0,
+                stride: 2,
+            },
+            end: 0,
         });
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let (colors, _storage) = linked_colors(&ctx, &bytes, &parents).unwrap();
         let linked = colors.get(&(700, 800)).unwrap();
         assert!(linked.agreed);
         assert_eq!(linked.current.parent_seq, 4);
         assert_eq!(linked.current.offset, 0);
-        assert_eq!(linked.current.color, super::color_record(&bytes, 0).unwrap().1);
+        assert_eq!(
+            linked.current.color,
+            super::color_record(&bytes, 0).unwrap().1
+        );
     }
 
     #[test]
@@ -559,10 +688,20 @@ mod tests {
         let mut bytes = color(800, [0.25, 0.5, 0.75], false);
         let suffix = bytes.len();
         bytes.extend(color(800, [0.25, 0.5, 0.75], false));
-        let parents = [suffix, 0].map(|end| EntityRecord { attr: 700, seq: 4, disc: 16,
-            refs: References { at: 0, count: 0, stride: 2 }, end });
+        let parents = [suffix, 0].map(|end| EntityRecord {
+            attr: 700,
+            seq: 4,
+            disc: 16,
+            refs: References {
+                at: 0,
+                count: 0,
+                stride: 2,
+            },
+            end,
+        });
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let (colors, _storage) = linked_colors(&ctx, &bytes, &parents).unwrap();
         let linked = colors.get(&(700, 800)).unwrap();
         assert!(linked.agreed);
@@ -571,6 +710,71 @@ mod tests {
         let (colors, _storage) = linked_colors(&ctx, &bytes, &parents).unwrap();
         assert!(!colors.get(&(700, 800)).unwrap().agreed);
         assert_eq!(colors.get(&(700, 800)).unwrap().current.offset, suffix);
+    }
+
+    #[test]
+    fn overlapping_parent_reference_tails_keep_the_highest_sequence() {
+        let mut bytes = Vec::new();
+        for _ in 0..128 { bytes.extend_from_slice(&[0, 100, 1]); }
+        let end = bytes.len();
+        bytes.extend(color(800, [0.25, 0.5, 0.75], false));
+        let parents: Vec<_> = (0_u16..64).map(|index| EntityRecord {
+            attr: 200 + index, seq: u32::from(index), disc: 16,
+            refs: References { at: usize::from(index) * 3, count: 128 - usize::from(index), stride: 3 }, end,
+        }).collect();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (colors, _storage) = linked_colors(&ctx, &bytes, &parents).unwrap();
+        assert_eq!(colors.len(), 65);
+        let shared = colors.get(&(100, 800)).unwrap();
+        assert!(shared.agreed);
+        assert_eq!(shared.current.parent_seq, 63);
+        assert_eq!(shared.current.parent_order, 63);
+        for parent in &parents {
+            assert_eq!(colors.get(&(parent.attr, 800)).unwrap().current.parent_seq, parent.seq);
+        }
+        crate::test_support::work_refusal_at("collect Parasolid linked face references", |ctx| {
+            linked_colors(ctx, &bytes, &parents).map(|(colors, _)| colors.len())
+        });
+    }
+
+    #[test]
+    fn repeated_color_attribute_is_reduced_before_parent_binding() {
+        let mut bytes = Vec::new();
+        for _ in 0..128 {
+            bytes.extend(color(800, [0.25, 0.5, 0.75], false));
+        }
+        let parents: Vec<_> = (200..264)
+            .map(|attr| EntityRecord {
+                attr,
+                seq: 4,
+                disc: 16,
+                refs: References {
+                    at: 0,
+                    count: 0,
+                    stride: 2,
+                },
+                end: 0,
+            })
+            .collect();
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (colors, _storage) = linked_colors(&ctx, &bytes, &parents).unwrap();
+        assert_eq!(colors.len(), 64);
+        for parent in &parents {
+            let linked = colors.get(&(parent.attr, 800)).unwrap();
+            assert!(linked.agreed);
+            assert_eq!(linked.current.offset, 0);
+            assert_eq!(linked.current.parent_seq, 4);
+            assert_eq!(
+                linked.current.color,
+                super::color_record(&bytes, 0).unwrap().1
+            );
+        }
+        crate::test_support::work_refusal_at("reduce Parasolid color runs", |ctx| {
+            linked_colors(ctx, &bytes, &parents).map(|(colors, _)| colors.len())
+        });
     }
 
     #[test]

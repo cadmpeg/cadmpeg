@@ -67,7 +67,11 @@ impl CarrierIndex {
         Ok(())
     }
 
-    pub(super) fn curve(&self, ctx: &DecodeContext<'_>, attr: u16) -> Result<Option<&IndexedCurve>, cadmpeg_core::CodecError> {
+    pub(super) fn curve(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&IndexedCurve>, cadmpeg_core::CodecError> {
         ctx.get_btree_map(&self.curves, &attr, "lookup SLDPRT curve carrier")
     }
 
@@ -81,28 +85,52 @@ impl CarrierIndex {
         )
     }
 
-    pub(super) fn surface(&self, ctx: &DecodeContext<'_>, attr: u16) -> Result<Option<&SurfaceCarrier>, cadmpeg_core::CodecError> {
+    pub(super) fn surface(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&SurfaceCarrier>, cadmpeg_core::CodecError> {
         ctx.get_btree_map(&self.surfaces, &attr, "lookup SLDPRT surface carrier")
     }
 
     /// Swept/spun surface construction carried by one attribute.
-    pub(super) fn sweep(&self, ctx: &DecodeContext<'_>, attr: u16) -> Result<Option<&sweep::SweepCarrier>, cadmpeg_core::CodecError> {
+    pub(super) fn sweep(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&sweep::SweepCarrier>, cadmpeg_core::CodecError> {
         ctx.get_btree_map(&self.sweeps, &attr, "lookup SLDPRT sweep carrier")
     }
 
     /// Constant-radius rolling-ball construction carried by `attr`.
-    pub(super) fn blend(&self, ctx: &DecodeContext<'_>, attr: u16) -> Result<Option<&blend::BlendCarrier>, cadmpeg_core::CodecError> {
+    pub(super) fn blend(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&blend::BlendCarrier>, cadmpeg_core::CodecError> {
         ctx.get_btree_map(&self.blends, &attr, "lookup SLDPRT blend carrier")
     }
 
     /// Exact offset-surface construction carried by `attr`.
-    pub(super) fn offset(&self, ctx: &DecodeContext<'_>, attr: u16) -> Result<Option<&offset::OffsetCarrier>, cadmpeg_core::CodecError> {
+    pub(super) fn offset(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&offset::OffsetCarrier>, cadmpeg_core::CodecError> {
         ctx.get_btree_map(&self.offsets, &attr, "lookup SLDPRT offset carrier")
     }
 
     /// Zero-offset surface pair carried by `attr`.
-    pub(super) fn blend_support_pair(&self, ctx: &DecodeContext<'_>, attr: u16) -> Result<Option<&blend::SupportPairCarrier>, cadmpeg_core::CodecError> {
-        ctx.get_btree_map(&self.blend_support_pairs, &attr, "lookup SLDPRT blend_support_pair carrier")
+    pub(super) fn blend_support_pair(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attr: u16,
+    ) -> Result<Option<&blend::SupportPairCarrier>, cadmpeg_core::CodecError> {
+        ctx.get_btree_map(
+            &self.blend_support_pairs,
+            &attr,
+            "lookup SLDPRT blend_support_pair carrier",
+        )
     }
 
     fn insert_intersection(
@@ -249,7 +277,9 @@ mod tests {
     fn carrier_lookup_admits_key_work() {
         let ctx = cadmpeg_test_support::service_decode_context();
         let index = super::scan_carriers(&ctx, &blend_body()).expect("carrier scan");
-        crate::test_support::work_refusal_at("lookup SLDPRT blend carrier", |ctx| index.blend(ctx, 9));
+        crate::test_support::work_refusal_at("lookup SLDPRT blend carrier", |ctx| {
+            index.blend(ctx, 9)
+        });
         assert!(index.blend(&ctx, 9).unwrap().is_some());
     }
 
@@ -259,7 +289,8 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(index.curve(&ctx, 7).unwrap().is_none());
         assert!(index.surface(&ctx, 7).unwrap().is_none());
         assert!(index.sweep(&ctx, 7).unwrap().is_none());
@@ -320,16 +351,23 @@ mod tests {
         let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match dimension {
-                cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                    policy.limits.max_collection_items = cap
+                }
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    policy.limits.max_work_units = cap
+                }
                 _ => panic!("carrier test selects a collection or work limit"),
             }
             let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("test carrier bytes fit the root limit");
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("test carrier bytes fit the root limit");
             super::scan_carriers(&ctx, &bytes)
         });
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("carrier resource refusal"); };
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("carrier resource refusal");
+        };
         assert_eq!(limit.dimension, dimension);
         assert_eq!(limit.operation, operation);
         limit
@@ -375,7 +413,10 @@ mod tests {
         base.merge_missing(&ctx, delta)
             .expect("test merge fits service policy");
 
-        let pair = base.blend_support_pair(&ctx, 9).expect("support lookup").expect("support pair");
+        let pair = base
+            .blend_support_pair(&ctx, 9)
+            .expect("support lookup")
+            .expect("support pair");
         assert_eq!(pair.supports, [11, 12]);
         assert_eq!(pair.intersection, 13);
     }

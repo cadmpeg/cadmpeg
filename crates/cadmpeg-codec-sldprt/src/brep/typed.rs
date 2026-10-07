@@ -648,16 +648,12 @@ impl Facts {
             )?;
         }
 
-        let (reachable, _reachable_storage) = reachable_shells(ctx, &regions, &candidates)?;
+        let (reachable, _reachable_storage) = reachable_shells(ctx, &candidates)?;
         let mut shells = BTreeMap::new();
         for &(region, shell) in
             ctx.admit_iter(&candidates, "index typed Parasolid ownership shells")?
         {
-            if !ctx.contains_btree_set(
-                &reachable,
-                &(region, shell.attr),
-                "index typed Parasolid ownership shells",
-            )? {
+            if !reachable.contains(ctx, &regions, region, shell.attr)? {
                 continue;
             }
             if storage
@@ -732,65 +728,164 @@ impl Facts {
     }
 }
 
-/// The `(region, shell)` pairs where the shell lies on the region's shell
-/// chain. Shell links are resolved once per shell. Each region emits its own
-/// membership pairs until a link is absent, ambiguous, or already visited.
+/// Shell membership as ancestor intervals in the reversed link forest.
+/// Every cycle is one component; all its shells are mutually reachable.
+struct ShellReachability {
+    intervals: BTreeMap<u16, (usize, usize)>,
+}
+
+impl ShellReachability {
+    fn contains(
+        &self,
+        ctx: &DecodeContext<'_>,
+        regions: &Regions<'_>,
+        region: u16,
+        shell: u16,
+    ) -> Result<bool, CodecError> {
+        const OPERATION: &str = "query typed Parasolid shell reachability";
+        let Some(node) = ctx.get_btree_map(&regions.by_attr, &region, OPERATION)? else {
+            return Ok(false);
+        };
+        let Some(head) = u16_from_ref_or_none(node.refs[4]) else {
+            return Ok(false);
+        };
+        let Some(&(head, _)) = ctx.get_btree_map(&self.intervals, &head, OPERATION)? else {
+            return Ok(false);
+        };
+        let Some(&(start, end)) = ctx.get_btree_map(&self.intervals, &shell, OPERATION)? else {
+            return Ok(false);
+        };
+        Ok(start <= head && head < end)
+    }
+}
+
+/// Resolve shell links once, then answer region membership without replaying
+/// shared tails or materializing every region/shell pair.
 fn reachable_shells<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    regions: &Regions<'_>,
     candidates: &[(u16, &ShellNode)],
-) -> Result<(BTreeSet<(u16, u16)>, ScopedReservation<'ctx>), CodecError> {
+) -> Result<(ShellReachability, ScopedReservation<'ctx>), CodecError> {
+    const RESOLVE: &str = "resolve typed Parasolid shell link";
+    const INDEX: &str = "index typed Parasolid shell forest";
     let (by_attr, _index_storage) = ctx.unique_index(
         candidates.iter().map(|&(_, shell)| (shell.attr, shell)),
         "index typed Parasolid shell candidates",
     )?;
-    let mut storage = ctx.reserve_scoped(0, "hold typed Parasolid shell chains")?;
-    let mut walked = BTreeSet::new();
-    let mut reachable = BTreeSet::new();
-    let mut reachable_storage = ctx.reserve_scoped(0, "hold typed Parasolid reachable shells")?;
-    let mut links = BTreeMap::<u16, Option<Option<u16>>>::new();
-    for &(region, _) in ctx.admit_iter(candidates, "walk typed Parasolid shell chains")? {
-        if !storage.with_storage(|| {
-            ctx.insert_btree_set(&mut walked, region, "walk typed Parasolid shell chains")
-        })? {
-            continue;
-        }
-        let Some(region_node) = ctx.get_btree_map(
-            &regions.by_attr,
-            &region,
-            "walk typed Parasolid shell chains",
-        )?
-        else {
-            continue;
-        };
-        let mut next = u16_from_ref_or_none(region_node.refs[4]);
-        while let Some(attr) = next {
-            ctx.charge_work(1, "walk typed Parasolid shell chain")?;
-            const RESOLVE: &str = "resolve typed Parasolid shell link";
-            let link = match ctx.get_btree_map(&links, &attr, RESOLVE)? {
-                Some(&link) => link,
-                None => {
-                    let link = ctx.get_hash_map(&by_attr, &attr, RESOLVE)?
-                        .and_then(Option::as_ref)
-                        .map(|shell| u16_from_ref_or_none(shell.refs[2]));
-                    storage.with_storage(|| ctx.insert_btree_map(&mut links, attr, link, RESOLVE))?;
-                    link
-                }
-            };
-            let Some(link) = link else { break; };
-            if !reachable_storage.with_storage(|| {
-                ctx.insert_btree_set(
-                    &mut reachable,
-                    (region, attr),
-                    "track typed Parasolid shell chain",
+    let mut scratch = ctx.reserve_scoped(0, "hold typed Parasolid shell forest")?;
+    let mut links = BTreeMap::new();
+    for &(_, shell) in ctx.admit_iter(candidates, RESOLVE)? {
+        if let Some(Some(shell)) = ctx.get_hash_map(&by_attr, &shell.attr, RESOLVE)? {
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut links,
+                    shell.attr,
+                    u16_from_ref_or_none(shell.refs[2]),
+                    RESOLVE,
                 )
-            })? {
-                break;
-            }
-            next = link;
+            })?;
         }
     }
-    Ok((reachable, reachable_storage))
+    let mut components = BTreeMap::<u16, u16>::new();
+    for (&start, _) in ctx.admit_iter(&links, INDEX)? {
+        if ctx.contains_key_btree_map(&components, &start, INDEX)? {
+            continue;
+        }
+        let mut path_storage = ctx.reserve_scoped(0, "hold typed Parasolid shell path")?;
+        let mut path = Vec::new();
+        let mut positions = BTreeMap::new();
+        let mut at = Some(start);
+        while let Some(attr) = at {
+            ctx.charge_work(1, "walk typed Parasolid shell chain")?;
+            if ctx.contains_key_btree_map(&components, &attr, INDEX)? {
+                break;
+            }
+            if let Some(&first) = ctx.get_btree_map(&positions, &attr, INDEX)? {
+                for &member in ctx.admit_iter(&path[first..], INDEX)? {
+                    scratch.with_storage(|| {
+                        ctx.insert_btree_map(&mut components, member, attr, INDEX)
+                    })?;
+                }
+                break;
+            }
+            let Some(&next) = ctx.get_btree_map(&links, &attr, INDEX)? else {
+                break;
+            };
+            path_storage
+                .with_storage(|| ctx.insert_btree_map(&mut positions, attr, path.len(), INDEX))?;
+            ctx.push_scoped_vec(&mut path_storage, &mut path, attr, INDEX)?;
+            at = next;
+        }
+        for attr in ctx.admit_iter(path, INDEX)? {
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                scratch.with_storage(|| ctx.entry_btree_map(&mut components, attr, INDEX))?
+            {
+                entry.insert(attr);
+            }
+        }
+    }
+    let mut roots = BTreeSet::new();
+    let mut children = BTreeMap::new();
+    for (_, &component) in ctx.admit_iter(&components, INDEX)? {
+        scratch.with_storage(|| ctx.insert_btree_set(&mut roots, component, INDEX))?;
+    }
+    for (&attr, &next) in ctx.admit_iter(&links, INDEX)? {
+        let Some(next) = next else {
+            continue;
+        };
+        let Some(&parent) = ctx.get_btree_map(&components, &next, INDEX)? else {
+            continue;
+        };
+        let Some(&child) = ctx.get_btree_map(&components, &attr, INDEX)? else {
+            continue;
+        };
+        if parent != child {
+            scratch.with_storage(|| {
+                ctx.push_btree_group(&mut children, parent, child, INDEX, INDEX)
+            })?;
+            ctx.remove_btree_set(&mut roots, &child, INDEX)?;
+        }
+    }
+    let mut ranges = BTreeMap::<u16, (usize, usize)>::new();
+    let mut counter = 0_usize;
+    let mut pending = Vec::new();
+    for &root in ctx.admit_iter(&roots, INDEX)? {
+        ctx.push_scoped_vec(&mut scratch, &mut pending, (root, false), INDEX)?;
+        while let Some((component, closing)) = pending.pop() {
+            ctx.charge_work(1, "walk typed Parasolid shell forest")?;
+            if closing {
+                if let Some(range) = ctx.get_mut_btree_map(&mut ranges, &component, INDEX)? {
+                    range.1 = counter;
+                }
+                continue;
+            }
+            let start = counter;
+            // There is at most one component per u16 shell attribute.
+            counter += 1;
+            scratch
+                .with_storage(|| ctx.insert_btree_map(&mut ranges, component, (start, 0), INDEX))?;
+            ctx.push_scoped_vec(&mut scratch, &mut pending, (component, true), INDEX)?;
+            if let Some(children) = ctx.get_btree_map(&children, &component, INDEX)? {
+                for &child in ctx.admit_iter(children, INDEX)?.rev() {
+                    ctx.push_scoped_vec(&mut scratch, &mut pending, (child, false), INDEX)?;
+                }
+            }
+        }
+    }
+    let mut storage = ctx.reserve_scoped(0, "hold typed Parasolid shell reachability")?;
+    let mut intervals = BTreeMap::new();
+    for (&attr, component) in ctx.admit_iter(&components, INDEX)? {
+        if let Some(&range) = ctx.get_btree_map(&ranges, component, INDEX)? {
+            storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut intervals,
+                    attr,
+                    range,
+                    "index typed Parasolid reachable shells",
+                )
+            })?;
+        }
+    }
+    Ok((ShellReachability { intervals }, storage))
 }
 
 /// The region chain shared by every body head candidate that names one, or
@@ -1388,16 +1483,98 @@ mod tests {
     #[test]
     fn shared_shell_chain_emits_each_region_membership_and_stops_cycles() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let shells = [8, 9].map(|attr| ShellNode { attr, node_id: u32::from(attr),
-            refs: [0, 3, if attr == 8 { 9 } else { 8 }, 0, 0, 0, 20, 0], offset: 0, end: 0 });
-        let regions = [20, 21].map(|attr| RegionNode { attr, node_id: u32::from(attr),
-            refs: [0, 3, 0, 0, 8], offset: 0, end: 0 });
-        let regions = Regions { by_attr: regions.iter().map(|r| (r.attr, r)).collect(), by_previous: Default::default() };
+        let shells = [8, 9].map(|attr| ShellNode {
+            attr,
+            node_id: u32::from(attr),
+            refs: [0, 3, if attr == 8 { 9 } else { 8 }, 0, 0, 0, 20, 0],
+            offset: 0,
+            end: 0,
+        });
+        let regions = [20, 21].map(|attr| RegionNode {
+            attr,
+            node_id: u32::from(attr),
+            refs: [0, 3, 0, 0, 8],
+            offset: 0,
+            end: 0,
+        });
+        let regions = Regions {
+            by_attr: regions.iter().map(|r| (r.attr, r)).collect(),
+            by_previous: Default::default(),
+        };
         let candidates = [(20, &shells[0]), (21, &shells[1])];
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        assert_eq!(super::reachable_shells(&ctx, &regions, &candidates).unwrap().0,
-            std::collections::BTreeSet::from([(20, 8), (20, 9), (21, 8), (21, 9)]));
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (reachable, _storage) = super::reachable_shells(&ctx, &candidates).unwrap();
+        let mut memberships = std::collections::BTreeSet::new();
+        for region in [20, 21] {
+            for shell in [8, 9] {
+                if reachable.contains(&ctx, &regions, region, shell).unwrap() {
+                    memberships.insert((region, shell));
+                }
+            }
+        }
+        assert_eq!(
+            memberships,
+            std::collections::BTreeSet::from([(20, 8), (20, 9), (21, 8), (21, 9)])
+        );
+        assert!(!reachable.contains(&ctx, &regions, 22, 8).unwrap());
+        assert!(!reachable.contains(&ctx, &regions, 20, 10).unwrap());
+    }
+
+    #[test]
+    fn shell_intervals_match_direct_walks_for_all_four_node_link_graphs() {
+        with_test_context(|ctx| {
+            for encoding in 0_u32..625 {
+                let mut digits = encoding;
+                let shells = [8_u16, 9, 10, 11].map(|attr| {
+                    let next = digits % 5;
+                    digits /= 5;
+                    ShellNode {
+                        attr,
+                        node_id: u32::from(attr),
+                        refs: [0, 3, if next == 0 { 0 } else { next + 7 }, 0, 0, 0, 20, 0],
+                        offset: 0,
+                        end: 0,
+                    }
+                });
+                let nodes = [20_u16, 21, 22, 23].map(|attr| RegionNode {
+                    attr,
+                    node_id: u32::from(attr),
+                    refs: [0, 3, 0, 0, u32::from(attr - 12)],
+                    offset: 0,
+                    end: 0,
+                });
+                let regions = Regions {
+                    by_attr: nodes.iter().map(|node| (node.attr, node)).collect(),
+                    by_previous: Default::default(),
+                };
+                let candidates: Vec<_> = shells.iter().map(|shell| (20, shell)).collect();
+                let (reachable, _storage) =
+                    super::reachable_shells(ctx, &candidates).unwrap();
+                for region in &nodes {
+                    let mut expected = BTreeSet::new();
+                    let mut current = region.refs[4];
+                    while let Some(shell) =
+                        shells.iter().find(|shell| u32::from(shell.attr) == current)
+                    {
+                        if !expected.insert(shell.attr) {
+                            break;
+                        }
+                        current = shell.refs[2];
+                    }
+                    for shell in &shells {
+                        assert_eq!(
+                            reachable.contains(ctx, &regions, region.attr, shell.attr).unwrap(),
+                            expected.contains(&shell.attr),
+                            "graph {encoding}, region {}, shell {}",
+                            region.attr,
+                            shell.attr
+                        );
+                    }
+                }
+            }
+        });
     }
 
     #[test]

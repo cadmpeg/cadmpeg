@@ -1520,6 +1520,25 @@ mod tests {
     }
 
     #[test]
+    fn patch_point_selects_the_last_matching_record() {
+        let mut bytes = crate::test_support::parasolid::world_point(60, [1.0, 2.0, 3.0]);
+        let last = bytes.len();
+        bytes.extend(crate::test_support::parasolid::world_point(
+            60,
+            [7.0, 8.0, 9.0],
+        ));
+        assert!(patch_point(&mut bytes, 60, [4.0, 5.0, 6.0]));
+        assert_eq!(
+            parse_point(&bytes, 0, false).unwrap().xyz_m,
+            [1.0, 2.0, 3.0]
+        );
+        assert_eq!(
+            parse_point(&bytes, last, false).unwrap().xyz_m,
+            [4.0, 5.0, 6.0]
+        );
+    }
+
+    #[test]
     fn patch_point_uses_parsed_adjacent_coordinate_offset() {
         let mut bytes = vec![0, 0x1d];
         bytes.extend(60_u16.to_be_bytes());
