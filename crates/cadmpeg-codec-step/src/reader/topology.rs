@@ -27,7 +27,7 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityKeyTail, LoopId, PcurveId,
     PointId, RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::index::{DecodeModelIndex, ModelIndex};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
@@ -3163,6 +3163,7 @@ fn build_one(
     let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
         || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
         || root.partial(ctx, "FACETED_BREP")?.is_some();
+    let mut selection_index = None;
     let mut typed = BTreeSet::new();
     ctx.insert_btree_set(&mut typed, id, "step_brep_typed")?;
     let mut vertices = Vec::new();
@@ -3787,8 +3788,11 @@ fn build_one(
                         if associated.is_empty() {
                             Vec::new()
                         } else {
+                            if selection_index.is_none() && associated.len() == 1 {
+                                selection_index = Some(PcurveSelectionIndex::build(ir, ctx)?);
+                            }
                             match select_associated_pcurve(
-                                ir,
+                                selection_index.as_ref(),
                                 exchange,
                                 surface,
                                 edge,
@@ -4975,8 +4979,59 @@ struct PcurveAssociationSources<'a> {
     candidates: &'a [PcurveId],
 }
 
+/// Lookups shared by the face/edge pcurve selection pass for one body.
+struct PcurveSelectionIndex<'ctx, 'ir> {
+    model: DecodeModelIndex<'ctx, 'ir>,
+    owned_procedurals: BTreeMap<&'ir str, &'ir cadmpeg_ir::geometry::ProceduralSurface>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx, 'ir> PcurveSelectionIndex<'ctx, 'ir> {
+    fn build(ir: &'ir CadIr, ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        use std::collections::btree_map::Entry;
+        let mut owners_storage = ctx.reserve_scoped(0, "step_pcurve_surface_owners")?;
+        let mut owners = BTreeMap::<&str, Option<&SurfaceId>>::new();
+        for surface in ctx.admit_iter(&ir.model.surfaces, "STEP pcurve surface owners traversal")? {
+            let Some(construction) = surface.geometry.procedural_construction() else {
+                continue;
+            };
+            owners_storage.with_storage(|| -> Result<(), CodecError> {
+                match ctx.entry_btree_map(&mut owners, construction.as_str(), "step_pcurve_surface_owners")? {
+                    Entry::Vacant(entry) => { entry.insert(Some(&surface.id)); }
+                    Entry::Occupied(mut entry) => { entry.insert(None); }
+                }
+                Ok(())
+            })?;
+        }
+        let mut storage = ctx.reserve_scoped(0, "step_pcurve_owned_procedurals")?;
+        let mut owned_procedurals = BTreeMap::new();
+        for procedural in ctx.admit_iter(&ir.model.procedural_surfaces, "STEP pcurve procedural traversal")? {
+            let Some(Some(owner)) = ctx.get_btree_map(&owners, procedural.id.as_str(), "STEP pcurve construction owner lookup")? else {
+                continue;
+            };
+            storage.with_storage(|| -> Result<(), CodecError> {
+                if let Entry::Vacant(entry) = ctx.entry_btree_map(&mut owned_procedurals, owner.as_str(), "step_pcurve_owned_procedurals")? {
+                    entry.insert(procedural);
+                }
+                Ok(())
+            })?;
+        }
+        Ok(Self {
+            model: ModelIndex::new_model_only(ir, ctx)?,
+            owned_procedurals,
+            _storage: storage,
+        })
+    }
+}
+
+impl<'ir> std::ops::Deref for PcurveSelectionIndex<'_, 'ir> {
+    type Target = ModelIndex<'ir>;
+
+    fn deref(&self) -> &Self::Target { &self.model }
+}
+
 fn select_associated_pcurve(
-    ir: &CadIr,
+    index: Option<&PcurveSelectionIndex<'_, '_>>,
     exchange: &Exchange,
     surface_step: u64,
     edge: &EdgeDef,
@@ -4994,40 +5049,17 @@ fn select_associated_pcurve(
         });
     };
     let candidate = candidate.try_clone_for_decode(ctx, "step_selected_pcurve_id")?;
-    let surface_identity = ids::data(kind!("surface"), surface_step);
-    let surface = ctx
-        .find_map(
-            &(ir.model.surfaces)[..],
-            |surface| -> Result<Option<_>, CodecError> {
-                Ok((ctx.equal(
-                    surface.id.as_str(),
-                    surface_identity.as_str(),
-                    "STEP select associated pcurve equality",
-                )?)
-                .then_some(surface))
-            },
-            "STEP select associated pcurve traversal",
-        )?
+    let index = index.ok_or(PcurveSelectionFailure::Carrier)?;
+    let surface_id = SurfaceId::from(ids::data(kind!("surface"), surface_step));
+    let surface = index
+        .surfaces(surface_id.as_str(), ctx)?
         .map(|surface| &surface.geometry)
         .ok_or(PcurveSelectionFailure::Carrier)?;
-    let surface_id = SurfaceId::from(surface_identity);
-    let index = ModelIndex::build(ir, ctx)?;
-    let pcurve = ctx
-        .find_map(
-            &(ir.model.pcurves)[..],
-            |pcurve| -> Result<Option<_>, CodecError> {
-                Ok((ctx.equal(
-                    &pcurve.id,
-                    &candidate,
-                    "STEP select associated pcurve equality",
-                )?)
-                .then_some(pcurve))
-            },
-            "STEP select associated pcurve traversal",
-        )?
+    let pcurve = index
+        .pcurves(candidate.as_str(), ctx)?
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
-    let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear.get());
+    let bound = COINCIDENCE_TOLERANCE.max(index.ir().tolerances.linear.get());
     let start = vdefs
         .get(&edge.vertices().0)
         .and_then(|vertex| point_positions.get(vertex.point))
@@ -5088,7 +5120,6 @@ fn select_associated_pcurve(
     } else {
         None
     };
-    drop(index);
     Ok(SelectedPcurve {
         id: candidate,
         parameter_range,
@@ -5106,7 +5137,7 @@ struct PcurveWitness {
 }
 
 fn pcurve_locus_witness(
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     exchange: &Exchange,
     edge: &EdgeDef,
     surface_id: &SurfaceId,
@@ -5239,7 +5270,7 @@ fn pcurve_locus_witness(
 
 fn curve_parameter_near_point(
     ctx: &DecodeContext<'_>,
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     curve_id: &CurveId,
     point: Point3,
     seeds: &[f64],
@@ -5266,7 +5297,7 @@ fn curve_parameter_near_point(
 }
 
 fn pcurve_endpoint_fit(
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     surface: &SurfaceGeometry,
@@ -5353,7 +5384,7 @@ fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]
 }
 
 fn surface_selection_parameters(
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     surface_id: &SurfaceId,
     u: f64,
     v: f64,
@@ -5387,7 +5418,7 @@ fn clamp_selection_parameter(value: f64, domain: Option<[f64; 2]>) -> f64 {
 
 fn surface_selection_point(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     surface_id: &SurfaceId,
     u: f64,
     v: f64,
@@ -5410,7 +5441,7 @@ fn surface_selection_point(
 #[cfg(test)]
 fn pcurve_declared_endpoint_fit(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     range: [f64; 2],
@@ -5437,7 +5468,7 @@ fn pcurve_declared_endpoint_fit(
 
 fn pcurve_declared_endpoint_fit_directed(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     range: [f64; 2],
@@ -5480,7 +5511,7 @@ fn pcurve_selection_uv(
 
 fn pcurve_surface_closest(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     target: Point3,
@@ -5512,7 +5543,7 @@ fn pcurve_surface_closest(
 /// proof of a global minimum.
 fn mapped_pcurve_closest(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     target: Point3,
@@ -5689,7 +5720,7 @@ fn pcurve_parameter_break_fractions(
 }
 
 fn pcurve_selection_seeds(
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     surface: &SurfaceGeometry,
@@ -5894,48 +5925,19 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
 }
 
 fn surface_selection_parameter_domains(
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     surface_id: &SurfaceId,
     surface: &SurfaceGeometry,
     ctx: &DecodeContext<'_>,
 ) -> Result<[Option<[f64; 2]>; 2], CodecError> {
     let _depth = ctx.enter_nested_limit("STEP surface selection domain depth")?;
     let definition = ctx
-        .find_map(
-            &(index.ir().model.procedural_surfaces)[..],
-            |procedural| -> Result<Option<_>, CodecError> {
-                let mut owners = ctx
-                    .admit_iter(
-                        index.ir().model.surfaces.as_slice(),
-                        "STEP procedural surface owner traversal",
-                    )?
-                    .map(|surface| -> Result<Option<_>, CodecError> {
-                        Ok(ctx
-                            .equal(
-                                &surface.geometry.procedural_construction(),
-                                &Some(&procedural.id),
-                                "STEP procedural construction equality",
-                            )?
-                            .then_some(&surface.id))
-                    })
-                    .filter_map(Result::transpose);
-                let owner = owners.next().transpose()?;
-                let owner = if owner.is_some() && owners.next().transpose()?.is_some() {
-                    None
-                } else {
-                    owner
-                };
-                Ok(ctx
-                    .equal(
-                        &owner,
-                        &Some(surface_id),
-                        "STEP procedural surface owner equality",
-                    )?
-                    .then_some(procedural))
-            },
-            "STEP surface selection parameter domains traversal",
+        .get_btree_map(
+            &index.owned_procedurals,
+            surface_id.as_str(),
+            "STEP procedural surface owner lookup",
         )?
-        .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
+        .map(|procedural| procedural.definition());
     Ok(match definition {
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
             let parameter_ranges = definition_payload
@@ -6005,7 +6007,7 @@ fn subset_parameter_domain(range: [f64; 2]) -> Option<[f64; 2]> {
 }
 
 fn curve_selection_parameter_domain(
-    index: &ModelIndex<'_>,
+    index: &PcurveSelectionIndex<'_, '_>,
     curve_id: &CurveId,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, ResourceLimit> {
