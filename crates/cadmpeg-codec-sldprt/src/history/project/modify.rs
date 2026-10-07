@@ -19,118 +19,115 @@ use crate::history::literals::{
     parse_bounded_angle_rad, parse_length_mm, parse_point3_mm, parse_positive_dimension_length_mm,
     parse_positive_length_mm, parse_valid_direction, parse_vector3, parse_vector3_mm,
 };
+use std::collections::BTreeMap;
 
-fn property_text(
+use super::{either_parameter, parameter_literal, property_literal, property_text, property_value};
+
+/// The parameters of a variable-radius fillet: `RadiusN` radii with their
+/// `PositionN` fractions along the edge.
+fn variable_radius_points(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    name: &str,
-) -> Result<Option<String>, CodecError> {
-    ctx.get_btree_map(&(feature.properties), name, "look up SLDPRT ordered key")?
-        .map(|value| {
-            ctx.format_retained(
-                format_args!("{value}"),
-                "retain SLDPRT edit selection reference",
-            )
-        })
-        .transpose()
+) -> Result<Option<Vec<VariableRadius<Fraction, NonNegativeLength>>>, CodecError> {
+    const RADII: &str = "scan SLDPRT variable fillet radii";
+    const COLLECT: &str = "collect SLDPRT variable fillet radii";
+    let mut scratch = ctx.reserve_scoped(0, COLLECT)?;
+    // The first position parameter, in key order, naming each canonical index.
+    let mut positions = BTreeMap::new();
+    for (name, value) in
+        ctx.admit_iter(&feature.parameters, "scan SLDPRT variable fillet positions")?
+    {
+        admit_literal(ctx, name.as_str(), "scan SLDPRT fillet position digits")?;
+        let Some(suffix) = name.as_str().strip_prefix("Position") else {
+            continue;
+        };
+        if !suffix.bytes().all(|byte| byte.is_ascii_digit())
+            || !(suffix.len() == 1 || !suffix.starts_with('0'))
+        {
+            continue;
+        }
+        let Ok(index) = suffix.parse::<usize>() else {
+            continue;
+        };
+        if !ctx.contains_key_btree_map(&positions, &index, COLLECT)? {
+            scratch.with_storage(|| ctx.insert_btree_map(&mut positions, index, value, COLLECT))?;
+        }
+    }
+    let mut points = Vec::new();
+    for (name, radius) in ctx.admit_iter(&feature.parameters, RADII)? {
+        admit_literal(ctx, name.as_str(), RADII)?;
+        let Some(index) = name
+            .as_str()
+            .strip_prefix("Radius")
+            .and_then(|index| index.parse::<usize>().ok())
+        else {
+            continue;
+        };
+        let parameter = ctx.get_btree_map(&positions, &index, COLLECT)?.copied();
+        if let Some(parameter) = parameter {
+            admit_literal(ctx, parameter, RADII)?;
+        }
+        admit_literal(ctx, radius, RADII)?;
+        let point = (|| {
+            let parameter = parameter?.trim().parse::<f64>().ok()?;
+            let radius = parse_positive_length_mm(radius)?;
+            Some(VariableRadius {
+                parameter: Fraction::new(parameter)?,
+                radius: NonNegativeLength::from(radius),
+            })
+        })();
+        let Some(point) = point else {
+            return Ok(None);
+        };
+        ctx.push_scoped_vec(&mut scratch, &mut points, (index, point), COLLECT)?;
+    }
+    ctx.sort_unstable_by(
+        &mut points,
+        |value| &value.0,
+        Ord::cmp,
+        "sort SLDPRT variable fillet radii",
+    )?;
+    if points.len() < 2
+        || !ctx.all_by(
+            points.iter().enumerate(),
+            |(expected, (actual, _))| Ok(expected == *actual),
+            "scan SLDPRT project_fillet values",
+        )?
+    {
+        return Ok(None);
+    }
+    let mut radii = Vec::new();
+    ctx.reserve_vec(
+        &mut radii,
+        points.len(),
+        "collect SLDPRT variable fillet controls",
+    )?;
+    for (_, point) in ctx.admit_iter(points, "collect SLDPRT variable fillet controls")? {
+        radii.push(point);
+    }
+    Ok(Some(radii))
 }
 
 pub(super) fn project_fillet(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<FeatureDefinition, CodecError> {
-    let radius = if let Some(radius) = feature
-        .parameters
-        .get("Radius")
-        .and_then(|value| parse_positive_length_mm(value))
-        .or_else(|| {
-            if variable_fillet(feature) {
-                None
-            } else {
-                feature
-                    .parameters
-                    .get("D1")
-                    .and_then(|value| parse_positive_dimension_length_mm(value))
-            }
-        }) {
+    let stated = match parameter_literal(ctx, feature, "Radius")?.and_then(parse_positive_length_mm)
+    {
+        Some(radius) => Some(radius),
+        None if !variable_fillet(feature) => {
+            parameter_literal(ctx, feature, "D1")?.and_then(parse_positive_dimension_length_mm)
+        }
+        None => None,
+    };
+    let radius = if let Some(radius) = stated {
         RadiusSpec::Constant { radius }
     } else {
-        let mut point_storage = ctx.reserve_scoped(0, "collect SLDPRT variable fillet radii")?;
-        let mut points = Vec::new();
-        let mut valid = true;
-        for (name, radius) in &feature.parameters {
-            ctx.charge_work(1, "scan SLDPRT variable fillet radii")?;
-            let Some(index) = name
-                .as_str()
-                .strip_prefix("Radius")
-                .and_then(|index| index.parse::<usize>().ok())
-            else {
-                continue;
-            };
-            let mut parameter = None;
-            for (name, value) in
-                ctx.admit_iter(&feature.parameters, "scan SLDPRT variable fillet positions")?
-            {
-                let Some(suffix) = name.as_str().strip_prefix("Position") else {
-                    continue;
-                };
-                if ctx
-                    .admit_iter(suffix.as_bytes(), "scan SLDPRT fillet position digits")?
-                    .all(|byte| byte.is_ascii_digit())
-                    && (suffix.len() == 1 || !suffix.starts_with('0'))
-                    && suffix.parse::<usize>().ok() == Some(index)
-                {
-                    parameter = Some(value);
-                    break;
-                }
+        let points = match variable_radius_points(ctx, feature)? {
+            Some(radii) => {
+                cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii, ctx)?.ok()
             }
-            let point = (|| {
-                let parameter = parameter?.trim().parse::<f64>().ok()?;
-                let radius = parse_positive_length_mm(radius)?;
-                Some(VariableRadius {
-                    parameter: Fraction::new(parameter)?,
-                    radius: NonNegativeLength::from(radius),
-                })
-            })();
-            let Some(point) = point else {
-                valid = false;
-                break;
-            };
-            ctx.reserve_scoped_vec(
-                &mut point_storage,
-                &mut points,
-                1,
-                "collect SLDPRT variable fillet radii",
-            )?;
-            points.push((index, point));
-        }
-        ctx.sort_unstable_by(
-            &mut points,
-            |value| &value.0,
-            Ord::cmp,
-            "sort SLDPRT variable fillet radii",
-        )?;
-        let points = if valid
-            && points.len() >= 2
-            && ctx
-                .admit_iter(&points[..], "scan SLDPRT project_fillet values")?
-                .enumerate()
-                .all(|(expected, (actual, _))| expected == *actual)
-        {
-            let mut radii = Vec::new();
-            ctx.reserve_vec(
-                &mut radii,
-                points.len(),
-                "collect SLDPRT variable fillet controls",
-            )?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(points.len()),
-                "collect SLDPRT variable fillet controls",
-            )?;
-            radii.extend(points.into_iter().map(|(_, point)| point));
-            cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii, ctx)?.ok()
-        } else {
-            None
+            None => None,
         };
         match points {
             None => {
@@ -145,11 +142,15 @@ pub(super) fn project_fillet(
                     RadiusSpec::Unresolved {
                         form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                     }
-                } else if ctx
-                    .admit_iter(&feature.parameters, "scan SLDPRT project_fillet map keys")?
-                    .map(|(key, _)| key)
-                    .any(|name| matches!(name.as_str(), "Radius" | "D1"))
-                {
+                } else if ctx.contains_key_btree_map(
+                    &feature.parameters,
+                    "Radius",
+                    "scan SLDPRT project_fillet map keys",
+                )? || ctx.contains_key_btree_map(
+                    &feature.parameters,
+                    "D1",
+                    "scan SLDPRT project_fillet map keys",
+                )? {
                     RadiusSpec::Unresolved {
                         form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
                     }
@@ -201,30 +202,40 @@ fn variable_fillet(feature: &Feature) -> bool {
             .is_some_and(|class| class.eq_ignore_ascii_case("VarFillet_c"))
 }
 
+/// A positive thickness from a named or positional dimension.
+fn thickness(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Option<cadmpeg_ir::scalar::PositiveLength>, CodecError> {
+    Ok(
+        match parameter_literal(ctx, feature, "Thickness")?.and_then(parse_positive_length_mm) {
+            Some(thickness) => Some(thickness),
+            None => {
+                parameter_literal(ctx, feature, "D1")?.and_then(parse_positive_dimension_length_mm)
+            }
+        },
+    )
+}
+
+/// A named property read as a boolean literal.
+fn property_bool(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+    name: &str,
+) -> Result<Option<bool>, CodecError> {
+    Ok(property_value(ctx, feature, name)?.and_then(parse_bool))
+}
+
 pub(super) fn project_shell(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<FeatureDefinition, CodecError> {
-    let thickness = feature
-        .parameters
-        .get("Thickness")
-        .and_then(|value| parse_positive_length_mm(value))
-        .or_else(|| {
-            feature
-                .parameters
-                .get("D1")
-                .and_then(|value| parse_positive_dimension_length_mm(value))
-        });
-    let outward = feature
-        .properties
-        .get("Outward")
-        .and_then(|value| parse_bool(value));
     Ok(FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: None,
         removed_faces: property_text(ctx, feature, "RemovedFaces")?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        thickness,
-        outward,
+        thickness: thickness(ctx, feature)?,
+        outward: property_bool(ctx, feature, "Outward")?,
         mode: None,
         join: None,
         resolve_intersections: None,
@@ -238,24 +249,9 @@ pub(super) fn project_thicken(
 ) -> Result<FeatureDefinition, CodecError> {
     use cadmpeg_ir::features::ThickenSide;
 
-    let thickness = feature
-        .parameters
-        .get("Thickness")
-        .and_then(|value| parse_positive_length_mm(value))
-        .or_else(|| {
-            feature
-                .parameters
-                .get("D1")
-                .and_then(|value| parse_positive_dimension_length_mm(value))
-        });
-    let both_sides = feature
-        .properties
-        .get("BothSides")
-        .map(|value| parse_bool(value));
-    let reverse = feature
-        .properties
-        .get("Reverse")
-        .map(|value| parse_bool(value));
+    let thickness = thickness(ctx, feature)?;
+    let both_sides = property_value(ctx, feature, "BothSides")?.map(parse_bool);
+    let reverse = property_value(ctx, feature, "Reverse")?.map(parse_bool);
     let side = match (both_sides, reverse) {
         (Some(Some(true)), Some(Some(true))) | (Some(None), _) | (_, Some(None)) => None,
         (Some(Some(true)), _) => Some(ThickenSide::Both),
@@ -275,17 +271,15 @@ pub(super) fn project_draft(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<FeatureDefinition, CodecError> {
-    let pull_direction = feature
-        .properties
-        .get("Direction")
-        .and_then(|value| parse_vector3(value))
-        .and_then(cadmpeg_ir::features::FeatureDirection3::new);
+    let pull = property_literal(ctx, feature, "Direction")?
+        .and_then(parse_vector3)
+        .and_then(cadmpeg_ir::features::FeatureDirection3::new)
+        .map(|direction| cadmpeg_ir::features::DraftPull {
+            direction,
+            plane: None,
+        });
     let neutral_plane = property_text(ctx, feature, "NeutralPlane")?
         .map_or(FaceSelection::Unresolved, FaceSelection::Native);
-    let pull = pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
-        direction,
-        plane: None,
-    });
     let anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
         plane: neutral_plane,
         pull,
@@ -294,16 +288,10 @@ pub(super) fn project_draft(
         faces: property_text(ctx, feature, "Faces")?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         anchor,
-        angle: feature
-            .parameters
-            .get("Angle")
-            .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_angle_rad(value))
+        angle: either_parameter(ctx, feature, "Angle", "D1")?
+            .and_then(parse_angle_rad)
             .and_then(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle).ok()),
-        outward: feature
-            .properties
-            .get("Outward")
-            .and_then(|value| parse_bool(value)),
+        outward: property_bool(ctx, feature, "Outward")?,
     }))
 }
 
@@ -311,10 +299,8 @@ pub(super) fn project_combine(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(op) = feature
-        .properties
-        .get("Operation")
-        .and_then(|value| parse_boolean_op(value))
+    let Some(op) = property_value(ctx, feature, "Operation")?
+        .and_then(parse_boolean_op)
         .and_then(|op| op.try_into().ok())
     else {
         return Ok(None);
@@ -336,11 +322,16 @@ pub(super) fn project_combine(
     }))
 }
 
+/// The retention mode a body-delete record states through its `Mode` property
+/// or, without one, its kind token, for the writer.
 pub(in crate::history) fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
-    let value = feature
-        .properties
-        .get("Mode")
-        .map_or(feature.kind.as_str(), String::as_str);
+    retention_mode(feature, feature.properties.get("Mode").map(String::as_str))
+}
+
+/// The retention mode for a record whose `Mode` property is `mode`. The test
+/// trims the kind text, so a decode caller admits it.
+fn retention_mode(feature: &Feature, mode: Option<&str>) -> Option<BodyRetentionMode> {
+    let value = mode.unwrap_or(feature.kind.as_str());
     if ["delete", "deletebody", "body-delete"]
         .iter()
         .any(|name| value.eq_ignore_ascii_case(name))
@@ -372,10 +363,7 @@ pub(super) fn project_cut_with_surface(
                 .map_or(BodySelection::Unresolved, BodySelection::Native),
             tools: property_text(ctx, feature, "Tools")?
                 .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-            reverse: feature
-                .properties
-                .get("Reverse")
-                .and_then(|value| parse_bool(value)),
+            reverse: property_bool(ctx, feature, "Reverse")?,
         },
     ))
 }
@@ -384,7 +372,9 @@ pub(super) fn project_delete_body(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(mode) = body_retention_mode(feature) else {
+    let mode = property_value(ctx, feature, "Mode")?;
+    admit_literal(ctx, &feature.kind, "classify SLDPRT body retention mode")?;
+    let Some(mode) = retention_mode(feature, mode) else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -400,11 +390,7 @@ pub(super) fn project_delete_face(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(heal) = feature
-        .properties
-        .get("Heal")
-        .and_then(|value| parse_bool(value))
-    else {
+    let Some(heal) = property_bool(ctx, feature, "Heal")? else {
         return Ok(None);
     };
     let Some(faces) = property_text(ctx, feature, "Faces")? else {
@@ -422,11 +408,6 @@ pub(super) fn project_replace_face(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    if !feature.properties.contains_key("Faces")
-        || !feature.properties.contains_key("ReplacementFaces")
-    {
-        return Ok(None);
-    }
     let (Some(faces), Some(replacement)) = (
         property_text(ctx, feature, "Faces")?,
         property_text(ctx, feature, "ReplacementFaces")?,
@@ -446,38 +427,46 @@ pub(super) fn project_move_face(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(motion) = (|| {
-        let distance = || {
-            feature
-                .parameters
-                .get("Distance")
-                .or_else(|| feature.parameters.get("D1"))
-                .and_then(|value| parse_length_mm(value))
+    let distance = || -> Result<_, CodecError> {
+        Ok(either_parameter(ctx, feature, "Distance", "D1")?.and_then(parse_length_mm))
+    };
+    let Some(mode) = property_value(ctx, feature, "Mode")? else {
+        return Ok(None);
+    };
+    let motion = if mode.eq_ignore_ascii_case("offset") {
+        distance()?.map(|distance| FaceMotion::Offset { distance })
+    } else if mode.eq_ignore_ascii_case("translate") {
+        match property_literal(ctx, feature, "Direction")?.and_then(parse_valid_direction) {
+            Some(direction) => distance()?.map(|distance| FaceMotion::Translate {
+                direction,
+                distance,
+            }),
+            None => None,
+        }
+    } else if mode.eq_ignore_ascii_case("rotate") {
+        let axis_origin = property_literal(ctx, feature, "AxisOrigin")?.and_then(parse_point3_mm);
+        let axis_dir = match axis_origin {
+            Some(_) => {
+                property_literal(ctx, feature, "AxisDirection")?.and_then(parse_valid_direction)
+            }
+            None => None,
         };
-        let mode = feature.properties.get("Mode")?;
-        let motion = if mode.eq_ignore_ascii_case("offset") {
-            FaceMotion::Offset {
-                distance: distance()?,
-            }
-        } else if mode.eq_ignore_ascii_case("translate") {
-            FaceMotion::Translate {
-                direction: parse_valid_direction(feature.properties.get("Direction")?)?,
-                distance: distance()?,
-            }
-        } else if mode.eq_ignore_ascii_case("rotate") {
-            FaceMotion::Rotate {
-                axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
-                axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
-                angle: feature
-                    .parameters
-                    .get("Angle")
-                    .and_then(|value| parse_angle_rad(value))?,
-            }
-        } else {
-            return None;
+        let angle = match axis_dir {
+            Some(_) => parameter_literal(ctx, feature, "Angle")?.and_then(parse_angle_rad),
+            None => None,
         };
-        Some(motion)
-    })() else {
+        match (axis_origin, axis_dir, angle) {
+            (Some(axis_origin), Some(axis_dir), Some(angle)) => Some(FaceMotion::Rotate {
+                axis_origin,
+                axis_dir,
+                angle,
+            }),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let Some(motion) = motion else {
         return Ok(None);
     };
     Ok(Some(FeatureDefinition::Operation(
@@ -493,23 +482,40 @@ pub(super) fn project_move_body(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some((translation, rotation, copies)) = (|| {
-        let translation = parse_vector3_mm(feature.properties.get("Translation")?)?;
-        let rotation = match feature.parameters.get("Rotation") {
-            Some(angle) => Some(AxisAngle {
-                origin: parse_point3_mm(feature.properties.get("RotationOrigin")?)?,
-                direction: parse_valid_direction(feature.properties.get("RotationAxis")?)?,
-                angle: parse_angle_rad(angle)?,
-            }),
-            None => None,
-        };
-        let copies = feature
-            .properties
-            .get("Copies")
-            .map_or(Some(0), |value| value.trim().parse::<u32>().ok())?;
-        Some((translation, rotation, copies))
-    })() else {
+    let Some(translation) =
+        property_literal(ctx, feature, "Translation")?.and_then(parse_vector3_mm)
+    else {
         return Ok(None);
+    };
+    let rotation = match parameter_literal(ctx, feature, "Rotation")? {
+        Some(angle) => {
+            let Some(origin) =
+                property_literal(ctx, feature, "RotationOrigin")?.and_then(parse_point3_mm)
+            else {
+                return Ok(None);
+            };
+            let Some(direction) =
+                property_literal(ctx, feature, "RotationAxis")?.and_then(parse_valid_direction)
+            else {
+                return Ok(None);
+            };
+            let Some(angle) = parse_angle_rad(angle) else {
+                return Ok(None);
+            };
+            Some(AxisAngle {
+                origin,
+                direction,
+                angle,
+            })
+        }
+        None => None,
+    };
+    let copies = match property_literal(ctx, feature, "Copies")? {
+        Some(value) => match value.trim().parse::<u32>() {
+            Ok(copies) => copies,
+            Err(_) => return Ok(None),
+        },
+        None => 0,
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::MoveBody {
@@ -529,42 +535,27 @@ pub(super) fn project_dome(
     Ok(FeatureDefinition::Operation(FeatureOperation::Dome {
         faces: property_text(ctx, feature, "Faces")?
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        height: feature
-            .parameters
-            .get("Height")
-            .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_positive_length_mm(value)),
-        elliptical: feature
-            .properties
-            .get("Elliptical")
-            .and_then(|value| parse_bool(value)),
-        reverse: feature
-            .properties
-            .get("Reverse")
-            .and_then(|value| parse_bool(value)),
+        height: either_parameter(ctx, feature, "Height", "D1")?.and_then(parse_positive_length_mm),
+        elliptical: property_bool(ctx, feature, "Elliptical")?,
+        reverse: property_bool(ctx, feature, "Reverse")?,
     }))
 }
 
-pub(super) fn project_flex(feature: &Feature) -> FeatureDefinition {
-    let axis = feature
-        .properties
-        .get("Axis")
-        .or_else(|| feature.properties.get("AxisDirection"))
-        .and_then(|value| parse_valid_direction(value));
-    let angle = feature
-        .parameters
-        .get("Angle")
-        .and_then(|value| parse_angle_rad(value));
-    let factor = feature
-        .parameters
-        .get("Factor")
+pub(super) fn project_flex(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
+    let axis = match property_literal(ctx, feature, "Axis")? {
+        Some(axis) => Some(axis),
+        None => property_literal(ctx, feature, "AxisDirection")?,
+    }
+    .and_then(parse_valid_direction);
+    let angle = parameter_literal(ctx, feature, "Angle")?.and_then(parse_angle_rad);
+    let factor = parameter_literal(ctx, feature, "Factor")?
         .and_then(|value| value.trim().parse::<f64>().ok())
         .and_then(cadmpeg_ir::scalar::PositiveReal::new);
-    let distance = feature
-        .parameters
-        .get("Distance")
-        .and_then(|value| parse_length_mm(value));
-    let form = feature.properties.get("Mode").and_then(|value| {
+    let distance = parameter_literal(ctx, feature, "Distance")?.and_then(parse_length_mm);
+    let form = property_value(ctx, feature, "Mode")?.and_then(|value| {
         if ["bending", "bend"]
             .iter()
             .any(|name| value.eq_ignore_ascii_case(name))
@@ -596,18 +587,19 @@ pub(super) fn project_flex(feature: &Feature) -> FeatureDefinition {
         (Some(FlexForm::Stretching), _, _, Some(distance)) => FlexMode::Stretching { distance },
         (form, _, _, _) => FlexMode::Unresolved { form },
     };
-    FeatureDefinition::Operation(FeatureOperation::Flex { axis, mode })
+    Ok(FeatureDefinition::Operation(FeatureOperation::Flex {
+        axis,
+        mode,
+    }))
 }
 
 pub(super) fn project_scale(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<FeatureDefinition, CodecError> {
-    let center = match feature.properties.get("CenterType").map(String::as_str) {
-        None | Some("Point") => feature
-            .properties
-            .get("Center")
-            .and_then(|value| parse_point3_mm(value))
+    let center = match property_value(ctx, feature, "CenterType")? {
+        None | Some("Point") => property_literal(ctx, feature, "Center")?
+            .and_then(parse_point3_mm)
             .map(ScaleCenter::Point),
         Some("Centroid") => Some(ScaleCenter::Centroid),
         Some("Origin" | "ModelOrigin") => Some(ScaleCenter::ModelOrigin),
@@ -616,12 +608,10 @@ pub(super) fn project_scale(
             .map(ScaleCenter::Native),
         Some(_) => None,
     };
-    let factor = |name| {
-        Ok::<_, cadmpeg_core::CodecError>(
-            ctx.get_btree_map(&(feature.parameters), name, "look up SLDPRT ordered key")?
-                .and_then(|value| value.trim().parse::<f64>().ok())
-                .and_then(cadmpeg_ir::scalar::NonZeroReal::new),
-        )
+    let factor = |name| -> Result<_, CodecError> {
+        Ok(parameter_literal(ctx, feature, name)?
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .and_then(cadmpeg_ir::scalar::NonZeroReal::new))
     };
     let factors = match (
         factor("Factor")?,
@@ -641,57 +631,54 @@ pub(super) fn project_scale(
     }))
 }
 
+/// The first three dimension children naming a parameter, in content order.
+fn ordered_dimensions<'f>(
+    ctx: &DecodeContext<'_>,
+    feature: &'f Feature,
+) -> Result<[Option<&'f str>; 3], CodecError> {
+    const OPERATION: &str = "scan SLDPRT chamfer dimension order";
+    let mut ordered = [None; 3];
+    let mut found = 0;
+    ctx.any_by(
+        &feature.content,
+        |content| {
+            let FeatureContent::Dimension(name) = content else {
+                return Ok(false);
+            };
+            let Some(value) = ctx.get_btree_map(&feature.parameters, name.as_str(), OPERATION)?
+            else {
+                return Ok(false);
+            };
+            admit_literal(ctx, value, OPERATION)?;
+            ordered[found] = Some(value.as_str());
+            found += 1;
+            Ok(found == ordered.len())
+        },
+        OPERATION,
+    )?;
+    Ok(ordered)
+}
+
 pub(super) fn project_chamfer(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
 ) -> Result<FeatureDefinition, CodecError> {
-    let length = |name, positional| {
-        let value = ctx
-            .get_btree_map(&feature.parameters, name, "look up SLDPRT ordered key")?
-            .and_then(|value| parse_positive_length_mm(value));
-        match value {
-            Some(value) => Ok::<_, CodecError>(Some(value)),
-            None => Ok(ctx
-                .get_btree_map(
-                    &feature.parameters,
-                    positional,
-                    "look up SLDPRT ordered key",
-                )?
-                .and_then(|value| parse_positive_dimension_length_mm(value))),
-        }
+    let length = |name, positional| -> Result<_, CodecError> {
+        Ok(
+            match parameter_literal(ctx, feature, name)?.and_then(parse_positive_length_mm) {
+                Some(value) => Some(value),
+                None => parameter_literal(ctx, feature, positional)?
+                    .and_then(parse_positive_dimension_length_mm),
+            },
+        )
     };
-    let positional_angle = feature
-        .parameters
-        .get("D2")
+    let positional_angle = parameter_literal(ctx, feature, "D2")?
         .filter(|value| parse_bounded_angle_rad(value).is_some());
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(feature.content.len()),
-        "scan SLDPRT chamfer dimension order",
-    )?;
-    let mut ordered_dimensions = feature
-        .content
-        .iter()
-        .map(|content| {
-            Ok::<_, CodecError>(match content {
-                FeatureContent::Dimension(name) => ctx.get_btree_map(
-                    &(feature.parameters),
-                    name.as_str(),
-                    "look up SLDPRT ordered key",
-                )?,
-                FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-            })
-        })
-        .filter_map(Result::transpose);
-    let ordered_dimensions = (
-        ordered_dimensions.next().transpose()?,
-        ordered_dimensions.next().transpose()?,
-        ordered_dimensions.next().transpose()?,
-    );
-    let ordered_spec = || match ordered_dimensions {
-        (Some(distance), None, None) => Some(ChamferSpec::Distance {
+    let ordered_spec = |ordered: [Option<&str>; 3]| match ordered {
+        [Some(distance), None, None] => Some(ChamferSpec::Distance {
             distance: parse_positive_dimension_length_mm(distance)?,
         }),
-        (Some(first), Some(second), None) => {
+        [Some(first), Some(second), None] => {
             let first_length = parse_positive_dimension_length_mm(first);
             let second_length = parse_positive_dimension_length_mm(second);
             let first_angle = parse_bounded_angle_rad(first);
@@ -709,55 +696,52 @@ pub(super) fn project_chamfer(
         }
         _ => None,
     };
-    let spec = (|| {
-        Ok::<_, cadmpeg_core::CodecError>(Some(
-            if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
-                ChamferSpec::DistanceAngle {
-                    distance: match length("Distance", "D1")? {
-                        Some(value) => value,
-                        None => return Ok::<_, cadmpeg_core::CodecError>(None),
-                    },
-                    angle: match parse_bounded_angle_rad(value) {
-                        Some(value) => value,
-                        None => return Ok::<_, cadmpeg_core::CodecError>(None),
-                    },
-                }
-            } else if let (Some(first), Some(second)) =
-                (length("Distance1", "D1")?, length("Distance2", "D2")?)
-            {
-                ChamferSpec::TwoDistances { first, second }
-            } else {
-                ChamferSpec::Distance {
-                    distance: match length("Distance", "D1")? {
-                        Some(value) => value,
-                        None => return Ok::<_, cadmpeg_core::CodecError>(None),
-                    },
-                }
-            },
-        ))
-    })()?
-    .or_else(ordered_spec)
-    .unwrap_or_else(|| {
-        if feature.parameters.contains_key("Angle") {
-            ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle),
-            }
-        } else if feature.parameters.contains_key("Distance1")
-            || feature.parameters.contains_key("Distance2")
-        {
-            ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::TwoDistances),
-            }
-        } else if feature.parameters.contains_key("Distance")
-            || (feature.parameters.contains_key("D1") && !feature.parameters.contains_key("D2"))
-        {
-            ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance),
-            }
-        } else {
-            ChamferSpec::Unresolved { form: None }
+    let angle = match parameter_literal(ctx, feature, "Angle")? {
+        Some(angle) => Some(angle),
+        None => positional_angle,
+    };
+    let stated = if let Some(value) = angle {
+        match (length("Distance", "D1")?, parse_bounded_angle_rad(value)) {
+            (Some(distance), Some(angle)) => Some(ChamferSpec::DistanceAngle { distance, angle }),
+            _ => None,
         }
-    });
+    } else if let (Some(first), Some(second)) =
+        (length("Distance1", "D1")?, length("Distance2", "D2")?)
+    {
+        Some(ChamferSpec::TwoDistances { first, second })
+    } else {
+        length("Distance", "D1")?.map(|distance| ChamferSpec::Distance { distance })
+    };
+    let spec = match stated {
+        Some(spec) => spec,
+        None => match ordered_spec(ordered_dimensions(ctx, feature)?) {
+            Some(spec) => spec,
+            None => {
+                let has = |name| {
+                    ctx.contains_key_btree_map(&feature.parameters, name, "test SLDPRT map key")
+                };
+                if has("Angle")? {
+                    ChamferSpec::Unresolved {
+                        form: Some(
+                            cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle,
+                        ),
+                    }
+                } else if has("Distance1")? || has("Distance2")? {
+                    ChamferSpec::Unresolved {
+                        form: Some(
+                            cadmpeg_ir::features::edge_treatments::ChamferForm::TwoDistances,
+                        ),
+                    }
+                } else if has("Distance")? || (has("D1")? && !has("D2")?) {
+                    ChamferSpec::Unresolved {
+                        form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance),
+                    }
+                } else {
+                    ChamferSpec::Unresolved { form: None }
+                }
+            }
+        },
+    };
     Ok(FeatureDefinition::Operation(FeatureOperation::Chamfer {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(
             cadmpeg_ir::features::edge_treatments::ChamferGroup {

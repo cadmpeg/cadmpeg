@@ -136,13 +136,19 @@ fn metadata_curve_projection_refuses_work_limit() {
         &composite_curve_source(),
         options,
         "project SLDPRT composite curve segments",
-        Some(1), // One visitor work unit; key reads have separate requests.
+        // One scan of the segment list admits every token.
+        Some(cadmpeg_core::decode::u64_from_index(
+            "curve-a;curve-b".len(),
+        )),
     );
     assert_eq!(
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
-    assert_eq!(refusal.additional, 1);
+    assert_eq!(
+        refusal.additional,
+        cadmpeg_core::decode::u64_from_index("curve-a;curve-b".len())
+    );
 }
 
 fn variable_fillet_source() -> Vec<u8> {
@@ -183,12 +189,12 @@ fn metadata_edit_projection_refuses_retained_limit() {
     let error = retained_refusal_at(
         &variable_fillet_source(),
         &mut options,
-        "retain SLDPRT edit selection reference",
+        "retain SLDPRT feature property",
     );
     assert!(matches!(error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT edit selection reference"
+                && limit.operation == "retain SLDPRT feature property"
     ));
 }
 
@@ -375,11 +381,11 @@ fn metadata_hole_projection_refuses_retained_limit() {
         ..DecodeOptions::default()
     };
     options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT hole face reference");
+    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT feature property");
     assert!(matches!(error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT hole face reference"
+                && limit.operation == "retain SLDPRT feature property"
     ));
 }
 
@@ -578,25 +584,6 @@ fn metadata_parameter_aliases_refuse_collection_limit() {
 }
 
 #[test]
-fn metadata_parameter_aliases_refuse_retained_limit() {
-    let mut options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &native_definition_source(),
-        &mut options,
-        "retain SLDPRT parameter alias",
-    );
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT parameter alias"
-    ));
-}
-
-#[test]
 fn metadata_parameter_aliases_refuse_work_limit() {
     let options = DecodeOptions {
         container_only: true,
@@ -644,23 +631,6 @@ fn metadata_parameter_value_states_refuse_work_limit() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
     assert_eq!(refusal.additional, 1);
-}
-
-#[test]
-fn metadata_parameter_value_states_refuse_retained_limit() {
-    let mut source = outer_header();
-    source.extend(make_block(
-        0x43, "Contents/Keywords",
-        br#"<Keywords><Feature Name="Custom" Type="Custom" id="10"><Dimension Name="Note">plain text</Dimension></Feature></Keywords>"#,
-    ));
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(&source, &mut options, "retain SLDPRT parameter value text");
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT parameter value text"
-    ));
 }
 
 #[test]

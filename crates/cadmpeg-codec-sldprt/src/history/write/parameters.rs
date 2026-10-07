@@ -14,7 +14,7 @@ use crate::history::literals::{
 };
 use crate::history::parameters::{
     expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
-    parse_native_parameter_literal, project_parameters,
+    parse_native_parameter_literal, project_parameters, ParameterAliases,
 };
 use crate::history::project::neutral_feature_id_charged;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
@@ -154,9 +154,9 @@ fn sync_neutral_parameters(
             &feature_names,
         )?;
     }
-    if parameters_with_incoherent_dependencies(&ctx, &parameters, &feature_names, &global_owners)?
-        > 0
-    {
+    let (aliases, _aliases_storage) =
+        ParameterAliases::scoped(&ctx, &parameters, &feature_names, &global_owners)?;
+    if parameters_with_incoherent_dependencies(&ctx, &parameters, &aliases)? > 0 {
         return Err(CodecError::Malformed(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));

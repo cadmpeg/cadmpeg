@@ -20,7 +20,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
-impl NeutralFeatureEncoder<'_, '_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_fillet(
         &self,
         groups: &[FilletGroup],
@@ -59,11 +59,9 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                 .unwrap_or_default();
             let positional_radius = parameters.contains_key("D1")
                 && !parameters.contains_key("Radius")
-                && !parameters.keys().try_fold(false, |found, name| {
-                    Ok::<_, cadmpeg_core::CodecError>(
-                        found || (indexed_name(name.as_str(), "Radius")),
-                    )
-                })?;
+                && !parameters
+                    .keys()
+                    .any(|name| indexed_name(name.as_str(), "Radius"));
             match radius {
                 RadiusSpec::Unresolved { .. } => {
                     if existing.is_none() {
@@ -76,21 +74,11 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                 RadiusSpec::Constant { radius } => {
                     let radius = (*radius).into();
 
-                    parameters = parameters
-                        .into_iter()
-                        .filter_map(|(name, value)| {
-                            let keep = (|| -> Result<bool, CodecError> {
-                                Ok(name.as_str() != "Radius"
-                                    && !indexed_name(name.as_str(), "Radius")
-                                    && !indexed_name(name.as_str(), "Position"))
-                            })();
-                            match keep {
-                                Ok(true) => Some(Ok((name, value))),
-                                Ok(false) => None,
-                                Err(error) => Some(Err(error)),
-                            }
-                        })
-                        .collect::<Result<_, CodecError>>()?;
+                    parameters.retain(|name, _| {
+                        name.as_str() != "Radius"
+                            && !indexed_name(name.as_str(), "Radius")
+                            && !indexed_name(name.as_str(), "Position")
+                    });
                     let key = if positional_radius {
                         cadmpeg_core::nonblank_literal!("D1")
                     } else {
@@ -117,21 +105,11 @@ impl NeutralFeatureEncoder<'_, '_, '_, '_> {
                     )));
                 }
                 RadiusSpec::Variable { points } => {
-                    parameters = parameters
-                        .into_iter()
-                        .filter_map(|(name, value)| {
-                            let keep = (|| -> Result<bool, CodecError> {
-                                Ok(name.as_str() != "Radius"
-                                    && !indexed_name(name.as_str(), "Radius")
-                                    && !indexed_name(name.as_str(), "Position"))
-                            })();
-                            match keep {
-                                Ok(true) => Some(Ok((name, value))),
-                                Ok(false) => None,
-                                Err(error) => Some(Err(error)),
-                            }
-                        })
-                        .collect::<Result<_, CodecError>>()?;
+                    parameters.retain(|name, _| {
+                        name.as_str() != "Radius"
+                            && !indexed_name(name.as_str(), "Radius")
+                            && !indexed_name(name.as_str(), "Position")
+                    });
                     if positional_radius {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} changes positional fillet form",

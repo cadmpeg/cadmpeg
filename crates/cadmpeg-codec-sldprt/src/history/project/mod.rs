@@ -27,6 +27,16 @@ use crate::history::literals::{
 };
 use crate::records::FeatureSource;
 
+/// The value of `$read`, or `Ok(None)` from the enclosing function when it is absent.
+macro_rules! require {
+    ($read:expr) => {
+        match $read {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 #[cfg(test)]
 mod content_tests;
 #[cfg(test)]
@@ -90,6 +100,62 @@ pub(super) type NeutralByKey<'k, 'n> = HashMap<&'k str, &'n FeatureId>;
 pub(crate) struct FeatureProjection {
     pub(super) features: Vec<cadmpeg_ir::features::Feature>,
     regeneration_parents: Vec<(FeatureId, FeatureId)>,
+}
+
+const FEATURE_LITERAL: &str = "read SLDPRT feature literal";
+
+/// A named parameter of `feature`, admitted for one literal reading.
+pub(super) fn parameter_literal<'f>(
+    ctx: &DecodeContext<'_>,
+    feature: &'f Feature,
+    name: &str,
+) -> Result<Option<&'f str>, CodecError> {
+    named_literal(ctx, &feature.parameters, name, FEATURE_LITERAL)
+}
+
+/// The first of two named parameters present, admitted for one literal reading.
+pub(super) fn either_parameter<'f>(
+    ctx: &DecodeContext<'_>,
+    feature: &'f Feature,
+    name: &str,
+    fallback: &str,
+) -> Result<Option<&'f str>, CodecError> {
+    match parameter_literal(ctx, feature, name)? {
+        Some(value) => Ok(Some(value)),
+        None => parameter_literal(ctx, feature, fallback),
+    }
+}
+
+/// A named property of `feature`, admitted for one literal reading.
+pub(super) fn property_literal<'f>(
+    ctx: &DecodeContext<'_>,
+    feature: &'f Feature,
+    name: &str,
+) -> Result<Option<&'f str>, CodecError> {
+    named_literal(ctx, &feature.properties, name, FEATURE_LITERAL)
+}
+
+/// A named property of `feature` that the caller compares with literal tokens
+/// or copies; only the lookup is charged.
+pub(super) fn property_value<'f>(
+    ctx: &DecodeContext<'_>,
+    feature: &'f Feature,
+    name: &str,
+) -> Result<Option<&'f str>, CodecError> {
+    Ok(ctx
+        .get_btree_map(&feature.properties, name, FEATURE_LITERAL)?
+        .map(String::as_str))
+}
+
+/// A copy of a named property of `feature`, such as a native selection.
+pub(super) fn property_text(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+    name: &str,
+) -> Result<Option<String>, CodecError> {
+    property_value(ctx, feature, name)?
+        .map(|value| ctx.copy_retained_text(value, "retain SLDPRT feature property"))
+        .transpose()
 }
 
 /// Mints a typed identity from formatted text after admitting the grammar scan of it.
@@ -348,6 +414,13 @@ fn project_history<'c>(
             Ok::<_, CodecError>(())
         })?;
     }
+    let (records, _records_storage) = ctx.unique_index(
+        history
+            .features
+            .iter()
+            .map(|feature| (feature.id.as_str(), feature)),
+        "index SLDPRT history records by identity",
+    )?;
     let source_ordered = ctx.any_by(
         &history.features,
         |feature| {
@@ -413,7 +486,7 @@ fn project_history<'c>(
                     &by_source,
                     &native_by_source,
                     &features_by_source,
-                    &history.features,
+                    &records,
                     &index,
                 )?,
             ),
@@ -1586,7 +1659,7 @@ fn project_definition(
     by_source: &NeutralByKey<'_, '_>,
     native_by_source: &HashMap<String, &str>,
     features_by_source: &BTreeMap<FeatureSource, &Feature>,
-    history_features: &[Feature],
+    records: &self::solid::RecordsById<'_>,
     index: &HistoryIndex<'_, '_>,
 ) -> Result<FeatureDefinition, CodecError> {
     const OPERATION: &str = "project SLDPRT feature definition";
@@ -1658,7 +1731,7 @@ fn project_definition(
         ));
     }
     if class == Some(FeatureClass::ReferencePlane) {
-        return project_datum_plane(feature).map_or_else(
+        return project_datum_plane(ctx, feature)?.map_or_else(
             || {
                 if ctx.contains_key_btree_map(&feature.properties, "NativeRole", OPERATION)? {
                     native_definition(ctx, feature)
@@ -1672,13 +1745,15 @@ fn project_definition(
         );
     }
     if class == Some(FeatureClass::ReferenceAxis) {
-        return project_datum_axis(feature).map_or_else(|| native_definition(ctx, feature), Ok);
+        return project_datum_axis(ctx, feature)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::ReferencePoint) {
-        return project_datum_point(feature).map_or_else(|| native_definition(ctx, feature), Ok);
+        return project_datum_point(ctx, feature)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::CoordinateSystem) {
-        return Ok(project_datum_coordinate_system(feature).unwrap_or(
+        return Ok(project_datum_coordinate_system(ctx, feature)?.unwrap_or(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumCoordinateSystem,
             }),
@@ -1697,7 +1772,7 @@ fn project_definition(
             .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::Helix) {
-        return Ok(match project_helix(feature) {
+        return Ok(match project_helix(ctx, feature)? {
             Some(definition) => definition,
             None => project_native_axis_helix(ctx, feature)?
                 .map_or_else(|| native_definition(ctx, feature), Ok)?,
@@ -1751,11 +1826,11 @@ fn project_definition(
     } else if class == Some(FeatureClass::Dome) {
         project_dome(ctx, feature)?
     } else if class == Some(FeatureClass::Flex) {
-        project_flex(feature)
+        project_flex(ctx, feature)?
     } else if class == Some(FeatureClass::Scale) {
         project_scale(ctx, feature)?
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(ctx, feature, features_by_source, history_features)?
+        project_hole(ctx, feature, features_by_source, records)?
             .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(ctx, feature, native_by_source)?
