@@ -1062,16 +1062,20 @@ mod direct_range_tests {
                 }
                 (
                     FramingError::OutOfBounds {
-                        offset: a,
-                        end: b,
-                        bound: c,
+                        offset: left_offset,
+                        end: left_end,
+                        bound: left_bound,
                     },
                     FramingError::OutOfBounds {
-                        offset: d,
-                        end: e,
-                        bound: f,
+                        offset: right_offset,
+                        end: right_end,
+                        bound: right_bound,
                     },
-                ) => a == d && b == e && c == f,
+                ) => {
+                    left_offset == right_offset
+                        && left_end == right_end
+                        && left_bound == right_bound
+                }
                 (FramingError::Resource(a), FramingError::Resource(b)) => a == b,
                 _ => false,
             }

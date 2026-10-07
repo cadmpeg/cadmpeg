@@ -52,21 +52,21 @@ pub(crate) fn admitted_json(
     let mut count = ByteCount(0);
     serde_json::to_writer(&mut count, value).or_else(|error| {
         Err(CodecError::malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino admitted_json text",
         )?))
     })?;
     let mut bytes = ctx.collection_vec(count.0, operation)?;
     serde_json::to_writer(&mut bytes, value).or_else(|error| {
         Err(CodecError::malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino admitted_json text",
         )?))
     })?;
     ctx.charge_work(u64_from_index(bytes.len()), operation)?;
     String::from_utf8(bytes).or_else(|error| {
         Err(CodecError::malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino admitted_json text",
         )?))
     })
@@ -95,14 +95,14 @@ pub(crate) fn admitted_canonical_json(
     let mut count = ByteCount(0);
     serde_json::to_writer(&mut count, value).or_else(|error| {
         Err(CodecError::malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino admitted_canonical_json text",
         )?))
     })?;
     let (mut raw, _temporary) = ctx.temporary_vec(count.0, operation)?;
     serde_json::to_writer(&mut raw, value).or_else(|error| {
         Err(CodecError::malformed(ctx.format_retained(
-            format_args!("{}", error),
+            format_args!("{error}"),
             "Rhino admitted_canonical_json text",
         )?))
     })?;
@@ -119,14 +119,14 @@ pub(crate) fn admitted_canonical_json(
                 Err(match failure.into_inner() {
                     Some(refusal) => refusal,
                     None => CodecError::malformed(ctx.format_retained(
-                        format_args!("{}", error),
+                        format_args!("{error}"),
                         "Rhino admitted_canonical_json text",
                     )?),
                 })
             })?;
         decoder.end().or_else(|error| {
             Err(CodecError::malformed(ctx.format_retained(
-                format_args!("{}", error),
+                format_args!("{error}"),
                 "Rhino admitted_canonical_json text",
             )?))
         })?;

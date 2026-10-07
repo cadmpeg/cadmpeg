@@ -292,7 +292,7 @@ fn framing_error(
             "rhino chunk framing",
         ),
         other => CodecError::Malformed(
-            ctx.format_retained(format_args!("{}", other), "Rhino framing_error text")?,
+            ctx.format_retained(format_args!("{other}"), "Rhino framing_error text")?,
         ),
     })
 }
@@ -303,11 +303,12 @@ fn checksum_children_warning(
     offset: usize,
     error: &FramingError,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    Ok(
-    ctx.format_retained(format_args!(
-        "checksum child framing at offset {offset} for typecode {typecode:#x} could not be verified: {error}"
-    ), "Rhino checksum_children_warning text")?
-)
+    ctx.format_retained(
+        format_args!(
+            "checksum child framing at offset {offset} for typecode {typecode:#x} could not be verified: {error}"
+        ),
+        "Rhino checksum_children_warning text",
+    )
 }
 
 fn checksum_warning(
