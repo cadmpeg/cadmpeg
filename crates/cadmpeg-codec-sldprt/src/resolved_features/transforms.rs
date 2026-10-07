@@ -799,21 +799,6 @@ impl SketchLocusRole {
         }
     }
 
-    pub(super) fn copy_locus(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        entity: &SketchEntityId,
-        operation: &'static str,
-    ) -> Result<SketchLocus, cadmpeg_core::CodecError> {
-        let entity = copy_sketch_entity_identity(ctx, entity, operation)?;
-        Ok(match self {
-            Self::Entity => SketchLocus::Entity(entity),
-            Self::Start => SketchLocus::Start(entity),
-            Self::End => SketchLocus::End(entity),
-            Self::Center => SketchLocus::Center(entity),
-        })
-    }
-
     pub(super) fn matches(self, locus: &SketchLocus) -> bool {
         self == Self::of_locus(locus)
     }

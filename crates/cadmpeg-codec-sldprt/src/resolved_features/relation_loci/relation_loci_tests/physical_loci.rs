@@ -1,5 +1,6 @@
 use super::super::canonicalize_physical_loci;
 use super::line_entity;
+use super::profile;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntityId, SketchId, SketchLocus};
 
@@ -28,7 +29,7 @@ fn coincident_physical_loci_keep_the_smallest_identity_and_role() {
     canonicalize_physical_loci(
         &cadmpeg_test_support::service_decode_context(),
         &mut loci,
-        &[first, second],
+        &profile(&[first, second]),
         EPS_PHYSICAL_LOCUS_QUANTIZATION,
     )
     .unwrap();
@@ -52,7 +53,7 @@ fn distinct_physical_loci_preserve_input_order() {
     canonicalize_physical_loci(
         &cadmpeg_test_support::service_decode_context(),
         &mut loci,
-        &[line],
+        &profile(&[line]),
         EPS_PHYSICAL_LOCUS_QUANTIZATION,
     )
     .unwrap();
@@ -76,7 +77,7 @@ fn unresolved_physical_loci_preserve_input_order() {
     canonicalize_physical_loci(
         &cadmpeg_test_support::service_decode_context(),
         &mut loci,
-        &[line],
+        &profile(&[line]),
         EPS_PHYSICAL_LOCUS_QUANTIZATION,
     )
     .unwrap();
