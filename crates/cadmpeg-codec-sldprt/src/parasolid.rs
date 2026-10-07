@@ -591,7 +591,7 @@ fn append_lossy_utf8(
 impl StreamHeader {
     /// Whether the description identifies a partition or deltas body stream.
     pub(crate) fn is_body_stream(&self) -> bool {
-        self.words.partition || self.words.deltas
+        self.words.partition() || self.words.deltas()
     }
 }
 

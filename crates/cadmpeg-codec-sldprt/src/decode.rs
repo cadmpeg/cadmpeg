@@ -2633,7 +2633,7 @@ fn active_body_streams<'a>(
 ) -> Result<Vec<ActiveParasolidSite<'a>>, CodecError> {
     let mut streams = Vec::new();
     for section in scan.sections(ctx)? {
-        if section.name_words().ghost || section.name_words().resolved_features {
+        if section.name_words().ghost() || section.name_words().resolved_features() {
             continue;
         }
         for stream in ctx.admit_iter(section.ps_streams(), "scan SLDPRT topology members")? {
@@ -2650,13 +2650,13 @@ fn active_body_streams<'a>(
     }
     ctx.stable_sort_by_key(
         &mut streams,
-        |value| value.header.words.partition,
+        |value| value.header.words.partition(),
         |left, right| right.cmp(left),
         "sort SLDPRT active body streams",
     )?;
     ctx.stable_sort_by_key(
         &mut streams,
-        |value| value.section.name_words().partition,
+        |value| value.section.name_words().partition(),
         |left, right| right.cmp(left),
         "sort SLDPRT active body streams",
     )?;
@@ -2725,13 +2725,13 @@ fn try_decode_brep(
                 &sites[&decoded_sites[selected_site].0],
                 "scan SLDPRT selected site body streams",
             )?
-            .any(|index| streams[*index].header.words.partition)
+            .any(|index| streams[*index].header.words.partition())
         && ctx
             .admit_iter(
                 &sites[&decoded_sites[selected_site].0],
                 "scan SLDPRT selected site body streams",
             )?
-            .any(|index| streams[*index].header.words.deltas);
+            .any(|index| streams[*index].header.words.deltas());
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
         || !decoded_sites[selected_site].2.points.is_empty();
@@ -2759,13 +2759,13 @@ fn try_decode_brep(
                                         &sites[site][..],
                                         "scan SLDPRT try_decode_brep values",
                                     )?
-                                    .any(|index| streams[*index].header.words.partition)
+                                    .any(|index| streams[*index].header.words.partition())
                                 && ctx
                                     .admit_iter(
                                         &sites[site][..],
                                         "scan SLDPRT try_decode_brep values",
                                     )?
-                                    .any(|index| streams[*index].header.words.deltas)
+                                    .any(|index| streams[*index].header.words.deltas())
                         }),
                 )
             })?;
