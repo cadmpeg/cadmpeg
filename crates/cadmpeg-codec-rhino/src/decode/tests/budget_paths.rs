@@ -13,10 +13,8 @@ fn shared_brep_c2_slot_preserves_each_trim_geometry() {
     })
     .expect("validate Brep with a shared C2 slot");
     let values = with_expand_bytes(&data, |expand| {
-        decode_pcurves(
-            expand.ctx(), &data, ArchiveVersion::V5, brep.raw(), brep.resolved(),
-            "plane", &std::collections::HashMap::new(),
-        ).map(|decoded| decoded.values)
+        decode_pcurves((expand.ctx(), &mut expand.ctx().reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch")), &data, ArchiveVersion::V5, brep.raw(), brep.resolved(),
+            "plane", &std::collections::HashMap::new(),).map(|decoded| decoded.values)
     }).expect("shared C2 slot decodes under the service profile");
     assert_eq!(values.len(), 3);
     assert_eq!(values[0].geometry, values[1].geometry);
@@ -37,8 +35,9 @@ fn brep_c2_cache_lookup_preserves_work_refusal() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)?;
-            decode_pcurves(&ctx, &data, ArchiveVersion::V5, brep.raw(), brep.resolved(),
-                "plane", &std::collections::HashMap::new())
+            let mut storage = ctx.reserve_scoped(0, "Rhino fixture arena scratch")?;
+            decode_pcurves((&ctx, &mut storage), &data, ArchiveVersion::V5, brep.raw(), brep.resolved(),
+                "plane", &std::collections::HashMap::new(),)
                 .map(|decoded| decoded.values)
                 .map_err(|error| match error {
                     crate::curves::GeometryError::Codec(error) => error,
@@ -62,8 +61,9 @@ fn brep_c2_cache_leaves_retention_for_output_knots() {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)?;
-            decode_pcurves(&ctx, &data, ArchiveVersion::V5, brep.raw(), brep.resolved(),
-                "plane", &std::collections::HashMap::new())
+            let mut storage = ctx.reserve_scoped(0, "Rhino fixture arena scratch")?;
+            decode_pcurves((&ctx, &mut storage), &data, ArchiveVersion::V5, brep.raw(), brep.resolved(),
+                "plane", &std::collections::HashMap::new(),)
                 .map(|decoded| decoded.values)
                 .map_err(|error| match error {
                     crate::curves::GeometryError::Codec(error) => error,
@@ -173,4 +173,52 @@ fn duplicate_instance_member_stops_before_unused_unique_keys() {
         .expect("empty root");
     assert!(!super::super::instance_members_are_unique(&ctx, &members)
         .expect("unused suffix keys need no allocation"));
+}
+
+#[test]
+fn staged_curve_arena_preserves_materialized_refusal() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino Brep curve arena", |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut storage = ctx.reserve_scoped(0, "fixture arena scratch")?;
+            let mut staged = super::BrepDraft::default();
+            super::stage_curve_tree(( &ctx, &mut storage), &mut staged,
+                super::decoded_nurbs(super::line_nurbs(0.0, 1.0, false)), "curve", "root",
+                &super::test_association(), &DecodeContext::mint_unknown_id(0))
+                .map_err(|error| match error {
+                    crate::curves::GeometryError::Codec(error) => {
+                        if let cadmpeg_core::CodecError::ResourceLimit(ref limit) = error {
+                            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+                        }
+                        error
+                    },
+                    error => panic!("unexpected geometry error: {error}"),
+                })
+        });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "Rhino Brep curve arena"));
+}
+
+#[test]
+fn rejected_candidate_releases_arena_storage() {
+    let scan = scan_with_objects(&[]);
+    let point = cadmpeg_ir::topology::Point::new(
+        "rhino:test:point#candidate".try_into().expect("identity"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)).expect("finite point"), None);
+    super::with_transaction_limits(&scan, u64::MAX, Some(0), Some(8192), |expand| {
+        let mut context = DecodeContext::new(&scan, expand).expect("empty transaction");
+        let result = context.validate_candidate_fallible(|candidate, _annotations, storage| {
+            expand.ctx().push_scoped_vec(storage, &mut candidate.model.points, point, "fixture candidate arena")?;
+            Err::<(), super::CandidateError>(super::CandidateError::Admission("rejected".to_string()))
+        });
+        assert!(matches!(result, Err(super::CandidateError::Admission(ref message)) if message == "rejected"));
+        assert!(context.session.document().model.points.is_empty());
+        let storage = expand.ctx().reserve_scoped(8192, "candidate arena storage released")
+            .expect("candidate arena backing is no longer live");
+        drop(storage);
+    });
 }

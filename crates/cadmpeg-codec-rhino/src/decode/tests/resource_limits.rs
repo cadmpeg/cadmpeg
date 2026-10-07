@@ -44,8 +44,7 @@ fn class_loss_tag_refuses_retained_limit() {
 fn staged_curve_tree_refusal(limit: u64, operation: &str) {
     let refusal = with_collection_limit(limit, |ctx| {
         let mut staged = BrepDraft::default();
-        stage_curve_tree(
-            ctx,
+        stage_curve_tree((ctx, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch")),
             &mut staged,
             one_child_compound(),
             "compound",
@@ -74,8 +73,7 @@ fn committed_curve_tree_refusal(limit: u64, operation: &str) {
                 association: &test_association(),
                 record: None,
                 path: "root",
-            },
-        )
+            }, &mut ctx.reserve_scoped(0, "Rhino fixture arena scratch").expect("fixture scratch"),)
         .expect_err("curve tree exceeds collection limit")
     });
     assert!(matches!(
