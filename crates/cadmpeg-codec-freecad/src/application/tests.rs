@@ -24,14 +24,9 @@ fn application_records_refuse_on_collection_limit() {
         order: 0,
         data: None,
     }];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within input policy");
-    assert!(matches!(super::wire_records(&ctx, &objects, &[], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD application records"));
+    crate::test_support::assert_collection_refusal_at(&[], "FreeCAD application records", |ctx| {
+        super::wire_records(ctx, &objects, &[], &[]).map(|_| ())
+    });
 }
 
 #[test]
@@ -453,13 +448,11 @@ fn application_hashes_refuse_work_before_digest_allocation() {
         order: 0,
         data: Some(crate::native::RetainedXml::from_text("<Object/>".into(), 0).expect("XML")),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 8;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("context");
-    assert!(
-        matches!(super::wire_records(&ctx, &[object], &[], &[]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD application object digest" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD application object digest",
+        |ctx| super::wire_records(ctx, std::slice::from_ref(&object), &[], &[]).map(|_| ()),
     );
 }
 
@@ -491,20 +484,19 @@ fn application_property_hash_refuses_work_and_digest_storage() {
         order: 0,
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // The owner lookup's first table bounds four buckets of control bytes, alignment and
-    // trailing controls. The pointer sort then reads two scalar range endpoints per key;
-    // ten units remain before XML hashing.
-    let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-    let owner_lookup = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<(&str, Vec<&crate::native::PropertyRecord>)>() + 15 + 4 + 16,
-    );
-    policy.limits.max_work_units = owner_lookup + 2 + (index_bytes + 4 * index_bytes) * 2 * 8 + 10;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("context");
-    assert!(
-        matches!(super::wire_records(&ctx, std::slice::from_ref(&object), std::slice::from_ref(&property), &[]), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD application property digest" && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD application property digest",
+        |ctx| {
+            super::wire_records(
+                ctx,
+                std::slice::from_ref(&object),
+                std::slice::from_ref(&property),
+                &[],
+            )
+            .map(|_| ())
+        },
     );
     crate::test_support::assert_retained_refusal_at(
         &[],
@@ -569,20 +561,24 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
     let digest = entry.sha256().as_ptr();
     let objects = [object];
     let entries = [entry];
+    let small_entries = [crate::test_support::entry_record(
+        entries[0].id().into(),
+        entries[0].name().into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        vec![7],
+    )];
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = crate::test_support::refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD application domain",
+        |ctx| super::wire_records(ctx, &objects, &properties, &small_entries).map(|_| ()),
+    ) else {
+        panic!("work refusal");
+    };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // The owner and entry lookups each bound one four-bucket table (control bytes, alignment
-    // and trailing controls). Two pointer records, complete range keys, two stable-run visits
-    // and 22 XML bytes own the remaining work.
-    let index_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>());
-    let owner_lookup = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<(&str, Vec<&crate::native::PropertyRecord>)>() + 15 + 4 + 16,
-    );
-    let entry_lookup = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<(&str, &crate::native::EntryRecord)>() + 15 + 4 + 16,
-    );
-    policy.limits.max_work_units =
-        owner_lookup + entry_lookup + 4 + 2 * (index_bytes + 4 * index_bytes) * 3 * 8 + 2 + 22;
+    policy.limits.max_work_units = limit.used + limit.additional;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     let records = super::wire_records(&ctx, &objects, &properties, &entries)
@@ -590,5 +586,42 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
     for property in &records[0].property_records {
         assert_eq!(property.payloads[0].sha256.as_ptr(), digest);
         assert_eq!(property.payloads[0].sha256, entries[0].sha256());
+    }
+}
+
+#[test]
+fn application_comparison_refuses_actual_arena_visits() {
+    let objects = [crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Owner".into(),
+            "Owner".into(),
+        )
+        .expect("object identity"),
+        type_name: "Vendor::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    }];
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+    crate::test_support::with_service_context(&[], |ctx| {
+        super::install(ctx, &mut namespace, &objects, &[], &[]).expect("application arena");
+    });
+    for (operation, expected) in [
+        ("FreeCAD actual application record", objects.as_slice()),
+        ("FreeCAD actual application tail", &[][..]),
+    ] {
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            operation,
+            |ctx| {
+                super::matches_native(ctx, &namespace, expected, &[], &[])
+                    .map_err(cadmpeg_core::CodecError::from)
+            },
+        );
     }
 }
