@@ -427,3 +427,137 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         "the sink is drained into the report"
     );
 }
+
+#[test]
+fn census_entity_traversal_refuses_work_before_counting() {
+    let bytes = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &[0xfe]);
+    let limit = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "catia_census_entity_records",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_work_units = cap;
+            CatiaCodec
+                .decode(&mut Cursor::new(&bytes), &options)
+                .map_err(|failure| match failure {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        },
+    );
+    assert!(
+        matches!(limit, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_census_entity_records" && limit.additional > 0)
+    );
+}
+
+#[test]
+fn incoming_storage_census_admits_each_reference_once() {
+    use crate::native::{CatiaEntityIncomingStorageReference, CatiaEntityReference};
+    let references = [
+        CatiaEntityIncomingStorageReference {
+            object_record: "first".to_owned(),
+            source_entity: Some(CatiaEntityReference::Resolved {
+                entity_id: 1,
+                entity: "entity".to_owned(),
+                class_name: Some("class".to_owned()),
+            }),
+        },
+        CatiaEntityIncomingStorageReference {
+            object_record: "second".to_owned(),
+            source_entity: Some(CatiaEntityReference::Unresolved { entity_id: 2 }),
+        },
+        CatiaEntityIncomingStorageReference {
+            object_record: "third".to_owned(),
+            source_entity: None,
+        },
+    ];
+    // Three reference visits cost three work units. The classification reads
+    // optional fields and does not compare their text.
+    let counts = crate::test_support::with_work_limit(3, |ctx| {
+        let mut counts = super::IncomingEntityIncidenceCounts::default();
+        counts.add(ctx, &[], &references)?;
+        Ok::<_, cadmpeg_core::CodecError>(counts)
+    })
+    .expect("exact census budget");
+    assert_eq!(counts.payload, 0);
+    assert_eq!(counts.storage, 3);
+    assert_eq!(counts.classified, 1);
+    assert_eq!(counts.zero, 0);
+    assert_eq!(counts.one, 0);
+    assert_eq!(counts.multiple, 1);
+    let limited = crate::test_support::with_work_limit(2, |ctx| {
+        let mut counts = super::IncomingEntityIncidenceCounts::default();
+        counts.add(ctx, &[], &references)?;
+        Ok::<_, cadmpeg_core::CodecError>(counts)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "catia_census_incoming_storage"
+            && limit.used == 0 && limit.additional == 3)
+    );
+}
+
+#[test]
+fn modeling_scope_search_stops_at_the_second_part_graph() {
+    let graphs = [
+        graph("first", "part", "CATPrtCont"),
+        graph("second", "part", "CATPrtCont"),
+        graph("unvisited", "part", "CATPrtCont"),
+    ];
+    // Two visited graphs cost 2 units and two ten-byte class comparisons cost
+    // 20 units. The third graph and the end of the iterator are not visited.
+    let scope =
+        crate::test_support::with_work_limit(22, |ctx| modeling_graph_scope(ctx, true, &graphs))
+            .expect("only the first two matching graphs are visited");
+    assert_eq!(scope, super::ModelingGraphScope::Unresolved);
+    let limited =
+        crate::test_support::with_work_limit(21, |ctx| modeling_graph_scope(ctx, true, &graphs));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_modeling_scope_class"
+            && limit.used == 12 && limit.additional == 10)
+    );
+}
+
+#[test]
+fn incoming_payload_census_admits_each_reference_once() {
+    use crate::native::{CatiaEntityIncomingReference, CatiaObjectRecordReferenceSource};
+    let references = [
+        CatiaEntityIncomingReference {
+            object_record: "first".to_owned(),
+            source_entity: None,
+            payload_offset: 0,
+            source: CatiaObjectRecordReferenceSource::Field,
+        },
+        CatiaEntityIncomingReference {
+            object_record: "second".to_owned(),
+            source_entity: None,
+            payload_offset: 4,
+            source: CatiaObjectRecordReferenceSource::Field,
+        },
+    ];
+    // Two payload visits cost two work units. The empty storage slice costs zero.
+    let counts = crate::test_support::with_work_limit(2, |ctx| {
+        let mut counts = super::IncomingEntityIncidenceCounts::default();
+        counts.add(ctx, &references, &[])?;
+        Ok::<_, cadmpeg_core::CodecError>(counts)
+    })
+    .expect("exact census budget");
+    assert_eq!(counts.payload, 2);
+    assert_eq!(counts.storage, 0);
+    assert_eq!(counts.classified, 0);
+    assert_eq!(counts.multiple, 1);
+    let limited = crate::test_support::with_work_limit(1, |ctx| {
+        let mut counts = super::IncomingEntityIncidenceCounts::default();
+        counts.add(ctx, &references, &[])?;
+        Ok::<_, cadmpeg_core::CodecError>(counts)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "catia_census_incoming_payload"
+            && limit.used == 0 && limit.additional == 2)
+    );
+}
