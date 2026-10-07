@@ -1499,7 +1499,7 @@ impl<'a> Section<'a> {
         };
         let Some(relative) = ctx.position_by(
             1..tail.len(),
-            |end| Ok(tail[end - 1..end + 1] == [0x41, 0x00]),
+            |end| Ok(tail[end - 1..=end] == [0x41, 0x00]),
             "NX audit trail marker",
         )?
         else {
@@ -2048,6 +2048,10 @@ pub(crate) fn pattern_payload_transform_lane(
     const GEOMETRY_SCALAR_SUFFIX: [u8; 10] =
         [0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03];
     const ROW_TAIL: [u8; 5] = [0x00, 0x00, 0xff, 0x00, 0x00];
+    enum RowValues {
+        Scalar(PatternValue<ShiftedScalar, usize>),
+        Wide(PatternWideValues<usize>),
+    }
     let (prefix_tail, scalar_suffix) = match record.name() {
         "Pattern Feature" => (
             FEATURE_PREFIX_TAIL.as_slice(),
@@ -2059,10 +2063,6 @@ pub(crate) fn pattern_payload_transform_lane(
         ),
         _ => return Ok(None),
     };
-    enum RowValues {
-        Scalar(PatternValue<ShiftedScalar, usize>),
-        Wide(PatternWideValues<usize>),
-    }
     let Some(end) = record.payload().len().checked_sub(1) else {
         return Ok(None);
     };
@@ -3815,7 +3815,7 @@ fn operation_state_journal_start(
     };
     let Some(relative) = ctx.position_by(
         1..tail.len(),
-        |end| Ok(tail[end - 1..end + 1] == [0x41, 0x00]),
+        |end| Ok(tail[end - 1..=end] == [0x41, 0x00]),
         "NX state journal marker",
     )?
     else {

@@ -272,6 +272,8 @@ pub(crate) fn sketch_pairs(
 
 #[cfg(test)]
 mod tests {
+    const EPS_SKETCH_SCALAR: f64 = 1e-12;
+
     fn datum_plane_pairs(bytes: &[u8]) -> Vec<super::Binary64Pair<super::DatumPlanePairForm>> {
         crate::test_support::with_decode_context(|ctx| super::datum_plane_pairs(ctx, bytes))
             .unwrap()
@@ -440,8 +442,6 @@ mod tests {
 
     #[test]
     fn om_sketch_scalar_pairs_accept_the_repeated_type_frame() {
-        const EPS_SKETCH_SCALAR: f64 = 1e-12;
-
         let mut bytes = vec![0xaa, 0x00];
         let discriminator_offset = bytes.len();
         bytes.extend_from_slice(&[

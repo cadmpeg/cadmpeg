@@ -143,7 +143,7 @@ fn control_word_traversal_pays_for_exactly_the_declared_words() {
             assert_eq!(
                 values
                     .into_iter()
-                    .map(|word| word.value())
+                    .map(crate::om::control_word::ControlWord24::value)
                     .collect::<Vec<_>>(),
                 [7, 8]
             );

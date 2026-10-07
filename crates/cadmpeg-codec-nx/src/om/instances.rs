@@ -36,7 +36,7 @@ impl<O> MultiInstanceOutputs<O> {
         ) {
             Ok(validation) => validation?,
             Err(error) => match error {},
-        };
+        }
         Ok(Self {
             selectors: rows.into_iter().map(|(selector, _)| selector).collect(),
             references,

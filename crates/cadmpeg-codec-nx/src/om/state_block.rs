@@ -121,7 +121,7 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
             message_storage,
             ..
         } = self;
-        let located = locate_messages(ctx, offset, body);
+        let located = locate_messages(ctx, offset, &body);
         drop(message_storage);
         located
     }
@@ -154,10 +154,10 @@ impl<'a, 'ctx> OperationStateBlock<'a, 'ctx> {
 fn locate_messages<'a>(
     ctx: &DecodeContext<'_>,
     mut offset: usize,
-    body: BlockBody<'a>,
+    body: &BlockBody<'a>,
 ) -> Result<Option<Vec<OperationStateMessage<'a>>>, CodecError> {
     let mut located = Vec::new();
-    let (initial, last) = match &body {
+    let (initial, last) = match body {
         BlockBody::Statuses { messages, .. } => (messages.as_slice(), &[][..]),
         BlockBody::Messages(messages) => {
             (messages.initial(), std::slice::from_ref(messages.last()))
@@ -883,7 +883,7 @@ mod tests {
                 let located = super::locate_messages(
                     ctx,
                     100,
-                    super::BlockBody::Messages(super::NonEmpty::new([message]).unwrap()),
+                    &super::BlockBody::Messages(super::NonEmpty::new([message]).unwrap()),
                 )
                 .unwrap()
                 .unwrap();

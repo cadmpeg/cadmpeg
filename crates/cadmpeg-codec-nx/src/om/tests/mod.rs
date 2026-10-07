@@ -57,7 +57,7 @@ fn expression_unit_equality_cost_counts_variant_and_label() {
                 unit.decode_cost(ctx, "NX expression unit equality")
                     .unwrap(),
                 expected
-            )
+            );
         });
         let error = crate::test_support::resource_refusal_at(
             &[],
