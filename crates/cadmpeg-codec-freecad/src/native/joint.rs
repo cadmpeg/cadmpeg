@@ -92,11 +92,11 @@ impl JointParameters {
         joint_id: &str,
     ) -> Result<Self, CodecError> {
         let mut checked = BTreeMap::new();
-        for (name, raw) in parameters {
+        for (name, raw) in ctx.admit_iter(parameters, "fcstd joint raw parameters")? {
             let parameter = match parameter_kind(&name) {
                 ParameterKind::Scalar => {
-                    let value = raw
-                        .parse::<f64>()
+                    let value = ctx
+                        .parse_text::<f64>(&raw, "fcstd joint checked scalar parse")?
                         .ok()
                         .and_then(FiniteReal::new)
                         .ok_or_else(|| {
@@ -143,18 +143,30 @@ impl JointParameters {
         self.0.get(name).map(JointParameter::raw)
     }
 
-    pub(crate) fn bool_value(&self, name: &str) -> Option<bool> {
-        match self.0.get(name) {
-            Some(JointParameter::Boolean { value, .. }) => Some(*value),
-            _ => None,
-        }
+    pub(crate) fn bool_value(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<bool>, CodecError> {
+        Ok(
+            match ctx.get_btree_map(&self.0, name, "fcstd joint boolean lookup")? {
+                Some(JointParameter::Boolean { value, .. }) => Some(*value),
+                _ => None,
+            },
+        )
     }
 
-    pub(crate) fn scalar_value(&self, name: &str) -> Option<FiniteReal> {
-        match self.0.get(name) {
-            Some(JointParameter::Scalar { value, .. }) => Some(*value),
-            _ => None,
-        }
+    pub(crate) fn scalar_value(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<FiniteReal>, CodecError> {
+        Ok(
+            match ctx.get_btree_map(&self.0, name, "fcstd joint scalar lookup")? {
+                Some(JointParameter::Scalar { value, .. }) => Some(*value),
+                _ => None,
+            },
+        )
     }
 }
 
@@ -469,6 +481,64 @@ mod tests {
     use super::{JointBody, JointConnectorRecord, JointRecord, JointRecordWire, PairedJointFamily};
 
     #[test]
+    fn checked_joint_parameter_traversal_and_parse_refuse_at_work_boundary() {
+        for operation in [
+            "fcstd joint raw parameters",
+            "fcstd joint checked scalar parse",
+        ] {
+            crate::test_support::refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                &[],
+                operation,
+                |ctx| {
+                    JointRecord::try_new(
+                        ctx,
+                        "fcstd:native:joint#Joint".into(),
+                        "fcstd:native:object#Joint".into(),
+                        JointBody::Grounded {
+                            reference: None,
+                            placement: super::FiniteFrame::default(),
+                        },
+                        BTreeMap::from([("Angle".into(), "15.5".into())]),
+                    )
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn checked_joint_parameter_lookups_refuse_at_work_boundary() {
+        let record = crate::test_support::with_service_context(&[], |ctx| {
+            JointRecord::try_new(
+                ctx,
+                "fcstd:native:joint#Joint".into(),
+                "fcstd:native:object#Joint".into(),
+                JointBody::Grounded {
+                    reference: None,
+                    placement: super::FiniteFrame::default(),
+                },
+                BTreeMap::from([
+                    ("Angle".into(), "15.5".into()),
+                    ("Suppressed".into(), "true".into()),
+                ]),
+            )
+            .expect("checked parameters")
+        });
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "fcstd joint scalar lookup",
+            |ctx| record.parameters().scalar_value(ctx, "Angle"),
+        );
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "fcstd joint boolean lookup",
+            |ctx| record.parameters().bool_value(ctx, "Suppressed"),
+        );
+    }
+
+    #[test]
     fn joint_identity_admission_rejects_invalid_joint_and_object_ids() {
         for (id, object) in [
             ("", "fcstd:native:object#Joint"),
@@ -754,7 +824,11 @@ mod tests {
                 .expect("valid known parameter values remain admissible");
             if name == "Angle" {
                 assert_eq!(
-                    record.parameters().scalar_value(name).map(FiniteReal::get),
+                    crate::test_support::with_service_context(&[], |ctx| record
+                        .parameters()
+                        .scalar_value(ctx, name)
+                        .expect("parameter lookup"))
+                    .map(FiniteReal::get),
                     Some(15.5)
                 );
             }
@@ -785,7 +859,13 @@ mod tests {
             let record = serde_json::from_value::<JointRecord>(wire.clone())
                 .expect("primary bool spellings remain admissible");
             assert_eq!(record.parameters().raw("Suppressed"), Some(raw));
-            assert_eq!(record.parameters().bool_value("Suppressed"), Some(expected));
+            assert_eq!(
+                crate::test_support::with_service_context(&[], |ctx| record
+                    .parameters()
+                    .bool_value(ctx, "Suppressed")
+                    .expect("parameter lookup")),
+                Some(expected)
+            );
             assert_eq!(serde_json::to_value(record).unwrap(), wire);
         }
     }
