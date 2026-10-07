@@ -67,22 +67,20 @@ pub const CATIA_ADMISSION_CHECKS: &[Check] = DRAFT_CORE_CHECKS;
 /// this set requires additional reject-fixture coverage.
 pub const SLDPRT_EXPORT_PRECONDITION_CHECKS: &[Check] = DRAFT_CORE_CHECKS;
 
-/// Drop findings whose [`Check`] is outside `allowed`, after admitting the scan.
+/// Drop findings whose [`Check`] is outside `allowed`.
+///
+/// `allowed` is one of the fixed check sets above, so testing a finding
+/// against it is bounded by the number of checks.
 pub fn filter_checks(
     ctx: &DecodeContext<'_>,
     mut report: ValidationReport,
     allowed: &[Check],
 ) -> Result<ValidationReport, CodecError> {
-    let work = allowed
-        .len()
-        .checked_add(std::mem::size_of::<crate::report::check::Finding>())
-        .and_then(|units| units.checked_add(1))
-        .and_then(|units| units.checked_mul(report.findings.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("filter admission checks", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(u64_from_index(work), "filter admission checks")?;
-    report
-        .findings
-        .retain(|finding| allowed.contains(&finding.check));
+    ctx.retain_vec(
+        &mut report.findings,
+        |finding| Ok(allowed.contains(&finding.check)),
+        "filter admission checks",
+    )?;
     Ok(report)
 }
 
@@ -170,25 +168,29 @@ fn native_unknown_order<'ctx>(
 ) -> Result<Result<NativeUnknownOrder<'ctx>, crate::native::NativeConvertError>, CodecError> {
     for record in records {
         ctx.charge_work(1, "source product record scan")?;
-        for (position, link) in ctx
-            .admit_iter(record.links(), "source product link grammar")?
-            .enumerate()
-        {
-            for _ in 0..4 {
-                ctx.charge_work(u64_from_index(link.len()), "source product link grammar")?;
-            }
-            if !crate::ids::is_valid_identity(link) {
-                let message = ctx.format_retained(
-                    format_args!(
-                        "native unknown {} link {position}: identity is invalid: {link:?}",
-                        record.id()
-                    ),
-                    "source product link error",
-                )?;
-                return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
-                    message,
-                )));
-            }
+        let invalid = ctx.position_by(
+            record.links(),
+            |link| {
+                let grammar = link.len().checked_mul(4).ok_or_else(|| {
+                    ctx.refuse_codec_limit("source product link grammar", u64::MAX - 1, u64::MAX)
+                })?;
+                ctx.charge_work(u64_from_index(grammar), "source product link grammar")?;
+                Ok(!crate::ids::is_valid_identity(link))
+            },
+            "source product link grammar",
+        )?;
+        if let Some(position) = invalid {
+            let message = ctx.format_retained(
+                format_args!(
+                    "native unknown {} link {position}: identity is invalid: {:?}",
+                    record.id(),
+                    record.links()[position]
+                ),
+                "source product link error",
+            )?;
+            return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
+                message,
+            )));
         }
     }
     let order = ctx.with_scoped_storage("source product identity order", || {
@@ -205,28 +207,28 @@ fn native_unknown_order<'ctx>(
         )?;
         Ok::<_, CodecError>(order)
     })?;
-    let mut positions = ctx
-        .admit_iter(&order.0, "source product identity duplicate scan")?
-        .copied();
-    if let Some(mut first_position) = positions.next() {
-        for second_position in positions {
-            let first = records[first_position].id().as_str();
-            let second = records[second_position].id().as_str();
-            if ctx.equal(
-                first,
-                second,
+    let duplicate = ctx.find_by(
+        order.0.windows(2),
+        |pair| {
+            ctx.equal(
+                records[pair[0]].id().as_str(),
+                records[pair[1]].id().as_str(),
                 "source product identity duplicate comparison",
-            )? {
-                let message = ctx.format_retained(
-                    format_args!("duplicate native unknown record {first}"),
-                    "native unknown identity collision",
-                )?;
-                return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
-                    message,
-                )));
-            }
-            first_position = second_position;
-        }
+            )
+        },
+        "source product identity duplicate scan",
+    )?;
+    if let Some(pair) = duplicate {
+        let message = ctx.format_retained(
+            format_args!(
+                "duplicate native unknown record {}",
+                records[pair[0]].id().as_str()
+            ),
+            "native unknown identity collision",
+        )?;
+        return Ok(Err(crate::native::NativeConvertError::InvalidCollection(
+            message,
+        )));
     }
     Ok(Ok(NativeUnknownOrder {
         positions: order.0,

@@ -24,6 +24,22 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
+/// The collection items a validator's typed reload of one stored arena
+/// admits: the least item allowance under which the reload succeeds.
+fn typed_reload_items<T: serde::de::DeserializeOwned>(ir: &cadmpeg_ir::CadIr, arena: &str) -> u64 {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let namespace = ir.native.namespace("f3d").unwrap();
+    (0..=u64::from(u16::MAX))
+        .find(|items| {
+            let decode_arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = *items;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &decode_arena, &policy).unwrap();
+            namespace.arena_as_for_decode::<T>(&ctx, arena).is_ok()
+        })
+        .unwrap()
+}
+
 mod act_limits;
 mod arithmetic;
 mod body_recipe_limits;
