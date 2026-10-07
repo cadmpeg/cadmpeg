@@ -174,7 +174,6 @@ fn swift_missing_vector_component_does_not_hide_later_lookup_refusal() {
 
 #[test]
 fn swift_missing_nominal_field_preserves_lookup_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut feature = entity("GdtCylinder");
     let mut geometry = entity("GeoCylinder");
     geometry.doubles.insert("Other".into(), 0.0);
@@ -183,16 +182,9 @@ fn swift_missing_nominal_field_preserves_lookup_refusal() {
         class: "GeoCylinder".into(),
         entity: geometry,
     });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::swift::nominal_measurement(&ctx, &feature, "NomCylinder", "R").unwrap_err();
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected work refusal");
-    };
-    assert_eq!(limit.operation, "look up SLDPRT ordered key");
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_work_refusal_at("look up SLDPRT ordered key", |ctx| {
+        crate::swift::nominal_measurement(ctx, &feature, "NomCylinder", "R").map(drop)
+    });
 }
 
 fn assert_work_refusal_at(
