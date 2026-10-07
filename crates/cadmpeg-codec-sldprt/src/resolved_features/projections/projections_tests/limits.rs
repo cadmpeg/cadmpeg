@@ -232,6 +232,26 @@ fn display_relation_synthesis_preserves_reference_parameter() {
     );
 }
 
+#[test]
+fn duplicate_display_parameter_candidates_release_owned_fields() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (mut parameters, features, lanes) = display_relation_synthesis_fixture();
+    synthesize_display_relation_parameters(&cadmpeg_test_support::service_decode_context(), &mut parameters, &features, &lanes).unwrap();
+    assert_eq!(parameters.len(), 1);
+    // Keep the identity collision while removing the earlier relation-property shortcut.
+    parameters[0].properties.clear();
+    let expected = parameters.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 16384;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        synthesize_display_relation_parameters(&ctx, &mut parameters, &features, &lanes).unwrap();
+        assert_eq!(parameters, expected);
+    }
+}
+
 fn display_relation_synthesis_limit_result(
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> cadmpeg_core::CodecError {

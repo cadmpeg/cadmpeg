@@ -776,10 +776,11 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             else {
                 continue;
             };
+            let (inserted, candidate_storage) = ctx.with_scoped_storage(OPERATION, || -> Result<_, cadmpeg_core::CodecError> {
             let Some((value, display, expression)) =
                 relation_display_parameter_value(ctx, relation.family, scalar.value.get())?
             else {
-                continue;
+                return Ok(false);
             };
             let owner = feature.id.as_str();
             let current_ordinal = ctx
@@ -787,7 +788,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 .copied()
                 .unwrap_or(0);
             let Some(next_ordinal) = current_ordinal.checked_add(1) else {
-                continue;
+                return Ok(false);
             };
             if let Some(ordinal) = ctx.get_mut_hash_map(
                 &mut next_ordinals,
@@ -839,7 +840,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 .rsplit_once(&relation.id, "#", "split SLDPRT relation key")?
                 .map_or(relation.id.as_str(), |(_, key)| key);
             if relation_key.is_empty() {
-                continue;
+                return Ok(false);
             }
             let Some(id) = mint_formatted::<ParameterId>(
                 ctx,
@@ -847,10 +848,10 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 OPERATION,
             )?
             else {
-                continue;
+                return Ok(false);
             };
             if ctx.contains_hash_set(&parameter_ids, id.as_str(), OPERATION)? {
-                continue;
+                return Ok(false);
             }
             record_text(&mut parameter_ids, &mut storage, id.as_str())?;
             let mut properties = BTreeMap::new();
@@ -899,6 +900,9 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 OPERATION,
             )?;
             record_text(&mut relation_ids, &mut storage, relation.id.as_str())?;
+            Ok(true)
+            })?;
+            if inserted { candidate_storage.commit()?; }
         }
     }
     Ok(())
