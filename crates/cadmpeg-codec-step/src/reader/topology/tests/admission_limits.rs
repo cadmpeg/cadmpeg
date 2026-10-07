@@ -921,8 +921,8 @@ fn implicit_face_loop_normals_refuse_collection_limit() {
 
 fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
     let ir = cadmpeg_ir::CadIr::empty();
-    let index =
-        cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+    let index_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &index_ctx).unwrap();
     let surface_id =
         cadmpeg_ir::ids::SurfaceId::mint("test:audit:surface#1").expect("valid surface identity");
     let surface = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
@@ -995,7 +995,7 @@ fn selected_pcurve_id_refuses_retained_limit() {
     let candidate =
         cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#1").expect("valid pcurve identity");
     assert!(matches!(super::super::select_associated_pcurve(
-        &cadmpeg_ir::CadIr::empty(), &exchange, 1,
+        None, &exchange, 1,
         &super::super::EdgeDef::Bare { start: 1, end: 2 },
         super::super::PcurveAssociationSources {
             vdefs: &BTreeMap::new(), point_positions: &carriers, candidates: &[candidate],

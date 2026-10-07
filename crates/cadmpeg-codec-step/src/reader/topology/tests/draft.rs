@@ -121,9 +121,11 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         .unwrap(),
     );
 
+    let index_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &index_ctx).unwrap();
     let fit = pcurve_declared_endpoint_fit(
         &cadmpeg_test_support::service_decode_context(),
-        &ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex),
+        &index,
         &surface_id,
         &pcurve,
         [
@@ -180,7 +182,8 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     )
     .expect("witness pcurve is evaluable");
     let target = Point3::new(exact_uv.u, exact_uv.v, 0.0);
-    let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let index_ctx = cadmpeg_test_support::service_decode_context();
+    let index = super::super::PcurveSelectionIndex::build(&ir, &index_ctx).unwrap();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) =
