@@ -916,8 +916,7 @@ fn collect_dimensions(
         seen,
         seen_storage,
     } = output;
-    for candidate in candidate_maps(ctx, payload)? {
-        let (guid, offset) = candidate?;
+    for (guid, offset) in candidate_maps(ctx, payload)? {
         let normalized = seen_storage
             .with_storage(|| ctx.to_ascii_lowercase(guid, "normalize SLDPRT PMI candidate GUID"))?;
         if ctx.contains_hash_set(seen, &normalized, "test SLDPRT hashed identity")? {
@@ -1174,7 +1173,7 @@ fn contains_fixstr_key(
 fn candidate_maps<'a>(
     ctx: &'a DecodeContext<'a>,
     payload: &'a [u8],
-) -> Result<impl Iterator<Item = Result<(&'a str, usize), CodecError>> + 'a, CodecError> {
+) -> Result<impl Iterator<Item = (&'a str, usize)> + 'a, CodecError> {
     Ok(ctx
         .admit_iter(payload, "scan SLDPRT PMI candidates")?
         .copied()
@@ -1184,31 +1183,19 @@ fn candidate_maps<'a>(
                 Marker::from_u8(marker),
                 Marker::FixMap(_) | Marker::Map16 | Marker::Map32
             ) {
-                guid_before(ctx, payload, offset)
-                    .transpose()
-                    .map(|guid| guid.map(|guid| (guid, offset)))
+                guid_before(payload, offset).map(|guid| (guid, offset))
             } else {
                 None
             }
         }))
 }
 
-fn guid_before<'a>(
-    _ctx: &DecodeContext<'_>,
-    payload: &'a [u8],
-    offset: usize,
-) -> Result<Option<&'a str>, CodecError> {
-    let Some(start) = offset.checked_sub(36) else {
-        return Ok(None);
-    };
-    let Some(bytes) = payload.get(start..offset) else {
-        return Ok(None);
-    };
-    let Ok(guid) = std::str::from_utf8(bytes) else {
-        return Ok(None);
-    };
+fn guid_before(payload: &[u8], offset: usize) -> Option<&str> {
+    let start = offset.checked_sub(36)?;
+    let bytes = payload.get(start..offset)?;
+    let guid = std::str::from_utf8(bytes).ok()?;
     let bytes = guid.as_bytes();
-    Ok((bytes.get(8) == Some(&b'-')
+    (bytes.get(8) == Some(&b'-')
         && bytes.get(13) == Some(&b'-')
         && bytes.get(18) == Some(&b'-')
         && bytes.get(23) == Some(&b'-')
@@ -1216,7 +1203,7 @@ fn guid_before<'a>(
             .iter()
             .enumerate()
             .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()))
-    .then_some(guid))
+    .then_some(guid)
 }
 
 fn parse_value<'a>(

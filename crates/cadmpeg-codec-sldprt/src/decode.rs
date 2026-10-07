@@ -2902,7 +2902,7 @@ fn try_decode_brep<'ctx>(
     })?;
     let (selected_site_key, selected, mut decoded) = decoded_sites.swap_remove(selected_site);
     if active_stream.is_none() {
-        decoded.qualify_ids(ctx, &selected_site_key)?;
+        decoded.qualify_ids(ctx, selected_site_key)?;
     }
     bind_opaque_geometry(ctx, &mut decoded, &streams[selected].section.native_id())?;
     let mut configuration_bodies = Vec::new();
@@ -2919,7 +2919,7 @@ fn try_decode_brep<'ctx>(
     for (site, first, mut alternate) in
         ctx.admit_iter(decoded_sites, "merge SLDPRT alternate sites")?
     {
-        alternate.qualify_ids(ctx, &site)?;
+        alternate.qualify_ids(ctx, site)?;
         bind_opaque_geometry(ctx, &mut alternate, &streams[first].section.native_id())?;
         if let Some(index) = configuration_index(ctx, streams[first].source_stream().as_str())? {
             let bodies = copy_body_ids(ctx, &alternate.bodies, &mut workspace)?;
