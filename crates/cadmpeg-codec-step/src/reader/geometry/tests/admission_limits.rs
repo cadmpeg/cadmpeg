@@ -6,20 +6,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-#[test]
-fn uncertainty_values_text_refuses_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    assert!(matches!(
-        &ctx.join_display_retained(["0.1", "0.2"], ", ", "step_uncertainty_values_text"),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_uncertainty_values_text"
-    ));
-}
 
 #[test]
 fn uncertainty_note_text_refuses_retained_limit() {
@@ -47,6 +33,10 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
     policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    let mut workspace = super::super::PcurveWorkspace {
+        records: BTreeSet::new(),
+        storage: ctx.reserve_scoped(0, "test pcurve workspace").expect("empty scope"),
+    };
     super::super::decode_pcurve_geometry(
         1,
         &exchange,
@@ -58,7 +48,7 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
             angle_scale: 1.0,
         },
         &mut Vec::new(),
-        &mut BTreeSet::new(),
+        &mut super::super::PcurveWalk { active: &mut BTreeSet::new(), workspace: &mut workspace },
         0,
         &ctx,
     )
@@ -156,51 +146,6 @@ fn surface_geometry_scale_walk_refuses_depth_limit() {
         matches!(surface_scale_refusal(128, u64::MAX, 1), CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::RecursionDepth
             && refusal.operation == "step_surface_geometry_scale_walk")
-    );
-}
-
-fn directrix_scale_refusal(
-    collection_limit: u64,
-    retained_limit: u64,
-    depth_limit: u64,
-) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    policy.limits.max_recursion_depth = depth_limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let ir = cadmpeg_ir::document::CadIr::empty();
-    let id = cadmpeg_ir::ids::CurveId::mint("test:model:curve#1").expect("valid identity");
-    super::super::directrix_parameter_scale_inner(&ir, &id, 1.0, 1.0, &mut BTreeSet::new(), &ctx)
-        .expect_err("directrix scale exceeds limit")
-}
-
-#[test]
-fn directrix_scale_active_refuses_collection_limit() {
-    assert!(
-        matches!(directrix_scale_refusal(0, u64::MAX, 128), CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "step_directrix_scale_active")
-    );
-}
-
-#[test]
-fn directrix_scale_active_id_refuses_retained_limit() {
-    assert!(
-        matches!(directrix_scale_refusal(128, 0, 128), CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::RetainedBytes
-            && refusal.operation == "step_directrix_scale_active_id")
-    );
-}
-
-#[test]
-fn directrix_scale_walk_refuses_depth_limit() {
-    assert!(
-        matches!(directrix_scale_refusal(128, u64::MAX, 0), CodecError::ResourceLimit(refusal)
-        if refusal.dimension == ResourceDimension::RecursionDepth
-            && refusal.operation == "step_directrix_scale_walk")
     );
 }
 

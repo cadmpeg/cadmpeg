@@ -351,7 +351,7 @@ pub(super) fn decode(
             mut local_vertices,
             local_triangles,
             addressing,
-            _local_vertex_bytes,
+            mut local_vertex_bytes,
             local_triangle_bytes,
             _coordinate_index_bytes,
         ) = if pnindex.is_empty() {
@@ -490,7 +490,7 @@ pub(super) fn decode(
         drop(triangle_bytes);
         drop(pnindex);
         drop(pnindex_bytes);
-        let (source_normals, _source_normal_bytes) =
+        let (source_normals, source_normal_bytes) =
             match inherited_parameter(ctx, record, base_kind, 2)? {
                 None | Some(Value::Omitted) => (Vec::new(), None),
                 Some(value) => match normal_rows(Some(value), ctx)? {
@@ -508,90 +508,66 @@ pub(super) fn decode(
             };
         // AP242 permits an empty normals aggregate; the IR represents both
         // that spelling and an omitted lane as an absent normal lane.
-        let mut _replicated_normal_bytes = None;
-        let mut projected_normal_bytes;
-        let mut normals = match source_normals.len() {
-            0 => None,
-            1 => {
-                let (replicated, storage) =
-                    replicated_normals(local_vertices.len(), source_normals[0], ctx)?;
-                _replicated_normal_bytes = Some(storage);
-                Some(replicated)
+        let (mut normals, mut normal_bytes) = match source_normals.len() {
+            0 => {
+                drop(source_normals);
+                drop(source_normal_bytes);
+                (None, None)
             }
-            count if count == local_vertices.len() => Some(source_normals),
+            1 => {
+                let (replicated, storage) = replicated_normals(local_vertices.len(), source_normals[0], ctx)?;
+                drop(source_normals);
+                drop(source_normal_bytes);
+                (Some(replicated), Some(storage))
+            }
+            count if count == local_vertices.len() => (Some(source_normals), source_normal_bytes),
             count => match &addressing {
-                CoordinateAddressing::TriangleIndices(coordinate_indices)
-                    if count == vertices.len() =>
-                {
-                    projected_normal_bytes = {
-                        ctx.reserve_scoped(0, "step_tessellation_projected_normals")
-                    }?;
-                    Some(projected_normal_bytes.with_storage(|| {
-                        ctx.collect_vec(coordinate_indices.iter().map(|index| {
-                                source_normals[cadmpeg_core::decode::index_from_u32(*index) - 1]
-                            }), "step_tessellation_projected_normals")
-                    })?)
+                CoordinateAddressing::TriangleIndices(coordinate_indices) if count == vertices.len() => {
+                    let (projected, storage) = ctx.with_scoped_storage("step_tessellation_projected_normals", || {
+                        ctx.collect_vec(coordinate_indices.iter().map(|index| source_normals[cadmpeg_core::decode::index_from_u32(*index) - 1]), "step_tessellation_projected_normals")
+                    })?;
+                    drop(source_normals);
+                    drop(source_normal_bytes);
+                    (Some(projected), Some(storage))
                 }
                 CoordinateAddressing::PnIndex | CoordinateAddressing::TriangleIndices(_) => {
                     push_loss(
-                        &mut losses,
-                        StepLossCode::DecodeWarning,
-                        format_args!(
-                            "{kind} #{id} carries {count} normals for {} coordinates",
-                            local_vertices.len()
-                        ),
-                        ctx,
+                        &mut losses, StepLossCode::DecodeWarning,
+                        format_args!("{kind} #{id} carries {count} normals for {} coordinates", local_vertices.len()), ctx,
                     )?;
-                    None
+                    drop(source_normals);
+                    drop(source_normal_bytes);
+                    (None, None)
                 }
             },
         };
-        let mut placed_vertex_bytes;
-        let mut placed_normal_bytes;
         if ctx.get_btree_map(&item_bodies, &id, "step_tessellation_lookup")?.is_some_and(BTreeSet::is_empty) {
-            if let Some(placement) =
-                distinct_placement(ctx, ctx.get_btree_map(&item_placements, &id, "step_tessellation_lookup")?.map_or(&[], Vec::as_slice))?
-            {
-                placed_vertex_bytes = {
-                    ctx.reserve_scoped(0, "step_tessellation_placed_vertices")
-                }?;
-
-                local_vertices = placed_vertex_bytes
-                    .with_storage(|| {
-                        ctx.collect_options(local_vertices
-                                .into_iter()
-                                .map(|vertex| placement.apply_point(vertex.get())), "step_tessellation_placed_vertices")
-                    })?
-                    .map_or_else(
-                        || {
-                            Err(CodecError::malformed(ctx.format_retained(
-                                format_args!(
-                        "{kind} #{id} placed tessellation vertex contains a non-finite coordinate"
-                    ),
-                                "STEP decode text",
-                            )?))
-                        },
-                        Ok,
-                    )?;
+            if let Some(placement) = distinct_placement(ctx, ctx.get_btree_map(&item_placements, &id, "step_tessellation_lookup")?.map_or(&[], Vec::as_slice))? {
+                let (placed, storage) = ctx.with_scoped_storage("step_tessellation_placed_vertices", || {
+                    ctx.collect_options(local_vertices.into_iter().map(|vertex| placement.apply_point(vertex.get())), "step_tessellation_placed_vertices")
+                })?;
+                local_vertices = match placed {
+                    Some(placed) => placed,
+                    None => return Err(CodecError::malformed(ctx.format_retained(
+                        format_args!("{kind} #{id} placed tessellation vertex contains a non-finite coordinate"), "STEP decode text",
+                    )?)),
+                };
+                local_vertex_bytes = storage;
                 if let Some(source_normals) = normals.take() {
-                    placed_normal_bytes = {
-                        ctx.reserve_scoped(0, "step_tessellation_placed_normals")
-                    }?;
-
-                    match placed_normal_bytes.with_storage(|| {
-                        ctx.collect_options(source_normals.into_iter().map(|normal| {
-                                placement
-                                    .apply_normal(normal.get())
-                                    .map(FiniteVector3::from)
-                            }), "step_tessellation_placed_normals")
-                    })? {
-                        Some(transformed) => normals = Some(transformed),
+                    let (placed, storage) = ctx.with_scoped_storage("step_tessellation_placed_normals", || {
+                        ctx.collect_options(source_normals.into_iter().map(|normal| placement.apply_normal(normal.get()).map(FiniteVector3::from)), "step_tessellation_placed_normals")
+                    })?;
+                    match placed {
+                        Some(transformed) => {
+                            normals = Some(transformed);
+                            normal_bytes = Some(storage);
+                        }
                         None => {
+                            normal_bytes = None;
+                            drop(storage);
                             push_loss(
-                                &mut losses,
-                                StepLossCode::DecodeWarning,
-                                format_args!("{kind} #{id} normal placement could not produce finite unit normals; normals omitted"),
-                                ctx,
+                                &mut losses, StepLossCode::DecodeWarning,
+                                format_args!("{kind} #{id} normal placement could not produce finite unit normals; normals omitted"), ctx,
                             )?;
                         }
                     }
@@ -625,14 +601,13 @@ pub(super) fn decode(
         drop(local_vertices);
         drop(local_triangles);
         drop(local_triangle_bytes);
-        drop(_local_vertex_bytes);
+        drop(local_vertex_bytes);
+        drop(normal_bytes);
         let _validation_triangle_bytes = ctx.reserve_scoped_collection::<[u32; 3]>(
             triangle_count,
             "step_tessellation_validation_triangles",
         )?;
-        let next_mesh_count = admitted_meshes.checked_add(1).ok_or_else(|| {
-            ctx.refuse_codec_limit("step_tessellation_mesh_entity", u64::MAX - 1, u64::MAX)
-        })?;
+        let next_mesh_count = admitted_meshes + 1;
         let mut pending_meshes = admitted_meshes;
         ctx.admit_entities(
             next_mesh_count,
@@ -774,7 +749,7 @@ struct TessellationItemAssociator<'a, 'ctx, 'arena> {
     declared_items: &'a mut BTreeSet<u64>,
     unresolved_containers: &'a mut BTreeSet<u64>,
     typed: &'a mut BTreeSet<u64>,
-    geometry: &'a GeometryData,
+    geometry: &'a GeometryData<'a>,
     placements: &'a mut BTreeMap<u64, Vec<Transform>>,
     unresolved_placements: &'a mut BTreeSet<u64>,
     body_context_items: &'a mut BTreeSet<u64>,
@@ -1408,11 +1383,7 @@ fn admitted_mesh_id(
     let digits = decimal_digits(id);
     let _key_bytes = ctx.reserve_scoped(digits, "step_tessellation_mesh_key")?;
     ctx.charge_retained(
-        u64_from_index("step:tessellation:mesh#".len())
-            .checked_add(digits)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("step_tessellation_mesh_id", u64::MAX - 1, u64::MAX)
-            })?,
+        u64_from_index("step:tessellation:mesh#".len()) + digits,
         "step_tessellation_mesh_id",
     )?;
     Ok(ids::tessellation(kind!("mesh"), id).into())
@@ -1423,12 +1394,7 @@ fn admitted_surface_id<'a>(
     ctx: &'a DecodeContext<'_>,
 ) -> Result<(cadmpeg_ir::ids::Identity, ScopedReservation<'a>), CodecError> {
     let digits = decimal_digits(id);
-    let bytes = u64_from_index("step:data:surface#".len())
-        .checked_add(digits)
-        .and_then(|length| length.checked_add(digits))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("step_tessellation_surface_id", u64::MAX - 1, u64::MAX)
-        })?;
+    let bytes = u64_from_index("step:data:surface#".len()) + digits * 2;
     let reservation = ctx.reserve_scoped(bytes, "step_tessellation_surface_id")?;
     Ok((ids::data(kind!("surface"), id), reservation))
 }
@@ -1447,11 +1413,7 @@ fn push_loss(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(losses, 1, "step_tessellation_loss_notes")?;
-    let vocabulary_bytes = u64_from_index(code.code().len())
-        .checked_add(u64_from_index("step".len()))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("step_tessellation_loss_notes", u64::MAX - 1, u64::MAX)
-        })?;
+    let vocabulary_bytes = u64_from_index(code.code().len()) + u64_from_index("step".len());
     ctx.charge_retained(vocabulary_bytes, "step_tessellation_loss_notes")?;
     let text = ctx.format_retained(message, "step_tessellation_loss_notes")?;
     losses.push(code.note(text));
