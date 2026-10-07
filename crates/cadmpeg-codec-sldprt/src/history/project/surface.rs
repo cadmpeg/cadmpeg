@@ -88,7 +88,7 @@ pub(super) fn project_filled_surface(
 pub(super) fn project_trim_surface(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
     let tool = match property_value(ctx, feature, "Tool")? {
         None => PathRef::Unresolved(ctx.format_retained(

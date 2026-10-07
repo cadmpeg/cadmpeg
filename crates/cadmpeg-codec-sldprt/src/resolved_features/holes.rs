@@ -824,6 +824,13 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
     const OPERATION: &str = "enrich SLDPRT cosmetic thread diameters";
     for history in histories {
         ctx.charge_work(1, OPERATION)?;
+        let (records, _records_storage) = ctx.unique_index(
+            history
+                .features
+                .iter()
+                .map(|feature| (feature.id.as_str(), feature)),
+            "index SLDPRT hole profile records",
+        )?;
         let mut features_by_id = HashMap::new();
         let mut features_by_source = BTreeMap::new();
         for feature in &history.features {
@@ -872,7 +879,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                         ctx,
                         producer,
                         &features_by_source,
-                        &history.features,
+                        &records,
                     )?
                     else {
                         continue;

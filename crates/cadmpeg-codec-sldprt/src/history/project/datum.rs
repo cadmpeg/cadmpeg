@@ -46,7 +46,11 @@ fn vector(
 
 /// A real-number parameter literal.
 fn real(ctx: &DecodeContext<'_>, feature: &Feature, name: &str) -> Result<Option<f64>, CodecError> {
-    Ok(parameter_literal(ctx, feature, name)?.and_then(|value| value.trim().parse::<f64>().ok()))
+    let Some(value) = ctx.get_btree_map(&feature.parameters, name, super::FEATURE_LITERAL)? else {
+        return Ok(None);
+    };
+    let value = ctx.trim_text(value, super::FEATURE_LITERAL)?;
+    Ok(ctx.parse_text::<f64>(value, super::FEATURE_LITERAL)?.ok())
 }
 
 pub(super) fn project_datum_plane(
@@ -176,14 +180,18 @@ pub(super) fn project_equation_curve(
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let trimmed = |name| -> Result<_, CodecError> {
-        Ok(property_literal(ctx, feature, name)?.map(str::trim))
+        property_value(ctx, feature, name)?
+            .map(|value| ctx.trim_text(value, super::FEATURE_LITERAL))
+            .transpose()
     };
     let parameter = require!(trimmed("Parameter")?);
     let x_expression = require!(trimmed("XEquation")?);
     let y_expression = require!(trimmed("YEquation")?);
     let z_expression = require!(trimmed("ZEquation")?);
-    let start = require!(trimmed("Start")?.and_then(|value| value.parse::<f64>().ok()));
-    let end = require!(trimmed("End")?.and_then(|value| value.parse::<f64>().ok()));
+    let start = require!(trimmed("Start")?);
+    let start = require!(ctx.parse_text::<f64>(start, super::FEATURE_LITERAL)?.ok());
+    let end = require!(trimmed("End")?);
+    let end = require!(ctx.parse_text::<f64>(end, super::FEATURE_LITERAL)?.ok());
     Ok(cadmpeg_ir::features::FeatureEquationCurve::new(
         copy_reference_text(ctx, parameter)?,
         copy_reference_text(ctx, x_expression)?,
@@ -198,7 +206,7 @@ pub(super) fn project_equation_curve(
 /// The native record a source names, or the source text itself.
 fn native_source<'s>(
     ctx: &DecodeContext<'_>,
-    native_by_source: &HashMap<String, &'s str>,
+    native_by_source: &HashMap<&str, &'s str>,
     source: &'s str,
 ) -> Result<&'s str, CodecError> {
     Ok(ctx
@@ -210,7 +218,7 @@ fn native_source<'s>(
 pub(super) fn project_projected_curve(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let source = require!(property_value(ctx, feature, "Source")?);
     let source = native_source(ctx, native_by_source, source)?;
@@ -235,20 +243,27 @@ pub(super) fn project_projected_curve(
 pub(super) fn project_composite_curve(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     const OPERATION: &str = "project SLDPRT composite curve segments";
     let segment_text = require!(property_value(ctx, feature, "Segments")?);
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(segment_text.len()),
-        OPERATION,
-    )?;
     let mut segments = Vec::new();
-    for source in segment_text
-        .split(';')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
+    let mut characters = segment_text.char_indices();
+    let mut start = 0;
+    let mut finished = false;
+    while !finished {
+        let delimiter = ctx.find_map(
+            &mut characters,
+            |(offset, character)| Ok((character == ';').then_some(offset)),
+            OPERATION,
+        )?;
+        let end = delimiter.unwrap_or(segment_text.len());
+        finished = delimiter.is_none();
+        let source = ctx.trim_text(&segment_text[start..end], OPERATION)?;
+        start = end + usize::from(!finished);
+        if source.is_empty() {
+            continue;
+        }
         let source = native_source(ctx, native_by_source, source)?;
         let segment = PathRef::Native(copy_reference_text(ctx, source)?);
         ctx.push_vec(&mut segments, segment, OPERATION)?;
@@ -332,7 +347,7 @@ pub(super) fn project_native_axis_helix(
 pub(super) fn project_wrap(
     ctx: &DecodeContext<'_>,
     feature: &Feature,
-    native_by_source: &HashMap<String, &str>,
+    native_by_source: &HashMap<&str, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let profile = require!(property_value(ctx, feature, "Profile")?);
     let profile = native_source(ctx, native_by_source, profile)?;
