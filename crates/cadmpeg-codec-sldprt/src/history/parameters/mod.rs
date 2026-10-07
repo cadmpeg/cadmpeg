@@ -672,7 +672,8 @@ fn insert_parameter_alias(
     Ok(())
 }
 
-struct ParameterAliases {
+/// Parameter aliases by scope, built once for a parameter set.
+pub(crate) struct ParameterAliases {
     global: HashMap<String, Option<ParameterId>>,
     exact: HashMap<String, Option<ParameterId>>,
     document_local: HashMap<String, Option<ParameterId>>,
@@ -681,7 +682,7 @@ struct ParameterAliases {
 
 impl ParameterAliases {
     /// Build the alias tables as scratch storage held by the returned reservation.
-    fn scoped<'c>(
+    pub(crate) fn scoped<'c>(
         ctx: &'c DecodeContext<'_>,
         parameters: &[DesignParameter],
         feature_names: &HashMap<FeatureId, String>,
@@ -899,11 +900,8 @@ fn insert_parameter_value(
 pub(crate) fn parameters_with_unresolved_references(
     ctx: &DecodeContext<'_>,
     parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>,
-    global_owners: &HashSet<FeatureId>,
+    aliases: &ParameterAliases,
 ) -> Result<usize, CodecError> {
-    let (aliases, _aliases_storage) =
-        ParameterAliases::scoped(ctx, parameters, feature_names, global_owners)?;
     let mut count = 0;
     for parameter in ctx.admit_iter(parameters, "check SLDPRT parameter references")? {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
@@ -939,15 +937,12 @@ pub(crate) fn parameters_with_unresolved_references(
 pub(crate) fn parameters_with_unevaluable_expressions(
     ctx: &DecodeContext<'_>,
     parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>,
-    global_owners: &HashSet<FeatureId>,
+    aliases: &ParameterAliases,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
     if parameters.is_empty() {
         return Ok(0);
     }
-    let (aliases, _aliases_storage) =
-        ParameterAliases::scoped(ctx, parameters, feature_names, global_owners)?;
     let (mut states, _states_storage) = ctx
         .with_scoped_storage("collect SLDPRT parameter value states", || {
             parameter_value_states(ctx, parameters, configurations, false)
@@ -987,11 +982,8 @@ pub(crate) fn parameters_with_unevaluable_expressions(
 pub(crate) fn parameters_with_incoherent_dependencies(
     ctx: &DecodeContext<'_>,
     parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>,
-    global_owners: &HashSet<FeatureId>,
+    aliases: &ParameterAliases,
 ) -> Result<usize, CodecError> {
-    let (aliases, _aliases_storage) =
-        ParameterAliases::scoped(ctx, parameters, feature_names, global_owners)?;
     let mut count = 0;
     for parameter in ctx.admit_iter(
         parameters,
@@ -1016,15 +1008,12 @@ pub(crate) fn parameters_with_incoherent_dependencies(
 pub(crate) fn parameters_with_incoherent_evaluated_values(
     ctx: &DecodeContext<'_>,
     parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>,
-    global_owners: &HashSet<FeatureId>,
+    aliases: &ParameterAliases,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
     if parameters.is_empty() {
         return Ok(0);
     }
-    let (aliases, _aliases_storage) =
-        ParameterAliases::scoped(ctx, parameters, feature_names, global_owners)?;
     let (mut states, _states_storage) = ctx
         .with_scoped_storage("collect SLDPRT parameter value states", || {
             parameter_value_states(ctx, parameters, configurations, true)

@@ -111,14 +111,13 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
     );
     assert_eq!(by_name["D1"].value, None);
     assert_eq!(
-        parameters_with_unevaluable_expressions(
-            &cadmpeg_test_support::service_decode_context(),
-            &parameters,
-            &HashMap::new(),
-            &HashSet::new(),
-            &[],
-        )
-        .unwrap(),
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let (aliases, _storage) =
+                ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new())
+                    .unwrap();
+            parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).unwrap()
+        },
         1
     );
 }
@@ -690,14 +689,9 @@ fn parameter_value_states_refuse_scoped_limit() {
             policy.limits.max_materialized_bytes = cap;
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            parameters_with_unevaluable_expressions(
-                &ctx,
-                &parameters,
-                &HashMap::new(),
-                &HashSet::new(),
-                &[],
-            )
-            .map(|_| ())
+            let (aliases, _storage) =
+                ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new())?;
+            parameters_with_unevaluable_expressions(&ctx, &parameters, &aliases, &[]).map(|_| ())
         },
     );
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
