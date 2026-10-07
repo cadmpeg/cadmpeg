@@ -125,6 +125,35 @@ impl DecodeContext<'_> {
         values.sort_unstable_by(compare);
         Ok(())
     }
+
+    /// Tests whether values are already in order with one pass of neighbour
+    /// comparisons, each charged one step and both operands' key costs, and
+    /// stops at the first pair out of order. Input in a deterministic order
+    /// can skip a sort when this holds; its charge depends on that order, so
+    /// it is not part of the sorts themselves, whose charge does not.
+    pub fn is_sorted_by<T, K: DecodeCost + ?Sized>(
+        &self,
+        values: &[T],
+        key: impl Fn(&T) -> &K,
+        mut compare: impl FnMut(&K, &K) -> Ordering,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        for pair in values.windows(2) {
+            self.charge_work(1, operation)?;
+            let left = key(&pair[0]);
+            let right = key(&pair[1]);
+            let work = self.cost_sum(
+                left.decode_cost(self, operation)?,
+                right.decode_cost(self, operation)?,
+                operation,
+            )?;
+            self.charge_work(work, operation)?;
+            if compare(right, left).is_lt() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
 }
 
 #[cfg(test)]
@@ -245,5 +274,27 @@ mod tests {
             Err(CodecError::ResourceLimit(_))
         ));
         assert_eq!(values, expected);
+    }
+
+    #[test]
+    fn sorted_check_pays_the_neighbour_pass_it_makes() {
+        // Three neighbour comparisons, each one step and two eight-byte keys.
+        let need = 3 * (1 + 8 + 8);
+        for (limit, fits) in [(need - 1, false), (need, true)] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("test operation succeeds");
+            let values = [1_u64, 2, 3, 4];
+            let result = ctx.is_sorted_by(&values, |value| value, Ord::cmp, "sorted");
+            assert_eq!(result.ok(), fits.then_some(true));
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test operation succeeds");
+        assert!(!ctx
+            .is_sorted_by(&[2_u64, 1, 3], |value| value, Ord::cmp, "unsorted")
+            .expect("one comparison"));
     }
 }

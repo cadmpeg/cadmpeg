@@ -5,8 +5,8 @@
 //! and removal through core operations. Their iteration order is unspecified
 //! and a scan walks the allocated table, whose extent has no exact public
 //! bound, so traversal, whole-table comparison, cloning, scan-retain and
-//! drain are reported with the ordered replacement. A removal is a keyed
-//! operation like a lookup. A keyed operation hashes and compares its key
+//! drain are reported with the ordered replacement. A raw removal is reported
+//! with core's charged removal. A keyed operation hashes and compares its key
 //! through `Hash` and `PartialEq` callbacks; core charges the key's
 //! `DecodeCost` for them, which covers a field-wise derived or standard
 //! implementation. Collision probing is not charged per probe, so the table
@@ -102,6 +102,27 @@ pub(crate) fn traversal<'tcx>(
         name.as_str() == *method && types::physical_item_path(tcx, owner, crate_name, parts)
     })
     .map(|(_, _, method)| method)
+}
+
+/// The replacement named for a raw removal from a hash table.
+pub(crate) const REMOVAL_REPLACEMENT: &str = "DecodeContext::remove_hash_map, DecodeContext::remove_entry_hash_map or DecodeContext::remove_hash_set";
+
+/// Returns the removal a call performs on a hash table, if any. Core's
+/// removals charge the key, and those charges, with the charged insertions,
+/// pay for the in-place rehash that reclaims deleted slots; a raw removal,
+/// including through an occupied entry, charges nothing.
+pub(crate) fn removal(tcx: TyCtxt<'_>, callee: DefId) -> Option<&'static str> {
+    const ENTRY: &[&str] = &["collections", "hash", "map", "OccupiedEntry"];
+    for method in ["remove", "remove_entry"] {
+        if types::physical_inherent_method(tcx, callee, "std", MAP, method)
+            || types::physical_inherent_method(tcx, callee, "std", ENTRY, method)
+        {
+            return Some(method);
+        }
+    }
+    ["remove", "take"]
+        .into_iter()
+        .find(|method| types::physical_inherent_method(tcx, callee, "std", SET, method))
 }
 
 /// Returns whether a binary comparison compares a hash table as a whole.

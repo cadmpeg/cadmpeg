@@ -2786,7 +2786,11 @@ pub(crate) fn parse_metadata(
                                 ),
                                 )?;
                             } else {
-                                admit_layer_uuid(ctx, &mut id_workspace, &mut ids, id)?;
+                                id_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                                    std::mem::size_of::<Uuid>(),
+                                ))?;
+                                ctx.reserve_set(&mut ids, 1, "Rhino layer UUID keys")?;
+                                ids.insert(id);
                             }
                         }
                         ctx.reserve_vec(&mut metadata.layers, 1, "Rhino metadata layers")?;
@@ -2869,8 +2873,20 @@ pub(crate) fn parse_metadata(
             }
         }
     }
+    let mut layer_index_counts = Vec::<(i32, usize)>::new();
     let mut index_workspace = ctx.reserve_scoped(0, "Rhino layer index workspace")?;
-    let layer_index_counts = count_layer_indexes(ctx, &mut index_workspace, &metadata.layers)?;
+    for layer in &metadata.layers {
+        match layer_index_counts.binary_search_by_key(&layer.index, |(index, _)| *index) {
+            Ok(position) => layer_index_counts[position].1 += 1,
+            Err(position) => {
+                index_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(i32, usize)>(),
+                ))?;
+                ctx.reserve_vec(&mut layer_index_counts, 1, "Rhino layer index counts")?;
+                layer_index_counts.insert(position, (layer.index, 1));
+            }
+        }
+    }
     for (index, count) in layer_index_counts {
         if count > 1 {
             warnings.push_coded_admitted(ctx,
@@ -2884,45 +2900,6 @@ pub(crate) fn parse_metadata(
     metadata.opaque_records = opaque_records;
     report_layer_parent_references(ctx, &metadata.layers, warnings)?;
     Ok(metadata)
-}
-
-/// Admits one new layer UUID: its workspace entry, then its set slot.
-fn admit_layer_uuid(
-    ctx: &DecodeContext<'_>,
-    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    ids: &mut HashSet<Uuid>,
-    id: Uuid,
-) -> Result<(), CodecError> {
-    workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-        Uuid,
-    >()))?;
-    ctx.reserve_set(ids, 1, "Rhino layer UUID keys")?;
-    ids.insert(id);
-    Ok(())
-}
-
-/// Counts layers per raw index in index order, growing the workspace for each
-/// new index before its slot.
-fn count_layer_indexes(
-    ctx: &DecodeContext<'_>,
-    workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    layers: &[LayerRecord],
-) -> Result<Vec<(i32, usize)>, CodecError> {
-    let mut layer_index_counts = Vec::<(i32, usize)>::new();
-    for layer in layers {
-        match layer_index_counts.binary_search_by_key(&layer.index, |(index, _)| *index) {
-            Ok(position) => layer_index_counts[position].1 += 1,
-            Err(position) => {
-                workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                    i32,
-                    usize,
-                )>()))?;
-                ctx.reserve_vec(&mut layer_index_counts, 1, "Rhino layer index counts")?;
-                layer_index_counts.insert(position, (layer.index, 1));
-            }
-        }
-    }
-    Ok(layer_index_counts)
 }
 
 fn report_layer_parent_references(
