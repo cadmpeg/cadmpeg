@@ -422,8 +422,8 @@ fn draft_face_identities_refuse_at_retained_limits() {
             super::draft_definition(
                 ctx,
                 &[&faces, &neutral, &angle],
-                &[],
-                &std::collections::HashMap::new(),
+                &std::collections::BTreeMap::new(),
+                &std::collections::BTreeMap::new(),
             )
         });
     }
@@ -1420,7 +1420,7 @@ fn design_ordered_objects_refuse_at_caller_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::feature_ordinals(
-        &ctx, &[object], &std::collections::HashMap::default(), &std::collections::HashMap::default(),
+        &ctx, &[object], &std::collections::BTreeMap::default(), &std::collections::HashMap::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "fcstd design ordered objects"));
 }

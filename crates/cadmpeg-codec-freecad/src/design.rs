@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -74,21 +74,19 @@ pub(crate) fn transfer(
     entries: &[EntryRecord],
     program_version: Option<&str>,
 ) -> Result<BTreeSet<String>, CodecError> {
-    let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
-    for property in properties {
-        if !properties_by_owner.contains_key(property.owner.as_str()) {
-            ctx.insert_hash_map(
-                &mut properties_by_owner,
-                property.owner.as_str(),
-                Vec::new(),
-                "fcstd design owner index",
-            )?;
-        }
-        if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
-            ctx.reserve_vec(owned, 1, "fcstd design owner properties")?;
-            owned.push(property);
-        }
-    }
+    let (properties_by_owner, _properties_storage) = ctx.collect_scoped_btree_groups(
+        properties
+            .iter()
+            .map(|property| (property.owner.as_str(), property)),
+        "fcstd design owner index",
+    )?;
+    let (object_by_id, _object_storage) = ctx.collect_scoped_btree_map(
+        objects
+            .iter()
+            .rev()
+            .map(|object| (object.id().as_str(), object)),
+        "fcstd design object index",
+    )?;
     let mut feature_ids = HashMap::new();
     for object in objects
         .iter()
@@ -101,10 +99,16 @@ pub(crate) fn transfer(
             "fcstd design feature ids",
         )?;
     }
+    let (predecessors, _predecessor_storage) =
+        body_predecessors(ctx, objects, &feature_ids, &properties_by_owner)?;
     let mut parent_by_member = HashMap::new();
     for body in objects.iter().filter(|object| is_body(&object.type_name)) {
-        let Some(property) = properties_by_owner
-            .get(body.id().as_str())
+        let Some(property) = ctx
+            .get_btree_map(
+                &properties_by_owner,
+                body.id().as_str(),
+                "fcstd body owner properties",
+            )?
             .and_then(|properties| body_membership_property(properties))
         else {
             continue;
@@ -163,11 +167,13 @@ pub(crate) fn transfer(
         if !is_design_object(&object.type_name) {
             continue;
         }
-        let source = properties_by_owner
-            .get(object.id().as_str())
+        let owned = ctx
+            .get_btree_map(
+                &properties_by_owner,
+                object.id().as_str(),
+                "fcstd design selected owner properties",
+            )?
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = ctx.collection_vec(source.len(), "fcstd design selected properties")?;
-        owned.extend_from_slice(source);
         let id = feature_id(ctx, object)?;
         let mut definition = if is_spreadsheet(&object.type_name) {
             ctx.reserve_vec(&mut ir.model.spreadsheets, 1, "fcstd design spreadsheets")?;
@@ -258,7 +264,7 @@ pub(crate) fn transfer(
                 object.id(),
                 &owned,
                 &sketch_ids,
-                objects,
+                &object_by_id,
                 &properties_by_owner,
             )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
@@ -277,6 +283,8 @@ pub(crate) fn transfer(
                 &feature_ids,
                 PatternSources {
                     objects,
+                    object_by_id: &object_by_id,
+                    predecessors: &predecessors,
                     properties_by_owner: &properties_by_owner,
                     entries,
                 },
@@ -291,7 +299,7 @@ pub(crate) fn transfer(
                 object.id(),
                 &owned,
                 &sketch_ids,
-                objects,
+                &object_by_id,
                 &properties_by_owner,
                 program_version,
             )?
@@ -321,18 +329,24 @@ pub(crate) fn transfer(
                 }
                 profile => profile,
             };
-            let profile_normal = profile_target(&owned)
-                .and_then(|(_, target)| {
-                    objects.iter().find(|object| object.id().as_str() == target)
-                })
-                .map(|profile_object| {
-                    let profile_properties = properties_by_owner
-                        .get(profile_object.id().as_str())
-                        .map(Vec::as_slice)
-                        .unwrap_or_default();
-                    sketch_frame(ctx, profile_properties).map(|frame| frame.1)
-                })
-                .transpose()?;
+            let profile_normal = match profile_target(owned) {
+                Some((_, target)) => {
+                    match ctx.get_btree_map(&object_by_id, target, "fcstd profile object lookup")? {
+                        Some(profile_object) => {
+                            let profile_properties = ctx
+                                .get_btree_map(
+                                    &properties_by_owner,
+                                    profile_object.id().as_str(),
+                                    "fcstd profile owner properties",
+                                )?
+                                .map_or(&[][..], Vec::as_slice);
+                            Some(sketch_frame(ctx, profile_properties)?.1)
+                        }
+                        None => None,
+                    }
+                }
+                None => None,
+            };
             extrusion_definition(
                 ctx,
                 &object.type_name,
@@ -373,7 +387,7 @@ pub(crate) fn transfer(
             project_on_surface_definition(ctx, &owned)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "PartDesign::Draft" {
-            draft_definition(ctx, &owned, objects, &properties_by_owner)?
+            draft_definition(ctx, &owned, &object_by_id, &properties_by_owner)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_fillet(&object.type_name) {
             fillet_definition(ctx, &object.type_name, &owned, entries)?
@@ -568,7 +582,7 @@ pub(crate) fn transfer(
     Ok(cycle_affected)
 }
 
-fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
+fn body_membership_property<'a>(properties: &[&'a PropertyRecord]) -> Option<&'a PropertyRecord> {
     match (property(properties, "Group"), property(properties, "Model")) {
         (Some(group), None) | (None, Some(group)) if group.type_name == "App::PropertyLinkList" => {
             Some(group)
@@ -668,7 +682,7 @@ fn body_tip(
 fn feature_ordinals<'a>(
     ctx: &DecodeContext<'_>,
     objects: &'a [ObjectRecord],
-    properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
+    properties_by_owner: &BTreeMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
 ) -> Result<(HashMap<&'a str, u64>, BTreeSet<String>), CodecError> {
     let count = objects
@@ -6179,8 +6193,8 @@ fn project_on_surface_definition(
 fn draft_definition(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some(faces) = property(properties, "Base") else {
         return Ok(None);
@@ -6188,8 +6202,14 @@ fn draft_definition(
     let Some(neutral_plane) = property(properties, "NeutralPlane") else {
         return Ok(None);
     };
-    let plane_normal = plane_reference(properties, "NeutralPlane", objects, properties_by_owner)
-        .map(|(_, normal)| normal);
+    let plane_normal = plane_reference(
+        ctx,
+        properties,
+        "NeutralPlane",
+        objects,
+        properties_by_owner,
+    )?
+    .map(|(_, normal)| normal);
     let pull_direction = if property(properties, "PullDirection").is_some_and(|property| {
         property
             .links()
@@ -6284,7 +6304,7 @@ fn chamfer_spec(
     })
 }
 
-fn property<'a>(properties: &'a [&PropertyRecord], name: &str) -> Option<&'a PropertyRecord> {
+fn property<'a>(properties: &[&'a PropertyRecord], name: &str) -> Option<&'a PropertyRecord> {
     properties
         .iter()
         .copied()
@@ -7058,8 +7078,8 @@ fn hole_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
     program_version: Option<&str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let profile = profile_ref(ctx, owner, properties, sketches)?;
@@ -7336,8 +7356,8 @@ fn helical_sweep_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((law, axis_origin, axis_direction)) = (|| -> Result<_, CodecError> {
         let law = match required!(enumeration_selector(ctx, properties, "Mode", 0)?) {
@@ -7731,7 +7751,9 @@ fn enumeration_label(
 #[derive(Clone, Copy)]
 struct PatternSources<'a, 'b> {
     objects: &'a [ObjectRecord],
-    properties_by_owner: &'a HashMap<&'b str, Vec<&'b PropertyRecord>>,
+    object_by_id: &'a BTreeMap<&'b str, &'b ObjectRecord>,
+    predecessors: &'a BTreeMap<&'b str, &'b FeatureId>,
+    properties_by_owner: &'a BTreeMap<&'b str, Vec<&'b PropertyRecord>>,
     entries: &'a [EntryRecord],
 }
 
@@ -7745,6 +7767,8 @@ fn pattern_definition(
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let PatternSources {
         objects,
+        object_by_id,
+        predecessors,
         properties_by_owner,
         ..
     } = sources;
@@ -7770,13 +7794,15 @@ fn pattern_definition(
         for target in linked_objects() {
             if features.contains_key(target) {
                 count += 1;
-            } else if !objects.iter().any(|object| {
-                object.id().as_str() == target
-                    && matches!(
+            } else if !ctx
+                .get_btree_map(object_by_id, target, "fcstd pattern object lookup")?
+                .is_some_and(|object| {
+                    matches!(
                         object.type_name.as_str(),
                         "App::Line" | "App::Plane" | "App::Point" | "App::CoordinateSystem"
                     )
-            }) {
+                })
+            {
                 return Ok(None);
             }
         }
@@ -7795,8 +7821,9 @@ fn pattern_definition(
     {
         seeds
     } else {
-        let Some(feature) =
-            implicit_body_predecessor(owner, features, objects, properties_by_owner)
+        let Some(feature) = ctx
+            .get_btree_map(predecessors, owner, "fcstd implicit body predecessor")?
+            .copied()
         else {
             return Ok(None);
         };
@@ -7805,57 +7832,57 @@ fn pattern_definition(
         seeds
     };
 
-    let pattern =
-        if kind.ends_with("MultiTransform") {
-            let Some(transformations) = property(properties, "Transformations") else {
-                return Ok(None);
-            };
-            if transformations.links().is_empty() {
-                return Ok(None);
-            }
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(transformations.links().len()),
-                "freecad pattern stages",
-            )?;
-            let mut stages =
-                ctx.vector_storage(transformations.links().len(), "freecad pattern stages")?;
-            for link in transformations.links() {
-                let Some((object, owned)) = (|| {
-                    let target = link.as_ref()?.object()?;
-                    let object = objects
-                        .iter()
-                        .find(|object| object.id().as_str() == target)?;
-                    let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-                    Some((object, owned))
-                })() else {
-                    return Ok(None);
-                };
-                let Some(pattern) = pattern_kind::<
-                    cadmpeg_ir::features::patterns::NoNestedComposite,
-                >(ctx, &object.type_name, owned, sources)?
-                else {
-                    return Ok(None);
-                };
-                stages.push(PatternStage {
-                    pattern: Box::new(pattern),
-                });
-            }
-            let Some(pattern) = cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()
-            else {
-                return Ok(None);
-            };
-            let Some(pattern) =
-                PatternKind::new(PatternTransform::Composite { stages: pattern }).ok()
-            else {
-                return Ok(None);
-            };
-            pattern
-        } else {
-            let Some(pattern) = pattern_kind(ctx, kind, properties, sources)? else {
-                return Ok(None);
-            };
-            pattern
+    let pattern = if kind.ends_with("MultiTransform") {
+        let Some(transformations) = property(properties, "Transformations") else {
+            return Ok(None);
         };
+        if transformations.links().is_empty() {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(transformations.links().len()),
+            "freecad pattern stages",
+        )?;
+        let mut stages =
+            ctx.vector_storage(transformations.links().len(), "freecad pattern stages")?;
+        for link in transformations.links() {
+            let target = required!(link.as_ref().and_then(crate::native::LinkTarget::object));
+            let object =
+                required!(ctx.get_btree_map(object_by_id, target, "fcstd pattern stage object")?);
+            let owned = required!(ctx.get_btree_map(
+                properties_by_owner,
+                target,
+                "fcstd pattern stage properties"
+            )?)
+            .as_slice();
+            let Some(pattern) = pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
+                ctx,
+                &object.type_name,
+                owned,
+                sources,
+            )?
+            else {
+                return Ok(None);
+            };
+            stages.push(PatternStage {
+                pattern: Box::new(pattern),
+            });
+        }
+        let Some(pattern) = cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()
+        else {
+            return Ok(None);
+        };
+        let Some(pattern) = PatternKind::new(PatternTransform::Composite { stages: pattern }).ok()
+        else {
+            return Ok(None);
+        };
+        pattern
+    } else {
+        let Some(pattern) = pattern_kind(ctx, kind, properties, sources)? else {
+            return Ok(None);
+        };
+        pattern
+    };
     let mut pattern_seeds = ctx.collection_vec(seeds.len(), "fcstd pattern seed variants")?;
     pattern_seeds.extend(seeds.into_iter().map(PatternSeed::Feature));
     Ok(Some(FeatureDefinition::Operation(
@@ -7871,10 +7898,15 @@ fn multi_transform_stage_seeds(
     stage: &str,
     features: &HashMap<&str, FeatureId>,
     objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<Vec<FeatureId>>, CodecError> {
     for consumer in objects {
-        let Some(owned) = properties_by_owner.get(consumer.id().as_str()) else {
+        let Some(owned) = ctx.get_btree_map(
+            properties_by_owner,
+            consumer.id().as_str(),
+            "fcstd multi-transform consumer properties",
+        )?
+        else {
             continue;
         };
         let Some(transformations) = property(owned, "Transformations") else {
@@ -7918,23 +7950,61 @@ fn multi_transform_stage_seeds(
     Ok(None)
 }
 
-fn implicit_body_predecessor<'a>(
-    owner: &str,
+fn body_predecessors<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'_>,
+    objects: &'a [ObjectRecord],
     features: &'a HashMap<&str, FeatureId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<&'a FeatureId> {
-    objects.iter().find_map(|object| {
-        let owned = properties_by_owner.get(object.id().as_str())?;
-        let members = body_membership_property(owned)?;
-        let position = members.links().iter().position(|link| {
-            link.as_ref().and_then(crate::native::LinkTarget::object) == Some(owner)
-        })?;
-        members.links()[..position]
-            .iter()
-            .rev()
-            .filter_map(|link| link.as_ref()?.object())
-            .find_map(|member| features.get(member))
+    properties_by_owner: &BTreeMap<&str, Vec<&'a PropertyRecord>>,
+) -> Result<(BTreeMap<&'a str, &'a FeatureId>, ScopedReservation<'ctx>), CodecError> {
+    ctx.with_scoped_storage("fcstd body predecessor storage", || {
+        let mut predecessors = BTreeMap::new();
+        for object in ctx.admit_iter(objects, "fcstd body predecessor objects")? {
+            let Some(owned) = ctx.get_btree_map(
+                properties_by_owner,
+                object.id().as_str(),
+                "fcstd body predecessor properties",
+            )?
+            else {
+                continue;
+            };
+            let Some(members) = body_membership_property(owned) else {
+                continue;
+            };
+            let mut previous = None;
+            let (mut seen, mut seen_storage) = ctx
+                .with_scoped_storage("fcstd body predecessor seen storage", || {
+                    Ok::<_, CodecError>(BTreeSet::new())
+                })?;
+            for link in ctx.admit_iter(members.links(), "fcstd body predecessor members")? {
+                let Some(member) = link.as_ref().and_then(crate::native::LinkTarget::object) else {
+                    continue;
+                };
+                if seen_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut seen, member, "fcstd body predecessor first member")
+                })? {
+                    if let Some(previous) = previous {
+                        if !ctx.contains_key_btree_map(
+                            &predecessors,
+                            member,
+                            "fcstd body predecessor first body",
+                        )? {
+                            ctx.insert_btree_map(
+                                &mut predecessors,
+                                member,
+                                previous,
+                                "fcstd body predecessor index",
+                            )?;
+                        }
+                    }
+                }
+                if let Some(feature) =
+                    ctx.get_hash_map(features, member, "fcstd body predecessor feature")?
+                {
+                    previous = Some(feature);
+                }
+            }
+        }
+        Ok::<_, CodecError>(predecessors)
     })
 }
 
@@ -7945,14 +8015,19 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
     sources: PatternSources<'_, '_>,
 ) -> Result<Option<PatternKind<C>>, CodecError> {
     let PatternSources {
-        objects,
+        object_by_id,
         properties_by_owner,
         entries,
+        ..
     } = sources;
     if kind.ends_with("Mirrored") {
-        if let Some((plane_origin, plane_normal)) =
-            plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
-        {
+        if let Some((plane_origin, plane_normal)) = plane_reference(
+            ctx,
+            properties,
+            "MirrorPlane",
+            object_by_id,
+            properties_by_owner,
+        )? {
             let Some(plane_origin) = cadmpeg_ir::features::FinitePoint3::new(plane_origin) else {
                 return Ok(None);
             };
@@ -8053,7 +8128,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         }
     } else if kind.ends_with("PolarPattern") {
         let Some((axis_origin, mut axis_dir)) =
-            axis_reference(ctx, properties, "Axis", objects, properties_by_owner)?
+            axis_reference(ctx, properties, "Axis", object_by_id, properties_by_owner)?
         else {
             return Ok(None);
         };
@@ -8128,16 +8203,17 @@ fn linear_pattern_axis(
     sources: PatternSources<'_, '_>,
 ) -> Result<Option<cadmpeg_ir::features::patterns::StagePatternKind>, CodecError> {
     let PatternSources {
-        objects,
+        object_by_id,
         properties_by_owner,
         entries,
+        ..
     } = sources;
     let name = |base: &str| format!("{base}{suffix}");
     let mut direction = axis_reference(
         ctx,
         properties,
         &name("Direction"),
-        objects,
+        object_by_id,
         properties_by_owner,
     )?
     .map(|(_, direction)| direction);
@@ -8327,8 +8403,8 @@ fn axis_reference(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<(Point3, cadmpeg_ir::units::UnitVector3)>, CodecError> {
     if let Some(direction) = vector_property(ctx, properties, name)? {
         return Ok(Some((
@@ -8340,8 +8416,13 @@ fn axis_reference(
         properties, name
     ))));
     let target = required!(link.object());
-    let object = required!(objects.iter().find(|object| object.id().as_str() == target));
-    let owned = required!(properties_by_owner.get(target).map(Vec::as_slice));
+    let object = required!(ctx.get_btree_map(objects, target, "fcstd axis reference object")?);
+    let owned = required!(ctx.get_btree_map(
+        properties_by_owner,
+        target,
+        "fcstd axis reference properties"
+    )?)
+    .as_slice();
     let (origin, z_axis, x_axis, y_axis) = required!(placement_frame(owned));
     let direction = match object.type_name.as_str() {
         "PartDesign::Line" | "App::Line" => z_axis,
@@ -8367,35 +8448,44 @@ fn axis_reference(
 }
 
 fn plane_reference(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<(Point3, cadmpeg_ir::units::UnitVector3)> {
-    let (link, selector) = singular_reference_link(property(properties, name)?)?;
-    let target = link.object()?;
-    let object = objects
-        .iter()
-        .find(|object| object.id().as_str() == target)?;
-    let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-    let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
+    objects: &BTreeMap<&str, &ObjectRecord>,
+    properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
+) -> Result<Option<(Point3, cadmpeg_ir::units::UnitVector3)>, CodecError> {
+    let (link, selector) = required!(singular_reference_link(required!(property(
+        properties, name
+    ))));
+    let target = required!(link.object());
+    let object = required!(ctx.get_btree_map(objects, target, "fcstd plane reference object")?);
+    let owned = required!(ctx.get_btree_map(
+        properties_by_owner,
+        target,
+        "fcstd plane reference properties"
+    )?)
+    .as_slice();
+    let (origin, z_axis, x_axis, y_axis) = required!(placement_frame(owned));
     let normal = match object.type_name.as_str() {
         "PartDesign::Plane" | "App::Plane" => z_axis,
         "PartDesign::CoordinateSystem" => match selector {
             Some("XY_Plane" | "XYPlane" | "XY") | None => z_axis,
             Some("XZ_Plane" | "XZPlane" | "XZ") => y_axis,
             Some("YZ_Plane" | "YZPlane" | "YZ") => x_axis,
-            _ => return None,
+            _ => return Ok(None),
         },
         kind if is_sketch(kind) => match selector {
             None | Some("N_Axis") => z_axis,
             Some("H_Axis") => y_axis,
             Some("V_Axis") => x_axis,
-            _ => return None,
+            _ => return Ok(None),
         },
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some((origin, cadmpeg_ir::units::UnitVector3::normalized(normal)?))
+    Ok(Some((
+        origin,
+        required!(cadmpeg_ir::units::UnitVector3::normalized(normal)),
+    )))
 }
 
 fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str> {

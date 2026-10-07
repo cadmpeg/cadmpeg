@@ -36,9 +36,11 @@ fn pattern_scalar(name: &str, value: f64) -> PropertyRecord {
 #[test]
 fn mirrored_pattern_plane_identity_refuses_at_retained_limit() {
     let plane = super::linked_property("mirror", "MirrorPlane", "mirror-plane-property");
-    let properties_by_owner = std::collections::HashMap::new();
+    let properties_by_owner = std::collections::BTreeMap::new();
     let sources = crate::design::PatternSources {
         objects: &[],
+        object_by_id: &std::collections::BTreeMap::new(),
+        predecessors: &std::collections::BTreeMap::new(),
         properties_by_owner: &properties_by_owner,
         entries: &[],
     };
@@ -66,9 +68,11 @@ fn pattern_seed_vectors_and_identities_refuse_at_matching_limits() {
         cadmpeg_ir::features::FeatureId::mint("test:test:feature#pattern-seed")
             .expect("valid feature id"),
     );
-    let properties_by_owner = std::collections::HashMap::new();
+    let properties_by_owner = std::collections::BTreeMap::new();
     let sources = crate::design::PatternSources {
         objects: &[],
+        object_by_id: &std::collections::BTreeMap::new(),
+        predecessors: &std::collections::BTreeMap::new(),
         properties_by_owner: &properties_by_owner,
         entries: &[],
     };
@@ -124,7 +128,7 @@ fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
         super::linked_property("fcstd:native:object#consumer", "Originals", "originals");
     let properties = [&transformations, &originals];
     let properties_by_owner =
-        std::collections::HashMap::from([("fcstd:native:object#consumer", properties.to_vec())]);
+        std::collections::BTreeMap::from([("fcstd:native:object#consumer", properties.to_vec())]);
     let mut features = std::collections::HashMap::new();
     features.insert(
         "base",
@@ -196,7 +200,7 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
         .expect("valid link");
     }
     let properties_by_owner =
-        std::collections::HashMap::from([("fcstd:native:object#body", vec![&group])]);
+        std::collections::BTreeMap::from([("fcstd:native:object#body", vec![&group])]);
     let mut features = std::collections::HashMap::new();
     features.insert(
         "base",
@@ -204,12 +208,22 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
             .expect("valid feature id"),
     );
     let factor = super::scalar_property("stage", "Factor", "2");
-    let sources = crate::design::PatternSources {
-        objects: std::slice::from_ref(&body),
-        properties_by_owner: &properties_by_owner,
-        entries: &[],
-    };
     crate::test_support::assert_collection_refusal_at(&[], "fcstd implicit pattern seed", |ctx| {
+        let (object_by_id, _object_storage) = ctx
+            .collect_scoped_btree_map([(body.id().as_str(), &body)], "test pattern object index")?;
+        let (predecessors, _predecessor_storage) = crate::design::body_predecessors(
+            ctx,
+            std::slice::from_ref(&body),
+            &features,
+            &properties_by_owner,
+        )?;
+        let sources = crate::design::PatternSources {
+            objects: std::slice::from_ref(&body),
+            object_by_id: &object_by_id,
+            predecessors: &predecessors,
+            properties_by_owner: &properties_by_owner,
+            entries: &[],
+        };
         crate::design::pattern_definition(
             ctx,
             "PartDesign::Scaled",
@@ -223,6 +237,23 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
         &[],
         "fcstd implicit pattern seed identity",
         |ctx| {
+            let (object_by_id, _object_storage) = ctx.collect_scoped_btree_map(
+                [(body.id().as_str(), &body)],
+                "test pattern object index",
+            )?;
+            let (predecessors, _predecessor_storage) = crate::design::body_predecessors(
+                ctx,
+                std::slice::from_ref(&body),
+                &features,
+                &properties_by_owner,
+            )?;
+            let sources = crate::design::PatternSources {
+                objects: std::slice::from_ref(&body),
+                object_by_id: &object_by_id,
+                predecessors: &predecessors,
+                properties_by_owner: &properties_by_owner,
+                entries: &[],
+            };
             crate::design::pattern_definition(
                 ctx,
                 "PartDesign::Scaled",
@@ -244,9 +275,11 @@ fn pattern_irregular_vectors_refuse_at_exact_collection_limits() {
     crate::test_support::assert_collection_refusal_at(&[], "freecad pattern intervals", |ctx| {
         crate::design::pattern_locations(ctx, &properties, "", 3, 1, ("Length", "Offset"), &entries)
     });
-    let properties_by_owner = std::collections::HashMap::new();
+    let properties_by_owner = std::collections::BTreeMap::new();
     let sources = crate::design::PatternSources {
         objects: &[],
+        object_by_id: &std::collections::BTreeMap::new(),
+        predecessors: &std::collections::BTreeMap::new(),
         properties_by_owner: &properties_by_owner,
         entries: &entries,
     };
