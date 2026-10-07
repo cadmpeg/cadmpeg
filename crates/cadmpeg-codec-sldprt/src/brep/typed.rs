@@ -1499,7 +1499,7 @@ mod tests {
         });
         let regions = Regions {
             by_attr: regions.iter().map(|r| (r.attr, r)).collect(),
-            by_previous: Default::default(),
+            by_previous: BTreeMap::default(),
         };
         let candidates = [(20, &shells[0]), (21, &shells[1])];
         let arena = DecodeArena::new();
@@ -1547,11 +1547,10 @@ mod tests {
                 });
                 let regions = Regions {
                     by_attr: nodes.iter().map(|node| (node.attr, node)).collect(),
-                    by_previous: Default::default(),
+                    by_previous: BTreeMap::default(),
                 };
                 let candidates: Vec<_> = shells.iter().map(|shell| (20, shell)).collect();
-                let (reachable, _storage) =
-                    super::reachable_shells(ctx, &candidates).unwrap();
+                let (reachable, _storage) = super::reachable_shells(ctx, &candidates).unwrap();
                 for region in &nodes {
                     let mut expected = BTreeSet::new();
                     let mut current = region.refs[4];
@@ -1565,7 +1564,9 @@ mod tests {
                     }
                     for shell in &shells {
                         assert_eq!(
-                            reachable.contains(ctx, &regions, region.attr, shell.attr).unwrap(),
+                            reachable
+                                .contains(ctx, &regions, region.attr, shell.attr)
+                                .unwrap(),
                             expected.contains(&shell.attr),
                             "graph {encoding}, region {}, shell {}",
                             region.attr,

@@ -80,7 +80,7 @@ impl CarrierIndex {
         ctx: &DecodeContext<'_>,
     ) -> Result<BTreeSet<u16>, cadmpeg_core::CodecError> {
         ctx.collect_btree_set(
-            self.curves.iter().map(|(attr, _)| *attr),
+            self.curves.keys().copied(),
             "collect SLDPRT curve attributes",
         )
     }
@@ -352,10 +352,10 @@ mod tests {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             match dimension {
                 cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                    policy.limits.max_collection_items = cap
+                    policy.limits.max_collection_items = cap;
                 }
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                    policy.limits.max_work_units = cap
+                    policy.limits.max_work_units = cap;
                 }
                 _ => panic!("carrier test selects a collection or work limit"),
             }

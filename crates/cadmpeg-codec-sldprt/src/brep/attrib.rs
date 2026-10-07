@@ -723,7 +723,7 @@ mod tests {
         ]);
         let bytes = [1, 45, 1, 44, 1, 44];
         let mut runs = PayloadRuns {
-            resolved: Default::default(),
+            resolved: std::collections::BTreeMap::default(),
             storage: ctx.reserve_scoped(0, "test tails").unwrap(),
         };
         assert!(runs
