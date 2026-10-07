@@ -2988,7 +2988,7 @@ pub(crate) fn project_geometry(
         ctx,
     )?;
 
-    super::csg::project(ir, directory, parameters, global, ctx)?.merge_into(
+    super::csg::project(ir, directory, &entries, &records, global, ctx)?.merge_into(
         &mut decoded,
         &mut losses,
         ctx,
@@ -2997,7 +2997,7 @@ pub(crate) fn project_geometry(
     let (structure_projection, placement_rejections) = super::structure::project(
         ir,
         directory,
-        parameters,
+        (&entries, &records),
         trailing_pointer_analysis,
         global,
         ctx,

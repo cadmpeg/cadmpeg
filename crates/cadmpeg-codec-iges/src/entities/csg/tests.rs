@@ -24,8 +24,7 @@ use crate::IgesCodec;
 const EPS_PROFILE_CLOSURE: f64 = 1.0e-9;
 
 fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimension) {
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
         let mut policy = DecodePolicy::service();
         match dimension {
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
@@ -33,26 +32,9 @@ fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimensio
             ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
             _ => panic!("unsupported test dimension"),
         }
-        match IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, dimension);
-                if limit.operation == operation {
-                    return;
-                }
-                let next = limit.used.checked_add(limit.additional).unwrap();
-                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
-                cap = next;
-            }
-            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
-        }
-    }
-    panic!("did not reach {operation} within 4096 admission boundaries");
+        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+            .map_err(|error| match error { DecodeFailure::Codec(error) => error, other => panic!("{other:?}") })
+    });
 }
 
 #[test]
@@ -157,7 +139,10 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
         },
     ]);
 
-    assert_eq!(crate::test_support::with_service_context(&[], |ctx| super::profile_closed(&ir, 1, EPS_PROFILE_CLOSURE, ctx)).unwrap(), None);
+    assert_eq!(crate::test_support::with_service_context(&[], |ctx| {
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, ctx).map_err(CodecError::from)?;
+        super::profile_closed(&index, &ir.model.edges.iter().collect::<Vec<_>>(), EPS_PROFILE_CLOSURE, ctx)
+    }).unwrap(), None);
 }
 
 #[test]
@@ -612,4 +597,17 @@ fn decode_rejects_cyclic_boolean_tree_references() {
             .count(),
         2
     );
+}
+
+#[test]
+fn csg_profile_indexes_and_boolean_scans_preserve_work_refusals() {
+    let bytes = procedural_and_boolean_solids_file();
+    for operation in [
+        "iges solid profile edge indexing",
+        "iges solid profile edges",
+        "iges Boolean postfix parsing",
+        "iges Boolean postfix stack",
+    ] {
+        assert_csg_refusal(&bytes, operation, ResourceDimension::WorkUnits);
+    }
 }

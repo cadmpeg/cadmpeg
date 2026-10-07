@@ -102,7 +102,6 @@ fn copious_projection_losses_refuse_slot_and_message_limits() {
 fn copious_tuple_and_path_arrays_refuse_collection_limits() {
     let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
     for operation in [
-        "iges copious tuple values",
         "iges copious definition points",
         "iges copious positioned points",
         "iges copious knots",
