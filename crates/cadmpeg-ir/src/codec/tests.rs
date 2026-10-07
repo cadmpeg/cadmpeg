@@ -477,3 +477,40 @@ fn detection_and_decode_draw_from_one_work_budget() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(fused)) if fused == limit)
     );
 }
+
+#[test]
+fn strict_loss_search_charges_only_the_first_rejecting_loss() {
+    struct TailCodec(usize);
+    impl CodecBackend for TailCodec {
+        const FORMAT: FormatId = FormatId::new("test");
+        fn detect_impl(&self, _ctx: &DecodeContext<'_>, _prefix: View<'_>) -> Result<Confidence, CodecError> { Ok(Confidence::No) }
+        fn inspect_impl(&self, _ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<ContainerSummary, CodecError> { unreachable!("decode fixture") }
+        fn decode_impl(&self, _ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<Decoded, CodecError> {
+            let mut value = decoded(unit_cube().expect("valid cube"));
+            value.body.losses.push(LossNote::new(reject_floor_kind(), "first reject"));
+            value.body.losses.extend((0..self.0).map(|_| LossNote::new(reject_floor_kind(), "trailing reject")));
+            Ok(value)
+        }
+    }
+    use cadmpeg_core::decode::{DecodeArena, ResourceDimension};
+    let run = |cap, tail| {
+        let arena = DecodeArena::new();
+        let mut options = strict_options(false);
+        options.policy.limits.max_work_units = cap;
+        let (ctx, root) = DecodeContext::from_root_bytes(&[], &arena, &options.policy)?;
+        match TailCodec(tail).decode_with_context(&ctx, root, &options) {
+            Err(DecodeFailure::Codec(error)) => Err(error),
+            Err(DecodeFailure::StrictRejected { rejection }) => {
+                assert_eq!(rejection.report().losses.len(), tail + 1);
+                ctx.finish_session()?;
+                Ok(())
+            }
+            Ok(_) => panic!("rejecting loss must refuse strict decode"),
+        }
+    };
+    let CodecError::ResourceLimit(limit) = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, "decode strict loss scan", |cap| run(cap, 4096),
+    ) else { panic!("work refusal"); };
+    run(limit.used + limit.additional, 0).unwrap();
+    run(limit.used + limit.additional, 4096).unwrap();
+}
