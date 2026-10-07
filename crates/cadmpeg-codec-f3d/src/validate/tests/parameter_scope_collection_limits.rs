@@ -178,8 +178,9 @@ fn edge_flange_reference_scan_preserves_work_refusal() {
             ..Default::default()
         };
         for operation in [
+            "index F3D edge flange scope references",
             "validate F3D flange claimed references",
-            "find F3D located flange claimed reference",
+            "find F3D flange claimed reference",
         ] {
             let error = crate::test_support::resource_refusal_at(
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -196,31 +197,6 @@ fn edge_flange_reference_scan_preserves_work_refusal() {
                 if limit.operation == operation)
             );
         }
-    });
-}
-
-#[test]
-fn edge_flange_selected_edge_count_refuses_work_limit() {
-    crate::test_support::with_decode_context(|service| {
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = crate::native::F3dNative {
-            design_parameter_scopes: vec![scope(Case::Flange)],
-            ..Default::default()
-        };
-        let error = crate::test_support::resource_refusal_at(
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "count F3D edge flange selected edges",
-            0,
-            |decode| {
-                let mut ctx = super::super::Ctx::new(&ir, &native, service)?;
-                ctx.decode = decode;
-                super::super::validate_parameter_scopes(&ctx, &mut Vec::new())
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "count F3D edge flange selected edges")
-        );
     });
 }
 
