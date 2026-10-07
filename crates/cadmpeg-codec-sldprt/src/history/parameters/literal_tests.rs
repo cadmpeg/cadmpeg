@@ -513,3 +513,29 @@ fn conditional_string_retains_only_selected_value() {
     assert_eq!(ParameterExpressionParser::new_flat(&ctx, "Iif(true,Text,Other)", &aliases, &values).parse().unwrap(), Some(ParameterValue::String("a".repeat(4096))));
     assert!(ctx.resource_refusal().is_none());
 }
+
+
+#[test]
+fn evaluation_value_index_borrows_large_stated_text() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
+    let parameter = |name: &str, expression: &str, value| DesignParameter {
+        id: ParameterId::mint(format!("synthetic:test:parameter#{name}")).unwrap(),
+        owner: None, ordinal: 0, name: name.into(), expression: expression.into(),
+        display: None, value, dependencies: DistinctMembers::default(),
+        properties: std::collections::BTreeMap::new(), pmi: None, native_ref: None,
+    };
+    let mut parameters = [
+        parameter("Text", "stated", Some(ParameterValue::String("a".repeat(128 * 1024)))),
+        parameter("Comparison", "Text = Text", None),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::evaluate_parameter_expressions(&ctx, &mut parameters, &std::collections::HashMap::new(), &std::collections::HashSet::new()).unwrap();
+    assert_eq!(parameters[0].value, Some(ParameterValue::String("a".repeat(128 * 1024))));
+    assert_eq!(parameters[1].value, Some(ParameterValue::Boolean(true)));
+    assert!(ctx.resource_refusal().is_none());
+}

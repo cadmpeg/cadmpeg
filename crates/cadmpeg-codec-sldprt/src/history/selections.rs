@@ -876,22 +876,21 @@ fn history_feature_sources<'a>(
     const OPERATION: &str = "index SLDPRT topology selections";
     let mut sources = HashMap::new();
     let mut name_storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut lane_names = None;
+    let mut lane_names = Vec::new();
     for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
         for feature in ctx.admit_iter(&history.features, "scan SLDPRT topology history features")? {
             let mut source = feature.source_id;
             if source.is_none() {
-                if lane_names.is_none() {
-                    lane_names = Some(crate::resolved_features::scalars::lane_object_names(
-                        ctx, &mut name_storage, lanes,
-                    )?);
-                }
                 let mut first = None;
-                let mut names = lane_names.as_deref().unwrap_or_default().iter();
-                while let Some(names) = ctx.next_charged(
-                    &mut names, "resolve SLDPRT topology source candidates",
+                let mut lanes = lanes.iter().enumerate();
+                while let Some((index, lane)) = ctx.next_charged(
+                    &mut lanes, "resolve SLDPRT topology source candidates",
                 )? {
-                    let Some(candidate) = names.of(ctx, feature)?
+                    if index == lane_names.len() {
+                        let names = crate::resolved_features::scalars::ObjectNames::new(ctx, lane)?;
+                        ctx.push_scoped_vec(&mut name_storage, &mut lane_names, names, OPERATION)?;
+                    }
+                    let Some(candidate) = lane_names[index].of(ctx, feature)?
                         .and_then(|name| name.object_id?.value()) else {
                         continue;
                     };
@@ -1152,4 +1151,34 @@ mod source_index_tests {
         assert_eq!(source("conflict"), None);
         assert_eq!(source("explicit"), Some(15));
     }
+
+    #[test]
+    fn source_conflict_leaves_unvisited_lane_names_unindexed() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let name = |source| FeatureInputName {
+            id: "conflict".into(), parent: "lane".into(), ordinal: 0, offset: 0,
+            object_id: ObjectId::from_value(source), value: "conflict".into(),
+        };
+        let mut first = feature_input_lane("first", None);
+        first.names.push(name(10));
+        let mut second = feature_input_lane("second", None);
+        second.names.push(name(11));
+        let mut tail = feature_input_lane("unvisited", None);
+        tail.names.extend(std::iter::repeat_n(name(12), 4096));
+        let history = FeatureHistory {
+            id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(), configurations: Vec::new(),
+            features: vec![feature("conflict", None, 0)],
+        };
+        let histories = [history];
+        let lanes = [first, second, tail];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The tail alone needs 4096 visits, in addition to the visited prefix.
+        policy.limits.max_work_units = 4096;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let sources = history_feature_sources(&ctx, &histories, &lanes).unwrap();
+        assert_eq!(sources.get("conflict"), Some(&None));
+        assert!(ctx.resource_refusal().is_none());
+    }
+
 }
