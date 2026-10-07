@@ -122,19 +122,6 @@ impl SketchPlaneFrame {
     }
 }
 
-fn feature_u_axis_source(feature: &cadmpeg_ir::features::Feature) -> SketchPlaneUAxisSource {
-    if feature
-        .source_properties
-        .get(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY)
-        .map(String::as_str)
-        == Some(CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE)
-    {
-        SketchPlaneUAxisSource::ConstructedMidPlane
-    } else {
-        SketchPlaneUAxisSource::Native
-    }
-}
-
 fn current_linked_semicircle_record(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
@@ -185,21 +172,23 @@ pub(super) fn resolve_two_center_semicircle_profile(
 
     let mut scratch = ctx.reserve_scoped(0, "collect SLDPRT semicircle geometry scratch")?;
     let mut records = Vec::new();
-    for marker in ctx.admit_iter(markers, "collect SLDPRT semicircle records")? {
+    if ctx.any_by(markers, |marker| {
         if usize::try_from(marker.offset())
             .ok()
             .is_some_and(|offset| current_linked_semicircle_record(payload, offset))
         {
+            if records.len() == 2 { return Ok(true); }
             scratch.with_storage(|| ctx.reserve_vec(&mut records, 1, "collect SLDPRT semicircle records"))?;
             records.push(*marker);
         }
-    }
+        Ok(false)
+    }, "collect SLDPRT semicircle records")? { return Ok(()); }
     let [first_record, second_record] = records.as_slice() else {
         return Ok(());
     };
     let record_refs = [first_record.id(), second_record.id()];
     let mut curve_entities = Vec::new();
-    for entity in ctx.admit_iter(&entities[..], "collect SLDPRT semicircle curves")? {
+    if ctx.any_by(&entities[..], |entity| {
         if matches!(
             *entity.geometry.definition(),
             SketchGeometryDefinition::Line { .. }
@@ -209,28 +198,32 @@ pub(super) fn resolve_two_center_semicircle_profile(
                 | SketchGeometryDefinition::Nurbs { .. }
                 | SketchGeometryDefinition::Native { .. }
         ) {
+            if curve_entities.len() == 2 { return Ok(true); }
             scratch.with_storage(|| ctx.reserve_vec(&mut curve_entities, 1, "collect SLDPRT semicircle curves"))?;
             curve_entities.push(entity);
         }
-    }
+        Ok(false)
+    }, "collect SLDPRT semicircle curves")? { return Ok(()); }
     if curve_entities.len() != 2 { return Ok(()); }
     for entity in &curve_entities {
         let Some(id) = entity.native_ref.as_deref() else { return Ok(()); };
         if !ctx.contains(&record_refs, &id, "collect SLDPRT semicircle curves")? { return Ok(()); }
     }
     let mut points = Vec::new();
-    for entity in ctx.admit_iter(&entities[..], "collect SLDPRT semicircle points")? {
+    if ctx.any_by(&entities[..], |entity| {
         let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
-            continue;
+            return Ok(false);
         };
         let Some(native_ref) = entity.native_ref.as_deref() else {
-            continue;
+            return Ok(false);
         };
+        if points.len() == 6 { return Ok(true); }
         let native_ref =
             scratch.with_storage(|| ctx.copy_retained_text(native_ref, "copy SLDPRT semicircle point identity"))?;
         scratch.with_storage(|| ctx.reserve_vec(&mut points, 1, "collect SLDPRT semicircle points"))?;
         points.push((native_ref, position.get()));
-    }
+        Ok(false)
+    }, "collect SLDPRT semicircle points")? { return Ok(()); }
     if points.len() != 6 {
         return Ok(());
     }
@@ -663,17 +656,19 @@ pub(super) fn resolve_slot_marker_arcs(
     };
     let mut scratch = ctx.reserve_scoped(0, "collect SLDPRT slot geometry scratch")?;
     let mut curves = Vec::new();
-    for marker in ctx.admit_iter(markers, "collect SLDPRT slot curves")? {
+    if ctx.any_by(markers, |marker| {
         if marker.coordinates_m.is_none()
             && matches!(
                 marker.kind(),
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
             )
         {
+            if curves.len() == 4 { return Ok(true); }
             scratch.with_storage(|| ctx.reserve_vec(&mut curves, 1, "collect SLDPRT slot curves"))?;
             curves.push(*marker);
         }
-    }
+        Ok(false)
+    }, "collect SLDPRT slot curves")? { return Ok(()); }
     ctx.sort_unstable_by_key(
         &mut curves,
         |value| value.offset(),
@@ -1626,8 +1621,8 @@ pub(super) fn fitted_marker_circle(
 }
 
 /// The plane frame a principal or explicit datum plane states.
-fn stated_plane_frame(feature: &cadmpeg_ir::features::Feature) -> Option<SketchPlaneFrame> {
-    match feature.evaluation.definition() {
+fn stated_plane_frame(ctx: &DecodeContext<'_>, feature: &cadmpeg_ir::features::Feature) -> Result<Option<SketchPlaneFrame>, CodecError> {
+    Ok(match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
             Some(SketchPlaneFrame::native(principal_sketch_frame(*plane)))
         }
@@ -1638,11 +1633,11 @@ fn stated_plane_frame(feature: &cadmpeg_ir::features::Feature) -> Option<SketchP
                     frame.normal().get(),
                     frame.u_axis().get(),
                 ),
-                feature_u_axis_source(feature),
+                if ctx.get_btree_map(&feature.source_properties, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY, "lookup SLDPRT plane axis source")?.map(String::as_str) == Some(CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE) { SketchPlaneUAxisSource::ConstructedMidPlane } else { SketchPlaneUAxisSource::Native },
             ))
         }
         _ => None,
-    }
+    })
 }
 
 /// The first model feature naming each native record.
@@ -1668,7 +1663,8 @@ pub(super) fn sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
 ) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
-    frames_from_entries(ctx, &sketch_plane_frame_entries(ctx, features, histories)?)
+    let (entries, _entry_storage) = ctx.with_scoped_storage("hold SLDPRT plane entries", || sketch_plane_frame_entries(ctx, features, histories))?;
+    frames_from_entries(ctx, &entries)
 }
 
 /// A frame map holding `entries`, a later entry replacing an earlier one with the same source.
@@ -1725,7 +1721,7 @@ fn sketch_plane_frame_entries(
     // Offset planes by identity, resolved from their reference chain.
     let mut offsets = HashMap::new();
     for feature in ctx.admit_iter(features, OPERATION)? {
-        if let Some(frame) = stated_plane_frame(feature) {
+        if let Some(frame) = stated_plane_frame(ctx, feature)? {
             storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut frames_by_feature,
@@ -1842,13 +1838,13 @@ impl<'h> LaneFrameIndex<'h> {
         histories: &'h [crate::records::FeatureHistory],
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "index SLDPRT lane sketch plane candidates";
-        let by_native = first_model_feature_by_native(ctx, features, OPERATION)?;
+        let (by_native, _native_storage) = ctx.with_scoped_storage(OPERATION, || first_model_feature_by_native(ctx, features, OPERATION))?;
         let mut stated_by_native = HashMap::new();
         for history in ctx.admit_iter(histories, OPERATION)? {
             for native in ctx.admit_iter(&history.features, OPERATION)? {
                 let Some(frame) = ctx
                     .get_hash_map(&by_native, native.id.as_str(), OPERATION)?
-                    .and_then(|feature| stated_plane_frame(feature))
+                    .map(|feature| stated_plane_frame(ctx, feature)).transpose()?.flatten()
                 else {
                     continue;
                 };
@@ -1927,7 +1923,8 @@ pub(super) fn lane_sketch_plane_frames(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
-    LaneFrameIndex::new(ctx, features, histories)?.lane_frames(
+    let (index, _index_storage) = ctx.with_scoped_storage("hold SLDPRT lane plane index", || LaneFrameIndex::new(ctx, features, histories))?;
+    index.lane_frames(
         ctx,
         histories,
         &ObjectNames::new(ctx, lane)?,

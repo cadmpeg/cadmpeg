@@ -4734,8 +4734,7 @@ fn legacy_config_collinear_sketch(
         return Ok(None);
     };
     let ordinal = chain.len();
-    ctx.reserve_vec(&mut chain, 1, OPERATION)?;
-    chain.push((origin.0, origin.1, ordinal));
+    chain_storage.with_storage(|| ctx.push_vec(&mut chain, (origin.0, origin.1, ordinal), OPERATION))?;
     ctx.sort_unstable_by_key(
         &mut chain,
         |value| (value.1[0], value.2),
