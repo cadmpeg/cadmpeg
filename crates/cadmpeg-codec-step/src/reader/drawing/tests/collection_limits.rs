@@ -29,7 +29,7 @@ fn drawing_refuses_source_with_typed(source: &[u8], operation: &str, typed: &[u6
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits collection policy");
-        matches!(
+        let refused = matches!(
             super::super::decode(
                 &exchange,
                 &mut cadmpeg_ir::document::CadIr::empty(),
@@ -40,7 +40,8 @@ fn drawing_refuses_source_with_typed(source: &[u8], operation: &str, typed: &[u6
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
-        )
+        );
+        refused
     });
     assert!(refused, "no collection limit refused {operation}");
 }
@@ -244,21 +245,19 @@ fn drawing_native_arena_items_refuse_collection_limit() {
 }
 
 #[test]
-fn drawing_ambiguous_identities_text_refuses_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits retained policy");
+fn drawing_ambiguous_identities_text_refuses_materialized_limit() {
+    // The identity detail is scratch text; only its final loss message is retained.
     let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
-    assert!(matches!(
-        super::super::note_ambiguous_target(
-            &mut Vec::new(), "drawing #1", "items", 2, &identities, &ctx,
-        ),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_drawing_ambiguous_identities_text"
-    ));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_drawing_ambiguous_identities_text", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
+        let result = super::super::note_ambiguous_target((&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))), "drawing #1", "items", 2, &identities, &ctx);
+        if let Err(CodecError::ResourceLimit(ref refusal)) = result { assert_eq!(ctx.resource_refusal(), Some(refusal.clone())); }
+        result
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_drawing_ambiguous_identities_text"));
 }
 
 #[test]
@@ -273,8 +272,9 @@ fn drawing_ambiguous_loss_text_refuses_retained_limit() {
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
                 .expect("empty root fits retained policy");
             let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
+            let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
             super::super::note_ambiguous_target(
-                &mut Vec::new(),
+                (&mut Vec::new(), &reports),
                 "drawing #1",
                 "items",
                 2,
@@ -292,20 +292,18 @@ fn drawing_ambiguous_loss_text_refuses_retained_limit() {
 
 #[test]
 fn drawing_ambiguous_loss_slot_refuses_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits collection policy");
-    let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
-    assert!(matches!(
-        super::super::note_ambiguous_target(
-            &mut Vec::new(), "drawing #1", "items", 2, &identities, &ctx,
-        ),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_drawing_losses"
-    ));
+    // Admit the two borrowed identity fragments before the final loss slot.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "step_drawing_losses", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
+        let identities = ["first", "second"].into_iter().map(str::to_owned).collect();
+        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+        super::super::note_ambiguous_target((&mut Vec::new(), &reports), "drawing #1", "items", 2, &identities, &ctx)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "step_drawing_losses"));
 }
 
 #[test]
@@ -523,14 +521,15 @@ fn drawing_untyped_relationship_loss_refuses_collection_limit() {
             external_documents: &documents,
             ctx: &ctx,
         };
-        matches!(
+        let refused = matches!(
             super::super::add_reference_fields(
-                &mut BTreeMap::new(), "PRESENTATION_VIEW", parameters, 2, &targets, &mut Vec::new(),
+                &mut BTreeMap::new(), "PRESENTATION_VIEW", parameters, 2, &targets, (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
             ),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_drawing_losses"
-        )
+        );
+        refused
     });
     assert!(
         refused,
@@ -587,12 +586,13 @@ fn sheet_usage_loss_refuses(typed_id: u64) {
             external_documents: &documents,
             ctx: &ctx,
         };
-        matches!(
-            super::super::add_sheet_revision_usages(&exchange, &mut baseline.clone(), &targets, &mut Vec::new(), &ctx),
+        let refused = matches!(
+            super::super::add_sheet_revision_usages(&exchange, &mut baseline.clone(), &targets, (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))), &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_drawing_losses"
-        )
+        );
+        refused
     });
     assert!(refused, "no collection limit refused sheet usage loss");
 }
@@ -629,14 +629,16 @@ fn association_loss_refuses(typed_id: u64) {
             external_documents: &documents,
             ctx: &ctx,
         };
-        matches!(
+        let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
+        let refused = matches!(
             super::super::add_draughting_model_associations(
-                &exchange, &mut baseline.clone(), &targets, &mut Vec::new(), &mut std::collections::BTreeSet::new(),
+                &exchange, &mut baseline.clone(), &targets, (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))), (&mut std::collections::BTreeSet::new(), &mut claim_storage),
             ),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_drawing_losses"
-        )
+        );
+        refused
     });
     assert!(refused, "no collection limit refused association loss");
 }

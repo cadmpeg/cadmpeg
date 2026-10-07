@@ -1745,3 +1745,5 @@ fn nonfinite_pmi_placement_refuses_real_overflow() {
 }
 
 mod target_indices;
+
+mod measure_index;

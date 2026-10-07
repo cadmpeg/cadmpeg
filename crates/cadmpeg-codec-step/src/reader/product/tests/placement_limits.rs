@@ -173,9 +173,10 @@ fn competing_placement_loss_text_refuses_retained_limit() {
 }
 
 #[test]
-fn body_conflict_source_text_refuses_retained_limit() {
+fn body_conflict_source_text_refuses_work_limit() {
+    // Detail text is scratch; its byte work is cumulative even below an earlier storage peak.
     let source = super::mapped_body_placement_source();
-    super::product_retained_refuses_source(source.as_bytes(), "step_body_conflict_source_text");
+    super::product_text_work_refuses_source(source.as_bytes(), "step_body_conflict_source_text");
 }
 
 #[test]

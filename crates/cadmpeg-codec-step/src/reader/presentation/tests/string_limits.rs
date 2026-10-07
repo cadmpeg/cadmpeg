@@ -66,7 +66,7 @@ fn color_result(source: &[u8], materialized_limit: u64) -> Result<Option<ColorRe
             ),
             active: &mut BTreeSet::new(),
             cache: &mut BTreeMap::new(),
-            losses: &mut Vec::new(),
+            losses: (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
             invalid_surface_sides: &mut BTreeSet::new(),
         },
         0,

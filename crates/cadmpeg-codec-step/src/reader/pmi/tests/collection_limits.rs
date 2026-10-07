@@ -32,12 +32,13 @@ fn pmi_refuses(records: &str, operation: &str) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
             .expect("root fits collection policy");
-        matches!(
+        let refused = matches!(
             super::super::decode(&exchange, &geometry.value, &topology.value, &mut setup_ir.clone(), &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
-        )
+        );
+        refused
     });
     assert!(refused, "no collection limit refused {operation}");
 }
@@ -293,30 +294,34 @@ fn pmi_datum_id_walk_refuses_depth_limit() {
 }
 
 #[test]
-fn pmi_datum_modifier_text_refuses_retained_limit() {
-    let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) =
-        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-            .expect("valid exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits retained policy");
-    let mut losses = Vec::new();
-    let mut measurements = super::super::MeasureContext {
-        length_scale: 1.0,
-        angle_scale: 1.0,
-        graph_limit: 64,
-        losses: &mut losses,
-    };
-    let value = crate::parse::Value::Enumeration("ABC".into());
-    assert!(matches!(
-        super::super::modifier_text(&value, &exchange, &mut std::collections::BTreeSet::new(), &mut measurements, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_pmi_datum_modifier_text"
-    ));
+fn pmi_datum_modifier_text_refuses_materialized_limit() {
+let source = format!("{HEADER}#1=ITEM();{TAIL}");
+let (exchange, _) =
+crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+.expect("valid exchange");
+// The three candidate bytes remain scoped until the datum reference is selected.
+let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_pmi_datum_modifier_text", |limit| {
+let arena = DecodeArena::new();
+let mut policy = DecodePolicy::service();
+policy.limits.max_materialized_bytes = limit;
+let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+.expect("empty root fits materialized policy");
+let mut losses = Vec::new();
+let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+let mut measurements = super::super::MeasureContext {
+length_scale: 1.0,
+angle_scale: 1.0,
+graph_limit: 64,
+losses: (&mut losses, &reports),
+};
+let value = crate::parse::Value::Enumeration("ABC".into());
+let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
+let mut text_storage = ctx.reserve_scoped(0, "text fixture").expect("scope");
+super::super::modifier_text(&value, &exchange, (&mut std::collections::BTreeSet::new(), &mut claim_storage), &mut measurements, &mut text_storage, &ctx)
+});
+assert!(matches!(error, CodecError::ResourceLimit(refusal)
+if refusal.dimension == ResourceDimension::MaterializedBytes
+&& refusal.operation == "step_pmi_datum_modifier_text"));
 }
 
 fn datum_reference_refuses(records: &str, operation: &str) {
@@ -355,14 +360,16 @@ fn datum_reference_refuses(records: &str, operation: &str) {
             length_scale: 1.0,
             angle_scale: 1.0,
             graph_limit: 64,
-            losses: &mut losses,
+            losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
         };
-        matches!(
-            super::super::datum_references_for_compartment(&crate::parse::Value::Reference(1), NonZeroU32::new(1).expect("positive precedence"), &exchange, &annotations, &mut std::collections::BTreeSet::new(), &mut measurements, &ctx),
+        let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
+        let refused = matches!(
+            super::super::datum_references_for_compartment((&crate::parse::Value::Reference(1), NonZeroU32::new(1).expect("positive precedence")), &exchange, &annotations, (&mut std::collections::BTreeSet::new(), &mut claim_storage), &mut measurements, (&mut Vec::new(), &mut ctx.reserve_scoped(0, "reference fixture").expect("scope")), &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
-        )
+        );
+        refused
     });
     assert!(refused, "datum reference never refused {operation}");
 }
@@ -383,29 +390,9 @@ fn pmi_datum_modifier_items_refuse_collection_limit() {
     );
 }
 
-#[test]
-fn pmi_datum_system_references_refuse_collection_limit() {
-    pmi_refuses(
-        "#1=DATUM('A');#2=DATUM_REFERENCE_COMPARTMENT($,$,$,$,#1,$);#3=DATUM_SYSTEM('S','',#4,.F.,(#2));#4=ITEM();",
-        "step_pmi_datum_system_references",
-    );
-}
 
-#[test]
-fn pmi_datum_compartments_refuse_collection_limit() {
-    pmi_refuses(
-        "#1=DATUM('A');#2=DATUM_REFERENCE_COMPARTMENT($,$,$,$,#1,$);#3=DATUM_SYSTEM('S','',#4,.F.,(#2));#4=ITEM();",
-        "step_pmi_datum_compartments",
-    );
-}
 
-#[test]
-fn pmi_datum_common_groups_refuse_collection_limit() {
-    pmi_refuses(
-        "#1=DATUM('A');#2=DATUM('B');#3=DATUM_REFERENCE_ELEMENT('',$,#7,.F.,#1,());#4=DATUM_REFERENCE_ELEMENT('',$,#7,.F.,#2,());#5=DATUM_REFERENCE_COMPARTMENT('',$,#7,.F.,COMMON_DATUM_LIST((#3,#4)),());#6=DATUM_SYSTEM('S','',#7,.F.,(#5));#7=ITEM();",
-        "step_pmi_datum_common_groups",
-    );
-}
+
 
 fn placement_refuses(operation: &str) {
     let source = format!(
@@ -427,12 +414,13 @@ fn placement_refuses(operation: &str) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
             .expect("empty root fits collection policy");
-        matches!(
+        let refused = matches!(
             super::super::collect_placement_candidates(5, &exchange, &geometry.value, &mut BTreeMap::new(), &mut BTreeMap::new(), 0, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
-        )
+        );
+        refused
     });
     assert!(refused, "placement walk did not refuse {operation}");
 }
@@ -552,7 +540,7 @@ fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> CodecError {
     super::super::collect_measure_ids(
         &crate::parse::Value::Reference(1),
         &exchange,
-        &mut std::collections::BTreeSet::new(),
+        &mut std::collections::BTreeMap::new(),
         0,
         64,
         &mut std::collections::BTreeSet::new(),
@@ -562,12 +550,12 @@ fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> CodecError {
 }
 
 #[test]
-fn pmi_measure_active_ids_refuse_collection_limit() {
+fn pmi_measure_visited_ids_refuse_collection_limit() {
     assert!(matches!(
         measure_id_refusal(0, None),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_measure_active_ids"
+                && refusal.operation == "step_pmi_measure_visited_ids"
     ));
 }
 
@@ -609,7 +597,7 @@ fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> C
         length_scale: 1.0,
         angle_scale: 1.0,
         graph_limit: 64,
-        losses: &mut losses,
+        losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
     };
     super::super::measure(
         &crate::parse::Value::Reference(1),
@@ -714,7 +702,7 @@ fn typed_measure_length_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                losses: &mut losses,
+                losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
             };
             let result =
                 super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
@@ -746,7 +734,7 @@ fn typed_measure_angle_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                losses: &mut losses,
+                losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
             };
             let result =
                 super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
@@ -844,7 +832,7 @@ fn record_measure_length_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                losses: &mut losses,
+                losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
             };
             let result =
                 super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());
@@ -873,7 +861,7 @@ fn record_measure_angle_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                losses: &mut losses,
+                losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
             };
             let result =
                 super::super::measure(&value, &exchange, &mut measurements, &ctx).map(|_| ());

@@ -133,4 +133,25 @@ mod tests {
                     && limit.operation == "step_pmi_annotation_index"
         ));
     }
+    #[test]
+    fn annotation_index_lookup_preserves_refusal() {
+        let setup = cadmpeg_test_support::service_decode_context();
+        let mut annotations = Annotations::new(&setup).expect("index");
+        annotations.push(&setup, &mut CadIr::empty(), 1, AnnotationDraft {
+            name: None,
+            targets: Vec::new(),
+            visible: None,
+            definition: PmiDefinition::Datum { identification: String::new() },
+        }).expect("annotation");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "STEP annotation index lookup", |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
+            let result = annotations.get(&ctx, 1);
+            if let Err(CodecError::ResourceLimit(ref refusal)) = result { assert_eq!(ctx.resource_refusal(), Some(refusal.clone())); }
+            result
+        });
+        assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.operation == "STEP annotation index lookup"));
+    }
 }

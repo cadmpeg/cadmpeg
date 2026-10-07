@@ -11,14 +11,19 @@ fn source(records: &str) -> String {
     format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;")
 }
 
-fn pmi_result(records: &str, retained_limit: u64) -> Result<(), CodecError> {
+fn pmi_result(records: &str, dimension: ResourceDimension, limit: u64) -> Result<(), CodecError> {
     let source = source(records);
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid PMI exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = retained_limit;
+    match dimension {
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
+        _ => panic!("unsupported string storage dimension"),
+    }
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("root fits retained policy");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -30,14 +35,18 @@ fn pmi_result(records: &str, retained_limit: u64) -> Result<(), CodecError> {
 }
 
 macro_rules! pmi_string_limit_test {
-    ($name:ident, $records:literal, $limit:expr) => {
+    ($name:ident, $records:literal, $dimension:ident) => {
         #[test]
         fn $name() {
+            let operation = match ResourceDimension::$dimension {
+                ResourceDimension::WorkUnits => "STEP decoded string character",
+                _ => "step_string_text",
+            };
             assert!(matches!(
-                Err::<(), CodecError>(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "step_string_text", |cap| pmi_result($records, cap))),
+                Err::<(), CodecError>(cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::$dimension, operation, |cap| pmi_result($records, ResourceDimension::$dimension, cap))),
                 Err(CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::RetainedBytes
-                        && refusal.operation == "step_string_text"
+                    if refusal.dimension == ResourceDimension::$dimension
+                        && refusal.operation == operation
             ));
         }
     };
@@ -45,69 +54,60 @@ macro_rules! pmi_string_limit_test {
 
 pmi_string_limit_test!(
     datum_identification_refuses_retained_limit,
-    "#1=DATUM('identifier');",
-    1
+    "#1=DATUM('identifier');", RetainedBytes
 );
 pmi_string_limit_test!(
     datum_name_refuses_retained_limit,
-    "#1=(DATUM('') SHAPE_ASPECT('datum name','',#2,.F.));#2=ITEM();",
-    1
+    "#1=(DATUM('') SHAPE_ASPECT('datum name','',#2,.F.));#2=ITEM();", RetainedBytes
 );
+// Recognized form spelling is scratch; rectangle has nine bytes.
 pmi_string_limit_test!(
-    datum_target_form_refuses_retained_limit,
-    "#1=DATUM_TARGET('','rectangle',#2,.F.,'');#2=ITEM();",
-    1
+    datum_target_form_refuses_materialized_limit,
+    "#1=DATUM_TARGET('','rectangle',#2,.F.,'');#2=ITEM();", MaterializedBytes
 );
 pmi_string_limit_test!(
     datum_target_identification_refuses_retained_limit,
-    "#1=DATUM_TARGET('','',#2,.F.,'identifier');#2=ITEM();",
-    1
+    "#1=DATUM_TARGET('','',#2,.F.,'identifier');#2=ITEM();", RetainedBytes
 );
 pmi_string_limit_test!(
     datum_target_name_refuses_retained_limit,
-    "#1=DATUM_TARGET('target name','',#2,.F.,'');#2=ITEM();",
-    1
+    "#1=DATUM_TARGET('target name','',#2,.F.,'');#2=ITEM();", RetainedBytes
 );
 pmi_string_limit_test!(
     datum_system_name_refuses_retained_limit,
-    "#1=DATUM_SYSTEM('system name','',#2,.F.,());#2=ITEM();",
-    1
+    "#1=DATUM_SYSTEM('system name','',#2,.F.,());#2=ITEM();", RetainedBytes
 );
 pmi_string_limit_test!(
     dimension_name_refuses_retained_limit,
-    "#1=DIMENSIONAL_SIZE(#2,'dimension name');#2=ITEM();",
-    1
+    "#1=DIMENSIONAL_SIZE(#2,'dimension name');#2=ITEM();", RetainedBytes
 );
 pmi_string_limit_test!(
     dimension_category_refuses_retained_limit,
-    "#1=DIMENSIONAL_SIZE_WITH_DATUM_FEATURE(#2,'diameter');#2=ITEM();",
-    8
+    "#1=DIMENSIONAL_SIZE_WITH_DATUM_FEATURE(#2,'diameter');#2=ITEM();", RetainedBytes
+);
+// These scratch copies run below an earlier materialized peak. Each ASCII
+// character write charges one work unit; the fields have 13, 13, 11 and 12 bytes.
+pmi_string_limit_test!(
+    limits_form_variance_refuses_string_work_limit,
+    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('form variance','','','');", WorkUnits
 );
 pmi_string_limit_test!(
-    limits_form_variance_refuses_retained_limit,
-    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('form variance','','','');",
-    1
+    limits_zone_variance_refuses_string_work_limit,
+    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','zone variance','','');", WorkUnits
 );
 pmi_string_limit_test!(
-    limits_zone_variance_refuses_retained_limit,
-    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','zone variance','','');",
-    1
+    limits_grade_refuses_string_work_limit,
+    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','','grade value','');", WorkUnits
 );
 pmi_string_limit_test!(
-    limits_grade_refuses_retained_limit,
-    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','','grade value','');",
-    1
+    limits_source_refuses_string_work_limit,
+    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','','','source value');", WorkUnits
 );
-pmi_string_limit_test!(
-    limits_source_refuses_retained_limit,
-    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','','','source value');",
-    1
+pmi_string_limit_test!(geometric_tolerance_name_refuses_retained_limit, "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(LENGTH_MEASURE_WITH_UNIT() MEASURE_WITH_UNIT(LENGTH_MEASURE(0.05),#1));#3=ITEM();#4=FLATNESS_TOLERANCE('tol name','',#2,#3);", RetainedBytes
 );
-pmi_string_limit_test!(geometric_tolerance_name_refuses_retained_limit, "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(LENGTH_MEASURE_WITH_UNIT() MEASURE_WITH_UNIT(LENGTH_MEASURE(0.05),#1));#3=ITEM();#4=FLATNESS_TOLERANCE('tol name','',#2,#3);", 1);
 pmi_string_limit_test!(
     presentation_annotation_name_refuses_retained_limit,
-    "#1=ANNOTATION_TEXT_OCCURRENCE('annotation name',());",
-    1
+    "#1=ANNOTATION_TEXT_OCCURRENCE('annotation name',());", RetainedBytes
 );
 
 #[test]
@@ -130,12 +130,13 @@ fn annotation_text_refuses_materialized_limit() {
             let mut candidates = BTreeMap::new();
             let mut storage = ctx.reserve_scoped(0, "text fixture").expect("scope");
             let mut losses = Vec::<LossNote>::new();
+            let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
             super::super::collect_annotation_text(
                 1,
                 &exchange,
                 &mut visited,
                 (&mut candidates, &mut storage),
-                &mut losses,
+                (&mut losses, &reports),
                 0,
                 &ctx,
             )
@@ -161,7 +162,8 @@ fn measure_item_name_refuses_materialized_limit() {
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).expect("root");
         let mut storage = ctx.reserve_scoped(0, "measure fixture").expect("scope");
-        super::super::measure_item_name(1, record, &exchange, &mut Vec::new(), (&ctx, &mut storage))
+        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+        super::super::measure_item_name(1, record, &exchange, (&mut Vec::new(), &reports), (&ctx, &mut storage))
     });
     assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_string_text"));
 }
@@ -179,13 +181,14 @@ fn annotation_collection_result(limit: u64, consume_text: bool) -> Result<(), Co
     let mut visited = BTreeSet::new();
     let mut storage = ctx.reserve_scoped(0, "text fixture").expect("scope");
     let mut losses = Vec::new();
+    let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
     if consume_text {
         super::super::find_annotation_text(
             1,
             &exchange,
             &mut visited,
-            &mut BTreeSet::new(),
-            &mut losses,
+            (&mut BTreeSet::new(), &mut storage),
+            (&mut losses, &reports),
             0,
             &ctx,
         )?;
@@ -195,7 +198,7 @@ fn annotation_collection_result(limit: u64, consume_text: bool) -> Result<(), Co
             &exchange,
             &mut visited,
             (&mut BTreeMap::new(), &mut storage),
-            &mut losses,
+            (&mut losses, &reports),
             0,
             &ctx,
         )?;
@@ -252,7 +255,7 @@ fn characteristic_measure_values_refuse_collection_limit() {
         length_scale: 1.0,
         angle_scale: 1.0,
         graph_limit: 64,
-        losses: &mut losses,
+        losses: (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
     };
     let value = crate::parse::Value::Real(
         cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture"),
@@ -285,12 +288,13 @@ fn characteristic_value_map_refuses_collection_limit() {
         };
         let mut losses = Vec::new();
         let mut storage = ctx.reserve_scoped(0, "characteristic fixture").expect("scope");
-        matches!(
-            super::super::characteristic_values(&exchange, &geometry.value, &mut losses, 64, &mut storage, &ctx),
+        let refused = matches!(
+            super::super::characteristic_values(&exchange, &geometry.value, (&mut losses, &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))), 64, &mut storage, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_pmi_characteristic_values"
-        )
+        );
+        refused
     });
     assert!(
         refused,

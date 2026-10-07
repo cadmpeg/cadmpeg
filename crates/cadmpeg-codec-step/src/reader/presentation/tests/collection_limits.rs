@@ -74,12 +74,15 @@ fn style_target_refuses(operation: &str, depth_limit: bool) {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits style target policy");
-        matches!(
-            super::super::expand_style_targets(1, &exchange, &mut std::collections::BTreeSet::new(), &mut BTreeSet::new(), 0, 128, &ctx),
+        let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
+        let mut target_storage = ctx.reserve_scoped(0, "target fixture").expect("scope");
+        let refused = matches!(
+            super::super::expand_style_targets(1, &exchange, (&mut std::collections::BTreeSet::new(), &mut claim_storage), &mut BTreeSet::new(), (0, 128), (&mut Vec::new(), &mut target_storage), &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.operation == operation
                     && refusal.dimension == if depth_limit { ResourceDimension::RecursionDepth } else { ResourceDimension::CollectionItems }
-        )
+        );
+        refused
     });
     assert!(refused, "no refusal for {operation}");
 }
@@ -204,7 +207,8 @@ fn transparency_refuses(operation: &str, retained: bool) {
                     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
                         .expect("root fits policy");
 
-                    super::super::surface_transparency(1, record, &exchange, &mut Vec::new(), &ctx)
+                    let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+                    super::super::surface_transparency(1, record, &exchange, (&mut Vec::new(), &reports), &ctx)
                         .map(|_| ())
                 },
             );
@@ -221,8 +225,9 @@ fn transparency_refuses(operation: &str, retained: bool) {
             }
             let (ctx, _) =
                 DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
+            let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
             matches!(
-                super::super::surface_transparency(1, record, &exchange, &mut Vec::new(), &ctx),
+                super::super::surface_transparency(1, record, &exchange, (&mut Vec::new(), &reports), &ctx),
                 Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
             )
         })
@@ -265,7 +270,7 @@ fn invalid_side_refuses(operation: &str, retained: bool) {
                     let result = (super::super::surface_side_rank(
                         1,
                         record,
-                        &mut Vec::new(),
+                        (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
                         &mut BTreeSet::new(),
                         &std::cell::RefCell::new(
                             ctx.reserve_scoped(0, "step invalid surface side storage")
@@ -291,7 +296,7 @@ fn invalid_side_refuses(operation: &str, retained: bool) {
         let (ctx, _) =
             DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
         let result = matches!(
-            super::super::surface_side_rank(1, record, &mut Vec::new(), &mut BTreeSet::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "step invalid surface side storage").unwrap()), &ctx),
+            super::super::surface_side_rank(1, record, (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))), &mut BTreeSet::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "step invalid surface side storage").unwrap()), &ctx),
             Err(CodecError::ResourceLimit(refusal)) if refusal.operation == operation
         );
         result
@@ -656,7 +661,7 @@ fn color_search_refuses(
                 ),
                 active: &mut BTreeSet::new(),
                 cache: &mut std::collections::BTreeMap::new(),
-                losses: &mut Vec::new(),
+                losses: (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
                 invalid_surface_sides: &mut BTreeSet::new(),
             },
             0,
@@ -715,7 +720,7 @@ fn presentation_color_cache_copy_refuses_materialized_limit() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
-        let result = super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { storage: &std::cell::RefCell::new(ctx.reserve_scoped(0, "color search fixture").expect("scope")), active: &mut BTreeSet::new(), cache: &mut cache, losses: &mut Vec::new(), invalid_surface_sides: &mut BTreeSet::new() }, 0, &ctx);
+        let result = super::super::find_color(1, &exchange, super::super::StyleDomain::Any, super::super::ColorSearchState { storage: &std::cell::RefCell::new(ctx.reserve_scoped(0, "color search fixture").expect("scope")), active: &mut BTreeSet::new(), cache: &mut cache, losses: (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))), invalid_surface_sides: &mut BTreeSet::new() }, 0, &ctx);
         result
     });
     assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_presentation_color_cache_copy"));

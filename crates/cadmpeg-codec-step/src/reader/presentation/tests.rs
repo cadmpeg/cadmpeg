@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod collection_limits;
 mod style_indices;
+mod target_expansion;
 mod string_limits;
 mod surface_styles;
 
@@ -70,7 +71,7 @@ ENDSEC;END-ISO-10303-21;",
                 ),
                 active: &mut BTreeSet::new(),
                 cache: &mut BTreeMap::new(),
-                losses: &mut Vec::new(),
+                losses: (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
                 invalid_surface_sides: &mut BTreeSet::new(),
             },
             0,
