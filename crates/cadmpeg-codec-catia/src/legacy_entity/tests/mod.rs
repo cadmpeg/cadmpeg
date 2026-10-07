@@ -57,8 +57,15 @@ fn legacy_run_list_refuses_after_identity_admission() {
     let mut bytes = Vec::new();
     identity(&mut bytes, 1);
     bytes.extend_from_slice(CATALOG_OPEN);
+    // The relation pass indexes the one identity before the run is kept.
     let refused =
         crate::test_support::with_collection_limit(1, |ctx| parse_runs_charged(ctx, &bytes));
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_legacy_relation_identity_ids")
+    );
+    let refused =
+        crate::test_support::with_collection_limit(2, |ctx| parse_runs_charged(ctx, &bytes));
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "catia_legacy_runs")
