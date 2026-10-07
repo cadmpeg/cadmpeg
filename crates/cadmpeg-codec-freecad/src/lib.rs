@@ -35,7 +35,6 @@ mod product;
 mod resource;
 mod topology_transfer;
 mod writer;
-mod xml;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
