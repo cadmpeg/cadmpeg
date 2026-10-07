@@ -200,20 +200,23 @@ fn nurbs_curve_knots_refuse_collection_limit_before_reserve() {
 }
 
 #[test]
-fn nurbs_curve_knot_bytes_refuse_retained_limit_before_reserve() {
+fn nurbs_curve_knot_bytes_refuse_materialized_limit_before_reserve() {
     let bytes = curve_payload(0x10, false, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 55;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("curve input fits service profile");
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds");
-    let refusal = super::read_nurbs_curve(&ctx, &mut reader, MillimeterScale::IDENTITY)
-        .expect_err("seven f64 knots need 56 retained bytes");
-    assert_resource(
-        &refusal,
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "Rhino NURBS knots",
+    // Seven stored FiniteReal knots occupy 56 scratch bytes before reconstruction.
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino NURBS knots", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds");
+            let result = super::read_nurbs_curve(&ctx, &mut reader, MillimeterScale::IDENTITY);
+            if let Err(GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) = &result {
+                assert_eq!(limit.additional, 56);
+            }
+            result.map_err(|error| match error { GeometryError::Codec(error) => error, error => panic!("unexpected curve refusal: {error:?}") })
+        },
     );
     assert!(read_nurbs_curve(
         &mut BoundedReader::new(&bytes, 0, bytes.len()).expect("curve bounds"),

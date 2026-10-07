@@ -200,12 +200,13 @@ struct RawFace {
     edges: Vec<ComponentPointer>,
 }
 
-#[derive(Debug, Clone)]
-struct RawLevel {
+#[derive(Debug)]
+struct RawLevel<'ctx> {
     source_offset: usize,
     vertices: Vec<RawVertex>,
     edges: Vec<RawEdge>,
     faces: Vec<RawFace>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,8 +250,10 @@ pub(crate) fn decode(
                 });
             }
             let mut enum_diagnostics = Vec::new();
+            let mut child_storage = ctx.reserve_scoped(0, "Rhino SubD child ranges")?;
             let (level, level_count, children) = read_subdimple(
                 ctx,
+                &mut child_storage,
                 &mut child,
                 archive,
                 minor,
@@ -388,14 +391,15 @@ fn identity_userdata_transform(data: &[u8], range: &Range<usize>) -> Result<bool
     Ok(identity)
 }
 
-fn read_subdimple(
-    ctx: &DecodeContext<'_>,
+fn read_subdimple<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    child_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     minor: i32,
     enum_diagnostics: &mut Vec<SubdEnumDiagnostic>,
     warnings: &mut Diagnostics,
-) -> Result<(RawLevel, usize, Vec<Range<usize>>), SubdError> {
+) -> Result<(RawLevel<'ctx>, usize, Vec<Range<usize>>), SubdError> {
     let level_count = capped_u32(ctx, reader, MAX_LEVELS, "SubD level count")?;
     reader.u32()?;
     reader.u32()?;
@@ -408,7 +412,7 @@ fn read_subdimple(
         ctx.charge_work(1, "Rhino subd read_subdimple records")?;
         let start = reader.position();
         let level = read_level(ctx, reader, archive, expected_level, warnings)?;
-        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges")
+        child_storage.with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
             .map_err(SubdError::from)?;
         children.push(start..reader.position());
         validate_level(ctx, &level, expected_level)?;
@@ -421,14 +425,14 @@ fn read_subdimple(
         reader.u8()?;
         let start = reader.position();
         read_mapping_tag(ctx, reader, archive, warnings)?;
-        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges")
+        child_storage.with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
             .map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
     if minor >= 2 {
         let start = reader.position();
         read_symmetry(ctx, reader, archive, enum_diagnostics, warnings)?;
-        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges")
+        child_storage.with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
             .map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
@@ -441,7 +445,7 @@ fn read_subdimple(
         reader.bool()?;
         let start = reader.position();
         read_subd_hash(ctx, reader, archive, warnings)?;
-        ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges")
+        child_storage.with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
             .map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
@@ -450,13 +454,13 @@ fn read_subdimple(
     Ok((level, level_count, children))
 }
 
-fn read_level(
-    ctx: &DecodeContext<'_>,
+fn read_level<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     parent: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_level: usize,
     warnings: &mut Diagnostics,
-) -> Result<RawLevel, SubdError> {
+) -> Result<RawLevel<'ctx>, SubdError> {
     let chunk = anonymous_chunk(ctx, parent, archive, "SubD level")?;
     let mut reader =
         BoundedReader::new(parent.backing_bytes(), chunk.body().start, chunk.body().end)?;
@@ -507,39 +511,37 @@ fn read_level(
         ));
     }
 
-    let mut vertices = ctx
-        .collection_vec(vertex_count, "Rhino SubD level vertices")
-        .map_err(SubdError::from)?;
+    let mut storage = ctx.reserve_scoped(0, "Rhino SubD raw level")?;
+    let mut vertices = storage.with_storage(|| ctx.collection_vec(vertex_count, "Rhino SubD level vertices"))?;
     for archive_id in partitions[0]..partitions[1] {
         ctx.charge_work(1, "Rhino subd read_level records")?;
         vertices.push(read_vertex(
             ctx,
+            &mut storage,
             &mut reader,
             archive,
             archive_id,
             level_index,
         )?);
     }
-    let mut edges = ctx
-        .collection_vec(edge_count, "Rhino SubD level edges")
-        .map_err(SubdError::from)?;
+    let mut edges = storage.with_storage(|| ctx.collection_vec(edge_count, "Rhino SubD level edges"))?;
     for archive_id in partitions[1]..partitions[2] {
         ctx.charge_work(1, "Rhino subd read_level records")?;
         edges.push(read_edge(
             ctx,
+            &mut storage,
             &mut reader,
             archive,
             archive_id,
             level_index,
         )?);
     }
-    let mut faces = ctx
-        .collection_vec(face_count, "Rhino SubD level faces")
-        .map_err(SubdError::from)?;
+    let mut faces = storage.with_storage(|| ctx.collection_vec(face_count, "Rhino SubD level faces"))?;
     for archive_id in partitions[2]..partitions[3] {
         ctx.charge_work(1, "Rhino subd read_level records")?;
         faces.push(read_face(
             ctx,
+            &mut storage,
             &mut reader,
             archive,
             archive_id,
@@ -561,6 +563,7 @@ fn read_level(
         vertices,
         edges,
         faces,
+        _storage: storage,
     };
     finish_chunk(ctx, parent, &chunk, reader, warnings)?;
     Ok(level)
@@ -568,6 +571,7 @@ fn read_level(
 
 fn read_vertex(
     ctx: &DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_id: u32,
@@ -618,7 +622,7 @@ fn read_vertex(
             "SubD vertex serialized edge count disagrees",
         ));
     }
-    let edges = read_pointers(ctx, reader, edge_count, false)?;
+    let edges = storage.with_storage(|| read_pointers(ctx, reader, edge_count, false))?;
     let serialized_faces = usize::from(reader.u16()?);
     if serialized_faces != face_count {
         return Err(malformed(
@@ -626,7 +630,7 @@ fn read_vertex(
             "SubD vertex serialized face count disagrees",
         ));
     }
-    let faces = read_pointers(ctx, reader, face_count, false)?;
+    let faces = storage.with_storage(|| read_pointers(ctx, reader, face_count, false))?;
     read_record_end(ctx, reader, archive)?;
     Ok(RawVertex {
         base,
@@ -639,6 +643,7 @@ fn read_vertex(
 
 fn read_edge(
     ctx: &DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_id: u32,
@@ -679,7 +684,7 @@ fn read_edge(
             "SubD edge serialized face count disagrees",
         ));
     }
-    let faces = read_pointers(ctx, reader, face_count, false)?;
+    let faces = storage.with_storage(|| read_pointers(ctx, reader, face_count, false))?;
     let mut sharpness = [start, start];
     if archive.value() < 70 {
         expect_zero(ctx, reader, "SubD edge end marker")?;
@@ -721,6 +726,7 @@ fn read_edge(
 
 fn read_face(
     ctx: &DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_id: u32,
@@ -737,7 +743,7 @@ fn read_face(
             "SubD face serialized edge count disagrees",
         ));
     }
-    let edges = read_pointers(ctx, reader, edge_count, false)?;
+    let edges = storage.with_storage(|| read_pointers(ctx, reader, edge_count, false))?;
     if archive.value() < 70 {
         expect_zero(ctx, reader, "SubD face end marker")?;
     } else {
@@ -1019,7 +1025,7 @@ fn read_untyped_pointer(reader: &mut BoundedReader<'_>) -> Result<(), SubdError>
 
 fn validate_level(
     ctx: &DecodeContext<'_>,
-    level: &RawLevel,
+    level: &RawLevel<'_>,
     expected_level: usize,
 ) -> Result<(), SubdError> {
     // The reader validates every archive ID against the contiguous partitions.
@@ -1121,7 +1127,7 @@ fn validate_level(
 
 fn incidence_from_edges<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    level: &RawLevel,
+    level: &RawLevel<'_>,
 ) -> Result<(Vec<BTreeSet<u32>>, ScopedReservation<'ctx>), SubdError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino SubD vertex-edge map")?;
     let mut result = storage.with_storage(|| {
@@ -1143,7 +1149,7 @@ fn incidence_from_edges<'ctx>(
 
 fn incidence_from_faces<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    level: &RawLevel,
+    level: &RawLevel<'_>,
 ) -> Result<(Vec<BTreeSet<u32>>, ScopedReservation<'ctx>), SubdError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino SubD vertex-face map")?;
     let mut result = storage.with_storage(|| {
@@ -1200,7 +1206,7 @@ fn incidence_from_faces<'ctx>(
 
 fn edge_face_incidence<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    level: &RawLevel,
+    level: &RawLevel<'_>,
 ) -> Result<(Vec<BTreeSet<u32>>, ScopedReservation<'ctx>), SubdError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino SubD edge-face map")?;
     let mut result = storage.with_storage(|| {
@@ -1269,7 +1275,7 @@ fn resolve_all(
 
 fn materialize(
     ctx: &DecodeContext<'_>,
-    level: RawLevel,
+    level: RawLevel<'_>,
     scale: MillimeterScale,
     id: cadmpeg_ir::ids::SubdId,
 ) -> Result<SubdSurface, SubdError> {
@@ -1783,7 +1789,8 @@ fn finish_chunk_children(
             )
             .map_err(FramingError::from)?;
     }
-    let direct = crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children)?;
+    let mut ranges = ctx.reserve_scoped(0, "Rhino subd checksum ranges")?;
+    let direct = ranges.with_storage(|| crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children))?;
     if matches!(
         crate::chunks::verify_checksum_ranges(ctx, parent.backing_bytes(), chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
