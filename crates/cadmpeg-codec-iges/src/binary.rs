@@ -12,7 +12,7 @@ use crate::directory::DirectoryFieldSlot;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::VecDeque;
 
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
@@ -276,7 +276,7 @@ impl<'a> BitReader<'a> {
             }
 
             ctx.reserve_capacity(&mut output, count, "iges binary string payload")?;
-            for _ in 0..count {
+            for _ in ctx.admit_iter(0..count, "iges binary string payload")? {
                 let byte = self.read_bits(8)?;
                 let byte =
                     u8::try_from(byte).map_err(|_| malformed("a Binary string byte overflows"))?;
@@ -408,13 +408,19 @@ fn checked_offset(base: usize, displacement: u32) -> Result<usize, CodecError> {
     .ok_or_else(|| malformed("a Binary section displacement overflows"))
 }
 
-fn padding_is_zero(bytes: &[u8], range: std::ops::Range<usize>) -> Result<(), CodecError> {
-    if bytes
+fn padding_is_zero(
+    bytes: &[u8],
+    range: std::ops::Range<usize>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let padding = bytes
         .get(range.clone())
-        .ok_or_else(|| malformed("Binary section padding is truncated"))?
-        .iter()
-        .any(|byte| *byte != 0)
-    {
+        .ok_or_else(|| malformed("Binary section padding is truncated"))?;
+    if ctx.any_by(
+        padding,
+        |byte| Ok(*byte != 0),
+        "iges binary section padding",
+    )? {
         return Err(malformed("Binary section padding is not null"));
     }
     Ok(())
@@ -448,7 +454,10 @@ fn section_payload(
         .ok_or_else(|| malformed("a Binary section payload is truncated"))
 }
 
-fn parse_header(source: &[u8]) -> Result<(PrimitiveLengths, SectionDisplacements), CodecError> {
+fn parse_header(
+    source: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<(PrimitiveLengths, SectionDisplacements), CodecError> {
     if source.len() < BINARY_FLAG_WIDTH || source.first() != Some(&b'B') {
         return Err(malformed("Binary Flag Section is truncated"));
     }
@@ -490,7 +499,7 @@ fn parse_header(source: &[u8]) -> Result<(PrimitiveLengths, SectionDisplacements
             "Binary Start displacement precedes the flag section",
         ));
     }
-    padding_is_zero(source, BINARY_FLAG_WIDTH..start)?;
+    padding_is_zero(source, BINARY_FLAG_WIDTH..start, ctx)?;
     if source.get(72) != Some(&b'B')
         || !source
             .get(73..79)
@@ -521,8 +530,11 @@ fn parse_header(source: &[u8]) -> Result<(PrimitiveLengths, SectionDisplacements
     Ok((lengths, section_displacements))
 }
 
-fn parse_sections(source: &[u8]) -> Result<BinarySections<'_>, CodecError> {
-    let (lengths, offsets) = parse_header(source)?;
+fn parse_sections<'a>(
+    source: &'a [u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<BinarySections<'a>, CodecError> {
+    let (lengths, offsets) = parse_header(source, ctx)?;
     if offsets.end > source.len() {
         return Err(malformed(
             "Binary Terminate displacement exceeds the source",
@@ -559,14 +571,14 @@ fn parse_sections(source: &[u8]) -> Result<BinarySections<'_>, CodecError> {
         (directory_end, offsets.parameter),
         (parameter_end, offsets.terminate),
     ] {
-        padding_is_zero(source, payload_end..next_start)?;
+        padding_is_zero(source, payload_end..next_start, ctx)?;
     }
     let terminate_end = offsets
         .terminate
         .checked_add(SECTION_HEADER_WIDTH)
         .and_then(|offset| offset.checked_add(terminate.len()))
         .ok_or_else(|| malformed("Binary Terminate section count overflows"))?;
-    padding_is_zero(source, terminate_end..offsets.end)?;
+    padding_is_zero(source, terminate_end..offsets.end, ctx)?;
     validate_terminate(
         terminate,
         [
@@ -780,7 +792,10 @@ fn parameter_text(
                 "Binary Macro Definition has no language statements",
             ));
         }
-        for (index, value) in values.iter().enumerate() {
+        for (index, value) in ctx
+            .admit_iter(values, "iges binary parameter text")?
+            .enumerate()
+        {
             if index > 0 {
                 ctx.extend_retained_bytes(&mut output, b";", "iges binary parameter text")?;
             }
@@ -795,7 +810,7 @@ fn parameter_text(
     }
     let entity_text = stack_text(format_args!("{entity_type}"))?;
     let mut output = ctx.copy_retained(entity_text.as_bytes(), "iges binary parameter text")?;
-    for value in values {
+    for value in ctx.admit_iter(values, "iges binary parameter text")? {
         ctx.extend_retained_bytes(&mut output, b",", "iges binary parameter text")?;
         ctx.extend_retained_bytes(
             &mut output,
@@ -883,7 +898,8 @@ fn render_cards(
     if data.is_empty() {
         return Ok(());
     }
-    for chunk in data.chunks(CARD_DATA_WIDTH) {
+    let mut chunks = data.chunks(CARD_DATA_WIDTH);
+    while let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary rendered cards")? {
         render_card(output, chunk, section, sequence, ctx)?;
     }
     Ok(())
@@ -1011,10 +1027,27 @@ fn normalize_global(
     Ok(output)
 }
 
+/// The index of the Directory record at `offset`. Records are read in
+/// section order, so their offsets strictly increase.
+fn directory_at(
+    directory: &[BinaryDirectory],
+    offset: u32,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<usize>, CodecError> {
+    Ok(ctx
+        .binary_search_by_key(
+            directory,
+            &offset,
+            |record| Ok(record.offset),
+            "iges binary directory offset lookup",
+        )?
+        .ok())
+}
+
 fn read_parameters(
     payload: &[u8],
     lengths: PrimitiveLengths,
-    directory_by_offset: &BTreeMap<u32, usize>,
+    directory: &[BinaryDirectory],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BinaryParameter>, CodecError> {
     let mut records = Vec::new();
@@ -1054,7 +1087,7 @@ fn read_parameters(
         }
         stream.finish()?;
         let directory_pointer = positive_pointer(directory_pointer, "Parameter Directory")?;
-        if !directory_by_offset.contains_key(&directory_pointer) {
+        if directory_at(directory, directory_pointer, ctx)?.is_none() {
             return Err(malformed(
                 "Binary Parameter Directory pointer does not resolve",
             ));
@@ -1077,24 +1110,13 @@ fn normalize_directory_and_parameters(
     parameters: Vec<BinaryParameter>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(usize, usize), CodecError> {
-    let mut directory_by_offset = BTreeMap::new();
-    for (index, record) in directory.iter().enumerate() {
-        ctx.insert_btree_map(
-            &mut directory_by_offset,
-            record.offset,
-            index,
-            "iges binary normalized directory index",
-        )?;
-    }
-    let mut referenced_parameters = BTreeSet::new();
     let mut normalized =
         ctx.collection_vec(parameters.len(), "iges binary normalized parameters")?;
     let mut parameter_sequence = 1_u32;
-    for parameter in parameters {
+    for parameter in ctx.admit_iter(parameters, "iges binary normalized parameters")? {
         let directory_pointer =
             positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
-        let directory_index = *directory_by_offset
-            .get(&directory_pointer)
+        let directory_index = directory_at(directory, directory_pointer, ctx)?
             .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))?;
         if directory[directory_index].entity_type() != parameter.entity_type {
             return Err(malformed(
@@ -1125,47 +1147,51 @@ fn normalize_directory_and_parameters(
             first_sequence,
         });
     }
-    let mut parameter_by_offset = BTreeMap::new();
-    for (index, record) in normalized.iter().enumerate() {
-        ctx.insert_btree_map(
-            &mut parameter_by_offset,
-            record.offset,
-            index,
-            "iges binary normalized parameter index",
-        )?;
-    }
+    // Parameter entries are read in section order, so their offsets strictly
+    // increase and a binary search resolves a Directory pointer.
+    let mut referenced =
+        ctx.alloc_filled(normalized.len(), false, "iges binary referenced parameters")?;
+    let mut referenced_count = 0_usize;
     let mut parameter_starts =
         ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts")?;
     let mut parameter_counts =
         ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts")?;
-    for (directory_index, directory_record) in directory.iter().enumerate() {
+    for (directory_index, directory_record) in ctx
+        .admit_iter(directory, "iges binary Directory parameter pointers")?
+        .enumerate()
+    {
         let pointer = directory_record.parameter_pointer();
         if pointer == 0 {
             continue;
         }
         let parameter_offset = positive_pointer(pointer, "Directory Parameter Data")?;
-        let parameter_index = *parameter_by_offset
-            .get(&parameter_offset)
-            .ok_or_else(|| malformed("Binary Directory Parameter Data pointer does not resolve"))?;
-        if !ctx.insert_btree_set(
-            &mut referenced_parameters,
-            parameter_index,
-            "iges binary referenced parameters",
-        )? {
+        let parameter_index = ctx
+            .binary_search_by_key(
+                &normalized,
+                &parameter_offset,
+                |record| Ok(record.offset),
+                "iges binary parameter offset lookup",
+            )?
+            .map_err(|_| malformed("Binary Directory Parameter Data pointer does not resolve"))?;
+        if std::mem::replace(&mut referenced[parameter_index], true) {
             return Err(malformed(
                 "Binary Parameter Data entry is referenced by more than one Directory Entry",
             ));
         }
+        referenced_count += 1;
         parameter_starts[directory_index] = normalized[parameter_index].first_sequence;
         parameter_counts[directory_index] = normalized[parameter_index].lines.len();
     }
-    if referenced_parameters.len() != normalized.len() {
+    if referenced_count != normalized.len() {
         return Err(malformed(
             "Binary Parameter Data section contains an unreferenced entry",
         ));
     }
     let mut directory_sequence = 1_u32;
-    for (index, directory_record) in directory.iter().enumerate() {
+    for (index, directory_record) in ctx
+        .admit_iter(directory, "iges binary Directory cards")?
+        .enumerate()
+    {
         let first_sequence = directory_sequence;
         let second_sequence = first_sequence
             .checked_add(1)
@@ -1266,8 +1292,8 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
     }
     let mut parameter_sequence = 1_u32;
-    for parameter in &normalized {
-        for line in &parameter.lines {
+    for parameter in ctx.admit_iter(&normalized, "iges binary Parameter Data cards")? {
+        for line in ctx.admit_iter(&parameter.lines, "iges binary Parameter Data cards")? {
             render_parameter_line(
                 output,
                 line,
@@ -1301,10 +1327,13 @@ fn render_parameter_lines(
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     if language {
         let mut cards = ctx.collection_vec(
-            data.chunks(PARAMETER_DATA_WIDTH).count(),
+            data.len().div_ceil(PARAMETER_DATA_WIDTH),
             "iges binary macro parameter cards",
         )?;
-        for chunk in data.chunks(PARAMETER_DATA_WIDTH) {
+        let mut chunks = data.chunks(PARAMETER_DATA_WIDTH);
+        while let Some(chunk) =
+            ctx.next_charged(&mut chunks, "iges binary macro parameter cards")?
+        {
             cards.push(ctx.copy_retained(chunk, "iges binary macro parameter card bytes")?);
         }
         return Ok(cards);
@@ -1367,40 +1396,15 @@ fn append_output_card(
     Ok(())
 }
 
-fn charge_normalization(
-    ctx: &DecodeContext<'_>,
-    source_len: usize,
-    normalized_len: usize,
-) -> Result<(), CodecError> {
-    let total = source_len
-        .checked_add(normalized_len)
-        .ok_or_else(|| ctx.refuse_codec_limit("iges_binary_normalization", u64::MAX, u64::MAX))?;
-    ctx.charge_work(u64_from_index(total), "iges_binary_normalization")
-}
-
 /// Normalize one Binary IGES source into the Fixed ASCII image consumed by the
 /// typed reader.
 pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
-    let sections = parse_sections(source)?;
+    let sections = parse_sections(source, ctx)?;
     let start_text = normalize_start(sections.start, sections.lengths, ctx)?;
     let global_values = read_global(sections.global, sections.lengths, ctx)?;
     let global_text = normalize_global(&global_values, ctx)?;
     let directory = read_directory(sections.directory, sections.lengths, ctx)?;
-    let mut directory_by_offset = BTreeMap::new();
-    for (index, record) in directory.iter().enumerate() {
-        ctx.insert_btree_map(
-            &mut directory_by_offset,
-            record.offset,
-            index,
-            "iges binary directory index",
-        )?;
-    }
-    let parameters = read_parameters(
-        sections.parameter,
-        sections.lengths,
-        &directory_by_offset,
-        ctx,
-    )?;
+    let parameters = read_parameters(sections.parameter, sections.lengths, &directory, ctx)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence, ctx)?;
@@ -1412,7 +1416,7 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     .map_err(|_| malformed("a Binary Start count does not fit memory"))?;
     let mut global_sequence = 1_u32;
     let global_cards = crate::global::layout_global_cards(&global_text, ctx)?;
-    for card in &global_cards {
+    for card in ctx.admit_iter(&global_cards, "iges binary Global cards")? {
         render_cards(&mut output, card, b'G', &mut global_sequence, ctx)?;
     }
     let global_count = usize::try_from(
@@ -1431,7 +1435,6 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         parameter_count,
         ctx,
     )?;
-    charge_normalization(ctx, source.len(), output.len())?;
     Ok(output)
 }
 
@@ -1552,7 +1555,7 @@ mod tests {
     }
 
     #[test]
-    fn binary_directory_index_refuses_collection_limit_before_insertion() {
+    fn binary_parameter_starts_refuse_collection_limit_before_allocation() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
         let mut values = std::array::from_fn(|_| super::BinaryValue::Default);
@@ -1576,7 +1579,7 @@ mod tests {
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.used == 0
                     && limit.additional == 1
-                    && limit.operation == "iges binary normalized directory index"
+                    && limit.operation == "iges_binary_parameter_starts"
         ));
 
         let arena = DecodeArena::new();
@@ -2332,7 +2335,10 @@ mod tests {
             let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, false);
             match run(&ctx) {
                 Err(CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+                    assert_eq!(
+                        limit.dimension,
+                        cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    );
                     if limit.operation == operation {
                         return;
                     }
@@ -2381,7 +2387,11 @@ mod tests {
     #[test]
     fn binary_parameter_records_refuse_loop_work() {
         let bytes = parameter_payload(lengths());
-        let directory = std::collections::BTreeMap::from([(1, 0)]);
+        let directory = [super::BinaryDirectory::new(
+            1,
+            std::array::from_fn(|_| super::BinaryValue::Integer(0)),
+        )
+        .expect("integer Directory fields")];
         assert_loop_work_refusal("iges binary section records", |ctx| {
             super::read_parameters(&bytes, lengths(), &directory, ctx)
         });
@@ -2390,10 +2400,13 @@ mod tests {
     #[test]
     fn binary_parameter_primitives_refuse_loop_work() {
         let bytes = parameter_payload(lengths());
-        let directory = std::collections::BTreeMap::from([(1, 0)]);
+        let directory = [super::BinaryDirectory::new(
+            1,
+            std::array::from_fn(|_| super::BinaryValue::Integer(0)),
+        )
+        .expect("integer Directory fields")];
         assert_loop_work_refusal("iges binary parameter primitives", |ctx| {
             super::read_parameters(&bytes, lengths(), &directory, ctx)
         });
     }
-
 }
