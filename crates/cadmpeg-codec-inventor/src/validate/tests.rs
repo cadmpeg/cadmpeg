@@ -4,7 +4,7 @@ use super::{
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn ordered_set_equality_matches_contents_across_insertion_order() {
@@ -220,13 +220,16 @@ fn expression_references_validate_without_collection_slots() {
     ] {
         let mut data = empty_native_data();
         let raw = carrier_record();
-        let payload = serde_json::from_value::<crate::design::PmDcExpressionPayload>(serde_json::json!({
-            "save_version_major": 1, "header_value": 0, "header_id": 0,
-            "unit": {"index": 1, "qualified": false}, "kind": kind
-        })).expect("expression payload");
+        let payload =
+            serde_json::from_value::<crate::design::PmDcExpressionPayload>(serde_json::json!({
+                "save_version_major": 1, "header_value": 0, "header_id": 0,
+                "unit": {"index": 1, "qualified": false}, "kind": kind
+            }))
+            .expect("expression payload");
         data.pm_dc_expressions.push(super::Located::new(
             payload,
-            crate::record_identity::RecordTypeId::try_from(raw.type_id.as_str().to_owned()).expect("type id"),
+            crate::record_identity::RecordTypeId::try_from(raw.type_id.as_str().to_owned())
+                .expect("type id"),
             cadmpeg_ir::ids::IdentityKey::encode_segment("t"),
             0,
         ));
@@ -238,15 +241,21 @@ fn expression_references_validate_without_collection_slots() {
         policy.limits.max_collection_items = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut findings = Vec::new();
-        validate_design(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings).expect("references resolve");
+        validate_design(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings)
+            .expect("references resolve");
         assert!(findings.is_empty());
     }
 }
 
-fn located_payload<T: serde::de::DeserializeOwned>(payload: serde_json::Value) -> super::Located<T> {
+fn located_payload<T: serde::de::DeserializeOwned>(
+    payload: serde_json::Value,
+) -> super::Located<T> {
     super::Located::new(
         serde_json::from_value(payload).expect("payload"),
-        crate::record_identity::RecordTypeId::try_from(carrier_record().type_id.as_str().to_owned()).expect("type id"),
+        crate::record_identity::RecordTypeId::try_from(
+            carrier_record().type_id.as_str().to_owned(),
+        )
+        .expect("type id"),
         cadmpeg_ir::ids::IdentityKey::encode_segment("t"),
         0,
     )
@@ -271,12 +280,13 @@ fn sketch_entity_references_validate_in_place_and_stop_at_failure() {
     for index in [1, 2] {
         let mut data = empty_native_data();
         data.records.push(carrier_record());
-        data.pm_dc_sketch_entities.push(located_payload(serde_json::json!({
-            "save_version_major": 1, "header": content_header(), "entity_flags": 0,
-            "sketch": {"index": 1, "qualified": false},
-            "kind": {"form": "line", "points": reference_list(index),
-                "auxiliary": [reference_list(1)], "origin": [0.0, 0.0], "direction": [1.0, 0.0]}
-        })));
+        data.pm_dc_sketch_entities
+            .push(located_payload(serde_json::json!({
+                "save_version_major": 1, "header": content_header(), "entity_flags": 0,
+                "sketch": {"index": 1, "qualified": false},
+                "kind": {"form": "line", "points": reference_list(index),
+                    "auxiliary": [reference_list(1)], "origin": [0.0, 0.0], "direction": [1.0, 0.0]}
+            })));
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // Raw-record index, entity uniqueness and native-entity identity: three
@@ -284,12 +294,49 @@ fn sketch_entity_references_validate_in_place_and_stop_at_failure() {
         policy.limits.max_collection_items = 3 + u64::from(index == 2);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut findings = Vec::new();
-        validate_sketches(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings).expect("entity validation");
+        validate_sketches(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings)
+            .expect("entity validation");
         assert_eq!(findings.len(), usize::from(index == 2));
         if let Some(finding) = findings.first() {
-            assert_eq!(finding.message, "Inventor PmDc sketch-entity record or reference does not resolve");
+            assert_eq!(
+                finding.message,
+                "Inventor PmDc sketch-entity record or reference does not resolve"
+            );
         }
     }
+}
+
+#[test]
+fn sketch_entity_failure_skips_large_auxiliary_reference_list() {
+    let mut data = empty_native_data();
+    data.records.push(carrier_record());
+    let mut auxiliary = reference_list(1);
+    auxiliary["references"] = serde_json::json!((0..10_000)
+        .map(|_| serde_json::json!({"index": 1, "qualified": false}))
+        .collect::<Vec<_>>());
+    data.pm_dc_sketch_entities
+        .push(located_payload(serde_json::json!({
+            "save_version_major": 1, "header": content_header(), "entity_flags": 0,
+            "sketch": {"index": 1, "qualified": false},
+            "kind": {"form": "line", "points": reference_list(2),
+                "auxiliary": [auxiliary], "origin": [0.0, 0.0], "direction": [1.0, 0.0]}
+        })));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One raw index, one uniqueness key, one canonical identity and one finding.
+    policy.limits.max_collection_items = 4;
+    // Indexes, the failed point lookup and the finding fit here. Visiting all
+    // 10,000 auxiliary references would exceed this allowance before lookups.
+    policy.limits.max_work_units = 10_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut findings = Vec::new();
+    validate_sketches(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings)
+        .expect("failed point skips auxiliary references");
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].message,
+        "Inventor PmDc sketch-entity record or reference does not resolve"
+    );
 }
 
 #[test]
@@ -313,10 +360,14 @@ fn sketch_constraint_reference_maps_validate_without_copies() {
         policy.limits.max_collection_items = 3 + u64::from(index == 2);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut findings = Vec::new();
-        validate_sketches(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings).expect("constraint validation");
+        validate_sketches(&ctx, &data, &cadmpeg_ir::CadIr::empty(), &mut findings)
+            .expect("constraint validation");
         assert_eq!(findings.len(), usize::from(index == 2));
         if let Some(finding) = findings.first() {
-            assert_eq!(finding.message, "Inventor PmDc sketch-constraint record or reference does not resolve");
+            assert_eq!(
+                finding.message,
+                "Inventor PmDc sketch-constraint record or reference does not resolve"
+            );
         }
     }
 }
@@ -337,21 +388,34 @@ fn feature_property_references_validate_without_copies() {
         policy.limits.max_collection_items = 4 + u64::from(index == 2);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut findings = Vec::new();
-        super::validate_features(&ctx, &cadmpeg_ir::CadIr::empty(), &data, &mut findings).expect("property validation");
+        super::validate_features(&ctx, &cadmpeg_ir::CadIr::empty(), &data, &mut findings)
+            .expect("property validation");
         assert_eq!(findings.len(), usize::from(index == 2));
         if let Some(finding) = findings.first() {
-            assert_eq!(finding.message, "Inventor PmDc feature-property record or reference does not resolve");
+            assert_eq!(
+                finding.message,
+                "Inventor PmDc feature-property record or reference does not resolve"
+            );
         }
     }
 }
 
 fn ufrx_payload() -> crate::native::ufrx::UfrxParsedPrefix {
     crate::native::ufrx::UfrxParsedPrefix {
-        id: "inventor:ufrx:state#root".into(), directory_id: 0, schema: 1,
-        section_versions: Vec::new(), original_file_name: String::new(), caption: String::new(),
-        representation: None, model_states: Vec::new(), external_references: Vec::new(),
-        embedded_references: Vec::new(), occurrences: Vec::new(), tail_len: 0,
-        tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from("0".repeat(64)).expect("digest"),
+        id: "inventor:ufrx:state#root".into(),
+        directory_id: 0,
+        schema: 1,
+        section_versions: Vec::new(),
+        original_file_name: String::new(),
+        caption: String::new(),
+        representation: None,
+        model_states: Vec::new(),
+        external_references: Vec::new(),
+        embedded_references: Vec::new(),
+        occurrences: Vec::new(),
+        tail_len: 0,
+        tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from("0".repeat(64))
+            .expect("digest"),
     }
 }
 
@@ -362,11 +426,21 @@ fn ufrx_contiguity_checks_distinct_ordinals_without_expected_set() {
         let mut payload = ufrx_payload();
         let setup = cadmpeg_test_support::service_decode_context();
         for ordinal in ordinals {
-            payload.model_states.push(crate::native::ufrx::UfrxModelStateRecordWire {
-                id: format!("inventor:ufrx:model-state#{ordinal}"), ordinal, prefix: 0,
-                name: "state".into(), state: [0, 0], prefix_count: 0, parameters: Vec::new(),
-                suffix_len: 77, suffix_sha256: "0".repeat(64),
-            }.into_record(&setup).expect("model state"));
+            payload.model_states.push(
+                crate::native::ufrx::UfrxModelStateRecordWire {
+                    id: format!("inventor:ufrx:model-state#{ordinal}"),
+                    ordinal,
+                    prefix: 0,
+                    name: "state".into(),
+                    state: [0, 0],
+                    prefix_count: 0,
+                    parameters: Vec::new(),
+                    suffix_len: 77,
+                    suffix_sha256: "0".repeat(64),
+                }
+                .into_record(&setup)
+                .expect("model state"),
+            );
         }
         data.ufrx = super::UfrxRecord::ParsedPrefix(Box::new(payload));
         let arena = DecodeArena::new();
@@ -377,9 +451,17 @@ fn ufrx_contiguity_checks_distinct_ordinals_without_expected_set() {
         policy.limits.max_collection_items = 2 + u64::from(expected_findings != 0);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut findings = Vec::new();
-        super::validate_ufrx(&ctx, &cadmpeg_ir::CadIr::empty(), &data, &mut findings).expect("ordinal validation");
+        super::validate_ufrx(&ctx, &cadmpeg_ir::CadIr::empty(), &data, &mut findings)
+            .expect("ordinal validation");
         assert_eq!(findings.len(), expected_findings);
-        assert_eq!(findings.iter().filter(|finding| finding.message == "Inventor UFRxDoc model-state ordinals are not contiguous").count(), usize::from(expected_findings != 0));
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|finding| finding.message
+                    == "Inventor UFRxDoc model-state ordinals are not contiguous")
+                .count(),
+            usize::from(expected_findings != 0)
+        );
     }
 }
 
@@ -393,7 +475,9 @@ fn assembly_validation_releases_temporary_projection_storage() {
         "file_reference_id": 1, "occurrence_id": 1, "header_value": 0,
         "title": null, "header_padding_words": 0, "record_len": 1, "record_sha256": "0".repeat(64)
     })).expect("occurrence wire");
-    payload.occurrences.push(wire.into_record(&setup).expect("occurrence"));
+    payload
+        .occurrences
+        .push(wire.into_record(&setup).expect("occurrence"));
     data.ufrx = super::UfrxRecord::ParsedPrefix(Box::new(payload));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -401,24 +485,75 @@ fn assembly_validation_releases_temporary_projection_storage() {
     policy.limits.max_materialized_bytes = 4_096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut findings = Vec::new();
-    super::validate_assembly(&ctx, &cadmpeg_ir::CadIr::empty(), &data, &mut findings).expect("assembly validation");
+    super::validate_assembly(&ctx, &cadmpeg_ir::CadIr::empty(), &data, &mut findings)
+        .expect("assembly validation");
     assert!(findings.is_empty());
     // The unresolved-cause table belongs to the temporary projection. All of
     // its storage is released, so the full allowance is available again.
-    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "probe released projection").expect("projection storage released");
+    ctx.reserve_scoped(
+        policy.limits.max_materialized_bytes,
+        "probe released projection",
+    )
+    .expect("projection storage released");
 }
 
 #[test]
 fn feature_result_bodies_compare_in_order_without_id_copies() {
     let overlong_body = "x".repeat(100_000);
     for (references, bodies, expected_findings) in [
-        ([2, 3], ["inventor:pmdc:feature-property#t-1", "inventor:pmdc:feature-property#t-2"], 0),
-        ([2, 3], ["inventor:pmdc:feature-property#t-2", "inventor:pmdc:feature-property#t-1"], 1),
-        ([2, 3], ["inventor:pmdc:feature-property#t-0", "inventor:pmdc:feature-property#t-2"], 1),
-        ([2, 3], ["inventor:pmdc:feature-property#t-01", "inventor:pmdc:feature-property#t-2"], 1),
-        ([2, 3], [overlong_body.as_str(), "inventor:pmdc:feature-property#t-2"], 1),
-        ([0, 3], ["inventor:pmdc:feature-property#t-1", "inventor:pmdc:feature-property#t-2"], 1),
-        ([4, 3], ["inventor:pmdc:feature-property#t-1", "inventor:pmdc:feature-property#t-2"], 2),
+        (
+            [2, 3],
+            [
+                "inventor:pmdc:feature-property#t-1",
+                "inventor:pmdc:feature-property#t-2",
+            ],
+            0,
+        ),
+        (
+            [2, 3],
+            [
+                "inventor:pmdc:feature-property#t-2",
+                "inventor:pmdc:feature-property#t-1",
+            ],
+            1,
+        ),
+        (
+            [2, 3],
+            [
+                "inventor:pmdc:feature-property#t-0",
+                "inventor:pmdc:feature-property#t-2",
+            ],
+            1,
+        ),
+        (
+            [2, 3],
+            [
+                "inventor:pmdc:feature-property#t-01",
+                "inventor:pmdc:feature-property#t-2",
+            ],
+            1,
+        ),
+        (
+            [2, 3],
+            [overlong_body.as_str(), "inventor:pmdc:feature-property#t-2"],
+            1,
+        ),
+        (
+            [0, 3],
+            [
+                "inventor:pmdc:feature-property#t-1",
+                "inventor:pmdc:feature-property#t-2",
+            ],
+            1,
+        ),
+        (
+            [4, 3],
+            [
+                "inventor:pmdc:feature-property#t-1",
+                "inventor:pmdc:feature-property#t-2",
+            ],
+            2,
+        ),
     ] {
         let mut data = empty_native_data();
         for ordinal in 0..3 {
@@ -427,7 +562,9 @@ fn feature_result_bodies_compare_in_order_without_id_copies() {
             data.records.push(raw);
             let kind = if ordinal == 0 {
                 let mut items = reference_list(1);
-                items["references"] = serde_json::json!(references.map(|index| serde_json::json!({"index": index, "qualified": false})));
+                items["references"] =
+                    serde_json::json!(references
+                        .map(|index| serde_json::json!({"index": index, "qualified": false})));
                 serde_json::json!({"form": "references", "family": "object_collection", "items": items})
             } else {
                 serde_json::json!({"form": "surface_body", "body": {"index": 1, "qualified": false}})
@@ -440,15 +577,31 @@ fn feature_result_bodies_compare_in_order_without_id_copies() {
         }
         let setup = cadmpeg_test_support::service_decode_context();
         let members = cadmpeg_ir::features::FeatureResultMembers::new(
-            bodies.into_iter().map(|body| cadmpeg_core::text::NonBlankString::try_from(body.to_owned()).expect("body id")).collect(),
-            Vec::new(), Vec::new(), Vec::new(), &setup, "fixture members",
-        ).expect("member budget").expect("distinct members");
+            bodies
+                .into_iter()
+                .map(|body| {
+                    cadmpeg_core::text::NonBlankString::try_from(body.to_owned()).expect("body id")
+                })
+                .collect(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            &setup,
+            "fixture members",
+        )
+        .expect("member budget")
+        .expect("distinct members");
         let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.model.feature_result_topologies.push(cadmpeg_ir::features::FeatureResultTopology::new(
-            cadmpeg_ir::ids::FeatureResultTopologyId::mint("inventor:test:result#0").expect("result id"),
-            cadmpeg_ir::features::FeatureId::mint("inventor:test:feature#0").expect("feature id"),
-            members, Some("inventor:pmdc:feature-property#t-0".into()),
-        ));
+        ir.model
+            .feature_result_topologies
+            .push(cadmpeg_ir::features::FeatureResultTopology::new(
+                cadmpeg_ir::ids::FeatureResultTopologyId::mint("inventor:test:result#0")
+                    .expect("result id"),
+                cadmpeg_ir::features::FeatureId::mint("inventor:test:feature#0")
+                    .expect("feature id"),
+                members,
+                Some("inventor:pmdc:feature-property#t-0".into()),
+            ));
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // Three raw-index slots, three uniqueness slots, six property-index
@@ -460,40 +613,76 @@ fn feature_result_bodies_compare_in_order_without_id_copies() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut findings = Vec::new();
         super::validate_features(&ctx, &ir, &data, &mut findings).expect("body validation");
-        assert_eq!(cadmpeg_core::decode::u64_from_index(findings.len()), expected_findings);
-        assert_eq!(findings.iter().filter(|finding| finding.message == "Inventor feature result bodies do not match its PmDc object collection").count(), usize::from(expected_findings != 0));
+        assert_eq!(
+            cadmpeg_core::decode::u64_from_index(findings.len()),
+            expected_findings
+        );
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|finding| finding.message
+                    == "Inventor feature result bodies do not match its PmDc object collection")
+                .count(),
+            usize::from(expected_findings != 0)
+        );
     }
 }
 
 #[test]
 fn protein_coverage_tracks_maximum_for_unsorted_repeated_and_gapped_positions() {
-    for (ordinals, expected_findings) in [([1, 0], 0), ([0, 0], 0), ([0, 2], 1), ([0, u64::MAX], 1)] {
+    for (ordinals, expected_findings) in [([1, 0], 0), ([0, 0], 0), ([0, 2], 1), ([0, u64::MAX], 1)]
+    {
         let mut data = empty_native_data();
         let setup = cadmpeg_test_support::service_decode_context();
         for ordinal in ordinals {
-            data.protein_rejections.push(super::ProteinRejectionRecordWire {
-                id: format!("inventor:protein:rejection#{ordinal}"),
-                entry_name: "InstanceProperties.bin".into(), ordinal, detail: "unavailable".into(),
-            }.into_record(&setup).expect("rejection"));
+            data.protein_rejections.push(
+                super::ProteinRejectionRecordWire {
+                    id: format!("inventor:protein:rejection#{ordinal}"),
+                    entry_name: "InstanceProperties.bin".into(),
+                    ordinal,
+                    detail: "unavailable".into(),
+                }
+                .into_record(&setup)
+                .expect("rejection"),
+            );
         }
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
         let mut findings = Vec::new();
         super::validate_protein_record_coverage(&ctx, &data, &mut findings).expect("coverage");
         assert_eq!(findings.len(), expected_findings);
         if let Some(finding) = findings.first() {
-            assert_eq!(finding.message, r#"Inventor Protein logical-record positions are not contiguous for "InstanceProperties.bin""#);
+            assert_eq!(
+                finding.message,
+                r#"Inventor Protein logical-record positions are not contiguous for "InstanceProperties.bin""#
+            );
         }
     }
 }
 
 #[test]
 fn feature_output_collection_uses_existing_identity_index() {
-    use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureOperation, FeatureResultMembers, NonEmptyMembers};
+    use cadmpeg_ir::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+        FeatureOperation, FeatureResultMembers, NonEmptyMembers,
+    };
     for (class, collection, expected_findings) in [
-        (crate::feature::FeatureFamily::Fillet, "inventor:pmdc:feature-property#t-1", 0),
-        (crate::feature::FeatureFamily::Extrusion, "inventor:pmdc:feature-property#t-1", 1),
-        (crate::feature::FeatureFamily::Fillet, "inventor:pmdc:feature-property#t-01", 2),
+        (
+            crate::feature::FeatureFamily::Fillet,
+            "inventor:pmdc:feature-property#t-1",
+            0,
+        ),
+        (
+            crate::feature::FeatureFamily::Extrusion,
+            "inventor:pmdc:feature-property#t-1",
+            1,
+        ),
+        (
+            crate::feature::FeatureFamily::Fillet,
+            "inventor:pmdc:feature-property#t-01",
+            2,
+        ),
     ] {
         let mut data = empty_native_data();
         for ordinal in 0..3 {
@@ -502,7 +691,11 @@ fn feature_output_collection_uses_existing_identity_index() {
             data.records.push(record);
         }
         let mut slots = reference_list(0);
-        slots["references"] = serde_json::json!((0..16).map(|slot| serde_json::json!({"index": if slot == 15 {2} else {0}, "qualified": false})).collect::<Vec<_>>());
+        slots["references"] = serde_json::json!((0..16)
+            .map(
+                |slot| serde_json::json!({"index": if slot == 15 {2} else {0}, "qualified": false})
+            )
+            .collect::<Vec<_>>());
         data.pm_dc_features.push(located_payload(serde_json::json!({
             "save_version_major": 1, "header": content_header(), "state": 0,
             "outline_value": 0, "properties": slots, "value": 0
@@ -523,31 +716,60 @@ fn feature_output_collection_uses_existing_identity_index() {
         })).expect("label wire");
         data.pm_dc_feature_labels.push(super::Located::new(
             wire.into_record(&setup).expect("label"),
-            crate::record_identity::RecordTypeId::try_from(carrier_record().type_id.as_str().to_owned()).expect("type id"),
-            cadmpeg_ir::ids::IdentityKey::encode_segment("t"), 2,
+            crate::record_identity::RecordTypeId::try_from(
+                carrier_record().type_id.as_str().to_owned(),
+            )
+            .expect("type id"),
+            cadmpeg_ir::ids::IdentityKey::encode_segment("t"),
+            2,
         ));
-        let feature_id = cadmpeg_ir::features::FeatureId::mint("inventor:test:feature#0").expect("feature id");
+        let feature_id =
+            cadmpeg_ir::features::FeatureId::mint("inventor:test:feature#0").expect("feature id");
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.features.push(Feature {
-            id: feature_id.clone(), ordinal: 0, name: None, suppressed: None,
-            dependencies: Default::default(), source_properties: Default::default(),
-            source_tag: None, source_text: None, source_content: FeatureContent::default(),
-            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: NonEmptyMembers::one(cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-                    radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {form: None},
-                    tangency_weight: None,
-                }),
-            })), native_ref: Some("inventor:pmdc:feature#t-0".into()),
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Fillet {
+                    groups: NonEmptyMembers::one(
+                        cadmpeg_ir::features::edge_treatments::FilletGroup {
+                            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+                            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
+                                form: None,
+                            },
+                            tangency_weight: None,
+                        },
+                    ),
+                },
+            )),
+            native_ref: Some("inventor:pmdc:feature#t-0".into()),
         });
         let members = FeatureResultMembers::new(
-            Vec::new(), vec![cadmpeg_core::text::NonBlankString::try_from("face").expect("face")],
-            Vec::new(), Vec::new(), &setup, "fixture members",
-        ).expect("member budget").expect("members");
-        ir.model.feature_result_topologies.push(cadmpeg_ir::features::FeatureResultTopology::new(
-            cadmpeg_ir::ids::FeatureResultTopologyId::mint("inventor:test:result#0").expect("result id"),
-            feature_id, members, Some(collection.into()),
-        ));
+            Vec::new(),
+            vec![cadmpeg_core::text::NonBlankString::try_from("face").expect("face")],
+            Vec::new(),
+            Vec::new(),
+            &setup,
+            "fixture members",
+        )
+        .expect("member budget")
+        .expect("members");
+        ir.model
+            .feature_result_topologies
+            .push(cadmpeg_ir::features::FeatureResultTopology::new(
+                cadmpeg_ir::ids::FeatureResultTopologyId::mint("inventor:test:result#0")
+                    .expect("result id"),
+                feature_id,
+                members,
+                Some(collection.into()),
+            ));
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // Three raw records, three uniqueness entries, one feature, one label,
@@ -555,8 +777,12 @@ fn feature_output_collection_uses_existing_identity_index() {
         policy.limits.max_collection_items = 11 + expected_findings;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut findings = Vec::new();
-        super::validate_features(&ctx, &ir, &data, &mut findings).expect("output collection validation");
-        assert_eq!(cadmpeg_core::decode::u64_from_index(findings.len()), expected_findings);
+        super::validate_features(&ctx, &ir, &data, &mut findings)
+            .expect("output collection validation");
+        assert_eq!(
+            cadmpeg_core::decode::u64_from_index(findings.len()),
+            expected_findings
+        );
     }
 }
 
@@ -573,8 +799,13 @@ fn missing_arena_report_uses_only_one_finding_slot() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let findings = super::validate_native(&ctx, &ir).expect("missing arena report");
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].check, cadmpeg_ir::report::check::Check::NativeLinks);
-    assert!(findings[0].message.starts_with("Inventor native namespace has missing arenas ["));
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::NativeLinks
+    );
+    assert!(findings[0]
+        .message
+        .starts_with("Inventor native namespace has missing arenas ["));
     assert!(findings[0].message.ends_with("and unexpected arenas []"));
     for name in super::ARENAS {
         assert!(findings[0].message.contains(&format!("{name:?}")));
@@ -596,7 +827,9 @@ fn unexpected_arena_report_preserves_tree_order_without_sorting() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let findings = super::validate_native(&ctx, &ir).expect("unexpected arena report");
     assert_eq!(findings.len(), 1);
-    assert!(findings[0].message.ends_with(r#"and unexpected arenas ["a", "z"]"#));
+    assert!(findings[0]
+        .message
+        .ends_with(r#"and unexpected arenas ["a", "z"]"#));
 }
 
 #[test]
@@ -650,23 +883,36 @@ fn active_carrier_type_comparison_does_not_scan_overlong_type_text() {
     let mut findings = Vec::new();
     super::validate_active_carrier(&ctx, &data, &mut findings).expect("bounded type comparison");
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].message, "Inventor active carrier does not resolve to its typed RSe record");
+    assert_eq!(
+        findings[0].message,
+        "Inventor active carrier does not resolve to its typed RSe record"
+    );
 }
 
 #[test]
 fn document_kind_comparison_is_bounded_by_literal_names() {
-    for (kind, expected) in [("assembly".to_owned(), true), ("part".to_owned(), false), ("x".repeat(100_000), false)] {
+    for (kind, expected) in [
+        ("assembly".to_owned(), true),
+        ("part".to_owned(), false),
+        ("x".repeat(100_000), false),
+    ] {
         let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.source = Some(serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": "inventor"},
-            "attributes": {"document_kind": kind}
-        })).expect("source metadata"));
+        ir.source = Some(
+            serde_json::from_value(serde_json::json!({
+                "identity": {"classification": "unclassified", "format": "inventor"},
+                "attributes": {"document_kind": kind}
+            }))
+            .expect("source metadata"),
+        );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // This covers the source-attribute B-tree lookup. Literal-name equality
         // does not scan an overlong value and needs no input-sized admission.
         policy.limits.max_work_units = 1_024;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert_eq!(super::is_assembly_document(&ctx, &ir).expect("document kind"), expected);
+        assert_eq!(
+            super::is_assembly_document(&ctx, &ir).expect("document kind"),
+            expected
+        );
     }
 }

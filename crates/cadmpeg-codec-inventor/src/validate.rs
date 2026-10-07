@@ -327,10 +327,22 @@ fn validate_design(
             None => false,
         };
         if !record_matches
-            || !resolves(parameter.identity.segment_token.as_str(), parameter.header.next.index())?
-            || !resolves(parameter.identity.segment_token.as_str(), parameter.header.context.index())?
-            || !resolves(parameter.identity.segment_token.as_str(), parameter.unit.index())?
-            || !resolves(parameter.identity.segment_token.as_str(), parameter.formula.index())?
+            || !resolves(
+                parameter.identity.segment_token.as_str(),
+                parameter.header.next.index(),
+            )?
+            || !resolves(
+                parameter.identity.segment_token.as_str(),
+                parameter.header.context.index(),
+            )?
+            || !resolves(
+                parameter.identity.segment_token.as_str(),
+                parameter.unit.index(),
+            )?
+            || !resolves(
+                parameter.identity.segment_token.as_str(),
+                parameter.formula.index(),
+            )?
         {
             push_finding(
                 ctx,
@@ -607,17 +619,18 @@ fn validate_sketches(
             && reference_resolves(token, sketch.transform.index())?
             && reference_resolves(token, sketch.direction.index())?
             && ctx.all_by(
-            sketch.entities.references(),
-            |reference| reference_resolves(token, reference.index()),
-            "resolve Inventor PmDc sketch entity references",
-        )? && match &sketch.auxiliary {
-            Some(list) => ctx.all_by(
-                list.references(),
+                sketch.entities.references(),
                 |reference| reference_resolves(token, reference.index()),
-                "resolve Inventor PmDc sketch auxiliary references",
-            )?,
-            None => true,
-        };
+                "resolve Inventor PmDc sketch entity references",
+            )?
+            && match &sketch.auxiliary {
+                Some(list) => ctx.all_by(
+                    list.references(),
+                    |reference| reference_resolves(token, reference.index()),
+                    "resolve Inventor PmDc sketch auxiliary references",
+                )?,
+                None => true,
+            };
         if !references_match {
             push_finding(
                 ctx,
@@ -647,30 +660,53 @@ fn validate_sketches(
                 "resolve Inventor PmDc sketch entity references",
             )
         };
-        let kind_matches = header_matches
+        let references_match = header_matches
             && match &entity.kind {
-                PmDcSketchEntityKind::Point { endpoint_of, center_of, tail, .. } => {
-                    list_resolves(endpoint_of)? && list_resolves(center_of)?
+                PmDcSketchEntityKind::Point {
+                    endpoint_of,
+                    center_of,
+                    tail,
+                    ..
+                } => {
+                    list_resolves(endpoint_of)?
+                        && list_resolves(center_of)?
                         && match tail {
                             PointTail::Absent => true,
                             PointTail::Present { associations, .. } => list_resolves(associations)?,
                         }
                 }
-                PmDcSketchEntityKind::Line { points, auxiliary, .. } => {
-                    list_resolves(points)? && ctx.all_by(
-                        auxiliary, list_resolves,
-                        "visit Inventor PmDc sketch entity auxiliary lists",
-                    )?
+                PmDcSketchEntityKind::Line {
+                    points, auxiliary, ..
+                } => {
+                    list_resolves(points)?
+                        && ctx.all_by(
+                            auxiliary,
+                            list_resolves,
+                            "visit Inventor PmDc sketch entity auxiliary lists",
+                        )?
                 }
-                PmDcSketchEntityKind::Circle { points, auxiliary, center, .. }
-                | PmDcSketchEntityKind::Ellipse { points, auxiliary, center, .. } => {
-                    list_resolves(points)? && ctx.all_by(
-                        auxiliary, list_resolves,
-                        "visit Inventor PmDc sketch entity auxiliary lists",
-                    )? && reference_resolves(token, center.index())?
+                PmDcSketchEntityKind::Circle {
+                    points,
+                    auxiliary,
+                    center,
+                    ..
+                }
+                | PmDcSketchEntityKind::Ellipse {
+                    points,
+                    auxiliary,
+                    center,
+                    ..
+                } => {
+                    list_resolves(points)?
+                        && ctx.all_by(
+                            auxiliary,
+                            list_resolves,
+                            "visit Inventor PmDc sketch entity auxiliary lists",
+                        )?
+                        && reference_resolves(token, center.index())?
                 }
             };
-        if !header_matches || !kind_matches {
+        if !references_match {
             push_finding(
                 ctx,
                 findings,
@@ -685,8 +721,13 @@ fn validate_sketches(
             transform.identity.segment_token.as_str(),
             transform.identity.record_ordinal,
             transform.identity.type_id.as_str(),
-        )? || !reference_resolves(transform.identity.segment_token.as_str(), transform.header.next.index())?
-            || !reference_resolves(transform.identity.segment_token.as_str(), transform.header.context.index())? {
+        )? || !reference_resolves(
+            transform.identity.segment_token.as_str(),
+            transform.header.next.index(),
+        )? || !reference_resolves(
+            transform.identity.segment_token.as_str(),
+            transform.header.context.index(),
+        )? {
             push_finding(
                 ctx,
                 findings,
@@ -734,14 +775,28 @@ fn validate_sketches(
                 }
                 PmDcSketchConstraintKind::Horizontal { entity, .. }
                 | PmDcSketchConstraintKind::Vertical { entity, .. }
-                | PmDcSketchConstraintKind::Radius { entity, .. } => reference_resolves(token, entity.index())?,
-                PmDcSketchConstraintKind::HorizontalDistance { first, second, parameter, .. }
-                | PmDcSketchConstraintKind::VerticalDistance { first, second, parameter, .. } => {
+                | PmDcSketchConstraintKind::Radius { entity, .. } => {
+                    reference_resolves(token, entity.index())?
+                }
+                PmDcSketchConstraintKind::HorizontalDistance {
+                    first,
+                    second,
+                    parameter,
+                    ..
+                }
+                | PmDcSketchConstraintKind::VerticalDistance {
+                    first,
+                    second,
+                    parameter,
+                    ..
+                } => {
                     reference_resolves(token, first.index())?
                         && reference_resolves(token, second.index())?
                         && reference_resolves(token, parameter.index())?
                 }
-                PmDcSketchConstraintKind::Diameter { reference, entity, .. } => {
+                PmDcSketchConstraintKind::Diameter {
+                    reference, entity, ..
+                } => {
                     reference_resolves(token, reference.index())?
                         && reference_resolves(token, entity.index())?
                 }
@@ -767,8 +822,13 @@ fn validate_sketches(
             direction.identity.segment_token.as_str(),
             direction.identity.record_ordinal,
             direction.identity.type_id.as_str(),
-        )? || !reference_resolves(direction.identity.segment_token.as_str(), direction.header.next.index())?
-            || !reference_resolves(direction.identity.segment_token.as_str(), direction.header.context.index())? {
+        )? || !reference_resolves(
+            direction.identity.segment_token.as_str(),
+            direction.header.next.index(),
+        )? || !reference_resolves(
+            direction.identity.segment_token.as_str(),
+            direction.header.context.index(),
+        )? {
             push_finding(
                 ctx,
                 findings,
@@ -1020,8 +1080,14 @@ fn validate_features(
             None => false,
         };
         if !record_matches
-            || !resolves(feature.identity.segment_token.as_str(), feature.header.next.index())?
-            || !resolves(feature.identity.segment_token.as_str(), feature.header.context.index())?
+            || !resolves(
+                feature.identity.segment_token.as_str(),
+                feature.header.next.index(),
+            )?
+            || !resolves(
+                feature.identity.segment_token.as_str(),
+                feature.header.context.index(),
+            )?
             || !ctx.all_by(
                 feature.properties.references(),
                 |reference| resolves(feature.identity.segment_token.as_str(), reference.index()),
@@ -1052,8 +1118,14 @@ fn validate_features(
             };
         let token = feature.identity.segment_token.as_str();
         if !record_matches
-            || !resolves(feature.identity.segment_token.as_str(), feature.header.next.index())?
-            || !resolves(feature.identity.segment_token.as_str(), feature.header.context.index())?
+            || !resolves(
+                feature.identity.segment_token.as_str(),
+                feature.header.next.index(),
+            )?
+            || !resolves(
+                feature.identity.segment_token.as_str(),
+                feature.header.context.index(),
+            )?
             || !ctx.all_by(
                 feature.properties.references(),
                 |reference| resolves(token, reference.index()),
@@ -1100,14 +1172,28 @@ fn validate_features(
                     "resolve Inventor PmDc feature-property references",
                 )?,
                 PmDcFeaturePropertyKind::SurfaceBody { body } => resolves(token, body.index())?,
-                PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => resolves(token, entity_link.index())?,
-                PmDcFeaturePropertyKind::Placement { transform, point, value } => {
-                    resolves(token, transform.index())? && resolves(token, point.index())?
+                PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
+                    resolves(token, entity_link.index())?
+                }
+                PmDcFeaturePropertyKind::Placement {
+                    transform,
+                    point,
+                    value,
+                } => {
+                    resolves(token, transform.index())?
+                        && resolves(token, point.index())?
                         && resolves(token, value.index())?
                 }
-                PmDcFeaturePropertyKind::FilletEdgeSet { edges, radius, selection, continuity } => {
-                    resolves(token, edges.index())? && resolves(token, radius.index())?
-                        && resolves(token, selection.index())? && resolves(token, continuity.index())?
+                PmDcFeaturePropertyKind::FilletEdgeSet {
+                    edges,
+                    radius,
+                    selection,
+                    continuity,
+                } => {
+                    resolves(token, edges.index())?
+                        && resolves(token, radius.index())?
+                        && resolves(token, selection.index())?
+                        && resolves(token, continuity.index())?
                 }
                 PmDcFeaturePropertyKind::Enumeration { .. }
                 | PmDcFeaturePropertyKind::WideEnumeration { .. }
@@ -1139,9 +1225,18 @@ fn validate_features(
                 None => false,
             };
         if !record_matches
-            || !resolves(link.identity.segment_token.as_str(), link.header.owner.index())?
-            || !resolves(link.identity.segment_token.as_str(), link.header.parent.index())?
-            || !resolves(link.identity.segment_token.as_str(), link.header.next.index())?
+            || !resolves(
+                link.identity.segment_token.as_str(),
+                link.header.owner.index(),
+            )?
+            || !resolves(
+                link.identity.segment_token.as_str(),
+                link.header.parent.index(),
+            )?
+            || !resolves(
+                link.identity.segment_token.as_str(),
+                link.header.next.index(),
+            )?
         {
             push_finding(
                 ctx,
@@ -1166,9 +1261,18 @@ fn validate_features(
                 None => false,
             };
         if !record_matches
-            || !resolves(label.identity.segment_token.as_str(), label.header.owner.index())?
-            || !resolves(label.identity.segment_token.as_str(), label.header.parent.index())?
-            || !resolves(label.identity.segment_token.as_str(), label.header.next.index())?
+            || !resolves(
+                label.identity.segment_token.as_str(),
+                label.header.owner.index(),
+            )?
+            || !resolves(
+                label.identity.segment_token.as_str(),
+                label.header.parent.index(),
+            )?
+            || !resolves(
+                label.identity.segment_token.as_str(),
+                label.header.next.index(),
+            )?
             || !ctx.all_by(
                 label.participants.references(),
                 |reference| resolves(token, reference.index()),
@@ -1198,8 +1302,14 @@ fn validate_features(
                 None => false,
             };
         if !record_matches
-            || !resolves(terminator.identity.segment_token.as_str(), terminator.header.next.index())?
-            || !resolves(terminator.identity.segment_token.as_str(), terminator.header.context.index())?
+            || !resolves(
+                terminator.identity.segment_token.as_str(),
+                terminator.header.next.index(),
+            )?
+            || !resolves(
+                terminator.identity.segment_token.as_str(),
+                terminator.header.context.index(),
+            )?
         {
             push_finding(
                 ctx,
@@ -1363,8 +1473,14 @@ fn validate_features(
                             "resolve Inventor feature output collection",
                         )? {
                             Some(actual) => ctx.equal(
-                                &(actual.identity.segment_token.as_str(), actual.identity.record_ordinal),
-                                &(collection.identity.segment_token.as_str(), collection.identity.record_ordinal),
+                                &(
+                                    actual.identity.segment_token.as_str(),
+                                    actual.identity.record_ordinal,
+                                ),
+                                &(
+                                    collection.identity.segment_token.as_str(),
+                                    collection.identity.record_ordinal,
+                                ),
                                 "compare Inventor feature output collection",
                             )?,
                             None => false,
@@ -1456,7 +1572,8 @@ fn validate_features(
                         &properties_by_record,
                         &(collection.identity.segment_token.as_str(), ordinal),
                         "find Inventor feature-result body",
-                    )? else {
+                    )?
+                    else {
                         return Ok(false);
                     };
                     if !matches!(property.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
@@ -1469,12 +1586,19 @@ fn validate_features(
                         &properties,
                         actual.as_str(),
                         "resolve Inventor neutral body source",
-                    )? else {
+                    )?
+                    else {
                         return Ok(false);
                     };
                     ctx.equal(
-                        &(property.identity.segment_token.as_str(), property.identity.record_ordinal),
-                        &(actual_property.identity.segment_token.as_str(), actual_property.identity.record_ordinal),
+                        &(
+                            property.identity.segment_token.as_str(),
+                            property.identity.record_ordinal,
+                        ),
+                        &(
+                            actual_property.identity.segment_token.as_str(),
+                            actual_property.identity.record_ordinal,
+                        ),
                         "compare Inventor feature-result body id",
                     )
                 },
@@ -2578,7 +2702,9 @@ fn validate_segments(
             ctx.get_hash_map(&types_by_token, token, "find Inventor metadata types")?;
         let sections_match = actual_sections.is_some_and(|actual| {
             actual.len() == EXPECTED_SECTIONS.len()
-                && EXPECTED_SECTIONS.iter().all(|number| actual.contains(number))
+                && EXPECTED_SECTIONS
+                    .iter()
+                    .all(|number| actual.contains(number))
         });
         let type_count = cadmpeg_core::decode::u64_from_index(actual_types.map_or(0, HashSet::len));
         if !sections_match || type_count != meta.type_count {
@@ -3074,7 +3200,8 @@ fn validate_protein_record_coverage(
     for (entry_name, (ordinals, maximum)) in
         ctx.admit_iter(&positions, "validate Inventor Protein position groups")?
     {
-        let contiguous = maximum.checked_add(1)
+        let contiguous = maximum
+            .checked_add(1)
             .and_then(|count| usize::try_from(count).ok())
             == Some(ordinals.len());
         if !contiguous {
@@ -3511,18 +3638,14 @@ fn push_finding(
     let message = ctx.format_retained(message, "retain Inventor validation finding message")?;
     ctx.push_vec(
         findings,
-        finding(check, message, entity),
+        Finding {
+            check,
+            severity: Severity::Error,
+            message,
+            entity,
+        },
         "collect Inventor validation findings",
     )
-}
-
-fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
-    Finding {
-        check,
-        severity: Severity::Error,
-        message,
-        entity,
-    }
 }
 
 #[cfg(test)]
