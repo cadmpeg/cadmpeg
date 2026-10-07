@@ -866,13 +866,10 @@ pub(super) fn validate_material_assignment_appearances(
         }
         let mut synchronized = false;
         for assignment in target_assignments {
-            let selected = crate::writer::primitives::with_writing_context(|ctx| {
-                crate::materials::appearance_for_assignment(
-                    ctx,
-                    &target.model.appearances,
-                    assignment,
-                )
-            })?;
+            let selected = crate::materials::writer_appearance_for_assignment(
+                &target.model.appearances,
+                assignment,
+            )?;
             if selected.is_some_and(|appearance| appearance.id == after.id)
                 && after.physical_token.as_deref()
                     == assignment
@@ -897,9 +894,8 @@ pub(super) fn validate_material_assignment_appearances(
         else {
             continue;
         };
-        let selected = crate::writer::primitives::with_writing_context(|ctx| {
-            crate::materials::appearance_for_assignment(ctx, &target.model.appearances, after)
-        })?;
+        let selected =
+            crate::materials::writer_appearance_for_assignment(&target.model.appearances, after)?;
         let before_token = before
             .physical_token
             .as_ref()

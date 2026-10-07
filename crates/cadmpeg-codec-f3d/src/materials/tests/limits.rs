@@ -76,16 +76,22 @@ fn material_utf16_prefix_refuses_work_limit() {
 }
 
 #[test]
-fn material_printable_ascii_refuses_retained_limit() {
+fn material_printable_ascii_refuses_work_limit() {
     let mut bytes = Vec::new();
     super::lp_ascii(&mut bytes, "Body");
-    let error = material_context_with_limits(u64::MAX, 3, |ctx| {
-        super::super::lp_ascii_printable_charged(ctx, &bytes, 0).unwrap_err()
-    });
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D printable ASCII string")
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "validate F3D printable ASCII bytes",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::lp_ascii_printable(&ctx, &bytes, 0).map(|_| ())
+        },
     );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 fn definition_catalog_merge_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {

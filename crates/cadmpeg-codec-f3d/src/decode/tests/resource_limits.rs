@@ -230,13 +230,23 @@ fn face_assignment_ir() -> cadmpeg_ir::document::CadIr {
 }
 
 macro_rules! face_join_refuses_collection_limit {
-    ($name:ident, $limit:expr, $operation:literal) => {
+    ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            let arena = DecodeArena::new();
-            let ctx = context(&arena, $limit);
-            let mut ir = face_assignment_ir();
-            let error = super::super::resolve_face_appearance_bindings(&ctx, &mut ir, &[face_assignment()]).unwrap_err();
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                $operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let ctx = context(&arena, cap);
+                    let mut ir = face_assignment_ir();
+                    super::super::resolve_face_appearance_bindings(
+                        &ctx,
+                        &mut ir,
+                        &[face_assignment()],
+                    )
+                },
+            );
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
         }
@@ -245,32 +255,26 @@ macro_rules! face_join_refuses_collection_limit {
 
 face_join_refuses_collection_limit!(
     face_material_guid_index_refuses_collection_limit,
-    1,
     "index F3D face material GUIDs"
 );
 face_join_refuses_collection_limit!(
     faces_by_material_guid_index_refuses_collection_limit,
-    2,
     "index F3D faces by material GUID"
 );
 face_join_refuses_collection_limit!(
     face_material_group_refuses_collection_limit,
-    3,
     "collect F3D faces by material GUID"
 );
 face_join_refuses_collection_limit!(
     new_face_binding_index_refuses_collection_limit,
-    4,
     "index F3D new appearance faces"
 );
 face_join_refuses_collection_limit!(
     face_binding_collection_refuses_collection_limit,
-    5,
     "collect F3D face appearance bindings"
 );
 face_join_refuses_collection_limit!(
     face_binding_append_refuses_collection_limit,
-    6,
     "append F3D face appearance bindings"
 );
 
@@ -569,8 +573,15 @@ fn model_brep_candidate_index_refuses_collection_limit() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert!(!blob_names.is_empty());
-    let limited = context(&arena, 0);
-    let error = super::super::model_brep_candidates(&limited, &scan, &blob_names).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect F3D model BREP candidates",
+        |cap| {
+            let limited_arena = DecodeArena::new();
+            let limited = context(&limited_arena, cap);
+            super::super::model_brep_candidates(&limited, &scan, &blob_names)
+        },
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D model BREP candidates")
