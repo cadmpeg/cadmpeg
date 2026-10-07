@@ -570,7 +570,7 @@ fn validation_point_number_parse_preserves_refusal() {
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
             let result = super::step_id(&ctx, "step:data:point#7");
             if let Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal)) = result {
-                assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
             }
             result
         },

@@ -115,7 +115,7 @@ pub(super) fn decode<'ctx>(
     for (id, record) in exchange.entities(ctx, "DATUM")? {
         let identification = record
             .partial(ctx, "DATUM")?
-            .and_then(|partial| partial.parameters.get(0))
+            .and_then(|partial| partial.parameters.first())
             .map(|value| {
                 decode_output_text(
                     exchange,
@@ -243,7 +243,7 @@ pub(super) fn decode<'ctx>(
         let mut reference_storage =
             ctx.reserve_scoped(0, "STEP datum reference candidate scratch")?;
         for (index, constituent) in ctx
-            .admit_iter(&constituents[..], "STEP decode traversal")?
+            .admit_iter(constituents, "STEP decode traversal")?
             .enumerate()
         {
             let Some(precedence) = u32::try_from(index + 1).ok().and_then(NonZeroU32::new) else {
@@ -796,7 +796,7 @@ pub(super) fn decode<'ctx>(
             AnnotationDraft {
                 name: record
                     .partial(ctx, "GEOMETRIC_TOLERANCE")?
-                    .and_then(|partial| partial.parameters.get(0))
+                    .and_then(|partial| partial.parameters.first())
                     .or_else(|| record.parameter(0))
                     .map(|value| {
                         decode_output_text(
@@ -1282,7 +1282,7 @@ fn resolve_geometric_item_usages(
             continue;
         };
         if ctx.contains_btree_set(
-            &shape_aspects,
+            shape_aspects,
             &annotation_id,
             "STEP pmi shape_aspects contains",
         )? {
@@ -1304,7 +1304,7 @@ fn resolve_geometric_item_usages(
                 for reference in references(parameter, ctx) {
                     let reference = reference?;
                     if ctx.contains_btree_set(
-                        &shape_aspects,
+                        shape_aspects,
                         &reference,
                         "STEP pmi shape_aspects contains",
                     )? {
@@ -1543,7 +1543,7 @@ fn topology_targets(
         }
     }
     if let Some(items) = ctx.get_btree_map(
-        &geometry_sources.points,
+        geometry_sources.points,
         &id,
         "STEP pmi geometry_sources.points get",
     )? {
@@ -1563,7 +1563,7 @@ fn topology_targets(
         }
     }
     if let Some(items) = ctx.get_btree_map(
-        &geometry_sources.curves,
+        geometry_sources.curves,
         &id,
         "STEP pmi geometry_sources.curves get",
     )? {
@@ -1794,10 +1794,7 @@ fn datum_references_for_compartment(
             )?
             .then_some(precedence.get());
         for element_id in ctx
-            .admit_iter(
-                &(members)[..],
-                "STEP datum references for compartment traversal",
-            )?
+            .admit_iter(members, "STEP datum references for compartment traversal")?
             .filter_map(ValueExt::reference)
         {
             let Some(element) =
@@ -2181,7 +2178,7 @@ fn collect_annotation_text(
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if depth >= 256 || ctx.contains_btree_set(&visited, &id, "STEP pmi visited contains")? {
+    if depth >= 256 || ctx.contains_btree_set(visited, &id, "STEP pmi visited contains")? {
         return Ok(());
     }
     let _depth_guard = ctx.enter_nested("step_pmi_annotation_text_walk")?;
@@ -2192,7 +2189,7 @@ fn collect_annotation_text(
     };
     if let Some(value) = record
         .partial(ctx, "TEXT_LITERAL")?
-        .and_then(|partial| partial.parameters.get(0))
+        .and_then(|partial| partial.parameters.first())
         .map_or_else(
             || -> Result<_, CodecError> {
                 Ok(record
@@ -2251,7 +2248,7 @@ fn collect_placement_candidates(
     // aggregate member order when a graph has alternate paths.
     if depth >= 256
         || ctx
-            .get_btree_map(&visited, &id, "STEP pmi visited get")?
+            .get_btree_map(visited, &id, "STEP pmi visited get")?
             .is_some_and(|visited_depth| *visited_depth <= depth)
     {
         return Ok(());
@@ -3006,8 +3003,8 @@ fn measure_context<'a, 'ctx>(
     }
 }
 
-fn first_measure<'a>(
-    values: &'a [Value],
+fn first_measure(
+    values: &[Value],
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_, '_>,
     ctx: &DecodeContext<'_>,
@@ -3067,7 +3064,7 @@ fn measure_inner(
             }
         }
         Value::Reference(id) => {
-            if ctx.contains_btree_set(&active, id, "STEP pmi active contains")? {
+            if ctx.contains_btree_set(active, id, "STEP pmi active contains")? {
                 return Ok(None);
             }
             let (_inserted, _active_storage) = ctx

@@ -102,3 +102,50 @@ fn predefined_colour_name_refuses_materialized_limit() {
                 && refusal.operation == "step_string_text"
     ));
 }
+
+#[test]
+fn repeated_colour_retains_only_output_appearance_identities() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('',1.,0.,0.);#2=PRESENTATION_STYLE_ASSIGNMENT((#1));#10=STYLED_ITEM('',(#2),#20);#11=STYLED_ITEM('',(#2),#21);#20=SOURCE_ITEM();#21=SOURCE_ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
+            .expect("valid repeated colour exchange");
+    let identity = "step:presentation:appearance#1";
+    let mut expected_retained = None;
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "appearance retained probe",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
+            let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
+            let outcome =
+                super::super::decode(&exchange, &topology.value, &mut ir, &BTreeMap::new(), &ctx)?;
+            assert!(outcome.losses.is_empty());
+            assert_eq!(ir.model.appearances.len(), 1);
+            assert_eq!(ir.model.appearance_bindings.len(), 2);
+            assert_eq!(ir.model.appearances[0].id.as_str(), identity);
+            for binding in &ir.model.appearance_bindings {
+                assert_eq!(binding.appearance.as_str(), identity);
+            }
+            // Retain the output arena slots and three identity copies: one
+            // appearance plus two bindings. The lookup index is scoped.
+            let output_slots = ir.model.appearances.capacity()
+                * std::mem::size_of::<cadmpeg_ir::appearance::Appearance>()
+                + ir.model.appearance_bindings.capacity()
+                    * std::mem::size_of::<cadmpeg_ir::appearance::AppearanceBinding>();
+            expected_retained =
+                Some(u64::try_from(output_slots + 3 * identity.len()).expect("fixture size"));
+            ctx.charge_retained(1, "appearance retained probe")
+        },
+    );
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("resource refusal");
+    };
+    assert_eq!(Some(refusal.used), expected_retained);
+    assert_eq!(refusal.additional, 1);
+}

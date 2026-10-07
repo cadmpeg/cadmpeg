@@ -766,7 +766,7 @@ fn collect_validation_references(
     match value {
         Value::Reference(id)
             if ctx.contains_btree_set(
-                &validation_points,
+                validation_points,
                 id,
                 "STEP validation validation_points contains",
             )? =>

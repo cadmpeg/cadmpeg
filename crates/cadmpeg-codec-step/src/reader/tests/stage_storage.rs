@@ -31,7 +31,7 @@ fn dependency_buffers_remain_scoped_until_the_outcome_drops() {
                 // This probe exceeds the fixture's previous scratch peak in either state.
                 let result = ctx.reserve_scoped(4096, "stage lifetime probe").map(|_| ());
                 if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                    assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                    assert_eq!(ctx.resource_refusal(), Some(*refusal));
                 }
                 drop(outcome);
                 result
@@ -96,7 +96,7 @@ fn product_claim_and_report_buffers_release_before_its_indices() {
                     .reserve_scoped(1024 * 1024, "product lifetime probe")
                     .map(|_| ());
                 if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                    assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                    assert_eq!(ctx.resource_refusal(), Some(*refusal));
                 }
                 drop(guards);
                 drop(data);
