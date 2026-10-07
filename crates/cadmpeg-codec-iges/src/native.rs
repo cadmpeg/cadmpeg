@@ -2208,7 +2208,7 @@ impl OccurrenceExpansion<'_, '_> {
 
 fn copy_native_tokens(ctx: &DecodeContext<'_>, tokens: &[Token]) -> Result<Vec<Token>, CodecError> {
     let mut copies = ctx.collection_vec(tokens.len(), "iges native token slots")?;
-    for token in tokens {
+    for token in ctx.admit_iter(tokens, "iges native token scan")? {
         let value = match &token.value {
             TokenValue::String(bytes) => {
                 TokenValue::String(ctx.copy_retained(bytes, "iges native token bytes")?)
@@ -2240,15 +2240,12 @@ fn native_entity_ids(
     sequences: impl IntoIterator<Item = u32>,
     operation: &'static str,
 ) -> Result<Vec<String>, CodecError> {
-    let mut ids = Vec::new();
-    for sequence in sequences {
-        ctx.reserve_vec(&mut ids, 1, operation)?;
-        ids.push(ctx.format_retained(
+    ctx.try_collect_retained_with::<_, _, CodecError>(sequences, operation, |sequence| {
+        ctx.format_retained(
             format_args!("iges:entity:directory#{sequence}"),
             "iges native linked entity id",
-        )?);
-    }
-    Ok(ids)
+        )
+    })
 }
 
 fn push_occurrence_neutral_link(
@@ -2298,22 +2295,6 @@ fn copy_native_parameter_record(
     })
 }
 
-fn collect_native_items<I, T>(
-    ctx: &DecodeContext<'_>,
-    entries: I,
-    operation: &'static str,
-    mut build: impl FnMut(I::Item) -> Result<T, CodecError>,
-) -> Result<Vec<T>, CodecError>
-where
-    I: Iterator + Clone,
-{
-    let mut values = ctx.collection_vec(entries.clone().count(), operation)?;
-    for entry in entries {
-        values.push(build(entry)?);
-    }
-    Ok(values)
-}
-
 struct NativeInputIndexes<'a> {
     quarantined_directory_records: Vec<NativeQuarantinedRecord<'a>>,
     quarantined_parameter_records: Vec<NativeQuarantinedRecord<'a>>,
@@ -2334,9 +2315,7 @@ fn index_native_inputs<'a>(
         "iges native quarantined directory slots",
     )?;
     quarantined_directory_records.extend(
-        quarantine
-            .directory
-            .iter()
+        ctx.admit_iter(quarantine.directory, "iges native quarantined directory scan")?
             .map(NativeQuarantinedRecord::Directory),
     );
     let mut quarantined_parameter_records = ctx.collection_vec(
@@ -2344,9 +2323,7 @@ fn index_native_inputs<'a>(
         "iges native quarantined parameter slots",
     )?;
     quarantined_parameter_records.extend(
-        quarantine
-            .parameters
-            .iter()
+        ctx.admit_iter(quarantine.parameters, "iges native quarantined parameter scan")?
             .map(NativeQuarantinedRecord::Parameter),
     );
     let framed = scan.cards();
@@ -2367,7 +2344,7 @@ fn index_native_inputs<'a>(
             .map(|(index, (line, card))| NativeCard { index, line, card }),
     );
     let mut by_directory = BTreeMap::new();
-    for record in parameters {
+    for record in ctx.admit_iter(parameters, "iges native parameter index scan")? {
         ctx.insert_btree_map(
             &mut by_directory,
             record.directory_sequence,
@@ -2376,7 +2353,7 @@ fn index_native_inputs<'a>(
         )?;
     }
     let mut entries = BTreeMap::new();
-    for entry in directory {
+    for entry in ctx.admit_iter(directory, "iges native directory index scan")? {
         ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
@@ -2438,7 +2415,7 @@ pub(crate) fn store(
         entries,
     } = index_native_inputs(scan, directory, parameters, quarantine, ctx)?;
     let mut macro_definitions = Vec::new();
-    for entry in directory.iter().filter(|entry| entry.entity_type == 306) {
+    for entry in ctx.admit_iter(directory, "iges native directory scan")?.filter(|entry| entry.entity_type == 306) {
         let Some(record) = by_directory.get(&entry.sequence).copied() else {
             continue;
         };
@@ -2465,7 +2442,7 @@ pub(crate) fn store(
             continue;
         };
         let mut language_statements = Vec::new();
-        for span in language_spans {
+        for span in ctx.admit_iter(language_spans, "iges native macro statement scan")? {
             ctx.reserve_vec(&mut language_statements, 1, "iges native macro statements")?;
             language_statements.push(ctx.copy_retained(
                 &record.bytes[span.clone()],
@@ -2495,8 +2472,7 @@ pub(crate) fn store(
         });
     }
     let mut macro_instances = Vec::new();
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges native directory scan")?
         .filter(|entry| crate::profile::macro_instance_type(entry.entity_type))
     {
         let Some(record) = by_directory.get(&entry.sequence).copied() else {
@@ -2588,8 +2564,7 @@ pub(crate) fn store(
     let mut overdeclared_counts = OverdeclaredCounts::default();
     let mut unstatable_attribute_tables = BTreeMap::new();
     let mut required_back_pointer_members = std::collections::BTreeSet::new();
-    for group in directory
-        .iter()
+    for group in ctx.admit_iter(directory, "iges native directory scan")?
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 14))
     {
         let record = by_directory.get(&group.sequence).copied();
@@ -2775,7 +2750,7 @@ pub(crate) fn store(
                     Some(edges) => {
                         let mut copies =
                             ctx.collection_vec(edges.len(), "iges native reference slots")?;
-                        for edge in edges {
+                        for edge in ctx.admit_iter(edges, "iges native reference copy scan")? {
                             copies.push(edge.copy_for_native(ctx)?);
                         }
                         copies
@@ -2809,10 +2784,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let flashes = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let flashes = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 125 && matches!(entry.form, 0..=4)),
         "iges native flash slots",
         |entry| {
@@ -2850,10 +2823,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let transforms = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let transforms = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12)),
         "iges native transformation slots",
         |entry| {
@@ -2884,9 +2855,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let copious_data = collect_native_items(
-        ctx,
-        directory.iter().filter(|entry| entry.entity_type == 106),
+    let copious_data = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?.filter(|entry| entry.entity_type == 106),
         "iges native copious data slots",
         |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
@@ -2940,10 +2910,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let colors = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let colors = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 314 && entry.form == 0),
         "iges native color slots",
         |entry| {
@@ -2968,9 +2936,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let display_attributes = collect_native_items(
-        ctx,
-        directory.iter(),
+    let display_attributes = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?,
         "iges native display attribute slots",
         |entry| {
             Ok(NativeDisplayAttributes {
@@ -3015,10 +2982,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let line_fonts = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let line_fonts = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 304 && matches!(entry.form, 1 | 2)),
         "iges native line font slots",
         |entry| {
@@ -3093,10 +3058,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let text_templates = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let text_templates = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1)),
         "iges native text template slots",
         |entry| {
@@ -3149,10 +3112,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let text_fonts = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let text_fonts = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 310 && entry.form == 0),
         "iges native text font slots",
         |entry| {
@@ -3259,10 +3220,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let definition_levels = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let definition_levels = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 406 && entry.form == 1),
         "iges native definition level slots",
         |entry| {
@@ -3288,8 +3247,7 @@ pub(crate) fn store(
         },
     )?;
     let mut primitive_solids = Vec::new();
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges native directory scan")?
         .filter(|entry| matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168))
     {
         let record = by_directory.get(&entry.sequence).copied();
@@ -3389,10 +3347,8 @@ pub(crate) fn store(
                 .transpose()?,
         });
     }
-    let procedural_solids = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let procedural_solids = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| matches!(entry.entity_type, 162 | 164)),
         "iges native procedural solid slots",
         |entry| {
@@ -3454,10 +3410,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let boolean_trees = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let boolean_trees = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1)),
         "iges native boolean tree slots",
         |entry| {
@@ -3536,10 +3490,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let selected_components = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let selected_components = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 182 && entry.form == 0),
         "iges native selected component slots",
         |entry| {
@@ -3583,10 +3535,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let solid_assemblies = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let solid_assemblies = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1)),
         "iges native solid assembly slots",
         |entry| {
@@ -3692,10 +3642,8 @@ pub(crate) fn store(
     // per void shell from index 4. §4.147 forbids an MSBO from pointing at a
     // Form 2 open shell, so the outer shell and every void resolve strictly
     // against Type 514 Form 1.
-    let manifold_solids = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let manifold_solids = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 186 && entry.form == 0),
         "iges native manifold solid slots",
         |entry| {
@@ -3755,10 +3703,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let solid_instances = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let solid_instances = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1)),
         "iges native solid instance slots",
         |entry| {
@@ -3823,10 +3769,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let subfigure_definitions = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let subfigure_definitions = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 308 && entry.form == 0),
         "iges native subfigure definition slots",
         |entry| {
@@ -3885,10 +3829,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let subfigure_instances = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let subfigure_instances = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 408 && entry.form == 0),
         "iges native subfigure instance slots",
         |entry| {
@@ -3933,10 +3875,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let network_definitions = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let network_definitions = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 320 && entry.form == 0),
         "iges native network definition slots",
         |entry| {
@@ -4095,10 +4035,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let network_instances = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let network_instances = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 420 && entry.form == 0),
         "iges native network instance slots",
         |entry| {
@@ -4201,10 +4139,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let connect_points = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let connect_points = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 132 && entry.form == 0),
         "iges native connect point slots",
         |entry| {
@@ -4315,10 +4251,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let rectangular_arrays = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let rectangular_arrays = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 412 && entry.form == 0),
         "iges native rectangular array slots",
         |entry| {
@@ -4382,10 +4316,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let circular_arrays = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let circular_arrays = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 414 && entry.form == 0),
         "iges native circular array slots",
         |entry| {
@@ -4448,8 +4380,7 @@ pub(crate) fn store(
         },
     )?;
     let mut external_references = Vec::new();
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges native directory scan")?
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
         let record = by_directory.get(&entry.sequence).copied();
@@ -4519,10 +4450,8 @@ pub(crate) fn store(
                 .transpose()?,
         });
     }
-    let groups = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let groups = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15)),
         "iges native group slots",
         |entry| {
@@ -4564,9 +4493,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let mut associativities = collect_native_items(
-        ctx,
-        directory.iter().filter(|entry| entry.entity_type == 302),
+    let mut associativities = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?.filter(|entry| entry.entity_type == 302),
         "iges native associativity definition slots",
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
@@ -4632,8 +4560,7 @@ pub(crate) fn store(
             })
         },
     )?;
-    directory
-        .iter()
+    ctx.admit_iter(directory, "iges native directory scan")?
         .filter(|entry| {
             entry.entity_type == 402
                 && matches!(
@@ -5459,10 +5386,8 @@ pub(crate) fn store(
             associativities.push(association);
             Ok(())
         })?;
-    let attribute_table_definitions = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let attribute_table_definitions = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2)),
         "iges native attribute definition slots",
         |entry| {
@@ -5591,10 +5516,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let attribute_table_instances = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let attribute_table_instances = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1)),
         "iges native attribute instance slots",
         |entry| {
@@ -5679,10 +5602,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let product_properties = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let product_properties = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 7 | 15)),
         "iges native product property slots",
         |entry| {
@@ -5707,8 +5628,7 @@ pub(crate) fn store(
                     .transpose()?,
                 owners: native_entity_ids(
                     ctx,
-                    by_directory
-                        .iter()
+                    ctx.admit_iter(&by_directory, "iges native property owner scan")?
                         .filter(|(sequence, _owner_record)| {
                             **sequence != entry.sequence
                                 && trailing_pointer_analysis
@@ -5730,8 +5650,7 @@ pub(crate) fn store(
         },
     )?;
     let mut properties = Vec::new();
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges native directory scan")?
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = by_directory.get(&entry.sequence).copied() else {
@@ -6083,8 +6002,7 @@ pub(crate) fn store(
             declared_value_count: record.integer(1),
             owners: native_entity_ids(
                 ctx,
-                by_directory
-                    .iter()
+                ctx.admit_iter(&by_directory, "iges native property owner scan")?
                     .filter(|(sequence, _owner)| {
                         **sequence != entry.sequence
                             && trailing_pointer_analysis
@@ -6101,10 +6019,8 @@ pub(crate) fn store(
             value,
         });
     }
-    let units_data = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let units_data = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 316 && entry.form == 0),
         "iges native units data slots",
         |entry| {
@@ -6113,8 +6029,7 @@ pub(crate) fn store(
             let count = overdeclared_counts.counted_tail(entry.sequence, record, end, 1, 3);
             let owners = native_entity_ids(
                 ctx,
-                by_directory
-                    .iter()
+                ctx.admit_iter(&by_directory, "iges native property owner scan")?
                     .filter(|(sequence, _owner)| {
                         trailing_pointer_analysis
                             .get(sequence)
@@ -6159,10 +6074,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let views = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let views = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1)),
         "iges native view slots",
         |entry| {
@@ -6244,10 +6157,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let view_visibility = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let view_visibility = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4)),
         "iges native view visibility slots",
         |entry| {
@@ -6383,10 +6294,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let segmented_visibility = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let segmented_visibility = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 402 && entry.form == 19),
         "iges native segmented visibility slots",
         |entry| {
@@ -6471,10 +6380,8 @@ pub(crate) fn store(
             })
         },
     )?;
-    let drawings = collect_native_items(
-        ctx,
-        directory
-            .iter()
+    let drawings = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(directory, "iges native directory scan")?
             .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1)),
         "iges native drawing slots",
         |entry| {
@@ -6521,8 +6428,7 @@ pub(crate) fn store(
                 choose_drawing_property(trailing, 16, &entries, &by_directory);
             let (units_property, units_ambiguous) =
                 choose_drawing_property(trailing, 17, &entries, &by_directory);
-            let ambiguous_property_forms = collect_native_items(
-                ctx,
+            let ambiguous_property_forms = ctx.try_collect_retained_with::<_, _, CodecError>(
                 [
                     (15, name_ambiguous),
                     (16, size_ambiguous),
@@ -6659,8 +6565,7 @@ pub(crate) fn store(
         .map(|context| context.length_factor_mm());
     let mut malformed_definition_sequences = Vec::new();
     let mut all_occurrence_definitions = BTreeMap::new();
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges native directory scan")?
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
     {
         let Some(record) = by_directory.get(&entry.sequence).copied() else {
@@ -6778,7 +6683,7 @@ pub(crate) fn store(
         )?;
     }
     let mut occurrence_neutral_links = BTreeMap::<u32, Vec<String>>::new();
-    for curve in &ir.model.curves {
+    for curve in ctx.admit_iter(&ir.model.curves, "iges occurrence curve scan")? {
         if let Some(sequence) = curve
             .source_object
             .as_ref()
@@ -6793,7 +6698,7 @@ pub(crate) fn store(
             )?;
         }
     }
-    for surface in &ir.model.surfaces {
+    for surface in ctx.admit_iter(&ir.model.surfaces, "iges occurrence surface scan")? {
         if let Some(sequence) = surface
             .source_object
             .as_ref()
@@ -6808,7 +6713,7 @@ pub(crate) fn store(
             )?;
         }
     }
-    for body in &ir.model.bodies {
+    for body in ctx.admit_iter(&ir.model.bodies, "iges occurrence body scan")? {
         if let Some(sequence) = sequences.body_neutral_form(&body.id) {
             push_occurrence_neutral_link(
                 ctx,
@@ -6818,7 +6723,7 @@ pub(crate) fn store(
             )?;
         }
     }
-    for point in &ir.model.points {
+    for point in ctx.admit_iter(&ir.model.points, "iges occurrence point scan")? {
         if let Some(sequence) = sequences.point(&point.id) {
             push_occurrence_neutral_link(
                 ctx,
@@ -6861,7 +6766,7 @@ pub(crate) fn store(
             ctx,
         };
         if malformed_definition_sequences.is_empty() {
-            for root in directory.iter().filter(|entry| {
+            for root in ctx.admit_iter(directory, "iges native directory scan")?.filter(|entry| {
                 matches!(entry.entity_type, 408 | 420)
                     && entry.form == 0
                     && structure_admitted
@@ -6878,8 +6783,7 @@ pub(crate) fn store(
             }
         }
     }
-    let issues = collect_native_items(
-        ctx,
+    let issues = ctx.try_collect_retained_with::<_, _, CodecError>(
         [
             (!malformed_definition_sequences.is_empty())
                 .then_some(ProductOccurrenceIssue::MalformedDefinition),
@@ -6901,9 +6805,8 @@ pub(crate) fn store(
         emitted: product_occurrences.len(),
         issues,
     }];
-    let boundary_vertex_sewing = collect_native_items(
-        ctx,
-        boundary_vertex_derivations.iter(),
+    let boundary_vertex_sewing = ctx.try_collect_retained_with::<_, _, CodecError>(
+        ctx.admit_iter(boundary_vertex_derivations, "iges native boundary vertex scan")?,
         "iges boundary vertex sewing slots",
         |derivation| {
             Ok(NativeBoundaryVertex {
@@ -6938,9 +6841,8 @@ pub(crate) fn store(
                     .source_endpoints
                     .iter()
                     .any(|endpoint| endpoint.position != derivation.representative),
-                source_endpoints: collect_native_items(
-                    ctx,
-                    derivation.source_endpoints.iter(),
+                source_endpoints: ctx.try_collect_retained_with::<_, _, CodecError>(
+                    ctx.admit_iter(&derivation.source_endpoints, "iges native boundary endpoint scan")?,
                     "iges boundary vertex endpoint slots",
                     |endpoint| {
                         Ok(NativeBoundaryVertexEndpoint {
@@ -6961,7 +6863,7 @@ pub(crate) fn store(
         },
     )?;
     parameter_resolver.append_to(references)?;
-    for entity in &mut entities {
+    for entity in ctx.admit_iter(&mut entities, "iges native resolved entity scan")? {
         entity.links = native_entity_ids(
             ctx,
             references
@@ -6975,7 +6877,7 @@ pub(crate) fn store(
             Some(edges) => {
                 let mut copies =
                     ctx.collection_vec(edges.len(), "iges resolved native reference slots")?;
-                for edge in edges {
+                for edge in ctx.admit_iter(edges, "iges native reference copy scan")? {
                     copies.push(edge.copy_for_native(ctx)?);
                 }
                 copies
@@ -7114,7 +7016,7 @@ pub(crate) fn store(
                     malformed_placement_sequences.len(),
                     "iges malformed occurrence placement result slots",
                 )?;
-                sequences.extend(malformed_placement_sequences);
+                sequences.extend(ctx.admit_iter(malformed_placement_sequences, "iges malformed occurrence placement result scan")?);
                 sequences
             },
         },
