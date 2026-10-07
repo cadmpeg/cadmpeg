@@ -334,17 +334,17 @@ pub(super) fn project(
         let mut profile_storage = [0_u8; 64];
         let profile_id =
             crate::ids::directory_lookup_key("iges:model:curve#D", profile, &mut profile_storage, ctx)?;
-        let profile_present = match profile_id {
+        let profile = match profile_id {
             Some(profile_id) => {
-                if profile_index.is_none() {
-                    profile_index = Some(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?);
-                }
-                profile_index.as_ref().expect("profile index initialized before lookup").curves(profile_id, ctx)?.is_some()
+                let index = match &mut profile_index {
+                    Some(index) => index,
+                    slot @ None => slot.insert(ModelIndex::new_model_only(ir, ctx).map_err(CodecError::from)?),
+                };
+                if index.curves(profile_id, ctx)?.is_some() { Some((profile_id, index)) } else { None }
             }
-            None => false,
+            None => None,
         };
-        if !profile_present
-        {
+        let Some((profile_id, index)) = profile else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -352,7 +352,7 @@ pub(super) fn project(
                 format_args!("{}", "solid profile curve pointer is invalid"),
             )?;
             continue;
-        }
+        };
         let Some(amount) = record
             .number_or(2, 1.0)
             .filter(|value| value.is_finite() && *value > 0.0)
@@ -394,17 +394,15 @@ pub(super) fn project(
             )?;
             continue;
         }
-        if profile_edges.is_none() {
-            profile_edges = Some(ctx.collect_scoped_btree_groups(
+        let groups = match &mut profile_edges {
+            Some(groups) => groups,
+            slot @ None => slot.insert(ctx.collect_scoped_btree_groups(
                 ctx.admit_iter(&ir.model.edges, "iges solid profile edge indexing")?.filter_map(|edge| edge.curve().map(|curve| (curve.as_str(), edge))),
                 "iges solid profile edge groups",
-            )?);
-        }
-        let edges = match profile_id {
-            Some(profile_id) => ctx.get_btree_map(&profile_edges.as_ref().expect("profile edge groups initialized before lookup").0, &profile_id, "iges solid profile edge lookup")?.map(Vec::as_slice).unwrap_or(&[]),
-            None => &[],
+            )?),
         };
-        let Some(closed) = profile_closed(profile_index.as_ref().expect("profile presence established an index"), edges, global.minimum_resolution_mm(), ctx)? else {
+        let edges = ctx.get_btree_map(&groups.0, &profile_id, "iges solid profile edge lookup")?.map(Vec::as_slice).unwrap_or(&[]);
+        let Some(closed) = profile_closed(index, edges, global.minimum_resolution_mm(), ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,

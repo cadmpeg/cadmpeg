@@ -393,9 +393,15 @@ pub(super) fn project(
             )?;
             continue;
         };
+        let projects_as_points = matches!(entry.form, 1..=3)
+            || (matches!(entry.form, 11..=13) && tuple_count == 1
+                && matches!(global.global_table(), GlobalTable::V4_0));
         let mut tuple_storage = ctx.reserve_scoped(0, "iges copious tuple scratch")?;
         let mut definition_points = Vec::new();
+        let mut position_storage = ctx.reserve_scoped(0, "iges copious positioned points")?;
+        let mut positions = Vec::new();
         let mut tuples_valid = true;
+        let mut positions_valid = true;
         let mut indices = (tuple_start..tuple_end).step_by(tuple_width);
         while let Some(start) = ctx.next_charged(&mut indices, "iges copious tuple traversal")? {
             let mut tuple = [FiniteReal::ZERO; 6];
@@ -407,44 +413,26 @@ pub(super) fn project(
                 *value = number;
             }
             if !tuples_valid { break }
+            if !positions_valid { continue }
             let z = common_z.unwrap_or(tuple[2]);
-            tuple_storage.with_storage(|| ctx.reserve_vec(&mut definition_points, 1, "iges copious definition points"))?;
-            definition_points.push(Point3::new(tuple[0].get() * factor, tuple[1].get() * factor, z.get() * factor));
+            let point = Point3::new(tuple[0].get() * factor, tuple[1].get() * factor, z.get() * factor);
+            let Some(position) = transform.apply_point(point) else {
+                positions_valid = false;
+                continue;
+            };
+            if entry.form == 63 {
+                tuple_storage.with_storage(|| ctx.push_vec(&mut definition_points, point, "iges copious definition points"))?;
+            }
+            position_storage.with_storage(|| ctx.push_vec(&mut positions, position, "iges copious positioned points"))?;
         }
         if !tuples_valid {
             push_copious_loss(ctx, &mut losses, entry, format_args!("tuple array is truncated or non-finite"))?;
             continue;
         }
-        let projects_as_points = matches!(entry.form, 1..=3)
-            || (matches!(entry.form, 11..=13) && tuple_count == 1
-                && matches!(global.global_table(), GlobalTable::V4_0));
-        let positions = if projects_as_points || presentation_form(entry.form) {
-            tuple_storage.with_storage(|| ctx.collect_options(
-            definition_points
-                .iter()
-                .copied()
-                .map(|point| transform.apply_point(point)),
-            "iges copious positioned points",
-        ))?
-        } else {
-            ctx.collect_options(
-            definition_points
-                .iter()
-                .copied()
-                .map(|point| transform.apply_point(point)),
-            "iges copious positioned points",
-        )?
-        };
-        let Some(positions) = positions
-        else {
-            push_copious_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!("placement produces non-finite copious points"),
-            )?;
+        if !positions_valid {
+            push_copious_loss(ctx, &mut losses, entry, format_args!("placement produces non-finite copious points"))?;
             continue;
-        };
+        }
         if presentation_form(entry.form) {
             push_attributed_loss(
                 ctx,
@@ -545,6 +533,7 @@ pub(super) fn project(
         } else {
             None
         };
+        position_storage.commit()?;
         let parameter_end = cadmpeg_core::convert::f64_from_index(positions.len() - 1)
             .ok_or_else(|| ctx.refuse_codec_limit("iges copious knots", 0, 1))?;
         let knot_count = positions
@@ -564,8 +553,6 @@ pub(super) fn project(
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         sequences.record_point(&start_point, &stem, ctx)?;
-        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-        sequences.record_point(&end_point, &stem, ctx)?;
         let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         let end_vertex = if entry.form == 63 {
             start_vertex.try_clone_for_decode(ctx, "iges copious identity copy")?
@@ -589,6 +576,8 @@ pub(super) fn project(
             tolerance: topology_tolerance,
         });
         if entry.form != 63 {
+            let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+            sequences.record_point(&end_point, &stem, ctx)?;
             ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
             ctx.charge_entities(1, "iges_geometry_copious")?;
             ir.model.points.push(Point::new(

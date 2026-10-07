@@ -102,7 +102,6 @@ fn copious_projection_losses_refuse_slot_and_message_limits() {
 fn copious_tuple_and_path_arrays_refuse_collection_limits() {
     let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
     for operation in [
-        "iges copious definition points",
         "iges copious positioned points",
         "iges copious knots",
         "iges copious neutral curves",
@@ -670,4 +669,42 @@ fn copious_duplicate_scan_refuses_before_visiting_points() {
                 has_forbidden_form_63_duplicate(&points, 0.0, ctx)
             })
         });
+}
+
+#[test]
+fn copious_closed_path_definition_points_preserve_collection_refusal() {
+    let bytes = copious_data_file(63, b"106,1,4,0,0,0,1,0,1,1,0,0;", "00000000");
+    assert_copious_collection_refusal(&bytes, "iges copious definition points");
+    let decoded = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    assert!(decoded.report().losses.is_empty(), "{:#?}", decoded.report().losses);
+}
+
+#[test]
+fn copious_tuple_diagnostics_precede_failed_placement() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,0.1,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    for (parameters, expected) in [
+        ("106,2,2,1D308,0,0,0,0;", "tuple array is truncated or non-finite"),
+        ("106,2,2,1D308,0,0,0,0,0;", "placement produces non-finite copious points"),
+    ] {
+        let decoded = IgesCodec.decode(&mut Cursor::new(owned_test_file_with_global(&[
+            OwnedTestEntity {
+                entity_type: 106,
+                form: 12,
+                label: "PATH".into(),
+                status: "00000000",
+                parameters: parameters.into(),
+            },
+        ], global)), &DecodeOptions::default()).unwrap();
+        assert!(decoded.ir().model.curves.is_empty());
+        assert!(decoded.ir().model.points.is_empty());
+        let projection_losses = decoded.report().losses.iter().filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()).collect::<Vec<_>>();
+        assert_eq!(projection_losses.len(), 1);
+        assert!(projection_losses[0].message.contains(expected), "{:#?}", projection_losses);
+    }
+}
+
+#[test]
+fn copious_path_positions_preserve_retained_byte_refusal() {
+    let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
+    assert_copious_retained_refusal(&bytes, "iges copious positioned points");
 }
