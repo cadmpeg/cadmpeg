@@ -388,9 +388,8 @@ pub(crate) fn curve_by_attr(
     body: &[u8],
     attr: u16,
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
-    let carriers = scan_carriers(ctx, body)?;
-    carriers
-        .curve(attr)
+    let (carriers, _carrier_storage) = ctx.with_scoped_storage("hold SLDPRT patch carriers", || scan_carriers(ctx, body))?;
+    carriers.curve(ctx, attr)?
         .map(|indexed| {
             indexed
                 .carrier()
@@ -407,8 +406,8 @@ pub(crate) fn patch_compact_values(
     attr: u16,
     values: &[f64],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let carriers = scan_carriers(ctx, body)?;
-    let Some(indexed) = carriers.curve(attr) else {
+    let (carriers, _carrier_storage) = ctx.with_scoped_storage("hold SLDPRT patch carriers", || scan_carriers(ctx, body))?;
+    let Some(indexed) = carriers.curve(ctx, attr)? else {
         return Ok(false);
     };
     let carrier = indexed.carrier();
@@ -438,8 +437,8 @@ pub(crate) fn patch_nurbs_by_attr(
     attr: u16,
     new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let carriers = scan_carriers(ctx, body)?;
-    let Some(indexed) = carriers.curve(attr) else {
+    let (carriers, _carrier_storage) = ctx.with_scoped_storage("hold SLDPRT patch carriers", || scan_carriers(ctx, body))?;
+    let Some(indexed) = carriers.curve(ctx, attr)? else {
         return Ok(false);
     };
     let carrier = indexed.carrier();
@@ -565,8 +564,8 @@ mod tests {
 
         let carriers = scan_carriers(&ctx, &bytes).expect("carrier scan");
 
-        assert!(carriers.curve(7).is_some());
-        assert!(carriers.curve(8).is_some());
+        assert!(carriers.curve(&ctx, 7).expect("carrier lookup").is_some());
+        assert!(carriers.curve(&ctx, 8).expect("carrier lookup").is_some());
     }
 
     #[test]

@@ -524,13 +524,9 @@ fn expanded_knots(
         if next_len > expected {
             return Ok(None);
         }
-        ctx.charge_work(u64::from(multiplicity), "emit Parasolid expanded knots")?;
-        ctx.reserve_vec(
-            &mut out,
-            usize::from(multiplicity),
-            "expand Parasolid knots",
-        )?;
-        out.extend(std::iter::repeat_n(*value, usize::from(multiplicity)));
+        for _ in ctx.admit_iter(0..usize::from(multiplicity), "emit Parasolid expanded knots")? {
+            ctx.push_vec(&mut out, *value, "expand Parasolid knots")?;
+        }
     }
     Ok(Some(out))
 }
@@ -1555,49 +1551,50 @@ pub(crate) fn scan_surface_carriers(
             continue;
         };
         let mut pole_rows =
-            ctx.collection_vec(descriptor.u_count, "partition Parasolid surface pole rows")?;
+            ctx.vector_storage(descriptor.u_count, "partition Parasolid surface pole rows")?;
         let mut weight_rows = if descriptor.rational {
-            Some(ctx.collection_vec(
+            Some(ctx.vector_storage(
                 descriptor.u_count,
                 "partition Parasolid surface weight rows",
             )?)
         } else {
             None
         };
+        let Some(pole_width) = std::num::NonZeroUsize::new(dimension) else { continue; };
         let mut valid = true;
         for row in ctx
             .admit_iter(control.as_ref(), "scan Parasolid surface poles")?
             .chunks(row_width)
         {
             let mut points =
-                ctx.collection_vec(descriptor.v_count, "decode Parasolid surface poles")?;
+                ctx.vector_storage(descriptor.v_count, "decode Parasolid surface poles")?;
             let mut weights = if descriptor.rational {
-                Some(ctx.collection_vec(descriptor.v_count, "decode Parasolid surface weights")?)
+                Some(ctx.vector_storage(descriptor.v_count, "decode Parasolid surface weights")?)
             } else {
                 None
             };
-            for pole in row.chunks_exact(dimension) {
+            for pole in ctx.admit_iter(&row[..row.len() / dimension * dimension], "scan Parasolid surface row poles")?.chunks(pole_width) {
                 let weight = if descriptor.rational { pole[3] } else { 1.0 };
                 // A pole holds three or four values.
                 if pole.iter().any(|value| !value.is_finite()) || weight.abs() <= f64::EPSILON {
                     valid = false;
                     break;
                 }
-                points.push(Point3::new(
+                ctx.push_vec(&mut points, Point3::new(
                     pole[0] / weight * LEN_TO_MM,
                     pole[1] / weight * LEN_TO_MM,
                     pole[2] / weight * LEN_TO_MM,
-                ));
+                ), "decode Parasolid surface poles")?;
                 if let Some(values) = &mut weights {
-                    values.push(weight);
+                    ctx.push_vec(values, weight, "decode Parasolid surface weights")?;
                 }
             }
             if !valid {
                 break;
             }
-            pole_rows.push(points);
+            ctx.push_vec(&mut pole_rows, points, "partition Parasolid surface pole rows")?;
             if let (Some(rows), Some(weights)) = (&mut weight_rows, weights) {
-                rows.push(weights);
+                ctx.push_vec(rows, weights, "partition Parasolid surface weight rows")?;
             }
         }
         if !valid || pole_rows.len() != descriptor.u_count {
@@ -2087,9 +2084,7 @@ mod knot_work_tests {
             });
         }
         let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        // Two paired visits and four knot emissions.
-        policy.limits.max_work_units = 6;
+        let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         assert_eq!(
             super::expanded_knots(&ctx, &[0.0, 1.0], &[2, 2], 4).expect("scan and emission"),
