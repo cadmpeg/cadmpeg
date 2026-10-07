@@ -25,94 +25,94 @@ use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
 
 fn blend_bound_limit_error(
-    adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &'static str,
 ) -> cadmpeg_core::CodecError {
     let stream = blend_bound_charted_intersection_curve_stream();
-
-    crate::test_support::with_decode_context_over(&stream, adjust, |ctx| {
-        crate::intersection::blend_bounds(ctx, &stream).expect_err("blend-bound resource refusal")
+    crate::test_support::resource_refusal_at(&stream, dimension, operation, |ctx| {
+        crate::intersection::blend_bounds(ctx, &stream)
     })
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_collection_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_collection_items = 0;
-    };
+    let error = blend_bound_limit_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX blend-bound records",
+    );
     assert!(
-        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems && limit.operation == "NX blend-bound records")
     );
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_retained_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 0;
-    };
+    let error = blend_bound_limit_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX blend-bound records",
+    );
     assert!(
-        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "NX blend-bound records")
     );
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_scoped_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_materialized_bytes = 0;
-    };
+    let error = blend_bound_limit_error(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX blend-bound identity index",
+    );
     assert!(
-        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "NX blend-bound identity index")
     );
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_work_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units = 0;
-    };
+    let error = blend_bound_limit_error(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX blend-bound identity index",
+    );
     assert!(
-        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "NX blend-bound identity index")
     );
 }
 
 #[test]
 fn intersection_chart_route_refuses_scoped_limit() {
     let stream = ext11_charted_intersection_curve_stream();
-
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &stream,
-        |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX chart sample pairs",
         |ctx| {
-            assert!(
-                matches!(crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Ext11),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-            );
+            crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Ext11)
         },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "NX chart sample pairs")
     );
 }
 
 #[test]
 fn intersection_solved_route_refuses_retained_limit() {
     let stream = charted_intersection_curve_topology_partition_stream();
-
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &stream,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX solved chart sample copy",
         |ctx| {
-            assert!(
-                matches!(crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
+            crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)
         },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "NX solved chart sample copy")
     );
 }
 
@@ -972,4 +972,23 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
             );
         });
     }
+}
+
+#[test]
+fn duplicate_uv_payloads_are_scratch_until_an_identity_survives() {
+    let mut bytes = record(204, 41);
+    bytes[2..6].copy_from_slice(&4_u32.to_be_bytes());
+    put_ref(&mut bytes, 6, 20);
+    bytes[8] = 2;
+    let duplicate = bytes.clone();
+    bytes.extend(duplicate);
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            assert!(super::support_uv_records(ctx, &bytes).unwrap().is_empty());
+        },
+    );
 }

@@ -21,7 +21,6 @@ use support_uv_values::{SupportUvPacking, SupportUvValues};
 
 use chart_samples::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
 
-use crate::framing::insert_unique;
 use crate::framing::node_kind::NodeKind;
 use crate::framing::read_xmt_width as read_xmt;
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
@@ -40,22 +39,21 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
-    fn present_with_storage<'values, E, I: Iterator<Item = &'values [f64; 2]>>(
-        values: &'values [[f64; 2]],
+    fn present_with_storage<E>(
+        values: &[[f64; 2]],
         mut checked: Vec<FiniteVector<2>>,
-        admit: impl FnOnce(&'values [[f64; 2]]) -> Result<I, E>,
+        mut next: impl FnMut(&mut std::slice::Iter<'_, [f64; 2]>) -> Result<Option<[f64; 2]>, E>,
+        mut push: impl FnMut(&mut Vec<FiniteVector<2>>, FiniteVector<2>) -> Result<(), E>,
     ) -> Result<Option<Self>, E> {
-        if !checked.is_empty() || checked.capacity() < values.len() {
-            return Ok(None);
-        }
-        for pair in admit(values)? {
+        let mut values = values.iter();
+        while let Some(pair) = next(&mut values)? {
             if pair.contains(&MISSING_PARAMETER) {
                 return Ok(None);
             }
-            let Some(pair) = FiniteVector::new(*pair) else {
+            let Some(pair) = FiniteVector::new(pair) else {
                 return Ok(None);
             };
-            checked.push(pair);
+            push(&mut checked, pair)?;
         }
         Ok(Some(Self(checked)))
     }
@@ -64,10 +62,19 @@ impl SupportUvLane {
         ctx: &'ctx DecodeContext<'_>,
         values: Vec<[f64; 2]>,
     ) -> Result<Option<(Self, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
-        let (checked, reservation) = ctx.temporary_vec(values.len(), "NX chart support-UV lane")?;
-        let lane = Self::present_with_storage(&values, checked, |values| {
-            ctx.admit_iter(values, "admit NX chart support-UV lane")
-        })?;
+        let mut reservation = ctx.reserve_scoped(0, "NX chart support-UV lane")?;
+        let lane = Self::present_with_storage(
+            &values,
+            Vec::new(),
+            |values| {
+                Ok(ctx
+                    .next_charged(values, "admit NX chart support-UV lane")?
+                    .copied())
+            },
+            |checked, pair| {
+                reservation.with_storage(|| ctx.push_vec(checked, pair, "NX chart support-UV lane"))
+            },
+        )?;
         Ok(lane.map(|lane| (lane, reservation)))
     }
     /// Construct one parameter pair per chart sample.
@@ -93,9 +100,15 @@ impl SupportUvLane {
             storage.try_reserve_exact(values.len()).map(|()| storage)
         }
         .ok()?;
-        match Self::present_with_storage(&values, checked, |values| {
-            Ok::<_, Infallible>(values.iter())
-        }) {
+        match Self::present_with_storage(
+            &values,
+            checked,
+            |values| Ok::<_, Infallible>(values.next().copied()),
+            |checked, pair| {
+                checked.push(pair);
+                Ok(())
+            },
+        ) {
             Ok(lane) => lane,
             Err(never) => match never {},
         }
@@ -425,16 +438,24 @@ pub(crate) fn scan_with_graph(
     graph: &topology::Graph,
     point_layout: ChartPointLayout,
 ) -> Result<CurveScan, CodecError> {
-    let uv = uv_records(ctx, stream)?;
+    let mut auxiliary_storage = ctx.reserve_scoped(0, "NX intersection auxiliary storage")?;
+    let (charts, terms, uv, bridges) = auxiliary_storage.with_storage(|| {
+        Ok::<_, CodecError>((
+            chart_records(ctx, stream, point_layout)?,
+            term_records(ctx, stream)?,
+            uv_records(ctx, stream)?,
+            blend_bound_records(ctx, stream)?,
+        ))
+    })?;
     let mut constructions = graph.composite_curves(ctx)?;
     append_intersection_data_curves(ctx, stream, &mut constructions)?;
     scan_with_auxiliaries(
         ctx,
         AuxiliaryMaps {
-            charts: &chart_records(ctx, stream, point_layout)?,
-            terms: &term_records(ctx, stream)?,
+            charts: &charts,
+            terms: &terms,
             uv: &uv,
-            bridges: &blend_bound_records(ctx, stream)?,
+            bridges: &bridges,
         },
         graph,
         constructions,
@@ -448,8 +469,7 @@ fn append_intersection_data_curves(
     constructions: &mut Vec<CompositeCurve>,
 ) -> Result<(), CodecError> {
     let twins = topology::intersection_data_curves(ctx, stream)?;
-    ctx.reserve_vec(constructions, twins.len(), "NX intersection constructions")?;
-    constructions.extend(twins);
+    ctx.extend_vec(constructions, twins, "NX intersection constructions")?;
     Ok(())
 }
 
@@ -478,37 +498,45 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     replacement_streams: &[&[u8]],
     graph: &topology::Graph,
 ) -> Result<CurveScan, CodecError> {
-    let mut charts = chart_records(ctx, base_stream, ChartPointLayout::Xyz3)?;
-    let mut terms = term_records(ctx, base_stream)?;
-    let mut uv = uv_records(ctx, base_stream)?;
-    let mut bridges = blend_bound_records(ctx, base_stream)?;
+    let mut auxiliary_storage = ctx.reserve_scoped(0, "NX replacement auxiliary storage")?;
+    let (mut charts, mut terms, mut uv, mut bridges) = auxiliary_storage.with_storage(|| {
+        Ok::<_, CodecError>((
+            chart_records(ctx, base_stream, ChartPointLayout::Xyz3)?,
+            term_records(ctx, base_stream)?,
+            uv_records(ctx, base_stream)?,
+            blend_bound_records(ctx, base_stream)?,
+        ))
+    })?;
     for replacement_stream in
         ctx.admit_iter(replacement_streams, "NX auxiliary replacement traversal")?
     {
-        extend_replacement_map(
-            ctx,
-            &mut charts,
-            chart_records(ctx, replacement_stream, ChartPointLayout::Ext11)?,
-            "NX replacement chart keys",
-        )?;
-        extend_replacement_map(
-            ctx,
-            &mut terms,
-            term_records(ctx, replacement_stream)?,
-            "NX replacement term keys",
-        )?;
-        extend_replacement_map(
-            ctx,
-            &mut uv,
-            uv_records(ctx, replacement_stream)?,
-            "NX replacement UV keys",
-        )?;
-        extend_replacement_map(
-            ctx,
-            &mut bridges,
-            blend_bound_records(ctx, replacement_stream)?,
-            "NX replacement bridge keys",
-        )?;
+        auxiliary_storage.with_storage(|| {
+            extend_replacement_map(
+                ctx,
+                &mut charts,
+                chart_records(ctx, replacement_stream, ChartPointLayout::Ext11)?,
+                "NX replacement chart keys",
+            )?;
+            extend_replacement_map(
+                ctx,
+                &mut terms,
+                term_records(ctx, replacement_stream)?,
+                "NX replacement term keys",
+            )?;
+            extend_replacement_map(
+                ctx,
+                &mut uv,
+                uv_records(ctx, replacement_stream)?,
+                "NX replacement UV keys",
+            )?;
+            extend_replacement_map(
+                ctx,
+                &mut bridges,
+                blend_bound_records(ctx, replacement_stream)?,
+                "NX replacement bridge keys",
+            )?;
+            Ok::<_, CodecError>(())
+        })?;
     }
     let mut constructions = graph.composite_curves(ctx)?;
     append_intersection_data_curves(ctx, stream, &mut constructions)?;
@@ -532,7 +560,7 @@ fn extend_replacement_map<T>(
     replacement: BTreeMap<u32, T>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    for (xmt, value) in replacement {
+    for (xmt, value) in ctx.admit_iter(replacement, operation)? {
         ctx.insert_btree_map(target, xmt, value, operation)?;
     }
     Ok(())
@@ -565,55 +593,51 @@ fn scan_with_auxiliaries(
         uv,
         bridges,
     } = maps;
-    let referenced_curves = graph.referenced_curve_xmts(ctx)?;
+    let mut reference_storage = ctx.reserve_scoped(0, "NX referenced intersection curve index")?;
+    let referenced_curves = reference_storage.with_storage(|| graph.referenced_curve_xmts(ctx))?;
     let mut result = CurveScan::default();
-    let mut forms_by_xmt = BTreeMap::<u32, BTreeSet<bool>>::new();
+    let mut form_storage = ctx.reserve_scoped(0, "NX intersection form index")?;
+    let mut forms_by_xmt = BTreeMap::<u32, u8>::new();
     for construction in ctx.admit_iter(&constructions, "NX intersection form traversal")? {
-        ctx.admit_btree_entry(
-            &forms_by_xmt,
-            &construction.xmt,
-            "NX intersection form keys",
-        )?;
-        let forms = forms_by_xmt.entry(construction.xmt).or_default();
-        ctx.insert_btree_set(
-            forms,
-            construction.delta_twin,
-            "NX intersection form values",
-        )?;
+        form_storage.with_storage(|| {
+            let forms = ctx
+                .entry_btree_map(
+                    &mut forms_by_xmt,
+                    construction.xmt,
+                    "NX intersection form keys",
+                )?
+                .or_default();
+            *forms |= 1 << u8::from(construction.delta_twin);
+            Ok::<_, CodecError>(())
+        })?;
     }
-    let mut cross_form_xmts = BTreeSet::new();
-    for (xmt, forms) in ctx.admit_iter(&forms_by_xmt, "NX intersection form identity traversal")? {
-        if forms.len() > 1 {
-            ctx.insert_btree_set(
-                &mut cross_form_xmts,
-                *xmt,
-                "NX intersection cross-form identities",
-            )?;
-        }
-    }
-    let mut kept = Vec::new();
-    for construction in ctx.admit_iter(constructions, "NX intersection cross-form selection")? {
-        if ctx.contains_btree_set(
-            &cross_form_xmts,
-            &construction.xmt,
-            "NX intersection cross-form selection",
-        )? {
-            match cross_form_collision {
-                CrossFormCollision::Reject => {
-                    result.rejected.add(Rejection::DuplicateIdentity);
-                    continue;
+    let mut constructions = constructions;
+    ctx.retain_vec(
+        &mut constructions,
+        |construction| {
+            if ctx.get_btree_map(
+                &forms_by_xmt,
+                &construction.xmt,
+                "NX intersection cross-form lookup",
+            )? == Some(&3)
+            {
+                match cross_form_collision {
+                    CrossFormCollision::Reject => {
+                        result.rejected.add(Rejection::DuplicateIdentity);
+                        return Ok(false);
+                    }
+                    CrossFormCollision::PreferDeltaTwin if !construction.delta_twin => {
+                        return Ok(false)
+                    }
+                    CrossFormCollision::PreferDeltaTwin => {}
                 }
-                CrossFormCollision::PreferDeltaTwin if !construction.delta_twin => continue,
-                CrossFormCollision::PreferDeltaTwin => {}
             }
-        }
-        ctx.push_vec(
-            &mut kept,
-            construction,
-            "NX intersection cross-form selection",
-        )?;
-    }
-    let constructions = kept;
+            Ok(true)
+        },
+        "NX intersection cross-form selection",
+    )?;
+    drop(forms_by_xmt);
+    drop(form_storage);
     for construction in ctx
         .admit_iter(&constructions, "NX intersection construction traversal")?
         .copied()
@@ -636,11 +660,16 @@ fn scan_with_auxiliaries(
                 )?;
                 ctx.push_vec(&mut result.curves, curve, "NX intersection solved curves")?;
             }
-            Err(EnrichError::Rejected(rejection))
-                if referenced
-                    && construction_supports(ctx, construction, uv, bridges, graph)?.is_some()
-                    && construction_has_endpoint_witnesses(ctx, construction, terms, graph)? =>
-            {
+            Err(EnrichError::Rejected(rejection)) if referenced => {
+                let supports = construction_supports(ctx, construction, uv, bridges, graph)?;
+                if supports.is_none()
+                    || !construction_has_endpoint_witnesses(ctx, construction, terms, graph)?
+                {
+                    if matches!(rejection, Rejection::MissingSupport) {
+                        result.rejected.add(Rejection::MissingSupport);
+                    }
+                    continue;
+                }
                 ctx.push_vec(
                     &mut result.constructions,
                     construction,
@@ -648,9 +677,9 @@ fn scan_with_auxiliaries(
                 )?;
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some((endpoints, tolerance))) = (
-                        construction_supports(ctx, construction, uv, bridges, graph)?.and_then(
-                            |(primary, secondary)| DistinctSupports::new(primary, secondary?),
-                        ),
+                        supports.and_then(|(primary, secondary)| {
+                            DistinctSupports::new(primary, secondary?)
+                        }),
                         graph
                             .unique_curve_edge_witness(ctx, construction.xmt)?
                             .and_then(|witness| {
@@ -674,9 +703,6 @@ fn scan_with_auxiliaries(
                 }
                 result.rejected.add(rejection);
             }
-            Err(EnrichError::Rejected(Rejection::MissingSupport)) if referenced => {
-                result.rejected.add(Rejection::MissingSupport);
-            }
             Err(EnrichError::Rejected(_)) => {}
             Err(EnrichError::Resource(error)) => return Err(error),
         }
@@ -694,9 +720,10 @@ fn enrich(
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Result<IntersectionCurve, EnrichError> {
-    const OPERATION: &str = "NX intersection construction records";
     let chart = match construction.references[2] {
-        Some(target) => ctx.get_btree_map(charts, &u32::from(target), OPERATION)?,
+        Some(target) => {
+            ctx.get_btree_map(charts, &u32::from(target), "NX intersection chart lookup")?
+        }
         None => None,
     }
     .ok_or(Rejection::MissingChart)?;
@@ -704,7 +731,7 @@ fn enrich(
     let term = |reference: Option<XmtTarget>| -> Result<Option<Point3>, CodecError> {
         match reference {
             Some(target) => Ok(ctx
-                .get_btree_map(terms, &u32::from(target), OPERATION)?
+                .get_btree_map(terms, &u32::from(target), "NX intersection term lookup")?
                 .copied()),
             None => Ok(None),
         }
@@ -757,7 +784,9 @@ fn enrich(
         construction_supports(ctx, construction, uv, bridges, graph)?
             .ok_or(Rejection::MissingSupport)?;
     let support_values = match construction.references[5] {
-        Some(target) => ctx.get_btree_map(uv, &u32::from(target), OPERATION)?,
+        Some(target) => {
+            ctx.get_btree_map(uv, &u32::from(target), "NX intersection support-UV lookup")?
+        }
         None => None,
     };
     let support_uv = match support_values {
@@ -806,7 +835,6 @@ fn construction_supports(
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Result<Option<(NonNullXmt, Option<NonNullXmt>)>, CodecError> {
-    const OPERATION: &str = "NX intersection supports";
     let (primary, bridge) = if construction.delta_twin {
         (construction.references[0], construction.references[1])
     } else {
@@ -815,7 +843,11 @@ fn construction_supports(
         // order; no alternate order was serialized.
         let packing = match construction.references[5] {
             Some(target) => ctx
-                .get_btree_map(uv, &u32::from(target), OPERATION)?
+                .get_btree_map(
+                    uv,
+                    &u32::from(target),
+                    "NX intersection support packing lookup",
+                )?
                 .map(SupportUvValues::packing),
             None => None,
         };
@@ -835,10 +867,12 @@ fn construction_supports(
         return Ok(None);
     }
     let secondary = match bridge.map(u32::from) {
-        Some(bridge) => match ctx.get_btree_map(bridges, &bridge, OPERATION)? {
-            Some(&secondary) => Some(secondary),
-            None => is_surface(ctx, graph, bridge)?.then_some(bridge),
-        },
+        Some(bridge) => {
+            match ctx.get_btree_map(bridges, &bridge, "NX intersection bridge lookup")? {
+                Some(&secondary) => Some(secondary),
+                None => is_surface(ctx, graph, bridge)?.then_some(bridge),
+            }
+        }
         None => None,
     };
     let secondary = secondary
@@ -903,7 +937,7 @@ pub(crate) fn blend_bounds(
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     let mut reservation = ctx.reserve_scoped(0, "NX blend-bound record index")?;
-    for tag in find_tags(ctx, stream, [0, 59])? {
+    for tag in find_tags(ctx, stream, [0, 59], "NX blend-bound tag traversal")? {
         if let Some((bound, _)) = blend_bound_at(stream, tag) {
             insert_unique_charged(
                 ctx,
@@ -912,37 +946,35 @@ pub(crate) fn blend_bounds(
                 &mut duplicates,
                 bound.state.xmt(),
                 bound,
+                "NX blend-bound identity index",
             )?;
         }
     }
-    ctx.collect_retained_vec(out.into_values(), "NX blend-bound records")
+    ctx.collect_vec(out.into_values(), "NX blend-bound records")
 }
 
-fn insert_unique_charged<'ctx, T>(
-    ctx: &'ctx DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
+fn insert_unique_charged<T>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     records: &mut BTreeMap<u32, T>,
     duplicates: &mut BTreeSet<u32>,
     xmt: u32,
     record: T,
+    operation: &'static str,
 ) -> Result<(), CodecError> {
-    if duplicates.contains(&xmt) {
+    if ctx.contains_btree_set(duplicates, &xmt, operation)? {
         return Ok(());
     }
-    if records.contains_key(&xmt) {
-        ctx.charge_collection_items(1, "NX duplicate intersection identities")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<u32>(),
-        ))?;
-    } else {
-        ctx.charge_collection_items(1, "NX intersection record index")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            u32,
-            T,
-        )>()))?;
-    }
-    insert_unique(records, duplicates, xmt, record);
-    Ok(())
+    reservation.with_storage(|| {
+        if ctx
+            .insert_btree_map(records, xmt, record, operation)?
+            .is_some()
+        {
+            ctx.remove_btree_map(records, &xmt, operation)?;
+            ctx.insert_btree_set(duplicates, xmt, operation)?;
+        }
+        Ok(())
+    })
 }
 
 pub(crate) fn blend_bound_at(stream: &[u8], tag: usize) -> Option<(BlendBound, usize)> {
@@ -1052,8 +1084,15 @@ fn chart_records(
     let mut out = BTreeMap::new();
     let mut complemented = BTreeSet::new();
     let mut duplicates = BTreeSet::new();
-    for source in chart_source_records(ctx, stream, point_layout)? {
-        if duplicates.contains(&u32::from(source.xmt)) {
+    for source in ctx.admit_iter(
+        chart_source_records(ctx, stream, point_layout)?,
+        "NX source chart traversal",
+    )? {
+        if ctx.contains_btree_set(
+            &duplicates,
+            &u32::from(source.xmt),
+            "NX duplicate chart lookup",
+        )? {
             continue;
         }
         let Some(fit_tolerance) = source.preamble.fit_tolerance() else {
@@ -1070,31 +1109,32 @@ fn chart_records(
             fit_tolerance,
             ext_support_uv,
         };
-        ctx.admit_btree_entry(&out, &u32::from(source.xmt), "NX chart identity index")?;
-        match out.entry(u32::from(source.xmt)) {
+        match ctx.entry_btree_map(&mut out, u32::from(source.xmt), "NX chart identity index")? {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Chart)>()),
-                    "NX chart identity index",
-                )?;
                 entry.insert(candidate);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let complements = !complemented.contains(&u32::from(source.xmt))
-                    && has_native_parameters
-                    && entry
-                        .get()
-                        .samples
-                        .iter_points(ctx)?
-                        .zip(candidate.samples.iter_points(ctx)?)
-                        .all(|(first, second)| {
-                            Point3::distance(first, second)
+                let complements = !ctx.contains_btree_set(
+                    &complemented,
+                    &u32::from(source.xmt),
+                    "NX complemented chart lookup",
+                )? && has_native_parameters
+                    && ctx.all_by(
+                        entry
+                            .get()
+                            .samples
+                            .iter_points()
+                            .zip(candidate.samples.iter_points()),
+                        |(first, second)| {
+                            Ok(Point3::distance(first, second)
                                 <= entry
                                     .get()
                                     .fit_tolerance
                                     .get()
-                                    .max(candidate.fit_tolerance.get())
-                        })
+                                    .max(candidate.fit_tolerance.get()))
+                        },
+                        "NX chart complement point comparison",
+                    )?
                     && entry
                         .get_mut()
                         .samples
@@ -1127,16 +1167,12 @@ pub(crate) fn chart_source_records(
     point_layout: ChartPointLayout,
 ) -> Result<Vec<ChartSourceRecord>, CodecError> {
     let mut out = Vec::new();
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(stream.len()),
-        "scan NX chart records",
-    )?;
     let mut tag = 0usize;
     while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
+        ctx.charge_work(1, "scan NX chart records")?;
         if stream.get(tag..tag + 2) == Some(&[0, 40]) {
             if let Some((record, end)) = chart_source_record_at(ctx, stream, tag, point_layout)? {
-                ctx.reserve_vec(&mut out, 1, "NX chart source records")?;
-                out.push(record);
+                ctx.push_vec(&mut out, record, "NX chart source records")?;
                 // A complete chart owns its counted point lane. Do not rescan
                 // bytes inside that lane as nested chart candidates.
                 tag = end;
@@ -1243,7 +1279,8 @@ fn chart_points(
     if point_layout == ChartPointLayout::Xyz3 {
         let operation = "NX raw xyz3 chart points";
         let (mut points, _reservation) = ctx.temporary_vec(count, operation)?;
-        for index in ctx.admit_iter(&(0..count), "NX chart points range traversal")? {
+        let mut indices = 0..count;
+        while let Some(index) = ctx.next_charged(&mut indices, "NX chart points range traversal")? {
             let Some(point) = point_m(stream, block + index * 24) else {
                 return Ok(None);
             };
@@ -1267,7 +1304,8 @@ fn chart_points(
         ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
         ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
     ];
-    for index in ctx.admit_iter(&(0..count), "NX chart points range traversal")? {
+    let mut indices = 0..count;
+    while let Some(index) = ctx.next_charged(&mut indices, "NX chart points range traversal")? {
         let Some((point, parameter, lanes)) = chart_ext_point_at(stream, block + index * 88) else {
             return Ok(None);
         };
@@ -1279,13 +1317,12 @@ fn chart_points(
                 .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
             {
                 if let Some(values) = &mut ext_support_uv[lane] {
-                    ctx.reserve_scoped_vec(
+                    ctx.push_scoped_vec(
                         &mut lane_reservations[lane],
                         values,
-                        1,
+                        lanes[lane],
                         "NX raw ext11 support-UV lane",
                     )?;
-                    values.push(lanes[lane]);
                 }
             } else {
                 ext_support_uv[lane] = None;
@@ -1337,7 +1374,7 @@ pub(crate) fn term_use_records(
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     let mut reservation = ctx.reserve_scoped(0, "NX term-use record index")?;
-    for tag in find_tags(ctx, stream, [0, 41])? {
+    for tag in find_tags(ctx, stream, [0, 41], "NX term-use tag traversal")? {
         if let Some((term, _)) = term_use_at(stream, tag) {
             insert_unique_charged(
                 ctx,
@@ -1346,6 +1383,7 @@ pub(crate) fn term_use_records(
                 &mut duplicates,
                 u32::from(term.xmt),
                 term,
+                "NX term-use identity index",
             )?;
         }
     }
@@ -1361,11 +1399,12 @@ pub(crate) fn term_use_records(
                     &mut duplicates,
                     u32::from(term.xmt),
                     term,
+                    "NX term-use identity index",
                 )?;
             }
         }
     }
-    ctx.collect_retained_vec(out.into_values(), "NX term-use records")
+    ctx.collect_vec(out.into_values(), "NX term-use records")
 }
 
 pub(crate) fn term_use_at(stream: &[u8], tag: usize) -> Option<(TermUse, usize)> {
@@ -1422,7 +1461,10 @@ fn uv_records(
     stream: &[u8],
 ) -> Result<BTreeMap<u32, SupportUvValues>, CodecError> {
     let mut records = BTreeMap::new();
-    for record in support_uv_records(ctx, stream)? {
+    for record in ctx.admit_iter(
+        support_uv_records(ctx, stream)?,
+        "NX support-UV record traversal",
+    )? {
         ctx.insert_btree_map(
             &mut records,
             u32::from(record.xmt),
@@ -1441,21 +1483,22 @@ pub(crate) fn support_uv_records(
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     let mut reservation = ctx.reserve_scoped(0, "NX support-UV record index")?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(stream.len()),
-        "scan NX support-UV records",
-    )?;
     let mut tag = 0usize;
     while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
+        ctx.charge_work(1, "scan NX support-UV records")?;
         if stream.get(tag..tag + 2) == Some(&[0, 204]) {
-            if let Some((record, end)) = support_uv_record_at(ctx, stream, tag)? {
+            let mut value_storage = ctx.reserve_scoped(0, "NX support-UV record payload")?;
+            if let Some((record, end)) =
+                value_storage.with_storage(|| support_uv_record_at(ctx, stream, tag))?
+            {
                 insert_unique_charged(
                     ctx,
                     &mut reservation,
                     &mut out,
                     &mut duplicates,
                     u32::from(record.xmt),
-                    record,
+                    (record, value_storage),
+                    "NX support-UV identity index",
                 )?;
                 // A complete counted UV lane owns its scalar payload. Do not
                 // rescan payload bytes as nested support arrays.
@@ -1466,23 +1509,25 @@ pub(crate) fn support_uv_records(
         tag += 1;
     }
     let mut label_start = 0;
-    while label_start < stream.len() {
-        let Some(relative) = ctx
-            .find_bytes_iter(
-                &stream[label_start..],
-                b"values",
-                "scan NX inline support-UV records",
-            )?
-            .next()
+    let label_end = stream
+        .len()
+        .checked_sub(b"values".len())
+        .map_or(0, |last| last + 1);
+    while label_start < label_end {
+        let Some(label) = ctx.find_by(
+            label_start..label_end,
+            |&at| Ok(stream.get(at..at + b"values".len()) == Some(b"values")),
+            "scan NX inline support-UV records",
+        )?
         else {
             break;
         };
-        let label = label_start + relative;
         let tail = label + b"values".len();
         if stream.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             let pos = tail + INLINE_UV_TAIL.len();
-            if let Some((record, end)) =
-                uv_at(ctx, stream, pos, SupportUvFraming::DescriptorInline, pos)?
+            let mut value_storage = ctx.reserve_scoped(0, "NX support-UV record payload")?;
+            if let Some((record, end)) = value_storage
+                .with_storage(|| uv_at(ctx, stream, pos, SupportUvFraming::DescriptorInline, pos))?
             {
                 insert_unique_charged(
                     ctx,
@@ -1490,7 +1535,8 @@ pub(crate) fn support_uv_records(
                     &mut out,
                     &mut duplicates,
                     u32::from(record.xmt),
-                    record,
+                    (record, value_storage),
+                    "NX support-UV identity index",
                 )?;
                 label_start = end;
                 continue;
@@ -1498,7 +1544,13 @@ pub(crate) fn support_uv_records(
         }
         label_start = label + 1;
     }
-    ctx.collect_retained_vec(out.into_values(), "NX support-UV records")
+    ctx.try_collect_vec(
+        out.into_values().map(|(record, storage)| {
+            storage.commit()?;
+            Ok(record)
+        }),
+        "NX support-UV records",
+    )
 }
 
 pub(crate) fn support_uv_record_at(
@@ -1573,7 +1625,7 @@ fn uv_at(
     let operation = "NX support-UV scalar lane";
     ctx.charge_collection_items(count_u64, operation)?;
     let (mut scalars, _reservation) = ctx.scoped_vector_storage(count_usize, operation)?;
-    for _ in ctx.admit_iter(&(0..count_usize), "NX uv at range traversal")? {
+    for _ in ctx.admit_iter(0..count_usize, "NX support-UV scalar read traversal")? {
         let Some(value) = view.f64_be() else {
             return Ok(None);
         };
@@ -1597,9 +1649,10 @@ fn find_tags<'stream>(
     ctx: &DecodeContext<'_>,
     stream: &'stream [u8],
     tag: [u8; 2],
+    operation: &'static str,
 ) -> Result<impl Iterator<Item = usize> + 'stream, CodecError> {
     Ok(ctx
-        .admit_iter(stream, "NX intersection tag traversal")?
+        .admit_iter(stream, operation)?
         .enumerate()
         .skip(1)
         .filter_map(move |(end, _)| (stream[end - 1..=end] == tag).then_some(end - 1)))

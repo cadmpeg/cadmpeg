@@ -2,12 +2,11 @@
 //! Finite support-UV tuples with their exact packing marker.
 
 use super::{SupportUv, SupportUvLane};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 use std::convert::Infallible;
-use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SupportUvPacking {
@@ -50,32 +49,27 @@ pub(crate) struct SupportUvValues {
     count: u32,
 }
 impl SupportUvValues {
-    fn with_storage<'values, E, I: Iterator<Item = &'values f64>>(
+    fn with_storage<E>(
         packing: SupportUvPacking,
-        values: &'values [f64],
+        values: &[f64],
         mut finite: Vec<FiniteReal>,
-        admit: impl FnOnce(&'values [f64]) -> Result<I, E>,
+        mut next: impl FnMut(&mut std::slice::Iter<'_, f64>) -> Result<Option<f64>, E>,
+        mut push: impl FnMut(&mut Vec<FiniteReal>, FiniteReal) -> Result<(), E>,
     ) -> Result<Result<Self, &'static str>, E> {
-        let validation: Result<u32, &'static str> = (|| {
-            let count =
-                u32::try_from(values.len()).map_err(|_| "values: scalar count exceeds u32")?;
-            if values.is_empty() || !values.len().is_multiple_of(packing.width()) {
-                return Err("values: must contain nonempty complete tuples for marker");
-            }
-            if !finite.is_empty() || finite.capacity() < values.len() {
-                return Err("values: admitted storage is too small or not empty");
-            }
-            Ok(count)
-        })();
-        let count = match validation {
-            Ok(count) => count,
-            Err(error) => return Ok(Err(error)),
+        let Ok(count) = u32::try_from(values.len()) else {
+            return Ok(Err("values: scalar count exceeds u32"));
         };
-        for value in admit(values)? {
-            let Some(value) = FiniteReal::new(*value) else {
+        if values.is_empty() || !values.len().is_multiple_of(packing.width()) {
+            return Ok(Err(
+                "values: must contain nonempty complete tuples for marker",
+            ));
+        }
+        let mut values = values.iter();
+        while let Some(value) = next(&mut values)? {
+            let Some(value) = FiniteReal::new(value) else {
                 return Ok(Err("values: scalars must be finite"));
             };
-            finite.push(value);
+            push(&mut finite, value)?;
         }
         Ok(Ok(Self {
             packing,
@@ -89,11 +83,21 @@ impl SupportUvValues {
         packing: SupportUvPacking,
         values: Vec<f64>,
     ) -> Result<Option<Self>, CodecError> {
-        let (finite, reservation) =
-            ctx.temporary_vec(values.len(), "NX finite support-UV values")?;
-        let data = Self::with_storage(packing, &values, finite, |values| {
-            ctx.admit_iter(values, "admit NX support-UV scalars")
-        })?
+        let mut reservation = ctx.reserve_scoped(0, "NX finite support-UV values")?;
+        let data = Self::with_storage(
+            packing,
+            &values,
+            Vec::new(),
+            |values| {
+                Ok(ctx
+                    .next_charged(values, "admit NX support-UV scalars")?
+                    .copied())
+            },
+            |finite, value| {
+                reservation
+                    .with_storage(|| ctx.push_vec(finite, value, "NX finite support-UV values"))
+            },
+        )?
         .ok();
         if data.is_some() {
             reservation.commit()?;
@@ -107,9 +111,16 @@ impl SupportUvValues {
             storage.try_reserve_exact(values.len()).map(|()| storage)
         }
         .map_err(|_| "values: storage allocation failed")?;
-        match Self::with_storage(packing, &values, finite, |values| {
-            Ok::<_, Infallible>(values.iter())
-        }) {
+        match Self::with_storage(
+            packing,
+            &values,
+            finite,
+            |values| Ok::<_, Infallible>(values.next().copied()),
+            |finite, value| {
+                finite.push(value);
+                Ok(())
+            },
+        ) {
             Ok(value) => value,
             Err(never) => match never {},
         }
@@ -167,37 +178,21 @@ impl SupportUvValues {
             return Ok([None, None]);
         }
         let operation = "NX solved support-UV values";
-        let count_u64 = u64_from_index(count);
-        let lane_count = if self.packing == SupportUvPacking::Form4 {
-            2
-        } else {
-            1
-        };
-        ctx.charge_collection_items(
-            count_u64
-                .checked_mul(lane_count)
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?,
-            operation,
-        )?;
-        let mut first = Vec::new();
-        ctx.reserve_capacity(&mut first, count, operation)?;
-        let mut second = if lane_count == 2 {
-            let mut lane = Vec::new();
-            ctx.reserve_capacity(&mut lane, count, operation)?;
-            Some(lane)
+        let mut first = ctx.collection_vec(count, operation)?;
+        let mut second = if self.packing == SupportUvPacking::Form4 {
+            Some(ctx.collection_vec(count, operation)?)
         } else {
             None
         };
-        let Some(width) = NonZeroUsize::new(self.packing.width()) else {
-            return Ok([None, None]);
-        };
-        for row in ctx
-            .admit_iter(&self.values, "project NX support-UV tuples")?
-            .chunks(width)
-        {
-            first.push(FiniteVector::from([row[0], row[1]]));
+        for index in ctx.admit_iter(0..count, "project NX support-UV tuples")? {
+            let at = index * self.packing.width();
+            // Complete tuple validation fixes each row's width at two or four.
+            first.push(FiniteVector::from([self.values[at], self.values[at + 1]]));
             if let Some(values) = &mut second {
-                values.push(FiniteVector::from([row[2], row[3]]));
+                values.push(FiniteVector::from([
+                    self.values[at + 2],
+                    self.values[at + 3],
+                ]));
             }
         }
         Ok([
@@ -301,5 +296,31 @@ mod physical_lane_tests {
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "admit NX support-UV scalars"));
+    }
+}
+
+#[cfg(test)]
+mod validation_budget_tests {
+    use super::{SupportUvPacking, SupportUvValues};
+
+    #[test]
+    fn support_uv_validation_does_not_visit_an_invalid_scalars_suffix() {
+        let mut values = vec![0.0; 4096];
+        values[0] = f64::INFINITY;
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 1;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                assert!(
+                    SupportUvValues::new_charged(ctx, SupportUvPacking::Form2, values)
+                        .unwrap()
+                        .is_none()
+                )
+            },
+        );
     }
 }
