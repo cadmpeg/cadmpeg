@@ -376,8 +376,8 @@ fn gui_body_update_refuses_at_caller_collection_limit() {
             let id = cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#sample")
                 .expect("valid body identity");
             let error = super::super::push_body_update(
-                &ctx,
-                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                ctx,
+                &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
                 &id,
                 super::super::Assignment::Keep,
                 Ok(None),
@@ -438,9 +438,9 @@ fn primitive_appearance_refusal(
     });
     crate::test_support::refusal_at(dimension, &[], operation, |ctx| {
         super::super::transfer_primitive_appearance(
-            &ctx,
+            ctx,
             &ir,
-            &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+            &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
             &mut Vec::new(),
             super::super::PrimitiveAppearanceSource {
                 provider_name: "Model",
@@ -604,7 +604,7 @@ fn gui_removed_appearance_refuses_at_caller_limit() {
         &[],
         "FCStd GUI removed appearances",
         |ctx| {
-            let mut plan = super::super::AppearancePlan::new(&ctx).expect("plan storage");
+            let mut plan = super::super::AppearancePlan::new(ctx).expect("plan storage");
             let id = cadmpeg_ir::ids::AppearanceId::mint("fcstd:appearance:object#sample")
                 .expect("valid appearance identity");
             let error = ctx
@@ -633,7 +633,7 @@ fn gui_shape_payload_prefix_refuses_at_caller_collection_limit() {
         &[],
         "FCStd GUI payload prefixes",
         |ctx| {
-            let error = super::super::shape_payload_prefixes(&ctx, &["fcstd:payload#shape"])
+            let error = super::super::shape_payload_prefixes(ctx, &["fcstd:payload#shape"])
                 .expect_err("prefix slot must be admitted");
             Err::<(), cadmpeg_core::CodecError>(error)
         },
@@ -654,7 +654,7 @@ fn gui_shape_payload_prefix_text_refuses_at_caller_retained_limit() {
         &[],
         "FCStd GUI payload prefix text",
         |ctx| {
-            let error = super::super::shape_payload_prefixes(&ctx, &["fcstd:payload#shape"])
+            let error = super::super::shape_payload_prefixes(ctx, &["fcstd:payload#shape"])
                 .expect_err("prefix text must be admitted");
             Err::<(), cadmpeg_core::CodecError>(error)
         },
@@ -677,7 +677,7 @@ fn gui_color_list_refuses_at_caller_limit() {
         "FCStd GUI color-list entries",
         |ctx| {
             let error = super::super::parse_color_list(
-                &ctx,
+                ctx,
                 cadmpeg_core::decode::View::over_retained(&bytes),
                 "colors.bin",
                 false,
@@ -773,7 +773,7 @@ fn gui_material_list_map_refuses_at_matching_collection_limit() {
         "FCStd GUI material lists",
         |ctx| {
             let error = super::super::validate_gui_list_payloads(
-                &ctx,
+                ctx,
                 &[material_list_property()],
                 &entries,
                 false,
@@ -832,7 +832,7 @@ fn gui_material_string_refuses_at_caller_limit() {
         "FCStd GUI material string UTF-8",
         |ctx| {
             let error = super::super::parse_material_list(
-                &ctx,
+                ctx,
                 cadmpeg_core::decode::View::over_retained(&bytes),
                 3,
                 "material",
@@ -884,7 +884,7 @@ fn gui_provider_identity_refuses_at_materialized_limit() {
         "FreeCAD native identity",
         |ctx| {
             let error = super::super::append_native_provider(
-                &ctx,
+                ctx,
                 text,
                 xml.root_element(),
                 0,
@@ -955,7 +955,7 @@ fn gui_provider_key_refuses_before_encoding() {
         &[],
         "FCStd GUI provider key",
         |ctx| {
-            let error = super::super::provider_identity_key(&ctx, "A B#")
+            let error = super::super::provider_identity_key(ctx, "A B#")
                 .expect_err("encoded provider key must be charged");
             Err::<(), cadmpeg_core::CodecError>(error)
         },
@@ -988,7 +988,7 @@ fn gui_object_appearance_identity_refuses_at_retained_limit() {
         &[],
         "FCStd GUI object appearance identity",
         |ctx| {
-            let error = super::super::object_appearance_id(&ctx, &key)
+            let error = super::super::object_appearance_id(ctx, &key)
                 .expect_err("appearance identity must charge before construction");
             Err::<(), cadmpeg_core::CodecError>(error)
         },
@@ -1201,7 +1201,7 @@ fn gui_state_records_refuse_at_caller_limit() {
         "FCStd GUI state records",
         |ctx| {
             super::super::transfer_schema_one(
-                &ctx,
+                ctx,
                 &cadmpeg_ir::CadIr::empty(),
                 text,
                 &xml,
@@ -1250,7 +1250,7 @@ fn gui_object_name_index_refuses_at_caller_limit() {
         "FCStd GUI object names",
         |ctx| {
             super::super::transfer_schema_one(
-                &ctx,
+                ctx,
                 &cadmpeg_ir::CadIr::empty(),
                 text,
                 &xml,
@@ -1291,8 +1291,8 @@ fn gui_presentation_document_refuses_at_caller_limit() {
         "FCStd presentation documents",
         |ctx| {
             super::super::transfer_neutral_presentation(
-                &ctx,
-                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                ctx,
+                &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
                 &graph,
                 None,
                 &mut Vec::new(),
@@ -1329,7 +1329,7 @@ fn gui_view_object_identity_refuses_at_matching_retained_limit() {
     crate::test_support::assert_retained_refusal_at(&[], "FCStd view object identity", |ctx| {
         super::super::transfer_neutral_presentation(
             ctx,
-            &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+            &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
             &graph,
             None,
             &mut Vec::new(),
@@ -1343,7 +1343,7 @@ fn gui_view_native_reference_refuses_at_matching_retained_limit() {
     crate::test_support::assert_retained_refusal_at(&[], "FCStd view native reference", |ctx| {
         super::super::transfer_neutral_presentation(
             ctx,
-            &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+            &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
             &graph,
             None,
             &mut Vec::new(),
@@ -1370,7 +1370,7 @@ fn gui_view_presentation_identity_refuses_at_matching_retained_limit() {
         |ctx| {
             super::super::transfer_neutral_presentation(
                 ctx,
-                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
                 &graph,
                 None,
                 &mut Vec::new(),
@@ -1398,8 +1398,8 @@ fn gui_view_presentation_refuses_at_caller_limit() {
         "FCStd view presentations",
         |ctx| {
             super::super::transfer_neutral_presentation(
-                &ctx,
-                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                ctx,
+                &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
                 &graph,
                 None,
                 &mut Vec::new(),
@@ -1438,8 +1438,8 @@ fn gui_presentation_states_refuse_at_caller_limit() {
         "FCStd presentation states",
         |ctx| {
             super::super::transfer_neutral_presentation(
-                &ctx,
-                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                ctx,
+                &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
                 &graph,
                 None,
                 &mut Vec::new(),
@@ -1478,8 +1478,8 @@ fn gui_presentation_assets_refuse_at_caller_limit() {
         "FCStd presentation assets",
         |ctx| {
             super::super::transfer_neutral_presentation(
-                &ctx,
-                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                ctx,
+                &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
                 &graph,
                 None,
                 &mut Vec::new(),
@@ -1519,8 +1519,8 @@ fn gui_asset_identity_refuses_at_retained_limit() {
         "FreeCAD native identity",
         |ctx| {
             super::super::transfer_neutral_presentation(
-                &ctx,
-                &mut super::super::AppearancePlan::new(&ctx).expect("plan storage"),
+                ctx,
+                &mut super::super::AppearancePlan::new(ctx).expect("plan storage"),
                 &graph,
                 None,
                 &mut Vec::new(),
@@ -1542,7 +1542,7 @@ fn gui_state_identity_refuses_at_retained_limit() {
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         xml.as_bytes(),
         "FreeCAD native identity",
-        |ctx| super::super::gui_state(&ctx, xml, 0, document.root_element()).map(|_| ()),
+        |ctx| super::super::gui_state(ctx, xml, 0, document.root_element()).map(|_| ()),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1557,7 +1557,7 @@ fn gui_presentation_property_map_refuses_at_caller_limit() {
         &[],
         "FCStd GUI presentation property map",
         |ctx| {
-            super::super::gui_named_entries(&ctx, || Ok("record".into()), [("key", "value")])
+            super::super::gui_named_entries(ctx, || Ok("record".into()), [("key", "value")])
                 .map(|_| ())
         },
     );
@@ -1575,7 +1575,7 @@ fn gui_refused_property_list_refuses_at_caller_limit() {
         "FCStd GUI refused property keys",
         |ctx| {
             super::super::gui_named_entries(
-                &ctx,
+                ctx,
                 || Ok("record".into()),
                 [("key", "first"), ("key", "second")],
             )
@@ -1598,7 +1598,7 @@ fn gui_refused_property_loss_refuses_at_caller_limit() {
             let refused = [cadmpeg_core::text::NamedEntryError::Blank {
                 record: "record".into(),
             }];
-            super::super::charge_refused_gui_keys(&ctx, &mut Vec::new(), &refused).map(|_| ())
+            super::super::charge_refused_gui_keys(ctx, &mut Vec::new(), &refused).map(|_| ())
         },
     );
     assert!(
@@ -1649,7 +1649,7 @@ fn gui_provider_record_refuses_at_caller_limit() {
         "FCStd GUI provider records",
         |ctx| {
             super::super::append_native_provider(
-                &ctx,
+                ctx,
                 xml,
                 document.root_element(),
                 0,
@@ -1676,7 +1676,7 @@ fn gui_provider_property_nodes_refuse_at_caller_limit() {
         "FCStd GUI provider property nodes",
         |ctx| {
             super::super::append_native_provider(
-                &ctx,
+                ctx,
                 xml,
                 document.root_element(),
                 0,
@@ -1725,7 +1725,7 @@ fn y4_2_gui_state_xml_copy_refuses_at_the_retained_byte_limit() {
         xml.as_bytes(),
         "FCStd GUI state XML",
         |ctx| {
-            let error = super::super::gui_state(&ctx, xml, 0, node.root_element())
+            let error = super::super::gui_state(ctx, xml, 0, node.root_element())
                 .expect_err("GUI state raw XML copy must be charged");
             Err::<(), cadmpeg_core::CodecError>(error)
         },
@@ -1749,7 +1749,7 @@ fn y4_2_gui_state_values_are_admitted_before_allocation() {
         xml.as_bytes(),
         "FCStd GUI state values",
         |ctx| {
-            let error = super::super::gui_state(&ctx, xml, 0, document.root_element())
+            let error = super::super::gui_state(ctx, xml, 0, document.root_element())
                 .expect_err("GUI state values must be charged before allocation");
             Err::<(), cadmpeg_core::CodecError>(error)
         },
@@ -1772,7 +1772,7 @@ fn gui_state_side_entry_refuses_at_caller_limit() {
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         xml.as_bytes(),
         "FCStd GUI side entry references",
-        |ctx| super::super::gui_state(&ctx, xml, 0, document.root_element()).map(|_| ()),
+        |ctx| super::super::gui_state(ctx, xml, 0, document.root_element()).map(|_| ()),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

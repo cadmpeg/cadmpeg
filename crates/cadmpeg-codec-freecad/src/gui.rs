@@ -3616,7 +3616,7 @@ fn validate_gui_center_line_record(
             "CenterLine has an unsupported Mode",
         ));
     }
-    for field in fields[3..7].iter() {
+    for field in &fields[3..7] {
         parse_gui_techdraw_finite(ctx, *field, property_name)?;
     }
     let line_type = parse_gui_techdraw_integer_value(ctx, fields[7], property_name, "Type")?;
@@ -4227,7 +4227,7 @@ fn validate_gui_cosmetic_vertex_record(
             "CosmeticVertex has an out-of-order field",
         ));
     }
-    for field in fields.iter() {
+    for field in &fields {
         if has_nested_gui_elements(ctx, *field)? {
             return Err(gui_techdraw_error(
                 ctx,
