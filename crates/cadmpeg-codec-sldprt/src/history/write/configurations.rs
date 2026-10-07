@@ -18,7 +18,7 @@ use crate::history::hash::{
 };
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
-    global_parameter_owners, parameters_with_incoherent_evaluated_values,
+    global_parameter_owners, parameters_with_incoherent_evaluated_values, ParameterAliases,
 };
 use crate::history::project::project_configurations_charged;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
@@ -161,11 +161,16 @@ fn sync_configuration_design_state(
         &validation_arena,
         &DecodePolicy::service(),
     )?;
-    if parameters_with_incoherent_evaluated_values(
+    let (aliases, _aliases_storage) = ParameterAliases::scoped(
         &validation_ctx,
         &ir.model.parameters,
         &feature_names,
         &global_owners,
+    )?;
+    if parameters_with_incoherent_evaluated_values(
+        &validation_ctx,
+        &ir.model.parameters,
+        &aliases,
         &ir.model.configurations,
     )? > 0
     {
