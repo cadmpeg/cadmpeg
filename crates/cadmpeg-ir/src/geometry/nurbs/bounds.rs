@@ -52,12 +52,13 @@ pub fn speed_bound_by<const N: usize>(
         if point_count <= order || knots.len() != point_count.checked_add(order)?.checked_add(1)? {
             return None;
         }
-        for value in knots.iter().chain(origin.iter()) {
+        for value in knots {
             work!("IR rational speed finite coordinate visit");
             if !value.is_finite() {
                 return None;
             }
         }
+        if origin.iter().any(|value| !value.is_finite()) { return None; }
         for pair in knots.windows(2) {
             work!("IR rational speed knot order comparison");
             if pair[0] > pair[1] {
@@ -158,55 +159,25 @@ mod tests {
     #[test]
     fn rational_speed_bound_admits_every_pass_without_allocating() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
         use std::cell::Cell;
         let knots = [0., 0., 1., 1.];
         let points = [[0., 0.], [1., 0.]];
-        // Six finite coordinates, three knot comparisons, and four two-pole passes.
-        let work = 6 + 3 + 4 * 2;
-        for cap in 0..work {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let called = Cell::new(false);
-            let limit = super::speed_bound_by(
-                &ctx,
-                1,
-                &knots,
-                2,
-                |index| {
-                    called.set(true);
-                    points.get(index).copied()
-                },
-                |_| 1.,
-                [0., 0.],
-            )
-            .expect_err("every pass requires admission");
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            if cap <= 9 {
-                assert!(!called.get());
-            }
-            assert_eq!(
-                limit.operation,
-                if cap < 6 {
-                    "IR rational speed finite coordinate visit"
-                } else if cap < 9 {
-                    "IR rational speed knot order comparison"
-                } else if cap < 11 {
-                    "IR rational speed pole validation"
-                } else if cap < 13 {
-                    "IR rational speed weight scale visit"
-                } else if cap < 15 {
-                    "IR rational speed minimum weight visit"
-                } else {
-                    "IR rational speed control bound visit"
-                }
-            );
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
+        for operation in ["IR rational speed finite coordinate visit", "IR rational speed knot order comparison",
+            "IR rational speed pole validation", "IR rational speed weight scale visit",
+            "IR rational speed minimum weight visit", "IR rational speed control bound visit"] {
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
+                |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
+                    let called = Cell::new(false);
+                    let result = super::speed_bound_by(ctx, 1, &knots, 2,
+                        |index| { called.set(true); points.get(index).copied() }, |_| 1., [0., 0.]);
+                    if matches!(operation, "IR rational speed finite coordinate visit" | "IR rational speed knot order comparison" | "IR rational speed pole validation") {
+                        assert!(!called.get());
+                    }
+                    result.map_err(Into::into)
+                }));
         }
+        // Four knots, three adjacent comparisons and four two-pole passes.
+        let work = 4 + 3 + 4 * 2;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = work;
@@ -297,5 +268,17 @@ mod tests {
             .expect("speed bound admission"),
             None
         );
+    }
+
+    #[test]
+    fn rational_bound_rejects_first_knot_without_charging_constant_origin() {
+        use crate::geometry::tests::budget::with_limit;
+        use cadmpeg_core::decode::ResourceDimension;
+        use crate::geometry::nurbs::bounds::speed_bound;
+        let points = [[0., 0.], [1., 0.]];
+        assert_eq!(with_limit(ResourceDimension::WorkUnits, 1,
+            |ctx| speed_bound(ctx, 1, &[f64::NAN, 0., 1., 1.], &points, None, [0., 0.]).map_err(Into::into)).unwrap(), None);
+        assert_eq!(with_limit(ResourceDimension::WorkUnits, 4,
+            |ctx| speed_bound(ctx, 1, &[0., 0., 1., 1.], &points, None, [f64::NAN, 0.]).map_err(Into::into)).unwrap(), None);
     }
 }

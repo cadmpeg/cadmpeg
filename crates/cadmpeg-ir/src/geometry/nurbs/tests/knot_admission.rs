@@ -3,8 +3,7 @@
 #[test]
 fn shared_knot_checks_preserve_prefix_order_and_original_refusal() {
     use crate::geometry::nurbs::NurbsError;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+    use cadmpeg_core::decode::ResourceDimension;
 
     for prefix in ["", "u_", "v_"] {
         for (knots, message) in [
@@ -31,31 +30,14 @@ fn shared_knot_checks_preserve_prefix_order_and_original_refusal() {
             );
             assert!(ctx.finish_session().is_ok());
         }
-        for (cap, operation) in [(0, "IR NURBS knot finiteness"), (4, "IR NURBS knot order")] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = crate::geometry::nurbs::require_nondecreasing_knots(
-                &ctx,
-                &[0.0, 0.0, 1.0, 1.0],
-                prefix,
-            );
-            let Err(crate::geometry::nurbs::admitted::ConstructionError::Resource(
-                CodecError::ResourceLimit(limit),
-            )) = result
-            else {
-                panic!("both knot scans need the caller account");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, operation);
-            assert_eq!(limit.used, cap);
-            assert_eq!(limit.additional, 1);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
+        for operation in ["IR NURBS knot finiteness", "IR NURBS knot order"] {
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
+                |cap| crate::geometry::tests::budget::with_policy(ResourceDimension::WorkUnits, cap,
+                    { let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                      policy.limits.max_retained_bytes = 0; policy.limits.max_collection_items = 0; policy }, |ctx| {
+                    crate::geometry::nurbs::admitted::finish(crate::geometry::nurbs::require_nondecreasing_knots(
+                        ctx, &[0.0, 0.0, 1.0, 1.0], prefix))
+                }));
         }
     }
 }
@@ -69,7 +51,7 @@ fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 8;
+    policy.limits.max_work_units = 9;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
@@ -87,44 +69,19 @@ fn knot_constructors_share_work_keep_storage_and_preserve_refusal() {
     };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "IR NURBS knot finiteness");
-    assert_eq!(limit.used, 8);
+    assert_eq!(limit.used, 9);
     assert_eq!(limit.additional, 1);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
 
-    // Four finite-lane values use five collection probes, then three order comparisons: eight.
-    for (dimension, cap, operation) in [
-        (ResourceDimension::RetainedBytes, 0, "IR finite knot values"),
-        (
-            ResourceDimension::CollectionItems,
-            0,
-            "IR finite knot values",
-        ),
-        (ResourceDimension::WorkUnits, 0, "IR finite knot values"),
-        (ResourceDimension::WorkUnits, 3, "IR finite knot values"),
-        (ResourceDimension::WorkUnits, 4, "IR finite knot values"),
-        (ResourceDimension::WorkUnits, 5, "IR NURBS knot order"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) =
-            KnotVector::from_finite_lanes(&ctx, vec![FiniteReal::ZERO; 4])
-        else {
-            panic!("finite conversion must refuse admission");
-        };
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(limit.operation, operation);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
+    for (dimension, operation) in [(ResourceDimension::RetainedBytes, "IR finite knot values"),
+        (ResourceDimension::CollectionItems, "IR finite knot values"),
+        (ResourceDimension::WorkUnits, "IR finite knot values"), (ResourceDimension::WorkUnits, "IR NURBS knot order")] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation,
+            |cap| crate::geometry::tests::budget::with_limit(dimension, cap, |ctx| {
+                KnotVector::from_finite_lanes(ctx, vec![FiniteReal::ZERO; 4])
+            }));
     }
 
     let ctx = cadmpeg_test_support::service_decode_context();

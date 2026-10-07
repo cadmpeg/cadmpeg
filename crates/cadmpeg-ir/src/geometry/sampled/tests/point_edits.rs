@@ -37,47 +37,16 @@ fn samples(parameterized: bool) -> PolylineSamples<FiniteReal, FinitePoint3> {
 fn sampled_point_edit_refuses_before_copy_callback_and_copy_back() {
     for parameterized in [false, true] {
         let original = samples(parameterized);
-        for cap in 0..9 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut edited = original.clone();
-            let mut calls = 0;
-            let Err(CodecError::ResourceLimit(limit)) = edited.edit_admitted_points(
-                |point| {
-                    calls += 1;
-                    Ok::<_, ()>(point.negated())
-                },
-                &ctx,
-            ) else {
-                panic!("all transaction operations require admission");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(
-                limit.operation,
-                if cap < 3 {
-                    "IR sampled edit candidate"
-                } else if cap < 6 {
-                    "IR sampled edit callback"
-                } else {
-                    "IR sampled edit copy back"
-                }
-            );
-            assert_eq!(
-                calls,
-                if cap < 3 {
-                    0
-                } else if cap < 6 {
-                    cap - 3
-                } else {
-                    3
-                }
-            );
-            assert_eq!(edited, original);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-            );
+        for operation in ["IR sampled edit candidate", "IR sampled edit callback", "IR sampled edit copy back"] {
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
+                |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
+                    let mut edited = original.clone();
+                    let mut calls = 0;
+                    let result = edited.edit_admitted_points(|point| { calls += 1; Ok::<_, ()>(point.negated()) }, ctx);
+                    assert_eq!(calls, if operation == "IR sampled edit copy back" { 3 } else { 0 });
+                    assert_eq!(edited, original);
+                    result
+                }));
         }
         let bytes = u64::try_from(
             3 * if parameterized {
@@ -136,7 +105,9 @@ fn sampled_point_edit_keeps_storage_parameters_and_releases_scratch() {
         .expect("bytes");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 24;
+        // A refused three-row candidate uses six units. Each successful transaction
+        // uses 3 copied slots, 4 callback probes and (3 + bytes) copy-back work.
+        policy.limits.max_work_units = 6 + 2 * (10 + bytes);
         policy.limits.max_materialized_bytes = bytes;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 9;

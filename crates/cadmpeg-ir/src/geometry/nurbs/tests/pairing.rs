@@ -85,49 +85,25 @@ fn refusal<T: std::fmt::Debug>(
 #[test]
 fn pairing_all_weight_forms_admit_each_pole_and_row_visit() {
     for form in 0..3 {
-        for cap in 0..2 {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            refusal(
-                curve(&ctx, form),
-                ctx,
-                ResourceDimension::WorkUnits,
-                "IR NURBS paired poles",
-            );
-        }
-        for (cap, operation) in [
-            (0, "IR NURBS paired grid rows"),
-            (1, "IR NURBS paired poles"),
-            (2, "IR NURBS paired poles"),
-            (3, "IR NURBS paired grid rows"),
-            (4, "IR NURBS paired poles"),
-            (5, "IR NURBS paired poles"),
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            refusal(
-                grid(&ctx, form),
-                ctx,
-                ResourceDimension::WorkUnits,
-                operation,
-            );
+        for (grid_route, operation) in [(false, "IR NURBS paired poles"),
+            (true, "IR NURBS paired grid rows"), (true, "IR NURBS paired poles")] {
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation,
+                |cap| crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, |ctx| {
+                    if grid_route { grid(ctx, form).map(|_| ()) } else { curve(ctx, form).map(|_| ()) }
+                }));
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 8;
+        policy.limits.max_work_units = 16;
         policy.limits.max_collection_items = 8;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let paired = curve(&ctx, form)
-            .expect("two slots and visits")
+            .expect("two slots and both lane visits")
             .expect("valid pairing");
         assert_eq!(paired.points(), vec![10, 20]);
         assert_eq!(paired.weights(), Some(vec![1.0, 2.0]));
         let paired = grid(&ctx, form)
-            .expect("six more slots and visits")
+            .expect("six more slots and both grid lanes")
             .expect("valid pairing");
         assert_eq!(paired.points(), vec![vec![10, 20], vec![30, 40]]);
         assert_eq!(paired.weights(), Some(vec![vec![1.0, 2.0], vec![3.0, 4.0]]));

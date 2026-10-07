@@ -25,40 +25,19 @@ fn nested_line() -> PcurveGeometry {
 #[test]
 fn pcurve_line_parameters_admit_first_later_and_active_session_frames() {
     let geometry = nested_line();
-    for (dimension, cap, active) in [
-        (ResourceDimension::RecursionDepth, 0, false),
-        (ResourceDimension::RecursionDepth, 1, false),
-        (ResourceDimension::RecursionDepth, 2, false),
-        (ResourceDimension::RecursionDepth, 3, true),
-        (ResourceDimension::WorkUnits, 0, false),
-        (ResourceDimension::WorkUnits, 1, false),
-        (ResourceDimension::WorkUnits, 2, false),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-            _ => panic!("test dimension"),
+    for active in [false, true] {
+        for (dimension, operation) in [
+            (ResourceDimension::RecursionDepth, "pcurve line parameter nesting"),
+            (ResourceDimension::WorkUnits, "pcurve line parameter visit"),
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(dimension, operation,
+                |cap| crate::geometry::tests::budget::with_limit(dimension, cap, |ctx| {
+                    let caller = active.then(|| ctx.enter_nested_limit("active caller").expect("caller frame"));
+                    let result = geometry.line_parameters(ctx).map_err(Into::into);
+                    drop(caller);
+                    result
+                }));
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let caller = active.then(|| ctx.enter_nested_limit("active caller").unwrap());
-        let limit = geometry
-            .line_parameters(&ctx)
-            .expect_err("line walk must refuse");
-        assert_eq!(limit.dimension, dimension);
-        assert_eq!(
-            limit.operation,
-            if dimension == ResourceDimension::RecursionDepth {
-                "pcurve line parameter nesting"
-            } else {
-                "pcurve line parameter visit"
-            }
-        );
-        drop(caller);
-        assert!(
-            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
-        );
     }
 }
 
@@ -66,7 +45,7 @@ fn pcurve_line_parameters_admit_first_later_and_active_session_frames() {
 fn pcurve_line_parameters_preserve_affine_trim_and_non_line_semantics() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_recursion_depth = 3;
+    policy.limits.max_recursion_depth = 2;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
@@ -83,4 +62,20 @@ fn pcurve_line_parameters_preserve_affine_trim_and_non_line_semantics() {
     );
     assert_eq!(placed_offset.line_parameters(&ctx).unwrap(), None);
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn pcurve_line_parameters_do_not_charge_unvisited_bases_or_fixed_leaves() {
+    use cadmpeg_core::CodecError;
+    let line = PcurveGeometry::Line(LinePcurve::U_AXIS);
+    let offset = PcurveGeometry::Offset(OffsetPcurve::try_new(2., Box::new(nested_line())).expect("offset"));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    crate::geometry::tests::budget::with_policy(ResourceDimension::WorkUnits, 0, policy, |ctx| {
+        assert_eq!(line.line_parameters(ctx)?, Some((Point2::new(0., 0.), Point2::new(1., 0.))));
+        assert_eq!(offset.line_parameters(ctx)?, None);
+        let original = ctx.charge_work_limit(1, "first refusal").expect_err("zero budget");
+        assert!(matches!(line.line_parameters(ctx), Err(sticky) if sticky == original));
+        Err::<(), CodecError>(original.into())
+    }).expect_err("sticky refusal");
 }

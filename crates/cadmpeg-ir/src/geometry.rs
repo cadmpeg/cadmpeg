@@ -179,7 +179,7 @@ impl SolvedSurfaceGeometry {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, operation)?;
+        ctx.charge_work(0, operation)?;
         Ok(match self {
             Self::Plane(value) => Self::Plane(*value),
             Self::Cylinder(value) => Self::Cylinder(*value),
@@ -189,6 +189,7 @@ impl SolvedSurfaceGeometry {
             Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
             Self::Polygonal(value) => Self::Polygonal(value.try_clone_for_decode(ctx, operation)?),
             Self::Transformed(value) => {
+                ctx.charge_work(1, operation)?;
                 let _depth = ctx.enter_nested(operation)?;
                 charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Transformed(PlacedSurface {
@@ -468,7 +469,7 @@ impl SolvedCurveGeometry {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(1, operation)?;
+        ctx.charge_work(0, operation)?;
         Ok(match self {
             Self::Line(value) => Self::Line(*value),
             Self::Circle(value) => Self::Circle(*value),
@@ -482,8 +483,7 @@ impl SolvedCurveGeometry {
             } => {
                 let mut copy = Vec::new();
                 ctx.reserve_vec(&mut copy, segments.len(), operation)?;
-                ctx.charge_work(u64_from_index(segments.len()), operation)?;
-                for segment in segments {
+                for segment in ctx.admit_iter(&segments[..], operation)? {
                     copy.push(CompositeCurveSegment {
                         curve: segment.curve.try_clone_for_decode(ctx, operation)?,
                         same_sense: segment.same_sense,
@@ -564,11 +564,11 @@ impl PlacedCurve {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
+        ctx.charge_work(1, operation)?;
         let _depth = ctx.enter_nested(operation)?;
         charge_decode_copy::<SolvedCurveGeometry>(1, ctx, operation)?;
         let basis = if let SolvedCurveGeometry::Transformed(placed) = self.basis.as_ref() {
-            ctx.charge_work(1, operation)?;
-            SolvedCurveGeometry::Transformed(placed.try_clone_for_decode(ctx, operation)?)
+                SolvedCurveGeometry::Transformed(placed.try_clone_for_decode(ctx, operation)?)
         } else {
             self.basis.try_clone_for_decode(ctx, operation)?
         };
@@ -3436,11 +3436,10 @@ impl RollingBallJetStations {
         )? {
             return Ok(Err(error));
         }
-        for station in &stations {
-            ctx.charge_work(1, "rolling-ball jet station controls")?;
-            if let Err(error) = admit_rolling_ball_radii(&station.site) {
-                return Ok(Err(error));
-            }
+        if let Some(error) = ctx.find_map(&stations,
+            |station| Ok(admit_rolling_ball_radii(&station.site).err()),
+            "rolling-ball jet station controls")? {
+            return Ok(Err(error));
         }
         Ok(Ok(Self { degree, stations }))
     }
