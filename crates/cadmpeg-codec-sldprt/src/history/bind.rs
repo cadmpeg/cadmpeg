@@ -93,9 +93,9 @@ pub(crate) fn bind_unique_sketch_feature(
         let Some(name) = feature.name.as_deref() else {
             continue;
         };
-        if !ctx
+        if ctx
             .get_hash_map(&features_by_name, name, BIND_OPERATION)?
-            .is_some_and(|group| group.len() == 1)
+            .is_none_or(|group| group.len() != 1)
         {
             continue;
         }
@@ -194,14 +194,14 @@ pub(crate) fn bind_unique_sketch_feature(
             sketch_alias_matches(ctx, &native_features, alias, &features[*candidate])
         };
         let Some(first) =
-            ctx.position_by(candidates, &matches, BIND_OPERATION)?
+            ctx.position_by(candidates, matches, BIND_OPERATION)?
         else {
             continue;
         };
         if ctx
             .position_by(
                 &candidates[first + 1..],
-                &matches,
+                matches,
                 BIND_OPERATION,
             )?
             .is_some()
@@ -622,6 +622,16 @@ fn regeneration_order<'ctx>(
             )
         })?;
     }
+    let mut configuration_predecessors = HashMap::new();
+    if let Some(model) = model {
+        const CONFIGURATIONS: &str = "index SLDPRT configuration feature dependencies";
+        for configuration in ctx.admit_iter(&model.configurations, CONFIGURATIONS)? {
+            for (feature_id, state) in ctx.admit_iter(&configuration.feature_states, CONFIGURATIONS)? {
+                if ctx.get_hash_map(&by_id, feature_id, CONFIGURATIONS)?.is_none() { continue; }
+                scratch.with_storage(|| ctx.push_hash_group(&mut configuration_predecessors, feature_id, state.dependencies.as_slice(), CONFIGURATIONS, CONFIGURATIONS))?;
+            }
+        }
+    }
     let mut predecessors = Vec::new();
     for (consumer, feature) in ctx
         .admit_iter(features, "scan SLDPRT regeneration_order values")?
@@ -638,7 +648,7 @@ fn regeneration_order<'ctx>(
             add(predecessor)?;
         }
         let tree_parent = ctx
-            .get_hash_map(&tree_parents, &feature.id, "look up SLDPRT hash key")?
+            .get_hash_map(&tree_parents, &feature.id, "scan SLDPRT feature parents")?
             .copied();
         if let Some((_, last)) = tree_parent {
             add(last)?;
@@ -646,10 +656,7 @@ fn regeneration_order<'ctx>(
         if let Some(model) = model {
             // The model's structural owner: the first tree node listing the
             // feature, or its regeneration predecessor when no tree owns it.
-            match ctx
-                .get_hash_map(&tree_parents, &feature.id, "scan SLDPRT feature parents")?
-                .copied()
-            {
+            match tree_parent {
                 Some((first, _)) => add(first)?,
                 None => {
                     if let Some(parent) = model.feature_regeneration_parent(&feature.id) {
@@ -657,19 +664,9 @@ fn regeneration_order<'ctx>(
                     }
                 }
             }
-            for configuration in ctx.admit_iter(
-                &model.configurations,
-                "scan SLDPRT configuration feature dependencies",
-            )? {
-                if let Some(state) = ctx.get_btree_map(
-                    &configuration.feature_states,
-                    &feature.id,
-                    "look up SLDPRT ordered key",
-                )? {
-                    for dependency in ctx.admit_iter(
-                        state.dependencies.as_slice(),
-                        "scan SLDPRT configuration feature dependencies",
-                    )? {
+            if let Some(dependencies) = ctx.get_hash_map(&configuration_predecessors, &feature.id, "look up SLDPRT configuration feature dependencies")? {
+                for group in ctx.admit_iter(dependencies, "scan SLDPRT configuration feature dependencies")? {
+                    for dependency in ctx.admit_iter(*group, "scan SLDPRT configuration feature dependencies")? {
                         add(dependency)?;
                     }
                 }
@@ -750,8 +747,7 @@ fn assign_regeneration_ordinals(
     order: Vec<usize>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (ordinal, index) in ctx
-        .admit_iter(&order, "scan SLDPRT regeneration ordinal order")?
-        .copied()
+        .admit_iter(order, "scan SLDPRT regeneration ordinal order")?
         .enumerate()
     {
         features[index].ordinal = u64::try_from(ordinal).map_err(|_| {
@@ -1127,6 +1123,32 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn regeneration_order_unites_configuration_dependency_indexes() {
+        use cadmpeg_ir::features::{ConfigurationEvaluation, ConfigurationFeatureState};
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut features = Vec::new();
+        for (ordinal, name) in ["consumer", "middle", "source"].into_iter().enumerate() {
+            let mut feature = ordering_feature();
+            feature.id = FeatureId::mint(format!("synthetic:test:id#{name}")).unwrap();
+            feature.ordinal = u64::try_from(ordinal).unwrap();
+            features.push(feature);
+        }
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.features = features;
+        for (ordinal, consumer, source) in [(0, 0, 1), (1, 1, 2), (2, 0, 1)] {
+            let mut configuration = crate::history::tests::design_configuration(&format!("dependencies-{ordinal}"), ordinal, None, None);
+            configuration.feature_states.insert(ir.model.features[consumer].id.clone(), ConfigurationFeatureState {
+                definition: ir.model.features[consumer].evaluation.definition().clone(),
+                dependencies: DistinctMembers::try_from(vec![ir.model.features[source].id.clone()], &ctx).unwrap(),
+                evaluation: ConfigurationEvaluation::Active { outputs: DistinctMembers::default() },
+            });
+            ir.model.configurations.push(configuration);
+        }
+        assert!(order_model_features_for_regeneration(&ctx, &mut ir).unwrap());
+        assert_eq!(ir.model.features.iter().map(|feature| feature.ordinal).collect::<Vec<_>>(), [2, 1, 0]);
+    }
+
     fn feature_output_error(
         limits: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
     ) -> cadmpeg_core::CodecError {
@@ -1259,7 +1281,7 @@ mod tests {
                 let mut features = [neutral.clone()];
                 let result = bind_unique_sketch_feature(&ctx, &mut features, &sketches, &histories);
                 if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                    assert_eq!(ctx.resource_refusal(), Some(*limit));
                 }
                 result
             },

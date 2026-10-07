@@ -559,13 +559,10 @@ fn unnumbered_principal_planes<'a>(
     };
     let follows =
         |before: &Feature, after: &Feature| before.ordinal.checked_add(1) == Some(after.ordinal);
-    let mut found = None;
-    for records in ctx
-        .admit_iter(features, OPERATION)?
-        .windows(const { crate::nonzero(4) })
-    {
+    let mut records = features.windows(4);
+    let candidate = |records: &'a [Feature]| -> Result<Option<[&'a Feature; 3]>, CodecError> {
         let [front, top, right, successor] = records else {
-            continue;
+            return Ok(None);
         };
         if !(plane_shape(front)
             && plane_shape(top)
@@ -583,18 +580,19 @@ fn unnumbered_principal_planes<'a>(
             && successor.source_id.is_none()
             && successor.tree_parent.is_none())
         {
-            continue;
+            return Ok(None);
         }
         if !ctx.equal(front.kind.as_str(), top.kind.as_str(), OPERATION)?
             || !ctx.equal(front.kind.as_str(), right.kind.as_str(), OPERATION)?
             || ctx.equal(successor.kind.as_str(), front.kind.as_str(), OPERATION)?
         {
-            continue;
-        }
-        if found.is_some() {
             return Ok(None);
         }
-        found = Some([front, top, right]);
+        Ok(Some([front, top, right]))
+    };
+    let found = ctx.find_map(&mut records, candidate, OPERATION)?;
+    if found.is_some() && ctx.find_map(records, candidate, OPERATION)?.is_some() {
+        return Ok(None);
     }
     Ok(found)
 }
@@ -740,8 +738,8 @@ pub(super) fn principal_plane_in_history(
     index.principal_plane(ctx, feature)
 }
 
-/// The boolean operation an extrusion type token names. The test reads every
-/// byte of `kind`; a decode caller admits it first.
+/// The boolean operation an extrusion type token names.
+/// A decode caller admits the text before normalization.
 pub(super) fn extrude_op(kind: &str) -> Option<BooleanOp> {
     if matches_alnum_ascii(kind, b"bossextrude") {
         Some(BooleanOp::Join)
@@ -756,7 +754,7 @@ pub(super) fn extrude_op(kind: &str) -> Option<BooleanOp> {
 
 /// Whether the ASCII letters and digits of `value`, lowercased, spell `expected`.
 ///
-/// The test reads every byte of `value`; a decode caller admits it first.
+/// A decode caller admits the text before normalization.
 pub(crate) fn matches_alnum_ascii(value: &str, expected: &[u8]) -> bool {
     value
         .bytes()
@@ -783,9 +781,34 @@ pub(super) fn loft_op(kind: &str) -> Option<BooleanOp> {
 
 /// Whether `name` is `prefix` followed by a non-empty run of ASCII digits.
 ///
-/// The test reads every byte of `name`; a decode caller admits it first.
+/// A decode caller admits the text before checking its digit suffix.
 pub(super) fn indexed_name(name: &str, prefix: &str) -> bool {
     name.strip_prefix(prefix).is_some_and(|suffix| {
         !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unnumbered_principal_planes;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    #[test]
+    fn principal_plane_ambiguity_leaves_unvisited_suffix_unpaid() {
+        let mut features = Vec::new();
+        for ordinal in 0..8 {
+            let mut feature = crate::history::tests::feature("plane", None, ordinal);
+            feature.kind = if ordinal % 4 == 3 { "Origin" } else { "Plane" }.into();
+            features.push(feature);
+        }
+        for ordinal in 8..4104 {
+            features.push(crate::history::tests::feature("tail", None, ordinal));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 128;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(unnumbered_principal_planes(&ctx, &features).unwrap().is_none());
+        assert!(ctx.resource_refusal().is_none());
+    }
 }

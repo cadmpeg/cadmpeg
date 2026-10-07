@@ -113,27 +113,23 @@ fn surface_selection_face_bindings<'a>(
             .components
             .last()
             .map(|component| {
-                let feature_source_id = match match selection.terminal_feature_ref.as_deref() {
+                let Some(feature_source_id) = (match selection.terminal_feature_ref.as_deref() {
                     Some(terminal) => ctx
                         .get_hash_map(feature_sources, terminal, "look up SLDPRT hash key")?
                         .copied()
                         .flatten(),
                     None => View::u32_le_at(&component.type_signature, 4)
                         .and_then(|source| FeatureSourceId::try_from(source).ok()),
-                } {
-                    Some(value) => value,
-                    None => return Ok::<_, cadmpeg_core::CodecError>(None),
+                }) else {
+                    return Ok::<_, cadmpeg_core::CodecError>(None);
+                };
+                let Some(local_id) = component.local_id else {
+                    return Ok::<_, cadmpeg_core::CodecError>(None);
                 };
                 Ok::<_, cadmpeg_core::CodecError>(
                     ctx.get_hash_map(
                         &faces_by_identity,
-                        &(
-                            feature_source_id,
-                            match component.local_id {
-                                Some(value) => value,
-                                None => return Ok::<_, cadmpeg_core::CodecError>(None),
-                            },
-                        ),
+                        &(feature_source_id, local_id),
                         "look up SLDPRT hash key",
                     )?
                     .copied()
@@ -646,7 +642,9 @@ fn resolve_planar_face_selection(
         return Ok(());
     }
     let mut matching = Vec::new();
-    for face in ctx.admit_iter(faces, OPERATION)? {
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut faces = faces.iter();
+    while let Some(face) = ctx.next_charged(&mut faces, OPERATION)? {
         let Some(surface) = ctx.get_hash_map(surfaces, &face.surface, OPERATION)? else {
             continue;
         };
@@ -677,15 +675,18 @@ fn resolve_planar_face_selection(
         if (alignment.abs() - 1.0).abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9
             && separation.abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8
         {
-            let face = face.id.try_clone_for_decode(ctx, SELECTION_IDENTITY)?;
-            ctx.push_vec(
-                &mut matching,
-                face,
-                "collect SLDPRT topology selection identities",
-            )?;
+            if !has_native && !matching.is_empty() {
+                return Ok(());
+            }
+            ctx.push_scoped_vec(&mut storage, &mut matching, &face.id, OPERATION)?;
         }
     }
-    if (has_native && !matching.is_empty()) || (!has_native && matching.len() == 1) {
+    if !matching.is_empty() {
+        let matching = ctx.try_collect_retained_with(
+            matching,
+            "collect SLDPRT topology selection identities",
+            |id| clone_face(ctx, id),
+        )?;
         let old = std::mem::replace(selection, FaceSelection::Unresolved);
         *selection = match old {
             FaceSelection::Native(native) => FaceSelection::Resolved {
