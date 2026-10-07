@@ -1066,8 +1066,7 @@ pub(crate) fn value_packets(
             )
         })
         .collect::<std::collections::BTreeMap<_, _>>();
-    let packets = ordered.into_values().collect();
-    packets
+    ordered.into_values().collect()
 }
 
 fn e9_scalar_packets_wire<'a>(
@@ -1150,7 +1149,7 @@ fn parse_numeric_value_packet_wire(
     payload: &[u8],
     offset: usize,
 ) -> Option<(EntityValuePacket, std::ops::Range<usize>)> {
-    let Some((prefix0, prefix1, selector, layout_atom, value_atom, mut at)) = (|| {
+    let (prefix0, prefix1, selector, layout_atom, value_atom, mut at) = (|| {
         let (prefix0, at) = compact_atom(payload, offset)?;
         let (prefix1, at) = compact_atom(payload, at)?;
         (payload.get(at) == Some(&0xe8)).then_some(())?;
@@ -1159,23 +1158,15 @@ fn parse_numeric_value_packet_wire(
         let (layout_atom, at) = one_byte_atom(payload, at + 4)?;
         let (value_atom, at) = one_byte_atom(payload, at)?;
         Some((prefix0, prefix1, selector, layout_atom, value_atom, at))
-    })() else {
-        return None;
-    };
+    })()?;
     let mut items = Vec::new();
     let mut binary64_count = 0usize;
     loop {
-        let Some(&code) = payload.get(at) else {
-            return None;
-        };
+        let &code = payload.get(at)?;
         match code {
             0xe6 => {
-                let Some(end) = at.checked_add(9) else {
-                    return None;
-                };
-                let Some(bits) = View::u64_le_at(payload, at + 1) else {
-                    return None;
-                };
+                let end = at.checked_add(9)?;
+                let bits = View::u64_le_at(payload, at + 1)?;
                 items.push(NumericPacketItem::Binary64 { bits, offset: at });
                 binary64_count += 1;
                 at = end;
@@ -1208,9 +1199,7 @@ fn parse_numeric_value_packet_wire(
         items,
         terminator_count,
     };
-    let Some(range) = packet.byte_range() else {
-        return None;
-    };
+    let range = packet.byte_range()?;
     (range.end == at).then_some((packet, range))
 }
 
@@ -1219,6 +1208,8 @@ pub(crate) fn value_packets_charged(
     payload: &[u8],
     fields: &[value_block::ValueField],
 ) -> Result<Vec<EntityValuePacket>, CodecError> {
+    const E9_PREFIX: [u8; 7] = [0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
+    const E9_TRAILER: [u8; 10] = [0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe];
     let mut scratch = ctx.reserve_scoped(0, "catia_value_packet_indexes")?;
     let mut opcode_offsets = BTreeSet::new();
     let mut e8_opcode_offsets = BTreeSet::new();
@@ -1263,8 +1254,6 @@ pub(crate) fn value_packets_charged(
         &marker_offsets,
         &atom_offsets,
     )?;
-    const E9_PREFIX: [u8; 7] = [0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
-    const E9_TRAILER: [u8; 10] = [0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe];
     for &offset in ctx.admit_iter(&atom_offsets, "catia_e9_packet_candidates")? {
         let Some(opcode) = offset.checked_add(1) else {
             continue;
@@ -1749,7 +1738,7 @@ fn unique_monotone_run(
     }
     let mut layers = Vec::new();
     for record in ctx.admit_iter(&records[1..], "catia_entity_path_record_visits")? {
-        let ((ordered_predecessors, cumulative), _predecessor_storage) =
+        let ((ordered_predecessors, cumulative), predecessor_storage) =
             ctx.with_scoped_storage("catia_entity_predecessor_workspace", || {
                 let mut ordered_predecessors =
                     ctx.collection_vec(previous.len(), "collect CATIA 7C05 ordered predecessors")?;
@@ -1810,7 +1799,7 @@ fn unique_monotone_run(
         }
         drop(ordered_predecessors);
         drop(cumulative);
-        drop(_predecessor_storage);
+        drop(predecessor_storage);
         path_storage.with_storage(|| {
             ctx.push_vec(
                 &mut layers,
@@ -2229,7 +2218,6 @@ fn one_byte_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
 /// Parse one complete encoded value selected by a source-schema `Range`
 /// entry. `start` begins after the selector word and `end` is the next
 /// catalog-valid selector or the `7C07` payload end.
-#[must_use]
 pub(crate) fn parse_range_interval(
     ctx: &DecodeContext<'_>,
     payload: &[u8],

@@ -1289,9 +1289,8 @@ mod tests {
             );
         });
         crate::test_support::with_work_limit(work - 1, |ctx| {
-            let error = match super::scan_vertex_rows(ctx, &bytes) {
-                Ok(_) => panic!("whole source must be admitted"),
-                Err(error) => error,
+            let Err(error) = super::scan_vertex_rows(ctx, &bytes) else {
+                panic!("whole source must be admitted")
             };
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
                 panic!("resource refusal required")
@@ -1332,7 +1331,7 @@ mod tests {
                 panic!("resource refusal required")
             };
             assert_eq!(limit.operation, "catia_record_scan");
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         });
         assert!(
@@ -1456,7 +1455,7 @@ mod tests {
             let result =
                 super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A);
             if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
             result
         });

@@ -151,12 +151,12 @@ impl DesignFeatureTransfer {
             let Some(native_ref) = parameter.native_ref.as_deref() else {
                 continue;
             };
-            let Some(entity) = ctx.get_hash_map(&entities, native_ref, "catia_feature_lookup")?
+            let Some(entity) = ctx.get_hash_map(entities, native_ref, "catia_feature_lookup")?
             else {
                 continue;
             };
             let Some(object_record) = ctx.get_hash_map(
-                &object_records,
+                object_records,
                 entity.object_record.as_str(),
                 "catia_feature_lookup",
             )?
@@ -169,7 +169,7 @@ impl DesignFeatureTransfer {
             let Some(feature_id) = nearest_feature_for_design_object(
                 ctx,
                 design_object,
-                &design_objects,
+                design_objects,
                 &self.feature_ids,
             )?
             else {
@@ -204,8 +204,8 @@ impl DesignFeatureTransfer {
         assign_feature_parameter_ordinals(
             ctx,
             ir,
-            &entities,
-            &object_records,
+            entities,
+            object_records,
             &exact_feature_owners,
         )?;
         assign_document_parameter_ordinals(ctx, ir)?;
@@ -272,7 +272,7 @@ impl DesignFeatureTransfer {
                 continue;
             };
             let Some(object) =
-                ctx.get_btree_map(&design_objects, native_ref, "catia_feature_lookup")?
+                ctx.get_btree_map(design_objects, native_ref, "catia_feature_lookup")?
             else {
                 continue;
             };
@@ -282,7 +282,7 @@ impl DesignFeatureTransfer {
             let Some(parent) = nearest_feature_for_design_object(
                 ctx,
                 parent_object,
-                &design_objects,
+                design_objects,
                 &self.feature_ids,
             )?
             else {
@@ -418,19 +418,19 @@ fn assign_feature_parameter_ordinals(
         let mut parameters_by_feature = BTreeMap::<FeatureId, Vec<(u64, u64, ParameterId)>>::new();
         for parameter in ctx.admit_iter(&ir.model.parameters, "catia_feature_visits")? {
             let Some(feature_id) =
-                ctx.get_hash_map(&exact_feature_owners, &parameter.id, "catia_feature_lookup")?
+                ctx.get_hash_map(exact_feature_owners, &parameter.id, "catia_feature_lookup")?
             else {
                 continue;
             };
             let Some(entity_id) = parameter.native_ref.as_deref() else {
                 continue;
             };
-            let Some(entity) = ctx.get_hash_map(&entities, entity_id, "catia_feature_lookup")?
+            let Some(entity) = ctx.get_hash_map(entities, entity_id, "catia_feature_lookup")?
             else {
                 continue;
             };
             let Some(object_record) = ctx.get_hash_map(
-                &object_records,
+                object_records,
                 entity.object_record.as_str(),
                 "catia_feature_lookup",
             )?
@@ -874,12 +874,12 @@ fn nearest_feature_for_design_object<'a>(
             return Ok(None);
         }
         let Some(object) = ctx
-            .get_btree_map(&design_objects, current_id, "catia_feature_lookup")?
+            .get_btree_map(design_objects, current_id, "catia_feature_lookup")?
             .copied()
         else {
             return Ok(None);
         };
-        if let Some(feature) = ctx.get_hash_map(&feature_ids, current_id, "catia_feature_lookup")? {
+        if let Some(feature) = ctx.get_hash_map(feature_ids, current_id, "catia_feature_lookup")? {
             return Ok(Some(feature));
         }
         current = match object.owner_design_object.as_deref() {
@@ -936,9 +936,9 @@ pub(crate) fn transfer_design_features(
             Ok::<_, CodecError>((ids, candidates))
         })?;
     let operation_sources = NativeOperationSources {
-        object_records: &records,
-        entities: &entities,
-        design_objects: &design_objects,
+        object_records: records,
+        entities,
+        design_objects,
         object_ids: &native_operation_object_ids,
     };
     let mut transfer = DesignFeatureTransfer::default();
@@ -995,7 +995,7 @@ pub(crate) fn transfer_design_features(
                     membership_storage,
                     ir,
                     &mut transfer,
-                    &candidate,
+                    candidate,
                     &operation_sources,
                 )?;
             }
@@ -1903,7 +1903,7 @@ fn native_operation_owner_chain_reaches(
             return Ok(false);
         }
         let Some(object) = ctx
-            .get_btree_map(&design_objects, current_id, "catia_feature_lookup")?
+            .get_btree_map(design_objects, current_id, "catia_feature_lookup")?
             .copied()
         else {
             return Ok(false);

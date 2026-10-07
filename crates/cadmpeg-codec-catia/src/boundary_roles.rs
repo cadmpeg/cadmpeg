@@ -183,7 +183,7 @@ pub(crate) fn classify_planar_boundaries(
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
     let normal = *plane_surface.frame().axis().as_raw();
-    let (projected, _polygon_storage) =
+    let (projected, polygon_storage) =
         ctx.with_scoped_storage("catia_boundary_polygons", || {
             let mut polygons = Vec::new();
             let mut areas = Vec::new();
@@ -239,7 +239,7 @@ pub(crate) fn classify_planar_boundaries(
             Ok::<_, CodecError>(complete.then_some((polygons, areas, coordinate_scale)))
         })?;
     let Some((polygons, areas, coordinate_scale)) = projected else {
-        drop(_polygon_storage);
+        drop(polygon_storage);
         return unspecified();
     };
     let coordinate_tolerance = EPS_PLANAR_COORDINATE * coordinate_scale;

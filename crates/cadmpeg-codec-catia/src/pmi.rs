@@ -182,7 +182,7 @@ mod tests {
                     let result = super::pmi_id(ctx, offset);
                     match &result {
                         Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit))
+                            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
                         }
                         Ok(identity) => {
                             assert_eq!(
