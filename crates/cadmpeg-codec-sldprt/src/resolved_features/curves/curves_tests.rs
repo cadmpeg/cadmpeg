@@ -137,15 +137,21 @@ fn connected_arc_refuses_collection_limit() {
 }
 
 #[test]
-fn connected_arc_refuses_retained_limit() {
-    let mut entities = connected_arc_limit_entities();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
+fn connected_arc_refuses_materialized_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "copy SLDPRT connected arc point identity",
+        |cap| {
+            let mut entities = connected_arc_limit_entities();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::resolve_connected_marker_arcs(&ctx, &mut entities, EPS_REFUSAL_GEOMETRY)
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "copy SLDPRT connected arc point identity"));
 }
 

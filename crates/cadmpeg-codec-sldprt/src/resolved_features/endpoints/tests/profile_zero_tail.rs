@@ -77,13 +77,7 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
                 .copy_from_slice(&native_kind.to_le_bytes());
             assert!(current_extended_zero_tail_92_profile_curve(&payload, 0));
             assert_eq!(
-                marker_curve_endpoint_markers(
-                    &cadmpeg_test_support::service_decode_context(),
-                    &payload,
-                    &curve,
-                    &markers_by_id,
-                    &markers
-                )
+                { let ctx = cadmpeg_test_support::service_decode_context(); let result = marker_curve_endpoint_markers(&ctx, &payload, &curve, &markers_by_id, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
                 .unwrap()
                 .iter()
                 .map(|marker| marker.id())
@@ -94,13 +88,7 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
             payload[zero_tail_92::ENDPOINT_FIRST..zero_tail_92::ENDPOINT_SECOND]
                 .copy_from_slice(&3u16.to_le_bytes());
             assert!(current_extended_zero_tail_92_profile_curve(&payload, 0));
-            assert!(marker_curve_endpoint_markers(
-                &cadmpeg_test_support::service_decode_context(),
-                &payload,
-                &curve,
-                &markers_by_id,
-                &markers
-            )
+            assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = marker_curve_endpoint_markers(&ctx, &payload, &curve, &markers_by_id, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
             .unwrap()
             .is_empty());
 

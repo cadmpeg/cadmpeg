@@ -2356,6 +2356,7 @@ fn bind_resolved_curve_vertices(
     let mut storage = ctx.reserve_scoped(0, SCALAR_BINDING_INDEX)?;
     let selected_axis_endpoints = {
         let (markers_by_id, markers) = lane_marker_index(ctx, &mut storage, &lane.sketch_entities)?;
+        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers)?;
         let mut selected = HashSet::new();
         for curve in ctx.admit_iter(&markers, SELECTED)? {
             if !index_from_u64(curve.offset()).is_some_and(|offset| {
@@ -2364,13 +2365,7 @@ fn bind_resolved_curve_vertices(
                 continue;
             }
             for marker in ctx.admit_iter(
-                marker_curve_endpoint_markers(
-                    ctx,
-                    &lane.native_payload,
-                    curve,
-                    &markers_by_id,
-                    &markers,
-                )?,
+                marker_curve_endpoint_markers(ctx, &lane.native_payload, curve, &markers_by_id, &markers, &geometry)?,
                 SELECTED,
             )? {
                 if marker.coordinates_m.is_some() {
@@ -2392,6 +2387,7 @@ fn bind_resolved_curve_vertices(
         let (resolved_curves, resolved_endpoints) = {
             let (markers_by_id, markers) =
                 lane_marker_index(ctx, &mut round, &lane.sketch_entities)?;
+            let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &markers)?;
             let mut resolved_curves = HashSet::new();
             let mut resolved_endpoints = HashSet::new();
             for curve in ctx.admit_iter(&markers, RESOLVE)? {
@@ -2401,13 +2397,7 @@ fn bind_resolved_curve_vertices(
                 ) {
                     continue;
                 }
-                let endpoints = marker_curve_endpoint_markers(
-                    ctx,
-                    &lane.native_payload,
-                    curve,
-                    &markers_by_id,
-                    &markers,
-                )?;
+                let endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, curve, &markers_by_id, &markers, &geometry)?;
                 if endpoints.len() == 2 {
                     round.with_storage(|| {
                         ctx.insert_string_set(

@@ -1,11 +1,12 @@
 //! Curve endpoint index decoders.
 
 pub(super) mod geometry_index;
+pub(super) mod arc_centers;
+use arc_centers::unique_arc_center_marker;
 use geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex};
 
 use super::curves::compact_bounded_curve_tangent;
 use super::dimensions::compact_legacy_radial_circle_index;
-use super::grid::quantize;
 use super::markers::{
     alternate_current_curve_body, compact_legacy_code_two_profile_point_coordinates,
     compact_legacy_coordinate_roster_coordinates, compact_legacy_embedded_geometry_coordinates,
@@ -399,6 +400,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
+    geometry: &MarkerGeometryIndex<'a, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT curve endpoint roster";
     let Some(offset) = usize::try_from(curve.offset()).ok() else {
@@ -418,20 +420,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     {
         return Ok(Vec::new());
     }
-    // The curve owner's located markers by object index, built on the first indexed lookup.
-    let owned_by_object = std::cell::OnceCell::new();
-    let owned_group = |index: u32| -> Result<&[&'a SketchInputEntity], CodecError> {
-        let (groups, _) = match owned_by_object.get() {
-            Some(groups) => groups,
-            None => {
-                let built = owner_markers_by_object(ctx, curve, markers, OPERATION)?;
-                owned_by_object.get_or_init(|| built)
-            }
-        };
-        Ok(ctx
-            .get_hash_map(groups, &Some(index), OPERATION)?
-            .map_or(&[][..], Vec::as_slice))
-    };
+    let owned_group = |index: u32| geometry.object_markers(ctx, curve, index);
     let is_point = |marker: &SketchInputEntity| {
         matches!(
             marker.kind(),
@@ -495,7 +484,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
         return coordinate_roster_curve_endpoint_markers(ctx, payload, curve, markers);
     }
     if let Some(CurrentWideArc(endpoints, _)) =
-        current_wide_arc_direct_markers(ctx, payload, curve, markers)?
+        current_wide_arc_direct_markers(ctx, payload, curve, geometry)?
     {
         return copy_endpoint_markers(ctx, &endpoints);
     }
@@ -1125,9 +1114,8 @@ fn current_wide_arc_direct_markers<'a>(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
-    markers: &[&'a SketchInputEntity],
+    geometry: &MarkerGeometryIndex<'a, '_>,
 ) -> Result<Option<CurrentWideArc<'a>>, CodecError> {
-    const OPERATION: &str = "resolve SLDPRT direct wide arc";
     let raw = (|| {
         let offset = usize::try_from(curve.offset()).ok()?;
         if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
@@ -1147,22 +1135,10 @@ fn current_wide_arc_direct_markers<'a>(
     let Some(raw) = raw else {
         return Ok(None);
     };
-    let (owned_by_object, _owned_storage) =
-        owner_markers_by_object(ctx, curve, markers, OPERATION)?;
-    let endpoint = |index: u32| -> Result<Option<&'a SketchInputEntity>, CodecError> {
-        let group = ctx
-            .get_hash_map(&owned_by_object, &Some(index), OPERATION)?
-            .map_or(&[][..], Vec::as_slice);
-        Ok(
-            match single_marker(ctx, group, is_point_marker, OPERATION)? {
-                MarkerMatch::One(endpoint) => Some(endpoint),
-                _ => None,
-            },
-        )
-    };
-    let (Some(first), Some(second)) = (endpoint(raw[0])?, endpoint(raw[1])?) else {
-        return Ok(None);
-    };
+    let (Some(first), Some(second)) = (
+        geometry.endpoint(ctx, curve, raw[0], false)?,
+        geometry.endpoint(ctx, curve, raw[1], false)?,
+    ) else { return Ok(None); };
     let direct = [first, second];
     let [Some(start), Some(end)] = direct.map(|marker| {
         marker
@@ -1171,26 +1147,14 @@ fn current_wide_arc_direct_markers<'a>(
     }) else {
         return Ok(None);
     };
-    let mut candidates = Vec::new();
-    for marker in ctx.admit_iter(markers, OPERATION)? {
-        if marker.kind() != SketchInputKind::Arc
-            || !ctx.equal(&marker.feature_ref, &curve.feature_ref, OPERATION)?
-        {
-            continue;
-        }
-        if let Some([u, v]) = marker
-            .coordinates_m
-            .map(cadmpeg_ir::units::FiniteVector::get)
-        {
-            ctx.push_vec(&mut candidates, Point2::new(u, v), OPERATION)?;
-        }
-    }
+    let Some(candidates) = geometry.arc_centers(curve, false, EPS_ENDPOINTS_CURRENT_WIDE_ARC_DIRECT_MARKERS_E9)? else { return Ok(None); };
     let center = unique_arc_center_marker(
         ctx,
         Point2::new(start[0], start[1]),
         Point2::new(end[0], end[1]),
-        &candidates,
+        candidates,
         EPS_ENDPOINTS_CURRENT_WIDE_ARC_DIRECT_MARKERS_E9,
+        [None, None],
     )?;
     Ok(center.map(|center| CurrentWideArc(direct, [center.u, center.v])))
 }
@@ -1896,6 +1860,7 @@ pub(super) fn output_curve_endpoint_markers<'a>(
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
+    geometry: &MarkerGeometryIndex<'a, '_>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     if usize::try_from(curve.offset())
         .ok()
@@ -1907,7 +1872,7 @@ pub(super) fn output_curve_endpoint_markers<'a>(
             return Ok(roster);
         }
     }
-    let endpoints = marker_curve_endpoint_markers(ctx, payload, curve, markers_by_id, markers)?;
+    let endpoints = marker_curve_endpoint_markers(ctx, payload, curve, markers_by_id, markers, geometry)?;
     if endpoints.len() == 2 {
         return Ok(endpoints);
     }
@@ -2487,11 +2452,12 @@ pub(super) fn implicit_coordinate_roster_curve_endpoints(
     })())
 }
 
-pub(super) fn implicit_profile_chain_closure_endpoints(
+pub(super) fn implicit_profile_chain_closure_endpoints<'a>(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
+    markers: &[&'a SketchInputEntity],
+    geometry: &MarkerGeometryIndex<'a, '_>,
 ) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT implicit profile chain";
     let profile_curve_at = |marker: &SketchInputEntity| {
@@ -2577,7 +2543,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
             continue;
         }
         let endpoints =
-            marker_curve_endpoint_markers(ctx, payload, sibling, &markers_by_id, markers)?;
+            marker_curve_endpoint_markers(ctx, payload, sibling, &markers_by_id, markers, geometry)?;
         let [first, second] = endpoints.as_slice() else {
             continue;
         };
@@ -2798,6 +2764,7 @@ pub(super) fn coordinate_roster_arc_center(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
     resolved_endpoints: [&SketchInputEntity; 2],
+    geometry: &MarkerGeometryIndex<'_, '_>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT coordinate roster arc center";
     let eligibility = (|| {
@@ -2842,7 +2809,7 @@ pub(super) fn coordinate_roster_arc_center(
         return Ok(None);
     };
     if let Some(CurrentWideArc(endpoints, center)) =
-        current_wide_arc_direct_markers(ctx, payload, curve, markers)?
+        current_wide_arc_direct_markers(ctx, payload, curve, geometry)?
     {
         let matches = (same_marker(ctx, resolved_endpoints[0], endpoints[0])?
             && same_marker(ctx, resolved_endpoints[1], endpoints[1])?)
@@ -5873,51 +5840,6 @@ pub(super) fn current_indexed_arc_reverses_center_sweep(payload: &[u8], offset: 
             .is_some_and(|at| sketch_marker_prefix_at(payload, at))
 }
 
-pub(super) fn unique_arc_center_marker(
-    ctx: &DecodeContext<'_>,
-    start: Point2,
-    end: Point2,
-    candidates: &[Point2],
-    tolerance: f64,
-) -> Result<Option<Point2>, CodecError> {
-    const OPERATION: &str = "resolve SLDPRT unique arc center";
-    if start == end {
-        return Ok(None);
-    }
-    let mut centers = Vec::new();
-    for center in ctx.admit_iter(candidates, OPERATION)?.copied() {
-        let radius = (start.u - center.u).hypot(start.v - center.v);
-        let end_radius = (end.u - center.u).hypot(end.v - center.v);
-        if radius <= tolerance
-            || (radius - end_radius).abs() > tolerance * radius.abs().max(end_radius.abs()).max(1.0)
-        {
-            continue;
-        }
-        let start_angle = (start.v - center.v).atan2(start.u - center.u);
-        let end_angle = (end.v - center.v).atan2(end.u - center.u);
-        let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
-        if sweep <= SKETCH_ANGLE_TOLERANCE
-            || (std::f64::consts::TAU - sweep) <= SKETCH_ANGLE_TOLERANCE
-        {
-            continue;
-        }
-        ctx.push_vec(
-            &mut centers,
-            (quantize(center, tolerance), center),
-            OPERATION,
-        )?;
-    }
-    ctx.sort_unstable_by(&mut centers, |value| &value.0, Ord::cmp, OPERATION)?;
-    ctx.dedup_by_key(
-        &mut centers,
-        |(center, _)| Ok(*center),
-        "deduplicate SLDPRT unique arc center cells",
-    )?;
-    let [(_, center)] = centers.as_slice() else {
-        return Ok(None);
-    };
-    Ok(Some(*center))
-}
 
 pub(super) fn minor_arc_angles(start_angle: f64, end_angle: f64) -> (f64, f64, bool) {
     let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);

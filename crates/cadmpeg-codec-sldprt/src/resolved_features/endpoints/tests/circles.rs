@@ -837,24 +837,14 @@ fn sole_out_of_roster_packed_curve_closes_one_open_profile_chain() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::implicit_profile_chain_closure_endpoints(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[5],
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = super::implicit_profile_chain_closure_endpoints(&ctx, &payload, &entities[5], &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap(),
         Some([[0.0, 0.0], [1.0, 1.0]])
     );
 
     payload[176 + 48..176 + 52].copy_from_slice(&[0, 0, 1, 0]);
     assert_eq!(
-        super::implicit_profile_chain_closure_endpoints(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[5],
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = super::implicit_profile_chain_closure_endpoints(&ctx, &payload, &entities[5], &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap(),
         None
     );

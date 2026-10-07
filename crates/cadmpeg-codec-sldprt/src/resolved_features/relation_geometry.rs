@@ -1048,6 +1048,7 @@ pub(crate) fn project_relation_point_geometry(
             marker_roster_storage
                 .with_storage(|| ctx.push_vec(&mut marker_roster, marker, operation))?;
         }
+        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &marker_roster)?;
         for marker in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT relation-line markers")? {
             let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind() == SketchInputKind::Arc
@@ -1149,13 +1150,7 @@ pub(crate) fn project_relation_point_geometry(
             else {
                 continue;
             };
-            let mut endpoints = marker_curve_endpoint_markers(
-                ctx,
-                &lane.native_payload,
-                marker,
-                &markers_by_id,
-                &marker_roster,
-            )?;
+            let mut endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers_by_id, &marker_roster, &geometry)?;
             if endpoints.len() != 2 && linked_curve_handle {
                 let linked_endpoints =
                     match linked_coordinate_line_endpoints(ctx, marker, &markers_by_id)? {
@@ -1538,6 +1533,7 @@ pub(crate) fn project_relation_solved_line_geometry(
             &lane.sketch_entities,
             "scan SLDPRT solved-line marker roster",
         )?);
+        let geometry = crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(ctx, &marker_roster)?;
         for relation in ctx.admit_iter(
             &lane.relation_instances,
             "scan SLDPRT solved-line relations",
@@ -1716,13 +1712,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let Some(marker) = marker else {
                     return Ok(None);
                 };
-                let endpoints = marker_curve_endpoint_markers(
-                    ctx,
-                    &lane.native_payload,
-                    marker,
-                    &markers_by_id,
-                    &marker_roster,
-                )?;
+                let endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers_by_id, &marker_roster, &geometry)?;
                 let [first, second] = endpoints.as_slice() else {
                     return Ok(None);
                 };

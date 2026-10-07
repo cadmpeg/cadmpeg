@@ -119,12 +119,7 @@ fn legacy_compact_84_construction_line_uses_direct_point_ids() {
     );
     assert!(marker_is_selected_construction_line(&payload, 0));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -239,12 +234,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         Some([2, 3])
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &profile_payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &profile_payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -258,12 +248,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         Some([2, 4])
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &code_one_payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &code_one_payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -287,12 +272,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         0
     ));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &construction_payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &construction_payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -310,12 +290,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         0
     ));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &construction_zero_payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &construction_zero_payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -329,12 +304,7 @@ fn legacy_compact_84_curves_use_complete_coordinate_roster() {
         legacy_compact_84_coordinate_roster_endpoint_indices(&rejected, 0),
         Some([1, 3])
     );
-    assert!(roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &rejected,
-        &curve,
-        &markers
-    )
+    assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &rejected, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap()
     .is_empty());
     rejected[58..60].copy_from_slice(&1u16.to_le_bytes());
@@ -393,12 +363,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         Some(CompactIndexedCurveRecordEnd::Continuation120)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -410,13 +375,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers_by_id,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = marker_curve_endpoint_markers(&ctx, &payload, &curve, &markers_by_id, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -594,12 +553,7 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
     let markers = [&curve, &first, &second];
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|endpoint| endpoint.id())
@@ -711,13 +665,7 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
     payload.resize(110 + 84, 0);
     payload[110..110 + 84].copy_from_slice(&record);
     assert_eq!(
-        marker_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers_by_id,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = marker_curve_endpoint_markers(&ctx, &payload, &curve, &markers_by_id, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -770,13 +718,7 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers_by_id,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = marker_curve_endpoint_markers(&ctx, &payload, &curve, &markers_by_id, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -790,13 +732,7 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
         .iter()
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
-    assert!(marker_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &ambiguous_by_id,
-        &ambiguous_markers,
-    )
+    assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = marker_curve_endpoint_markers(&ctx, &payload, &curve, &ambiguous_by_id, &ambiguous_markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &ambiguous_markers).unwrap()); result }
     .unwrap()
     .is_empty());
 }
@@ -929,12 +865,7 @@ fn extended_compact_84_profile_roster_uses_one_based_point_objects() {
         Some([3, 2])
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .into_iter()
         .map(crate::records::SketchInputEntity::id)
@@ -1015,12 +946,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
 
     assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
-    let endpoints = roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers,
-    )
+    let endpoints = { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap();
     assert_eq!(
         endpoints
@@ -1036,12 +962,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert!(!super::extended_marker84_line_uses_point_roster(
         &payload, 0
     ));
-    let endpoints = roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers,
-    )
+    let endpoints = { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap();
     assert_eq!(
         endpoints
@@ -1054,12 +975,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     assert!(!super::extended_marker84_line_uses_point_roster(
         &payload, 0
     ));
-    assert!(roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers
-    )
+    assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap()
     .is_empty());
     payload[80..84].copy_from_slice(&2u32.to_le_bytes());
@@ -1067,12 +983,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     payload[58..60].copy_from_slice(&3u16.to_le_bytes());
     payload[72..76].fill(0);
     assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
-    let endpoints = roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers,
-    )
+    let endpoints = { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap();
     assert_eq!(
         endpoints
@@ -1088,12 +999,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     payload[72..76].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
     payload[56..58].copy_from_slice(&4u16.to_le_bytes());
     payload[58..60].copy_from_slice(&1u16.to_le_bytes());
-    let endpoints = roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers,
-    )
+    let endpoints = { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap();
     assert_eq!(
         endpoints
@@ -1105,12 +1011,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     payload[72..76].fill(0);
     payload[56..58].copy_from_slice(&1u16.to_le_bytes());
     payload[58..60].copy_from_slice(&3u16.to_le_bytes());
-    let endpoints = roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers,
-    )
+    let endpoints = { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap();
     assert_eq!(
         endpoints
@@ -1127,12 +1028,7 @@ fn extended_marker84_line_uses_state_selected_point_roster_base() {
     payload[27..29].copy_from_slice(&1u16.to_le_bytes());
     payload[56..58].fill(0);
     assert!(super::extended_marker84_line_uses_point_roster(&payload, 0));
-    let endpoints = roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers,
-    )
+    let endpoints = { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap();
     assert_eq!(
         endpoints
@@ -1195,12 +1091,7 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
     ));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|endpoint| endpoint.id())
@@ -1216,12 +1107,7 @@ fn legacy_compact_marker84_profile_line_uses_zero_based_point_roster() {
     assert!(!super::legacy_compact_84_profile_line_uses_point_roster(
         &payload, 0
     ));
-    assert!(roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers
-    )
+    assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap()
     .is_empty());
 }
@@ -1275,12 +1161,7 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
     assert!(!marker_is_selected_construction_line(&payload, 0));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|endpoint| endpoint.id())
@@ -1297,12 +1178,7 @@ fn extended_compact_marker84_profile_line_uses_zero_based_geometry_roster() {
     assert!(!super::extended_compact_84_profile_line_uses_point_roster(
         &payload, 0
     ));
-    assert!(roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers
-    )
+    assert!({ let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
     .unwrap()
     .is_empty());
 }
@@ -1445,12 +1321,7 @@ fn legacy_104_profile_line_uses_zero_based_point_roster() {
         Some(56)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|endpoint| endpoint.id())
@@ -1544,12 +1415,7 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
         Some(56)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|endpoint| endpoint.id())
@@ -1628,12 +1494,7 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
     assert_eq!(marker_local_id(&short, 0), Some(0x0008_0000));
     assert_eq!(coordinate_roster_endpoint_offset(&short, 0), Some(64));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &short,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &short, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -1647,12 +1508,7 @@ fn legacy_wide_profile_roster_curves_use_zero_based_geometry_roster() {
     assert_eq!(marker_local_links(&long, 0), None);
     assert_eq!(coordinate_roster_endpoint_offset(&long, 0), Some(64));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &long,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &long, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -1733,12 +1589,7 @@ fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
         Some(56)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|endpoint| endpoint.id())
@@ -1826,12 +1677,7 @@ fn extended_state_one_84_profile_line_uses_one_based_point_roster() {
         Some(56)
     );
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context(); let result = roster_curve_endpoint_markers(&ctx, &payload, &curve, &markers, &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap()); result }
         .unwrap()
         .iter()
         .map(|endpoint| endpoint.id())
