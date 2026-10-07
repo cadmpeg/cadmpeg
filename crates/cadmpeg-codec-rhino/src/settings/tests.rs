@@ -1450,11 +1450,9 @@ fn metadata_collection_operations() -> &'static [&'static str] {
     })
 }
 
-/// A property or setting singleton set charges a transient table bound that
-/// exceeds every later, smaller workspace charge, so a workspace is the first
-/// refusal at some limit only when no hash table has been charged before it.
-/// The ladder therefore also runs over a settings-only archive, where the
-/// setting singleton workspace comes first.
+/// The layer UUID table is the first scoped table a decode grows, so it
+/// refuses first; a layer without a UUID grows no UUID table, so the index
+/// count copy refuses first. The ladder runs over both.
 fn metadata_materialized_operations() -> &'static [&'static str] {
     static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
     OPERATIONS.get_or_init(|| {
@@ -1466,19 +1464,6 @@ fn metadata_materialized_operations() -> &'static [&'static str] {
         };
         [
             (ALL_METADATA_TABLES, [0x44; 16]),
-            (
-                MetadataTables {
-                    properties: false,
-                    settings: true,
-                    layers: false,
-                    stamp: LayerStamp::WriterVersion,
-                },
-                [0x44; 16],
-            ),
-            // Without the writer-version stamp no property set is charged
-            // before the layers, so the layer UUID workspace refuses first; a
-            // layer without a UUID charges no UUID set, so the layer index
-            // workspace refuses first.
             (unstamped_layers, [0x44; 16]),
             (unstamped_layers, [0; 16]),
         ]
@@ -1562,19 +1547,9 @@ metadata_limit_test!(
     "Rhino property previews"
 );
 metadata_limit_test!(
-    property_singletons_refuse_collection_limit,
-    metadata_collection_operations,
-    "Rhino property singleton keys"
-);
-metadata_limit_test!(
     unsupported_settings_refuse_collection_limit,
     metadata_collection_operations,
     "Rhino unsupported settings"
-);
-metadata_limit_test!(
-    setting_singletons_refuse_collection_limit,
-    metadata_collection_operations,
-    "Rhino setting singleton keys"
 );
 metadata_limit_test!(
     layer_uuid_keys_refuse_collection_limit,
@@ -1602,67 +1577,15 @@ metadata_limit_test!(
     "Rhino metadata opaque records"
 );
 metadata_limit_test!(
-    property_singleton_workspace_refuses_materialized_limit,
+    layer_uuid_keys_refuse_materialized_limit,
     metadata_materialized_operations,
-    "Rhino property singleton workspace"
+    "Rhino layer UUID keys"
 );
 metadata_limit_test!(
-    setting_singleton_workspace_refuses_materialized_limit,
+    layer_index_counts_refuse_materialized_limit,
     metadata_materialized_operations,
-    "Rhino setting singleton workspace"
+    "Rhino layer index counts"
 );
-metadata_limit_test!(
-    layer_uuid_workspace_refuses_materialized_limit,
-    metadata_materialized_operations,
-    "Rhino layer UUID workspace"
-);
-metadata_limit_test!(
-    layer_index_workspace_refuses_materialized_limit,
-    metadata_materialized_operations,
-    "Rhino layer index workspace"
-);
-/// The parent-reference pass starts after the layer UUID set has charged its
-/// larger transient bound, so a whole-metadata ladder never meets the parent
-/// workspace first; the pass is driven alone over the parsed layers.
-#[test]
-fn layer_parent_workspace_refuses_materialized_limit() {
-    let (data, layer_tables) = layer_fixture(&[0], Some(200_912_010), 1, [0x44; 16], &[]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let ctx = retained_limit_context(&data, &arena, &policy);
-    let metadata = settings::parse_metadata(
-        &ctx,
-        &data,
-        ArchiveVersion::V8,
-        &layer_tables,
-        &mut Diagnostics::new(),
-    )
-    .expect("layer metadata");
-    assert_eq!(metadata.layers.len(), 1);
-    let workspace = u64::try_from(std::mem::size_of::<(Uuid, usize)>()).unwrap();
-    let mut operations = Vec::new();
-    for limit in 0..workspace {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_materialized_bytes = limit;
-        let ctx = retained_limit_context(&data, &arena, &policy);
-        match super::report_layer_parent_references(&ctx, &metadata.layers, &mut Diagnostics::new())
-        {
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
-                assert_eq!(refusal.used, 0);
-                assert_eq!(refusal.additional, workspace);
-                operations.push(refusal.operation);
-            }
-            other => panic!("limit {limit} below the workspace must refuse: {other:?}"),
-        }
-    }
-    assert!(
-        operations
-            .iter()
-            .all(|operation| *operation == "Rhino layer parent workspace"),
-        "reached {operations:?}"
-    );
-}
 metadata_limit_test!(
     layer_extension_items_refuse_collection_limit,
     metadata_extension_operations,
@@ -2055,6 +1978,7 @@ fn rendering_attributes_reject_negative_version_minors_at_each_nested_gate() {
 }
 
 mod embedded_records;
+mod layer_tables;
 mod rendering_checksums;
 
 #[test]

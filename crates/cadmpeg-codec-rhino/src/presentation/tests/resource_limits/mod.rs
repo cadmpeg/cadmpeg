@@ -1247,46 +1247,72 @@ presentation_install_limit_test!(
     presentation_install_materialized_operations,
     "Rhino object identity workspace"
 );
-/// Each new group grows its workspace before its key table; the table's growth
-/// bound always outweighs one entry, so the membership step is driven alone.
+/// Runs two memberships of one group on a fresh context with the given
+/// materialized and retained allowances.
+fn two_group_memberships(
+    materialized: u64,
+    retained: u64,
+) -> Result<HashMap<i32, Vec<String>>, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = materialized;
+    policy.limits.max_retained_bytes = retained;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
+    let mut members = HashMap::new();
+    crate::presentation::admit_group_member(&ctx, &mut workspace, &mut members, 7, 0)?;
+    crate::presentation::admit_group_member(&ctx, &mut workspace, &mut members, 7, 1)?;
+    Ok(members)
+}
+
+/// A group's key is charged once, as scoped storage: the materialized need of
+/// the first membership also admits the second membership of the same group.
 #[test]
-fn group_member_workspace_refuses_materialized_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let entry = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(i32, Vec<String>)>());
-    for limit in 0..=entry {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let mut workspace =
-            crate::presentation::group_member_workspace(&ctx).expect("empty workspace");
-        let mut members = HashMap::new();
-        let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) =
-            crate::presentation::admit_group_member(&ctx, &mut workspace, &mut members, 7, 0)
-        else {
-            panic!("the membership must refuse at {limit} bytes");
-        };
-        assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
-        if limit < entry {
-            assert_eq!(refusal.operation, "Rhino group member workspace");
-            assert_eq!((refusal.used, refusal.additional), (0, entry));
-        } else {
-            // The workspace entry fits; the key table's growth refuses next.
-            assert_eq!(refusal.operation, "Rhino group member keys");
-            assert_eq!(refusal.used, entry);
-        }
-        assert!(members.is_empty());
-    }
+fn group_member_key_is_scoped_and_charged_once() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) =
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            "Rhino group member keys",
+            |cap| two_group_memberships(cap, u64::MAX),
+        )
+    else {
+        panic!("the key table refuses with a resource limit");
+    };
+    assert_eq!(refusal.used, 0, "nothing scoped precedes the first key");
+    let need = refusal.additional;
+    assert!(need > 0);
+    let members = two_group_memberships(need, u64::MAX).expect("one key admits both members");
+    assert_eq!(
+        members.get(&7).map(Vec::as_slice),
+        Some(
+            [
+                "rhino:object:record#000000".to_owned(),
+                "rhino:object:record#000001".to_owned()
+            ]
+            .as_slice()
+        )
+    );
+}
+
+/// The member links move into the group records, so they are retained, and
+/// the key table charges no retained storage.
+#[test]
+fn group_member_links_are_retained() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = two_group_memberships(u64::MAX, 0)
+    else {
+        panic!("a link needs retained storage");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(refusal.operation, "Rhino group member link");
+    assert_eq!(refusal.used, 0, "the key table retains nothing");
 }
 presentation_install_limit_test!(
     layer_identity_workspace_refuses_materialized_limit,
     presentation_install_materialized_operations,
     "Rhino layer identity workspace"
-);
-presentation_install_limit_test!(
-    group_index_workspace_refuses_materialized_limit,
-    presentation_install_materialized_operations,
-    "Rhino group index workspace"
 );
 
 fn font_refusal(limit: u64) -> FramingError {
@@ -1676,7 +1702,7 @@ fn presentation_loss_refuses_collection_and_note_copy_limits() {
 
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        crate::test_support::retained_limit_at("Rhino presentation loss text", 1, |cap| {
+        crate::test_support::retained_limit_at("Rhino presentation loss text", 0, |cap| {
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) =

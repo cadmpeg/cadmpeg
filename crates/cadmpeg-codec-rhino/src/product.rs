@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent Rhino definition, occurrence, and external-reference graph.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -297,36 +297,33 @@ pub(crate) fn install(
     }
 
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
-    let mut member_definitions = HashMap::<Uuid, Vec<String>>::new();
+    // Each member's parent definitions, ordered and unique by UUID; the
+    // table only serves keyed lookups and is dropped before install returns.
+    let mut member_definitions = HashMap::<Uuid, BTreeSet<Uuid>>::new();
     let mut definition_ids = HashSet::new();
+    let mut definition_workspace = ctx.reserve_scoped(0, "Rhino product definition workspace")?;
     for definition in ctx.admit_iter(
         scan.definitions.definitions(),
         "Rhino install borrowed traversal",
     )? {
-        if !definition_ids.contains(&definition.id()) {
-            ctx.reserve_set(&mut definition_ids, 1, "Rhino product definition keys")?;
-        }
-        definition_ids.insert(definition.id());
-        for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
-            if !member_definitions.contains_key(member) {
-                ctx.reserve_map(&mut member_definitions, 1, "Rhino product member keys")?;
+        definition_workspace.with_storage(|| -> Result<(), CodecError> {
+            ctx.insert_hash_set(
+                &mut definition_ids,
+                definition.id(),
+                "Rhino product definition keys",
+            )?;
+            for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
+                let parents = ctx
+                    .entry_hash_map(
+                        &mut member_definitions,
+                        *member,
+                        "Rhino product member keys",
+                    )?
+                    .or_default();
+                ctx.insert_btree_set(parents, definition.id(), "Rhino product member parents")?;
             }
-            let parents = member_definitions.entry(*member).or_default();
-            ctx.reserve_vec(parents, 1, "Rhino product member parents")?;
-            parents.push(ctx.format_retained(
-                format_args!("{}", definition.id()),
-                "Rhino product parent UUID",
-            )?);
-        }
-    }
-    for parents in member_definitions.values_mut() {
-        ctx.stable_sort_by(
-            parents,
-            |value| value,
-            Ord::cmp,
-            "Rhino product member parents sort",
-        )?;
-        parents.dedup();
+            Ok(())
+        })?;
     }
     let mut occurrences = Vec::new();
     for (source_order, object) in ctx
@@ -383,14 +380,20 @@ pub(crate) fn install(
             "Rhino occurrence object ID",
         )?;
         let mut parents = Vec::new();
-        if let Some(source_parents) = member_definitions.get(&identity.object_id) {
+        if let Some(source_parents) = ctx.get_hash_map(
+            &member_definitions,
+            &identity.object_id,
+            "Rhino occurrence parent lookup",
+        )? {
             ctx.reserve_vec(
                 &mut parents,
                 source_parents.len(),
                 "Rhino occurrence parents",
             )?;
             for parent in ctx.admit_iter(source_parents, "Rhino install borrowed traversal")? {
-                parents.push(ctx.copy_retained_text(parent, "Rhino occurrence parent UUID")?);
+                parents.push(
+                    ctx.format_retained(format_args!("{parent}"), "Rhino occurrence parent UUID")?,
+                );
             }
         }
         let key = if identity.object_id.is_nil()
@@ -410,7 +413,11 @@ pub(crate) fn install(
         };
         let mut links = ctx.collection_vec(1, "Rhino occurrence links")?;
         links.push(object_record);
-        if definition_ids.contains(&reference.definition_id()) {
+        if ctx.contains_hash_set(
+            &definition_ids,
+            &reference.definition_id(),
+            "Rhino occurrence definition lookup",
+        )? {
             ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
             links.push(definition);
         }
@@ -718,7 +725,6 @@ mod tests {
             &[],
         )]);
         let mut limit = 0_u64;
-        let mut loss_text_refusals = 0;
         for _ in 0..128 {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -731,11 +737,10 @@ mod tests {
             let cadmpeg_core::CodecError::ResourceLimit(item) = refusal else {
                 panic!("expected a retained-byte refusal, got {refusal:?}");
             };
+            // The loss text reserves its formatted length once, so the
+            // ladder meets its boundary exactly once.
             if item.operation == "Rhino product occurrence loss text" {
-                loss_text_refusals += 1;
-                if loss_text_refusals == 2 {
-                    return;
-                }
+                return;
             }
             limit = (item.used + item.additional).max(limit + 1);
         }
