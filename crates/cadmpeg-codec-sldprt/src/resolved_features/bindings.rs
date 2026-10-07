@@ -17,7 +17,7 @@ use super::markers::{
 use super::operands::resolve_scalar_operand_markers;
 use super::reference_geometry::explicit_reference_plane_frame;
 use super::relation_records::{feature_intervals, relation_instances};
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::selections::{
     compact_body_selections, compact_edge_selections, compact_surface_selections,
     coordinate_marker_local_links, generated_surface_identities, marker_local_links,
@@ -123,19 +123,25 @@ pub(crate) fn bind_pattern_inputs(
         // `object_names` read out of `native_payload`, so an admitted name
         // offset is an index of that payload. It is narrowed once here, where
         // that proof holds, and the objects below carry `usize` offsets.
-        let mut starts = collect_feature_binding_vec(
-            ctx,
+        let mut starts = Vec::new();
+        for (offset, feature) in ctx.admit_iter(
+            lane_feature_objects(
+                ctx,
+                history_features.iter().copied(),
+                &metadata_ids,
+                lane,
+                "scan SLDPRT pattern input candidates",
+            )?,
             "collect SLDPRT pattern input candidates",
-            "scan SLDPRT pattern input candidates",
-            history_features
-                .iter()
-                .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
-                .filter_map(|feature| {
-                    let offset =
-                        usize::try_from(feature_object_name(feature, lane)?.offset).ok()?;
-                    Some((offset, *feature))
-                }),
-        )?;
+        )? {
+            if let Ok(offset) = usize::try_from(offset) {
+                ctx.push_vec(
+                    &mut starts,
+                    (offset, feature),
+                    "collect SLDPRT pattern input candidates",
+                )?;
+            }
+        }
         ctx.sort_unstable_by(
             &mut starts,
             |value| &value.0,
@@ -1224,14 +1230,12 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         )>,
     >::new();
     for lane in lanes {
-        let mut starts = collect_feature_binding_vec(
+        let mut starts = lane_feature_objects(
             ctx,
-            "collect SLDPRT feature binding candidates",
+            history_features.iter().copied(),
+            &metadata_ids,
+            lane,
             "scan SLDPRT feature binding candidates",
-            history_features
-                .iter()
-                .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
-                .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature))),
         )?;
         ctx.sort_unstable_by(
             &mut starts,
@@ -1399,6 +1403,29 @@ fn reserve_feature_binding_map<
     ctx.reserve_map(values, 1, operation)
 }
 
+/// Each non-metadata feature that names an object in the lane, with the
+/// object's offset, in feature order.
+fn lane_feature_objects<'h>(
+    ctx: &DecodeContext<'_>,
+    features: impl IntoIterator<Item = &'h crate::records::Feature>,
+    metadata_ids: &HashSet<&str>,
+    lane: &FeatureInputLane,
+    operation: &'static str,
+) -> Result<Vec<(u64, &'h crate::records::Feature)>, cadmpeg_core::CodecError> {
+    let object_names = ObjectNames::new(ctx, lane)?;
+    let mut objects = Vec::new();
+    let mut features = features.into_iter();
+    while let Some(feature) = ctx.next_charged(&mut features, operation)? {
+        if ctx.contains_hash_set(metadata_ids, feature.id.as_str(), operation)? {
+            continue;
+        }
+        if let Some(name) = object_names.of(ctx, feature)? {
+            ctx.push_vec(&mut objects, (name.offset, feature), operation)?;
+        }
+    }
+    Ok(objects)
+}
+
 fn collect_feature_binding_vec<T>(
     ctx: &DecodeContext<'_>,
     collection_operation: &'static str,
@@ -1421,24 +1448,38 @@ pub(crate) fn bind_scalar_operands(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let represented_sketches = represented_sketch_features(ctx, histories, lanes)?;
     let metadata_ids = history_metadata_ids(ctx, histories)?;
+    let mut history_features = Vec::new();
+    for history in ctx.admit_iter(histories, "scan SLDPRT scalar binding candidates")? {
+        for feature in ctx.admit_iter(&history.features, "scan SLDPRT scalar binding candidates")? {
+            ctx.push_vec(
+                &mut history_features,
+                feature,
+                "collect SLDPRT scalar binding candidates",
+            )?;
+        }
+    }
     for lane in lanes {
         for entity in &mut lane.sketch_entities {
             entity.feature_ref = None;
             entity.links = None;
         }
-        let mut starts = collect_binding_vec(
-            ctx,
-            histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
-                .filter_map(|feature| {
-                    Some((
-                        feature_object_name(feature, lane)?.offset,
-                        feature.id.as_str(),
-                    ))
-                }),
-        )?;
+        let mut starts = Vec::new();
+        for (offset, feature) in ctx.admit_iter(
+            lane_feature_objects(
+                ctx,
+                history_features.iter().copied(),
+                &metadata_ids,
+                lane,
+                "scan SLDPRT scalar binding candidates",
+            )?,
+            "collect SLDPRT scalar binding candidates",
+        )? {
+            ctx.push_vec(
+                &mut starts,
+                (offset, feature.id.as_str()),
+                "collect SLDPRT scalar binding candidates",
+            )?;
+        }
         ctx.sort_unstable_by(
             &mut starts,
             |value| &value.0,
@@ -1644,12 +1685,12 @@ fn represented_sketch_features(
         if is_supplemental_config_lane(lane) {
             continue;
         }
-        let mut objects = collect_binding_vec(
+        let mut objects = lane_feature_objects(
             ctx,
-            features
-                .iter()
-                .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
-                .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature))),
+            features.iter().copied(),
+            &metadata_ids,
+            lane,
+            "scan SLDPRT represented sketch objects",
         )?;
         ctx.sort_unstable_by(
             &mut objects,

@@ -9,7 +9,7 @@ use super::endpoints::{
     wide_indexed_curve_endpoint_indices,
 };
 use super::grid::quantize;
-use super::scalars::feature_object_name;
+use super::scalars::lane_object_names;
 use super::transforms::{sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
@@ -1116,6 +1116,7 @@ pub(crate) fn enrich_history_revolution_inputs(
     const SOURCES: &str = "index SLDPRT revolution profile sources";
     let mut storage = ctx.reserve_scoped(0, "SLDPRT revolution input workspace")?;
     let unique_names = super::unique_feature_names(ctx, &mut storage, histories, true)?;
+    let object_names = lane_object_names(ctx, &mut storage, lanes)?;
     let mut unique = unique_names.iter();
     for history in ctx.admit_iter(&mut *histories, "find SLDPRT revolution profile source")? {
         for feature in ctx.admit_iter(
@@ -1128,9 +1129,10 @@ pub(crate) fn enrich_history_revolution_inputs(
                 continue;
             }
             let mut object_ids = Vec::new();
-            for lane in ctx.admit_iter(lanes, "find SLDPRT revolution profile source")? {
-                if let Some(id) =
-                    feature_object_name(feature, lane).and_then(|name| name.object_id?.value())
+            for names in ctx.admit_iter(&object_names, "find SLDPRT revolution profile source")? {
+                if let Some(id) = names
+                    .of(ctx, feature)?
+                    .and_then(|name| name.object_id?.value())
                 {
                     storage.with_storage(|| {
                         ctx.push_vec(
@@ -1164,9 +1166,10 @@ pub(crate) fn enrich_history_revolution_inputs(
             if let Some(source) = feature.source_value() {
                 storage.with_storage(|| ctx.insert_hash_set(&mut sources, source, SOURCES))?;
             }
-            for lane in ctx.admit_iter(lanes, SOURCES)? {
-                if let Some(source) =
-                    feature_object_name(feature, lane).and_then(|name| name.object_id?.value())
+            for names in ctx.admit_iter(&object_names, SOURCES)? {
+                if let Some(source) = names
+                    .of(ctx, feature)?
+                    .and_then(|name| name.object_id?.value())
                 {
                     storage.with_storage(|| ctx.insert_hash_set(&mut sources, source, SOURCES))?;
                 }
@@ -1216,13 +1219,16 @@ pub(crate) fn enrich_history_revolution_inputs(
     let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
     let mut inputs =
         HashMap::<String, Vec<Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)>>>::new();
-    for lane in ctx.admit_iter(lanes, "scan SLDPRT revolution feature objects")? {
+    for (lane, names) in ctx
+        .admit_iter(lanes, "scan SLDPRT revolution feature objects")?
+        .zip(&object_names)
+    {
         for history in ctx.admit_iter(&*histories, "scan SLDPRT revolution feature objects")? {
             let mut objects = Vec::new();
             for feature in
                 ctx.admit_iter(&history.features, "scan SLDPRT revolution feature objects")?
             {
-                if let Some(name) = feature_object_name(feature, lane) {
+                if let Some(name) = names.of(ctx, feature)? {
                     storage.with_storage(|| {
                         ctx.push_vec(
                             &mut objects,
@@ -1248,12 +1254,17 @@ pub(crate) fn enrich_history_revolution_inputs(
                 ) {
                     continue;
                 }
-                let immediate_profile = index
+                let immediate_profile = match index
                     .checked_sub(1)
                     .and_then(|index| objects.get(index))
                     .map(|(_, feature)| *feature)
                     .filter(|feature| is_profile_feature_object(feature))
-                    .and_then(|feature| feature_object_name(feature, lane)?.object_id?.value());
+                {
+                    Some(profile) => names
+                        .of(ctx, profile)?
+                        .and_then(|name| name.object_id?.value()),
+                    None => None,
+                };
                 let Some(known_profiles) = known_profiles(ctx, feature.id.as_str())? else {
                     continue;
                 };

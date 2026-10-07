@@ -80,12 +80,14 @@ fn split_line_limit_error(
 
 #[test]
 fn split_line_enrichment_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let error = split_line_limit_error(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT split-line objects")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect SLDPRT split-line objects",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(split_line_limit_error(|policy| {
+                policy.limits.max_collection_items = cap;
+            }))
+        },
     );
 }
 

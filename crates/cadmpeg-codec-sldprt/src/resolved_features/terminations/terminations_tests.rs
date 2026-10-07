@@ -1719,12 +1719,14 @@ fn sweep_path_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core:
 
 #[test]
 fn sweep_path_enrichment_refuses_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    assert!(
-        matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "enrich SLDPRT sweep paths")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "enrich SLDPRT sweep paths",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            Err::<(), cadmpeg_core::CodecError>(sweep_path_error(policy))
+        },
     );
 }
 
