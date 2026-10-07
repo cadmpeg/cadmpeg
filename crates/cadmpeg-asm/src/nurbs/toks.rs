@@ -376,55 +376,6 @@ fn walk_owned_markers(
     Ok((out, malformed.is_none()))
 }
 
-/// Token indices and names of the subtype definitions `toks` itself owns: the
-/// `SubtypeOpen`s at the outermost nesting level whose next token is an
-/// identifier, in order, `ref` included. A definition inside a nested scope
-/// belongs to that scope's construction, not to `toks`.
-///
-/// A `SubtypeClose` with no open scope is a malformed token stream and is
-/// refused.
-pub(super) fn owned_subtype_defs<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    toks: &'a [Token],
-) -> Option<Result<Vec<(usize, &'a str)>, cadmpeg_core::CodecError>> {
-    let mut owned = Vec::new();
-    let mut depth = 0usize;
-    let walked = ctx.find_map(
-        toks.iter().enumerate(),
-        |(pos, token)| {
-            match token {
-                Token::SubtypeOpen => {
-                    if depth == 0 {
-                        if let Some(Token::Ident(name) | Token::SubIdent(name)) = toks.get(pos + 1)
-                        {
-                            ctx.push_vec(
-                                &mut owned,
-                                (pos, name.as_str()),
-                                "ASM owned subtype definitions",
-                            )?;
-                        }
-                    }
-                    depth += 1;
-                }
-                Token::SubtypeClose => {
-                    let Some(next) = depth.checked_sub(1) else {
-                        return Ok(Some(false));
-                    };
-                    depth = next;
-                }
-                _ => {}
-            }
-            Ok(None)
-        },
-        "scan ASM owned subtype definitions",
-    );
-    match walked {
-        Err(error) => Some(Err(error)),
-        Ok(Some(false)) => None,
-        Ok(_) => Some(Ok(owned)),
-    }
-}
-
 /// Token index of the first subtype definition `toks` owns whose name matches
 /// one of `names`, with the matched name. Names are tried in order; the first
 /// name with a hit wins.
@@ -704,28 +655,6 @@ pub(super) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<
     None
 }
 
-/// Subtype-table reference indices in `toks`, in token order: the
-/// `{ref N}` form (`SubtypeOpen`, `Ident("ref")`, `Long(N)`) and the bare
-/// index form (`SubtypeOpen`, `Long(N)`, `SubtypeClose`).
-pub(super) fn subtype_refs(toks: &[Token]) -> impl Iterator<Item = usize> + '_ {
-    toks.iter().enumerate().filter_map(|(pos, token)| {
-        if !matches!(token, Token::SubtypeOpen) {
-            return None;
-        }
-        match (toks.get(pos + 1), toks.get(pos + 2)) {
-            (Some(Token::Ident(name)), Some(Token::Long(index)))
-                if name == "ref" && *index >= 0 =>
-            {
-                usize::try_from(*index).ok()
-            }
-            (Some(Token::Long(index)), Some(Token::SubtypeClose)) if *index >= 0 => {
-                usize::try_from(*index).ok()
-            }
-            _ => None,
-        }
-    })
-}
-
 /// The subtype scope at payload chunk `chunk_index` when its immediately
 /// following identifier is `expected`.
 ///
@@ -977,8 +906,7 @@ mod tests {
     use super::{
         cache_scope as cache_scope_ctx, lex_test_span, marker_at,
         owned_construction_subtype as owned_construction_subtype_ctx,
-        owned_marker_positions as owned_marker_positions_ctx,
-        owned_subtype_defs as owned_subtype_defs_ctx, subtype_refs, subtype_span, test_table, Cur,
+        owned_marker_positions as owned_marker_positions_ctx, subtype_span, test_table, Cur,
     };
     use crate::kernel_header::RefWidth;
     use crate::nurbs::reader::BsplineMarker;
@@ -990,10 +918,6 @@ mod tests {
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         f(&ctx)
-    }
-
-    fn owned_subtype_defs(toks: &[Token]) -> Option<Vec<(usize, &str)>> {
-        with_ctx(|ctx| owned_subtype_defs_ctx(ctx, toks).transpose().unwrap())
     }
 
     fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
@@ -1046,24 +970,6 @@ mod tests {
         );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
         assert_eq!(limit.operation, "ASM owned spline markers");
-    }
-
-    #[test]
-    fn owned_subtype_vector_refuses_collection_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let tokens = [
-            Token::SubtypeOpen,
-            Token::Ident("exactcur".into()),
-            Token::SubtypeClose,
-        ];
-        let limit = crate::test_support::resource_limit_at(
-            &[],
-            ResourceDimension::CollectionItems,
-            "ASM owned subtype definitions",
-            |ctx| owned_subtype_defs_ctx(ctx, &tokens).expect("owned definitions"),
-        );
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(limit.operation, "ASM owned subtype definitions");
     }
 
     #[test]
@@ -1230,7 +1136,6 @@ mod tests {
         let mut tokens = vec![Token::SubtypeClose];
         tokens.extend((0..10_000).map(|_| Token::True));
         assert!(cache_scope_ctx(&ctx, &tokens).is_none());
-        assert!(owned_subtype_defs_ctx(&ctx, &tokens).is_none());
     }
 
     fn ident(name: &str) -> Token {
@@ -1354,8 +1259,6 @@ mod tests {
             Token::SubtypeClose,
             Token::SubtypeClose,
         ];
-        assert_eq!(owned_subtype_defs(&toks), Some(vec![(0, "exactcur")]));
-        assert_eq!(subtype_refs(&toks).collect::<Vec<_>>(), vec![3]);
         assert_eq!(
             owned_construction_subtype(&toks),
             Some("exact_int_cur".to_string())
@@ -1513,7 +1416,6 @@ mod tests {
             ident("nurbs"),
             Token::SubtypeClose,
         ];
-        assert_eq!(owned_subtype_defs(&toks), None);
         assert_eq!(cache_scope(&toks), None);
     }
 
@@ -1533,7 +1435,6 @@ mod tests {
             ident("nurbs"),
         ];
         assert_eq!(owned_marker_positions(&toks), None);
-        assert_eq!(owned_subtype_defs(&toks), None);
     }
     #[test]
     fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {

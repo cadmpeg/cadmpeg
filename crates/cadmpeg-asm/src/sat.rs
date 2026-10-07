@@ -125,9 +125,15 @@ pub struct TextStream {
 
 /// Whether `bytes` begins like a text ASM stream: an ASCII digit run (the
 /// save-format word) followed by a space.
-pub fn has_text_magic(bytes: &[u8]) -> bool {
-    let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
-    digits >= 3 && bytes.get(digits) == Some(&b' ')
+pub fn has_text_magic(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
+    let digits = ctx
+        .position_by(
+            bytes,
+            |b| Ok(!b.is_ascii_digit()),
+            "scan SAT text magic digits",
+        )?
+        .unwrap_or(bytes.len());
+    Ok(digits >= 3 && bytes.get(digits) == Some(&b' '))
 }
 
 // ---------------------------------------------------------------------------

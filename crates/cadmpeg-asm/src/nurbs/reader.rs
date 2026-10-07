@@ -93,52 +93,6 @@ impl ReadPoles3 {
             }),
         }
     }
-
-    pub(super) fn into_counted_transposed_grid(
-        self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        u_count: usize,
-        v_count: usize,
-    ) -> Option<Result<NurbsPoleGrid, cadmpeg_core::CodecError>> {
-        fn transpose<T: Clone>(
-            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-            flat: &[T],
-            u_count: usize,
-            v_count: usize,
-        ) -> Option<Result<Vec<Vec<T>>, cadmpeg_core::CodecError>> {
-            (flat.len() == u_count.checked_mul(v_count)?).then_some(())?;
-            let mut rows = match ctx.collection_vec(u_count, "ASM NURBS grid rows") {
-                Ok(rows) => rows,
-                Err(error) => return Some(Err(error)),
-            };
-            let rows_to_read = match ctx.admit_iter(0..u_count, "transpose ASM NURBS grid rows") {
-                Ok(rows) => rows,
-                Err(error) => return Some(Err(error.into())),
-            };
-            for u in rows_to_read {
-                let mut row = match ctx.collection_vec(v_count, "ASM NURBS grid row poles") {
-                    Ok(row) => row,
-                    Err(error) => return Some(Err(error)),
-                };
-                let poles_to_read =
-                    match ctx.admit_iter(0..v_count, "transpose ASM NURBS row poles") {
-                        Ok(poles) => poles,
-                        Err(error) => return Some(Err(error.into())),
-                    };
-                for v in poles_to_read {
-                    row.push(flat.get(v.checked_mul(u_count)?.checked_add(u)?)?.clone());
-                }
-                rows.push(row);
-            }
-            Some(Ok(rows))
-        }
-        match self {
-            Self::Polynomial(points) => transpose(ctx, &points, u_count, v_count)
-                .map(|result| result.map(|rows| NurbsPoleGrid::Polynomial { rows })),
-            Self::Rational(points) => transpose(ctx, &points, u_count, v_count)
-                .map(|result| result.map(|rows| NurbsPoleGrid::Rational { rows })),
-        }
-    }
 }
 
 /// Millimetres per ASM model-space length unit (centimetres).
@@ -811,25 +765,6 @@ mod string_width_tests {
     use crate::kernel_header::RefWidth;
     use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
     use cadmpeg_ir::math::Point3;
-
-    #[test]
-    fn token_surface_grid_rows_refuse_collection_limit() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let limit = crate::test_support::resource_limit_at(
-            &[],
-            ResourceDimension::CollectionItems,
-            "ASM NURBS grid row poles",
-            |ctx| {
-                let points = (0..4)
-                    .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
-                    .collect();
-                ReadPoles3::Polynomial(points)
-                    .into_counted_transposed_grid(ctx, 2, 2)
-                    .expect("valid grid")
-            },
-        );
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    }
 
     /// A `0x09` string whose length prefix is the stream integer width.
     fn long_string_bytes(payload: &str, int_width: RefWidth) -> Vec<u8> {
