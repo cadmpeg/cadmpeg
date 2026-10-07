@@ -283,6 +283,14 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 boundary_allowed = true;
                 continue;
             }
+            if self.input[at].is_ascii_control() {
+                while self.input.get(at).is_some_and(u8::is_ascii_control) {
+                    self.budget.charge_work(1, "STEP lexer cursor traversal")?;
+                    at += 1;
+                }
+                boundary_allowed = true;
+                continue;
+            }
             if let Some(end) = self.print_control_end(at)? {
                 at = end;
                 boundary_allowed = true;
@@ -814,6 +822,14 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             self.budget.charge_work(1, "STEP lexer cursor traversal")?;
             if byte == b'>' {
                 break;
+            }
+            if byte.is_ascii_control() {
+                let controls_start = self.at;
+                self.skip_ignored()?;
+                if self.print_control_end(self.at)?.is_some() {
+                    return Err(self.error(controls_start, "print control directive is not allowed in a resource")?);
+                }
+                continue;
             }
             if self.print_control_end(self.at)?.is_some() {
                 return Err(self.error(
