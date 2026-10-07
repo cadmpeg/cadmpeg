@@ -2,6 +2,7 @@
 //! Views, drawings, and view-dependent presentation relationships.
 
 use super::geometry::{resolve_transform, ProjectionOutcome};
+use super::PropertyTextIndex;
 
 use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
@@ -145,12 +146,13 @@ pub(crate) fn drawing_property_value(
     }
 }
 
-fn conflicting_drawing_property_forms(
+fn conflicting_drawing_property_forms<'text>(
     record: &ParameterRecord,
     form: i64,
     directory: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    records: &BTreeMap<u32, &'text ParameterRecord>,
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    texts: &mut PropertyTextIndex<'text, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let Some(TrailingPointerAnalysis::Unambiguous(groups)) =
@@ -158,7 +160,7 @@ fn conflicting_drawing_property_forms(
     else {
         return Ok(false);
     };
-    let mut first = None;
+    let mut first: Option<(u32, DrawingPropertyValue<'text>)> = None;
     let mut properties = groups.properties().iter();
     while let Some(sequence) =
         ctx.next_charged(&mut properties, "iges drawing property traversal")?
@@ -171,14 +173,26 @@ fn conflicting_drawing_property_forms(
         }
         let Some(value) = records
             .get(sequence)
-            .and_then(|record| drawing_property_value(form, record))
+            .and_then(|&record| drawing_property_value(form, record))
         else {
             continue;
         };
-        if let Some(first) = &first {
-            let agrees = match (&value, first) {
+        if let Some((first_sequence, first_value)) = &first {
+            let agrees = match (&value, first_value) {
                 (DrawingPropertyValue::Name(left), DrawingPropertyValue::Name(right)) => {
-                    ctx.equal_bytes(left, right, "iges drawing property name agreement")?
+                    sequence == first_sequence
+                        || (left.len() == right.len()
+                            && texts.id(
+                                *first_sequence,
+                                right,
+                                ctx,
+                                "iges drawing property name agreement",
+                            )? == texts.id(
+                                *sequence,
+                                left,
+                                ctx,
+                                "iges drawing property name agreement",
+                            )?)
                 }
                 (DrawingPropertyValue::Size(left), DrawingPropertyValue::Size(right)) => {
                     left == right
@@ -188,11 +202,19 @@ fn conflicting_drawing_property_forms(
                     DrawingPropertyValue::Units(right_unit, right_name),
                 ) => {
                     left_unit == right_unit
-                        && ctx.equal_bytes(
-                            left_name,
-                            right_name,
-                            "iges drawing unit name agreement",
-                        )?
+                        && (sequence == first_sequence
+                            || (left_name.len() == right_name.len()
+                                && texts.id(
+                                    *first_sequence,
+                                    right_name,
+                                    ctx,
+                                    "iges drawing unit name agreement",
+                                )? == texts.id(
+                                    *sequence,
+                                    left_name,
+                                    ctx,
+                                    "iges drawing unit name agreement",
+                                )?))
                 }
                 _ => false,
             };
@@ -200,7 +222,7 @@ fn conflicting_drawing_property_forms(
                 return Ok(true);
             }
         } else {
-            first = Some(value);
+            first = Some((*sequence, value));
         }
     }
     Ok(false)
@@ -255,6 +277,7 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<ProjectionOutcome, CodecError> {
+    let mut property_texts = PropertyTextIndex::new(ctx)?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -306,6 +329,7 @@ pub(super) fn project(
                 entries,
                 records,
                 trailing_pointer_analysis,
+                &mut property_texts,
                 ctx,
             )? {
                 push_drawing_loss(
