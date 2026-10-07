@@ -883,7 +883,7 @@ impl<'a> DecodeContext<'a> {
             let Some(object) = self.scan.objects[source_order].framed() else {
                 continue;
             };
-            if self.instance_selection.is_none() && self.is_definition_member(object) {
+            if self.instance_selection.is_none() && self.is_definition_member(object)? {
                 continue;
             }
             if crate::instances::is_reference_class(object.class_uuid) {
@@ -1128,7 +1128,7 @@ impl<'a> DecodeContext<'a> {
             if !crate::dimensions::supported_class(object.class_uuid) {
                 continue;
             }
-            if self.is_definition_member(object) {
+            if self.is_definition_member(object)? {
                 self.scan_warning(source_order, format_args!("definition-member dimension retained because annotation instance expansion is unsupported"))?;
                 continue;
             }
@@ -2234,9 +2234,9 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
-    fn is_definition_member(&self, object: &ObjectDescriptor) -> bool {
+    fn is_definition_member(&self, object: &ObjectDescriptor) -> Result<bool, cadmpeg_core::CodecError> {
         let identity = &object.identity;
-        self.scan.definitions.contains_member(identity.object_id)
+        self.scan.definitions.contains_member(self.expand.ctx(), identity.object_id)
     }
 
     /// Admit the source-derived object key before composing any typed identity.
@@ -2480,7 +2480,7 @@ impl<'a> DecodeContext<'a> {
         if self
             .scan
             .definitions
-            .is_ambiguous(reference.definition_id())
+            .is_ambiguous(self.expand.ctx(), reference.definition_id())?
         {
             return Err(ReferenceFailure::Semantic(
                 self.expand.ctx().format_retained(

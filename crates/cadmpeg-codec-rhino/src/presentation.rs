@@ -2911,29 +2911,28 @@ fn disambiguate_group_ids(
     let mut counts = HashMap::<&str, usize>::new();
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
     for group in ctx.admit_iter(&groups[..], "Rhino disambiguate group ids traversal")? {
-        if let Some(count) = counts.get_mut(group.id.as_str()) {
-            *count += 1;
-        } else {
-            workspace
-                .with_storage(|| ctx.reserve_map(&mut counts, 1, "Rhino group identity counts"))?;
-            counts.insert(group.id.as_str(), 1);
-        }
+        let count = workspace.with_storage(|| ctx.entry_hash_map(
+            &mut counts, group.id.as_str(), "Rhino group identity counts",
+        ))?.or_default();
+        *count += 1;
     }
     let mut duplicate_indices = Vec::new();
+    let mut index_workspace = ctx.reserve_scoped(0, "Rhino duplicate group workspace")?;
     for (order, group) in ctx
         .admit_iter(&groups[..], "Rhino disambiguate group ids traversal")?
         .enumerate()
     {
-        if counts.get(group.id.as_str()).copied() != Some(1) {
-            workspace.with_storage(|| {
+        if ctx.get_hash_map(&counts, group.id.as_str(), "Rhino group identity lookup")?.copied() != Some(1) {
+            index_workspace.with_storage(|| {
                 ctx.reserve_vec(&mut duplicate_indices, 1, "Rhino duplicate group indices")
             })?;
             duplicate_indices.push(order);
         }
     }
     drop(counts);
+    drop(workspace);
     let changed = duplicate_indices.len();
-    for order in duplicate_indices {
+    for order in ctx.admit_iter(duplicate_indices, "Rhino duplicate group traversal")? {
         let group = &mut groups[order];
         group.id = ctx.format_retained(
             format_args!(
@@ -3057,18 +3056,15 @@ fn push_light(
     let source_id = parse_uuid_text(ctx, &light.source_uuid)?
         .ok_or_else(|| CodecError::malformed("light source UUID is invalid"))?;
     if !source_id.is_nil() {
-        if indexes.contains_key(&source_id) {
+        if ctx.contains_key_hash_map(indexes, &source_id, "Rhino light identity lookup")? {
             light.id = ctx.format_retained(
                 format_args!("{}-offset-{}", light.id, light.source_offset),
                 "Rhino duplicate light ID",
             )?;
         } else {
-            workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-                Uuid,
-                usize,
-            )>()))?;
-            ctx.reserve_map(indexes, 1, "Rhino light identity index")?;
-            indexes.insert(source_id, lights.len());
+            workspace.with_storage(|| ctx.insert_hash_map(
+                indexes, source_id, lights.len(), "Rhino light identity index",
+            ))?;
         }
     }
     ctx.reserve_vec(lights, 1, "Rhino lights")?;
@@ -5140,15 +5136,10 @@ pub(crate) fn install(
     let mut opaque_records = Vec::new();
     for object in ctx.admit_iter(&scan.objects[..], "Rhino install traversal")? {
         if let Some(identity) = object.identity() {
-            if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
-                *count += 1;
-            } else {
-                object_count_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(Uuid, usize)>(),
-                ))?;
-                ctx.reserve_map(&mut object_id_counts, 1, "Rhino object identity counts")?;
-                object_id_counts.insert(identity.object_id, 1);
-            }
+            let count = object_count_workspace.with_storage(|| ctx.entry_hash_map(
+                &mut object_id_counts, identity.object_id, "Rhino object identity counts",
+            ))?.or_default();
+            *count += 1;
         }
     }
     for table in ctx.admit_iter(&scan.tables[..], "Rhino install traversal")? {
@@ -5723,7 +5714,7 @@ pub(crate) fn install(
             )?;
             object_presentation.push(ObjectPresentationRecord {
                 id: if identity.object_id.is_nil()
-                    || object_id_counts.get(&identity.object_id).copied() != Some(1)
+                    || ctx.get_hash_map(&object_id_counts, &identity.object_id, "Rhino object identity lookup")?.copied() != Some(1)
                 {
                     ctx.format_retained(
                         format_args!("rhino:presentation:object#record-{source_order:06}"),
@@ -5745,15 +5736,10 @@ pub(crate) fn install(
     let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
     for layer in ctx.admit_iter(&scan.metadata.layers[..], "Rhino install traversal")? {
         if let Some(id) = layer.id {
-            if let Some(count) = layer_id_counts.get_mut(&id) {
-                *count += 1;
-            } else {
-                layer_count_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(Uuid, usize)>(),
-                ))?;
-                ctx.reserve_map(&mut layer_id_counts, 1, "Rhino layer identity counts")?;
-                layer_id_counts.insert(id, 1);
-            }
+            let count = layer_count_workspace.with_storage(|| ctx.entry_hash_map(
+                &mut layer_id_counts, id, "Rhino layer identity counts",
+            ))?.or_default();
+            *count += 1;
         }
     }
     for layer in ctx.admit_iter(&scan.metadata.layers[..], "Rhino install traversal")? {
@@ -5779,16 +5765,15 @@ pub(crate) fn install(
                 RenderingAttributesPresentation::default()
             }
         };
-        let mut per_viewport_settings = ctx.collection_vec(
-            layer.per_viewport_settings.len(),
-            "Rhino layer presentation viewport settings",
-        )?;
-        per_viewport_settings.extend_from_slice(&layer.per_viewport_settings);
+        let mut per_viewport_settings = Vec::new();
+        ctx.extend_from_slice(&mut per_viewport_settings, &layer.per_viewport_settings, "Rhino layer presentation viewport settings")?;
+        let unique_id = match layer.id {
+            Some(id) if ctx.get_hash_map(&layer_id_counts, &id, "Rhino layer identity lookup")?.copied() == Some(1) => Some(id),
+            _ => None,
+        };
         ctx.reserve_vec(&mut layers, 1, "Rhino layer presentation records")?;
         layers.push(LayerPresentationRecord {
-            id: if let Some(id) = layer
-                .id
-                .filter(|id| layer_id_counts.get(id).copied() == Some(1))
+            id: if let Some(id) = unique_id
             {
                 ctx.format_retained(
                     format_args!("rhino:presentation:layer#{id}"),

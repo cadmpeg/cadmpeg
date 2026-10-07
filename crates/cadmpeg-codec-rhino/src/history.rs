@@ -2318,41 +2318,36 @@ pub(crate) fn project(
         redundant_repairs: 0,
         refusal: None,
     };
-    let mut ids = ctx
-        .collection_vec(records.len(), "Rhino history feature ids")
+    let (mut ids, mut id_workspace) = ctx
+        .temporary_vec(records.len(), "Rhino history feature ids")
         .map_err(crate::chunks::FramingError::from)
         .or_else(|error| Err(history_resource_error(ctx, error)?))?;
-    let mut native_ids = ctx
-        .collection_vec(records.len(), "Rhino history native ids")
+    let (mut native_ids, mut native_workspace) = ctx
+        .temporary_vec(records.len(), "Rhino history native ids")
         .map_err(crate::chunks::FramingError::from)
         .or_else(|error| Err(history_resource_error(ctx, error)?))?;
     let mut seen_record_ids = HashSet::new();
-    ctx.reserve_set(
-        &mut seen_record_ids,
-        records.len(),
-        "Rhino history record identities",
-    )
-    .map_err(ProjectionError::Codec)?;
+    let mut identity_workspace = ctx.reserve_scoped(0, "Rhino history identity workspace")?;
     for record in ctx
         .admit_iter(records, "Rhino project traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
-        let unique = !record.id.is_nil() && seen_record_ids.insert(record.id);
-        let key = if unique {
-            ctx.format_retained(format_args!("{}", record.id), "Rhino history identity key")
+        let unique = !record.id.is_nil() && identity_workspace.with_storage(||
+            ctx.insert_hash_set(&mut seen_record_ids, record.id, "Rhino history record identities")
+        )?;
+        let (key, _key_workspace) = if unique {
+            ctx.format_scoped(format_args!("{}", record.id), "Rhino history identity key")
         } else {
-            ctx.format_retained(
+            ctx.format_scoped(
                 format_args!("offset-{}", record.source_range.start),
                 "Rhino history identity key",
             )
         }
         .map_err(ProjectionError::Codec)?;
-        let feature_id = ctx
-            .format_retained(
+        let feature_id = id_workspace.with_storage(|| ctx.format_retained(
                 format_args!("rhino:history:feature#{key}"),
                 "Rhino history feature identity",
-            )
-            .map_err(ProjectionError::Codec)?;
+            ))?;
         ids.push(FeatureId::mint(feature_id).or_else(|error| {
             Err(ProjectionError::Admission(ctx.format_retained(
                 format_args!("{}", error),
@@ -2360,51 +2355,30 @@ pub(crate) fn project(
             )?))
         })?);
         native_ids.push(
-            ctx.format_retained(
+            native_workspace.with_storage(|| ctx.format_retained(
                 format_args!("rhino:history:record#{key}"),
                 "Rhino history native identity",
-            )
+            ))
             .map_err(ProjectionError::Codec)?,
         );
     }
-    let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
-    for (index, record) in ctx
-        .admit_iter(&records[..], "Rhino project traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .enumerate()
-    {
-        let mut record_descendants = HashSet::new();
-        ctx.reserve_set(
-            &mut record_descendants,
-            record.descendants.len(),
-            "Rhino history unique descendants",
-        )
-        .map_err(ProjectionError::Codec)?;
-        for descendant in ctx
-            .admit_iter(&record.descendants[..], "Rhino project traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
-            if !record_descendants.insert(*descendant) {
-                continue;
-            }
-            if descendant.is_nil() {
-                continue;
-            }
-            if let Some(producer) = producers.get_mut(descendant) {
-                *producer = None;
-            } else {
-                ctx.reserve_map(&mut producers, 1, "Rhino history producers")
-                    .map_err(ProjectionError::Codec)?;
-                producers.insert(
-                    *descendant,
-                    Some((
-                        index,
-                        ids[index]
-                            .try_clone_for_decode(ctx, "Rhino history producer identity")
-                            .map_err(ProjectionError::Codec)?,
-                    )),
-                );
-            }
+    let mut producers = HashMap::<Uuid, Option<usize>>::new();
+    let mut producer_workspace = ctx.reserve_scoped(0, "Rhino history producer workspace")?;
+    for (index, record) in ctx.admit_iter(records, "Rhino project traversal").map_err(CodecError::from)?.enumerate() {
+        for descendant in ctx.admit_iter(&record.descendants[..], "Rhino project traversal").map_err(CodecError::from)? {
+            if descendant.is_nil() { continue; }
+            producer_workspace.with_storage(|| -> Result<(), CodecError> {
+                use std::collections::hash_map::Entry;
+                match ctx.entry_hash_map(&mut producers, *descendant, "Rhino history producers")? {
+                    Entry::Vacant(entry) => { entry.insert(Some(index)); }
+                    Entry::Occupied(mut entry) => {
+                        if entry.get().is_some_and(|producer| producer != index) {
+                            entry.insert(None);
+                        }
+                    }
+                }
+                Ok(())
+            })?;
         }
     }
     let mut dropped_dependencies = 0;
@@ -2413,63 +2387,33 @@ pub(crate) fn project(
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
-        for antecedent in ctx
-            .admit_iter(&record.antecedents[..], "Rhino project traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
-            match producers.get(antecedent) {
-                Some(None) => dropped_dependencies += 1,
-                Some(Some((producer_index, _))) if *producer_index >= index => {
-                    dropped_dependencies += 1;
-                }
-                _ => {}
-            }
-        }
         let mut dependency_seen = HashSet::new();
-        ctx.reserve_set(
-            &mut dependency_seen,
-            record.antecedents.len(),
-            "Rhino history seen dependencies",
-        )
-        .map_err(ProjectionError::Codec)?;
-        let mut dependencies = ctx
-            .collection_vec(record.antecedents.len(), "Rhino history dependencies")
-            .map_err(crate::chunks::FramingError::from)
-            .or_else(|error| Err(history_resource_error(ctx, error)?))?;
-        for antecedent in ctx
-            .admit_iter(&record.antecedents[..], "Rhino project traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
-            let Some((producer_index, id)) = producers.get(antecedent).and_then(Option::as_ref)
-            else {
-                continue;
+        let mut dependency_workspace = ctx.reserve_scoped(0, "Rhino history dependency workspace")?;
+        let mut dependencies = Vec::new();
+        for antecedent in ctx.admit_iter(&record.antecedents[..], "Rhino project traversal").map_err(CodecError::from)? {
+            let producer_index = match ctx.get_hash_map(&producers, antecedent, "Rhino history producer lookup")? {
+                Some(None) => { dropped_dependencies += 1; continue; }
+                Some(Some(producer)) if *producer >= index => { dropped_dependencies += 1; continue; }
+                Some(Some(producer)) => *producer,
+                None => continue,
             };
-            if *producer_index >= index || dependency_seen.contains(id) {
-                continue;
-            }
-            dependency_seen.insert(
-                id.try_clone_for_decode(ctx, "Rhino history seen dependency identity")
-                    .map_err(ProjectionError::Codec)?,
-            );
-            dependencies.push(
-                id.try_clone_for_decode(ctx, "Rhino history dependency identity")
-                    .map_err(ProjectionError::Codec)?,
-            );
+            if !dependency_workspace.with_storage(|| ctx.insert_hash_set(
+                &mut dependency_seen, producer_index, "Rhino history seen dependencies",
+            ))? { continue; }
+            ctx.reserve_vec(&mut dependencies, 1, "Rhino history dependencies")?;
+            dependencies.push(ids[producer_index].try_clone_for_decode(ctx, "Rhino history dependency identity")?);
         }
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();
         let mut value_occurrences = HashMap::<i32, usize>::new();
-        ctx.reserve_map(
-            &mut value_occurrences,
-            record.values.len(),
-            "Rhino history value occurrences",
-        )
-        .map_err(ProjectionError::Codec)?;
+        let mut value_workspace = ctx.reserve_scoped(0, "Rhino history value workspace")?;
         for value in ctx
             .admit_iter(&record.values[..], "Rhino project traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
-            let occurrence = value_occurrences.entry(value.id).or_default();
+            let occurrence = value_workspace.with_storage(|| ctx.entry_hash_map(
+                &mut value_occurrences, value.id, "Rhino history value occurrences",
+            ))?.or_default();
             let key = if *occurrence == 0 {
                 ctx.format_retained(
                     format_args!("value_{}", value.id),
