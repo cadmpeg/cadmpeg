@@ -60,16 +60,7 @@ fn surface_parameter_scales_for_step(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let (index, _workspace) = SurfaceScaleIndex::build(ir, ctx)?;
-    procedural_surface_parameter_scales(
-        ir,
-        &index,
-        surface_id,
-        geometry,
-        length_scale,
-        angle_scale,
-        source_curve_parameter_scales,
-        ctx,
-    )
+    procedural_surface_parameter_scales(ir, &index, surface_id, geometry, [length_scale, angle_scale], source_curve_parameter_scales, ctx)
 }
 
 #[test]
@@ -1276,4 +1267,15 @@ fn surface_scale_index_tracks_appends_and_duplicate_owners() {
         let (rebuilt, _rebuilt_storage) = SurfaceScaleIndex::build(&ir, ctx).expect("rebuilt index");
         assert!(rebuilt.owned_procedural(&ir, ctx, &owner).expect("lookup").is_none());
     });
+}
+
+#[test]
+fn pcurve_trim_fallback_visits_each_selector_once() {
+    let value = Value::List(vec![Value::Integer(17), Value::Omitted, Value::Reference(1)]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // Three selector visits plus the terminal probe; the first bare number is kept during typed selection.
+    policy.limits.max_work_units = 3 + 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    assert_eq!(pcurve_trim_parameter(&ctx, &value).expect("one selector pass fits").map(FiniteReal::get), Some(17.0));
 }
