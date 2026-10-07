@@ -415,12 +415,12 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
     ));
     let relation_curve = &relation_roster[0];
     let relation_markers = relation_roster.iter().collect::<Vec<_>>();
-    assert!(relation_reference_curve_record(
-        &cadmpeg_test_support::service_decode_context(),
+    assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = relation_reference_curve_record(
+        &roster_ctx,
         &payload,
         relation_curve,
         &relation_markers
-    )
+    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &relation_markers).unwrap()); result }
     .unwrap());
 
     let mut point_roster = relation_roster.clone();
@@ -429,12 +429,12 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
     }
     let point_markers = point_roster.iter().collect::<Vec<_>>();
-    assert!(!relation_reference_curve_record(
-        &cadmpeg_test_support::service_decode_context(),
+    assert!(!{ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = relation_reference_curve_record(
+        &roster_ctx,
         &payload,
         &point_roster[0],
         &point_markers
-    )
+    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &point_markers).unwrap()); result }
     .unwrap());
 }
 
@@ -791,12 +791,11 @@ fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
     let markers = [&curve, &first, &relation, &second];
 
     assert_eq!(
-        extended_compact_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = extended_compact_endpoint_markers(&roster_ctx,
+&payload,
+&curve,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
         .unwrap()
         .into_iter()
         .map(crate::records::SketchInputEntity::id)

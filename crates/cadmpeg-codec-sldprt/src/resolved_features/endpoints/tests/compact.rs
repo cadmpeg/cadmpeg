@@ -571,12 +571,11 @@ fn compact_legacy_embedded_geometry_preserves_coordinate_roster_ordinals() {
         entity.feature_ref = Some("feature".into());
     }
     let markers = entities.iter().collect::<Vec<_>>();
-    let endpoints = coordinate_roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &entities[3],
-        &markers,
-    )
+    let endpoints = { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
+&payload,
+&entities[3],
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
     .unwrap();
     assert_eq!(
         endpoints
@@ -990,12 +989,12 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
     let point = marker("point", Some(5), SketchInputKind::Point, Some([1.0, 0.0]));
     let markers = [&curve, &relation, &duplicate_curve, &point];
 
-    assert!(relation_reference_curve_record(
-        &cadmpeg_test_support::service_decode_context(),
+    assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = relation_reference_curve_record(
+        &roster_ctx,
         &payload,
         &curve,
         &markers
-    )
+    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap()); result }
     .unwrap());
 
     let first_point = marker(
@@ -1011,12 +1010,12 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
         Some([1.0, 0.0]),
     );
     let markers = [&curve, &first_point, &second_point];
-    assert!(!relation_reference_curve_record(
-        &cadmpeg_test_support::service_decode_context(),
+    assert!(!{ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = relation_reference_curve_record(
+        &roster_ctx,
         &payload,
         &curve,
         &markers
-    )
+    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap()); result }
     .unwrap());
 }
 
@@ -1068,13 +1067,11 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
     for prefix in [SKETCH_MARKER, LEGACY_EXTENDED_SKETCH_MARKER] {
         payload[..prefix.len()].copy_from_slice(prefix);
         payload[84..84 + prefix.len()].copy_from_slice(prefix);
-        let pair = compact_complete_marker_roster_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            true,
-        )
+        let pair = { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = compact_complete_marker_roster_pair(&payload,
+&curve,
+true,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
         .unwrap()
         .expect("complete marker roster endpoints");
         assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
@@ -1082,13 +1079,11 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
 
     let mut terminal = payload[..84].to_vec();
     terminal[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let pair = compact_complete_marker_roster_pair(
-        &cadmpeg_test_support::service_decode_context(),
-        &terminal,
-        &curve,
-        &markers,
-        true,
-    )
+    let pair = { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = compact_complete_marker_roster_pair(&terminal,
+&curve,
+true,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
     .unwrap()
     .expect("terminal complete marker roster endpoints");
     assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
@@ -1128,12 +1123,12 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         constructed_marker
     };
     let markers = [&curve, &first, &relation];
-    assert!(relation_reference_curve_record(
-        &cadmpeg_test_support::service_decode_context(),
+    assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = relation_reference_curve_record(
+        &roster_ctx,
         &payload,
         &curve,
         &markers
-    )
+    , &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap()); result }
     .unwrap());
 }
 
@@ -1182,35 +1177,30 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
     let markers = [&curve, &first, &second, &third];
 
     assert_eq!(
-        compact_complete_marker_roster_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            true
-        )
+        { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = compact_complete_marker_roster_pair(&payload,
+&curve,
+true,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
         .unwrap()
         .map(|pair| [pair[0].id(), pair[1].id()]),
         Some(["first", "second"])
     );
     assert_eq!(
-        compact_complete_marker_roster_pair(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers,
-            false
-        )
+        { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = compact_complete_marker_roster_pair(&payload,
+&curve,
+false,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
         .unwrap()
         .map(|pair| [pair[0].id(), pair[1].id()]),
         Some(["second", "third"])
     );
-    assert!(super::compact_complete_marker_roster_endpoints(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &curve,
-        &markers
-    )
+    assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = super::compact_complete_marker_roster_endpoints(&roster_ctx,
+&payload,
+&curve,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
     .unwrap()
     .is_empty());
 }
@@ -1264,12 +1254,11 @@ fn current_referenced_compact_roster_prefers_complete_roster() {
         &payload, 0
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
+&payload,
+&curve,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -1325,12 +1314,11 @@ fn current_referenced_compact_roster_falls_back_when_complete_slot_is_not_a_poin
         &payload, 0
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        { let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
+&payload,
+&curve,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
         .unwrap()
         .iter()
         .map(|marker| marker.id())

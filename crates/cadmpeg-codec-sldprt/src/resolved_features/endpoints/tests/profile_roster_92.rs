@@ -119,34 +119,31 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
     assert_eq!(endpoint_ids(&roster), ["third", "coordinate-line"]);
 
     let direct = profile_payload(1, 0x44, [4, 13], false);
-    assert!(coordinate_roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &direct,
-        &curve,
-        &markers
-    )
+    assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
+&direct,
+&curve,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
     .unwrap()
     .is_empty());
     assert_eq!(endpoint_ids(&direct), ["third", "coordinate-line"]);
 
     let terminal = profile_payload(0, 0x04, [4, 13], true);
-    assert!(coordinate_roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &terminal,
-        &curve,
-        &markers
-    )
+    assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
+&terminal,
+&curve,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
     .unwrap()
     .is_empty());
     assert_eq!(endpoint_ids(&terminal), ["third", "coordinate-line"]);
 
     let zero_direct = profile_payload(1, 0x44, [0, 13], false);
-    assert!(coordinate_roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &zero_direct,
-        &curve,
-        &markers
-    )
+    assert!({ let roster_ctx = cadmpeg_test_support::service_decode_context(); let result = coordinate_roster_curve_endpoint_markers(&roster_ctx,
+&zero_direct,
+&curve,
+&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&roster_ctx, &markers).unwrap(),
+); result }
     .unwrap()
     .is_empty());
     assert!(endpoint_ids(&zero_direct).is_empty());

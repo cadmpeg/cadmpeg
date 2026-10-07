@@ -53,3 +53,35 @@ fn marker_center_indexes_keep_owner_scope_units_and_cached_storage() {
     assert_eq!(unique_arc_center_marker(&ctx, Point2::new(4.0, 6.0), Point2::new(6.0, 6.0),
         profile, EPS_CENTER_POSITION, [Some("center"), None]).unwrap(), None);
 }
+
+#[test]
+fn owner_rosters_keep_unlocated_ordinals_and_cache_each_subset() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let marker = |id: &str, owner: Option<&str>, offset: u64, kind, coordinates: Option<[f64; 2]>| {
+        let mut marker = SketchInputEntity::new(id, "lane", 0, offset, kind);
+        marker.feature_ref = owner.map(str::to_owned);
+        marker.coordinates_m = coordinates.and_then(cadmpeg_ir::units::FiniteVector::new);
+        marker
+    };
+    let unlocated = marker("unlocated", Some("owner"), 8, SketchInputKind::Arc, None);
+    let point = marker("point", Some("owner"), 24, SketchInputKind::Point, Some([1.0, 2.0]));
+    let arc = marker("arc", Some("owner"), 16, SketchInputKind::Arc, Some([3.0, 4.0]));
+    let relation = marker("relation", Some("owner"), 20, SketchInputKind::Relation(crate::records::SketchRelationKind::Coincident), Some([1.0, 2.0]));
+    let other = marker("other", Some("other-owner"), 0, SketchInputKind::Point, Some([1.0, 2.0]));
+    let unowned = marker("unowned", None, 4, SketchInputKind::Point, Some([5.0, 6.0]));
+    let geometry = MarkerGeometryIndex::new(&ctx, &[&point, &other, &unlocated, &arc, &unowned, &relation]).unwrap();
+    let all = geometry.roster(&arc, MarkerRoster::All).unwrap();
+    assert_eq!(all.iter().map(|marker| marker.id()).collect::<Vec<_>>(), ["unlocated", "arc", "relation", "point"]);
+    let located = geometry.roster(&arc, MarkerRoster::Located).unwrap();
+    assert_eq!(located.iter().map(|marker| marker.id()).collect::<Vec<_>>(), ["arc", "relation", "point"]);
+    assert_eq!(geometry.roster(&arc, MarkerRoster::Points).unwrap()[0].id(), "point");
+    assert_eq!(geometry.roster(&unowned, MarkerRoster::All).unwrap()[0].id(), "unowned");
+    let subset = geometry.roster(&arc, MarkerRoster::Geometry).unwrap();
+    assert_eq!(subset.iter().map(|marker| marker.id()).collect::<Vec<_>>(), ["arc", "point"]);
+    let cached = subset.as_ptr();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "index SLDPRT owner marker rosters", None,
+    );
+    assert_eq!(geometry.roster(&arc, MarkerRoster::Geometry).unwrap().as_ptr(), cached);
+}
