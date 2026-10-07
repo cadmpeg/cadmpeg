@@ -479,7 +479,7 @@ impl Node {
         crate::geometry::decode_curve_record(&self.bytes, self.kind, payload_shift)
     }
 
-    /// Spine curve reference of a rolling-ball BLEND_SURFACE.
+    /// Spine curve reference of a rolling-ball `BLEND_SURFACE`.
     fn blend_spine(&self) -> Option<u32> {
         let (_, mut at) = self.common_header()?;
         (self.bytes.get(at) == Some(&b'R')).then_some(())?;
@@ -1850,15 +1850,15 @@ impl Graph {
         let mut reachable_fins = BTreeSet::new();
         for shell in ctx.admit_iter(&shells, "NX body shell faces")? {
             for &face_xmt in ctx.admit_iter(&shell.faces, "NX body shell faces")? {
-                let rings =
-                    match storage.with_storage(|| match self.face_loop_rings(ctx, face_xmt) {
+                let Ok(rings) =
+                    storage.with_storage(|| match self.face_loop_rings(ctx, face_xmt) {
                         Ok(rings) => Ok(Ok(rings)),
                         Err(FaceLoopError::Invalid(failure)) => Ok(Err(failure)),
                         Err(FaceLoopError::Codec(error)) => Err(error),
-                    })? {
-                        Ok(rings) => rings,
-                        Err(_) => return Ok((false, faces)),
-                    };
+                    })?
+                else {
+                    return Ok((false, faces));
+                };
                 if rings.is_empty() {
                     return Ok((false, faces));
                 }
