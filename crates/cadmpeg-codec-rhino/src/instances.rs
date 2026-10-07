@@ -507,10 +507,7 @@ pub(crate) fn hex(
         .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     let mut value = ctx.retained_string(byte_len, operation)?;
-    for byte in ctx
-        .admit_iter(bytes, "Rhino hex traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for byte in ctx.admit_iter(bytes, "Rhino hex traversal")? {
         ctx.push_retained_char(
             &mut value,
             char::from(DIGITS[usize::from(byte >> 4)]),
@@ -1450,8 +1447,7 @@ pub(crate) fn parse_definitions(
     let mut seen = HashMap::new();
     let mut opaque_indices = BTreeSet::new();
     for (source_order, record) in ctx
-        .admit_iter(&(records)[..], "Rhino parse definitions traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&records[..], "Rhino parse definitions traversal")?
         .enumerate()
     {
         let mut warnings = Diagnostics::new();

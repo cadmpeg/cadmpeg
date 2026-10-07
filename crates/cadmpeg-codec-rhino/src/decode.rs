@@ -64,10 +64,7 @@ fn instance_members_are_unique(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut lookup_storage = ctx.reserve_scoped(0, "Rhino instance member lookup")?;
     let mut unique_members = BTreeSet::new();
-    for member in ctx
-        .admit_iter(members, "Rhino instance members are unique traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for member in ctx.admit_iter(members, "Rhino instance members are unique traversal")? {
         lookup_storage.with_storage(|| {
             ctx.insert_btree_set(
                 &mut unique_members,
@@ -299,22 +296,16 @@ fn snapshot_instance_links<'a>(
             "Rhino instance link snapshot rows",
         )?;
         let mut links = ctx.vector_storage(records.len(), BYTES)?;
-        for record in ctx
-            .admit_iter(records, "Rhino snapshot instance links borrowed traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for record in ctx.admit_iter(records, "Rhino snapshot instance links borrowed traversal")? {
             ctx.charge_collection_items(
                 u64_from_index(record.links().len()),
                 "Rhino instance link snapshot entries",
             )?;
             let mut row = ctx.vector_storage(record.links().len(), BYTES)?;
-            for link in ctx
-                .admit_iter(
-                    record.links(),
-                    "Rhino snapshot instance links borrowed traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for link in ctx.admit_iter(
+                record.links(),
+                "Rhino snapshot instance links borrowed traversal",
+            )? {
                 row.push(ctx.copy_retained_text(link, BYTES)?);
             }
             ctx.charge_work(
@@ -555,8 +546,7 @@ impl<'a> DecodeContext<'a> {
         let mut lookup_storage = session.reserve_scoped(0, "Rhino transaction lookup storage")?;
         let mut object_candidates = HashMap::new();
         for (source_order, object) in session
-            .admit_iter(&(scan.objects)[..], "Rhino new traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&scan.objects[..], "Rhino new traversal")?
             .enumerate()
         {
             if let Some(identity) = object.identity() {
@@ -578,8 +568,7 @@ impl<'a> DecodeContext<'a> {
         }
         let mut definition_candidates = HashMap::new();
         for (index, definition) in session
-            .admit_iter(&(scan.definitions.definitions())[..], "Rhino new traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&(scan.definitions.definitions())[..], "Rhino new traversal")?
             .enumerate()
         {
             let id = definition.id();
@@ -985,8 +974,7 @@ impl<'a> DecodeContext<'a> {
                         let proxy = self
                             .expand
                             .ctx()
-                            .admit_iter(&(object.userdata)[..], "Rhino decode geometry traversal")
-                            .map_err(cadmpeg_core::CodecError::from)?
+                            .admit_iter(&object.userdata[..], "Rhino decode geometry traversal")?
                             .filter_map(UserdataDescriptor::known)
                             .find(|extra| {
                                 extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
@@ -1438,8 +1426,7 @@ impl<'a> DecodeContext<'a> {
             )?;
         }
         for (index, (kind, id)) in ctx
-            .admit_iter(&(loop_ids)[..], "Rhino decode hatch traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&loop_ids[..], "Rhino decode hatch traversal")?
             .enumerate()
         {
             insert_feature_property(
@@ -1568,8 +1555,7 @@ impl<'a> DecodeContext<'a> {
         }?;
         let mut parameters = BTreeMap::new();
         for (index, segment) in ctx
-            .admit_iter(&(polyedge.segments)[..], "Rhino decode polyedge traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&polyedge.segments[..], "Rhino decode polyedge traversal")?
             .enumerate()
         {
             if let Some(record) = self.resolve_object_record(
@@ -3089,15 +3075,10 @@ impl<'a> DecodeContext<'a> {
         );
         match decoded {
             Ok(extrusion) => {
-                for warning in self
-                    .expand
-                    .ctx()
-                    .admit_iter(
-                        &(extrusion.warnings)[..],
-                        "Rhino decode extrusion traversal",
-                    )
-                    .map_err(cadmpeg_core::CodecError::from)?
-                {
+                for warning in self.expand.ctx().admit_iter(
+                    &(extrusion.warnings)[..],
+                    "Rhino decode extrusion traversal",
+                )? {
                     self.scan_diagnostic(source_order, warning)?;
                 }
                 if self.commit_extrusion(source_order, extrusion)? {
@@ -3136,10 +3117,7 @@ impl<'a> DecodeContext<'a> {
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
         let ctx = self.expand.ctx();
-        for loss in ctx
-            .admit_iter(&(self.scan.metadata.losses)[..], "Rhino commit traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for loss in ctx.admit_iter(&self.scan.metadata.losses[..], "Rhino commit traversal")? {
             ctx.reserve_vec(
                 &mut self.report.phase_losses,
                 1,
@@ -3180,8 +3158,7 @@ impl<'a> DecodeContext<'a> {
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes(ctx)?;
         let decoded = ctx
-            .admit_iter(&(outcomes)[..], "Rhino commit traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&outcomes[..], "Rhino commit traversal")?
             .map(|(_, outcome)| outcome.decoded)
             .sum::<usize>();
         let total = self.scan.objects.len();
@@ -3193,10 +3170,7 @@ impl<'a> DecodeContext<'a> {
             "Rhino final decode loss message",
         )?);
         let mut omissions: Vec<LossNote> = Vec::new();
-        for (class, outcome) in ctx
-            .admit_iter(&(outcomes)[..], "Rhino commit traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for (class, outcome) in ctx.admit_iter(&outcomes[..], "Rhino commit traversal")? {
             if outcome.retained > 0 {
                 ctx.reserve_vec(&mut omissions, 1, "Rhino class omission losses")?;
                 omissions.push(
@@ -3260,13 +3234,10 @@ impl<'a> DecodeContext<'a> {
             "Rhino typed decode losses",
         )?;
         self.report.typed_losses.extend(omissions);
-        for diagnostic in ctx
-            .admit_iter(
-                self.scan.definitions.diagnostics(),
-                "Rhino commit view traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for diagnostic in ctx.admit_iter(
+            self.scan.definitions.diagnostics(),
+            "Rhino commit view traversal",
+        )? {
             self.expand
                 .ctx()
                 .reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
@@ -3278,10 +3249,7 @@ impl<'a> DecodeContext<'a> {
             "Rhino final decode losses",
         )?;
         losses.append(&mut self.report.typed_losses);
-        for diagnostic in ctx
-            .admit_iter(&(self.scan.warnings)[..], "Rhino commit traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for diagnostic in ctx.admit_iter(&self.scan.warnings[..], "Rhino commit traversal")? {
             ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
             losses.push(crate::wire::admitted_loss(
                 ctx,
@@ -3299,9 +3267,8 @@ impl<'a> DecodeContext<'a> {
         )?;
         losses.append(&mut self.report.phase_losses);
         let mut phase_families = BTreeMap::<String, (usize, String)>::new();
-        for diagnostic in ctx
-            .admit_iter(&(self.report.phase_warnings)[..], "Rhino commit traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+        for diagnostic in
+            ctx.admit_iter(&self.report.phase_warnings[..], "Rhino commit traversal")?
         {
             if let Some(code) = diagnostic.code {
                 ctx.reserve_vec(&mut losses, 1, "Rhino final decode losses")?;
@@ -3356,13 +3323,11 @@ impl<'a> DecodeContext<'a> {
             losses.push(loss);
         }
         let byte_records = ctx
-            .admit_iter(&(self.session.unknowns())[..], "Rhino commit traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&(self.session.unknowns())[..], "Rhino commit traversal")?
             .filter(|record| record.data().is_some())
             .count()
             + ctx
-                .admit_iter(&(self.opaque_records)[..], "Rhino commit traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+                .admit_iter(&self.opaque_records[..], "Rhino commit traversal")?
                 .filter(|record| record.data().is_some())
                 .count();
         let note = if self.opaque_records.is_empty() {
@@ -3474,7 +3439,7 @@ impl<'a> DecodeContext<'a> {
         let binding = self.unit_binding();
         for index in 0..self.scan.history.len() {
             let record = &self.scan.history[index];
-            if !self.expand.ctx().admit_iter(&(record.values)[..], "Rhino retain unbound history geometry traversal").map_err(cadmpeg_core::CodecError::from)?.any(|value| {
+            if !self.expand.ctx().admit_iter(&record.values[..], "Rhino retain unbound history geometry traversal")?.any(|value| {
                 matches!(&value.value, crate::history::Value::Geometries(values) if !values.is_empty())
             }) {
                 continue;
@@ -3875,8 +3840,7 @@ impl<'a> DecodeContext<'a> {
                     .admit_iter(
                         &(self.session.document().model.points)[..],
                         "Rhino commit geometry traversal",
-                    )
-                    .map_err(cadmpeg_core::CodecError::from)?
+                    )?
                     .filter(|point| point.id.as_str().starts_with(&point_prefix))
                 {
                     set_exactness(
@@ -4508,8 +4472,7 @@ impl<'a> DecodeContext<'a> {
         for loss in self
             .expand
             .ctx()
-            .admit_iter(&(raw.losses)[..], "Rhino decode brep traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&raw.losses[..], "Rhino decode brep traversal")?
         {
             self.expand.ctx().reserve_vec(
                 &mut self.report.phase_losses,
@@ -4672,12 +4635,8 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
         let mut outcomes = HashMap::new();
         for (object, status) in ctx
-            .admit_iter(&(self.scan.objects)[..], "Rhino class outcomes traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-            .zip(
-                ctx.admit_iter(self.statuses.as_slice(), "Rhino object status traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?,
-            )
+            .admit_iter(&self.scan.objects[..], "Rhino class outcomes traversal")?
+            .zip(ctx.admit_iter(self.statuses.as_slice(), "Rhino object status traversal")?)
         {
             let class = object.class_uuid().unwrap_or_else(crate::wire::Uuid::nil);
             if !outcomes.contains_key(&class) {
@@ -4986,7 +4945,7 @@ fn stage_extrusion_caps(
         });
         let mut loop_ids = ctx.collection_vec(boundaries.len(), "Rhino extrusion cap loop IDs")?;
         for (profile, committed) in ctx
-            .admit_iter(&(boundaries)[..], "Rhino stage extrusion caps traversal")
+            .admit_iter(&boundaries[..], "Rhino stage extrusion caps traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
@@ -5425,8 +5384,7 @@ impl BrepDraft {
             .admit_iter(
                 &(self.draft.model().curves)[..],
                 "Rhino free carrier fallback traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            )?
             .map(|value| value.id.as_str())
             .chain(
                 self.draft
@@ -5511,7 +5469,7 @@ fn stage_brep_carriers(
         ("analysis", &raw.analysis_meshes),
     ] {
         for (index, slot) in ctx
-            .admit_iter(&(slots)[..], "Rhino stage brep carriers traversal")
+            .admit_iter(&slots[..], "Rhino stage brep carriers traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
@@ -5577,7 +5535,7 @@ fn stage_brep_carriers(
         }
     }
     for (index, child) in ctx
-        .admit_iter(&(raw.c3.slots)[..], "Rhino stage brep carriers traversal")
+        .admit_iter(&raw.c3.slots[..], "Rhino stage brep carriers traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
         .filter_map(|(index, child)| child.as_ref().map(|child| (index, child)))
@@ -5868,7 +5826,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     )
     .map_err(crate::curves::GeometryError::from)?;
     for (index, vertex) in ctx
-        .admit_iter(&(raw.vertices)[..], "Rhino stage brep traversal")
+        .admit_iter(&raw.vertices[..], "Rhino stage brep traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -5919,7 +5877,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     )
     .map_err(crate::curves::GeometryError::from)?;
     for (index, edge) in ctx
-        .admit_iter(&(raw.edges)[..], "Rhino stage brep traversal")
+        .admit_iter(&raw.edges[..], "Rhino stage brep traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -5967,7 +5925,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         )
         .map_err(crate::curves::GeometryError::from)?;
     for index in ctx
-        .admit_iter(&(free_vertex_indices)[..], "Rhino stage brep traversal")
+        .admit_iter(&free_vertex_indices[..], "Rhino stage brep traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         free_vertex_ids.push({
@@ -6003,7 +5961,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     )
     .map_err(crate::curves::GeometryError::from)?;
     for (index, face) in ctx
-        .admit_iter(&(raw.faces)[..], "Rhino stage brep traversal")
+        .admit_iter(&raw.faces[..], "Rhino stage brep traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -6073,7 +6031,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     )
     .map_err(crate::curves::GeometryError::from)?;
     for (index, loop_record) in ctx
-        .admit_iter(&(resolved.loops)[..], "Rhino stage brep traversal")
+        .admit_iter(&resolved.loops[..], "Rhino stage brep traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -6094,7 +6052,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             .collection_vec(loop_record.trims.len(), "Rhino staged Brep loop coedges")
             .map_err(crate::curves::GeometryError::from)?;
         for trim_index in ctx
-            .admit_iter(&(loop_record.trims)[..], "Rhino stage brep traversal")
+            .admit_iter(&loop_record.trims[..], "Rhino stage brep traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             let trim = &raw.trims[*trim_index];
@@ -6231,7 +6189,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             continue;
         }
         for (offset, trim_index) in ctx
-            .admit_iter(&(uses)[..], "Rhino stage brep traversal")
+            .admit_iter(&uses[..], "Rhino stage brep traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
@@ -6262,7 +6220,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     )
     .map_err(crate::curves::GeometryError::from)?;
     for (component, shell) in ctx
-        .admit_iter(&(grouping.shells)[..], "Rhino stage brep traversal")
+        .admit_iter(&grouping.shells[..], "Rhino stage brep traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -6293,7 +6251,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             .collection_vec(shell.faces.len(), "Rhino staged Brep shell faces")
             .map_err(crate::curves::GeometryError::from)?;
         for index in ctx
-            .admit_iter(&(shell.faces)[..], "Rhino stage brep traversal")
+            .admit_iter(&shell.faces[..], "Rhino stage brep traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             shell_faces
@@ -6669,7 +6627,7 @@ fn scale_plane_pcurves(
             "Rhino plane loops membership",
         )? {
             for curve_use in ctx
-                .admit_iter(&(coedge.pcurves)[..], "Rhino scale plane pcurves traversal")
+                .admit_iter(&coedge.pcurves[..], "Rhino scale plane pcurves traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 insert_id(ctx, &mut plane_pcurves, curve_use.pcurve.as_str())?;
@@ -7054,7 +7012,7 @@ fn decode_pcurves(
     let mut cached_curve_storage = ctx.reserve_scoped(0, "Rhino temporary C2 cache")?;
     let mut decoded_slots = HashMap::<usize, Option<NurbsCurve>>::new();
     for (index, trim) in ctx
-        .admit_iter(&(raw.trims)[..], "Rhino decode pcurves traversal")
+        .admit_iter(&raw.trims[..], "Rhino decode pcurves traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -7298,7 +7256,7 @@ fn face_components(
         *value = index;
     }
     for edge in ctx
-        .admit_iter(&(resolved.edges)[..], "Rhino face components traversal")
+        .admit_iter(&resolved.edges[..], "Rhino face components traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         let mut faces = ctx.alloc_filled(edge.trims.len(), 0usize, "Rhino Brep edge faces")?;
@@ -7368,7 +7326,7 @@ fn brep_free_vertex_indices(
         }
     }
     let free_count = ctx
-        .admit_iter(&(attached)[..], "Rhino brep free vertex indices traversal")
+        .admit_iter(&attached[..], "Rhino brep free vertex indices traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .filter(|attached| !**attached)
         .count();
@@ -7403,7 +7361,7 @@ fn region_shell_groups(
             ctx.alloc_filled(components.len(), 0usize, "Rhino Brep fallback face groups")?;
         let mut groups = HashMap::new();
         for (face, component) in ctx
-            .admit_iter(&(components)[..], "Rhino region shell groups traversal")
+            .admit_iter(&components[..], "Rhino region shell groups traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .copied()
             .enumerate()
@@ -7416,7 +7374,7 @@ fn region_shell_groups(
             .map_err(crate::curves::GeometryError::from)?;
         for (group, (_component, faces)) in groups.into_iter().enumerate() {
             for face in ctx
-                .admit_iter(&(faces)[..], "Rhino region shell groups traversal")
+                .admit_iter(&faces[..], "Rhino region shell groups traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 face_groups[*face] = group;
@@ -7468,7 +7426,7 @@ fn region_shell_groups(
         .map_err(crate::curves::GeometryError::from)?;
     for (group, ((region, _component), faces)) in grouped.into_iter().enumerate() {
         for face in ctx
-            .admit_iter(&(faces)[..], "Rhino region shell groups traversal")
+            .admit_iter(&faces[..], "Rhino region shell groups traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             face_groups[*face] = group;
@@ -7573,13 +7531,10 @@ fn append_curve_warnings<P: std::fmt::Display + Copy>(
     prefix: P,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let _nested = ctx.enter_nested("Rhino curve warning tree")?;
-    for warning in ctx
-        .admit_iter(
-            &curve.warnings()[..],
-            "Rhino append curve warnings borrowed traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for warning in ctx.admit_iter(
+        &curve.warnings()[..],
+        "Rhino append curve warnings borrowed traversal",
+    )? {
         destination.push_coded_admitted(
             ctx,
             warning.code,
@@ -7587,13 +7542,10 @@ fn append_curve_warnings<P: std::fmt::Display + Copy>(
         )?;
     }
     if let crate::curves::DecodedCurve::Compound { children, .. } = curve {
-        for (_, child) in ctx
-            .admit_iter(
-                children.as_slice(),
-                "Rhino append curve warnings view traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for (_, child) in ctx.admit_iter(
+            children.as_slice(),
+            "Rhino append curve warnings view traversal",
+        )? {
             append_curve_warnings(ctx, destination, child, prefix)?;
         }
     }
@@ -8094,10 +8046,7 @@ fn source_association(
         instance_path.len(),
         "Rhino source association instance path",
     )?;
-    for segment in ctx
-        .admit_iter(instance_path, "Rhino source association traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for segment in ctx.admit_iter(instance_path, "Rhino source association traversal")? {
         admitted_path
             .push(ctx.copy_retained_text(segment, "Rhino source association instance ID")?);
     }
@@ -8466,13 +8415,10 @@ fn full_source_attributes(
         attribute!("model_url", url);
     }
     let mut layer_index_counts = BTreeMap::<i32, usize>::new();
-    for layer in ctx
-        .admit_iter(
-            &(scan.metadata.layers)[..],
-            "Rhino full source attributes traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for layer in ctx.admit_iter(
+        &(scan.metadata.layers)[..],
+        "Rhino full source attributes traversal",
+    )? {
         ctx.admit_btree_entry(
             &layer_index_counts,
             &layer.index,
@@ -8481,13 +8427,10 @@ fn full_source_attributes(
         *layer_index_counts.entry(layer.index).or_default() += 1;
     }
     let mut layer_index_occurrences = BTreeMap::<i32, usize>::new();
-    for layer in ctx
-        .admit_iter(
-            &(scan.metadata.layers)[..],
-            "Rhino full source attributes traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for layer in ctx.admit_iter(
+        &(scan.metadata.layers)[..],
+        "Rhino full source attributes traversal",
+    )? {
         let duplicate = if layer_index_counts.get(&layer.index) == Some(&1) {
             None
         } else {

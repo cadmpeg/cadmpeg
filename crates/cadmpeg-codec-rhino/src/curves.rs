@@ -798,7 +798,7 @@ pub(crate) fn exact_nurbs(
                 .collection_vec(children.len(), "Rhino exact NURBS segments")
                 .map_err(crate::curves::GeometryError::from)?;
             for (index, (start, child)) in ctx
-                .admit_iter(&(children)[..], "Rhino exact nurbs traversal")
+                .admit_iter(&children[..], "Rhino exact nurbs traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .enumerate()
             {
@@ -937,7 +937,7 @@ fn insert_knot_once(
     // Endpoint clamping can select a span beyond the last control point.
     let k = ctx
         .admit_iter(knots.as_slice(), "Rhino knot span search")
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
         .rposition(|knot| *knot <= value)
         .map_or_else(
             || {
@@ -950,7 +950,7 @@ fn insert_knot_once(
         )?;
     let k = if degree == 0 { k.min(n) } else { k };
     let multiplicity = ctx
-        .admit_iter(&(knots)[..], "Rhino insert knot once traversal")
+        .admit_iter(&knots[..], "Rhino insert knot once traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .filter(|knot| **knot == value)
         .count();
@@ -1083,7 +1083,7 @@ fn elevate_to_degree(
     knots.extend_from_slice(source_knots);
     for endpoint in domain {
         while ctx
-            .admit_iter(&(knots)[..], "Rhino elevate to degree traversal")
+            .admit_iter(&knots[..], "Rhino elevate to degree traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter(|value| **value == endpoint)
             .count()
@@ -1102,7 +1102,7 @@ fn elevate_to_degree(
     }
     let mut internal = Vec::new();
     for knot in ctx
-        .admit_iter(&(knots)[..], "Rhino elevate to degree traversal")
+        .admit_iter(&knots[..], "Rhino elevate to degree traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .copied()
         .filter(|knot| *knot > domain[0] && *knot < domain[1])
@@ -1113,7 +1113,7 @@ fn elevate_to_degree(
     internal.dedup();
     for knot in internal {
         while ctx
-            .admit_iter(&(knots)[..], "Rhino elevate to degree traversal")
+            .admit_iter(&knots[..], "Rhino elevate to degree traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter(|value| **value == knot)
             .count()
@@ -1147,7 +1147,7 @@ fn elevate_to_degree(
         bezier.extend_from_slice(&points[span - degree..=span]);
         let bezier = elevate_bezier(ctx, bezier, target)?;
         let disconnected = ctx
-            .admit_iter(&(knots)[..], "Rhino elevate to degree traversal")
+            .admit_iter(&knots[..], "Rhino elevate to degree traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter(|knot| **knot == knots[span])
             .count()
@@ -1224,7 +1224,7 @@ pub(crate) fn join_nurbs_segments(
         .collection_vec(segments.len(), "Rhino elevated polycurve segments")
         .map_err(crate::curves::GeometryError::from)?;
     for segment in ctx
-        .admit_iter(&(segments)[..], "Rhino join nurbs segments traversal")
+        .admit_iter(&segments[..], "Rhino join nurbs segments traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         elevated_segments.push(elevate_to_degree(ctx, segment, target, offset)?);
@@ -1241,7 +1241,7 @@ pub(crate) fn join_nurbs_segments(
         .and_then(|value| value.checked_add(1))
         .ok_or_else(|| error(offset, "curve degree overflow"))?;
     for segment in ctx
-        .admit_iter(&(segments)[..], "Rhino join nurbs segments traversal")
+        .admit_iter(&segments[..], "Rhino join nurbs segments traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         let start = segment.knots().get(multiplicity - 1).copied();
@@ -1272,7 +1272,7 @@ pub(crate) fn join_nurbs_segments(
         }
     }
     let rational = ctx
-        .admit_iter(&(segments)[..], "Rhino join nurbs segments traversal")
+        .admit_iter(&segments[..], "Rhino join nurbs segments traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .any(|segment| {
             matches!(

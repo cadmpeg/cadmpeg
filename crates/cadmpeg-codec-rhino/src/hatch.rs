@@ -339,8 +339,7 @@ pub(crate) fn apply_userdata(
     let mut errors = Vec::new();
     let mut first_gradient = None;
     for extra in ctx
-        .admit_iter(&(userdata)[..], "Rhino apply userdata traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&userdata[..], "Rhino apply userdata traversal")?
         .filter_map(UserdataDescriptor::known)
         .filter(|value| value.class_uuid == V5_HATCH_EXTRA && value.item_uuid == V5_HATCH_EXTRA)
     {
@@ -351,8 +350,7 @@ pub(crate) fn apply_userdata(
         }
     }
     for extra in ctx
-        .admit_iter(&(userdata)[..], "Rhino apply userdata traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&userdata[..], "Rhino apply userdata traversal")?
         .filter_map(UserdataDescriptor::known)
         .filter(|value| value.class_uuid == GRADIENT_COLOR_DATA)
     {

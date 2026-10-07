@@ -109,10 +109,7 @@ pub(super) fn decode(
         ctx.insert_btree_map(&mut definitions, id, product, "step_product_definitions")?;
     }
     let mut definitions_by_product_in_source_order = BTreeMap::<u64, Vec<u64>>::new();
-    for (&definition, &product) in ctx
-        .admit_iter(&definitions, "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&definition, &product) in ctx.admit_iter(&definitions, "STEP decode traversal")? {
         ctx.admit_btree_entry(
             &definitions_by_product_in_source_order,
             &product,
@@ -185,8 +182,7 @@ pub(super) fn decode(
     let mut shape_bindings = shape_bindings(exchange, &definitions, topology, ctx)?;
     let mut definition_counts = BTreeMap::<u64, usize>::new();
     for product in ctx
-        .admit_iter(&(definitions), "STEP decode map traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&(definitions), "STEP decode map traversal")?
         .map(|(_, value)| value)
     {
         ctx.admit_btree_entry(
@@ -264,7 +260,7 @@ pub(super) fn decode(
         let definition_iter = std::iter::once(None)
             .filter(|_| product_definitions.is_empty())
             .chain(
-                ctx.admit_iter(&(product_definitions)[..], "STEP decode chain traversal")?
+                ctx.admit_iter(&product_definitions[..], "STEP decode chain traversal")?
                     .copied()
                     .map(Some),
             );
@@ -446,8 +442,7 @@ pub(super) fn decode(
         );
     }
     for id in ctx
-        .admit_iter(&(formations), "STEP decode map traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&(formations), "STEP decode map traversal")?
         .map(|(key, _)| key)
         .chain(
             ctx.admit_iter(&definitions, "STEP decode chain traversal")?
@@ -498,8 +493,7 @@ pub(super) fn decode(
     }
     let mut child_definitions = BTreeSet::new();
     for usage in ctx
-        .admit_iter(&(usages), "STEP decode map traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&(usages), "STEP decode map traversal")?
         .map(|(_, value)| value)
     {
         ctx.insert_btree_set(
@@ -514,8 +508,7 @@ pub(super) fn decode(
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
     for &definition in ctx
-        .admit_iter(&(definitions), "STEP decode map traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&(definitions), "STEP decode map traversal")?
         .map(|(key, _)| key)
     {
         if child_definitions.contains(&definition) {
@@ -597,10 +590,7 @@ pub(super) fn decode(
         &mut competing_placements,
         ctx,
     )?;
-    for (&usage_id, source_ids) in ctx
-        .admit_iter(&ambiguous_placements, "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&usage_id, source_ids) in ctx.admit_iter(&ambiguous_placements, "STEP decode traversal")? {
         if competing_placements.contains_key(&usage_id) {
             continue;
         }
@@ -631,10 +621,7 @@ pub(super) fn decode(
         ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(ctx.format_retained(format_args!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"), "step_ambiguous_placement_loss_text")?));
     }
-    for (&usage_id, source_ids) in ctx
-        .admit_iter(&competing_placements, "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&usage_id, source_ids) in ctx.admit_iter(&competing_placements, "STEP decode traversal")? {
         let records = join_product_references(
             source_ids.iter().copied(),
             ctx,
@@ -647,10 +634,7 @@ pub(super) fn decode(
     let mut missing_placement_reports = BTreeSet::new();
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
-    for (&usage_id, usage) in ctx
-        .admit_iter(&usages, "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&usage_id, usage) in ctx.admit_iter(&usages, "STEP decode traversal")? {
         ctx.admit_btree_entry(
             &usages_by_parent,
             &usage.parent_definition,
@@ -871,10 +855,7 @@ pub(super) fn decode(
             ctx.insert_btree_set(&mut typed, id, "step_product_typed_claims")?;
         }
     }
-    for (&usage_id, source_ids) in ctx
-        .admit_iter(&ambiguous_placements, "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&usage_id, source_ids) in ctx.admit_iter(&ambiguous_placements, "STEP decode traversal")? {
         ctx.remove_btree_set(&mut typed, &usage_id, "step_product_typed_claims")?;
         for source_id in ctx.admit_iter(source_ids, "step_product_typed_claims")? {
             ctx.remove_btree_set(&mut typed, source_id, "step_product_typed_claims")?;
@@ -951,8 +932,7 @@ fn apply_body_placements(
         .admit_iter(
             &(ir.model.bodies)[..],
             "STEP apply body placements traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .enumerate()
     {
         ctx.admit_btree_entry(&body_indices, &body.id, "step_body_placement_indices")?;
@@ -1050,18 +1030,15 @@ fn drawing_owned_items(
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut pending = Vec::new();
     for record in ctx
-        .admit_iter(exchange.records(), "STEP drawing owned items map traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(exchange.records(), "STEP drawing owned items map traversal")?
         .map(|(_, value)| value)
     {
         let drawing_owner = ctx
-            .admit_iter(&(record.partials)[..], "STEP drawing owned items traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP drawing owned items traversal")?
             .any(|partial| DRAWING_ITEM_OWNER_TYPES.contains(&partial.name.as_str()));
         if drawing_owner {
-            for partial in ctx
-                .admit_iter(&(record.partials)[..], "STEP drawing owned items traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            for partial in
+                ctx.admit_iter(&record.partials[..], "STEP drawing owned items traversal")?
             {
                 for value in ctx.admit_iter(
                     partial.parameters.as_slice(),
@@ -1092,8 +1069,7 @@ fn drawing_owned_items(
             }
         }
         for partial in ctx
-            .admit_iter(&(record.partials)[..], "STEP drawing owned items traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP drawing owned items traversal")?
             .filter(|partial| {
                 matches!(
                     partial.name.as_str(),
@@ -1105,8 +1081,7 @@ fn drawing_owned_items(
                 .admit_iter(
                     &(partial.parameters)[..],
                     "STEP drawing owned items traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
+                )?
                 .find_map(|value| match value {
                     Value::List(values) => Some(values.as_slice()),
                     _ => None,
@@ -1133,9 +1108,8 @@ fn collect_references(
             ctx.push_vec(references, *id, "step_drawing_owned_pending")?;
         }
         Value::List(values) => {
-            for value in ctx
-                .admit_iter(values.as_slice(), "STEP collect references value traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            for value in
+                ctx.admit_iter(values.as_slice(), "STEP collect references value traversal")?
             {
                 collect_references(value, references, ctx)?;
             }
@@ -1276,9 +1250,8 @@ fn occurrence_placements(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
     let mut pds = BTreeMap::new();
-    for (&id, record) in ctx
-        .admit_iter(exchange.records(), "STEP occurrence placements traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+    for (&id, record) in
+        ctx.admit_iter(exchange.records(), "STEP occurrence placements traversal")?
     {
         if let Some(definition) = named_parameter(ctx, record, "PRODUCT_DEFINITION_SHAPE", 2)?
             .and_then(ValueExt::reference)
@@ -1288,13 +1261,10 @@ fn occurrence_placements(
     }
     let definition_representations = definition_representations(exchange, &pds, ctx)?;
     let mut definitions_by_representation = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for (&definition, representations) in ctx
-        .admit_iter(
-            &definition_representations,
-            "STEP occurrence placements traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&definition, representations) in ctx.admit_iter(
+        &definition_representations,
+        "STEP occurrence placements traversal",
+    )? {
         for &representation in representations {
             ctx.admit_btree_entry(
                 &definitions_by_representation,
@@ -1351,9 +1321,8 @@ fn occurrence_placements(
             Err(error) => return Err(placement_error(error)),
         }
     }
-    for (&usage, source_ids) in ctx
-        .admit_iter(&context_candidates, "STEP occurrence placements traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+    for (&usage, source_ids) in
+        ctx.admit_iter(&context_candidates, "STEP occurrence placements traversal")?
     {
         if source_ids.len() > 1 {
             let mut copied = Vec::new();
@@ -1407,13 +1376,10 @@ fn occurrence_placements(
         ctx.reserve_vec(grouped, 1, "step_occurrence_representation_members")?;
         grouped.push((record_id, representation));
     }
-    for (&usage_id, representations) in ctx
-        .admit_iter(
-            &occurrence_representations,
-            "STEP occurrence placements traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&usage_id, representations) in ctx.admit_iter(
+        &occurrence_representations,
+        "STEP occurrence placements traversal",
+    )? {
         let Some(usage) = usages.get(&usage_id) else {
             continue;
         };
@@ -1538,18 +1504,14 @@ fn occurrence_placements(
     }
     let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
     for usage in ctx
-        .admit_iter(usages, "STEP occurrence placements map traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(usages, "STEP occurrence placements map traversal")?
         .map(|(_, value)| value)
     {
         let pair = (usage.parent_definition, usage.child_definition);
         ctx.admit_btree_entry(&sibling_usage_counts, &pair, "step_sibling_usage_counts")?;
         *sibling_usage_counts.entry(pair).or_default() += 1;
     }
-    for (&usage_id, usage) in ctx
-        .admit_iter(usages, "STEP occurrence placements traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&usage_id, usage) in ctx.admit_iter(usages, "STEP occurrence placements traversal")? {
         if result.contains_key(&usage_id) || ambiguous.contains_key(&usage_id) {
             continue;
         }

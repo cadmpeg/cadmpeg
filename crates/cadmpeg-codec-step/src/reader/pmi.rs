@@ -44,10 +44,7 @@ fn collect_pmi_references(
     operation: &'static str,
 ) -> Result<Vec<u64>, CodecError> {
     let mut ids = Vec::new();
-    for value in ctx
-        .admit_iter(values, "STEP collect pmi references traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for value in ctx.admit_iter(values, "STEP collect pmi references traversal")? {
         for id in references(value, ctx) {
             let id = id?;
             ctx.push_vec(&mut ids, id, operation)?;
@@ -203,8 +200,7 @@ pub(super) fn decode(
 
     for (id, record) in exchange.entities(ctx, "DATUM_SYSTEM")? {
         let constituents = ctx
-            .admit_iter(&(record.parameters())[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&(record.parameters())[..], "STEP decode traversal")?
             .rev()
             .find_map(ValueExt::list)
             .unwrap_or_default();
@@ -212,8 +208,7 @@ pub(super) fn decode(
         let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
         let mut datum_references = Vec::new();
         for (index, constituent) in ctx
-            .admit_iter(&(constituents)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&constituents[..], "STEP decode traversal")?
             .enumerate()
         {
             let Some(precedence) = u32::try_from(index + 1).ok().and_then(NonZeroU32::new) else {
@@ -299,9 +294,8 @@ pub(super) fn decode(
             continue;
         };
         let mut name = None;
-        'record_parameters: for partial in ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+        'record_parameters: for partial in
+            ctx.admit_iter(&record.partials[..], "STEP decode traversal")?
         {
             for value in ctx.admit_iter(
                 partial.parameters.as_slice(),
@@ -325,8 +319,7 @@ pub(super) fn decode(
             let category = if dimension_name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE") {
                 let mut category = None;
                 'record_parameters: for partial in ctx
-                    .admit_iter(&(record.partials)[..], "STEP decode traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
+                    .admit_iter(&record.partials[..], "STEP decode traversal")?
                     .map(|partial| -> Result<Option<_>, CodecError> {
                         Ok((ctx.equal(
                             partial.name.as_str(),
@@ -439,12 +432,10 @@ pub(super) fn decode(
         let refs =
             collect_pmi_references(record.parameters(), ctx, "step_pmi_plus_minus_references")?;
         let dimension = ctx
-            .admit_iter(&(refs)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&refs[..], "STEP decode traversal")?
             .find_map(|reference| annotations.get(*reference));
         let limits = ctx
-            .admit_iter(&(refs)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&refs[..], "STEP decode traversal")?
             .find_map(|reference| {
                 exchange
                     .records()
@@ -452,8 +443,7 @@ pub(super) fn decode(
                     .filter(|candidate| candidate.simple_name() == Some("TOLERANCE_VALUE"))
             });
         let fit = ctx
-            .admit_iter(&(refs)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&refs[..], "STEP decode traversal")?
             .find_map(|reference| {
                 let record = exchange.records().get(reference)?;
                 (record.simple_name() == Some("LIMITS_AND_FITS")).then(
@@ -608,8 +598,7 @@ pub(super) fn decode(
             continue;
         };
         let Some(tolerance) = ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .find_map(|partial| {
                 (partial.name != "GEOMETRIC_TOLERANCE")
                     .then(|| tolerance_kind(Some(&partial.name)))
@@ -631,8 +620,7 @@ pub(super) fn decode(
             continue;
         };
         let reference_values = ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
             .map_or(record.parameters(), |partial| partial.parameters.as_slice());
         let refs = collect_pmi_references(
@@ -694,16 +682,14 @@ pub(super) fn decode(
             continue;
         };
         let defined_unit = ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT")
             .and_then(|partial| partial.parameters.first())
             .map(|value| measure(value, exchange, &mut measurements, ctx))
             .transpose()?
             .flatten();
         let (defined_area_unit, defined_area_second_unit) = if let Some(partial) = ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT")
         {
             let area = partial
@@ -810,10 +796,7 @@ pub(super) fn decode(
                 }
             }
         }
-        for partial in ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for partial in ctx.admit_iter(&record.partials[..], "STEP decode traversal")? {
             for value in ctx.admit_iter(
                 partial.parameters.as_slice(),
                 "STEP record parameter traversal",
@@ -1052,7 +1035,7 @@ fn mark_characteristic_representations(
     for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
         let Some(_) = find_record_value(record, ctx, |value| {
             first_matching([value], ctx, |reference| {
-                Ok({ annotations.get(reference).is_some() })
+                Ok(annotations.get(reference).is_some())
             })
         })?
         else {
@@ -1073,8 +1056,7 @@ fn mark_characteristic_representations(
                         .admit_iter(
                             &(representation.partials)[..],
                             "STEP mark characteristic representations traversal",
-                        )
-                        .map_err(cadmpeg_core::CodecError::from)?
+                        )?
                         .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
                     {
                         continue;
@@ -1150,13 +1132,10 @@ fn resolve_geometric_item_usages(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
-    for (&annotation_id, record) in ctx
-        .admit_iter(
-            exchange.records(),
-            "STEP resolve geometric item usages traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&annotation_id, record) in ctx.admit_iter(
+        exchange.records(),
+        "STEP resolve geometric item usages traversal",
+    )? {
         let Some(annotation_index) = annotations.get(annotation_id) else {
             continue;
         };
@@ -1195,8 +1174,7 @@ fn resolve_geometric_item_usages(
         .admit_iter(
             exchange.records(),
             "STEP resolve geometric item usages map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(_, value)| value)
     {
         let Some((relating, related)) = relationship_endpoints(record, ctx)? else {
@@ -1218,19 +1196,15 @@ fn resolve_geometric_item_usages(
         )?;
     }
 
-    for (&id, record) in ctx
-        .admit_iter(
-            exchange.records(),
-            "STEP resolve geometric item usages traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&id, record) in ctx.admit_iter(
+        exchange.records(),
+        "STEP resolve geometric item usages traversal",
+    )? {
         let Some(partial) = ctx
             .admit_iter(
                 &(record.partials)[..],
                 "STEP resolve geometric item usages traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            )?
             .find(|partial| partial.name == "GEOMETRIC_ITEM_SPECIFIC_USAGE")
         else {
             continue;
@@ -1274,13 +1248,10 @@ fn resolve_geometric_item_usages(
         }
         for annotation_index in annotation_indices {
             let annotation = &mut ir.model.pmi[annotation_index.get()];
-            for target in ctx
-                .admit_iter(
-                    &(targets)[..],
-                    "STEP resolve geometric item usages traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for target in ctx.admit_iter(
+                &(targets)[..],
+                "STEP resolve geometric item usages traversal",
+            )? {
                 push_target(
                     &mut annotation.targets,
                     copy_pmi_target(target, ctx, "step_pmi_geometric_usage_identity")?,
@@ -1396,8 +1367,7 @@ fn relationship_endpoints(
         .admit_iter(
             &(record.partials)[..],
             "STEP relationship endpoints traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .find_map(|partial| {
             matches!(
                 partial.name.as_str(),
@@ -1422,10 +1392,7 @@ fn point_sources(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>, CodecError> {
     let mut points = BTreeMap::new();
-    for point in ctx
-        .admit_iter(&(ir.model.points)[..], "STEP point sources traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for point in ctx.admit_iter(&ir.model.points[..], "STEP point sources traversal")? {
         let Some(source) = source_numeric_id(ctx, point.id.as_str(), "point")? else {
             continue;
         };
@@ -1448,10 +1415,7 @@ fn curve_sources(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>>, CodecError> {
     let mut curves = BTreeMap::new();
-    for curve in ctx
-        .admit_iter(&(ir.model.curves)[..], "STEP curve sources traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for curve in ctx.admit_iter(&ir.model.curves[..], "STEP curve sources traversal")? {
         let Some(source) = source_numeric_id(ctx, curve.id.as_str(), "curve")? else {
             continue;
         };
@@ -1520,8 +1484,7 @@ fn datum_references_for_compartment(
             .admit_iter(
                 &(members)[..],
                 "STEP datum references for compartment traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            )?
             .filter_map(ValueExt::reference)
             .count()
             >= 2)
@@ -1530,8 +1493,7 @@ fn datum_references_for_compartment(
             .admit_iter(
                 &(members)[..],
                 "STEP datum references for compartment traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            )?
             .filter_map(ValueExt::reference)
         {
             let Some(element) = exchange.records().get(&element_id) else {
@@ -1610,14 +1572,12 @@ fn admit_datum_reference_maps(
         .admit_iter(
             &(references)[..],
             "STEP admit datum reference maps traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .enumerate()
     {
         let prior = &references[..index];
         if !ctx
-            .admit_iter(&(prior)[..], "STEP admit datum reference maps traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&prior[..], "STEP admit datum reference maps traversal")?
             .map(|other| -> Result<Option<_>, CodecError> {
                 Ok((ctx.equal(
                     &other.precedence,
@@ -1634,8 +1594,7 @@ fn admit_datum_reference_maps(
         }
         if let Some(group) = reference.common_group {
             if !ctx
-                .admit_iter(&(prior)[..], "STEP admit datum reference maps traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+                .admit_iter(&prior[..], "STEP admit datum reference maps traversal")?
                 .any(|other| other.common_group == Some(group))
             {
                 ctx.charge_collection_items(1, "step_pmi_datum_common_groups")?;
@@ -1680,9 +1639,8 @@ fn visit_datum_ids(
     match value {
         Value::Reference(id) => visitor(*id)?,
         Value::List(values) => {
-            for value in ctx
-                .admit_iter(values.as_slice(), "STEP visit datum ids value traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            for value in
+                ctx.admit_iter(values.as_slice(), "STEP visit datum ids value traversal")?
             {
                 visit_datum_ids(value, ctx, visitor)?;
             }
@@ -1712,8 +1670,7 @@ fn modifier_text(
                 return Ok(None);
             };
             let Some(parameters) = ctx
-                .admit_iter(&(record.partials)[..], "STEP modifier text traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+                .admit_iter(&record.partials[..], "STEP modifier text traversal")?
                 .find(|partial| partial.name == "DATUM_REFERENCE_MODIFIER_WITH_VALUE")
             else {
                 return Ok(None);
@@ -1785,16 +1742,14 @@ fn hidden_presentation_annotation_ids(
         .admit_iter(
             exchange.records(),
             "STEP hidden presentation annotation ids map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(_, value)| value)
     {
         let Some(items) = ctx
             .admit_iter(
                 &(record.partials)[..],
                 "STEP hidden presentation annotation ids traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            )?
             .find(|partial| partial.name == "INVISIBILITY")
             .and_then(|partial| partial.parameters.first())
         else {
@@ -1822,20 +1777,16 @@ fn collect_typed_placement_candidates(
         .admit_iter(
             &(record.partials)[..],
             "STEP collect typed placement candidates traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .any(|partial| {
             partial.name == "ANNOTATION_TEXT"
                 || partial.name == "ANNOTATION_TEXT_CHARACTER"
                 || partial.name.starts_with("ANNOTATION_TEXT_WITH_")
         });
-    for partial in ctx
-        .admit_iter(
-            &(record.partials)[..],
-            "STEP collect typed placement candidates traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for partial in ctx.admit_iter(
+        &(record.partials)[..],
+        "STEP collect typed placement candidates traversal",
+    )? {
         let is_carrier = match partial.name.as_str() {
             "DEFINED_CHARACTER_GLYPH"
             | "SYMBOL_TARGET"
@@ -1853,8 +1804,7 @@ fn collect_typed_placement_candidates(
             .admit_iter(
                 &(partial.parameters)[..],
                 "STEP collect typed placement candidates traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            )?
             .flat_map(|value| references(value, ctx))
         {
             let reference = reference?;
@@ -2325,13 +2275,10 @@ fn dimension_descriptor<'a>(
     record: &'a RawRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(&'a str, DimensionKind)>, CodecError> {
-    for partial in ctx
-        .admit_iter(
-            &(record.partials)[..],
-            "STEP dimension descriptor traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for partial in ctx.admit_iter(
+        &(record.partials)[..],
+        "STEP dimension descriptor traversal",
+    )? {
         if let Some(kind) = dimension_kind(partial.name.as_str(), ctx)? {
             return Ok(Some((partial.name.as_str(), kind)));
         }
@@ -2367,17 +2314,13 @@ fn tolerance_modifiers(
 ) -> Result<Vec<String>, CodecError> {
     let mut modifiers = Vec::new();
     if let Some(partial) = ctx
-        .admit_iter(&(record.partials)[..], "STEP tolerance modifiers traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&record.partials[..], "STEP tolerance modifiers traversal")?
         .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_MODIFIERS")
     {
-        for value in ctx
-            .admit_iter(
-                &(partial.parameters)[..],
-                "STEP tolerance modifiers traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for value in ctx.admit_iter(
+            &(partial.parameters)[..],
+            "STEP tolerance modifiers traversal",
+        )? {
             modifier_values(value, &mut modifiers, ctx)?;
         }
     }
@@ -2397,9 +2340,8 @@ fn modifier_values(
             ctx.push_vec(output, text, "step_pmi_modifier_items")?;
         }
         Value::List(values) => {
-            for value in ctx
-                .admit_iter(values.as_slice(), "STEP modifier values value traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            for value in
+                ctx.admit_iter(values.as_slice(), "STEP modifier values value traversal")?
             {
                 modifier_values(value, output, ctx)?;
             }
@@ -2480,10 +2422,7 @@ fn characteristic_values(
         let values = characteristic_measure_values(&parameters, exchange, &mut measurements, ctx)?;
         let mut named_count = 0usize;
         let mut named_first = None;
-        for (name, value) in ctx
-            .admit_iter(&(values)[..], "STEP characteristic values traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for (name, value) in ctx.admit_iter(&values[..], "STEP characteristic values traversal")? {
             if name
                 .as_deref()
                 .map(|name| {
@@ -2632,17 +2571,13 @@ fn collect_measure_ids(
                 if is_measure_record(ctx, record)? {
                     ctx.insert_btree_set(measure_ids, *id, "step_pmi_measure_ids")?;
                 } else {
-                    for partial in ctx
-                        .admit_iter(&(record.partials)[..], "STEP collect measure ids traversal")
-                        .map_err(cadmpeg_core::CodecError::from)?
+                    for partial in
+                        ctx.admit_iter(&record.partials[..], "STEP collect measure ids traversal")?
                     {
-                        for parameter in ctx
-                            .admit_iter(
-                                &(partial.parameters)[..],
-                                "STEP collect measure ids traversal",
-                            )
-                            .map_err(cadmpeg_core::CodecError::from)?
-                        {
+                        for parameter in ctx.admit_iter(
+                            &(partial.parameters)[..],
+                            "STEP collect measure ids traversal",
+                        )? {
                             collect_measure_ids(
                                 parameter,
                                 exchange,
@@ -2659,13 +2594,10 @@ fn collect_measure_ids(
             active.remove(id);
         }
         Value::List(values) => {
-            for value in ctx
-                .admit_iter(
-                    values.as_slice(),
-                    "STEP collect measure ids value traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for value in ctx.admit_iter(
+                values.as_slice(),
+                "STEP collect measure ids value traversal",
+            )? {
                 collect_measure_ids(
                     value,
                     exchange,
@@ -2701,8 +2633,7 @@ fn measure_item_name(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
     Ok(ctx
-        .admit_iter(&(record.partials)[..], "STEP measure item name traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&record.partials[..], "STEP measure item name traversal")?
         .find(|partial| partial.name == "REPRESENTATION_ITEM")
         .and_then(|partial| partial.parameters.first())
         .map_or_else(
@@ -2829,9 +2760,8 @@ fn measure_inner(
                 return Ok(None);
             };
             let mut quantity = None;
-            'record_parameters: for partial in ctx
-                .admit_iter(&(record.partials)[..], "STEP measure inner traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            'record_parameters: for partial in
+                ctx.admit_iter(&record.partials[..], "STEP measure inner traversal")?
             {
                 for parameter in ctx.admit_iter(
                     partial.parameters.as_slice(),
@@ -2946,9 +2876,8 @@ fn measure_inner(
                 PmiQuantity::Ratio => 1.0,
             };
             let mut result = None;
-            'record_parameters: for partial in ctx
-                .admit_iter(&(record.partials)[..], "STEP measure inner traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            'record_parameters: for partial in
+                ctx.admit_iter(&record.partials[..], "STEP measure inner traversal")?
             {
                 for parameter in ctx.admit_iter(
                     partial.parameters.as_slice(),
@@ -2976,10 +2905,7 @@ fn measure_inner(
         }
         Value::List(values) => {
             let mut result = None;
-            for value in ctx
-                .admit_iter(values.as_slice(), "STEP measure inner value traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for value in ctx.admit_iter(values.as_slice(), "STEP measure inner value traversal")? {
                 result = measure_inner(value, exchange, active, depth + 1, measurements, ctx)?;
                 if result.is_some() {
                     break;
@@ -3018,9 +2944,8 @@ fn measure_quantity(
         }
         Value::List(values) => {
             let mut quantity = None;
-            for value in ctx
-                .admit_iter(values.as_slice(), "STEP measure quantity value traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            for value in
+                ctx.admit_iter(values.as_slice(), "STEP measure quantity value traversal")?
             {
                 quantity = measure_quantity(value, ctx)?;
                 if quantity.is_some() {

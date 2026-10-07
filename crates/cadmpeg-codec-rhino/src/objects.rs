@@ -2033,10 +2033,7 @@ pub(crate) fn resolve_identities(
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut seen_ids = HashSet::new();
     let mut layers = LayerLookup::new();
-    for layer in ctx
-        .admit_iter(&(metadata.layers)[..], "Rhino resolve identities traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for layer in ctx.admit_iter(&metadata.layers[..], "Rhino resolve identities traversal")? {
         layers.insert(ctx, layer)?;
     }
     let mut resolved = Vec::new();
@@ -2054,9 +2051,8 @@ pub(crate) fn resolve_identities(
                     index,
                     &mut seen_ids,
                 )?;
-                for warning in ctx
-                    .admit_iter(&(local_warnings)[..], "Rhino resolve identities traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
+                for warning in
+                    ctx.admit_iter(&local_warnings[..], "Rhino resolve identities traversal")?
                 {
                     warnings.push_coded_admitted(
                         ctx,

@@ -711,8 +711,7 @@ pub(crate) fn install(
     let mut dots = Vec::new();
     let mut arrows = Vec::new();
     for (source_order, object) in ctx
-        .admit_iter(&(scan.objects)[..], "Rhino install traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&scan.objects[..], "Rhino install traversal")?
         .enumerate()
     {
         let Some(object) = object.framed() else {
@@ -744,8 +743,7 @@ pub(crate) fn install(
             AnnotationClass::Modern { leader: false } | AnnotationClass::Legacy { leader: false }
         ) {
             if let Some(extra) = ctx
-                .admit_iter(&(object.userdata)[..], "Rhino install traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+                .admit_iter(&object.userdata[..], "Rhino install traversal")?
                 .filter_map(UserdataDescriptor::known)
                 .find(|userdata| {
                     userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA

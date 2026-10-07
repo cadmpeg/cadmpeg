@@ -137,10 +137,7 @@ fn admitted_body_clone<'a>(
     let mut values = Vec::new();
 
     bytes.with_storage(|| ctx.reserve_capacity(&mut values, bodies.len(), operation))?;
-    for body in ctx
-        .admit_iter(bodies, "STEP admitted body clone traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for body in ctx.admit_iter(bodies, "STEP admitted body clone traversal")? {
         values.push(bytes.with_storage(|| body.try_clone_for_decode(ctx, operation))?);
     }
     Ok(AdmittedRepresentationBodies {
@@ -253,10 +250,7 @@ pub(super) fn representation_bodies<'a>(
                 active,
                 ctx,
             )?;
-            for body in ctx
-                .admit_iter(&(nested)[..], "STEP representation bodies traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for body in ctx.admit_iter(&nested[..], "STEP representation bodies traversal")? {
                 insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
             }
         }
@@ -269,10 +263,7 @@ pub(super) fn representation_bodies<'a>(
         .copied()
     {
         let nested = representation_bodies(related, exchange, topology, cache, active, ctx)?;
-        for body in ctx
-            .admit_iter(&(nested)[..], "STEP representation bodies traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for body in ctx.admit_iter(&nested[..], "STEP representation bodies traversal")? {
             insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
         }
     }
@@ -308,8 +299,7 @@ fn shape_representation_relationships(
         .admit_iter(
             exchange.records(),
             "STEP shape representation relationships map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(_, value)| value)
     {
         let Some(relationship) = record.partial(ctx, "SHAPE_REPRESENTATION_RELATIONSHIP")? else {
@@ -469,10 +459,7 @@ pub(super) fn decode(
         notes: Vec::new(),
     };
     let mut losses: Vec<LossNote> = Vec::new();
-    for (&id, record) in ctx
-        .admit_iter(exchange.records(), "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
         let Some(name) = most_specific(
             ctx,
             record,
@@ -531,10 +518,7 @@ pub(super) fn decode(
         }
     }
     let mut built_wire_models = BTreeSet::new();
-    for (&representation, record) in ctx
-        .admit_iter(exchange.records(), "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&representation, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
         let Some(items) = representation_item_values(ctx, record)? else {
             continue;
         };
@@ -665,10 +649,7 @@ pub(super) fn decode(
                 )?;
             } else {
                 committed += 1;
-                for shell in ctx
-                    .admit_iter(&built.shell_sources, "STEP decode traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                {
+                for shell in ctx.admit_iter(&built.shell_sources, "STEP decode traversal")? {
                     insert_topology_body_group(
                         &mut result.body_by_shell,
                         *shell,
@@ -716,13 +697,10 @@ pub(super) fn decode(
         }
     }
     let mut decoded_pcurves = BTreeSet::new();
-    for pcurve in ctx
-        .admit_iter(
-            &(commit_session.document().model.pcurves)[..],
-            "STEP decode traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for pcurve in ctx.admit_iter(
+        &(commit_session.document().model.pcurves)[..],
+        "STEP decode traversal",
+    )? {
         if let Some(id) = source_numeric_id(ctx, pcurve.id.as_str(), "pcurve")? {
             ctx.insert_btree_set(&mut decoded_pcurves, id, "step_decoded_topology_pcurves")?;
         }
@@ -774,9 +752,8 @@ pub(super) fn decode(
                 copies,
                 "step_topology_root_groups",
             )?;
-            for (&shell, body_ids) in ctx
-                .admit_iter(&root_built.body_by_shell, "STEP decode traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            for (&shell, body_ids) in
+                ctx.admit_iter(&root_built.body_by_shell, "STEP decode traversal")?
             {
                 for body in body_ids {
                     insert_topology_body_group(
@@ -834,10 +811,7 @@ pub(super) fn decode(
                     "step_topology_losses",
                 )?;
             } else {
-                for shell in ctx
-                    .admit_iter(&built.shell_sources, "STEP decode traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
-                {
+                for shell in ctx.admit_iter(&built.shell_sources, "STEP decode traversal")? {
                     insert_topology_body_group(
                         &mut result.body_by_shell,
                         *shell,
@@ -1076,13 +1050,10 @@ pub(super) fn decode(
             ctx.insert_btree_set(&mut result.claims, id, "step_topology_claims")?;
         }
     }
-    for face in ctx
-        .admit_iter(
-            &(commit_session.document().model.faces)[..],
-            "STEP decode traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for face in ctx.admit_iter(
+        &(commit_session.document().model.faces)[..],
+        "STEP decode traversal",
+    )? {
         if let Some(source) = source_numeric_id(ctx, face.id.as_str(), "face")? {
             ctx.push_btree_group(
                 &mut result.faces_by_source,
@@ -1094,13 +1065,10 @@ pub(super) fn decode(
             )?;
         }
     }
-    for edge in ctx
-        .admit_iter(
-            &(commit_session.document().model.edges)[..],
-            "STEP decode traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for edge in ctx.admit_iter(
+        &(commit_session.document().model.edges)[..],
+        "STEP decode traversal",
+    )? {
         if let Some(source) = source_numeric_id(ctx, edge.id.as_str(), "edge")? {
             ctx.push_btree_group(
                 &mut result.edges_by_source,
@@ -1112,13 +1080,10 @@ pub(super) fn decode(
             )?;
         }
     }
-    for vertex in ctx
-        .admit_iter(
-            &(commit_session.document().model.vertices)[..],
-            "STEP decode traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for vertex in ctx.admit_iter(
+        &(commit_session.document().model.vertices)[..],
+        "STEP decode traversal",
+    )? {
         if let Some(source) = source_numeric_id(ctx, vertex.id.as_str(), "vertex")? {
             ctx.push_btree_group(
                 &mut result.vertices_by_source,
@@ -3260,7 +3225,7 @@ fn build_one(
     let mut admissions = Vec::new();
     for &shell_reference in ctx
         .admit_iter(shell_steps, "STEP body topology traversal")
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
     {
         let (shell_step, shell_forward) =
             if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
@@ -3331,8 +3296,8 @@ fn build_one(
         let sid = shell_identity(id, shell_step, scope_root);
         let mut face_ids = vec![];
         for face_step in ctx
-            .admit_iter(&(face_steps)[..], "STEP body topology traversal")
-            .map_err(CodecError::from)?
+            .admit_iter(&face_steps[..], "STEP body topology traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(Value::reference)
         {
             if used_faces.contains(&(shell_step, face_step)) {
@@ -3364,7 +3329,7 @@ fn build_one(
             let mut outer_bound_count = 0usize;
             for bound_step in ctx
                 .admit_iter(&face_info.bounds[..], "STEP body topology traversal")
-                .map_err(CodecError::from)?
+                .map_err(cadmpeg_core::CodecError::from)?
             {
                 if exchange
                     .records()
@@ -3591,8 +3556,8 @@ fn build_one(
                     .ok_or(BuildError::Absent)?;
                     let mut points = Vec::new();
                     for point in ctx
-                        .admit_iter(&(point_values)[..], "STEP body topology traversal")
-                        .map_err(CodecError::from)?
+                        .admit_iter(&point_values[..], "STEP body topology traversal")
+                        .map_err(cadmpeg_core::CodecError::from)?
                         .filter_map(ValueExt::reference)
                     {
                         ctx.push_vec(&mut points, point, "step_brep_poly_loop_points")?;
@@ -3604,7 +3569,7 @@ fn build_one(
                     let mut distinct_points = BTreeSet::new();
                     for &point in ctx
                         .admit_iter(&points, "STEP body topology traversal")
-                        .map_err(CodecError::from)?
+                        .map_err(cadmpeg_core::CodecError::from)?
                     {
                         ctx.insert_btree_set(
                             &mut distinct_points,
@@ -3615,8 +3580,8 @@ fn build_one(
                     if points.len() < 3
                         || distinct_points.len() != points.len()
                         || ctx
-                            .admit_iter(&(points)[..], "STEP body topology traversal")
-                            .map_err(CodecError::from)?
+                            .admit_iter(&points[..], "STEP body topology traversal")
+                            .map_err(cadmpeg_core::CodecError::from)?
                             .any(|point| !point_positions.contains_key(*point))
                     {
                         note_failure(failure, loop_step, CarrierKind::PolyLoopPointCarrier);
@@ -3627,8 +3592,8 @@ fn build_one(
                     }
                     let mut coedge_ids = Vec::new();
                     for (index, &start_point) in ctx
-                        .admit_iter(&(points)[..], "STEP body topology traversal")
-                        .map_err(CodecError::from)?
+                        .admit_iter(&points[..], "STEP body topology traversal")
+                        .map_err(cadmpeg_core::CodecError::from)?
                         .enumerate()
                     {
                         let end_point = points[(index + 1) % points.len()];
@@ -3754,8 +3719,8 @@ fn build_one(
                 .ok_or(BuildError::Absent)?;
                 let mut uses = Vec::new();
                 for use_step in ctx
-                    .admit_iter(&(use_values)[..], "STEP body topology traversal")
-                    .map_err(CodecError::from)?
+                    .admit_iter(&use_values[..], "STEP body topology traversal")
+                    .map_err(cadmpeg_core::CodecError::from)?
                     .filter_map(ValueExt::reference)
                 {
                     ctx.push_vec(&mut uses, use_step, "step_brep_edge_loop_uses")?;
@@ -4051,7 +4016,7 @@ fn build_one(
         let mut component_edge_vertices = BTreeMap::new();
         for (used_shell, edge_id) in ctx
             .admit_iter(&used_e, "STEP body topology traversal")
-            .map_err(CodecError::from)?
+            .map_err(cadmpeg_core::CodecError::from)?
         {
             if *used_shell != shell_step {
                 continue;
@@ -4072,7 +4037,7 @@ fn build_one(
         }
         for ((used_shell, edge_id), (start, end)) in ctx
             .admit_iter(&poly_edges, "STEP body topology traversal")
-            .map_err(CodecError::from)?
+            .map_err(cadmpeg_core::CodecError::from)?
         {
             if *used_shell != shell_step {
                 continue;
@@ -4264,12 +4229,12 @@ fn build_one(
     }
     for indices in ctx
         .admit_iter(&radial, "STEP body topology radial traversal")
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
         .map(|(_, value)| value)
     {
         for (position, &index) in ctx
-            .admit_iter(&(indices)[..], "STEP body topology traversal")
-            .map_err(CodecError::from)?
+            .admit_iter(&indices[..], "STEP body topology traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
             coedges[index].radial_next = coedges[indices[(position + 1) % indices.len()]]
@@ -4280,14 +4245,14 @@ fn build_one(
     let mut edge_by_id = BTreeMap::<&EdgeId, &Edge>::new();
     for edge in ctx
         .admit_iter(&edges, "STEP body topology traversal")
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
     {
         ctx.insert_btree_map(&mut edge_by_id, &edge.id, edge, "step_brep_edge_index")?;
     }
     let mut coedge_by_id = BTreeMap::<&CoedgeId, &Coedge>::new();
     for coedge in ctx
         .admit_iter(&coedges, "STEP body topology traversal")
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
     {
         ctx.insert_btree_map(
             &mut coedge_by_id,
@@ -4298,7 +4263,7 @@ fn build_one(
     }
     for loop_ in ctx
         .admit_iter(&loops, "STEP body topology traversal")
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
     {
         if loop_.coedges().is_empty() {
             continue;
@@ -4306,7 +4271,7 @@ fn build_one(
         let loop_source = source_numeric_id(ctx, loop_.id.as_str(), "loop")?.unwrap_or(0);
         for (index, current_id) in ctx
             .admit_iter(&(loop_.coedges())[..], "STEP body topology traversal")
-            .map_err(CodecError::from)?
+            .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
             let next_id = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
@@ -4377,7 +4342,7 @@ fn build_one(
     built.pcurve_admissions = admissions;
     for &shell_reference in ctx
         .admit_iter(shell_steps, "STEP body topology traversal")
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
     {
         let shell_step = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
             shell_reference
@@ -4422,8 +4387,7 @@ fn connected_face_components(
         })?;
     let mut face_indices = BTreeMap::new();
     for (index, face) in ctx
-        .admit_iter(&(face_ids)[..], "STEP connected face components traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&face_ids[..], "STEP connected face components traversal")?
         .enumerate()
     {
         ctx.insert_btree_map(
@@ -4434,10 +4398,7 @@ fn connected_face_components(
         )?;
     }
     let mut coedge_edges = BTreeMap::new();
-    for coedge in ctx
-        .admit_iter(coedges, "STEP connected face components traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for coedge in ctx.admit_iter(coedges, "STEP connected face components traversal")? {
         ctx.insert_btree_map(
             &mut coedge_edges,
             coedge.id.as_str(),
@@ -4447,20 +4408,14 @@ fn connected_face_components(
     }
     let mut faces_by_edge = BTreeMap::<&str, BTreeSet<usize>>::new();
     let mut faces_by_vertex = BTreeMap::<&str, BTreeSet<usize>>::new();
-    for loop_ in ctx
-        .admit_iter(loops, "STEP connected face components traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for loop_ in ctx.admit_iter(loops, "STEP connected face components traversal")? {
         let Some(&face_index) = face_indices.get(loop_.face.as_str()) else {
             continue;
         };
-        for coedge_id in ctx
-            .admit_iter(
-                loop_.coedges(),
-                "STEP connected face components view traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for coedge_id in ctx.admit_iter(
+            loop_.coedges(),
+            "STEP connected face components view traversal",
+        )? {
             let Some(edge_id) = coedge_edges.get(coedge_id.as_str()) else {
                 continue;
             };
@@ -4490,8 +4445,7 @@ fn connected_face_components(
         .admit_iter(
             &(faces_by_edge),
             "STEP connected face components map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(_, value)| value)
         .chain(
             ctx.admit_iter(
@@ -4521,9 +4475,8 @@ fn connected_face_components(
         ctx.push_vec(&mut pending, start, "STEP connected-face pending")?;
         while let Some(face) = pending.pop() {
             ctx.push_vec(&mut component, face, "STEP connected-face component")?;
-            for &neighbor in ctx
-                .admit_iter(&neighbors[face], "STEP connected face components traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            for &neighbor in
+                ctx.admit_iter(&neighbors[face], "STEP connected face components traversal")?
             {
                 if !reached[neighbor] {
                     reached[neighbor] = true;
@@ -4710,10 +4663,7 @@ fn implicit_face_points(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Vec<Point3>>>, CodecError> {
     let mut loops = Vec::new();
-    for &bound_step in ctx
-        .admit_iter(bounds, "STEP implicit face points traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for &bound_step in ctx.admit_iter(bounds, "STEP implicit face points traversal")? {
         let Some(bound) = exchange.records().get(&bound_step) else {
             return Ok(None);
         };
@@ -4744,10 +4694,7 @@ fn implicit_face_points(
         }
         point_steps.dedup();
         let mut distinct = BTreeSet::new();
-        for &point in ctx
-            .admit_iter(&(point_steps)[..], "STEP implicit face points traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for &point in ctx.admit_iter(&point_steps[..], "STEP implicit face points traversal")? {
             ctx.insert_btree_set(&mut distinct, point, "step_implicit_face_distinct_points")?;
         }
         if point_steps.len() < 3 || distinct.len() != point_steps.len() {
@@ -4822,25 +4769,21 @@ fn implicit_face_plane(
         return Ok(None);
     };
     let origin = Point3::new(
-        ctx.admit_iter(&(points)[..], "STEP implicit face plane traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+        ctx.admit_iter(&points[..], "STEP implicit face plane traversal")?
             .map(|point| point.x)
             .sum::<f64>()
             / point_count,
-        ctx.admit_iter(&(points)[..], "STEP implicit face plane traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+        ctx.admit_iter(&points[..], "STEP implicit face plane traversal")?
             .map(|point| point.y)
             .sum::<f64>()
             / point_count,
-        ctx.admit_iter(&(points)[..], "STEP implicit face plane traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+        ctx.admit_iter(&points[..], "STEP implicit face plane traversal")?
             .map(|point| point.z)
             .sum::<f64>()
             / point_count,
     );
     let scale = ctx
-        .admit_iter(&(points)[..], "STEP implicit face plane traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&points[..], "STEP implicit face plane traversal")?
         .map(|point| point.vector_from(origin))
         .map(|vector| vector.norm())
         .fold(0.0, f64::max);
@@ -4853,32 +4796,27 @@ fn implicit_face_plane(
             return Ok(None);
         };
         let loop_origin = Point3::new(
-            ctx.admit_iter(&(loop_points)[..], "STEP implicit face plane traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            ctx.admit_iter(&loop_points[..], "STEP implicit face plane traversal")?
                 .map(|point| point.x)
                 .sum::<f64>()
                 / loop_count,
-            ctx.admit_iter(&(loop_points)[..], "STEP implicit face plane traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            ctx.admit_iter(&loop_points[..], "STEP implicit face plane traversal")?
                 .map(|point| point.y)
                 .sum::<f64>()
                 / loop_count,
-            ctx.admit_iter(&(loop_points)[..], "STEP implicit face plane traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            ctx.admit_iter(&loop_points[..], "STEP implicit face plane traversal")?
                 .map(|point| point.z)
                 .sum::<f64>()
                 / loop_count,
         );
         let mut area_normal = Vector3::new(0.0, 0.0, 0.0);
         for (current, next) in ctx
-            .admit_iter(&(loop_points)[..], "STEP implicit face plane traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&loop_points[..], "STEP implicit face plane traversal")?
             .zip(
                 ctx.admit_iter(
                     &(loop_points)[..],
                     "STEP implicit face plane next-point traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
+                )?
                 .skip(1)
                 .chain(loop_points.first()),
             )
@@ -4906,8 +4844,7 @@ fn implicit_face_plane(
         return Ok(None);
     };
     for (candidate, area) in ctx
-        .admit_iter(&(loop_normals)[..], "STEP implicit face plane traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&loop_normals[..], "STEP implicit face plane traversal")?
         .skip(1)
         .copied()
     {
@@ -4921,10 +4858,7 @@ fn implicit_face_plane(
             largest_area = area;
         }
     }
-    for (candidate, _) in ctx
-        .admit_iter(&(loop_normals)[..], "STEP implicit face plane traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (candidate, _) in ctx.admit_iter(&loop_normals[..], "STEP implicit face plane traversal")? {
         if candidate.as_raw().dot(*normal.as_raw()) < 1.0 - IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE
         {
             return Ok(None);
@@ -4933,8 +4867,7 @@ fn implicit_face_plane(
     let planarity_tolerance =
         COINCIDENCE_TOLERANCE.max(IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE * scale);
     if ctx
-        .admit_iter(&(points)[..], "STEP implicit face plane traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&points[..], "STEP implicit face plane traversal")?
         .map(|point| point.vector_from(origin))
         .map(|point| point.dot(*normal.as_raw()).abs())
         .fold(0.0, f64::max)
@@ -4981,8 +4914,7 @@ fn associated_pcurves(
         return Ok(Vec::new());
     };
     if !ctx
-        .admit_iter(&(curve.partials)[..], "STEP associated pcurves traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&curve.partials[..], "STEP associated pcurves traversal")?
         .any(|partial| {
             matches!(
                 partial.name.as_str(),
@@ -5338,7 +5270,7 @@ fn curve_parameter_near_point(
 ) -> Result<Option<f64>, CodecError> {
     let mut best: Option<(f64, f64)> = None;
     for &seed in ctx
-        .admit_iter(&(seeds)[..], "STEP curve parameter near point traversal")
+        .admit_iter(&seeds[..], "STEP curve parameter near point traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .filter(|seed| seed.is_finite())
     {
@@ -5735,8 +5667,7 @@ fn pcurve_parameter_break_fractions(
                 .admit_iter(
                     &(nurbs.knots())[..],
                     "STEP pcurve parameter break fractions traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
+                )?
                 .copied()
             {
                 add_pcurve_break_fraction(parameter, parameters, fractions, ctx)?;
@@ -5747,8 +5678,7 @@ fn pcurve_parameter_break_fractions(
                 .admit_iter(
                     &(nurbs.knots())[..],
                     "STEP pcurve parameter break fractions traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
+                )?
                 .copied()
             {
                 add_pcurve_break_fraction(parameter, parameters, fractions, ctx)?;
@@ -5826,8 +5756,7 @@ fn pcurve_selection_seeds(
         )?;
         fractions.dedup_by(|left, right| *left == *right);
         for seed in ctx
-            .admit_iter(&(fractions)[..], "STEP pcurve selection seeds traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&fractions[..], "STEP pcurve selection seeds traversal")?
             .filter_map(|fraction| at_fraction(*fraction))
         {
             ctx.push_vec(&mut seeds, seed, "step_pcurve_selection_seeds")?;
@@ -6293,10 +6222,7 @@ fn shell_def_for(
     let Some(definition) = shells.get(&reference) else {
         return Ok(None);
     };
-    for &id in ctx
-        .admit_iter(&definition.typed, "STEP shell def for traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for &id in ctx.admit_iter(&definition.typed, "STEP shell def for traversal")? {
         ctx.insert_btree_set(typed, id, "step_shell_definition_claims")?;
     }
     Ok(Some((definition.base, definition.forward)))

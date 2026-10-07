@@ -969,13 +969,10 @@ fn displacement_record(
         displacement.sub_items.len(),
         "Rhino projected displacement sub-items",
     )?;
-    for item in ctx
-        .admit_iter(
-            &(displacement.sub_items)[..],
-            "Rhino displacement record traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for item in ctx.admit_iter(
+        &(displacement.sub_items)[..],
+        "Rhino displacement record traversal",
+    )? {
         sub_items.push(DisplacementSubItemRecord {
             face_index: item.face_index,
             on: item.on,
@@ -1066,13 +1063,10 @@ fn shut_lining_record(
         shut_lining.curves.len(),
         "Rhino projected shut-lining curves",
     )?;
-    for curve in ctx
-        .admit_iter(
-            &(shut_lining.curves)[..],
-            "Rhino shut lining record traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for curve in ctx.admit_iter(
+        &(shut_lining.curves)[..],
+        "Rhino shut lining record traversal",
+    )? {
         curves.push(ShutLiningCurveRecord {
             uuid: curve
                 .uuid
@@ -1318,8 +1312,7 @@ fn first_user_string_records(
         .admit_iter(
             &(class_userdata)[..],
             "Rhino first user string records traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .filter_map(UserdataDescriptor::known)
         .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .map(|value| value.payload_range.clone());
@@ -1336,8 +1329,7 @@ fn first_user_string_records(
         .admit_iter(
             &(attribute_userdata)[..],
             "Rhino first user string records traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .filter_map(AttributeUserdataDescriptor::known)
         .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .map(|value| value.payload_range.clone());
@@ -1354,8 +1346,7 @@ fn first_user_string_records(
         .admit_iter(
             &(attributes)[..],
             "Rhino first user string records traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .enumerate()
         .map(|(index, value)| -> Result<_, CodecError> {
             Ok(ctx
@@ -1429,13 +1420,10 @@ fn object_attributes_presentation(
         attributes.display_materials.len(),
         "Rhino projected display materials",
     )?;
-    for (viewport, material) in ctx
-        .admit_iter(
-            &(attributes.display_materials)[..],
-            "Rhino object attributes presentation traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (viewport, material) in ctx.admit_iter(
+        &(attributes.display_materials)[..],
+        "Rhino object attributes presentation traversal",
+    )? {
         display_materials.push([
             ctx.format_retained(
                 format_args!("{viewport}"),
@@ -1459,13 +1447,10 @@ fn object_attributes_presentation(
         attributes.clipping_plane_ids.len(),
         "Rhino projected clipping plane UUIDs",
     )?;
-    for id in ctx
-        .admit_iter(
-            &(attributes.clipping_plane_ids)[..],
-            "Rhino object attributes presentation traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for id in ctx.admit_iter(
+        &(attributes.clipping_plane_ids)[..],
+        "Rhino object attributes presentation traversal",
+    )? {
         clipping_plane_uuids.push(ctx.format_retained(
             format_args!("{id}"),
             "Rhino projected clipping plane UUID text",
@@ -1876,8 +1861,7 @@ fn legacy_rdk_material_instance_id(
         .admit_iter(
             &(userdata)[..],
             "Rhino legacy rdk material instance id traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .filter_map(UserdataDescriptor::known)
         .rev()
     {
@@ -1905,8 +1889,7 @@ fn rdk_material_userdata_requires_opaque(
         .admit_iter(
             &(userdata)[..],
             "Rhino rdk material userdata requires opaque traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .filter_map(UserdataDescriptor::known)
     {
         if value.class_uuid != RDK_CLASS
@@ -2911,10 +2894,7 @@ fn disambiguate_group_ids(
 ) -> Result<usize, CodecError> {
     let mut counts = HashMap::<&str, usize>::new();
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
-    for group in ctx
-        .admit_iter(&(groups)[..], "Rhino disambiguate group ids traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for group in ctx.admit_iter(&groups[..], "Rhino disambiguate group ids traversal")? {
         if let Some(count) = counts.get_mut(group.id.as_str()) {
             *count += 1;
         } else {
@@ -2925,8 +2905,7 @@ fn disambiguate_group_ids(
     }
     let mut duplicate_indices = Vec::new();
     for (order, group) in ctx
-        .admit_iter(&(groups)[..], "Rhino disambiguate group ids traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&groups[..], "Rhino disambiguate group ids traversal")?
         .enumerate()
     {
         if counts.get(group.id.as_str()).copied() != Some(1) {
@@ -4503,7 +4482,7 @@ fn parse_texture_mapping(
         let (value, userdata) =
             parse_class_wrapper_with_userdata(ctx, data, object.range(), archive, &mut warnings)?;
         let cache_requires_opaque = ctx
-            .admit_iter(&(userdata)[..], "Rhino parse texture mapping traversal")
+            .admit_iter(&userdata[..], "Rhino parse texture mapping traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .any(|value| {
@@ -5142,10 +5121,7 @@ pub(crate) fn install(
     let mut object_count_workspace = ctx.reserve_scoped(0, "Rhino object identity workspace")?;
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
-    for object in ctx
-        .admit_iter(&(scan.objects)[..], "Rhino install traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for object in ctx.admit_iter(&scan.objects[..], "Rhino install traversal")? {
         if let Some(identity) = object.identity() {
             if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
                 *count += 1;
@@ -5158,15 +5134,9 @@ pub(crate) fn install(
             }
         }
     }
-    for table in ctx
-        .admit_iter(&(scan.tables)[..], "Rhino install traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for table in ctx.admit_iter(&scan.tables[..], "Rhino install traversal")? {
         let table_type = table.typecode & !0x0000_8000;
-        for record in ctx
-            .admit_iter(&(table.records)[..], "Rhino install traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for record in ctx.admit_iter(&table.records[..], "Rhino install traversal")? {
             let recognized = matches!(
                 table_type,
                 GROUP_TABLE
@@ -5652,18 +5622,14 @@ pub(crate) fn install(
     let mut group_members = HashMap::<i32, Vec<String>>::new();
     let mut group_member_workspace = group_member_workspace(ctx)?;
     for (source_order, object) in ctx
-        .admit_iter(&(scan.objects)[..], "Rhino install traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&scan.objects[..], "Rhino install traversal")?
         .enumerate()
     {
         let Some(object) = object.framed() else {
             continue;
         };
         if let Some(attributes) = object.attributes.parsed() {
-            for group in ctx
-                .admit_iter(&(attributes.groups)[..], "Rhino install traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for group in ctx.admit_iter(&attributes.groups[..], "Rhino install traversal")? {
                 admit_group_member(
                     ctx,
                     &mut group_member_workspace,
@@ -5760,10 +5726,7 @@ pub(crate) fn install(
     }
     let mut layer_id_counts = HashMap::<Uuid, usize>::new();
     let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
-    for layer in ctx
-        .admit_iter(&(scan.metadata.layers)[..], "Rhino install traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for layer in ctx.admit_iter(&scan.metadata.layers[..], "Rhino install traversal")? {
         if let Some(id) = layer.id {
             if let Some(count) = layer_id_counts.get_mut(&id) {
                 *count += 1;
@@ -5776,10 +5739,7 @@ pub(crate) fn install(
             }
         }
     }
-    for layer in ctx
-        .admit_iter(&(scan.metadata.layers)[..], "Rhino install traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for layer in ctx.admit_iter(&scan.metadata.layers[..], "Rhino install traversal")? {
         let rendering = match rendering_attributes(
             ctx,
             scan.data,
@@ -5875,10 +5835,7 @@ pub(crate) fn install(
         |group| group.archive_index,
         "Rhino group index counts",
     )?;
-    for (index, count) in ctx
-        .admit_iter(&(group_index_counts)[..], "Rhino install traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (index, count) in ctx.admit_iter(&group_index_counts[..], "Rhino install traversal")? {
         if *count > 1 {
             push_presentation_loss(
                 ctx,
