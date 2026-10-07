@@ -895,7 +895,6 @@ pub(super) fn check_carrier_reachability(
                             for link in
                                 crate::native::view::NativeEntity::Product(product).links(ctx)?
                             {
-                                let link = link?;
                                 surfaces.insert_unique(link, ())?;
                                 curves.insert_unique(link, ())?;
                             }

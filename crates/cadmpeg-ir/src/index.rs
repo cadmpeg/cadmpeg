@@ -1159,7 +1159,7 @@ mod tests {
             super::IdentityEntry::Many(vec![0, 0]),
         )]));
         for operation in ["model identity lookup hash", "model identity lookup collision", "model identity lookup comparison"] {
-            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+            let boundary = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
@@ -1174,6 +1174,21 @@ mod tests {
                 }
                 Ok(())
             });
+            let cadmpeg_core::CodecError::ResourceLimit(first) = boundary else { panic!("work refusal"); };
+            assert_eq!(first.used, if operation == "model identity lookup hash" { 0 } else { first.limit });
+            assert_eq!(first.additional, if operation == "model identity lookup hash" { cadmpeg_core::decode::u64_from_index(query.len()) } else { 1 });
+            if operation == "model identity lookup comparison" {
+                let cap = first.used + first.additional;
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let first = super::lookup_identity(&ir.model.points, &cache, query, &&ctx).unwrap_err();
+                assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                assert_eq!(first.operation, operation);
+                assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
+            }
         }
 
     }

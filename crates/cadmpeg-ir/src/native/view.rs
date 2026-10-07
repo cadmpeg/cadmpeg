@@ -19,16 +19,13 @@ impl<'a> NativeEntity<'a> {
         }
     }
 
-    pub(crate) fn links<'ctx>(
+    pub(crate) fn links(
         self,
-        ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<
-        impl Iterator<Item = Result<&'a str, cadmpeg_core::CodecError>> + 'ctx,
+        impl Iterator<Item = &'a str>,
         cadmpeg_core::CodecError,
-    >
-    where
-        'a: 'ctx,
-    {
+    > {
         let product = match self {
             Self::Product(record) => {
                 ctx.find_map(record.fields(), |(key, value)| {
@@ -48,8 +45,8 @@ impl<'a> NativeEntity<'a> {
         };
         Ok(ctx
             .admit_iter(product.map_or(&[][..], Vec::as_slice), "native outgoing link scan")?
-            .filter_map(|value| value.as_str().map(Ok))
-            .chain(ctx.admit_iter(source, "native outgoing link scan")?.map(|text| Ok(text.as_str()))))
+            .filter_map(serde_json::Value::as_str)
+            .chain(ctx.admit_iter(source, "native outgoing link scan")?.map(String::as_str)))
     }
 }
 
@@ -111,7 +108,7 @@ impl<'a> NativeView<'a> {
             }
             let replacing = order == Some(std::cmp::Ordering::Equal);
             for (arena, records) in storage.admit_iter(namespace.arenas(), operation)? {
-                if replacing {
+                if replacing && pending.is_some() {
                     let order = storage.compare("unknowns", arena.as_str(), operation)?;
                     if order != std::cmp::Ordering::Greater {
                         if let Some((replacement, sources, indices)) = pending.take() {
@@ -205,16 +202,14 @@ mod tests {
             ]),
         ).unwrap();
         let ctx = cadmpeg_test_support::service_decode_context();
-        assert_eq!(NativeEntity::Product(&record).links(&ctx).unwrap().collect::<Result<Vec<_>, _>>().unwrap(), ["first", "last"]);
+        assert_eq!(NativeEntity::Product(&record).links(&ctx).unwrap().collect::<Vec<_>>(), ["first", "last"]);
         for operation in ["native link field lookup", "native link field comparison", "native outgoing link scan"] {
             cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let arena = DecodeArena::new();
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                let result = NativeEntity::Product(&record).links(&ctx).and_then(|mut links| {
-                    links.try_for_each(|link| link.map(|_| ()))
-                });
+                let result = NativeEntity::Product(&record).links(&ctx).map(|links| { links.for_each(|_| ()); });
                 match result {
                     Err(CodecError::ResourceLimit(limit)) => {
                         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
