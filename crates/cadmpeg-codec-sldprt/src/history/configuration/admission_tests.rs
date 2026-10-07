@@ -1127,3 +1127,16 @@ fn configuration_parameter_overlays_use_scoped_storage() {
         run_parameter_overlay(&policy).unwrap();
     }
 }
+
+
+#[test]
+fn configuration_spatial_identity_lookup_keeps_candidate_text_scoped() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::MAX;
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "match SLDPRT configuration spatial sketch identity",
+        None,
+    );
+    run_spatial_ownership(&policy).unwrap();
+}

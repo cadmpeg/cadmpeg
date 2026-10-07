@@ -659,7 +659,7 @@ pub(crate) fn project_configuration_sketch_states(
             0,
             "SLDPRT temporary configuration spatial sketch identities",
         )?;
-        let mut reusable_spatial_sketches = HashSet::new();
+        let mut reusable_spatial_sketches = HashMap::new();
         for sketch in ctx.admit_iter(
             &ir.model.spatial_sketches,
             "scan SLDPRT project_configuration_sketch_states values",
@@ -682,8 +682,9 @@ pub(crate) fn project_configuration_sketch_states(
                 }
             {
                 spatial_sketches_storage.with_storage(|| {
-                    ctx.insert_hash_set(
+                    ctx.insert_hash_map(
                         &mut reusable_spatial_sketches,
+                        sketch.id.as_str(),
                         &sketch.id,
                         "index SLDPRT configuration spatial sketches",
                     )
@@ -695,36 +696,18 @@ pub(crate) fn project_configuration_sketch_states(
             if let FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch }) =
                 feature.evaluation.definition()
             {
-                const OPERATION: &str = "retain SLDPRT configuration spatial sketch identity";
+                if sketch.is_some() { continue; }
+                const OPERATION: &str = "match SLDPRT configuration spatial sketch identity";
                 let id = feature.id.as_str();
-                let text = if let Some((prefix, suffix)) =
-                    ctx.split_once(id, ":model:feature#", OPERATION)?
-                {
-                    ctx.format_retained(
-                        format_args!("{prefix}:model:spatial-sketch#{suffix}"),
-                        OPERATION,
-                    )?
+                let (text, _text_storage) = if let Some((prefix, suffix)) = ctx.split_once(id, ":model:feature#", OPERATION)? {
+                    let (text, storage) = ctx.format_scoped(format_args!("{prefix}:model:spatial-sketch#{suffix}"), OPERATION)?;
+                    (std::borrow::Cow::Owned(text), storage)
                 } else {
-                    ctx.copy_retained_text(id, OPERATION)?
+                    (std::borrow::Cow::Borrowed(id), ctx.reserve_scoped(0, OPERATION)?)
                 };
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), OPERATION)?;
-                let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(text) else {
-                    continue;
-                };
-                if sketch.is_none()
-                    && ctx.contains_hash_set(
-                        &reusable_spatial_sketches,
-                        &expected,
-                        "match SLDPRT configuration spatial sketch",
-                    )?
-                {
-                    feature
-                        .evaluation
-                        .set_definition(FeatureDefinition::Operation(
-                            FeatureOperation::SpatialSketch {
-                                sketch: Some(expected),
-                            },
-                        ));
+                if let Some(existing) = ctx.get_hash_map(&reusable_spatial_sketches, text.as_ref(), "match SLDPRT configuration spatial sketch")? {
+                    let copied = existing.try_clone_for_decode(ctx, "copy SLDPRT configuration spatial sketch identity")?;
+                    feature.evaluation.set_definition(FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(copied) }));
                 }
                 continue;
             }
@@ -740,9 +723,9 @@ pub(crate) fn project_configuration_sketch_states(
                 continue;
             };
             if sketch.id().is_none()
-                && ctx.contains_hash_set(
+                && ctx.contains_key_hash_map(
                     &reusable_spatial_sketches,
-                    base_sketch,
+                    base_sketch.as_str(),
                     "match SLDPRT configuration spatial sketch",
                 )?
             {
