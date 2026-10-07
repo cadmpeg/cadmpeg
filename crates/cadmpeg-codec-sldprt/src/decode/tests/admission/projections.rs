@@ -183,12 +183,12 @@ fn metadata_edit_projection_refuses_retained_limit() {
     let error = retained_refusal_at(
         &variable_fillet_source(),
         &mut options,
-        "retain SLDPRT edit selection reference",
+        "retain SLDPRT feature property",
     );
     assert!(matches!(error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT edit selection reference"
+                && limit.operation == "retain SLDPRT feature property"
     ));
 }
 
