@@ -1207,22 +1207,6 @@ pub(crate) fn project(
         }),
         "index Inventor sketch constraints",
     )?;
-    let mut parameter_index_storage = ctx.reserve_scoped(0, "index Inventor sketch parameter")?;
-    let mut parameter_index = HashMap::new();
-    if !inventory.constraints.is_empty() {
-        for parameter in ctx.admit_iter(parameters, "visit Inventor sketch items")? {
-            if let Some(native) = &parameter.native_ref {
-                parameter_index_storage.with_storage(|| {
-                    ctx.insert_hash_map(
-                        &mut parameter_index,
-                        native.as_str(),
-                        &parameter.id,
-                        "index Inventor sketch parameter",
-                    )
-                })?;
-            }
-        }
-    }
 
     // Which records each sketch lists, keyed by the sketch's identity and the
     // listed one-based reference, so an entity or constraint finds its
@@ -1459,6 +1443,16 @@ pub(crate) fn project(
     )?;
     drop(projected_sketch_ids);
     drop(projected_sketch_ids_storage);
+    if sketches.is_empty() {
+        return Ok(SketchProjection {
+            sketches,
+            entities: projected_entities,
+            constraints: Vec::new(),
+            unresolved_sketches,
+            unresolved_entities,
+            unresolved_constraints: inventory.constraints.len(),
+        });
+    }
     let mut projected_by_native_storage =
         ctx.reserve_scoped(0, "reindex projected Inventor sketch entities")?;
     let projected_by_native = projected_by_native_storage.with_storage(|| {
@@ -1474,34 +1468,52 @@ pub(crate) fn project(
     let mut projected_entity_by_key_storage =
         ctx.reserve_scoped(0, "index projected Inventor sketch entity key")?;
     let mut projected_entity_by_key = BTreeMap::new();
-    for raw in ctx.admit_iter(&inventory.entities, "visit Inventor sketch items")? {
-        let (native_id, _native_reservation) = ctx.format_scoped(
-            format_args!(
-                "inventor:pmdc:sketch-entity#{}-{}",
-                raw.identity.segment_token, raw.identity.record_ordinal
-            ),
-            "resolve projected Inventor sketch native id",
-        )?;
-        if let Some(projected) = ctx.get_hash_map(
-            &projected_by_native,
-            native_id.as_str(),
-            "access Inventor sketch records",
-        )? {
-            projected_entity_by_key_storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut projected_entity_by_key,
-                    (
-                        raw.identity.segment_token.as_str(),
-                        raw.identity.record_ordinal,
-                    ),
-                    *projected,
-                    "index projected Inventor sketch entity key",
-                )
-            })?;
+    if !projected_by_native.is_empty() {
+        for raw in ctx.admit_iter(&inventory.entities, "visit Inventor sketch items")? {
+            let (native_id, _native_reservation) = ctx.format_scoped(
+                format_args!(
+                    "inventor:pmdc:sketch-entity#{}-{}",
+                    raw.identity.segment_token, raw.identity.record_ordinal
+                ),
+                "resolve projected Inventor sketch native id",
+            )?;
+            if let Some(projected) = ctx.get_hash_map(
+                &projected_by_native,
+                native_id.as_str(),
+                "access Inventor sketch records",
+            )? {
+                projected_entity_by_key_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut projected_entity_by_key,
+                        (
+                            raw.identity.segment_token.as_str(),
+                            raw.identity.record_ordinal,
+                        ),
+                        *projected,
+                        "index projected Inventor sketch entity key",
+                    )
+                })?;
+            }
         }
     }
     drop(projected_by_native);
     drop(projected_by_native_storage);
+    let mut parameter_index_storage = ctx.reserve_scoped(0, "index Inventor sketch parameter")?;
+    let mut parameter_index = HashMap::new();
+    if !inventory.constraints.is_empty() {
+        for parameter in ctx.admit_iter(parameters, "visit Inventor sketch items")? {
+            if let Some(native) = &parameter.native_ref {
+                parameter_index_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut parameter_index,
+                        native.as_str(),
+                        &parameter.id,
+                        "index Inventor sketch parameter",
+                    )
+                })?;
+            }
+        }
+    }
     let mut constraints = Vec::new();
     let mut projected_constraint_keys_storage =
         ctx.reserve_scoped(0, "index projected Inventor sketch constraint")?;
@@ -1537,6 +1549,8 @@ pub(crate) fn project(
             }
         }
     }
+    drop(parameter_index);
+    drop(parameter_index_storage);
     let mut unresolved_constraints = inventory
         .constraints
         .len()
@@ -1642,32 +1656,36 @@ pub(crate) fn project(
     let mut raw_sketch_by_id_storage =
         ctx.reserve_scoped(0, "index Inventor raw sketch projected ids")?;
     let mut raw_sketch_by_id = HashMap::new();
-    for sketch in ctx.admit_iter(&inventory.sketches, "visit Inventor sketch items")? {
-        let id = raw_sketch_by_id_storage.with_storage(|| sketch_id(ctx, sketch))?;
-        if let Some(id) = id {
-            raw_sketch_by_id_storage.with_storage(|| {
-                ctx.insert_hash_map(
-                    &mut raw_sketch_by_id,
-                    id,
-                    sketch,
-                    "index Inventor raw sketch projected ids",
-                )
-            })?;
+    if !sketches.is_empty() && !constraints.is_empty() {
+        for sketch in ctx.admit_iter(&inventory.sketches, "visit Inventor sketch items")? {
+            let id = raw_sketch_by_id_storage.with_storage(|| sketch_id(ctx, sketch))?;
+            if let Some(id) = id {
+                raw_sketch_by_id_storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut raw_sketch_by_id,
+                        id,
+                        sketch,
+                        "index Inventor raw sketch projected ids",
+                    )
+                })?;
+            }
         }
     }
     let mut raw_constraint_by_native_storage =
         ctx.reserve_scoped(0, "index Inventor raw constraint native refs")?;
     let mut raw_constraint_by_native = HashMap::new();
-    for constraint in ctx.admit_iter(&inventory.constraints, "visit Inventor sketch items")? {
-        let id = raw_constraint_by_native_storage.with_storage(|| constraint.id(ctx))?;
-        raw_constraint_by_native_storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut raw_constraint_by_native,
-                id,
-                constraint,
-                "index Inventor raw constraint native refs",
-            )
-        })?;
+    if !sketches.is_empty() && !constraints.is_empty() {
+        for constraint in ctx.admit_iter(&inventory.constraints, "visit Inventor sketch items")? {
+            let id = raw_constraint_by_native_storage.with_storage(|| constraint.id(ctx))?;
+            raw_constraint_by_native_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut raw_constraint_by_native,
+                    id,
+                    constraint,
+                    "index Inventor raw constraint native refs",
+                )
+            })?;
+        }
     }
     let previous_constraint_count = constraints.len();
     ctx.retain_vec(
@@ -3051,6 +3069,186 @@ mod tests {
         }
     }
 
+    fn horizontal_constraint_fixture(index: u32, reference: u32) -> super::PmDcSketchConstraint {
+        let mut bytes = constraint_header(index, 0);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.push(0);
+        let payload = parse(&bytes, |ctx, source| {
+            parse_constraint(ctx, SketchConstraintTag::Horizontal, source, 22)
+                .expect("horizontal constraint")
+        });
+        Located::new(
+            payload,
+            fixture_record_type_id(HORIZONTAL_TYPE),
+            cadmpeg_ir::identity_key!("segment"),
+            index,
+        )
+    }
+
+    #[test]
+    fn unprojectable_sketches_skip_constraint_native_ids() {
+        let mut inventory = empty_projectable_inventory();
+        inventory.directions.clear();
+        let mut constraint = horizontal_constraint_fixture(3, 0);
+        constraint.identity.segment_token =
+            cadmpeg_ir::ids::IdentityKey::try_new("x".repeat(4097)).expect("key");
+        inventory.constraints.push(constraint);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Three borrowed raw-record tables fit; the unused native key alone exceeds this limit.
+        policy.limits.max_materialized_bytes = 4096;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let projection =
+            project(&ctx, &inventory, &[]).expect("rejected sketches need no native index");
+        assert_eq!(projection.unresolved_sketches, 1);
+        assert_eq!(projection.unresolved_constraints, 1);
+        assert!(projection.sketches.is_empty());
+        assert!(projection.entities.is_empty());
+        assert!(projection.constraints.is_empty());
+        assert!(matches!(ctx.reserve_scoped(u64::MAX, "probe"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes && limit.used == 0));
+    }
+
+    #[test]
+    fn orphan_entities_skip_projected_native_lookup_strings() {
+        let mut inventory = empty_projectable_inventory();
+        let point = parse(&point_bytes(3, 0, [0.0, 0.0]), |ctx, source| {
+            parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point")
+        });
+        inventory.entities.push(Located::new(
+            point,
+            fixture_record_type_id(POINT_TYPE),
+            cadmpeg_ir::ids::IdentityKey::try_new("x".repeat(4097)).expect("key"),
+            3,
+        ));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // A borrowed key needs no string storage; its unused formatted copy would exceed the limit.
+        policy.limits.max_materialized_bytes = 4096;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let projection = project(&ctx, &inventory, &[]).expect("no projected entity lookup keys");
+        assert_eq!(projection.sketches.len(), 1);
+        assert_eq!(projection.unresolved_entities, 1);
+        assert!(projection.entities.is_empty());
+        assert!(projection.constraints.is_empty());
+    }
+
+    #[test]
+    fn sketch_projection_without_constraints_skips_native_constraint_indexes() {
+        for has_raw_constraint in [false, true] {
+            let mut inventory = empty_projectable_inventory();
+            if has_raw_constraint {
+                inventory.constraints.push(horizontal_constraint_fixture(3, 0));
+            }
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // Three raw-record entries, one output sketch, one projected-ID entry,
+            // one raw native-sketch entry and one closed-ID entry: seven slots.
+            // A raw constraint adds one; no projected constraints need the final native tables.
+            let slots = 7 + u64::from(has_raw_constraint);
+            policy.limits.max_collection_items = slots;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let projection = project(&ctx, &inventory, &[]).expect("only read indexes are stored");
+            assert_eq!(projection.sketches.len(), 1);
+            assert_eq!(projection.unresolved_constraints, usize::from(has_raw_constraint));
+            assert!(projection.entities.is_empty());
+            assert!(projection.constraints.is_empty());
+            assert!(matches!(ctx.charge_collection_items(1, "probe"),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems && limit.used == slots));
+        }
+    }
+
+    #[test]
+    fn unprojectable_sketches_skip_parameter_index() {
+        let parameters = [cadmpeg_ir::features::DesignParameter {
+            id: cadmpeg_ir::features::ParameterId::mint("inventor:design:parameter#segment-0")
+                .expect("parameter id"),
+            owner: None,
+            ordinal: 0,
+            name: "p".into(),
+            expression: String::new(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(format!("inventor:pmdc:parameter#{}-0", "x".repeat(4097))),
+        }];
+        let mut inventory = empty_projectable_inventory();
+        inventory.directions.clear();
+        inventory.constraints.push(horizontal_constraint_fixture(3, 0));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The unused parameter key exceeds the whole work budget; rejected sketches do not hash it.
+        policy.limits.max_work_units = 4096;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let projection = project(&ctx, &inventory, &parameters).expect("no unused parameter index");
+        assert_eq!(projection.unresolved_sketches, 1);
+        assert_eq!(projection.unresolved_constraints, 1);
+        assert!(projection.sketches.is_empty());
+        assert!(projection.entities.is_empty());
+        assert!(projection.constraints.is_empty());
+    }
+
+    #[test]
+    fn rejected_closed_sketches_skip_constraint_native_indexes() {
+        use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+        for closed in [true, false] {
+            let mut inventory = empty_projectable_inventory();
+            let point = parse(&point_bytes(3, 3, [0.0, 0.0]), |ctx, source| {
+                parse_entity(ctx, SketchEntityTag::Point, source, 22).expect("point")
+            });
+            inventory.entities.push(Located::new(
+                point,
+                fixture_record_type_id(POINT_TYPE),
+                cadmpeg_ir::identity_key!("segment"),
+                3,
+            ));
+            inventory.constraints.push(horizontal_constraint_fixture(5, 4));
+            let references = if closed { &[4, 6][..] } else { &[4, 6, 0][..] };
+            let mut bytes = content(2);
+            bytes.extend_from_slice(&0_i32.to_le_bytes());
+            bytes.extend_from_slice(&u32::try_from(references.len()).expect("count").to_le_bytes());
+            bytes.extend(list(8, references));
+            bytes.extend_from_slice(&1_u32.to_le_bytes());
+            bytes.extend_from_slice(&2_u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+            bytes.extend(list(2, &[]));
+            let sketch = parse(&bytes, |ctx, source| {
+                parse_sketch(ctx, source, 22).expect("sketch")
+            });
+            inventory.sketches = vec![Located::new(
+                sketch,
+                fixture_record_type_id(SKETCH_TYPE),
+                cadmpeg_ir::identity_key!("segment"),
+                2,
+            )];
+            for operation in [
+                "index Inventor raw sketch projected ids",
+                "index Inventor raw constraint native refs",
+            ] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = u64::MAX;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+                // Refuse any final native-index entry only in the rejected-sketch case.
+                let _probe = (!closed).then(|| {
+                    RefusalProbe::arm(ResourceDimension::CollectionItems, operation, None)
+                });
+                let projection = project(&ctx, &inventory, &[]).expect("native indexes need readers");
+                let count = usize::from(closed);
+                assert_eq!(projection.sketches.len(), count);
+                assert_eq!(projection.entities.len(), count);
+                assert_eq!(projection.constraints.len(), count);
+                assert_eq!(projection.unresolved_sketches, 1 - count);
+                assert_eq!(projection.unresolved_entities, 1 - count);
+                assert_eq!(projection.unresolved_constraints, 1 - count);
+            }
+        }
+    }
+
     #[test]
     fn sketch_parameter_index_borrows_unselected_values() {
         let parameters = [cadmpeg_ir::features::DesignParameter {
@@ -3090,6 +3288,35 @@ mod tests {
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.used == 0
                     && limit.operation == "retain projected Inventor sketch_id identity"));
+        // Two output identities fill this budget before the returned vector is allocated.
+        let text_bytes = cadmpeg_core::decode::u64_from_index(
+            "inventor:design:sketch#segment-2".len()
+                + "inventor:pmdc:sketch#segment-2".len(),
+        );
+        policy.limits.max_retained_bytes = text_bytes;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let sketch_bytes = std::mem::size_of::<cadmpeg_ir::sketches::Sketch>();
+        assert!((2..=1024).contains(&sketch_bytes));
+        // Core amortized growth reserves four slots for an initial element of this size.
+        let vector_bytes = cadmpeg_core::decode::u64_from_index(4 * sketch_bytes);
+        assert!(matches!(project(&ctx, &inventory, &parameters),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "collect Inventor sketch items"
+                    && limit.used == text_bytes && limit.additional == vector_bytes));
+        // Only output text and returned vector storage are retained. The live
+        // parameter index borrows its key and ID after those output copies.
+        let retained = text_bytes + vector_bytes;
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let projection = project(&ctx, &inventory, &parameters).expect("borrowed parameter index");
+        assert_eq!(projection.sketches.len(), 1);
+        assert_eq!(projection.unresolved_constraints, 1);
+        assert!(projection.entities.is_empty());
+        assert!(projection.constraints.is_empty());
+        assert!(matches!(ctx.charge_retained(1, "probe"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes && limit.used == retained));
     }
 
     #[test]
