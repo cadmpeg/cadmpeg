@@ -1756,13 +1756,13 @@ fn merged_event_spans(
         census.inline_body_states.len(),
     ];
     let mut count = 0usize;
-    for value in ctx.admit_iter(&base_count, "NX deltas event count traversal")? {
+    for value in &base_count {
         count = count
             .checked_add(*value)
             .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event spans", u64::MAX, u64::MAX))?;
     }
     if include_derived_events {
-        for value in ctx.admit_iter(&derived_count, "NX deltas derived event count traversal")? {
+        for value in &derived_count {
             count = count.checked_add(*value).ok_or_else(|| {
                 ctx.refuse_codec_limit("NX deltas event spans", u64::MAX, u64::MAX)
             })?;
