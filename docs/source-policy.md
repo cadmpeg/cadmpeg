@@ -480,7 +480,12 @@ charges the storage for twice the new length as work, which bounds the old
 table it walks, and holds it as a scoped reservation while the table grows,
 which bounds the new table before it is allocated. Right after growing, the
 table has no deleted slots, so growth then charges the storage of its new
-`capacity()` less that of the old one as retained bytes. An in-place rehash
+`capacity()` less that of the old one as retained bytes. Std exposes neither
+the bucket count nor the deleted slots, so after removals that charge cannot
+tell an in-place rehash from a doubling and charges as if the table doubled.
+Under churn the retained total therefore exceeds the table's storage, by at
+most 8/7 of an entry and its control byte per removal: no more than keeping
+the removed entry would have retained. An in-place rehash
 allocates nothing; the charged removals and insertions since the last rehash
 pay for its walk, so a raw removal is reported with `remove_hash_map`,
 `remove_entry_hash_map` or `remove_hash_set`. Growth then
