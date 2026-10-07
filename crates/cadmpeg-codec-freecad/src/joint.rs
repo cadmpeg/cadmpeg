@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly joints recovered without executing Python proxy payloads.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
@@ -17,30 +17,19 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<JointRecord>, CodecError> {
-    let mut owner_storage = ctx.reserve_scoped(0, "FreeCAD joint owner storage")?;
-    let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
-    for property in properties {
-        if !by_owner.contains_key(property.owner.as_str()) {
-            owner_storage
-                .with_storage(|| ctx.reserve_map(&mut by_owner, 1, "fcstd joint owner index"))?;
-            by_owner.insert(&property.owner, Vec::new());
-        }
-        if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
-            owner_storage
-                .with_storage(|| ctx.reserve_vec(owned, 1, "fcstd joint owner properties"))?;
-            owned.push(property);
-        }
-    }
+    let (by_owner, _owner_storage) = ctx.collect_scoped_btree_groups(
+        properties
+            .iter()
+            .map(|property| (property.owner.as_str(), property)),
+        "fcstd joint owner index",
+    )?;
     let mut output = Vec::new();
-    for object in objects {
-        let source = by_owner
-            .get(object.id().as_str())
+    for object in ctx.admit_iter(objects, "fcstd joint objects")? {
+        let owned = ctx
+            .get_btree_map(&by_owner, object.id().as_str(), "fcstd joint owner lookup")?
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = owner_storage
-            .with_storage(|| ctx.collection_vec(source.len(), "fcstd joint selected properties"))?;
-        owned.extend_from_slice(source);
-        let grounded_property = sole_named_property(ctx, "joint", &owned, "ObjectToGround")?;
-        let joint_type_property = sole_named_property(ctx, "joint", &owned, "JointType")?;
+        let grounded_property = sole_named_property(ctx, "joint", owned, "ObjectToGround")?;
+        let joint_type_property = sole_named_property(ctx, "joint", owned, "JointType")?;
         if grounded_property.is_some() && joint_type_property.is_some() {
             return Err(crate::resource::malformed_charged(
                 ctx,
@@ -54,9 +43,14 @@ pub(crate) fn transfer(
         if let Some(property) = grounded_property {
             let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
                 && property.links().len() == 1
-                && property.links()[0]
-                    .as_ref()
-                    .is_none_or(|link| link.subelements().iter().all(String::is_empty));
+                && match property.links()[0].as_ref() {
+                    None => true,
+                    Some(link) => ctx.all_by(
+                        link.subelements(),
+                        |name| Ok(name.is_empty()),
+                        "fcstd grounded joint subelements",
+                    )?,
+                };
             if !matches!(
                 property.type_name.as_str(),
                 "App::PropertyLinkGlobal" | "App::PropertyLink"
@@ -88,14 +82,21 @@ pub(crate) fn transfer(
             .map(|property| enumeration_value(ctx, property))
             .transpose()?;
         let body = if grounded_property.is_some() {
-            let placement = placement(ctx, &owned, "Placement")?.unwrap_or_default();
-            let reference = grounded_property
-                .into_iter()
-                .flat_map(PropertyRecord::links)
-                .flatten()
-                .find(|link| link.document().is_some() || link.object().is_some())
-                .map(|link| link.clone_with_context(ctx))
-                .transpose()?;
+            let placement = placement(ctx, owned, "Placement")?.unwrap_or_default();
+            let reference = match grounded_property {
+                Some(property) => ctx.find_map(
+                    property.links(),
+                    |target| {
+                        Ok(target
+                            .as_ref()
+                            .filter(|link| link.document().is_some() || link.object().is_some()))
+                    },
+                    "fcstd grounded joint reference",
+                )?,
+                None => None,
+            }
+            .map(|link| link.clone_with_context(ctx))
+            .transpose()?;
             JointBody::Grounded {
                 reference,
                 placement,
@@ -115,40 +116,42 @@ pub(crate) fn transfer(
             JointBody::Pair {
                 kind: PairedJointFamily::new(joint_type).map_err(CodecError::Malformed)?,
                 connectors: Box::new([
-                    connector_record(&owned, "Reference1", "Placement1", "Offset1")?,
-                    connector_record(&owned, "Reference2", "Placement2", "Offset2")?,
+                    connector_record(owned, "Reference1", "Placement1", "Offset1")?,
+                    connector_record(owned, "Reference2", "Placement2", "Offset2")?,
                 ]),
             }
         } else {
             continue;
         };
+        let mut parameter_storage = ctx.reserve_scoped(0, "fcstd joint raw parameters")?;
         let mut parameters = BTreeMap::new();
-        for property in owned.iter().filter(|property| {
-            matches!(
-                property.name.as_str(),
-                "Angle"
-                    | "AngleMin"
-                    | "AngleMax"
-                    | "Distance"
-                    | "Distance2"
-                    | "LengthMin"
-                    | "LengthMax"
-                    | "EnableAngleMin"
-                    | "EnableAngleMax"
-                    | "EnableLengthMin"
-                    | "EnableLengthMax"
-                    | "Detach1"
-                    | "Detach2"
-                    | "Suppressed"
-            )
-        }) {
+        for property in ctx
+            .admit_iter(owned, "fcstd joint parameter properties")?
+            .filter(|property| {
+                matches!(
+                    property.name.as_str(),
+                    "Angle"
+                        | "AngleMin"
+                        | "AngleMax"
+                        | "Distance"
+                        | "Distance2"
+                        | "LengthMin"
+                        | "LengthMax"
+                        | "EnableAngleMin"
+                        | "EnableAngleMax"
+                        | "EnableLengthMin"
+                        | "EnableLengthMax"
+                        | "Detach1"
+                        | "Detach2"
+                        | "Suppressed"
+                )
+            })
+        {
             if let Some(value) = scalar_parameter(ctx, property)? {
-                ctx.insert_btree_map(
-                    &mut parameters,
-                    ctx.copy_retained_text(&property.name, "fcstd joint parameter name")?,
-                    value,
-                    "fcstd joint parameters",
-                )?;
+                let name = ctx.copy_retained_text(&property.name, "fcstd joint parameter name")?;
+                parameter_storage.with_storage(|| {
+                    ctx.insert_btree_map(&mut parameters, name, value, "fcstd joint parameters")
+                })?;
             }
         }
         ctx.reserve_vec(&mut output, 1, "fcstd joint records")?;
@@ -168,29 +171,25 @@ pub(crate) fn transfer_neutral(
     records: &[JointRecord],
     occurrences: &[Occurrence],
 ) -> Result<Vec<AssemblyJoint>, CodecError> {
-    let count = occurrences
-        .iter()
-        .filter(|occurrence| occurrence.native_ref.is_some())
-        .count();
     let mut lookup_storage = ctx.reserve_scoped(0, "FreeCAD joint occurrence lookup")?;
-    let mut occurrence_by_native = HashMap::new();
-    lookup_storage.with_storage(|| {
-        ctx.reserve_map(
-            &mut occurrence_by_native,
-            count,
-            "fcstd joint occurrence index",
-        )
-    })?;
-    for occurrence in occurrences {
+    let mut occurrence_by_native = BTreeMap::new();
+    for occurrence in ctx.admit_iter(occurrences, "fcstd joint occurrences")? {
         if let Some(native) = occurrence.native_ref.as_deref() {
-            occurrence_by_native.insert(native, &occurrence.id);
+            lookup_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut occurrence_by_native,
+                    native,
+                    &occurrence.id,
+                    "fcstd joint occurrence index",
+                )
+            })?;
         }
     }
     let mut output = Vec::new();
-    for record in records {
+    for record in ctx.admit_iter(records, "fcstd neutral joint records")? {
         let parameters = record.parameters();
-        let bool_value = |name: &str| parameters.bool_value(name);
-        let scalar = |name: &str| parameters.scalar_value(name);
+        let bool_value = |name: &str| parameters.bool_value(ctx, name);
+        let scalar = |name: &str| parameters.scalar_value(ctx, name);
         let enabled_limits =
             |minimum: &str, maximum: &str, enable_min: &str, enable_max: &str, scale: f64| {
                 let scaled_bound = |value: FiniteReal| {
@@ -204,18 +203,16 @@ pub(crate) fn transfer_neutral(
                         })
                     }
                 };
-                let minimum = bool_value(enable_min)
-                    .is_some_and(|enabled| enabled)
-                    .then(|| scalar(minimum))
-                    .flatten()
-                    .map(scaled_bound)
-                    .transpose()?;
-                let maximum = bool_value(enable_max)
-                    .is_some_and(|enabled| enabled)
-                    .then(|| scalar(maximum))
-                    .flatten()
-                    .map(scaled_bound)
-                    .transpose()?;
+                let minimum = if bool_value(enable_min)?.is_some_and(|enabled| enabled) {
+                    scalar(minimum)?.map(scaled_bound).transpose()?
+                } else {
+                    None
+                };
+                let maximum = if bool_value(enable_max)?.is_some_and(|enabled| enabled) {
+                    scalar(maximum)?.map(scaled_bound).transpose()?
+                } else {
+                    None
+                };
                 if minimum.is_none() && maximum.is_none() {
                     Ok(None)
                 } else {
@@ -233,16 +230,17 @@ pub(crate) fn transfer_neutral(
                 return Ok(None);
             };
             let object = ctx.copy_retained_text(name, "fcstd joint operand object")?;
-            let mut subelements = ctx.collection_vec(
-                reference.subelements().len(),
-                "fcstd joint operand subelements",
-            )?;
-            for name in reference
-                .subelements()
-                .iter()
-                .filter(|name| !name.is_empty())
+            let mut subelements = Vec::new();
+            for name in
+                ctx.admit_iter(reference.subelements(), "fcstd joint operand subelements")?
             {
-                subelements.push(ctx.copy_retained_text(name, "fcstd joint operand subelement")?);
+                if !name.is_empty() {
+                    ctx.push_vec(
+                        &mut subelements,
+                        ctx.copy_retained_text(name, "fcstd joint operand subelement")?,
+                        "fcstd joint operand subelements",
+                    )?;
+                }
             }
             if let Some(document) = reference.document() {
                 let document = crate::product::external_document_reference_charged(
@@ -252,14 +250,19 @@ pub(crate) fn transfer_neutral(
                 )?;
                 return Ok(Some(JointOperand::external(document, object, subelements)));
             }
-            Ok(Some(match occurrence_by_native.get(name).copied() {
-                Some(occurrence) => {
-                    let identity =
-                        occurrence.try_clone_for_decode(ctx, "fcstd joint occurrence identity")?;
-                    JointOperand::occurrence(identity, object, subelements)
-                }
-                None => JointOperand::root(object, subelements),
-            }))
+            Ok(Some(
+                match ctx
+                    .get_btree_map(&occurrence_by_native, name, "fcstd joint occurrence lookup")?
+                    .copied()
+                {
+                    Some(occurrence) => {
+                        let identity = occurrence
+                            .try_clone_for_decode(ctx, "fcstd joint occurrence identity")?;
+                        JointOperand::occurrence(identity, object, subelements)
+                    }
+                    None => JointOperand::root(object, subelements),
+                },
+            ))
         };
         let id = JointId::mint(crate::native::model_id_charged(
             ctx,
@@ -268,9 +271,9 @@ pub(crate) fn transfer_neutral(
             "constraint",
         )?)
         .map_err(CodecError::malformed)?;
-        let angle = scalar("Angle").map(|value| value.get().to_radians());
-        let distance = scalar("Distance");
-        let distance2 = scalar("Distance2");
+        let angle = scalar("Angle")?.map(|value| value.get().to_radians());
+        let distance = scalar("Distance")?;
+        let distance2 = scalar("Distance2")?;
         let angular_limits = enabled_limits(
             "AngleMin",
             "AngleMax",
@@ -301,7 +304,7 @@ pub(crate) fn transfer_neutral(
                     JointConnector {
                         operand,
                         frame: placement.transform(),
-                        detached: bool_value("Detach1").is_some_and(|value| value),
+                        detached: bool_value("Detach1")?.is_some_and(|value| value),
                     },
                     None,
                 )
@@ -336,19 +339,19 @@ pub(crate) fn transfer_neutral(
                         JointConnector {
                             operand: first_operand,
                             frame: first.placement.transform(),
-                            detached: bool_value("Detach1").is_some_and(|value| value),
+                            detached: bool_value("Detach1")?.is_some_and(|value| value),
                         },
                         JointConnector {
                             operand: second_operand,
                             frame: second.placement.transform(),
-                            detached: bool_value("Detach2").is_some_and(|value| value),
+                            detached: bool_value("Detach2")?.is_some_and(|value| value),
                         },
                     ],
                     Some([first.offset.transform(), second.offset.transform()]),
                 )
             }
         };
-        joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
+        joint.suppressed = bool_value("Suppressed")?.is_some_and(|value| value);
         joint.native_ref =
             Some(ctx.copy_retained_text(record.id(), "fcstd joint native reference")?);
         ctx.reserve_vec(&mut output, 1, "fcstd neutral joints")?;
@@ -371,13 +374,14 @@ fn joint_kind(
             .ok_or_else(|| CodecError::Malformed("joint scalar must be finite".into()))
     };
     let angle = angle.map(finite_angle).transpose()?;
-    let (mut lower, _reservation) =
-        ctx.temporary_vec::<u8>(kind.as_str().len(), "fcstd joint kind matching")?;
-    lower.extend_from_slice(kind.as_str().as_bytes());
-    lower.make_ascii_lowercase();
-    let lower = std::str::from_utf8(&lower)
-        .map_err(|_| CodecError::Malformed("joint kind lost UTF-8 encoding".into()))?;
-    Ok(match lower {
+    let mut kind_storage = ctx.reserve_scoped(0, "fcstd joint kind matching")?;
+    let mut lower = ctx.copy_scoped_text(
+        kind.as_str(),
+        &mut kind_storage,
+        "fcstd joint kind matching",
+    )?;
+    ctx.make_ascii_lowercase(&mut lower, "fcstd joint kind case fold")?;
+    Ok(match lower.as_str() {
         "fixed" => PairedJointKind::Fixed {
             angle,
             translation_offset: None,
@@ -449,8 +453,8 @@ fn enumeration_value(
             )
         })?;
     let document = admitted_document.document();
-    let root = document.root_element();
-    if !root.has_tag_name("Property") {
+    let root = ctx.xml_root_element(document, "fcstd joint XML root")?;
+    if !ctx.xml_has_tag_name(root, "Property", "fcstd joint XML tag")? {
         return Err(crate::resource::malformed_charged(
             ctx,
             format_args!(
@@ -460,8 +464,17 @@ fn enumeration_value(
             "fcstd joint diagnostic",
         ));
     }
-    let mut values = root.children().filter(roxmltree::Node::is_element);
-    let Some(integer) = values.next().filter(|value| value.has_tag_name("Integer")) else {
+    let mut values = root.children();
+    let integer = ctx.find_by(
+        values.by_ref(),
+        |node| Ok(node.is_element()),
+        "fcstd joint XML child",
+    )?;
+    let integer = match integer {
+        Some(node) if ctx.xml_has_tag_name(node, "Integer", "fcstd joint XML tag")? => Some(node),
+        _ => None,
+    };
+    let Some(integer) = integer else {
         return Err(crate::resource::malformed_charged(
             ctx,
             format_args!(
@@ -471,7 +484,11 @@ fn enumeration_value(
             "fcstd joint diagnostic",
         ));
     };
-    if integer.children().any(|value| value.is_element()) {
+    if ctx.any_by(
+        integer.children(),
+        |value| Ok(value.is_element()),
+        "fcstd joint Integer children",
+    )? {
         return Err(crate::resource::malformed_charged(
             ctx,
             format_args!(
@@ -481,10 +498,25 @@ fn enumeration_value(
             "fcstd joint diagnostic",
         ));
     }
-    let custom_list = values.next();
-    if values.next().is_some()
-        || custom_list.is_some_and(|value| !value.has_tag_name("CustomEnumList"))
-    {
+    let custom_list = ctx.find_by(
+        values.by_ref(),
+        |node| Ok(node.is_element()),
+        "fcstd joint XML child",
+    )?;
+    let extra = ctx.any_by(
+        values,
+        |node| Ok(node.is_element()),
+        "fcstd joint XML child",
+    )?;
+    let wrong_custom_tag = if extra {
+        false
+    } else {
+        match custom_list {
+            Some(node) => !ctx.xml_has_tag_name(node, "CustomEnumList", "fcstd joint XML tag")?,
+            None => false,
+        }
+    };
+    if extra || wrong_custom_tag {
         return Err(crate::resource::malformed_charged(
             ctx,
             format_args!(
@@ -494,7 +526,7 @@ fn enumeration_value(
             "fcstd joint diagnostic",
         ));
     }
-    let custom = match integer.attribute("CustomEnum") {
+    let custom = match ctx.xml_attribute(integer, "CustomEnum", "fcstd joint XML attribute")? {
         None => false,
         Some("true") => true,
         Some(_) => {
@@ -518,19 +550,21 @@ fn enumeration_value(
             "fcstd joint diagnostic",
         ));
     }
-    let index = integer
-        .attribute("value")
-        .ok_or_else(|| {
-            crate::resource::malformed_charged(
-                ctx,
-                format_args!(
-                    "joint enumeration property {} has no Integer value",
-                    property.id
-                ),
-                "fcstd joint diagnostic",
-            )
-        })?
-        .parse::<usize>()
+    let index = ctx
+        .parse_text::<usize>(
+            ctx.xml_attribute(integer, "value", "fcstd joint XML attribute")?
+                .ok_or_else(|| {
+                    crate::resource::malformed_charged(
+                        ctx,
+                        format_args!(
+                            "joint enumeration property {} has no Integer value",
+                            property.id
+                        ),
+                        "fcstd joint diagnostic",
+                    )
+                })?,
+            "fcstd joint enumeration integer",
+        )?
         .map_err(|_| {
             crate::resource::malformed_charged(
                 ctx,
@@ -542,19 +576,21 @@ fn enumeration_value(
             )
         })?;
     let selected = if let Some(custom_list) = custom_list {
-        let count = custom_list
-            .attribute("count")
-            .ok_or_else(|| {
-                crate::resource::malformed_charged(
-                    ctx,
-                    format_args!(
-                        "joint enumeration property {} CustomEnumList has no count",
-                        property.id
-                    ),
-                    "fcstd joint diagnostic",
-                )
-            })?
-            .parse::<usize>()
+        let count = ctx
+            .parse_text::<usize>(
+                ctx.xml_attribute(custom_list, "count", "fcstd joint XML attribute")?
+                    .ok_or_else(|| {
+                        crate::resource::malformed_charged(
+                            ctx,
+                            format_args!(
+                                "joint enumeration property {} CustomEnumList has no count",
+                                property.id
+                            ),
+                            "fcstd joint diagnostic",
+                        )
+                    })?,
+                "fcstd joint enumeration count",
+            )?
             .map_err(|_| {
                 crate::resource::malformed_charged(
                     ctx,
@@ -565,9 +601,17 @@ fn enumeration_value(
                     "fcstd joint diagnostic",
                 )
             })?;
-        let values = custom_list.children().filter(roxmltree::Node::is_element);
-        let found = values.clone().count();
-        if found != count || values.clone().any(|value| !value.has_tag_name("Enum")) {
+        let mut children = custom_list.children();
+        let mut found = 0;
+        let mut invalid_tag = false;
+        while let Some(value) = ctx.next_charged(&mut children, "fcstd joint Enum count")? {
+            if !value.is_element() {
+                continue;
+            }
+            found += 1;
+            invalid_tag |= !ctx.xml_has_tag_name(value, "Enum", "fcstd joint XML tag")?;
+        }
+        if found != count || invalid_tag {
             return Err(crate::resource::malformed_charged(ctx, format_args!(
                 "joint enumeration property {} CustomEnumList count={count} but {} direct Enum values were found",
                 property.id,
@@ -575,8 +619,17 @@ fn enumeration_value(
             ), "fcstd joint diagnostic"));
         }
         let mut selected = None;
-        for (position, value) in values.enumerate() {
-            if value.children().any(|child| child.is_element()) {
+        let mut children = custom_list.children();
+        let mut position = 0;
+        while let Some(value) = ctx.next_charged(&mut children, "fcstd joint Enum values")? {
+            if !value.is_element() {
+                continue;
+            }
+            if ctx.any_by(
+                value.children(),
+                |child| Ok(child.is_element()),
+                "fcstd joint Enum children",
+            )? {
                 return Err(crate::resource::malformed_charged(
                     ctx,
                     format_args!(
@@ -586,19 +639,22 @@ fn enumeration_value(
                     "fcstd joint diagnostic",
                 ));
             }
-            let text = value.attribute("value").ok_or_else(|| {
-                crate::resource::malformed_charged(
-                    ctx,
-                    format_args!(
-                        "joint enumeration property {} Enum has no value",
-                        property.id
-                    ),
-                    "fcstd joint diagnostic",
-                )
-            })?;
+            let text = ctx
+                .xml_attribute(value, "value", "fcstd joint XML attribute")?
+                .ok_or_else(|| {
+                    crate::resource::malformed_charged(
+                        ctx,
+                        format_args!(
+                            "joint enumeration property {} Enum has no value",
+                            property.id
+                        ),
+                        "fcstd joint diagnostic",
+                    )
+                })?;
             if position == index {
                 selected = Some(text);
             }
+            position += 1;
         }
         selected
     } else {
@@ -651,16 +707,18 @@ fn scalar_parameter(
             "fcstd joint diagnostic",
         ));
     }
-    let value = value.attributes.get("value").ok_or_else(|| {
-        crate::resource::malformed_charged(
-            ctx,
-            format_args!("joint parameter property {} has no value", property.id),
-            "fcstd joint diagnostic",
-        )
-    })?;
+    let value = ctx
+        .get_btree_map(&value.attributes, "value", "fcstd joint scalar attribute")?
+        .ok_or_else(|| {
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("joint parameter property {} has no value", property.id),
+                "fcstd joint diagnostic",
+            )
+        })?;
     if expected_tag == "Float"
-        && value
-            .parse::<f64>()
+        && ctx
+            .parse_text::<f64>(value, "fcstd joint scalar parse")?
             .ok()
             .and_then(FiniteReal::new)
             .is_none()
@@ -803,6 +861,50 @@ pub(crate) mod tests {
             dynamic: None,
         };
         property
+    }
+
+    #[test]
+    fn joint_enumeration_charges_xml_visits_attributes_and_numbers() {
+        let property = diagnostic_property(
+            "JointType",
+            "App::PropertyEnumeration",
+            "<Property><Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"1\"><Enum value=\"Fixed\"/></CustomEnumList></Property>",
+        );
+        for operation in [
+            "fcstd joint XML root",
+            "fcstd joint XML child",
+            "fcstd joint XML tag",
+            "fcstd joint XML attribute",
+            "fcstd joint Integer children",
+            "fcstd joint enumeration integer",
+            "fcstd joint enumeration count",
+            "fcstd joint Enum count",
+            "fcstd joint Enum values",
+            "fcstd joint Enum children",
+        ] {
+            crate::test_support::refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                &[],
+                operation,
+                |ctx| super::enumeration_value(ctx, &property),
+            );
+        }
+    }
+
+    #[test]
+    fn joint_scalar_parse_and_attribute_lookup_refuse_before_copy() {
+        let property = scalar_property(
+            "App::PropertyAngle",
+            "<Property><Float value=\"15.5\"/></Property>",
+        );
+        for operation in ["fcstd joint scalar attribute", "fcstd joint scalar parse"] {
+            crate::test_support::refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                &[],
+                operation,
+                |ctx| super::scalar_parameter(ctx, &property),
+            );
+        }
     }
 
     #[test]
@@ -1051,14 +1153,13 @@ pub(crate) mod tests {
             xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
                 .expect("valid XML span"),
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 3;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        assert!(matches!(super::transfer(&ctx, &[object], &[property]),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "fcstd joint records"));
+        crate::test_support::assert_collection_refusal_at(&[], "fcstd joint records", |ctx| {
+            super::transfer(
+                ctx,
+                std::slice::from_ref(&object),
+                std::slice::from_ref(&property),
+            )
+        });
     }
 
     #[test]
@@ -1595,7 +1696,10 @@ pub(crate) mod tests {
                 .expect("joints");
             assert_eq!(joints[0].parameters().raw("Suppressed"), Some(raw));
             assert_eq!(
-                joints[0].parameters().bool_value("Suppressed"),
+                crate::test_support::with_service_context(&[], |ctx| joints[0]
+                    .parameters()
+                    .bool_value(ctx, "Suppressed")
+                    .expect("parameter lookup")),
                 Some(expected)
             );
             assert_eq!(result.ir().model.assembly_joints[0].suppressed, expected);

@@ -436,7 +436,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         })?;
     let (cyclic_products, _cycle_storage) = ctx
         .with_scoped_storage("fcstd product cycle lookup", || {
-            product::product_cycle_nodes(ctx, &product_by_object)
+            product::product_cycle_nodes(ctx, &product_nodes)
         })?;
     for node in ctx.admit_iter(&product_nodes, "FreeCAD validation product nodes")? {
         let missing_prototype = match node.prototype() {
