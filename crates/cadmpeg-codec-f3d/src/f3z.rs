@@ -39,9 +39,11 @@ pub(crate) fn inspect<'a>(
 ) -> Result<ContainerSummary, CodecError> {
     let ((model_root, _), _model_root_storage) = archive::model_root(ctx, scan)?;
     scan.entry_view(ctx, &model_root)?.ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "f3z root member {model_root} is not present in the archive"
-        ))
+        ctx.format_retained(
+            format_args!("f3z root member {model_root} is not present in the archive"),
+            "retain F3D malformed diagnostic",
+        )
+        .map_or_else(std::convert::identity, CodecError::Malformed)
     })?;
     let classified = archive::classify_members(ctx, scan)?;
     let member_count = f3d_member_count(ctx, scan)?;

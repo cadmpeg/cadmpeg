@@ -51,9 +51,12 @@ fn decode_record_frames<'ctx>(
     CodecError,
 > {
     if meta.records.is_empty() {
-        return Err(CodecError::malformed(format_args!(
-            "F3D ACT MetaStream has no primary record index: {stream}"
-        )));
+        return Err(ctx
+            .format_retained(
+                format_args!("F3D ACT MetaStream has no primary record index: {stream}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed));
     }
     let mut previous_offset = None;
     let mut records = meta.records.iter();
@@ -61,9 +64,14 @@ fn decode_record_frames<'ctx>(
         ctx.next_charged(&mut records, "validate F3D ACT record offset order")?
     {
         if previous_offset.is_some_and(|previous| previous >= record.bulk_offset) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT primary record offsets are not strictly increasing: {stream}"
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!(
+                        "F3D ACT primary record offsets are not strictly increasing: {stream}"
+                    ),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         }
         previous_offset = Some(record.bulk_offset);
     }
@@ -77,26 +85,37 @@ fn decode_record_frames<'ctx>(
         .enumerate()
     {
         let start = usize::try_from(record.bulk_offset).map_err(|_| {
-            CodecError::malformed(format_args!(
-                "F3D ACT record offset exceeds usize: {stream}"
-            ))
+            ctx.format_retained(
+                format_args!("F3D ACT record offset exceeds usize: {stream}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
         let end = if let Some(next) = meta.records.get(ordinal + 1) {
             usize::try_from(next.bulk_offset).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "F3D ACT record offset exceeds usize: {stream}"
-                ))
+                ctx.format_retained(
+                    format_args!("F3D ACT record offset exceeds usize: {stream}"),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed)
             })?
         } else {
             bytes.len()
         };
         if start >= end || end > bytes.len() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT record extent is outside its BulkStream: {stream}"
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!("F3D ACT record extent is outside its BulkStream: {stream}"),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         }
         let expected_index = u32::try_from(record.entity_id).map_err(|_| {
-            CodecError::malformed(format_args!("F3D ACT record index exceeds u32: {stream}"))
+            ctx.format_retained(
+                format_args!("F3D ACT record index exceeds u32: {stream}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
         if !ctx.insert_scoped_btree_value(
             &mut index_storage,
@@ -104,9 +123,14 @@ fn decode_record_frames<'ctx>(
             expected_index,
             "index F3D ACT records",
         )? {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate F3D ACT primary record index {expected_index}: {stream}"
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!(
+                        "duplicate F3D ACT primary record index {expected_index}: {stream}"
+                    ),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         }
         let (class_tag, after_tag) = crate::bytes::lp_ascii_strict(bytes, start, 3..=3)
             .map(|(tag, after)| {
@@ -117,22 +141,35 @@ fn decode_record_frames<'ctx>(
             .transpose()?
             .flatten()
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "F3D ACT record lacks a dynamic class tag: {stream}@{start}"
-                ))
+                ctx.format_retained(
+                    format_args!("F3D ACT record lacks a dynamic class tag: {stream}@{start}"),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed)
             })?;
         let payload_offset = after_tag.checked_add(4).ok_or_else(|| {
-            CodecError::malformed(format_args!("F3D ACT record header overflows: {stream}"))
+            ctx.format_retained(
+                format_args!("F3D ACT record header overflows: {stream}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
         if payload_offset > end || View::u32_le_at(bytes, after_tag) != Some(expected_index) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(ctx
+                .format_retained(
+                    format_args!(
                 "F3D ACT record header conflicts with its MetaStream index: {stream}@{start}"
-            )));
+            ),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         }
         let class_index = class_tag.dynamic_ordinal().ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D ACT class tag is outside the dynamic registry: {stream}@{start}"
-            ))
+            ctx.format_retained(
+                format_args!("F3D ACT class tag is outside the dynamic registry: {stream}@{start}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
         let mut registered = false;
         if let Some(record_type) = meta.types.get(class_index) {
@@ -164,9 +201,14 @@ fn decode_record_frames<'ctx>(
             }
         }
         if !registered {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT class tag conflicts with its MetaStream type: {stream}@{start}"
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!(
+                        "F3D ACT class tag conflicts with its MetaStream type: {stream}@{start}"
+                    ),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         }
         let frame = RecordFrame {
             start,
@@ -219,16 +261,24 @@ pub(crate) fn decode(
                 sibling_meta_name(ctx, &entry.name)
             })?;
         let meta_name = meta_name.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D ACT BulkStream has no sibling MetaStream name: {}",
-                entry.name
-            ))
+            ctx.format_retained(
+                format_args!(
+                    "F3D ACT BulkStream has no sibling MetaStream name: {}",
+                    entry.name
+                ),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
         let meta_bytes = scan.entry_view(ctx, &meta_name)?.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D ACT BulkStream has no sibling MetaStream: {}",
-                entry.name
-            ))
+            ctx.format_retained(
+                format_args!(
+                    "F3D ACT BulkStream has no sibling MetaStream: {}",
+                    entry.name
+                ),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
         let meta = crate::metastream::parse(ctx, meta_bytes.window(), &meta_name)?;
         let (frames, _frames_storage) = decode_record_frames(ctx, bytes, &meta, &entry.name)?;
@@ -245,10 +295,15 @@ pub(crate) fn decode(
             }
         }
         let Some((table_frame, table_payload)) = selected_table.filter(|_| table_count == 1) else {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT segment must have exactly one indexed ACTTable record: {}",
-                entry.name
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!(
+                        "F3D ACT segment must have exactly one indexed ACTTable record: {}",
+                        entry.name
+                    ),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         };
         let DecodedTable {
             _entries_storage,
@@ -276,10 +331,15 @@ pub(crate) fn decode(
                 &reference.target_record,
                 "find F3D ACT target record",
             )? {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D ACTTable reference targets absent record {}: {}",
-                    reference.target_record, entry.name
-                )));
+                return Err(ctx
+                    .format_retained(
+                        format_args!(
+                            "F3D ACTTable reference targets absent record {}: {}",
+                            reference.target_record, entry.name
+                        ),
+                        "retain F3D malformed diagnostic",
+                    )
+                    .map_or_else(std::convert::identity, CodecError::Malformed));
             }
         }
         let mut groups_storage = ctx.reserve_scoped(0, "stage F3D ACT channel groups")?;
@@ -311,10 +371,15 @@ pub(crate) fn decode(
             .filter(|link| matches!(link, ComponentLink::Root(_)))
             .count();
         if !links.is_empty() && stream_roots != 1 {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT segment does not have one root component link: {}",
-                entry.name
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!(
+                        "F3D ACT segment does not have one root component link: {}",
+                        entry.name
+                    ),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         }
         non_root_component_links = non_root_component_links
             .checked_add(links.len().checked_sub(stream_roots).ok_or_else(|| {
@@ -390,10 +455,11 @@ fn decode_table<'ctx>(
     stream: &str,
 ) -> Result<DecodedTable<'ctx>, CodecError> {
     let malformed = |detail: &str| {
-        CodecError::malformed(format_args!(
-            "invalid F3D ACTTable {detail}: {stream}@{}",
-            frame.start
-        ))
+        ctx.format_retained(
+            format_args!("invalid F3D ACTTable {detail}: {stream}@{}", frame.start),
+            "retain F3D malformed diagnostic",
+        )
+        .map_or_else(std::convert::identity, CodecError::Malformed)
     };
     let count_offset = payload.checked_add(2).ok_or_else(|| malformed("offset"))?;
     let mut cursor = count_offset
@@ -616,9 +682,14 @@ fn merge_entities<'ctx>(
             "index F3D ACT table entries",
             "index F3D ACT table entries",
         )? {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate F3D ACTTable change-group reference {record_index}: {stream}"
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!(
+                        "duplicate F3D ACTTable change-group reference {record_index}: {stream}"
+                    ),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         }
     }
     let mut by_index_storage = ctx.reserve_scoped(0, "index F3D ACT entities")?;
@@ -630,9 +701,12 @@ fn merge_entities<'ctx>(
             &record_index,
             "check duplicate F3D ACT change group",
         )? {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate F3D ACT change group {stream}:{record_index}"
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!("duplicate F3D ACT change group {stream}:{record_index}"),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         }
         let entity_id_offset = group.entity_id.as_ref().map(|id| u64_from_index(id.offset));
         let (entity_id, row) = if let Some(item) = ctx.remove_btree_map(
@@ -646,7 +720,7 @@ fn merge_entities<'ctx>(
                     &group_id.value,
                     "compare F3D ACT entity identifiers",
                 )? {
-                    return Err(CodecError::malformed(format_args!("F3D ACTTable entity key conflicts with its change group: {stream}:{record_index}")));
+                    return Err(ctx.format_retained(format_args!("F3D ACTTable entity key conflicts with its change group: {stream}:{record_index}"), "retain F3D malformed diagnostic").map_or_else(std::convert::identity, CodecError::Malformed));
                 }
             }
             (item.entity_id, Some(item.row))
@@ -687,9 +761,12 @@ fn merge_entities<'ctx>(
         |_| Ok(true),
         "select unjoined F3D ACT table entry",
     )? {
-        return Err(CodecError::malformed(format_args!(
-            "F3D ACTTable reference has no change group: {stream}:{record_index}"
-        )));
+        return Err(ctx
+            .format_retained(
+                format_args!("F3D ACTTable reference has no change group: {stream}:{record_index}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed));
     }
     ctx.try_collect_scoped_vec(
         ctx.admit_iter(by_index, "scan F3D ACT entities by index")?
@@ -706,9 +783,11 @@ fn decode_channel_group<'ctx>(
 ) -> Result<Option<ChannelGroup<'ctx>>, CodecError> {
     let mut group_storage = ctx.reserve_scoped(0, "stage F3D ACT group channels")?;
     let count_offset = frame.payload_offset.checked_add(10).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "F3D ACT channel-group offset overflows: {stream}"
-        ))
+        ctx.format_retained(
+            format_args!("F3D ACT channel-group offset overflows: {stream}"),
+            "retain F3D malformed diagnostic",
+        )
+        .map_or_else(std::convert::identity, CodecError::Malformed)
     })?;
     if count_offset
         .checked_add(4)
@@ -758,11 +837,16 @@ fn decode_channel_group<'ctx>(
                 });
             }
             std::collections::btree_map::Entry::Occupied(entry) => {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate F3D ACT channel {:?}: {stream}@{}",
-                    entry.key(),
-                    frame.start
-                )));
+                return Err(ctx
+                    .format_retained(
+                        format_args!(
+                            "duplicate F3D ACT channel {:?}: {stream}@{}",
+                            entry.key(),
+                            frame.start
+                        ),
+                        "retain F3D malformed diagnostic",
+                    )
+                    .map_or_else(std::convert::identity, CodecError::Malformed));
             }
         }
         cursor = after_guid;
@@ -1397,6 +1481,52 @@ mod tests {
         );
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "validate F3D ACT record offset order" && limit.additional == 1)
+        );
+    }
+
+    #[test]
+    fn act_missing_primary_index_diagnostic_refuses_retained_storage() {
+        let meta = crate::metastream::MetaStream {
+            types: Vec::new(),
+            records: Vec::new(),
+            secondary_records: Vec::new(),
+        };
+        let normal = cadmpeg_test_support::service_decode_context();
+        let error = super::decode_record_frames(&normal, &[], &meta, "synthetic")
+            .err()
+            .expect("missing primary index");
+        assert!(
+            matches!(error, CodecError::Malformed(message) if message == "F3D ACT MetaStream has no primary record index: synthetic")
+        );
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain F3D malformed diagnostic",
+            0,
+            |ctx| super::decode_record_frames(ctx, &[], &meta, "synthetic").map(|_| ()),
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "retain F3D malformed diagnostic")
+        );
+    }
+
+    #[test]
+    fn act_conflicting_entity_diagnostic_refuses_retained_storage() {
+        let error = crate::test_support::resource_refusal_at(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "retain F3D malformed diagnostic",
+            0,
+            |ctx| {
+                merge_entities(
+                    ctx,
+                    "synthetic",
+                    vec![table_entry("0_985")],
+                    vec![channel_group(ctx, "0_986")],
+                )
+                .map(|_| ())
+            },
+        );
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.operation == "retain F3D malformed diagnostic")
         );
     }
 }

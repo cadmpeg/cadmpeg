@@ -75,3 +75,26 @@ fn unique_asset_identity_search_preserves_work_refusal() {
         );
     }
 }
+
+#[test]
+fn missing_brep_candidate_diagnostic_refuses_retained_storage() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (normal, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&normal, root).unwrap();
+    let names = vec!["absent.brep".to_owned()];
+    let error = super::super::super::model_brep_candidates(&normal, &scan, &names).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::Malformed(message) if message == "Design body map references missing BREP entry absent.brep")
+    );
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain F3D malformed diagnostic",
+        0,
+        |ctx| super::super::super::model_brep_candidates(ctx, &scan, &names).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "retain F3D malformed diagnostic")
+    );
+}

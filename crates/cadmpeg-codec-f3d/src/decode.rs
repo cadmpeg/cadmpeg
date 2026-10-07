@@ -2534,14 +2534,20 @@ fn model_brep_candidates<'s, 'ctx>(
             "find F3D model BREP by basename",
         )? {
             None => {
-                return Err(CodecError::malformed(format_args!(
-                    "Design body map references missing BREP entry {blob_name}"
-                )))
+                return Err(ctx
+                    .format_retained(
+                        format_args!("Design body map references missing BREP entry {blob_name}"),
+                        "retain F3D malformed diagnostic",
+                    )
+                    .map_or_else(std::convert::identity, CodecError::Malformed))
             }
             Some(None) => {
-                return Err(CodecError::malformed(format_args!(
-                    "Design body map BREP basename is ambiguous: {blob_name}"
-                )))
+                return Err(ctx
+                    .format_retained(
+                        format_args!("Design body map BREP basename is ambiguous: {blob_name}"),
+                        "retain F3D malformed diagnostic",
+                    )
+                    .map_or_else(std::convert::identity, CodecError::Malformed))
             }
             Some(Some(brep)) => *brep,
         };
@@ -2580,9 +2586,12 @@ fn try_decode_text_model(
         let stream = match ctx.get_hash_map(&scan.text_breps, name, "find F3D text BREP stream")? {
             Some(crate::container::TextBrepFraming::Parsed(stream)) => stream,
             Some(crate::container::TextBrepFraming::Unframed(error)) => {
-                return Err(CodecError::malformed(format_args!(
-                    "text BREP entry {name} failed to parse: {error}"
-                )));
+                return Err(ctx
+                    .format_retained(
+                        format_args!("text BREP entry {name} failed to parse: {error}"),
+                        "retain F3D malformed diagnostic",
+                    )
+                    .map_or_else(std::convert::identity, CodecError::Malformed));
             }
             Some(crate::container::TextBrepFraming::Malformed(error)) => {
                 return Err(CodecError::Malformed(ctx.format_retained(
@@ -2597,9 +2606,12 @@ fn try_decode_text_model(
                 )?));
             }
             None => {
-                return Err(CodecError::malformed(format_args!(
-                    "text BREP entry {name} was not framed"
-                )))
+                return Err(ctx
+                    .format_retained(
+                        format_args!("text BREP entry {name} was not framed"),
+                        "retain F3D malformed diagnostic",
+                    )
+                    .map_or_else(std::convert::identity, CodecError::Malformed))
             }
         };
         let decoded = brep::decode_text(ctx, stream, bytes, name, crate::ids::ID_FORMAT)?;
@@ -2966,7 +2978,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &mut dimension_records,
             )?
             .try_into()
-            .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
+            .map_err(CodecError::Malformed)?;
         self.native.design_dimension_annotation_frames =
             crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
                 ctx,
@@ -2998,7 +3010,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.design_dimension_locus_groups,
             )?
             .try_into()
-            .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
+            .map_err(CodecError::Malformed)?;
         drop(dimension_records);
         crate::design::dimensions::remove_dimension_frame_relations(
             ctx,
@@ -3894,7 +3906,7 @@ fn decode_scanned_document<'a>(
                 continue;
             }
             primary_model_brep.get_or_insert(candidate);
-            let (mut body_selectors, mut _body_selectors_storage) = match ctx.get_hash_map(
+            let (mut body_selectors, mut body_selectors_storage) = match ctx.get_hash_map(
                 &selected_body_keys,
                 blob_name,
                 "find F3D selected body keys",
@@ -3915,15 +3927,21 @@ fn decode_scanned_document<'a>(
                 }
             }
             if qualify_ids {
+                drop(body_selectors);
+                drop(body_selectors_storage);
                 let namespace =
                     brep_identity_namespace(ctx, &candidate.name)?.ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "BREP entry has no stable blob identity: {}",
-                            candidate.name
-                        ))
+                        ctx.format_retained(
+                            format_args!(
+                                "BREP entry has no stable blob identity: {}",
+                                candidate.name
+                            ),
+                            "retain F3D malformed diagnostic",
+                        )
+                        .map_or_else(std::convert::identity, CodecError::Malformed)
                     })?;
                 part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
-                (body_selectors, _body_selectors_storage) = match ctx.get_hash_map(
+                (body_selectors, body_selectors_storage) = match ctx.get_hash_map(
                     &selected_body_keys,
                     blob_name,
                     "find F3D selected body keys",
@@ -3977,6 +3995,8 @@ fn decode_scanned_document<'a>(
                     )?;
                 }
             }
+            drop(body_selectors);
+            drop(body_selectors_storage);
             brep.append(ctx, part)?;
             decoded_brep_count += 1;
         }
@@ -4070,10 +4090,15 @@ fn extend_unique_assets(
         match existing {
             // The payload comparison is a gap: `Asset` has no `DecodeCost`.
             Some(existing) if existing != &asset => {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D embedded asset {} has conflicting projections",
-                    asset.id.as_str()
-                )));
+                return Err(ctx
+                    .format_retained(
+                        format_args!(
+                            "F3D embedded asset {} has conflicting projections",
+                            asset.id.as_str()
+                        ),
+                        "retain F3D malformed diagnostic",
+                    )
+                    .map_or_else(std::convert::identity, CodecError::Malformed));
             }
             Some(_) => {}
             None => {
@@ -4226,18 +4251,24 @@ fn corner_shaded_mesh(
         let error = cadmpeg_ir::tessellation::TessellationLaneError::CornerCountOverflow {
             triangles: triangle_count,
         };
-        return Err(CodecError::malformed(format_args!(
-            "paramesh body record {body_id}: {error}"
-        )));
+        return Err(ctx
+            .format_retained(
+                format_args!("paramesh body record {body_id}: {error}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed));
     };
     if normal_count != corner_count {
         let error = cadmpeg_ir::tessellation::TessellationLaneError::CornerNormalLane {
             corners: corner_count,
             normals: normal_count,
         };
-        return Err(CodecError::malformed(format_args!(
-            "paramesh body record {body_id}: {error}"
-        )));
+        return Err(ctx
+            .format_retained(
+                format_args!("paramesh body record {body_id}: {error}"),
+                "retain F3D malformed diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed));
     }
     let mut normals = ctx.admit_iter(&corner_normals, "scan F3D corner-shaded normal values")?;
     let mut shaded_triangles =
@@ -4250,9 +4281,12 @@ fn corner_shaded_mesh(
                 corners: corner_count,
                 normals: normal_count,
             };
-            return Err(CodecError::malformed(format_args!(
-                "paramesh body record {body_id}: {error}"
-            )));
+            return Err(ctx
+                .format_retained(
+                    format_args!("paramesh body record {body_id}: {error}"),
+                    "retain F3D malformed diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed));
         };
         shaded_triangles.push(cadmpeg_ir::tessellation::ShadedTriangle {
             corners: *corners,
@@ -7032,9 +7066,11 @@ fn append_metadata_unknown(
 ) -> Result<(), CodecError> {
     let id_text = crate::ids::native_scoped_id(ctx, &brep.name, "unknown", 0_u64)?;
     let id = UnknownId::mint(id_text).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "F3D BREP name cannot form an unknown-record identity: {error}"
-        ))
+        ctx.format_retained(
+            format_args!("F3D BREP name cannot form an unknown-record identity: {error}"),
+            "retain F3D malformed diagnostic",
+        )
+        .map_or_else(std::convert::identity, CodecError::Malformed)
     })?;
     let digest =
         ctx.copy_retained_text(brep.sha256.as_str(), "retain F3D unavailable BREP digest")?;
@@ -7438,9 +7474,12 @@ pub(crate) fn resolve_face_appearance_bindings(
         })?;
         if let Some(previous) = previous {
             if !ctx.equal(previous, face_guid, "compare F3D face material GUIDs")? {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D face {face} carries multiple material GUIDs"
-                )));
+                return Err(ctx
+                    .format_retained(
+                        format_args!("F3D face {face} carries multiple material GUIDs"),
+                        "retain F3D malformed diagnostic",
+                    )
+                    .map_or_else(std::convert::identity, CodecError::Malformed));
             }
         }
         faces_by_guid_storage.with_storage(|| {
@@ -7551,9 +7590,14 @@ pub(crate) fn resolve_face_appearance_bindings(
                     &appearance.id,
                     "compare F3D face appearance assignments",
                 )? {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D face {face} carries conflicting appearance assignments"
-                    )));
+                    return Err(ctx
+                        .format_retained(
+                            format_args!(
+                                "F3D face {face} carries conflicting appearance assignments"
+                            ),
+                            "retain F3D malformed diagnostic",
+                        )
+                        .map_or_else(std::convert::identity, CodecError::Malformed));
                 }
                 continue;
             }
