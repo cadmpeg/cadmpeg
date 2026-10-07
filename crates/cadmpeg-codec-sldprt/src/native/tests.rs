@@ -321,7 +321,7 @@ fn native_load_materialized_limit_refuses_before_expected_lane_clone() {
 }
 
 #[test]
-fn native_store_materialized_limit_refuses_before_feature_validation_clone() {
+fn native_store_materialized_limit_refuses_before_namespace_write() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let decoded = SldprtCodec
@@ -341,7 +341,7 @@ fn native_store_materialized_limit_refuses_before_feature_validation_clone() {
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "validate SLDPRT store features"
+                && limit.operation == "index SLDPRT stored features"
     ));
     assert!(namespace.arenas().is_empty());
 

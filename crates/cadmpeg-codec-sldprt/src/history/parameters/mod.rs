@@ -19,7 +19,7 @@ use crate::history::classify::{
     is_history_metadata_record, is_offset_plane, EQUATION_DRIVEN_TOKEN,
 };
 use crate::history::literals::{
-    dimension_display, format_angle_rad, format_f64_literal, format_length_mm,
+    admit_literal, dimension_display, format_angle_rad, format_f64_literal, format_length_mm,
     format_length_number, format_parameter_value, parse_angle_rad, parse_dimension_display_length,
     parse_parameter_literal, parse_positive_dimension_length_mm,
 };
@@ -74,7 +74,8 @@ pub(crate) fn project_parameters(
                 .enumerate()
             {
                 let expression = &feature.parameters[name.as_str()];
-                let display = dimension_display(ctx, expression)?;
+                admit_literal(ctx, expression, "parse SLDPRT parameter display")?;
+                let display = dimension_display(expression);
                 let properties = ctx
                     .get_btree_map(
                         &(feature.dimension_properties),
@@ -93,7 +94,8 @@ pub(crate) fn project_parameters(
                 let parse_value = |value: &str| -> Result<_, CodecError> {
                     Ok(match display {
                         Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
-                            parse_dimension_display_length(ctx, value)?.map(ParameterValue::Length)
+                            admit_literal(ctx, value, "parse SLDPRT parameter value")?;
+                            parse_dimension_display_length(value).map(ParameterValue::Length)
                         }
                         None => parse_native_parameter_literal(ctx, feature, &name, value)?,
                     })
@@ -356,12 +358,14 @@ pub(crate) fn parse_native_parameter_literal(
     name: &str,
     expression: &str,
 ) -> Result<Option<ParameterValue>, cadmpeg_core::CodecError> {
-    if native_parameter_is_length(ctx, feature, name, Some(expression))? {
+    let is_length = native_parameter_is_length(ctx, feature, name, Some(expression))?;
+    admit_literal(ctx, expression, "parse SLDPRT native parameter literal")?;
+    if is_length {
         return Ok(parse_positive_dimension_length_mm(expression)
             .map(Length::from)
             .map(ParameterValue::Length));
     }
-    Ok(parse_parameter_literal(ctx, expression)?)
+    Ok(parse_parameter_literal(expression))
 }
 
 pub(super) fn native_parameter_is_length(
@@ -433,7 +437,10 @@ pub(crate) fn format_native_scalar(
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
     Ok(
         if let Some(display) = expression
-            .map(|value| dimension_display(ctx, value))
+            .map(|value| {
+                admit_literal(ctx, value, "parse SLDPRT parameter display")?;
+                Ok::<_, CodecError>(dimension_display(value))
+            })
             .transpose()?
             .flatten()
         {

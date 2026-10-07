@@ -15,9 +15,9 @@ use cadmpeg_ir::{
 
 use crate::history::classify::{indexed_name, is_fillet};
 use crate::history::literals::{
-    dimension_display, parse_angle_rad, parse_bool, parse_boolean_op, parse_bounded_angle_rad,
-    parse_length_mm, parse_point3_mm, parse_positive_dimension_length_mm, parse_positive_length_mm,
-    parse_valid_direction, parse_vector3, parse_vector3_mm,
+    admit_literal, dimension_display, parse_angle_rad, parse_bool, parse_boolean_op,
+    parse_bounded_angle_rad, parse_length_mm, parse_point3_mm, parse_positive_dimension_length_mm,
+    parse_positive_length_mm, parse_valid_direction, parse_vector3, parse_vector3_mm,
 };
 
 fn property_text(
@@ -134,15 +134,14 @@ pub(super) fn project_fillet(
         };
         match points {
             None => {
-                if ctx
-                    .admit_iter(&feature.parameters, "scan SLDPRT project_fillet map keys")?
-                    .map(|(key, _)| key)
-                    .try_fold(false, |found, name| {
-                        Ok::<_, cadmpeg_core::CodecError>(
-                            found || (indexed_name(ctx, name.as_str(), "Radius")?),
-                        )
-                    })?
-                {
+                if ctx.any_by(
+                    feature.parameters.keys(),
+                    |name| {
+                        admit_literal(ctx, name.as_str(), "scan SLDPRT project_fillet map keys")?;
+                        Ok(indexed_name(name.as_str(), "Radius"))
+                    },
+                    "scan SLDPRT project_fillet map keys",
+                )? {
                     RadiusSpec::Unresolved {
                         form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                     }
@@ -188,7 +187,10 @@ pub(crate) fn fillet_radius_parameter_has_native_display(
         } else {
             name == "D1"
         }
-        && dimension_display(ctx, expression)?.is_some())
+        && {
+            admit_literal(ctx, expression, "classify SLDPRT fillet radius display")?;
+            dimension_display(expression).is_some()
+        })
 }
 
 fn variable_fillet(feature: &Feature) -> bool {

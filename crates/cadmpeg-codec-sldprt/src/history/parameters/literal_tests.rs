@@ -107,11 +107,7 @@ fn diameter_display_literals_participate_in_expressions() {
         ))
     );
     assert_eq!(
-        parse_parameter_literal(
-            &cadmpeg_test_support::service_decode_context(),
-            "&lt;MOD-DIAM&gt;4.917"
-        )
-        .unwrap(),
+        parse_parameter_literal("&lt;MOD-DIAM&gt;4.917"),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(4.917).unwrap()
         ))
@@ -149,21 +145,13 @@ fn radius_display_literals_participate_in_expressions() {
         ))
     );
     assert_eq!(
-        parse_parameter_literal(
-            &cadmpeg_test_support::service_decode_context(),
-            "<MOD-RHO>0.5"
-        )
-        .unwrap(),
+        parse_parameter_literal("<MOD-RHO>0.5"),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(0.5).unwrap()
         ))
     );
     assert_eq!(
-        dimension_display(
-            &cadmpeg_test_support::service_decode_context(),
-            "&lt;MOD-RHO&gt;0.5"
-        )
-        .unwrap(),
+        dimension_display("&lt;MOD-RHO&gt;0.5"),
         Some(DimensionDisplay::Radius)
     );
 }
@@ -179,18 +167,13 @@ fn dimension_decorations_preserve_the_nominal_scalar() {
         ("3x &lt;MOD-RHO&gt;0.5", 0.5, DimensionDisplay::Radius),
     ] {
         assert_eq!(
-            parse_parameter_literal(&cadmpeg_test_support::service_decode_context(), expression)
-                .unwrap(),
+            parse_parameter_literal(expression),
             Some(ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(expected).unwrap()
             )),
             "{expression}"
         );
-        assert_eq!(
-            dimension_display(&cadmpeg_test_support::service_decode_context(), expression).unwrap(),
-            Some(display),
-            "{expression}"
-        );
+        assert_eq!(dimension_display(expression), Some(display), "{expression}");
         assert_eq!(
             ParameterExpressionParser::new_flat(
                 &cadmpeg_test_support::service_decode_context(),
@@ -206,22 +189,9 @@ fn dimension_decorations_preserve_the_nominal_scalar() {
             "{expression}"
         );
     }
-    assert_eq!(
-        parse_parameter_literal(&cadmpeg_test_support::service_decode_context(), "x2").unwrap(),
-        None
-    );
-    assert_eq!(
-        parse_parameter_literal(&cadmpeg_test_support::service_decode_context(), "15mmH7").unwrap(),
-        None
-    );
-    assert_eq!(
-        parse_parameter_literal(
-            &cadmpeg_test_support::service_decode_context(),
-            "<MOD-DIAM>15H"
-        )
-        .unwrap(),
-        None
-    );
+    assert_eq!(parse_parameter_literal("x2"), None);
+    assert_eq!(parse_parameter_literal("15mmH7"), None);
+    assert_eq!(parse_parameter_literal("<MOD-DIAM>15H"), None);
 }
 
 #[test]
@@ -345,31 +315,26 @@ fn integer_powers_preserve_exact_exponent_parity() {
 #[test]
 fn non_finite_parameter_literals_have_no_evaluated_value() {
     for literal in ["NaN", "inf", "-inf"] {
-        assert_eq!(
-            parse_parameter_literal(&cadmpeg_test_support::service_decode_context(), literal)
-                .unwrap(),
-            None,
-            "{literal}"
-        );
+        assert_eq!(parse_parameter_literal(literal), None, "{literal}");
     }
 }
 
 #[test]
 fn bare_binary_digits_are_integer_parameters() {
     assert_eq!(
-        parse_parameter_literal(&cadmpeg_test_support::service_decode_context(), "0").unwrap(),
+        parse_parameter_literal("0"),
         Some(ParameterValue::Integer(0))
     );
     assert_eq!(
-        parse_parameter_literal(&cadmpeg_test_support::service_decode_context(), "1").unwrap(),
+        parse_parameter_literal("1"),
         Some(ParameterValue::Integer(1))
     );
     assert_eq!(
-        parse_parameter_literal(&cadmpeg_test_support::service_decode_context(), "true").unwrap(),
+        parse_parameter_literal("true"),
         Some(ParameterValue::Boolean(true))
     );
     assert_eq!(
-        parse_parameter_literal(&cadmpeg_test_support::service_decode_context(), "false").unwrap(),
+        parse_parameter_literal("false"),
         Some(ParameterValue::Boolean(false))
     );
 }
@@ -457,18 +422,4 @@ fn integer_without_exact_real_value_has_no_real_arithmetic_result() {
         exponentiate_parameter_value(&ParameterValue::Integer(2), &ParameterValue::Integer(-1)),
         Some(ParameterValue::Real(real(0.5)))
     );
-}
-
-#[test]
-fn dimension_count_refusal_does_not_become_missing_literal() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = parse_parameter_literal(&ctx, "2X<MOD-DIAM>1.2").unwrap_err();
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-        panic!("resource refusal");
-    };
-    assert_eq!(ctx.resource_refusal(), Some(limit));
 }
