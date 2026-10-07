@@ -49,20 +49,37 @@ impl<'a> InventorContainer<'a> {
     }
 
     pub(crate) fn summary(&self, ctx: &DecodeContext<'_>) -> Result<ContainerSummary, CodecError> {
-        admit_container_entries(ctx, &self.snapshot)?;
         let mut entries = self.snapshot.container_entries(ctx, |entry| match entry {
             CompoundEntry::Storage(_) => ContainerRole::Storage,
             CompoundEntry::Stream(_) => ContainerRole::Stream,
         })?;
-        for (index, source) in ctx
-            .admit_iter(self.snapshot.entries(), "classify Inventor summary entries")?
-            .enumerate()
+        // The summary holds one entry per snapshot entry, in snapshot order.
+        for (entry, source) in ctx
+            .admit_iter(&mut entries, "classify Inventor summary entries")?
+            .zip(self.snapshot.entries())
         {
-            entries[index].role = classify(ctx, source)?;
+            entry.role = classify(ctx, source)?;
         }
+        // Segments name their streams by directory id; one index serves every
+        // segment lookup.
+        let mut index_storage = ctx.reserve_scoped(0, "index Inventor summary entries")?;
+        let by_directory = index_storage.with_storage(|| {
+            ctx.collect_hash_map(
+                self.snapshot
+                    .entries()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, entry)| (entry.directory_id(), index)),
+                "index Inventor summary entries",
+            )
+        })?;
         for segment in ctx.admit_iter(&self.rse.segments, "visit Inventor summary segments")? {
-            let Some(entry) =
-                find_summary_entry(ctx, &mut entries, segment.pair.metadata.directory_id())?
+            let Some(entry) = summary_entry(
+                ctx,
+                &by_directory,
+                &mut entries,
+                segment.pair.metadata.directory_id(),
+            )?
             else {
                 continue;
             };
@@ -118,8 +135,12 @@ impl<'a> InventorContainer<'a> {
                     insert_attribute(ctx, entry, "framing_error", format_args!("{detail}"))?;
                 }
             }
-            let Some(bulk_entry) =
-                find_summary_entry(ctx, &mut entries, segment.pair.bulk.directory_id())?
+            let Some(bulk_entry) = summary_entry(
+                ctx,
+                &by_directory,
+                &mut entries,
+                segment.pair.bulk.directory_id(),
+            )?
             else {
                 continue;
             };
@@ -153,14 +174,10 @@ impl<'a> InventorContainer<'a> {
         if let Some(loss) = crate::dialect::dialect_loss(ctx, &matched, &recovery)? {
             ctx.push_vec(&mut losses, loss, "collect Inventor summary loss")?;
         }
-        let dialects = crate::dialect::layers(ctx, &matched, &self.rse.active_carrier)?;
-        if let Some(kernel) = dialects
-            .iter()
-            .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
-        {
-            if let Some(loss) = crate::dialect::kernel_dialect_loss(ctx, kernel)? {
-                ctx.push_vec(&mut losses, loss, "collect Inventor summary loss")?;
-            }
+        let (dialects, kernel_loss) =
+            crate::dialect::layers(ctx, &matched, &self.rse.active_carrier)?;
+        if let Some(loss) = kernel_loss {
+            ctx.push_vec(&mut losses, loss, "collect Inventor summary loss")?;
         }
         let note = summary_note(
             ctx,
@@ -184,69 +201,24 @@ fn summary_note(
     segment_count: usize,
     database_count: usize,
 ) -> Result<String, CodecError> {
-    ctx.charge_collection_items(1, "collect Inventor summary note")?;
-    ctx.charge_formatted_retained(format_args!(
+    ctx.format_retained(
+        format_args!(
             "CFB v{major} with {segment_count} RSe segment pair(s) and {database_count} versioned database(s)"
-        ), "retain Inventor summary note")?;
-    Ok(format!(
-        "CFB v{major} with {segment_count} RSe segment pair(s) and {database_count} versioned database(s)"
-    ))
+        ),
+        "retain Inventor summary note",
+    )
 }
 
-fn admit_container_entries(
+/// The summary entry for the snapshot entry with `directory_id`.
+fn summary_entry<'a>(
     ctx: &DecodeContext<'_>,
-    snapshot: &CompoundSnapshot<'_>,
-) -> Result<(), CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(snapshot.entries().len());
-    ctx.charge_collection_items(count, "collect Inventor container summary entries")?;
-    for entry in ctx.admit_iter(snapshot.entries(), "visit Inventor container entries")? {
-        let path_len = cadmpeg_core::decode::u64_from_index(entry.path().len());
-        ctx.charge_retained(path_len, "retain Inventor summary entry path")?;
-        ctx.charge_collection_items(1, "collect Inventor summary directory attribute")?;
-        ctx.charge_retained(12, "retain Inventor summary directory key")?;
-        ctx.charge_formatted_retained(
-            format_args!("{}", entry.directory_id()),
-            "retain Inventor summary directory id",
-        )?;
-        if let CompoundEntry::Stream(stream) = entry {
-            if let Some(allocation) = stream.allocation() {
-                ctx.charge_collection_items(1, "collect Inventor summary allocation attribute")?;
-                ctx.charge_retained(10, "retain Inventor summary allocation key")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(allocation.label().len()),
-                    "retain Inventor summary allocation label",
-                )?;
-            }
-            ctx.charge_collection_items(1, "collect Inventor summary start-sector attribute")?;
-            ctx.charge_retained(12, "retain Inventor summary start-sector key")?;
-            ctx.charge_formatted_retained(
-                format_args!("{}", stream.start_sector()),
-                "retain Inventor summary start sector",
-            )?;
-        }
-    }
-    Ok(())
-}
-
-fn find_summary_entry<'a>(
-    ctx: &DecodeContext<'_>,
+    by_directory: &std::collections::HashMap<u32, usize>,
     entries: &'a mut [ContainerEntry],
     directory_id: u32,
 ) -> Result<Option<&'a mut ContainerEntry>, CodecError> {
-    for entry in entries {
-        ctx.charge_work(1, "find Inventor summary entry")?;
-        let matches = match entry.attributes.get("directory_id") {
-            Some(value) => {
-                ctx.parse_text::<u32>(value, "parse Inventor summary directory id")?
-                    == Ok(directory_id)
-            }
-            None => false,
-        };
-        if matches {
-            return Ok(Some(entry));
-        }
-    }
-    Ok(None)
+    Ok(ctx
+        .get_hash_map(by_directory, &directory_id, "find Inventor summary entry")?
+        .and_then(|&index| entries.get_mut(index)))
 }
 
 fn insert_attribute(
@@ -270,24 +242,26 @@ pub(crate) fn has_inventor_evidence(
     ctx: &DecodeContext<'_>,
     paths: &[String],
 ) -> Result<bool, CodecError> {
-    let mut has_storage = false;
-    for path in ctx.admit_iter(paths, "visit Inventor directory storage evidence")? {
-        if ctx.eq_ignore_ascii_case(path, "RSeStorage", "Inventor directory storage evidence")? {
-            has_storage = true;
-            break;
-        }
+    // Evidence needs the storage and one corroborating entry; each search
+    // charges only the paths it visits.
+    if !ctx.any_by(
+        paths,
+        |path| ctx.eq_ignore_ascii_case(path, "RSeStorage", "Inventor directory storage evidence"),
+        "visit Inventor directory storage evidence",
+    )? {
+        return Ok(false);
     }
-    for path in ctx.admit_iter(paths, "visit Inventor directory corroboration")? {
-        if ctx.eq_ignore_ascii_case(
-            path,
-            "RSeStorage/RSeSegInfo",
-            "Inventor directory corroboration",
-        )? || database_band(ctx, path)?.is_some()
-        {
-            return Ok(has_storage);
-        }
-    }
-    Ok(false)
+    ctx.any_by(
+        paths,
+        |path| {
+            Ok(ctx.eq_ignore_ascii_case(
+                path,
+                "RSeStorage/RSeSegInfo",
+                "Inventor directory corroboration",
+            )? || database_band(ctx, path)?.is_some())
+        },
+        "visit Inventor directory corroboration",
+    )
 }
 
 fn classify(ctx: &DecodeContext<'_>, entry: &CompoundEntry) -> Result<ContainerRole, CodecError> {

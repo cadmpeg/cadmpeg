@@ -46,12 +46,11 @@ impl StorageBand {
             return Ok(None);
         }
         if digits.is_empty()
-            || !ctx
-                .admit_iter(
-                    digits.as_bytes(),
-                    "validate RSe database storage-band digits",
-                )?
-                .all(u8::is_ascii_digit)
+            || !ctx.all_by(
+                digits.as_bytes(),
+                |digit| Ok(digit.is_ascii_digit()),
+                "validate RSe database storage-band digits",
+            )?
         {
             return Ok(None);
         }
@@ -108,18 +107,22 @@ impl SegmentToken {
             Some('B') => SegmentPrefix::Bulk,
             _ => return Ok(None),
         };
+        // The token grammar is the identity-key grammar: nonempty, no `#` and
+        // no whitespace. It is checked on the borrowed name first, so a name
+        // that fails is never copied; the key constructor then copies the
+        // token and rescans it, both charged before it runs.
         if token.is_empty()
-            || ctx.contains_text(token, "#", "validate RSe segment token")?
-            || ctx
-                .admit_iter(token, "validate RSe segment token whitespace")?
-                .any(char::is_whitespace)
+            || ctx.any_by(
+                token.chars(),
+                |character| Ok(character == '#' || character.is_whitespace()),
+                "validate RSe segment token",
+            )?
         {
             return Ok(None);
         }
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(token.len()),
-            "retain RSe segment token",
-        )?;
+        let token_len = cadmpeg_core::decode::u64_from_index(token.len());
+        ctx.charge_work(token_len, "validate RSe segment token key")?;
+        ctx.charge_retained(token_len, "retain RSe segment token")?;
         let Ok(token) = IdentityKey::try_new(token) else {
             return Ok(None);
         };
@@ -302,19 +305,11 @@ impl SegmentKind {
             Some("NotebookSegmentType") => Self::Notebook,
             Some("FWxDesignViewType" | "FWxDesignViewManagerType") => Self::DesignView,
             Some(type_name) => {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(type_name.len()),
-                    "retain RSe unknown segment kind",
-                )?;
-                Self::Unknown(type_name.into())
+                Self::Unknown(ctx.copy_retained_text(type_name, "retain RSe unknown segment kind")?)
             }
-            None => {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(display_name.len()),
-                    "retain RSe unknown segment kind",
-                )?;
-                Self::Unknown(display_name.into())
-            }
+            None => Self::Unknown(
+                ctx.copy_retained_text(display_name, "retain RSe unknown segment kind")?,
+            ),
         };
         Ok(kind)
     }

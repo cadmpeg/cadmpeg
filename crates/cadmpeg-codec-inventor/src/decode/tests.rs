@@ -11,8 +11,8 @@ mod presentation_admission;
 mod property_admission;
 
 use super::{
-    built_in_property_name, known_property_set_fmtid, normalize_property_name, preview_bytes,
-    push_hex, MetadataProjection,
+    built_in_property_name, known_property_name, known_property_set_fmtid, preview_bytes, push_hex,
+    KnownPropertyName, MetadataProjection, PropertyName,
 };
 use crate::loss::InventorLossCode;
 use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
@@ -45,24 +45,55 @@ fn built_in_properties_are_selected_by_embedded_set_identity() {
 }
 
 #[test]
-fn property_name_normalization_admits_scans_and_retained_output() {
+fn property_names_classify_by_lowercased_alphanumeric_characters() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    assert_eq!(
-        normalize_property_name(&ctx, "Part Number 42").expect("normalized name"),
-        "partnumber42"
-    );
-    assert_eq!(
-        normalize_property_name(&ctx, "Étage #1").expect("normalized Unicode name"),
-        "étage1"
-    );
+    for (name, expected) in [
+        ("Part Number", Some(KnownPropertyName::PartNumber)),
+        ("Preview-Image", Some(KnownPropertyName::PreviewImage)),
+        ("DOCUMENT_TYPE", Some(KnownPropertyName::DocumentType)),
+        ("Part Number 42", None),
+        ("Étage #1", None),
+        ("", None),
+    ] {
+        assert_eq!(
+            known_property_name(&ctx, name).expect("classified name"),
+            expected,
+            "{name}"
+        );
+    }
 
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        normalize_property_name(&ctx, "Name"),
+        known_property_name(&ctx, "Name"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "normalize Inventor property name"
+    ));
+}
+
+#[test]
+fn property_name_classification_charges_only_the_characters_it_reads() {
+    // "previewimage" fills the twelve-byte buffer; the thirteenth character
+    // cannot fit, so classification stops after thirteen charged steps and
+    // never reads the remaining characters.
+    let name = format!("previewimage{}", "x".repeat(10_000));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 13;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert_eq!(
+        known_property_name(&ctx, &name).expect("bounded walk"),
+        None
+    );
+
+    policy.limits.max_work_units = 12;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        known_property_name(&ctx, &name),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == "normalize Inventor property name"
@@ -97,14 +128,21 @@ fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
         .expect("service context");
     let mut projection = MetadataProjection::default();
     projection
-        .consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first")
+        .consider(
+            &ctx,
+            &[0; 16],
+            5,
+            Some(PropertyName::classify(&ctx, "Part Number").expect("name")),
+            Some("P-1"),
+            "first",
+        )
         .expect("first property");
     projection
         .consider(
             &ctx,
             &[0; 16],
             5,
-            Some("Part Number"),
+            Some(PropertyName::classify(&ctx, "Part Number").expect("name")),
             Some("P-2"),
             "second",
         )
@@ -114,7 +152,7 @@ fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
             &ctx,
             &[0; 16],
             29,
-            Some("Description"),
+            Some(PropertyName::classify(&ctx, "Description").expect("name")),
             Some("Bracket"),
             "desc",
         )
@@ -128,43 +166,22 @@ fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
 }
 
 #[test]
-fn metadata_projection_refuses_scoped_and_retained_limits_before_normalized_name_and_value() {
+fn metadata_projection_refuses_retained_limit_before_value_copy() {
     let arena = DecodeArena::new();
-    // The 10-byte normalized key is scoped; the 3-byte P-1 value is retained.
-    for (dimension, cap, operation) in [
-        (
-            ResourceDimension::MaterializedBytes,
-            "partnumber".len() - 1,
-            "retain Inventor normalized property name",
-        ),
-        (
-            ResourceDimension::RetainedBytes,
-            "P-1".len() - 1,
-            "retain Inventor metadata value",
-        ),
-    ] {
-        let mut policy = DecodePolicy::service();
-        match dimension {
-            ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes =
-                    u64::try_from(cap).expect("normalized name length fits");
-            }
-            ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes =
-                    u64::try_from(cap).expect("metadata value length fits");
-            }
-            _ => panic!("test resource dimension"),
-        }
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-        let mut projection = MetadataProjection::default();
-        assert!(matches!(
-            projection.consider(&ctx, &[0; 16], 5, Some("Part Number"), Some("P-1"), "first"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension
-                    && limit.operation == operation
-        ));
-    }
+    // The name is classified without storage; the 3-byte P-1 value is retained.
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from("P-1".len() - 1).expect("metadata value length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let mut projection = MetadataProjection::default();
+    assert!(matches!(
+        projection.consider(&ctx, &[0; 16], 5, Some(PropertyName::classify(&ctx, "Part Number").expect("name")), Some("P-1"), "first"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor metadata value"
+                && limit.used == 0
+    ));
+    assert!(projection.part_number.is_none());
 }
 
 #[test]
@@ -175,7 +192,7 @@ fn metadata_bom_property_refuses_collection_limit_before_insert() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut projection = MetadataProjection::default();
     assert!(matches!(
-        projection.consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom"),
+        projection.consider(&ctx, &[0; 16], 99, Some(PropertyName::classify(&ctx, "Custom").expect("name")), Some("value"), "custom"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor BOM property"
@@ -184,7 +201,14 @@ fn metadata_bom_property_refuses_collection_limit_before_insert() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     projection
-        .consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom")
+        .consider(
+            &ctx,
+            &[0; 16],
+            99,
+            Some(PropertyName::classify(&ctx, "Custom").expect("name")),
+            Some("value"),
+            "custom",
+        )
         .expect("admitted property");
     assert_eq!(
         projection.bom_properties.get("Custom").map(String::as_str),

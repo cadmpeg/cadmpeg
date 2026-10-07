@@ -5,47 +5,9 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
-use super::{
-    admit_container_entries, classify, find_summary_entry, insert_attribute, summary_note,
-    InventorContainer,
-};
+use super::{classify, insert_attribute, summary_note, InventorContainer};
 use crate::test_support::test_fixtures::{fixture, primary_envelope_fixture_with_broken_metadata};
 use crate::InventorCodec;
-
-#[test]
-fn container_summary_entries_refuse_limits_before_materialization() {
-    let bytes = fixture(true);
-    let arena = DecodeArena::new();
-    let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("service context");
-    let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
-    assert!(admit_container_entries(&setup, &snapshot).is_ok());
-    for (collection_cap, retained_cap, dimension, operation) in [
-        (
-            0,
-            u64::MAX,
-            ResourceDimension::CollectionItems,
-            "collect Inventor container summary entries",
-        ),
-        (
-            u64::MAX,
-            0,
-            ResourceDimension::RetainedBytes,
-            "retain Inventor summary entry path",
-        ),
-    ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_cap;
-        policy.limits.max_retained_bytes = retained_cap;
-        let (limited, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-        assert!(matches!(
-            admit_container_entries(&limited, &snapshot),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension && limit.operation == operation
-        ));
-    }
-}
 
 #[test]
 fn container_summary_attribute_refuses_before_insert() {
@@ -97,45 +59,16 @@ fn container_summary_attribute_refuses_before_insert() {
 }
 
 #[test]
-fn container_summary_search_refuses_work_limit_before_scan() {
-    let bytes = fixture(true);
-    let arena = DecodeArena::new();
-    let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("service context");
-    let snapshot = CompoundSnapshot::new(&setup, root).expect("fixture snapshot");
-    let mut entries = snapshot
-        .container_entries(&setup, |entry| {
-            classify(&setup, entry).expect("classification")
-        })
-        .expect("summary admission");
-    assert!(
-        find_summary_entry(&setup, &mut entries, snapshot.entries()[0].directory_id())
-            .expect("service search")
-            .is_some()
-    );
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (limited, _) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
-    assert!(matches!(
-        find_summary_entry(&limited, &mut entries, snapshot.entries()[0].directory_id()),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "find Inventor summary entry"
-    ));
-}
-
-#[test]
 fn container_summary_note_refuses_before_text_creation() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
         summary_note(&ctx, 3, 1, 1),
         Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect Inventor summary note"
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor summary note"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
