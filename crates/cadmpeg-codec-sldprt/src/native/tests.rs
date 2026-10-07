@@ -722,7 +722,7 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
 }
 
 #[test]
-fn native_scalar_operand_validation_limit_refuses_before_resolution() {
+fn native_store_groups_operand_candidates_before_resolution() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let decoded = SldprtCodec
@@ -732,39 +732,36 @@ fn native_scalar_operand_validation_limit_refuses_before_resolution() {
         )
         .unwrap();
     let native = sldprt_native(decoded.ir());
-    let lane = native
-        .feature_input_lanes
-        .iter()
-        .find(|lane| {
-            lane.scalars
+    assert!(native.feature_input_lanes.iter().any(|lane| {
+        !lane.sketch_entities.is_empty()
+            && lane
+                .scalars
                 .iter()
                 .any(|scalar| !scalar.operands.is_empty())
-        })
-        .unwrap();
-    let scalar = lane
-        .scalars
-        .iter()
-        .find(|scalar| !scalar.operands.is_empty())
-        .unwrap();
+    }));
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::resolved_scalar_operand_markers(&limited, lane, scalar).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "group SLDPRT stored sketch entities",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut namespace = cadmpeg_ir::NativeNamespace::default();
+            native
+                .store(&limited, &mut namespace)
+                .map_err(cadmpeg_core::CodecError::from)
+        },
+    );
     assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
+        error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT scalar operand markers"
+            if limit.operation == "group SLDPRT stored sketch entities"
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        super::resolved_scalar_operand_markers(&service, lane, scalar)
-            .unwrap()
-            .len(),
-        scalar.operands.len()
-    );
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&service, &mut namespace).unwrap();
 }
 
 #[test]
