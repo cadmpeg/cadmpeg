@@ -475,7 +475,7 @@ impl<'a> Container<'a> {
         Ok(wrappers)
     }
 
-    /// Index the container's segment table and FastLoad object table.
+    /// Index the container's segment table and `FastLoad` object table.
     fn index_tables(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         self.fastload_table = self.parse_rmfastload_object_id_table(ctx)?;
         self.segment_index = self.locate_segment_index(ctx)?;
