@@ -277,11 +277,13 @@ fn model_root_member(
         cadmpeg_core::decode::u64_from_index(description_bytes.len()),
         "validate F3Z JSON UTF-8",
     )?;
-    let text = std::str::from_utf8(description_bytes).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
-        ))
-    })?;
+    let text = ctx
+        .validate_utf8(description_bytes, "validate F3Z design description UTF-8")?
+        .map_err(|error| {
+            CodecError::malformed(format_args!(
+                "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
+            ))
+        })?;
     let description: DesignDescriptionJson = ctx
         .parse_json(text, "match F3Z derived model reference")
         .map_err(|error| {
@@ -297,17 +299,13 @@ fn model_root_member(
         &description.design_description.design_graphs,
         "scan F3Z design graphs",
     )? {
+        let mut root_storage = ctx.reserve_scoped(0, "index F3Z root object IDs")?;
+        let root_ids = root_storage.with_storage(|| {
+            ctx.collect_btree_set(graph.root_ids.iter().copied(), "index F3Z root object IDs")
+        })?;
         let mut root = None;
         for object in ctx.admit_iter(&graph.design_objects, "scan F3Z root objects")? {
-            let mut is_root = false;
-            for id in &graph.root_ids {
-                ctx.charge_work(1, "match F3Z root object ID")?;
-                if *id == object.id {
-                    is_root = true;
-                    break;
-                }
-            }
-            if is_root {
+            if ctx.contains_btree_set(&root_ids, &object.id, "match F3Z root object ID")? {
                 ctx.charge_work(
                     cadmpeg_core::decode::u64_from_index(object.relative_path.len()),
                     "match F3Z root object path",
@@ -318,9 +316,28 @@ fn model_root_member(
                 }
             }
         }
+        drop(root_ids);
+        drop(root_storage);
         let Some(root) = root else {
             continue;
         };
+        // Object IDs the root's derived references name, built once.
+        let mut derived_storage = ctx.reserve_scoped(0, "index F3Z derived model references")?;
+        let mut derived_ids = std::collections::BTreeSet::new();
+        for reference in ctx.admit_iter(&root.references, "scan F3Z root references")? {
+            if reference.reference_type != "DERIVED" {
+                continue;
+            }
+            for id in ctx.admit_iter(&reference.ids, "index F3Z derived model references")? {
+                derived_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut derived_ids,
+                        *id,
+                        "index F3Z derived model references",
+                    )
+                })?;
+            }
+        }
         for object in ctx.admit_iter(&graph.design_objects, "scan F3Z derived model objects")? {
             if !ctx.eq_ignore_ascii_case(
                 &object.content_type,
@@ -331,22 +348,11 @@ fn model_root_member(
             {
                 continue;
             }
-            let mut derived = false;
-            for reference in ctx
-                .admit_iter(&root.references, "scan F3Z root references")?
-                .filter(|reference| reference.reference_type == "DERIVED")
-            {
-                for id in &reference.ids {
-                    ctx.charge_work(1, "match F3Z derived model reference")?;
-                    if *id == object.id {
-                        derived = true;
-                        break;
-                    }
-                }
-                if derived {
-                    break;
-                }
-            }
+            let derived = ctx.contains_btree_set(
+                &derived_ids,
+                &object.id,
+                "match F3Z derived model reference",
+            )?;
             if derived {
                 ctx.reserve_vec(&mut candidates, 1, "collect F3Z model candidates")?;
                 candidates.push(ctx.copy_retained_text(
