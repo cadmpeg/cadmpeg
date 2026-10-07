@@ -39,11 +39,6 @@ pub struct SubSurfaceConstruction {
     parameter_ranges: [FiniteVector<2>; 2],
 }
 
-decode_cost_record!(
-    [] SubSurfaceConstruction;
-    Self { support, parameter_ranges } => [support:  SurfaceId, parameter_ranges:  [FiniteVector<2>; 2]]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -115,11 +110,6 @@ pub struct TaperSurfaceConstruction {
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
-
-decode_cost_record!(
-    [] TaperSurfaceConstruction;
-    Self { support, reference, pcurve, parameter, taper, cache } => [support:  SurfaceId, reference:  CurveId, pcurve:  Option<PcurveGeometry>, parameter:  FiniteReal, taper:  TaperSurfaceKind<FiniteReal, FiniteVector3>, cache:  CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -252,11 +242,6 @@ pub struct ExtrusionSurfaceConstruction {
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
-
-decode_cost_record!(
-    [] ExtrusionSurfaceConstruction;
-    Self { directrix, parameter_interval, direction, native_position, cache } => [directrix:  CurveId, parameter_interval:  Option<FiniteVector<2>>, direction:  FiniteVector3, native_position:  Option<FinitePoint3>, cache:  CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -470,11 +455,6 @@ pub struct RevolutionSurfaceConstruction {
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
-decode_cost_record!(
-    [] RevolutionSurfaceConstruction;
-    Self { directrix, axis_origin, axis_direction, angular_interval, angular_parameter_interval, parameter_interval, transposed, cache } => [directrix:  CurveId, axis_origin:  FinitePoint3, axis_direction:  UnitVector3, angular_interval:  IncreasingParameterInterval, angular_parameter_interval:  Option<IncreasingParameterInterval>, parameter_interval:  Option<IncreasingParameterInterval>, transposed:  bool, cache:  CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -687,11 +667,6 @@ pub struct OffsetSurfaceConstruction {
     extension: OffsetExtension<FiniteReal>,
 }
 
-decode_cost_record!(
-    [] OffsetSurfaceConstruction;
-    Self { support, distance, u_sense, v_sense, linear_support_extension, extension } => [support:  SurfaceId, distance:  FiniteReal, u_sense:  Option<i64>, v_sense:  Option<i64>, linear_support_extension:  bool, extension:  OffsetExtension<FiniteReal>]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -862,11 +837,6 @@ pub struct SubsetSurfaceConstruction {
     cache: Option<LegacyCache>,
 }
 
-decode_cost_record!(
-    [] SubsetSurfaceConstruction;
-    Self { support, parameter_ranges, u_sense, v_sense, cache } => [support:  SurfaceId, parameter_ranges:  [DirectedParameterRange; 2], u_sense:  Option<bool>, v_sense:  Option<bool>, cache:  Option<LegacyCache>]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -992,11 +962,6 @@ pub struct ParallelOffsetSurfaceConstruction {
     self_intersect: Option<bool>,
 }
 
-decode_cost_record!(
-    [] ParallelOffsetSurfaceConstruction;
-    Self { support, distance, self_intersect } => [support:  SurfaceId, distance:  FiniteReal, self_intersect:  Option<bool>]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1061,11 +1026,6 @@ pub struct LinearSweepSurfaceConstruction {
     direction: DirectionAboveEpsilon,
 }
 
-decode_cost_record!(
-    [] LinearSweepSurfaceConstruction;
-    Self { directrix, direction } => [directrix:  CurveId, direction:  DirectionAboveEpsilon]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1127,11 +1087,6 @@ pub struct AxisRevolutionSurfaceConstruction {
     /// Unit revolution-axis direction.
     axis_direction: UnitVector3,
 }
-
-decode_cost_record!(
-    [] AxisRevolutionSurfaceConstruction;
-    Self { directrix, axis_origin, axis_direction } => [directrix:  CurveId, axis_origin:  FinitePoint3, axis_direction:  UnitVector3]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1213,11 +1168,6 @@ pub struct SumSurfaceConstruction {
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
-
-decode_cost_record!(
-    [] SumSurfaceConstruction;
-    Self { first, second, basepoint, cache } => [first:  CurveId, second:  CurveId, basepoint:  FiniteVector3, cache:  CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1303,11 +1253,6 @@ impl TryFrom<SumSurfaceConstructionWire> for SumSurfaceConstruction {
 pub struct ExactSurfacePayload {
     spline: ExactSpline<FiniteReal>,
 }
-
-decode_cost_record!(
-    [] ExactSurfacePayload;
-    Self { spline } => [spline:  ExactSpline<FiniteReal>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1373,11 +1318,6 @@ pub struct CompoundSurfacePayload {
     )]
     cache: Option<LegacyCache>,
 }
-
-decode_cost_record!(
-    [] CompoundSurfacePayload;
-    Self { components, cache } => [components:  Vec<CompoundComponent<SurfaceId, FiniteReal>>, cache:  Option<LegacyCache>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1436,11 +1376,6 @@ pub struct LoftSurfacePayload {
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<LoftRevisionForm<FiniteReal>>,
 }
-
-decode_cost_record!(
-    [] LoftSurfacePayload;
-    Self { sections, parameters, closures, singularities, mode, bridge, cache } => [sections:  [LoftSection<FiniteReal, FiniteVector3>; 2], parameters:  SplineSurfaceParameters<FiniteReal>, closures:  [i64; 2], singularities:  [i64; 2], mode:  i64, bridge:  Vec<LoftBridgeToken<FiniteReal>>, cache:  CacheContract<LoftRevisionForm<FiniteReal>>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1566,11 +1501,6 @@ pub struct CompoundLoftSurfacePayload {
     )]
     cache: Option<LegacyCache>,
 }
-
-decode_cost_record!(
-    [] CompoundLoftSurfacePayload;
-    Self { construction, cache } => [construction:  Box<CompoundLoftConstruction<FiniteReal, FiniteVector3>>, cache:  Option<LegacyCache>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1629,11 +1559,6 @@ pub struct ScaledCompoundLoftSurfacePayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cache: Option<LegacyCache>,
 }
-
-decode_cost_record!(
-    [] ScaledCompoundLoftSurfacePayload;
-    Self { construction, cache } => [construction:  Box<ScaledCompoundLoftConstruction<FiniteReal, FiniteVector3>>, cache:  Option<LegacyCache>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1686,11 +1611,6 @@ impl TryFrom<ScaledCompoundLoftSurfacePayloadWire> for ScaledCompoundLoftSurface
 pub struct LawSurfacePayload {
     construction: Box<LawSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
 }
-
-decode_cost_record!(
-    [] LawSurfacePayload;
-    Self { construction } => [construction:  Box<LawSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1739,11 +1659,6 @@ pub struct SkinSurfacePayload {
     )]
     cache: Option<LegacyCache>,
 }
-
-decode_cost_record!(
-    [] SkinSurfacePayload;
-    Self { construction, cache } => [construction:  Box<SkinSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>, cache:  Option<LegacyCache>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1799,11 +1714,6 @@ pub struct NetSurfacePayload {
     )]
     cache: Option<LegacyCache>,
 }
-
-decode_cost_record!(
-    [] NetSurfacePayload;
-    Self { construction, cache } => [construction:  Box<NetSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>, cache:  Option<LegacyCache>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1855,11 +1765,6 @@ pub struct SweepSurfacePayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     native: Option<Box<SweepSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>>,
 }
-
-decode_cost_record!(
-    [] SweepSurfacePayload;
-    Self { profile, spine, native } => [profile:  CurveId, spine:  CurveId, native:  Option<Box<SweepSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1927,11 +1832,6 @@ impl TryFrom<SweepSurfacePayloadWire> for SweepSurfacePayload {
 pub struct DeformableSurfacePayload {
     construction: Box<DeformableSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
 }
-
-decode_cost_record!(
-    [] DeformableSurfacePayload;
-    Self { construction } => [construction:  Box<DeformableSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1982,11 +1882,6 @@ pub struct G2BlendSurfacePayload {
     )]
     cache: Option<LegacyCache>,
 }
-
-decode_cost_record!(
-    [] G2BlendSurfacePayload;
-    Self { construction, cache } => [construction:  Box<G2BlendConstruction<FiniteReal, FiniteVector3>>, cache:  Option<LegacyCache>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2036,11 +1931,6 @@ pub struct VariableBlendSurfacePayload {
     #[serde(skip)]
     slice_range: OrderedOptionalRange,
 }
-
-decode_cost_record!(
-    [] VariableBlendSurfacePayload;
-    Self { construction, slice_range } => [construction:  Box<VariableBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3>>, slice_range:  OrderedOptionalRange]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2101,11 +1991,6 @@ impl TryFrom<VariableBlendSurfacePayloadWire> for VariableBlendSurfacePayload {
 pub struct VertexBlendSurfacePayload {
     construction: Box<VertexBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
 }
-
-decode_cost_record!(
-    [] VertexBlendSurfacePayload;
-    Self { construction } => [construction:  Box<VertexBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3>>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2158,11 +2043,6 @@ impl TryFrom<VertexBlendSurfacePayloadWire> for VertexBlendSurfacePayload {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct OrderedOptionalRange([Option<FiniteReal>; 2]);
 
-decode_cost_record!(
-    [] OrderedOptionalRange;
-    Self(field_0) => [field_0: [Option<FiniteReal>; 2]]
-);
-
 impl OrderedOptionalRange {
     fn new(endpoints: [Option<FiniteReal>; 2]) -> Option<Self> {
         optional_ordered(&endpoints).then_some(Self(endpoints))
@@ -2200,11 +2080,6 @@ pub struct BlendSurfacePayload {
     #[serde(skip)]
     native_ranges: Option<[OrderedOptionalRange; 2]>,
 }
-
-decode_cost_record!(
-    [] BlendSurfacePayload;
-    Self { supports, spine, radius, cross_section, cache, native_ranges } => [supports:  [Option<BlendSupport>; 2], spine:  Option<CurveId>, radius:  BlendRadiusLaw, cross_section:  BlendCrossSection, cache:  CacheContract<Box<RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>>>, native_ranges:  Option<[OrderedOptionalRange; 2]>]
-);
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]

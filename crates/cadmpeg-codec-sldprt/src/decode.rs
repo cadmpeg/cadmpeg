@@ -2463,7 +2463,7 @@ fn try_decode_brep(
                 header.schema.value(),
                 "retain SLDPRT B-rep header schema",
             )?;
-            let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(schema)
+            let schema = cadmpeg_parasolid::OwnedSchemaToken::parse(ctx, schema)?
                 .map_err(|_| CodecError::Malformed("invalid admitted Parasolid schema".into()))?;
             Ok::<_, CodecError>(StreamHeader {
                 description,

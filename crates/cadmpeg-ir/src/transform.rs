@@ -23,11 +23,6 @@ pub struct Transform2 {
     rows: [[f64; 3]; 2],
 }
 
-decode_cost_record!(
-    [] Transform2;
-    Self { rows } => [rows:  [[f64; 3]; 2]]
-);
-
 const BOTTOM_ROW_2: [f64; 3] = [0.0, 0.0, 1.0];
 const BOTTOM_ROW_4: [f64; 4] = [0.0, 0.0, 0.0, 1.0];
 
@@ -162,10 +157,18 @@ pub struct Transform {
     rows: [[f64; 4]; 3],
 }
 
-decode_cost_record!(
-    [] Transform;
-    Self { rows } => [rows:  [[f64; 4]; 3]]
-);
+impl cadmpeg_core::decode::cost::DecodeCost for Transform {
+    const FIXED_BYTES: Option<u64> =
+        <[[f64; 4]; 3] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.rows.decode_cost(ctx, operation)
+    }
+}
 
 impl Default for Transform {
     fn default() -> Self {

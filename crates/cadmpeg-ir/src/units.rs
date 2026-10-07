@@ -9,6 +9,7 @@ use crate::math::sum::ScaledValue;
 use crate::math::{Point2, Vector3};
 use crate::scalar::{PositiveAngle, PositiveLength, PositiveReal};
 use crate::transform::Transform;
+use cadmpeg_core::decode::cost::DecodeCost;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -41,10 +42,17 @@ pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FiniteVector<const N: usize>([f64; N]);
 
-decode_cost_record!(
-    [const N: usize] FiniteVector<N>;
-    Self(field_0) => [field_0: [f64; N]]
-);
+impl<const N: usize> DecodeCost for FiniteVector<N> {
+    const FIXED_BYTES: Option<u64> = <[f64; N] as DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
 
 impl<const N: usize> FiniteVector<N> {
     /// Construct finite coordinates.
@@ -351,10 +359,17 @@ impl SumSquaresUnitVector3 {
 #[serde(try_from = "Vector3", into = "Vector3")]
 pub struct UnitVector3(Vector3);
 
-decode_cost_record!(
-    [] UnitVector3;
-    Self(field_0) => [field_0: Vector3]
-);
+impl DecodeCost for UnitVector3 {
+    const FIXED_BYTES: Option<u64> = <[f64; 3] as DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        [self.0.x, self.0.y, self.0.z].decode_cost(ctx, operation)
+    }
+}
 
 impl UnitVector3 {
     /// The unit +x direction.
@@ -636,11 +651,6 @@ impl From<UnitVector3> for Vector3 {
 #[serde(transparent)]
 pub struct DirectionAboveEpsilon(FiniteVector3);
 
-decode_cost_record!(
-    [] DirectionAboveEpsilon;
-    Self(field_0) => [field_0: FiniteVector3]
-);
-
 impl DirectionAboveEpsilon {
     /// Admit a finite direction with length above machine epsilon.
     pub fn new(value: Vector3) -> Option<Self> {
@@ -783,11 +793,6 @@ pub struct OrthonormalFrame3 {
     axis: UnitVector3,
     reference: UnitVector3,
 }
-
-decode_cost_record!(
-    [] OrthonormalFrame3;
-    Self { axis, reference } => [axis:  UnitVector3, reference:  UnitVector3]
-);
 impl OrthonormalFrame3 {
     /// The model coordinate frame: first direction +z, second direction +x.
     pub const IDENTITY: Self = Self {
@@ -1071,7 +1076,17 @@ impl Transform {
 #[serde(try_from = "Point2", into = "Point2")]
 pub struct FinitePoint2(Point2);
 
-decode_cost_record!([] FinitePoint2; Self(field_0) => [field_0: Point2]);
+impl DecodeCost for FinitePoint2 {
+    const FIXED_BYTES: Option<u64> = <[f64; 2] as DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        [self.0.u, self.0.v].decode_cost(ctx, operation)
+    }
+}
 
 impl FinitePoint2 {
     /// The parameter-space origin.
@@ -1107,6 +1122,7 @@ impl FinitePoint2 {
         Self(Point2::new(-self.0.u, -self.0.v))
     }
 }
+
 impl TryFrom<Point2> for FinitePoint2 {
     type Error = &'static str;
     fn try_from(value: Point2) -> Result<Self, Self::Error> {
@@ -1149,11 +1165,6 @@ impl PartialEq<Point2> for FinitePoint2 {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Point2", into = "Point2")]
 pub struct NonzeroPoint2(Point2);
-
-decode_cost_record!(
-    [] NonzeroPoint2;
-    Self(field_0) => [field_0: Point2]
-);
 impl NonzeroPoint2 {
     /// The unit-u direction.
     pub const U_AXIS: Self = Self(Point2 { u: 1.0, v: 0.0 });

@@ -30,11 +30,6 @@ pub struct Color {
     a: f32,
 }
 
-decode_cost_record!(
-    [] Color;
-    Self { r, g, b, a } => [r:  f32, g:  f32, b:  f32, a:  f32]
-);
-
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1085,11 +1080,6 @@ pub struct CoedgeUseCurve {
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
 pub struct ParameterInterval([f64; 2]);
 
-decode_cost_record!(
-    [] ParameterInterval;
-    Self(field_0) => [field_0: [f64; 2]]
-);
-
 impl ParameterInterval {
     /// The unit interval `[0, 1]`.
     pub(crate) const UNIT: Self = Self([0.0, 1.0]);
@@ -1221,10 +1211,18 @@ impl From<IncreasingParameterInterval> for ParameterInterval {
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
 pub struct IncreasingParameterInterval([f64; 2]);
 
-decode_cost_record!(
-    [] IncreasingParameterInterval;
-    Self(field_0) => [field_0: [f64; 2]]
-);
+impl cadmpeg_core::decode::cost::DecodeCost for IncreasingParameterInterval {
+    const FIXED_BYTES: Option<u64> =
+        <[f64; 2] as cadmpeg_core::decode::cost::DecodeCost>::FIXED_BYTES;
+
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        self.0.decode_cost(ctx, operation)
+    }
+}
 
 impl IncreasingParameterInterval {
     /// Order finite endpoints without testing their already admitted finiteness.
@@ -1484,11 +1482,6 @@ pub struct Point {
     )]
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
 }
-
-decode_cost_record!(
-    [] Point;
-    Self { id, position, source_object } => [id:  PointId, position:  FinitePoint3, source_object:  Option<crate::provenance::SourceObjectAssociation>]
-);
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

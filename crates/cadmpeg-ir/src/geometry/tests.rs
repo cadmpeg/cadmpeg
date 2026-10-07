@@ -10,7 +10,6 @@ use crate::test_support::make_first_face_surface_unknown;
 use crate::unknown::NativeUnknownRecord;
 
 mod decode_copy;
-mod decode_cost;
 
 #[test]
 fn admitted_nurbs_geometry_copy_refuses_each_nested_vector() {
