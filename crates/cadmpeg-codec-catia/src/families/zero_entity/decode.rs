@@ -1152,7 +1152,7 @@ pub(in crate::families) fn try_decode_zero_entity(
             }
         };
     }
-    let preamble = container::outer_preamble_range(&scan.data)?;
+    let preamble = admitted!(container::outer_preamble_range(ctx, &scan.data))?;
     let surfaces = match crate::families::zero_entity::records::zero_entity_surfaces_in_range(
         ctx, &scan.data, preamble.clone(), refusal,
     ) {

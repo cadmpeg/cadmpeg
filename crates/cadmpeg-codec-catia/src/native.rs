@@ -10165,14 +10165,17 @@ impl CatiaNative {
             .transpose()?;
             let outer_container = outer_directory
                 .as_ref()
-                .and_then(|outer| {
+                .map(|outer| {
                     container::outer_container_for_extent(
+                        ctx,
                         outer,
                         &outer_container_declarations,
                         u64_from_index(graph.pos),
                         u64_from_index(graph.total_len),
                     )
                 })
+                .transpose()?
+                .flatten()
                 .map(|container| CatiaOuterContainerBinding::from_source(ctx, container))
                 .transpose()?;
             let (graph, mut entities) =
@@ -10369,14 +10372,17 @@ impl CatiaNative {
         for run in &mut legacy_entity_runs {
             run.outer_container = outer_directory
                 .as_ref()
-                .and_then(|outer| {
+                .map(|outer| {
                     container::outer_container_for_extent(
+                        ctx,
                         outer,
                         &outer_container_declarations,
                         run.byte_offset,
                         run.byte_len,
                     )
                 })
+                .transpose()?
+                .flatten()
                 .map(|container| CatiaOuterContainerBinding::from_source(ctx, container))
                 .transpose()?;
         }
@@ -10411,7 +10417,7 @@ impl CatiaNative {
             consolidated_revolutions(ctx, bytes, consolidated_records, &consolidated_circles)?;
         let consolidated_spheres = consolidated_spheres(ctx, bytes, consolidated_records)?;
         let consolidated_tori = consolidated_tori(ctx, bytes, consolidated_records)?;
-        let zero_entity_range = container::outer_preamble_range(bytes).unwrap_or_else(|| {
+        let zero_entity_range = container::outer_preamble_range(ctx, bytes)?.unwrap_or_else(|| {
             if bytes.starts_with(container::OUTER_MAGIC) {
                 0..0
             } else {
