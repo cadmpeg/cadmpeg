@@ -25,7 +25,10 @@ fn native_token_copy_refuses_outer_and_nested_allocations() {
         span: 0..3,
     }];
     for (dimension, operation) in [
-        (ResourceDimension::CollectionItems, "iges native token slots"),
+        (
+            ResourceDimension::CollectionItems,
+            "iges native token slots",
+        ),
         (ResourceDimension::RetainedBytes, "iges native token bytes"),
     ] {
         let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
@@ -54,7 +57,10 @@ fn native_entity_links_refuse_slots_and_text_before_copy() {
 
     for (dimension, operation) in [
         (ResourceDimension::CollectionItems, "iges native test links"),
-        (ResourceDimension::RetainedBytes, "iges native linked entity id"),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges native linked entity id",
+        ),
     ] {
         let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = DecodeArena::new();
@@ -95,10 +101,19 @@ fn native_parameter_record_refuses_bytes_tokens_and_comment() {
         b"e".to_vec(),
     );
     for (dimension, operation) in [
-        (ResourceDimension::RetainedBytes, "iges native parameter bytes"),
-        (ResourceDimension::CollectionItems, "iges native token slots"),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges native parameter bytes",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges native token slots",
+        ),
         (ResourceDimension::RetainedBytes, "iges native token bytes"),
-        (ResourceDimension::RetainedBytes, "iges native parameter comment"),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges native parameter comment",
+        ),
     ] {
         let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = DecodeArena::new();
@@ -313,20 +328,21 @@ fn native_input_cards_refuse_collection_limit() {
         parameters: &assembly.quarantined,
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "iges native card slots", |cap| {
+        ResourceDimension::CollectionItems,
+        "iges native card slots",
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             super::collect_native_inputs(&scan, quarantine(), &ctx)
-        });
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "iges native card slots"));
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let indexes =
-        super::collect_native_inputs(&scan, quarantine(), &ctx)
-            .unwrap();
+    let indexes = super::collect_native_inputs(&scan, quarantine(), &ctx).unwrap();
     assert_eq!(
         indexes.cards.len(),
         (scan.cards().len() + scan.trailing().len())
@@ -372,22 +388,27 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
         directory: &quarantined_directory,
         parameters: &assembly.quarantined,
     };
-    for operation in ["iges native quarantined directory slots", "iges native quarantined parameter slots"] {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            super::collect_native_inputs(&scan, quarantine(), &ctx)
-        });
+    for operation in [
+        "iges native quarantined directory slots",
+        "iges native quarantined parameter slots",
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::collect_native_inputs(&scan, quarantine(), &ctx)
+            },
+        );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let indexes =
-        super::collect_native_inputs(&scan, quarantine(), &ctx)
-            .unwrap();
+    let indexes = super::collect_native_inputs(&scan, quarantine(), &ctx).unwrap();
     assert_eq!(indexes.quarantined_directory_records.len(), 1);
     assert_eq!(indexes.quarantined_parameter_records.len(), 1);
 }

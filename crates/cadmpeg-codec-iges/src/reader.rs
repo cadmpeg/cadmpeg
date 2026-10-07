@@ -764,8 +764,7 @@ fn decode_with_occurrence_limits(
             &mut losses,
             IgesLossCode::AttributeTableCountUnstatable,
             format_args!(
-                "IGES attribute table instance D{source_sequence} {}, so no attribute row was read",
-                refusal
+                "IGES attribute table instance D{source_sequence} {refusal}, so no attribute row was read"
             ),
             source_sequence,
             &parse.directory,

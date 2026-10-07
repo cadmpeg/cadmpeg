@@ -109,7 +109,10 @@ pub(super) fn build(
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeFemEntity>, CodecError> {
     let mut result = Vec::new();
-    for entry in ctx.admit_iter(directory, "iges FEM directory scan")?.filter(|entry| is_fem(entry)) {
+    for entry in ctx
+        .admit_iter(directory, "iges FEM directory scan")?
+        .filter(|entry| is_fem(entry))
+    {
         ctx.reserve_vec(&mut result, 1, "iges FEM native entities")?;
         let record = record_by_sequence(records, entry.sequence, ctx)?;
         let native = match entry.entity_type {
@@ -514,40 +517,82 @@ fn element_results(
     let sequence = entry.sequence;
     let declared_value_count = record_integer(record, 4);
     let declared_element_count = record_integer(record, 6);
-    let (mut layouts, mut layout_storage) = ctx.temporary_vec(0, "iges FEM element result layouts")?;
-    let element_count = declared_value_count.and_then(|count| usize::try_from(count).ok())
+    let (mut layouts, mut layout_storage) =
+        ctx.temporary_vec(0, "iges FEM element result layouts")?;
+    let element_count = declared_value_count
+        .and_then(|count| usize::try_from(count).ok())
         .and(declared_element_count.and_then(|count| usize::try_from(count).ok()));
     let mut cursor = 7_usize;
     let complete = if let Some(element_count) = element_count {
-        ctx.all_by(0..element_count, |_| {
-            let layout = record.and_then(|record| {
-                let count_index = cursor.checked_add(5)?;
-                let report_count = usize::try_from(record.integer(count_index)?).ok()?;
-                let report_start = cursor.checked_add(6)?;
-                let value_count_index = report_start.checked_add(report_count)?;
-                let value_count = usize::try_from(record.integer(value_count_index)?).ok()?;
-                let next = value_count_index.checked_add(1)?.checked_add(value_count)?;
-                (next <= record.parameter_end()).then_some((report_count, report_start, value_count_index, value_count, next))
-            });
-            let Some((report_count, report_start, value_count_index, value_count, next)) = layout
-            else { return Ok(false); };
-            ctx.push_scoped_vec(&mut layout_storage, &mut layouts,
-                (cursor, report_count, report_start, value_count_index, value_count), "iges FEM element result layouts")?;
-            cursor = next;
-            Ok(true)
-        }, "iges FEM element result layout scan")?
-        && record.is_some_and(|record| cursor <= record.parameter_end())
-    } else { false };
+        ctx.all_by(
+            0..element_count,
+            |_| {
+                let layout = record.and_then(|record| {
+                    let count_index = cursor.checked_add(5)?;
+                    let report_count = usize::try_from(record.integer(count_index)?).ok()?;
+                    let report_start = cursor.checked_add(6)?;
+                    let value_count_index = report_start.checked_add(report_count)?;
+                    let value_count = usize::try_from(record.integer(value_count_index)?).ok()?;
+                    let next = value_count_index.checked_add(1)?.checked_add(value_count)?;
+                    (next <= record.parameter_end()).then_some((
+                        report_count,
+                        report_start,
+                        value_count_index,
+                        value_count,
+                        next,
+                    ))
+                });
+                let Some((report_count, report_start, value_count_index, value_count, next)) =
+                    layout
+                else {
+                    return Ok(false);
+                };
+                ctx.push_scoped_vec(
+                    &mut layout_storage,
+                    &mut layouts,
+                    (
+                        cursor,
+                        report_count,
+                        report_start,
+                        value_count_index,
+                        value_count,
+                    ),
+                    "iges FEM element result layouts",
+                )?;
+                cursor = next;
+                Ok(true)
+            },
+            "iges FEM element result layout scan",
+        )? && record.is_some_and(|record| cursor <= record.parameter_end())
+    } else {
+        false
+    };
     let elements = if complete {
-        ctx.try_collect_retained_with::<_, _, CodecError>(layouts, "iges_fem_element_result_elements",
+        ctx.try_collect_retained_with::<_, _, CodecError>(
+            layouts,
+            "iges_fem_element_result_elements",
             |(cursor, report_count, report_start, value_count_index, value_count)| {
-                let report_locations = ctx.collect_indexed_vec(report_count,
-                    "iges_fem_element_result_locations", |offset| Ok(record_integer(record, report_start + offset)))?;
-                let values = ctx.collect_indexed_vec(value_count, "iges_fem_element_result_values",
-                    |offset| Ok(record_number(record, value_count_index + 1 + offset)))?;
+                let report_locations = ctx.collect_indexed_vec(
+                    report_count,
+                    "iges_fem_element_result_locations",
+                    |offset| Ok(record_integer(record, report_start + offset)),
+                )?;
+                let values = ctx.collect_indexed_vec(
+                    value_count,
+                    "iges_fem_element_result_values",
+                    |offset| Ok(record_number(record, value_count_index + 1 + offset)),
+                )?;
                 Ok(NativeFemElementSample {
                     identifier: record_integer(record, cursor),
-                    element: resolve_type(ctx, resolver, sequence, cursor + 1, record_integer(record, cursor + 1), 136, &[0])?,
+                    element: resolve_type(
+                        ctx,
+                        resolver,
+                        sequence,
+                        cursor + 1,
+                        record_integer(record, cursor + 1),
+                        136,
+                        &[0],
+                    )?,
                     topology_type: record_integer(record, cursor + 2),
                     layers: record_integer(record, cursor + 3),
                     data_layer_flag: record_integer(record, cursor + 4),
@@ -555,8 +600,11 @@ fn element_results(
                     declared_value_count: record_integer(record, value_count_index),
                     values,
                 })
-            })?
-    } else { Vec::new() };
+            },
+        )?
+    } else {
+        Vec::new()
+    };
     Ok(NativeFemEntity::ElementResults {
         id: entity_id(ctx, "element-results", sequence)?,
         source_entity: source_entity(ctx, sequence)?,
@@ -654,8 +702,12 @@ mod tests {
         )
     }
 
-    fn refusal_at(directory: &[crate::directory::DirectoryEntry], records: &[crate::parameter::ParameterRecord],
-        dimension: cadmpeg_core::decode::ResourceDimension, operation: &str) -> cadmpeg_core::CodecError {
+    fn refusal_at(
+        directory: &[crate::directory::DirectoryEntry],
+        records: &[crate::parameter::ParameterRecord],
+        dimension: cadmpeg_core::decode::ResourceDimension,
+        operation: &str,
+    ) -> cadmpeg_core::CodecError {
         use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let mut policy = DecodePolicy::service();
@@ -677,24 +729,30 @@ mod tests {
     fn fem_directory_scan_refuses_before_filtering_a_non_fem_entry() {
         use crate::graph::ParameterResolver;
         use crate::test_support::directory_target;
-        use cadmpeg_core::decode::{ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
 
         let directory = [directory_target(1, 116)];
-        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "iges FEM directory scan", |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            crate::test_support::with_policy_context(&[], &policy, |ctx| {
-                let resolver = ParameterResolver::new(&[], ctx)?;
-                super::build(&directory, &[], &resolver, ctx)
-            })
-        });
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "iges FEM directory scan",
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                    let resolver = ParameterResolver::new(&[], ctx)?;
+                    super::build(&directory, &[], &resolver, ctx)
+                })
+            },
+        );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "iges FEM directory scan"
                 && limit.used == 0 && limit.additional == 1));
         crate::test_support::with_service_context(&[], |ctx| {
-            let resolver = ParameterResolver::new(&[], ctx).unwrap();
-            assert!(super::build(&directory, &[], &resolver, ctx).unwrap().is_empty());
+            let resolver = ParameterResolver::new(&[], ctx).expect("empty parameter resolver");
+            assert!(super::build(&directory, &[], &resolver, ctx)
+                .expect("non-FEM directory entry")
+                .is_empty());
         });
     }
 
@@ -709,7 +767,12 @@ mod tests {
         let directory = [directory_target(1, 134), directory_target(3, 136)];
         let element = integer_record(3, &[136, 1, 1, 1, 0]);
         let records = [element];
-        let result = refusal_at(&directory, &records, ResourceDimension::CollectionItems, "iges_fem_element_nodes");
+        let result = refusal_at(
+            &directory,
+            &records,
+            ResourceDimension::CollectionItems,
+            "iges_fem_element_nodes",
+        );
         assert!(matches!(
             result,
             CodecError::ResourceLimit(limit)
@@ -741,7 +804,12 @@ mod tests {
         let directory = [directory_target(1, 138)];
         let displacement = integer_record(1, &[138, 1, 0, 1, 1, 0, 1, 2, 3, 4, 5, 6]);
         let records = [displacement];
-        let result = refusal_at(&directory, &records, ResourceDimension::CollectionItems, "iges FEM rotations");
+        let result = refusal_at(
+            &directory,
+            &records,
+            ResourceDimension::CollectionItems,
+            "iges FEM rotations",
+        );
         assert!(matches!(
             result,
             CodecError::ResourceLimit(limit)
@@ -771,7 +839,12 @@ mod tests {
         use cadmpeg_core::CodecError;
 
         let directory = [directory_target(1, 134)];
-        let result = refusal_at(&directory, &[], ResourceDimension::RetainedBytes, "iges FEM entity id");
+        let result = refusal_at(
+            &directory,
+            &[],
+            ResourceDimension::RetainedBytes,
+            "iges FEM entity id",
+        );
         assert!(matches!(
             result,
             CodecError::ResourceLimit(limit)
@@ -813,7 +886,12 @@ mod tests {
         .collect();
         let element = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), 4, tokens, Vec::new());
         let records = [element];
-        let result = refusal_at(&directory, &records, ResourceDimension::RetainedBytes, "iges FEM parameter string");
+        let result = refusal_at(
+            &directory,
+            &records,
+            ResourceDimension::RetainedBytes,
+            "iges FEM parameter string",
+        );
         assert!(matches!(
             result,
             CodecError::ResourceLimit(limit)
@@ -843,7 +921,12 @@ mod tests {
         use cadmpeg_core::CodecError;
 
         let directory = [directory_target(1, 134)];
-        let result = refusal_at(&directory, &[], ResourceDimension::CollectionItems, "iges FEM native entities");
+        let result = refusal_at(
+            &directory,
+            &[],
+            ResourceDimension::CollectionItems,
+            "iges FEM native entities",
+        );
         assert!(matches!(
             result,
             CodecError::ResourceLimit(limit)
