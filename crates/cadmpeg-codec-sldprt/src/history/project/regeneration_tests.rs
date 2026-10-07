@@ -238,17 +238,16 @@ fn projected_dependencies_refuse_collection_limit() {
         cadmpeg_core::nonblank_literal!("Dependency"),
         "2".to_owned(),
     );
-    let source = HashMap::from([(
-        "2".to_owned(),
-        FeatureId::mint("sldprt:model:feature#0:2").unwrap(),
-    )]);
+    let dependency = FeatureId::mint("sldprt:model:feature#0:2").unwrap();
+    let owner = FeatureId::mint("sldprt:model:feature#0:1").unwrap();
+    let source = HashMap::from([("2", &dependency)]);
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(b"dependencies", &arena, &policy)
             .unwrap();
-    let error = project_feature_dependencies(&ctx, &consumer, &source)
+    let error = project_feature_dependencies(&ctx, &consumer, &owner, &source)
         .err()
         .unwrap();
     assert!(matches!(

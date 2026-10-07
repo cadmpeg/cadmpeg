@@ -428,7 +428,7 @@ impl DecodeContext<'_> {
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         if !kept {
-            self.admit_tree_mutation::<K, V>(len, operation)?;
+            self.admit_tree_removal_work::<K, V>(len, operation)?;
         }
         Ok(kept)
     }
@@ -803,16 +803,13 @@ mod tests {
         else {
             panic!("refusal")
         };
-        // Two visits per tree, and one removal per tree over a root and a new root.
+        // Two visits per tree, and one removal per tree shifting its single leaf.
         let node_bytes = |slot: usize| {
             crate::decode::u64_from_index(
                 11 * slot + 16 * std::mem::size_of::<usize>() + 2 * std::mem::align_of::<usize>(),
             )
         };
-        assert_eq!(
-            limit.used,
-            2 + 2 + 4 * 2 * node_bytes(2) + 4 * 2 * node_bytes(1)
-        );
+        assert_eq!(limit.used, 2 + 2 + node_bytes(2) + node_bytes(1));
     }
 
     #[test]

@@ -40,9 +40,10 @@ pub(super) fn admit(
         }
         if let Some((index, actual, expected_units)) =
             crate::resolved_features::names::first_object_name_value_mismatch(
+                ctx,
                 &lane.native_payload,
                 &lane.names,
-            )
+            )?
         {
             let characters = || {
                 let units = ctx
@@ -125,22 +126,21 @@ pub(super) fn admit(
     } = expected_lanes_charged(ctx, native)?;
     for (lane, expected_lane) in expected {
         if !crate::resolved_features::scalars::scalar_indices_match(
+            ctx,
             &lane.scalars,
             &expected_lane.scalars,
-        ) {
-            let mismatch = ctx
-                .admit_iter(&lane.scalars[..], "scan SLDPRT admit values")
-                .map_err(cadmpeg_core::CodecError::from)?
-                .zip(
-                    ctx.admit_iter(&expected_lane.scalars, "scan SLDPRT expected lane scalars")
-                        .map_err(cadmpeg_core::CodecError::from)?,
-                )
-                .find(|(actual, expected)| {
-                    !crate::resolved_features::scalars::scalar_indices_match(
+        )? {
+            let mismatch = ctx.find_by(
+                lane.scalars.iter().zip(&expected_lane.scalars),
+                |(actual, expected)| {
+                    Ok(!crate::resolved_features::scalars::scalar_indices_match(
+                        ctx,
                         std::slice::from_ref(actual),
                         std::slice::from_ref(expected),
-                    )
-                });
+                    )?)
+                },
+                "scan SLDPRT expected lane scalars",
+            )?;
             return match mismatch {
                 Some((actual, expected)) => Err(cadmpeg_ir::NativeConvertError::InvalidOwner(ctx.format_retained(format_args!(
                         "SolidWorks feature-input scalar index does not match its native payload: {actual:?} != {expected:?}"

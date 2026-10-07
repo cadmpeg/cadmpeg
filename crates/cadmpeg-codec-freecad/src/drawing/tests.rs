@@ -87,23 +87,66 @@ fn drawing_native_identity_refuses_at_retained_limit() {
 
 #[test]
 fn drawing_model_identity_refuses_at_retained_limit() {
-    let mut record = resource_drawing_record();
-    // The identity text outweighs the lookup table, so the table's growth, which peaks at
-    // twice the table bound while the new table is filled, is admitted before the text.
-    record.object = format!("fcstd:native:object#{}", "P".repeat(256));
-    let lookup = 4 * std::mem::size_of::<(&str, cadmpeg_ir::drawings::DrawingId)>() + 35;
-    assert!(crate::native::model_id("drawing", &record.object, "entity").len() > lookup);
-    // Temporary identity lookup slots and text use the materialized budget.
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
-        lookup + crate::native::model_id("drawing", &record.object, "entity").len(),
-    ) - 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(
-        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD model identity" && limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    let record = resource_drawing_record();
+    let identity = crate::native::model_id("drawing", &record.object, "entity").len();
+    // The neutral identity lookup reserves one entry up front: a four-bucket
+    // table of `(&str, DrawingId)` elements, 15 bytes of group padding
+    // (alignment 16), four control bytes and a 16-byte trailer. It is held as a
+    // transient reservation and then kept as scoped storage; the retained
+    // growth equals the transient bound, so the identity text that follows
+    // sees exactly the table behind it.
+    let lookup = 4 * std::mem::size_of::<(&str, cadmpeg_ir::drawings::DrawingId)>() + 15 + 4 + 16;
+    let dimension = cadmpeg_core::decode::ResourceDimension::MaterializedBytes;
+    let refusal = |materialized: usize| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(materialized);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        match super::transfer_neutral(
+            &ctx,
+            &mut cadmpeg_ir::document::Model::default(),
+            std::slice::from_ref(&record),
+            &[],
+        ) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => limit,
+            other => panic!("expected a resource refusal, got {other:?}"),
+        }
+    };
+
+    // One byte under the table: its transient reservation is refused with
+    // nothing yet charged.
+    let limit = refusal(lookup - 1);
+    assert_eq!(
+        (
+            limit.dimension,
+            limit.operation,
+            limit.used,
+            limit.additional
+        ),
+        (
+            dimension,
+            "fcstd drawing neutral identities",
+            0,
+            cadmpeg_core::decode::u64_from_index(lookup)
+        )
+    );
+    // Exactly the table: growth fits, and the identity text is the first
+    // charge past it.
+    let limit = refusal(lookup + identity - 1);
+    assert_eq!(
+        (
+            limit.dimension,
+            limit.operation,
+            limit.used,
+            limit.additional
+        ),
+        (
+            dimension,
+            "FreeCAD model identity",
+            cadmpeg_core::decode::u64_from_index(lookup),
+            cadmpeg_core::decode::u64_from_index(identity)
+        )
     );
 }
 
