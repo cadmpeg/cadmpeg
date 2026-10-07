@@ -702,12 +702,7 @@ impl EdgeRow {
     }
 
     pub(crate) fn normalize_handles(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-        ctx.charge_work(
-            u64_from_index(self.handles.len()),
-            "catia_mesh_gauge_normalize_handles",
-        )?;
-        self.handles.fill(0);
-        Ok(())
+        ctx.fill(&mut self.handles, 0, "catia_mesh_gauge_normalize_handles")
     }
 
     pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {

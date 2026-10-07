@@ -11366,7 +11366,7 @@ impl StandardLinePairConstraint {
     ) -> Result<bool, CodecError> {
         for (role, pair) in ctx
             .admit_iter(&self.edge_roles, "catia_standard_line_valid_roles")?
-            .zip(ctx.admit_iter(pairs.pairs(), "catia_standard_line_valid_pairs")?)
+            .zip(pairs.pairs())
         {
             if *role == EdgeLineRole::NotLine {
                 continue;
