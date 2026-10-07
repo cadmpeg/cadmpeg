@@ -28,3 +28,26 @@ fn history_empty_string_joins_admit_each_source_step() {
         result
     });
 }
+
+#[test]
+fn history_projection_keyed_work_refusals_preserve_the_caller_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let records = [super::record(1, 11, &[], &[40, 40]), super::record(2, 12, &[40, 40], &[41])];
+    for operation in ["Rhino history producers", "Rhino history producer lookup", "Rhino history seen dependencies", "Rhino history value occurrences", "Rhino history value text"] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = crate::history::project(&ctx, &records, None, &mut cadmpeg_ir::document::CadIr::empty(), &mut crate::loss::Diagnostics::new());
+            match result {
+                Ok(value) => Ok(value),
+                Err(crate::history::ProjectionError::Codec(error)) => {
+                    if let cadmpeg_core::CodecError::ResourceLimit(limit) = &error { assert_eq!(ctx.resource_refusal().as_ref(), Some(limit)); }
+                    Err(error)
+                }
+                Err(error) => panic!("valid history records failed admission: {error:?}"),
+            }
+        });
+    }
+}

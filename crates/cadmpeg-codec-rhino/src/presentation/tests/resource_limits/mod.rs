@@ -10,7 +10,7 @@ use crate::loss::Diagnostics;
 use crate::presentation::TextStyleParseInput;
 use crate::settings;
 use crate::wire::Uuid;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 #[test]
@@ -256,15 +256,16 @@ fn push_light_refusal(
     let mut workspace = ctx
         .reserve_scoped(0, "Rhino light identity workspace")
         .expect("empty workspace admitted");
-    let mut indexes = HashMap::new();
+    let mut indexes = HashSet::new();
     if duplicate {
-        indexes.insert(Uuid::from_canonical([0x55; 16]), 0);
+        indexes.insert(Uuid::from_canonical([0x55; 16]));
     }
     crate::presentation::push_light(&ctx, &mut workspace, &mut Vec::new(), &mut indexes, light)
         .expect_err("light collection or identity exceeds limit")
 }
 
 #[test]
+// The identity set admits its buckets and controls; it stores no positions.
 fn light_identity_workspace_refuses_materialized_limit() {
     assert!(
         matches!(push_light_refusal(u64::MAX, 0, u64::MAX, false), cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino light identity index")

@@ -2,7 +2,7 @@
 //! Rhino appearance, grouping, and lighting presentation records.
 
 use crate::loss::Diagnostics;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::ops::Range;
 
@@ -1359,13 +1359,7 @@ fn first_user_string_records(
     if let Some(index) = ctx.find_map(
         (attributes)[..].iter().enumerate(),
         |(index, value)| -> Result<_, CodecError> {
-            Ok(ctx
-                .eq_ignore_ascii_case(
-                    value.key.as_str(),
-                    "$temp_object$",
-                    "Rhino temporary user string key case equality",
-                )?
-                .then_some(index))
+            Ok(value.key.eq_ignore_ascii_case("$temp_object$").then_some(index))
         },
         "Rhino first user string records traversal",
     )? {
@@ -1824,32 +1818,28 @@ fn classify_rdk_material_payload(
             ))
         })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino RDK root search")?;
     if root.tag_name().name() != "xml" {
         return Err(FramingError::structural(
             payload_range.start,
             "legacy RDK XML root is not xml",
         ));
     }
-    let render_data = root
-        .children()
-        .find(|node| node.is_element() && node.tag_name().name() == "render-content-manager-data")
+    let render_data = ctx.find_by(root.children(), |node| Ok(node.is_element() && node.tag_name().name() == "render-content-manager-data"), "Rhino RDK render data search")?
         .ok_or_else(|| {
             FramingError::structural(
                 payload_range.start,
                 "legacy RDK XML has no render-content-manager-data element",
             )
         })?;
-    let material = render_data
-        .children()
-        .find(|node| node.is_element() && node.tag_name().name() == "material")
+    let material = ctx.find_by(render_data.children(), |node| Ok(node.is_element() && node.tag_name().name() == "material"), "Rhino RDK material search")?
         .ok_or_else(|| {
             FramingError::structural(
                 payload_range.start,
                 "legacy RDK XML has no material element",
             )
         })?;
-    let instance_id = material.attribute("instance-id").ok_or_else(|| {
+    let instance_id = ctx.find_map(material.attributes(), |attribute| Ok((attribute.name() == "instance-id").then_some(attribute.value())), "Rhino RDK instance attribute search")?.ok_or_else(|| {
         FramingError::structural(
             payload_range.start,
             "legacy RDK material has no instance-id attribute",
@@ -1871,27 +1861,18 @@ fn legacy_rdk_material_instance_id(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<Option<Uuid>, CodecError> {
-    for value in ctx
-        .admit_iter(
-            &(userdata)[..],
-            "Rhino legacy rdk material instance id traversal",
-        )?
-        .filter_map(UserdataDescriptor::known)
-        .rev()
-    {
-        if value.class_uuid != RDK_CLASS
-            || value.item_uuid != RDK_USERDATA
-            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
-        {
-            continue;
+    ctx.find_map(userdata.iter().rev(), |raw| {
+        let Some(value) = raw.known() else { return Ok(None); };
+        if value.class_uuid != RDK_CLASS || value.item_uuid != RDK_USERDATA
+            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION)) {
+            return Ok(None);
         }
         match parse_legacy_rdk_material_instance_id(ctx, data, value.payload_range.clone()) {
-            Ok(Some(instance)) => return Ok(Some(instance)),
-            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
-            Ok(None) | Err(_) => {}
+            Ok(value) => Ok(value),
+            Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
+            Err(_) => Ok(None),
         }
-    }
-    Ok(None)
+    }, "Rhino legacy rdk material instance id traversal")
 }
 
 fn rdk_material_userdata_requires_opaque(
@@ -1899,26 +1880,18 @@ fn rdk_material_userdata_requires_opaque(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<bool, CodecError> {
-    for value in ctx
-        .admit_iter(
-            &(userdata)[..],
-            "Rhino rdk material userdata requires opaque traversal",
-        )?
-        .filter_map(UserdataDescriptor::known)
-    {
-        if value.class_uuid != RDK_CLASS
-            || value.item_uuid != RDK_USERDATA
-            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION))
-        {
-            continue;
+    ctx.any_by(userdata, |raw| {
+        let Some(value) = raw.known() else { return Ok(false); };
+        if value.class_uuid != RDK_CLASS || value.item_uuid != RDK_USERDATA
+            || (value.application_uuid.is_some() && value.application_uuid != Some(RDK_APPLICATION)) {
+            return Ok(false);
         }
         match classify_rdk_material_payload(ctx, data, value.payload_range.clone()) {
-            Ok(RdkMaterialPayload::Compatibility(_)) => {}
-            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
-            Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => return Ok(true),
+            Ok(RdkMaterialPayload::Compatibility(_)) => Ok(false),
+            Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
+            Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => Ok(true),
         }
-    }
-    Ok(false)
+    }, "Rhino rdk material userdata requires opaque traversal")
 }
 
 fn wide_string(
@@ -3050,22 +3023,16 @@ fn push_light(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     workspace: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     lights: &mut Vec<LightRecord>,
-    indexes: &mut HashMap<Uuid, usize>,
+    identities: &mut HashSet<Uuid>,
     mut light: LightRecord,
 ) -> Result<(), CodecError> {
     let source_id = parse_uuid_text(ctx, &light.source_uuid)?
         .ok_or_else(|| CodecError::malformed("light source UUID is invalid"))?;
-    if !source_id.is_nil() {
-        if ctx.contains_key_hash_map(indexes, &source_id, "Rhino light identity lookup")? {
-            light.id = ctx.format_retained(
-                format_args!("{}-offset-{}", light.id, light.source_offset),
-                "Rhino duplicate light ID",
-            )?;
-        } else {
-            workspace.with_storage(|| ctx.insert_hash_map(
-                indexes, source_id, lights.len(), "Rhino light identity index",
-            ))?;
-        }
+    if !source_id.is_nil() && !workspace.with_storage(|| ctx.insert_hash_set(identities, source_id, "Rhino light identity index"))? {
+        light.id = ctx.format_retained(
+            format_args!("{}-offset-{}", light.id, light.source_offset),
+            "Rhino duplicate light ID",
+        )?;
     }
     ctx.reserve_vec(lights, 1, "Rhino lights")?;
     lights.push(light);
@@ -5119,7 +5086,7 @@ pub(crate) fn install(
     let mut groups = Vec::new();
     let mut materials = Vec::new();
     let mut lights = Vec::new();
-    let mut light_indexes = HashMap::new();
+    let mut light_identities = HashSet::new();
     let mut light_index_workspace = ctx.reserve_scoped(0, "Rhino light identity workspace")?;
     let mut linetypes = Vec::new();
     let mut hatch_patterns = Vec::new();
@@ -5134,6 +5101,7 @@ pub(crate) fn install(
     let mut object_count_workspace = ctx.reserve_scoped(0, "Rhino object identity workspace")?;
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
+    let mut apple_runtime = None;
     for object in ctx.admit_iter(&scan.objects[..], "Rhino install traversal")? {
         if let Some(identity) = object.identity() {
             let count = object_count_workspace.with_storage(|| ctx.entry_hash_map(
@@ -5192,15 +5160,11 @@ pub(crate) fn install(
                             record.range.start
                         ))?;
                     }
-                    let physically_based = if let Some(value) = userdata
-                        .iter()
-                        .filter_map(UserdataDescriptor::known)
-                        .find(|value| {
-                            value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
-                                && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
-                                && (value.application_uuid.is_none()
-                                    || value.application_uuid == Some(OPENNURBS6_APPLICATION))
-                        }) {
+                    let physically_based = if let Some(value) = ctx.find_map(&userdata, |raw| {
+                        Ok(raw.known().filter(|value| value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                            && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                            && (value.application_uuid.is_none() || value.application_uuid == Some(OPENNURBS6_APPLICATION))))
+                    }, "Rhino PBR userdata search")? {
                         match parse_physically_based_material(
                             ctx,
                             scan.data,
@@ -5333,7 +5297,7 @@ pub(crate) fn install(
                             ctx,
                             &mut light_index_workspace,
                             &mut lights,
-                            &mut light_indexes,
+                            &mut light_identities,
                             light,
                         )?;
                         parsed = true;
@@ -5423,14 +5387,7 @@ pub(crate) fn install(
                         scan.archive,
                         V5_DIMSTYLE,
                     ))? {
-                        let extra =
-                            userdata
-                                .iter()
-                                .filter_map(UserdataDescriptor::known)
-                                .find(|value| {
-                                    value.class_uuid == DIMSTYLE_EXTRA
-                                        && value.item_uuid == DIMSTYLE_EXTRA
-                                });
+                        let extra = ctx.find_map(&userdata, |raw| Ok(raw.known().filter(|value| value.class_uuid == DIMSTYLE_EXTRA && value.item_uuid == DIMSTYLE_EXTRA)), "Rhino dimension style userdata search")?;
                         let extra = match extra {
                             Some(value) => match parse_v5_dimension_style_extra(
                                 ctx,
@@ -5585,18 +5542,17 @@ pub(crate) fn install(
                             range,
                             archive: scan.archive,
                             writer_version: scan.metadata.properties.writer_version,
-                            apple_runtime: scan
-                                .metadata
-                                .properties
-                                .application
-                                .as_ref()
-                                .is_some_and(|application| {
-                                    application
-                                        .name
-                                        .as_bytes()
-                                        .windows(3)
-                                        .any(|part| part.eq_ignore_ascii_case(b"mac"))
-                                }),
+                            apple_runtime: match apple_runtime {
+                                Some(value) => value,
+                                None => {
+                                    let value = match &scan.metadata.properties.application {
+                                        Some(application) => ctx.any_by(application.name.as_bytes().windows(3), |part| Ok(part.eq_ignore_ascii_case(b"mac")), "Rhino font application search")?,
+                                        None => false,
+                                    };
+                                    apple_runtime = Some(value);
+                                    value
+                                }
+                            },
                             source_offset: record.range.start,
                         },
                         &mut losses,
@@ -5627,6 +5583,12 @@ pub(crate) fn install(
             }
         }
     }
+    let (group_index_counts, _group_index_workspace) = crate::settings::index_occurrences(
+        ctx,
+        &groups,
+        |group| group.archive_index,
+        "Rhino group index counts",
+    )?;
     let mut group_members = HashMap::<i32, Vec<String>>::new();
     let mut group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
     for (source_order, object) in ctx
@@ -5638,6 +5600,8 @@ pub(crate) fn install(
         };
         if let Some(attributes) = object.attributes.parsed() {
             for group in ctx.admit_iter(&attributes.groups[..], "Rhino install traversal")? {
+                let unique = ctx.binary_search_by(&group_index_counts, |(index, _)| Ok(index.cmp(group)), "Rhino group membership index lookup")?.ok().is_some_and(|index| group_index_counts[index].1 == 1);
+                if !unique { continue; }
                 admit_group_member(
                     ctx,
                     &mut group_member_workspace,
@@ -5661,7 +5625,7 @@ pub(crate) fn install(
                         ctx,
                         &mut light_index_workspace,
                         &mut lights,
-                        &mut light_indexes,
+                        &mut light_identities,
                         light,
                     )?,
                     Err(FramingError::Resource(limit)) => {
@@ -5831,12 +5795,6 @@ pub(crate) fn install(
             per_viewport_settings,
         });
     }
-    let (group_index_counts, _group_index_workspace) = crate::settings::index_occurrences(
-        ctx,
-        &groups,
-        |group| group.archive_index,
-        "Rhino group index counts",
-    )?;
     for (index, count) in ctx.admit_iter(&group_index_counts[..], "Rhino install traversal")? {
         if *count > 1 {
             push_presentation_loss(
