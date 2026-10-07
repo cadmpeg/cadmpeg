@@ -1014,11 +1014,14 @@ fn body_selection_lookup_and_parsing_refusals_reach_named_operations() {
                     &blocks,
                     &BTreeMap::new(),
                     "nx:om-object-index#7".to_string(),
-                )?.into_selection(ctx)
+                )?
+                .into_selection(ctx)
             },
         );
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
     }
 }
 
@@ -1026,15 +1029,27 @@ fn body_selection_lookup_and_parsing_refusals_reach_named_operations() {
 fn boolean_participant_stops_at_first_non_offset_body() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let selection = BodySelection::local(
-        vec!["nx:om-body-object#7".to_string(), "nx:om-data-blocks-3:block#7".to_string()],
+        vec![
+            "nx:om-body-object#7".to_string(),
+            "nx:om-data-blocks-3:block#7".to_string(),
+        ],
         "nx:om-object-indices#7,8".to_string(),
         &cadmpeg_test_support::service_decode_context(),
-    ).expect("selection admission").expect("local selection");
+    )
+    .expect("selection admission")
+    .expect("local selection");
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(boolean_participant_writer(
-        &ctx, &selection, 7, None, &BTreeMap::new(), &BodyWriterHistory::default(),
-    ).expect("only the first body is visited").is_none());
+        &ctx,
+        &selection,
+        7,
+        None,
+        &BTreeMap::new(),
+        &BodyWriterHistory::default(),
+    )
+    .expect("only the first body is visited")
+    .is_none());
 }
