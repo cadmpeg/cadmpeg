@@ -728,12 +728,16 @@ fn singular_reference_link_keeps_one_selector_and_rejects_two() {
         }
     };
     let one = property(vec!["Edge1".into()]);
-    assert!(matches!(
-        super::singular_reference_link(&one),
-        Some((_, Some("Edge1")))
-    ));
-    let two = property(vec!["Edge1 Edge2".into()]);
-    assert!(super::singular_reference_link(&two).is_none());
+    crate::test_support::with_service_context(&[], |ctx| {
+        assert!(matches!(
+            super::singular_reference_link(ctx, &one).expect("link admission"),
+            Some((_, Some("Edge1")))
+        ));
+        let two = property(vec!["Edge1 Edge2".into()]);
+        assert!(super::singular_reference_link(ctx, &two)
+            .expect("link admission")
+            .is_none());
+    });
 }
 
 #[test]
@@ -877,17 +881,17 @@ fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
     let text = property("<Constrain Type=\"21\" MetaData=\"{&quot;text&quot;:&quot;label&quot;,&quot;font&quot;:&quot;mono&quot;}\" ElementIds=\"0\" ElementPositions=\"0\"/>");
     for operation in ["fcstd constraint text", "fcstd constraint font"] {
         crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
-            super::parse_constraints(ctx, &object, &[&text], &sketch, &entities)
+            parse_constraints(ctx, &object, &[&text], &sketch, &entities)
         });
     }
     crate::test_support::assert_collection_refusal_at(
         &[],
         "fcstd constraint locus copies",
-        |ctx| super::parse_constraints(ctx, &object, &[&text], &sketch, &entities),
+        |ctx| parse_constraints(ctx, &object, &[&text], &sketch, &entities),
     );
     let error = crate::test_support::materialized_refusal_at(
         "fcstd constraint text metadata parse",
-        |ctx| super::parse_constraints(ctx, &object, &[&text], &sketch, &entities),
+        |ctx| parse_constraints(ctx, &object, &[&text], &sketch, &entities),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -897,13 +901,13 @@ fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
     crate::test_support::assert_collection_refusal_at(
         &[],
         "fcstd native constraint entities",
-        |ctx| super::parse_constraints(ctx, &object, &[&native], &sketch, &entities),
+        |ctx| parse_constraints(ctx, &object, &[&native], &sketch, &entities),
     );
     let alignment = property("<Constrain Type=\"15\" InternalAlignmentType=\"1\" First=\"0\" FirstPos=\"0\" Second=\"0\" SecondPos=\"1\"/>");
     crate::test_support::assert_retained_refusal_at(
         &[],
         "fcstd constraint entity identity",
-        |ctx| super::parse_constraints(ctx, &object, &[&alignment], &sketch, &entities),
+        |ctx| parse_constraints(ctx, &object, &[&alignment], &sketch, &entities),
     );
 }
 
@@ -1072,18 +1076,19 @@ fn design_constraint_parameter_admissions_refuse_at_matching_limits() {
     };
     let sketch = cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#one")
         .expect("valid sketch identity");
-    for operation in [
-        "fcstd constraint expression path",
-        "fcstd constraint parameter name",
-    ] {
+    for operation in ["fcstd constraint parameter name"] {
         crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
-            super::parse_constraints(ctx, &object, &[&property], &sketch, &[])
+            parse_constraints(ctx, &object, &[&property], &sketch, &[])
         });
     }
+    let _error =
+        crate::test_support::materialized_refusal_at("fcstd constraint expression path", |ctx| {
+            parse_constraints(ctx, &object, &[&property], &sketch, &[])
+        });
     crate::test_support::assert_collection_refusal_at(
         &[],
         "fcstd constraint parameter properties",
-        |ctx| super::parse_constraints(ctx, &object, &[&property], &sketch, &[]),
+        |ctx| parse_constraints(ctx, &object, &[&property], &sketch, &[]),
     );
 }
 
@@ -1122,7 +1127,7 @@ fn design_native_operand_position_refuses_at_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
         &[],
         "fcstd native operand position kind",
-        |ctx| super::parse_constraints(ctx, &object, &[&property], &sketch, &[]),
+        |ctx| parse_constraints(ctx, &object, &[&property], &sketch, &[]),
     );
 }
 
@@ -1306,7 +1311,7 @@ fn design_vector_list_refuses_at_collection_limit() {
 }
 
 #[test]
-fn design_body_output_prefix_refuses_at_retained_limit() {
+fn design_body_output_prefix_refuses_at_materialized_limit() {
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#Body".into(),
@@ -1340,10 +1345,8 @@ fn design_body_output_prefix_refuses_at_retained_limit() {
         entry: "shape.brp".into(),
         payload: crate::brep::ShapePayload::Empty,
     };
-    crate::test_support::assert_retained_refusal_at(
-        &[],
-        "fcstd design body output prefix",
-        |ctx| {
+    let _error =
+        crate::test_support::materialized_refusal_at("fcstd design body output prefix", |ctx| {
             let mut ir = cadmpeg_ir::document::CadIr::empty();
             super::transfer(
                 ctx,
@@ -1354,8 +1357,7 @@ fn design_body_output_prefix_refuses_at_retained_limit() {
                 &[],
                 None,
             )
-        },
-    );
+        });
 }
 
 #[test]
@@ -1653,6 +1655,7 @@ fn design_counted_record_diagnostic_refuses_at_retained_limit() {
     let xml = roxmltree::Document::parse("<Property/>").expect("valid XML");
     crate::test_support::assert_retained_refusal_at(&[], "fcstd design diagnostic", |ctx| {
         super::direct_counted_records(ctx, &xml, "GeometryList", "Geometry", "geometry-property")
+            .map(|(records, _storage)| records)
     });
 }
 
@@ -1746,4 +1749,24 @@ fn extrusion_definition(result: &cadmpeg_ir::codec::DecodeResult) -> &FeatureDef
         .expect("extrusion feature")
         .evaluation
         .definition()
+}
+
+fn parse_constraints(
+    ctx: &super::DecodeContext<'_>,
+    object: &super::ObjectRecord,
+    properties: &[&super::PropertyRecord],
+    sketch: &super::SketchId,
+    entities: &[super::SketchEntity],
+) -> Result<(Vec<super::SketchConstraint>, Vec<super::DesignParameter>), super::CodecError> {
+    let source = super::constraint_xml(ctx, properties)?;
+    super::parse_constraints(
+        ctx,
+        object,
+        properties,
+        sketch,
+        entities,
+        source
+            .as_ref()
+            .map(|(property, tree)| (*property, tree.document())),
+    )
 }

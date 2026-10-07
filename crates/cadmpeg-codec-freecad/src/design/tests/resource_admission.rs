@@ -295,3 +295,73 @@ fn design_boolean_scalar_propagates_tree_refusal() {
     assert_eq!(limit.operation, "FreeCAD direct property XML tree");
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
+
+#[test]
+fn design_duplicate_property_search_stops_at_second_match() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let property = super::scalar_property("owner", "Refine", "1");
+    let after = "test after duplicate property search";
+    let run = |count| {
+        let properties: Vec<_> = (0..count).map(|_| &property).collect();
+        crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], after, |ctx| {
+            assert!(matches!(
+                super::super::unique_named_property(ctx, &properties, "Refine")?,
+                super::super::NamedProperty::Duplicate
+            ));
+            ctx.copy_retained_text("probe", after)
+        })
+    };
+    let small = run(2);
+    let large = run(1000);
+    let (
+        cadmpeg_core::CodecError::ResourceLimit(small),
+        cadmpeg_core::CodecError::ResourceLimit(large),
+    ) = (small, large)
+    else {
+        panic!("work refusal required");
+    };
+    assert_eq!(small.used, large.used);
+    assert_eq!(small.additional, large.additional);
+}
+
+#[test]
+fn design_operation_parameters_require_numeric_scalar_carriers() {
+    let object = crate::native::ObjectRecord {
+        identity: crate::native::object_identity::ObjectIdentity::try_new(
+            "fcstd:native:object#Feature".into(),
+            "Feature".into(),
+        )
+        .expect("object identity"),
+        type_name: "Part::Feature".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: BTreeMap::new(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let numeric = super::scalar_property(object.id(), "Length", "3");
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut parameters = Vec::new();
+        for (type_name, tag) in [
+            ("App::PropertyString", "String"),
+            ("App::PropertyBool", "Bool"),
+        ] {
+            let mut invalid = numeric.clone();
+            invalid.type_name = type_name.into();
+            invalid.xml = crate::native::RetainedXml::from_text(
+                format!("<Property><{tag} value=\"3\"/></Property>"),
+                0,
+            )
+            .expect("valid XML");
+            super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&invalid])
+                .expect("parameter projection");
+            assert!(parameters.is_empty());
+        }
+        super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&numeric])
+            .expect("numeric parameter");
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].expression, "3");
+    });
+}
