@@ -135,35 +135,17 @@ fn endpoint_agrees_with_coefficient_carrier(
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    source: (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges conic parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges conic directory index",
-        )?;
-    }
+    let (entries, records) = source;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges conic directory traversal")?
         .filter(|entry| entry.entity_type == 104 && (0..=3).contains(&entry.form))
     {
         let factor = global.length_factor_mm();

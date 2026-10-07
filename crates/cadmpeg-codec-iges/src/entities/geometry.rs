@@ -897,27 +897,18 @@ pub(crate) fn enforce_transform_depth(
         .map_or(MAX_TRANSFORM_DEPTH, |policy| {
             policy.min(MAX_TRANSFORM_DEPTH)
         });
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges transform preflight directory index",
-        )?;
-    }
-
-    for entry in directory {
+    for entry in ctx.admit_iter(directory, "iges transform preflight directory traversal")? {
         let Some(mut sequence) = u32::try_from(entry.transform)
             .ok()
             .filter(|sequence| sequence % 2 == 1)
         else {
             continue;
         };
+        let mut path_storage = ctx.reserve_scoped(0, "iges transform preflight path storage")?;
         let mut path = BTreeSet::new();
         let mut depth = 0_usize;
-        loop {
-            ctx.charge_work(1, "iges transform preflight walk")?;
+        let mut steps = std::iter::repeat(());
+        while ctx.next_charged(&mut steps, "iges transform preflight walk")?.is_some() {
             if depth >= depth_limit {
                 let requested = depth.checked_add(1).map(u64_from_index).ok_or_else(|| {
                     refuse_local_limit(
@@ -932,11 +923,11 @@ pub(crate) fn enforce_transform_depth(
                     requested,
                 ));
             }
-            if !ctx.insert_btree_set(&mut path, sequence, "iges transform preflight path")? {
+            if !path_storage.with_storage(|| ctx.insert_btree_set(&mut path, sequence, "iges transform preflight path"))? {
                 break;
             }
             depth += 1;
-            let Some(transform) = entries.get(&sequence).copied() else {
+            let Some(transform) = crate::directory::entry_by_sequence(directory, sequence, ctx)? else {
                 break;
             };
             if transform.entity_type != 124 || !matches!(transform.form, 0 | 1) {
@@ -1002,11 +993,10 @@ impl ProjectionOutcome {
         losses: &mut Vec<LossNote>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        for sequence in self.decoded {
+        for sequence in ctx.admit_iter(self.decoded, "iges merged decoded traversal")? {
             ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")?;
         }
-        ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
-        losses.extend(self.losses);
+        ctx.extend_vec(losses, self.losses, "iges merged loss slots")?;
         Ok(())
     }
 }
@@ -1027,17 +1017,11 @@ impl WireProjectionOutcome {
         wire_edges: &mut Vec<EdgeId>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        for sequence in self.decoded {
+        for sequence in ctx.admit_iter(self.decoded, "iges merged decoded traversal")? {
             ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")?;
         }
-        ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
-        losses.extend(self.losses);
-        ctx.reserve_vec(
-            wire_edges,
-            self.wire_edges.len(),
-            "iges merged wire edge slots",
-        )?;
-        wire_edges.extend(self.wire_edges);
+        ctx.extend_vec(losses, self.losses, "iges merged loss slots")?;
+        ctx.extend_vec(wire_edges, self.wire_edges, "iges merged wire edge slots")?;
         Ok(())
     }
 }
@@ -1067,31 +1051,19 @@ fn consumed_support_sequences(
     records: &BTreeMap<u32, &ParameterRecord>,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u32>, CodecError> {
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges consumed-support directory index",
-        )?;
-    }
+    let mut support_storage = ctx.reserve_scoped(0, "iges consumed-support pending transforms")?;
     let mut transform_sequences = BTreeSet::new();
-    for entry in directory {
-        if let Some(sequence) = positive_sequence(entry.transform).filter(|sequence| {
-            entries
-                .get(sequence)
-                .is_some_and(|target| target.entity_type == 124)
-        }) {
-            ctx.insert_btree_set(
+    for entry in ctx.admit_iter(directory, "iges consumed-support directory traversal")? {
+        if let Some(sequence) = positive_sequence(entry.transform) {
+            if !crate::directory::entry_by_sequence(directory, sequence, ctx)?.is_some_and(|target| target.entity_type == 124) { continue; }
+            support_storage.with_storage(|| ctx.insert_btree_set(
                 &mut transform_sequences,
                 sequence,
                 "iges consumed-support transforms",
-            )?;
+            ))?;
         }
     }
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges consumed-support directory traversal")?
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -1100,26 +1072,22 @@ fn consumed_support_sequences(
         let Some(count) = record.count(1) else {
             continue;
         };
-        for index in 0..count.min(record.parameter_end()) {
+        for index in ctx.admit_iter(0..count.min(record.parameter_end()), "iges consumed-support assembly members")? {
             if let Some(sequence) = record
                 .integer(2 + count + index)
                 .and_then(positive_sequence)
-                .filter(|sequence| {
-                    entries
-                        .get(sequence)
-                        .is_some_and(|target| target.entity_type == 124)
-                })
             {
-                ctx.insert_btree_set(
+                if !crate::directory::entry_by_sequence(directory, sequence, ctx)?.is_some_and(|target| target.entity_type == 124) { continue; }
+                support_storage.with_storage(|| ctx.insert_btree_set(
                     &mut transform_sequences,
                     sequence,
                     "iges consumed-support transforms",
-                )?;
+                ))?;
             }
         }
     }
     let mut direction_sequences = BTreeSet::new();
-    for entry in directory.iter().filter(|entry| {
+    for entry in ctx.admit_iter(directory, "iges consumed-support directory traversal")?.filter(|entry| {
         matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -1139,12 +1107,8 @@ fn consumed_support_sequences(
                 record
                     .integer(*index)
                     .and_then(positive_sequence)
-                    .filter(|sequence| {
-                        entries
-                            .get(sequence)
-                            .is_some_and(|target| target.entity_type == 123 && target.form == 0)
-                    })
             {
+                if !crate::directory::entry_by_sequence(directory, sequence, ctx)?.is_some_and(|target| target.entity_type == 123 && target.form == 0) { continue; }
                 ctx.insert_btree_set(
                     &mut direction_sequences,
                     sequence,
@@ -1156,26 +1120,22 @@ fn consumed_support_sequences(
 
     let mut consumed = direction_sequences;
     loop {
-        ctx.charge_work(1, "iges consumed-support closure traversal")?;
-        let Some(sequence) = transform_sequences.pop_first() else {
+        let Some(sequence) = ctx.next_charged(&mut std::iter::from_fn(|| transform_sequences.pop_first()), "iges consumed-support closure traversal")? else {
             break;
         };
         if !ctx.insert_btree_set(&mut consumed, sequence, "iges consumed-support closure")? {
             continue;
         }
-        let Some(entry) = entries.get(&sequence).copied() else {
+        let Some(entry) = crate::directory::entry_by_sequence(directory, sequence, ctx)? else {
             continue;
         };
-        if let Some(parent) = positive_sequence(entry.transform).filter(|parent| {
-            entries
-                .get(parent)
-                .is_some_and(|target| target.entity_type == 124)
-        }) {
-            ctx.insert_btree_set(
+        if let Some(parent) = positive_sequence(entry.transform) {
+            if !crate::directory::entry_by_sequence(directory, parent, ctx)?.is_some_and(|target| target.entity_type == 124) { continue; }
+            support_storage.with_storage(|| ctx.insert_btree_set(
                 &mut transform_sequences,
                 parent,
                 "iges consumed-support transforms",
-            )?;
+            ))?;
         }
     }
     Ok(consumed)
@@ -1576,7 +1536,9 @@ pub(crate) fn project_geometry(
         ) && crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
     };
     let mut losses = Vec::new();
-    for entry in directory {
+    let mut needs_admitted_copy = false;
+    for entry in ctx.admit_iter(directory, "iges geometry directory admission")? {
+        needs_admitted_copy |= !admitted(entry);
         let Some(use_flag) = entry.status.use_flag(global_table) else {
             super::push_entity_loss(
                 ctx,
@@ -1611,39 +1573,42 @@ pub(crate) fn project_geometry(
             )?;
         }
     }
-    let admitted_directory = if directory.iter().any(|entry| !admitted(entry)) {
-        let admitted_count = directory.iter().filter(|entry| admitted(entry)).count();
-        let mut admitted_entries =
-            ctx.collection_vec(admitted_count, "iges admitted geometry directory")?;
-        admitted_entries.extend(directory.iter().filter(|entry| admitted(entry)).cloned());
+    let mut admitted_storage = ctx.reserve_scoped(0, "iges admitted directory storage")?;
+    let admitted_directory = if needs_admitted_copy {
+        let mut admitted_entries = Vec::new();
+        for entry in ctx.admit_iter(directory, "iges admitted directory traversal")?.filter(|entry| admitted(entry)) {
+            ctx.push_scoped_vec(&mut admitted_storage, &mut admitted_entries, *entry, "iges admitted geometry directory")?;
+        }
         Some(admitted_entries)
     } else {
         None
     };
     let directory = admitted_directory.as_deref().unwrap_or(directory);
+    let mut lookup_storage = ctx.reserve_scoped(0, "iges geometry source lookup storage")?;
     let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
+    for record in ctx.admit_iter(parameters, "iges geometry parameter traversal")? {
+        lookup_storage.with_storage(|| ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
             "iges geometry parameter index",
-        )?;
+        ))?;
     }
     let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
+    for entry in ctx.admit_iter(directory, "iges geometry directory index traversal")? {
+        lookup_storage.with_storage(|| ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
             "iges geometry directory index",
-        )?;
+        ))?;
     }
     let mut decoded = BTreeSet::new();
     let mut boundary_vertex_derivations = Vec::new();
     let consumed = consumed_support_sequences(directory, &records, ctx)?;
+    let mut location_storage = ctx.reserve_scoped(0, "iges analytic location storage")?;
     let mut analytic_surface_locations = BTreeSet::new();
-    for entry in directory.iter().filter(|entry| {
+    for entry in ctx.admit_iter(directory, "iges geometry family traversal")?.filter(|entry| {
         matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
     }) {
         if let Some(sequence) = records
@@ -1651,17 +1616,16 @@ pub(crate) fn project_geometry(
             .and_then(|record| record.integer(1))
             .and_then(|value| u32::try_from(value).ok())
         {
-            ctx.insert_btree_set(
+            location_storage.with_storage(|| ctx.insert_btree_set(
                 &mut analytic_surface_locations,
                 sequence,
                 "iges analytic-surface locations",
-            )?;
+            ))?;
         }
     }
     let mut free_vertices = Vec::new();
     let mut wire_edges = Vec::new();
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges geometry family traversal")?
         .filter(|entry| entry.entity_type == 123 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -1714,8 +1678,7 @@ pub(crate) fn project_geometry(
             )?;
         }
     }
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges geometry family traversal")?
         .filter(|entry| entry.entity_type == 100 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
@@ -1981,8 +1944,7 @@ pub(crate) fn project_geometry(
             "iges circle decoded sequences",
         )?;
     }
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges geometry family traversal")?
         .filter(|entry| entry.entity_type == 116 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
@@ -2061,8 +2023,7 @@ pub(crate) fn project_geometry(
         }
         ctx.insert_btree_set(&mut decoded, entry.sequence, "iges point decoded sequences")?;
     }
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges geometry family traversal")?
         .filter(|entry| entry.entity_type == 125 && (0..=4).contains(&entry.form))
     {
         let factor = global.length_factor_mm();
@@ -2184,8 +2145,7 @@ pub(crate) fn project_geometry(
         }
         ctx.insert_btree_set(&mut decoded, entry.sequence, "iges flash decoded sequences")?;
     }
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges geometry family traversal")?
         .filter(|entry| entry.entity_type == 110 && (0..=2).contains(&entry.form))
     {
         let factor = global.length_factor_mm();
@@ -2334,8 +2294,7 @@ pub(crate) fn project_geometry(
         wire_edges.push(edge);
         ctx.insert_btree_set(&mut decoded, entry.sequence, "iges line decoded sequences")?;
     }
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges geometry family traversal")?
         .filter(|entry| entry.entity_type == 126 && (0..=5).contains(&entry.form))
     {
         let factor = global.length_factor_mm();
@@ -2865,7 +2824,7 @@ pub(crate) fn project_geometry(
     }
     // The stanza sequence keeps source order in losses, wire edges, and free
     // vertices. Each projection admits its model entities before creation.
-    super::conics::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
+    super::conics::project(ir, directory, (&entries, &records), global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
@@ -2887,7 +2846,7 @@ pub(crate) fn project_geometry(
         ctx,
     )?;
 
-    super::composite::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
+    super::composite::project(ir, directory, (&entries, &records), global, ctx, &mut sequences)?.merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
@@ -2907,7 +2866,7 @@ pub(crate) fn project_geometry(
     super::composite::project_type_130_children(
         ir,
         directory,
-        parameters,
+        (&entries, &records),
         global,
         ctx,
         &mut sequences,
@@ -2974,12 +2933,7 @@ pub(crate) fn project_geometry(
 
     let (trimming_projection, trimming_vertex_derivations) =
         super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences)?;
-    ctx.reserve_vec(
-        &mut boundary_vertex_derivations,
-        trimming_vertex_derivations.len(),
-        "iges merged boundary vertex derivations",
-    )?;
-    boundary_vertex_derivations.extend(trimming_vertex_derivations);
+    ctx.extend_vec(&mut boundary_vertex_derivations, trimming_vertex_derivations, "iges merged boundary vertex derivations")?;
     trimming_projection.merge_into(&mut decoded, &mut losses, ctx)?;
 
     super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
@@ -3032,20 +2986,21 @@ pub(crate) fn project_geometry(
         ctx,
     )?;
 
+    let mut vertex_storage = ctx.reserve_scoped(0, "iges analytic vertex point storage")?;
     let mut vertex_points = BTreeSet::new();
-    for vertex in &ir.model.vertices {
-        ctx.insert_btree_set(
+    for vertex in ctx.admit_iter(&ir.model.vertices, "iges analytic vertex traversal")? {
+        vertex_storage.with_storage(|| ctx.insert_btree_set(
             &mut vertex_points,
             &vertex.point,
             "iges analytic-surface vertex point index",
-        )?;
+        ))?;
     }
-    ir.model.points.retain(|point| {
-        !sequences
+    ctx.retain_vec(&mut ir.model.points, |point| {
+        Ok(!sequences
             .point(&point.id)
             .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
-            || vertex_points.contains(&point.id)
-    });
+            || vertex_points.contains(&point.id))
+    }, "iges analytic point retention")?;
     Ok(Projection {
         placement_rejections,
         decoded,

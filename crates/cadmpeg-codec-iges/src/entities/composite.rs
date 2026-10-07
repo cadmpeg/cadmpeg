@@ -2302,23 +2302,23 @@ fn project_degraded_composite(
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    source: (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    project_with_type_130_policy(ir, directory, parameters, global, ctx, sequences, false)
+    project_with_type_130_policy(ir, directory, source, global, ctx, sequences, false)
 }
 
 pub(super) fn project_type_130_children(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    source: (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    project_with_type_130_policy(ir, directory, parameters, global, ctx, sequences, true)
+    project_with_type_130_policy(ir, directory, source, global, ctx, sequences, true)
 }
 
 fn has_type_130_child(
@@ -2353,35 +2353,13 @@ fn has_type_130_child(
 fn project_with_type_130_policy(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
+    source: (&BTreeMap<u32, &DirectoryEntry>, &BTreeMap<u32, &ParameterRecord>),
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
     only_type_130_children: bool,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    let mut lookup_storage = ctx.reserve_scoped(0, "IGES projection source lookup")?;
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut records,
-                record.directory_sequence,
-                record,
-                "iges composite parameter index",
-            )
-        })?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        lookup_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut entries,
-                entry.sequence,
-                entry,
-                "iges composite directory index",
-            )
-        })?;
-    }
+    let (entries, records) = source;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -2389,8 +2367,7 @@ fn project_with_type_130_policy(
     let mut index = index_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?;
     let join_tolerance = global.minimum_resolution_mm();
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges composite directory traversal")?
         .filter(|entry| entry.entity_type == 102 && entry.form == 0)
     {
         if has_type_130_child(entry.sequence, &entries, &records, global.global_table())

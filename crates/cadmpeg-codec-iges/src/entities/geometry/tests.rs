@@ -21,28 +21,15 @@ use super::{
 fn assert_geometry_collection_refusal(bytes: &[u8], operation: &str) {
     use cadmpeg_core::decode::DecodePolicy;
     use cadmpeg_ir::codec::DecodeFailure;
-    let mut cap = 0_u64;
-    for _ in 0..4096 {
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        match crate::IgesCodec.decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        ) {
-            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation {
-                    return;
-                }
-                cap = limit.used.checked_add(limit.additional).unwrap();
-            }
-            other => panic!("expected geometry collection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("geometry collection refusal was not reached: {operation}");
+        crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
+            .map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
+    });
 }
 
 #[test]
@@ -504,19 +491,14 @@ fn consumed_support_indexes_refuse_collection_limits_before_insert() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let directory = [transform_entry(1, 0), transform_entry(3, 1)];
     let records = std::collections::BTreeMap::new();
-    for (cap, operation) in [
-        (0, "iges consumed-support directory index"),
-        (2, "iges consumed-support transforms"),
-        (3, "iges consumed-support closure"),
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = consumed_support_sequences(&directory, &records, &ctx).unwrap_err();
-        assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
-        );
+    for operation in ["iges consumed-support transforms", "iges consumed-support closure"] {
+        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            consumed_support_sequences(&directory, &records, &ctx)
+        });
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -1083,28 +1065,17 @@ fn transform_depth_overflow_is_a_structured_resource_refusal() {
 }
 
 #[test]
-fn transform_preflight_admits_directory_index_and_walk_path() {
+fn transform_preflight_admits_walk_path() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let directory = [transform_entry(1, 3), transform_entry(3, 0)];
-    for (cap, operation) in [
-        (0, "iges transform preflight directory index"),
-        (2, "iges transform preflight path"),
-    ] {
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "iges transform preflight path", |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = enforce_transform_depth(&directory, &ctx);
-        assert!(matches!(
-            result,
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == cap
-                    && limit.additional == 1
-                    && limit.operation == operation
-        ));
-    }
+        enforce_transform_depth(&directory, &ctx)
+    });
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
