@@ -516,14 +516,18 @@ pub(crate) fn project_parameters(
     let mut projected_storage = ctx.reserve_scoped(0, "project Inventor parameter")?;
     let mut unresolved = 0usize;
     for parameter in ctx.admit_iter(&inventory.parameters, "visit Inventor design items")? {
-        if !ctx.contains_key_hash_map(
-            &parameters,
-            &(
-                parameter.identity.segment_token.as_str(),
-                parameter.identity.record_ordinal,
-            ),
-            "access Inventor design records",
-        )? {
+        if ctx
+            .get_hash_map(
+                &parameters,
+                &(
+                    parameter.identity.segment_token.as_str(),
+                    parameter.identity.record_ordinal,
+                ),
+                "access Inventor design records",
+            )?
+            .and_then(Option::as_ref)
+            .is_none()
+        {
             unresolved += 1;
             continue;
         }
@@ -2597,10 +2601,15 @@ mod tests {
         let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
         let id_bytes =
             u64::try_from(parameters[0].id.as_str().len()).expect("identity byte length fits u64");
-        // Indexing, dependency visits, closure flags, and the first queue step use 174 units.
+        // The index table's growth bound is four buckets of (&ParameterId, usize) slots with
+        // their control bytes, alignment and trailing controls. Indexing, dependency visits,
+        // closure flags, and the first queue step use the remaining units.
+        let index_table =
+            u64::try_from(4 * std::mem::size_of::<(&ParameterId, usize)>() + 15 + 4 + 16)
+                .expect("table bytes fit u64");
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units =
-            (3 + 4 + 6 * id_bytes) + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
+            index_table + (3 + 4 + 6 * id_bytes) + 3 + 3 + (3 + 2 + 2 * id_bytes) + 3 + 1;
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
@@ -2815,14 +2824,16 @@ mod tests {
             + 16
             + 31
             + 12 * std::mem::size_of::<u32>();
-        // Five rendered lengths total 213 bytes; their memo table has eight buckets.
-        // The sixth shared-add node needs 2*121+7 bytes, above every earlier replacement peak.
+        // Six rendered lengths total 462 bytes; their memo table has eight buckets.
+        // The shape memo's growth holds a transient bound above the sixth node's
+        // need, so the seventh shared-add node, needing 2*249+7 bytes, is the
+        // first render that exceeds every earlier peak.
         let live = plan_bytes
-            + (1 + 9 + 25 + 57 + 121)
+            + (1 + 9 + 25 + 57 + 121 + 249)
             + 8 * std::mem::size_of::<(u32, String)>()
             + 8
             + 31;
-        let next_length = 2 * 121 + 7;
+        let next_length = 2 * 249 + 7;
         policy.limits.max_materialized_bytes =
             cadmpeg_core::decode::u64_from_index(live + next_length - 1);
         assert!(matches!(

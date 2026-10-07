@@ -23,14 +23,19 @@ impl TextureAsset {
     pub fn to_ref(&self, ctx: &DecodeContext<'_>, slot: &str) -> Result<TextureRef, CodecError> {
         ctx.charge_collection_items(1, "Protein appearance texture")?;
         Ok(TextureRef {
-            asset_guid: ctx.copy_retained_text(&self.asset_guid, "Protein appearance texture field")?,
+            asset_guid: ctx
+                .copy_retained_text(&self.asset_guid, "Protein appearance texture field")?,
             slot: ctx.copy_retained_text(slot, "Protein appearance texture field")?,
             schema: ctx.copy_retained_text(&self.schema, "Protein appearance texture field")?,
             paths: ctx.try_collect_vec(
-                self.paths.iter().map(|path| ctx.copy_retained_text(path, "Protein appearance texture path")),
+                self.paths
+                    .iter()
+                    .map(|path| ctx.copy_retained_text(path, "Protein appearance texture path")),
                 "Protein appearance texture paths",
             )?,
-            urn: self.urn.as_deref()
+            urn: self
+                .urn
+                .as_deref()
                 .map(|urn| ctx.copy_retained_text(urn, "Protein appearance texture URN"))
                 .transpose()?,
             mapping: self.mapping.clone(),
@@ -109,7 +114,9 @@ pub fn texture_asset(
     }
     let paths = match source_paths {
         Some(paths) => ctx.try_collect_vec(
-            paths.iter().map(|path| ctx.copy_retained_text(path, "Protein texture path")),
+            paths
+                .iter()
+                .map(|path| ctx.copy_retained_text(path, "Protein texture path")),
             "Protein texture paths",
         )?,
         None => Vec::new(),
@@ -158,7 +165,12 @@ pub fn texture_asset(
         Some(BumpMap {
             normal_map: integer_property(ctx, record, "bumpmap_Type")? == Some(1),
             depth: distances[4],
-            normal_scale: finite_float_property(ctx, record, "bumpmap_NormalScale", FiniteReal::ONE)?,
+            normal_scale: finite_float_property(
+                ctx,
+                record,
+                "bumpmap_NormalScale",
+                FiniteReal::ONE,
+            )?,
         })
     } else {
         None
@@ -180,7 +192,8 @@ fn property_with_suffix<'a>(
     suffix: &str,
 ) -> Result<Option<&'a crate::property::PropertyValue>, CodecError> {
     let (qualified_suffix, _reservation) = ctx.format_scoped(
-        format_args!("_{suffix}"), "Protein qualified property suffix",
+        format_args!("_{suffix}"),
+        "Protein qualified property suffix",
     )?;
     for (id, property) in ctx.admit_iter(&record.properties, "Protein property suffix search")? {
         if ctx.equal(id.as_str(), suffix, "Protein property name comparison")?

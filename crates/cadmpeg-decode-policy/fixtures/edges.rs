@@ -37,7 +37,7 @@ pub fn decode(
     ctx.charge_work(strings.len() as u64, "children")?;
     let _children = strings == strings; // finding: unproven_decode_charge
     ctx.charge_work(map.len() as u64, "capacity")?;
-    let _entries = map.iter().fold(0usize, |count, _| count + 1); // finding: unproven_decode_charge
+    let _entries = map.iter().fold(0usize, |count, _| count + 1); // finding: uncharged_decode_work, unproven_decode_charge
     ctx.charge_work(1, "opaque")?;
     let _opaque = callback.count(); // finding: unproven_decode_charge
     let _parse = std::str::from_utf8(bytes).map_err(|_| ())?.parse::<u64>(); // finding: unproven_decode_charge, unproven_decode_charge
@@ -89,6 +89,11 @@ pub fn empty_and_borrowed(ctx: &DecodeContext, text: &str, values: &mut Vec<u8>)
     let _empty_children = vec![text.to_owned(); 0]; // finding: uncharged_decode_allocation, uncharged_decode_work
     let _outer = Box::new(text);
     let _copy = text.repeat(1); // finding: uncharged_decode_allocation, uncharged_decode_work
+}
+
+pub fn possibly_owned_cow(ctx: &DecodeContext, value: std::borrow::Cow<'_, str>) {
+    let _ctx = ctx;
+    let _owned = value.into_owned(); // finding: uncharged_decode_work, unproven_decode_charge
 }
 
 pub fn storage_and_count(ctx: &DecodeContext, bytes: &[u8], n: usize) {
