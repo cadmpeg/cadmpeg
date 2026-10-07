@@ -15,12 +15,14 @@ fn global_summary_refuses_note_slot_and_text_limits() {
 
     let (global, _) = super::resolve_global_fields(&valid_global_fields());
     let result = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "iges global summary notes", |cap| {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = cap;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    global.summary_notes(&ctx)
+        ResourceDimension::CollectionItems,
+        "iges global summary notes",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            global.summary_notes(&ctx)
         },
     );
     assert!(matches!(
@@ -33,12 +35,14 @@ fn global_summary_refuses_note_slot_and_text_limits() {
     ));
 
     let result = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "iges global summary text", |cap| {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cap;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    global.summary_notes(&ctx)
+        ResourceDimension::RetainedBytes,
+        "iges global summary text",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            global.summary_notes(&ctx)
         },
     );
     assert!(matches!(

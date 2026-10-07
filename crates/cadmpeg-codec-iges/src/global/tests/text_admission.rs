@@ -8,18 +8,28 @@ use cadmpeg_core::{
 #[test]
 fn global_declaration_lossy_text_refuses_before_expanded_storage() {
     let bytes = b"a\xffb";
-    let result = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "iges global declaration text", |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        crate::test_support::with_policy_context(bytes, &policy, |ctx| {
-        let resolution = Resolution {
-            ctx,
-            values: std::array::from_fn(|index| if index == 0 { Value::Malformed(bytes) } else { Value::Omitted }),
-            losses: Vec::new(),
-        };
-            resolution.declaration_text(0)
-        })
-    });
+    let result = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "iges global declaration text",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            crate::test_support::with_policy_context(bytes, &policy, |ctx| {
+                let resolution = Resolution {
+                    ctx,
+                    values: std::array::from_fn(|index| {
+                        if index == 0 {
+                            Value::Malformed(bytes)
+                        } else {
+                            Value::Omitted
+                        }
+                    }),
+                    losses: Vec::new(),
+                };
+                resolution.declaration_text(0)
+            })
+        },
+    );
     assert!(matches!(result, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 0
             && limit.additional == 5 && limit.operation == "iges global declaration text"));
@@ -36,7 +46,13 @@ fn global_declaration_lossy_text_preserves_replacement_boundaries() {
         crate::test_support::with_service_context(bytes, |ctx| {
             let resolution = Resolution {
                 ctx,
-                values: std::array::from_fn(|index| if index == 0 { Value::Malformed(bytes) } else { Value::Omitted }),
+                values: std::array::from_fn(|index| {
+                    if index == 0 {
+                        Value::Malformed(bytes)
+                    } else {
+                        Value::Omitted
+                    }
+                }),
                 losses: Vec::new(),
             };
             assert_eq!(resolution.declaration_text(0).unwrap(), expected);
