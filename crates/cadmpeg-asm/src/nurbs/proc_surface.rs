@@ -3867,9 +3867,9 @@ fn off_spl_sur(
         // displacement. The second leaves the point set unchanged. The revision
         // form reads these positions where the earlier form reads U/V sense
         // enums.
-        let mut flags = Vec::new();
-        for _ in 0..4 {
-            flags.push(cur.take_bool()?);
+        let mut flags = [false; 4];
+        for flag in &mut flags {
+            *flag = cur.take_bool()?;
         }
         let RevisionSurfaceTail {
             cache,
@@ -3887,7 +3887,7 @@ fn off_spl_sur(
                         support_bounds,
                         reference_endpoints: [None; 2],
                         second_endpoints: [None; 2],
-                        flags: flags.try_into().ok()?,
+                        flags,
                         cache: cache.into_form()?,
                         discontinuities,
                         tail_flag,

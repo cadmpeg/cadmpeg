@@ -414,12 +414,12 @@ impl SurfacePatchLayout {
 
     /// Native v-major tagged-double payload offsets, excluding each tag byte.
     pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
-        let components = if self.surface.weights().is_some() {
+        let components = if matches!(self.surface.pole_grid(), NurbsPoleGrid::Rational { .. }) {
             4
         } else {
             3
         };
-        (0..self.surface.poles().len() * components)
+        (0..self.surface.u_count() * self.surface.v_count() * components)
             .map(|ordinal| self.control_start + ordinal * 9 + 1)
     }
 }
@@ -570,8 +570,8 @@ impl CurvePatchLayout {
 
     /// Tagged-double payload offsets in pole/component order.
     pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
-        let components = if self.curve.weights().is_some() { 4 } else { 3 };
-        (0..self.curve.control_points().len() * components)
+        let components = if matches!(self.curve.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }) { 4 } else { 3 };
+        (0..self.curve.pole_count() * components)
             .map(|ordinal| self.control_start + ordinal * 9 + 1)
     }
 }

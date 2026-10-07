@@ -213,9 +213,10 @@ pub(super) fn decode_pcurve_block_with_end(
 /// This generic entry point has no stream-width or owning-scope witness. It
 /// therefore withholds when more than one `(width, marker)` candidate decodes.
 pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<PcurveNurbs> {
+    let positions = marker_positions(record_bytes);
     let mut decoded = None;
     for int_width in INT_WIDTHS {
-        for position in marker_positions(record_bytes) {
+        for &position in &positions {
             if let Some(candidate) = decode_pcurve_block(record_bytes, position, int_width) {
                 if decoded.is_some() {
                     return None;

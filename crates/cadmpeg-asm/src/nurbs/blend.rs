@@ -1534,8 +1534,13 @@ pub(super) fn compact_rb_blend_spl_sur(
             }
             let payload_start = cur.pos();
             let support = if !has_outer_kind {
-                let Some((_, end)) = surface_block(ctx, span, cur.pos()).transpose()? else {
-                    return Ok(None);
+                let end = {
+                    let (decoded, _cache_storage) = ctx.with_scoped_storage(
+                        "ASM compact blend support cache",
+                        || surface_block(ctx, span, cur.pos()).transpose(),
+                    )?;
+                    let Some((_, end)) = decoded else { return Ok(None); };
+                    end
                 };
                 cur.set_pos(end);
                 None
@@ -1598,6 +1603,37 @@ mod compact_blend_work_tests {
     use crate::sab::Token;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn compact_blend_discarded_support_cache_uses_scoped_storage() {
+        let mut tokens = vec![
+            Token::SubtypeOpen,
+            Token::Ident("rbblnsur".into()),
+            Token::Str("blend_support_surface".into()),
+            Token::Ident("nubs".into()),
+            Token::Long(1), Token::Long(1),
+            Token::Enum(0), Token::Enum(0), Token::Enum(0), Token::Enum(0),
+            Token::Long(2), Token::Long(2),
+        ];
+        for _ in 0..2 {
+            tokens.extend([Token::Double(0.0), Token::Long(1), Token::Double(1.0), Token::Long(1)]);
+        }
+        for point in [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]] {
+            tokens.extend(point.map(Token::Double));
+        }
+        tokens.push(Token::SubtypeClose);
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            "ASM NURBS grid rows",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                compact_rb_blend_spl_sur(&ctx, &tokens).transpose()
+            },
+        );
+    }
 
     #[test]
     fn compact_blend_support_scan_refuses_work_before_label_probe() {
