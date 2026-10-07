@@ -830,12 +830,8 @@ fn implicit_face_plane_work(
         exchange.records(),
         "STEP implicit plane work record traversal",
     )? {
-        if let Some(points) = ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP implicit plane work partial traversal",
-            )?
-            .find(|partial| partial.name == "POLY_LOOP")
+        if let Some(points) = record
+            .partial(ctx, "POLY_LOOP")?
             .and_then(|partial| partial.parameters.get(1))
             .and_then(Value::list)
         {
@@ -1708,10 +1704,13 @@ trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
     fn parameters(&self) -> &[Value];
     fn parameter(&self, index: usize) -> Option<&Value>;
+    /// Finds the partial record named `name`, charging one step per partial
+    /// visited. `name` is a schema entity literal: comparing it reads at most
+    /// its own length, so each comparison is fixed work.
     fn partial(
         &self,
         ctx: &DecodeContext<'_>,
-        name: &str,
+        name: &'static str,
     ) -> Result<Option<&crate::parse::PartialRecord>, CodecError>;
 }
 
@@ -1728,18 +1727,13 @@ impl RecordExt for RawRecord {
     fn partial(
         &self,
         ctx: &DecodeContext<'_>,
-        name: &str,
+        name: &'static str,
     ) -> Result<Option<&crate::parse::PartialRecord>, CodecError> {
-        Ok(ctx
-            .admit_iter(&self.partials[..], "STEP partial record search")?
-            .map(|partial| -> Result<Option<_>, CodecError> {
-                Ok(
-                    (ctx.equal(partial.name.as_str(), name, "STEP partial equality")?)
-                        .then_some(partial),
-                )
-            })
-            .find_map(Result::transpose)
-            .transpose()?)
+        ctx.find_by(
+            &self.partials[..],
+            |partial| Ok(partial.name == name),
+            "STEP partial record search",
+        )
     }
 }
 

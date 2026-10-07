@@ -1240,12 +1240,8 @@ fn product_linked_representations<'a>(
     let mut linked = BTreeSet::new();
     let mut linked_bytes = ctx.reserve_scoped(0, "step_tessellation_product_representations")?;
     for (_, record) in exchange.entities(ctx, "SHAPE_DEFINITION_REPRESENTATION")? {
-        let representation = ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP product linked representation partial traversal",
-            )?
-            .find(|partial| partial.name == "SHAPE_DEFINITION_REPRESENTATION")
+        let representation = record
+            .partial(ctx, "SHAPE_DEFINITION_REPRESENTATION")?
             .and_then(|partial| {
                 let definition = partial.parameters.first().and_then(ValueExt::reference)?;
                 product_shape_definitions

@@ -1100,7 +1100,9 @@ fn presentation_item_one(
             source_id: super::step_source_id(ctx, id)?,
         });
     };
-    let has = |name: &str| -> Result<bool, CodecError> { Ok(record.partial(ctx, name)?.is_some()) };
+    let has = |name: &'static str| -> Result<bool, CodecError> {
+        Ok(record.partial(ctx, name)?.is_some())
+    };
     Ok(
         if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")?
             && ctx.contains_btree_set(
@@ -1112,13 +1114,10 @@ fn presentation_item_one(
             PresentationItem::Occurrence {
                 occurrence: OccurrenceId::from(ids::product(kind!("occurrence"), id)),
             }
-        } else if {
-            let mut found = false;
-            for partial in ctx.admit_iter(
-                &(record.partials)[..],
-                "STEP presentation item one traversal",
-            )? {
-                if (partial.name == "DATUM"
+        } else if ctx.any_by(
+            &record.partials[..],
+            |partial| {
+                Ok((partial.name == "DATUM"
                     || partial.name == "DATUM_SYSTEM"
                     || partial.name.starts_with("DIMENSIONAL_")
                     || partial.name.ends_with("_TOLERANCE")
@@ -1127,14 +1126,10 @@ fn presentation_item_one(
                         &entity_ids.pmi,
                         ids::presentation(kind!("pmi"), id).as_str(),
                         "STEP pmi membership",
-                    )?
-                {
-                    found = true;
-                    break;
-                }
-            }
-            found
-        } {
+                    )?)
+            },
+            "STEP presentation item one traversal",
+        )? {
             PresentationItem::Pmi {
                 annotation: PmiId::from(ids::presentation(kind!("pmi"), id)),
             }
@@ -1246,13 +1241,7 @@ fn styled_item_parts<'a>(
     ctx: &DecodeContext<'_>,
     record: &'a RawRecord,
 ) -> Result<Option<StyledItemParts<'a>>, CodecError> {
-    if let Some(partial) = ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP overriding styled item partial traversal",
-        )?
-        .find(|partial| partial.name == "OVER_RIDING_STYLED_ITEM")
-    {
+    if let Some(partial) = record.partial(ctx, "OVER_RIDING_STYLED_ITEM")? {
         let parameters = partial.parameters.as_slice();
         return Ok((|| {
             let target = parameters.get(parameters.len().checked_sub(2)?)?;
@@ -1265,10 +1254,7 @@ fn styled_item_parts<'a>(
             })
         })());
     }
-    let Some(partial) = ctx
-        .admit_iter(&record.partials[..], "STEP styled item partial traversal")?
-        .find(|partial| partial.name == "STYLED_ITEM")
-    else {
+    let Some(partial) = record.partial(ctx, "STYLED_ITEM")? else {
         return Ok(None);
     };
     let parameters = partial.parameters.as_slice();
@@ -1287,12 +1273,9 @@ fn is_presentation_style_by_context(
     ctx: &DecodeContext<'_>,
     record: &RawRecord,
 ) -> Result<bool, CodecError> {
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP contextual style partial traversal",
-        )?
-        .any(|partial| partial.name == "PRESENTATION_STYLE_BY_CONTEXT"))
+    Ok(record
+        .partial(ctx, "PRESENTATION_STYLE_BY_CONTEXT")?
+        .is_some())
 }
 
 fn presentation_style_context(record: &RawRecord) -> Option<&Value> {
@@ -1653,10 +1636,7 @@ fn find_color(
         }
         match name {
             Some("COLOUR_RGB") => {
-                let Some(rgb) = ctx
-                    .admit_iter(&record.partials[..], "STEP find color traversal")?
-                    .find(|partial| partial.name == "COLOUR_RGB")
-                else {
+                let Some(rgb) = record.partial(ctx, "COLOUR_RGB")? else {
                     return Ok(None);
                 };
                 let offset = usize::from(record.partials.len() == 1);
@@ -1672,8 +1652,8 @@ fn find_color(
                 let name_value = if record.partials.len() == 1 {
                     rgb.parameters.first()
                 } else {
-                    ctx.admit_iter(&record.partials[..], "STEP find color traversal")?
-                        .find(|partial| partial.name == "COLOUR_SPECIFICATION")
+                    record
+                        .partial(ctx, "COLOUR_SPECIFICATION")?
                         .and_then(|partial| partial.parameters.first())
                 };
                 let Some((r, g, b)) = cadmpeg_core::convert::f32_from_f64(r)
@@ -1711,8 +1691,8 @@ fn find_color(
                 let name_value = if record.partials.len() == 1 {
                     record.parameter(0)
                 } else {
-                    ctx.admit_iter(&record.partials[..], "STEP find color traversal")?
-                        .find(|partial| partial.name == "PRE_DEFINED_ITEM")
+                    record
+                        .partial(ctx, "PRE_DEFINED_ITEM")?
                         .and_then(|partial| partial.parameters.first())
                 };
                 let Some(name_value) = name_value else {
@@ -1881,10 +1861,7 @@ fn surface_side_rank(
     storage: &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<SurfaceSideRank>, CodecError> {
-    let Some(partial) = ctx
-        .admit_iter(&record.partials[..], "STEP surface side rank traversal")?
-        .find(|partial| partial.name == "SURFACE_STYLE_USAGE")
-    else {
+    let Some(partial) = record.partial(ctx, "SURFACE_STYLE_USAGE")? else {
         return Ok(Some(SurfaceSideRank::NoUsage));
     };
     let Some(side) = partial.parameters.first().and_then(ValueExt::enumeration) else {

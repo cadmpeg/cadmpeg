@@ -19,8 +19,8 @@ use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, ReferenceName, Value};
 
 use super::representation;
-use super::ValueExt;
 use super::{decode_text_charged, opaque_record_id, record_targets, StageOutcome};
+use super::{RecordExt, ValueExt};
 
 const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
     "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
@@ -213,9 +213,8 @@ pub(super) fn decode(
         .admit_iter(exchange.records(), "STEP decode map traversal")?
         .map(|(_, value)| value)
     {
-        let Some(items) = ctx
-            .admit_iter(&record.partials[..], "STEP decode traversal")?
-            .find(|partial| partial.name == "INVISIBILITY")
+        let Some(items) = record
+            .partial(ctx, "INVISIBILITY")?
             .and_then(|partial| partial.parameters.first())
         else {
             continue;
@@ -620,12 +619,8 @@ fn source_parameters<'a>(
         if let Some(parameters) = direct.filter(|parameters| parameters.len() >= 2) {
             return Ok(DrawingParameters::from_slice(parameters));
         }
-        let inherited_name = ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP drawing inherited name traversal",
-            )?
-            .find(|partial| partial.name == "REPRESENTATION_ITEM")
+        let inherited_name = record
+            .partial(ctx, "REPRESENTATION_ITEM")?
             .and_then(|partial| partial.parameters.first());
         return Ok(DrawingParameters {
             inherited_name,
@@ -964,12 +959,9 @@ fn add_draughting_model_associations(
             complete = false;
         }
 
-        let placeholder_target = if ctx
-            .admit_iter(
-                &record.partials[..],
-                "STEP drawing placeholder type traversal",
-            )?
-            .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
+        let placeholder_target = if record
+            .partial(ctx, "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")?
+            .is_some()
         {
             match association_placeholder_reference(ctx, record, parameters)? {
                 Some(placeholder_id) => match target_context.resolve(placeholder_id)? {
@@ -1074,12 +1066,8 @@ fn association_placeholder_reference(
     if let Some(reference) = parameters.get(5).and_then(ValueExt::reference) {
         return Ok(Some(reference));
     }
-    Ok(ctx
-        .admit_iter(
-            &record.partials[..],
-            "STEP drawing association placeholder traversal",
-        )?
-        .find(|partial| partial.name == "ANNOTATION_PLACEHOLDER_OCCURRENCE")
+    Ok(record
+        .partial(ctx, "ANNOTATION_PLACEHOLDER_OCCURRENCE")?
         .and_then(|partial| partial.parameters.first())
         .and_then(ValueExt::reference))
 }
@@ -1226,9 +1214,8 @@ fn mapped_representation(
     record: &RawRecord,
     exchange: &Exchange,
 ) -> Result<Option<u64>, CodecError> {
-    let Some(map_id) = ctx
-        .admit_iter(&record.partials[..], "STEP drawing mapped item traversal")?
-        .find(|partial| partial.name == "MAPPED_ITEM")
+    let Some(map_id) = record
+        .partial(ctx, "MAPPED_ITEM")?
         .and_then(|partial| partial.parameters.get(1))
         .and_then(ValueExt::reference)
     else {
@@ -1237,12 +1224,8 @@ fn mapped_representation(
     let Some(map) = exchange.records().get(&map_id) else {
         return Ok(None);
     };
-    Ok(ctx
-        .admit_iter(
-            &map.partials[..],
-            "STEP drawing representation map traversal",
-        )?
-        .find(|partial| partial.name == "REPRESENTATION_MAP")
+    Ok(map
+        .partial(ctx, "REPRESENTATION_MAP")?
         .and_then(|partial| partial.parameters.get(1))
         .and_then(ValueExt::reference))
 }
