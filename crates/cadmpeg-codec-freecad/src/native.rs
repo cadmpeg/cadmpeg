@@ -53,6 +53,10 @@ pub(crate) fn native_id_charged(
     id.push_str("fcstd:native:");
     id.push_str(kind);
     id.push('#');
+    if !key.is_empty() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(key.len()), OPERATION)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(encoded_len), OPERATION)?;
+    }
     id.extend(encoded_segment_bytes(key).map(char::from));
     Ok(id)
 }
@@ -64,7 +68,16 @@ pub(crate) fn encoded_segment_charged(
 ) -> Result<IdentityKey, CodecError> {
     let len = encoded_segment_len(ctx, value, operation)?;
     let mut key = ctx.retained_string(len, operation)?;
+    if !value.is_empty() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(len), operation)?;
+    }
     key.extend(encoded_segment_bytes(value).map(char::from));
+    // The encoded text is ASCII; key admission scans whitespace and separators.
+    if !value.is_empty() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(len), operation)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(len), operation)?;
+    }
     IdentityKey::try_new(key).map_err(CodecError::malformed)
 }
 
@@ -75,7 +88,7 @@ pub(crate) fn native_child_id_charged(
     child: &str,
 ) -> Result<String, CodecError> {
     const OPERATION: &str = "FreeCAD native child identity";
-    let parent_key = id_key(parent);
+    let parent_key = id_key_charged(ctx, parent, OPERATION)?;
     let child_len = encoded_segment_len(ctx, child, OPERATION)?;
     let len = "fcstd:native:"
         .len()
@@ -98,8 +111,16 @@ pub(crate) fn native_child_id_charged(
     id.push_str("fcstd:native:");
     id.push_str(kind);
     id.push('#');
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(parent_key.len()),
+        OPERATION,
+    )?;
     id.push_str(parent_key);
     id.push(':');
+    if !child.is_empty() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(child.len()), OPERATION)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(child_len), OPERATION)?;
+    }
     id.extend(encoded_segment_bytes(child).map(char::from));
     Ok(id)
 }
@@ -120,7 +141,7 @@ pub(crate) fn model_id_charged_at(
     child: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let parent_key = id_key(parent);
+    let parent_key = id_key_charged(ctx, parent, operation)?;
     let child_len = if child.is_empty() {
         0
     } else {
@@ -147,9 +168,15 @@ pub(crate) fn model_id_charged_at(
     id.push_str("fcstd:model:");
     id.push_str(kind);
     id.push('#');
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(parent_key.len()),
+        operation,
+    )?;
     id.push_str(parent_key);
     id.push(':');
     if !child.is_empty() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(child.len()), operation)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(child_len), operation)?;
         id.extend(encoded_segment_bytes(child).map(char::from));
     }
     Ok(id)
@@ -163,10 +190,10 @@ fn encoded_segment_len(
     if key.is_empty() {
         return Ok(6);
     }
-    key.bytes()
+    ctx.admit_iter(key.as_bytes(), operation)?
         .try_fold(0_usize, |len, byte| {
             len.checked_add(
-                if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
+                if byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'-' | b'/') {
                     1
                 } else {
                     3
@@ -228,6 +255,16 @@ pub(crate) fn model_id(kind: &str, parent: &str, child: impl AsRef<str>) -> Stri
 
 pub(crate) fn id_key(id: &str) -> &str {
     id.split_once('#').map_or(id, |(_, key)| key)
+}
+
+pub(crate) fn id_key_charged<'text>(
+    ctx: &DecodeContext<'_>,
+    id: &'text str,
+    operation: &'static str,
+) -> Result<&'text str, CodecError> {
+    Ok(ctx
+        .split_once(id, "#", operation)?
+        .map_or(id, |(_, key)| key))
 }
 
 #[cfg(test)]
@@ -430,6 +467,470 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn identity_scans_and_encoding_refuse_at_work_boundaries() {
+        use cadmpeg_core::decode::ResourceDimension::WorkUnits;
+        for key in ["Body", "A B#%", "Å"] {
+            crate::test_support::refusal_at(WorkUnits, &[], "FreeCAD native identity", |ctx| {
+                super::native_id_charged(ctx, "entry", key)
+            });
+            crate::test_support::refusal_at(WorkUnits, &[], "FreeCAD encoded segment", |ctx| {
+                super::encoded_segment_charged(ctx, key, "FreeCAD encoded segment")
+            });
+        }
+        for parent in ["fcstd:native:object#A%20B", "parent-without-separator"] {
+            for child in ["", "S # Å"] {
+                crate::test_support::refusal_at(
+                    WorkUnits,
+                    &[],
+                    "FreeCAD native child identity",
+                    |ctx| super::native_child_id_charged(ctx, "property", parent, child),
+                );
+                crate::test_support::refusal_at(WorkUnits, &[], "FreeCAD model identity", |ctx| {
+                    super::model_id_charged(ctx, "body", parent, child)
+                });
+                crate::test_support::with_service_context(&[], |ctx| {
+                    assert_eq!(
+                        super::native_child_id_charged(ctx, "property", parent, child).unwrap(),
+                        native_child_id("property", parent, child)
+                    );
+                    assert_eq!(
+                        super::model_id_charged(ctx, "body", parent, child).unwrap(),
+                        model_id("body", parent, child)
+                    );
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn safe_entry_names_admit_only_bytes_visited() {
+        for (name, read, safe) in [
+            ("", 0, false),
+            ("Body.brp", 8, true),
+            ("safe/../unused", 8, false),
+            ("safe\\unused", 5, false),
+            ("/unused", 1, false),
+            ("a//unused", 3, false),
+            ("safe/.", 6, false),
+            ("safe/..", 7, false),
+        ] {
+            assert_eq!(super::is_safe_entry_name(name), safe);
+            crate::test_support::with_service_context(&[], |ctx| {
+                assert_eq!(super::is_safe_entry_name_charged(ctx, name).unwrap(), safe);
+                let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                    ctx.charge_work(u64::MAX, "probe").unwrap_err()
+                else {
+                    panic!("work refusal");
+                };
+                assert_eq!(limit.used, read, "{name}");
+            });
+        }
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "FCStd entry name check",
+            |ctx| super::is_safe_entry_name_charged(ctx, "safe/../unused"),
+        );
+    }
+
+    #[test]
+    fn empty_shared_admissions_preserve_prior_resource_refusal() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            let error = ctx.charge_work(u64::MAX, "prior refusal").unwrap_err();
+            let cadmpeg_core::CodecError::ResourceLimit(expected) = error else {
+                panic!("work refusal");
+            };
+            let facts = super::DocumentFacts {
+                id: "document".into(),
+                file_version: "1".to_owned().try_into().unwrap(),
+                program_version: None,
+                root_name: "Document".into(),
+                object_count: 0,
+                domains: Vec::new(),
+            };
+            let admit = |length, operation| {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+            };
+            for result in [
+                super::is_safe_entry_name_charged(ctx, "").map(|_| ()),
+                facts.document_kind_with_admission(admit).map(|_| ()),
+                super::StringTables::from_records_with_admission(Vec::new(), admit).map(|_| ()),
+                super::StringTableRecord::from_parts_with_admission(
+                    (0, None, false, 0, None),
+                    Vec::new(),
+                    admit,
+                    |_, _| panic!("empty table has no component lookup"),
+                    |_, _| panic!("empty table has no insertion"),
+                )
+                .map(|_| ()),
+            ] {
+                assert!(matches!(result,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == expected));
+            }
+        });
+    }
+
+    #[test]
+    fn entry_reference_admission_stops_after_first_invalid_reference() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            let id = "fcstd:native:entry#safe";
+            assert!(matches!(
+                super::EntryRecord::new(
+                    ctx,
+                    id.into(),
+                    "safe".into(),
+                    cadmpeg_core::container::ContainerRole::Auxiliary,
+                    vec!["invalid".into(), "fcstd:native:object#Unused".into()],
+                    vec![1, 2, 3]
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                ctx.charge_work(u64::MAX, "probe").unwrap_err()
+            else {
+                panic!("work refusal");
+            };
+            assert_eq!(
+                limit.used,
+                cadmpeg_core::decode::u64_from_index(id.len() + "safe".len() + 1 + "invalid".len())
+            );
+        });
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD entry reference visits",
+            |ctx| {
+                super::EntryRecord::new(
+                    ctx,
+                    "fcstd:native:entry#safe".into(),
+                    "safe".into(),
+                    cadmpeg_core::container::ContainerRole::Auxiliary,
+                    vec!["fcstd:native:object#Owner".into()],
+                    vec![1, 2, 3],
+                )
+            },
+        );
+        crate::test_support::assert_retained_refusal_at(
+            &[],
+            "FreeCAD entry identity error",
+            |ctx| {
+                super::EntryRecord::new(
+                    ctx,
+                    "invalid identity".into(),
+                    "safe".into(),
+                    cadmpeg_core::container::ContainerRole::Auxiliary,
+                    Vec::new(),
+                    vec![1, 2, 3],
+                )
+            },
+        );
+    }
+
+    #[test]
+    fn admitted_link_clones_charge_copies_and_subelement_visits() {
+        let link = super::LinkTarget::try_new(
+            Some(super::ExternalDocument::Name(
+                "   doc".to_owned().try_into().unwrap(),
+            )),
+            Some("   object".to_owned().try_into().unwrap()),
+            vec!["Face1".into(), "".into(), "É".into()],
+        )
+        .unwrap();
+        crate::test_support::with_service_context(&[], |ctx| {
+            assert_eq!(link.clone_with_context(ctx).unwrap(), link);
+        });
+        for operation in [
+            "FreeCAD external document copy",
+            "FreeCAD link object copy",
+            "FreeCAD link subelement visits",
+            "FreeCAD link subelement text",
+        ] {
+            crate::test_support::refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                &[],
+                operation,
+                |ctx| link.clone_with_context(ctx),
+            );
+        }
+        for operation in [
+            "FreeCAD external document copy",
+            "FreeCAD link object copy",
+            "FreeCAD link subelement text",
+        ] {
+            crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+                link.clone_with_context(ctx)
+            });
+        }
+    }
+
+    #[test]
+    fn owned_numeric_spellings_share_context_free_and_admitted_parsers() {
+        use cadmpeg_core::CodecError;
+        for raw in ["+00099", "-2", "abc", "", "9223372036854775808"] {
+            crate::test_support::with_service_context(&[], |ctx| {
+                let admitted = super::CopyOnChangePolicy::from_raw_with_admission(
+                    raw.into(),
+                    |length, operation| {
+                        ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+                    },
+                )
+                .unwrap();
+                assert_eq!(
+                    admitted.map_err(str::to_owned),
+                    super::CopyOnChangePolicy::from_raw(raw.into())
+                );
+            });
+        }
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD copy-on-change policy parse",
+            |ctx| {
+                super::CopyOnChangePolicy::from_raw_with_admission(
+                    "+00099".into(),
+                    |length, operation| {
+                        ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+                    },
+                )?
+                .map_err(CodecError::malformed)
+            },
+        );
+        for raw in ["+001", "0", "-1", "abc", "", "184467440737095516160"] {
+            crate::test_support::with_service_context(&[], |ctx| {
+                let admitted =
+                    super::FileVersion::from_raw_with_admission(raw.into(), |length, operation| {
+                        ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+                    })
+                    .unwrap();
+                assert_eq!(
+                    admitted.map_err(str::to_owned),
+                    super::FileVersion::try_from(raw.to_owned())
+                );
+            });
+        }
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD file version parse",
+            |ctx| {
+                super::FileVersion::from_raw_with_admission("+001".into(), |length, operation| {
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+                })?
+                .map_err(CodecError::malformed)
+            },
+        );
+    }
+
+    #[test]
+    fn document_domain_admission_preserves_priority_and_stops_at_assembly() {
+        let facts = |domains: &[&str]| super::DocumentFacts {
+            id: "document".into(),
+            file_version: "1".to_owned().try_into().unwrap(),
+            program_version: None,
+            root_name: "Document".into(),
+            object_count: 1,
+            domains: domains.iter().map(|domain| (*domain).into()).collect(),
+        };
+        for (domains, expected) in [
+            (
+                vec!["Part", "PartDesign", "TechDraw"],
+                super::DocumentKind::Drawing,
+            ),
+            (
+                vec!["TechDraw", "PartDesign", "Part"],
+                super::DocumentKind::Drawing,
+            ),
+            (vec!["Part", "PartDesign"], super::DocumentKind::PartDesign),
+            (vec!["Unknown"], super::DocumentKind::ApplicationDocument),
+        ] {
+            let facts = facts(&domains);
+            assert_eq!(facts.document_kind(), expected);
+            crate::test_support::with_service_context(&[], |ctx| {
+                assert_eq!(
+                    facts
+                        .document_kind_with_admission(|length, operation| ctx
+                            .charge_work(cadmpeg_core::decode::u64_from_index(length), operation))
+                        .unwrap(),
+                    expected
+                );
+            });
+        }
+        let facts = facts(&["Assembly", "Unused", "Unused"]);
+        crate::test_support::with_service_context(&[], |ctx| {
+            assert_eq!(
+                facts
+                    .document_kind_with_admission(|length, operation| ctx
+                        .charge_work(cadmpeg_core::decode::u64_from_index(length), operation))
+                    .unwrap(),
+                super::DocumentKind::Assembly
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                ctx.charge_work(u64::MAX, "probe").unwrap_err()
+            else {
+                panic!("work refusal");
+            };
+            assert_eq!(limit.used, 1);
+        });
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD document domain visits",
+            |ctx| {
+                facts.document_kind_with_admission(|length, operation| {
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+                })
+            },
+        );
+    }
+
+    #[test]
+    fn archive_role_mapping_charges_only_the_copied_name() {
+        use cadmpeg_container::ZipSpanRole;
+        for role in [
+            ZipSpanRole::LocalSignature("Document.xml".into()),
+            ZipSpanRole::CompressedPayload("Body.brp".into()),
+            ZipSpanRole::Padding {
+                entry: Some("Body.brp".into()),
+            },
+        ] {
+            crate::test_support::with_service_context(&[], |ctx| {
+                assert_eq!(
+                    super::ArchiveSpanRole::from_zip_role_with(&role, |entry| ctx
+                        .copy_retained_text(entry, "FreeCAD archive role entry"))
+                    .unwrap(),
+                    super::ArchiveSpanRole::from(&role)
+                );
+            });
+            crate::test_support::assert_retained_refusal_at(
+                &[],
+                "FreeCAD archive role entry",
+                |ctx| {
+                    super::ArchiveSpanRole::from_zip_role_with(&role, |entry| {
+                        ctx.copy_retained_text(entry, "FreeCAD archive role entry")
+                    })
+                },
+            );
+            crate::test_support::refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                &[],
+                "FreeCAD archive role entry",
+                |ctx| {
+                    super::ArchiveSpanRole::from_zip_role_with(&role, |entry| {
+                        ctx.copy_retained_text(entry, "FreeCAD archive role entry")
+                    })
+                },
+            );
+        }
+        let role = super::ArchiveSpanRole::from_zip_role_with(
+            &ZipSpanRole::EndRecord,
+            |_| -> Result<String, std::convert::Infallible> {
+                panic!("unnamed role must not copy")
+            },
+        )
+        .unwrap();
+        assert_eq!(role, super::ArchiveSpanRole::EndRecord);
+    }
+
+    fn charged_string_table(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        entries: Vec<super::StringTableEntry>,
+    ) -> Result<super::StringTableRecord, cadmpeg_core::CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "FreeCAD string table index")?;
+        super::StringTableRecord::from_parts_with_admission(
+            (0, None, false, 0, None),
+            entries,
+            |length, operation| {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+            },
+            |seen, id| ctx.contains_btree_set(seen, &id, "FreeCAD string table component lookup"),
+            |seen, id| {
+                storage
+                    .with_storage(|| ctx.insert_btree_set(seen, id, "FreeCAD string table index"))
+            },
+        )?
+        .map_err(cadmpeg_core::CodecError::malformed)
+    }
+
+    fn string_table_entries() -> Vec<super::StringTableEntry> {
+        vec![
+            super::StringTableEntry {
+                string_id: 1,
+                flags: 0,
+                components: vec![],
+                payload: "first".into(),
+                raw: "raw".into(),
+            },
+            super::StringTableEntry {
+                string_id: 2,
+                flags: 0,
+                components: vec![1],
+                payload: "second".into(),
+                raw: "raw".into(),
+            },
+        ]
+    }
+
+    #[test]
+    fn string_table_admission_charges_visits_lookups_and_scoped_index() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            let charged = charged_string_table(ctx, string_table_entries()).unwrap();
+            assert_eq!(
+                charged,
+                super::StringTableRecord::try_new(0, None, false, 0, None, string_table_entries())
+                    .unwrap()
+            );
+        });
+        for operation in [
+            "FreeCAD string table entry visits",
+            "FreeCAD string table component visits",
+            "FreeCAD string table component lookup",
+            "FreeCAD string table index",
+        ] {
+            crate::test_support::refusal_at(
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                &[],
+                operation,
+                |ctx| charged_string_table(ctx, string_table_entries()),
+            );
+        }
+        crate::test_support::materialized_refusal_at("FreeCAD string table index", |ctx| {
+            charged_string_table(ctx, string_table_entries())
+        });
+        crate::test_support::assert_collection_refusal_at(
+            &[],
+            "FreeCAD string table index",
+            |ctx| charged_string_table(ctx, string_table_entries()),
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(charged_string_table(&ctx, string_table_entries()).is_ok());
+    }
+
+    #[test]
+    fn string_table_position_admission_refuses_at_work_boundary() {
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD string table position visits",
+            |ctx| {
+                let records = (0..2)
+                    .map(|index| {
+                        super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new())
+                            .unwrap()
+                    })
+                    .collect();
+                super::StringTables::from_records_with_admission(records, |length, operation| {
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+                })?
+                .map_err(cadmpeg_core::CodecError::malformed)
+            },
+        );
     }
 
     #[test]
@@ -2143,10 +2644,22 @@ pub(crate) struct CopyOnChangePolicy {
 
 impl CopyOnChangePolicy {
     pub(crate) fn from_raw(raw: String) -> Result<Self, String> {
-        let index = raw
+        match Self::from_raw_with_admission(raw, |_, _| Ok::<(), std::convert::Infallible>(())) {
+            Ok(result) => result.map_err(str::to_owned),
+            Err(never) => match never {},
+        }
+    }
+
+    /// Parses the owned spelling after the caller admits its bytes.
+    pub(crate) fn from_raw_with_admission<E>(
+        raw: String,
+        mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
+    ) -> Result<Result<Self, &'static str>, E> {
+        admit(raw.len(), "FreeCAD copy-on-change policy parse")?;
+        Ok(raw
             .parse::<i64>()
-            .map_err(|_| "copy-on-change policy must be a signed integer".to_owned())?;
-        Ok(Self { raw, index })
+            .map(|index| Self { raw, index })
+            .map_err(|_| "copy-on-change policy must be a signed integer"))
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -2655,29 +3168,42 @@ pub(crate) enum ArchiveSpanRole {
 
 impl From<&cadmpeg_container::ZipSpanRole> for ArchiveSpanRole {
     fn from(role: &cadmpeg_container::ZipSpanRole) -> Self {
-        use cadmpeg_container::ZipSpanRole;
-        match role {
-            ZipSpanRole::LocalSignature(entry) => Self::LocalSignature(entry.clone()),
-            ZipSpanRole::LocalFields(entry) => Self::LocalFields(entry.clone()),
-            ZipSpanRole::LocalName(entry) => Self::LocalName(entry.clone()),
-            ZipSpanRole::LocalExtra(entry) => Self::LocalExtra(entry.clone()),
-            ZipSpanRole::CompressedPayload(entry) => Self::CompressedPayload(entry.clone()),
-            ZipSpanRole::DataDescriptor(entry) => Self::DataDescriptor(entry.clone()),
-            ZipSpanRole::CentralSignature(entry) => Self::CentralSignature(entry.clone()),
-            ZipSpanRole::CentralFields(entry) => Self::CentralFields(entry.clone()),
-            ZipSpanRole::CentralName(entry) => Self::CentralName(entry.clone()),
-            ZipSpanRole::CentralExtra(entry) => Self::CentralExtra(entry.clone()),
-            ZipSpanRole::CentralComment(entry) => Self::CentralComment(entry.clone()),
-            ZipSpanRole::Padding { entry: Some(entry) } => Self::EntryArchivePadding(entry.clone()),
-            ZipSpanRole::Padding { entry: None } => Self::ArchivePadding,
-            ZipSpanRole::Zip64EndRecord => Self::Zip64EndRecord,
-            ZipSpanRole::Zip64EndLocator => Self::Zip64EndLocator,
-            ZipSpanRole::EndRecord => Self::EndRecord,
+        match Self::from_zip_role_with(role, |entry| {
+            Ok::<_, std::convert::Infallible>(entry.to_owned())
+        }) {
+            Ok(role) => role,
+            Err(never) => match never {},
         }
     }
 }
 
 impl ArchiveSpanRole {
+    /// Maps the ledger role with one caller-owned copy operation per entry name.
+    pub(crate) fn from_zip_role_with<E>(
+        role: &cadmpeg_container::ZipSpanRole,
+        mut copy: impl FnMut(&str) -> Result<String, E>,
+    ) -> Result<Self, E> {
+        use cadmpeg_container::ZipSpanRole;
+        Ok(match role {
+            ZipSpanRole::LocalSignature(entry) => Self::LocalSignature(copy(entry)?),
+            ZipSpanRole::LocalFields(entry) => Self::LocalFields(copy(entry)?),
+            ZipSpanRole::LocalName(entry) => Self::LocalName(copy(entry)?),
+            ZipSpanRole::LocalExtra(entry) => Self::LocalExtra(copy(entry)?),
+            ZipSpanRole::CompressedPayload(entry) => Self::CompressedPayload(copy(entry)?),
+            ZipSpanRole::DataDescriptor(entry) => Self::DataDescriptor(copy(entry)?),
+            ZipSpanRole::CentralSignature(entry) => Self::CentralSignature(copy(entry)?),
+            ZipSpanRole::CentralFields(entry) => Self::CentralFields(copy(entry)?),
+            ZipSpanRole::CentralName(entry) => Self::CentralName(copy(entry)?),
+            ZipSpanRole::CentralExtra(entry) => Self::CentralExtra(copy(entry)?),
+            ZipSpanRole::CentralComment(entry) => Self::CentralComment(copy(entry)?),
+            ZipSpanRole::Padding { entry: Some(entry) } => Self::EntryArchivePadding(copy(entry)?),
+            ZipSpanRole::Padding { entry: None } => Self::ArchivePadding,
+            ZipSpanRole::Zip64EndRecord => Self::Zip64EndRecord,
+            ZipSpanRole::Zip64EndLocator => Self::Zip64EndLocator,
+            ZipSpanRole::EndRecord => Self::EndRecord,
+        })
+    }
+
     /// Stable physical-ledger label retained on the CADIR wire.
     pub(crate) fn as_str(&self) -> &'static str {
         match self {
@@ -2856,13 +3382,26 @@ pub(crate) struct FileVersion {
 impl TryFrom<String> for FileVersion {
     type Error = String;
     fn try_from(spelling: String) -> Result<Self, Self::Error> {
-        let value = spelling
-            .parse()
-            .map_err(|_| "file_version must parse as usize".to_owned())?;
-        Ok(Self { spelling, value })
+        match Self::from_raw_with_admission(spelling, |_, _| Ok::<(), std::convert::Infallible>(()))
+        {
+            Ok(result) => result.map_err(str::to_owned),
+            Err(never) => match never {},
+        }
     }
 }
 impl FileVersion {
+    /// Parses the owned version after the caller admits its bytes.
+    pub(crate) fn from_raw_with_admission<E>(
+        spelling: String,
+        mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
+    ) -> Result<Result<Self, &'static str>, E> {
+        admit(spelling.len(), "FreeCAD file version parse")?;
+        Ok(spelling
+            .parse::<usize>()
+            .map(|value| Self { spelling, value })
+            .map_err(|_| "file_version must parse as usize"))
+    }
+
     pub(crate) fn value(&self) -> usize {
         self.value
     }
@@ -2892,19 +3431,43 @@ pub(crate) struct DocumentFacts {
 impl DocumentFacts {
     /// Structural document-kind classification.
     pub(crate) fn document_kind(&self) -> DocumentKind {
-        if self.domains.iter().any(|domain| domain == "Assembly") {
-            DocumentKind::Assembly
-        } else if self.domains.iter().any(|domain| domain == "TechDraw") {
-            DocumentKind::Drawing
-        } else if self.domains.iter().any(|domain| domain == "PartDesign") {
-            DocumentKind::PartDesign
-        } else if self.domains.iter().any(|domain| domain == "Part") {
-            DocumentKind::Part
-        } else if self.object_count == 0 {
+        match self.document_kind_with_admission(|_, _| Ok::<(), std::convert::Infallible>(())) {
+            Ok(kind) => kind,
+            Err(never) => match never {},
+        }
+    }
+
+    /// Classifies domains in one pass, stopping at the highest-priority domain.
+    pub(crate) fn document_kind_with_admission<E>(
+        &self,
+        mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
+    ) -> Result<DocumentKind, E> {
+        admit(0, "FreeCAD document domain visits")?;
+        let mut kind = if self.object_count == 0 {
             DocumentKind::Empty
         } else {
             DocumentKind::ApplicationDocument
+        };
+        let mut index = 0;
+        while index < self.domains.len() {
+            admit(1, "FreeCAD document domain visits")?;
+            match self.domains[index].as_str() {
+                "Assembly" => return Ok(DocumentKind::Assembly),
+                "TechDraw" => kind = DocumentKind::Drawing,
+                "PartDesign" if kind != DocumentKind::Drawing => kind = DocumentKind::PartDesign,
+                "Part"
+                    if matches!(
+                        kind,
+                        DocumentKind::Empty | DocumentKind::ApplicationDocument
+                    ) =>
+                {
+                    kind = DocumentKind::Part
+                }
+                _ => {}
+            }
+            index += 1;
         }
+        Ok(kind)
     }
 }
 
@@ -3135,15 +3698,13 @@ pub(crate) enum ExternalDocument {
 
 impl ExternalDocument {
     pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let value = NonBlankString::for_decode(
-            ctx,
-            ctx.copy_retained_text(self.as_str(), "FreeCAD external document copy")?,
-            "validate nonblank text",
-        )?
-        .ok_or_else(|| CodecError::Malformed("external document is empty".into()))?;
         Ok(match self {
-            Self::File(_) => Self::File(value),
-            Self::Name(_) => Self::Name(value),
+            Self::File(value) => {
+                Self::File(value.try_clone_for_decode(ctx, "FreeCAD external document copy")?)
+            }
+            Self::Name(value) => {
+                Self::Name(value.try_clone_for_decode(ctx, "FreeCAD external document copy")?)
+            }
         })
     }
 
@@ -3209,18 +3770,11 @@ impl LinkTarget {
         let object = self
             .object
             .as_ref()
-            .map(|value| {
-                NonBlankString::for_decode(
-                    ctx,
-                    ctx.copy_retained_text(value.as_str(), "FreeCAD link object copy")?,
-                    "validate nonblank text",
-                )?
-                .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
-            })
+            .map(|value| value.try_clone_for_decode(ctx, "FreeCAD link object copy"))
             .transpose()?;
         let mut subelements =
             ctx.collection_vec(self.subelements.len(), "FreeCAD link subelement copies")?;
-        for subelement in &self.subelements {
+        for subelement in ctx.admit_iter(&self.subelements, "FreeCAD link subelement visits")? {
             subelements.push(ctx.copy_retained_text(subelement, "FreeCAD link subelement text")?);
         }
         Ok(Self {
@@ -3713,16 +4267,32 @@ pub(crate) fn is_safe_entry_name_charged(
     })
 }
 
-/// Admits the name's bytes once, then reads them in two linear passes.
+/// Reads each byte once, stopping at the first unsafe path component.
 fn safe_entry_name<E>(
     name: &str,
-    admit: impl FnOnce(usize, &'static str) -> Result<(), E>,
+    mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
 ) -> Result<bool, E> {
-    admit(name.len(), "FCStd entry name check")?;
-    Ok(!name.contains('\\')
-        && !name
-            .split('/')
-            .any(|component| component.is_empty() || component == "." || component == ".."))
+    admit(0, "FCStd entry name check")?;
+    let bytes = name.as_bytes();
+    let mut start = 0;
+    let mut index = 0;
+    while index < bytes.len() {
+        admit(1, "FCStd entry name check")?;
+        let byte = bytes[index];
+        if byte == b'\\' {
+            return Ok(false);
+        }
+        if byte == b'/' {
+            let component = &name[start..index];
+            if component.is_empty() || component == "." || component == ".." {
+                return Ok(false);
+            }
+            start = index + 1;
+        }
+        index += 1;
+    }
+    let component = &name[start..];
+    Ok(!component.is_empty() && component != "." && component != "..")
 }
 
 impl EntryRecord {
@@ -3738,20 +4308,33 @@ impl EntryRecord {
             cadmpeg_core::decode::u64_from_index(id.len()),
             "FreeCAD entry identity validation",
         )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(name.len()),
-            "FreeCAD entry name validation",
-        )?;
-        for reference in &referenced_by {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(reference.len()),
-                "FreeCAD entry reference validation",
-            )?;
+        let id = match cadmpeg_ir::ids::Identity::new(id) {
+            Ok(id) => id,
+            Err(error) => {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("{error}"),
+                    "FreeCAD entry identity error",
+                )?))
+            }
+        };
+        if !is_safe_entry_name_charged(ctx, &name)? {
+            return Err(CodecError::malformed("unsafe ZIP entry path"));
         }
-        let id = cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?;
-        let name = ArchiveEntryName::try_from(name).map_err(CodecError::malformed)?;
-        let referenced_by =
-            EntryReferences::try_from(referenced_by).map_err(CodecError::malformed)?;
+        let name = ArchiveEntryName(name);
+        if !ctx.all_by(
+            &referenced_by,
+            |reference| {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(reference.len()),
+                    "FreeCAD entry reference validation",
+                )?;
+                Ok(cadmpeg_ir::ids::is_valid_identity(reference))
+            },
+            "FreeCAD entry reference visits",
+        )? {
+            return Err(CodecError::malformed("entry reference identity is invalid"));
+        }
+        let referenced_by = EntryReferences(referenced_by);
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(data.len()),
             "FreeCAD entry digest",
@@ -4015,6 +4598,29 @@ pub(crate) struct ByteCoverageRecord {
 pub(crate) struct StringTables(Vec<StringTableRecord>);
 
 impl StringTables {
+    /// Checks contiguous positions after admission of each record visit.
+    pub(crate) fn from_records_with_admission<E>(
+        records: Vec<StringTableRecord>,
+        mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
+    ) -> Result<Result<Self, cadmpeg_ir::native::NativeConvertError>, E> {
+        admit(0, "FreeCAD string table position visits")?;
+        let mut position = 0;
+        while position < records.len() {
+            admit(1, "FreeCAD string table position visits")?;
+            let record = &records[position];
+            if record.index != position {
+                return Ok(Err(
+                    cadmpeg_ir::native::NativeConvertError::InvalidCollection(format!(
+                        "string_tables[{position}].index must equal {position}, got {}",
+                        record.index
+                    )),
+                ));
+            }
+            position += 1;
+        }
+        Ok(Ok(Self(records)))
+    }
+
     pub(crate) fn as_slice(&self) -> &[StringTableRecord] {
         &self.0
     }
@@ -4024,15 +4630,12 @@ impl TryFrom<Vec<StringTableRecord>> for StringTables {
     type Error = cadmpeg_ir::native::NativeConvertError;
 
     fn try_from(records: Vec<StringTableRecord>) -> Result<Self, Self::Error> {
-        for (position, record) in records.iter().enumerate() {
-            if record.index != position {
-                return Err(Self::Error::InvalidCollection(format!(
-                    "string_tables[{position}].index must equal {position}, got {}",
-                    record.index
-                )));
-            }
+        match Self::from_records_with_admission(records, |_, _| {
+            Ok::<(), std::convert::Infallible>(())
+        }) {
+            Ok(result) => result,
+            Err(never) => match never {},
         }
-        Ok(Self(records))
     }
 }
 
@@ -4063,23 +4666,57 @@ impl StringTableRecord {
         source_entry: Option<String>,
         entries: Vec<StringTableEntry>,
     ) -> Result<Self, String> {
-        let mut seen = std::collections::HashSet::new();
-        for entry in &entries {
-            if entry.components.iter().any(|id| !seen.contains(id)) {
-                return Err("entries.components must reference earlier string_id values".to_owned());
-            }
-            if !seen.insert(entry.string_id) {
-                return Err("entries.string_id values must be distinct".to_owned());
-            }
+        match Self::from_parts_with_admission(
+            (index, owner_property, save_all, threshold, source_entry),
+            entries,
+            |_, _| Ok::<(), std::convert::Infallible>(()),
+            |seen, id| Ok(seen.contains(&id)),
+            |seen, id| Ok(seen.insert(id)),
+        ) {
+            Ok(result) => result.map_err(str::to_owned),
+            Err(never) => match never {},
         }
-        Ok(Self {
+    }
+
+    /// Checks backward references and distinct ids with caller-owned index operations.
+    /// The decode caller keeps scoped storage alive for every index insertion.
+    pub(crate) fn from_parts_with_admission<E>(
+        metadata: (usize, Option<String>, bool, i64, Option<String>),
+        entries: Vec<StringTableEntry>,
+        mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
+        mut known: impl FnMut(&std::collections::BTreeSet<i64>, i64) -> Result<bool, E>,
+        mut remember: impl FnMut(&mut std::collections::BTreeSet<i64>, i64) -> Result<bool, E>,
+    ) -> Result<Result<Self, &'static str>, E> {
+        admit(0, "FreeCAD string table entry visits")?;
+        let mut seen = std::collections::BTreeSet::new();
+        let mut position = 0;
+        while position < entries.len() {
+            admit(1, "FreeCAD string table entry visits")?;
+            let entry = &entries[position];
+            let mut component = 0;
+            while component < entry.components.len() {
+                admit(1, "FreeCAD string table component visits")?;
+                if !known(&seen, entry.components[component])? {
+                    return Ok(Err(
+                        "entries.components must reference earlier string_id values",
+                    ));
+                }
+                component += 1;
+            }
+            if !remember(&mut seen, entry.string_id)? {
+                return Ok(Err("entries.string_id values must be distinct"));
+            }
+            position += 1;
+        }
+        let (index, owner_property, save_all, threshold, source_entry) = metadata;
+        Ok(Ok(Self {
             index,
             owner_property,
             save_all,
             threshold,
             source_entry,
             entries,
-        })
+        }))
     }
 
     /// Stable table identity derived from the document table index.
