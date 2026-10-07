@@ -139,6 +139,8 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
             },
         ],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -190,6 +192,8 @@ fn container_cached_operation_labels_preserve_section_materialization() {
             },
         }],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -243,6 +247,8 @@ fn container_caches_owned_section_layouts() {
             },
         }],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -283,6 +289,8 @@ fn framed_section_cache_reader_refuses_collection_limit() {
             },
         }],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
@@ -808,6 +816,8 @@ fn external_reference_path_container(payload: &[u8]) -> Container<'_> {
             },
         }],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     }

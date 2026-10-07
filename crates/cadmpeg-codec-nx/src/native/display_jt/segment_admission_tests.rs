@@ -153,6 +153,8 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
             },
         }],
         fastload_table: None,
+        segment_index: None,
+        segment_wrappers: Vec::new(),
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
