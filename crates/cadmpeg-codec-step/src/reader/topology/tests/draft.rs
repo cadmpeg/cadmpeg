@@ -312,14 +312,11 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
     };
 
     for sample in 0..PCURVE_LOCUS_SAMPLE_COUNT {
-        let fraction = f64::from(sample)
-            / f64::from(PCURVE_LOCUS_SAMPLE_COUNT - 1);
+        let fraction = f64::from(sample) / f64::from(PCURVE_LOCUS_SAMPLE_COUNT - 1);
         assert!(point_set_residual(fraction) <= COINCIDENCE_TOLERANCE);
     }
     for gap in 0..(PCURVE_LOCUS_SAMPLE_COUNT - 1) {
-        let fraction = (f64::from(gap)
-            + 0.5)
-            / f64::from(PCURVE_LOCUS_SAMPLE_COUNT - 1);
+        let fraction = (f64::from(gap) + 0.5) / f64::from(PCURVE_LOCUS_SAMPLE_COUNT - 1);
         assert!(point_set_residual(fraction) > 1.0);
     }
 
@@ -763,7 +760,8 @@ fn shared_surface_carrier_is_staged_once() {
                 visible: None,
             },
         },
-        ctx.reserve_scoped(0, "test staged metadata").expect("empty staged storage"),
+        ctx.reserve_scoped(0, "test staged metadata")
+            .expect("empty staged storage"),
         &ctx,
     )
     .expect("duplicate references to one source surface must stage");
