@@ -1826,17 +1826,8 @@ pub struct PcurveNurbs {
     periodic: bool,
 }
 
-fn pcurve_cost_sum(
-    ctx: &DecodeContext<'_>,
-    left: u64,
-    right: u64,
-    operation: &'static str,
-) -> Result<u64, CodecError> {
-    left.checked_add(right)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
-}
-
 impl DecodeCost for WeightedPole2<FinitePoint2> {
+    const FIXED_BYTES: Option<u64> = Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()));
     fn decode_cost(
         &self,
         ctx: &DecodeContext<'_>,
@@ -1853,26 +1844,8 @@ impl DecodeCost for PcurveNurbsPoles<FinitePoint2> {
         operation: &'static str,
     ) -> Result<u64, CodecError> {
         match self {
-            Self::Polynomial { points } => {
-                let mut bytes = 1_u64;
-                for point in ctx.admit_iter(points, operation)? {
-                    bytes = pcurve_cost_sum(
-                        ctx,
-                        bytes,
-                        point.get().decode_cost(ctx, operation)?,
-                        operation,
-                    )?;
-                }
-                Ok(bytes)
-            }
-            Self::Rational { points } => {
-                let mut bytes = 1_u64;
-                for pole in ctx.admit_iter(points, operation)? {
-                    bytes =
-                        pcurve_cost_sum(ctx, bytes, pole.decode_cost(ctx, operation)?, operation)?;
-                }
-                Ok(bytes)
-            }
+            Self::Polynomial { points } => (0_u8, points).decode_cost(ctx, operation),
+            Self::Rational { points } => (0_u8, points).decode_cost(ctx, operation),
         }
     }
 }
@@ -2825,3 +2798,5 @@ cadmpeg_core::named_optional_field!(
 mod tests;
 
 mod identity_rewrite;
+
+mod decode_cost;

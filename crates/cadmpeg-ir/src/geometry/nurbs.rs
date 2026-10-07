@@ -2125,3 +2125,5 @@ impl From<CodecError> for NurbsError {
 }
 
 mod identity_rewrite;
+
+mod decode_cost;

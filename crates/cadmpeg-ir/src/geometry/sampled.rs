@@ -775,3 +775,5 @@ impl PolylineCurve {
 mod tests;
 
 mod identity_rewrite;
+
+mod decode_cost;
