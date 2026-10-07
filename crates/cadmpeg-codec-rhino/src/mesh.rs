@@ -444,7 +444,7 @@ pub(crate) fn decode(
                     let mut valid = true;
                     for point in expand
                         .ctx()
-                        .admit_iter(&(values)[..], "Rhino decode traversal")
+                        .admit_iter(&values[..], "Rhino decode traversal")
                         .map_err(cadmpeg_core::CodecError::from)?
                     {
                         if let Some(point) =
@@ -484,7 +484,7 @@ pub(crate) fn decode(
     if ngon_count == 0 {
         if let Some(extra) = expand
             .ctx()
-            .admit_iter(&(userdata)[..], "Rhino decode traversal")
+            .admit_iter(&userdata[..], "Rhino decode traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .find(|value| {
@@ -545,7 +545,7 @@ pub(crate) fn decode(
     if double_vertices.is_none() {
         if let Some(extra) = expand
             .ctx()
-            .admit_iter(&(userdata)[..], "Rhino decode traversal")
+            .admit_iter(&userdata[..], "Rhino decode traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .find(|value| {
@@ -581,7 +581,7 @@ pub(crate) fn decode(
     ] {
         for extra in expand
             .ctx()
-            .admit_iter(&(userdata)[..], "Rhino decode traversal")
+            .admit_iter(&userdata[..], "Rhino decode traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .filter(|value| value.class_uuid == class && value.item_uuid == class)
@@ -601,7 +601,7 @@ pub(crate) fn decode(
     }
     let proxy_fingerprint = if expand
         .ctx()
-        .admit_iter(&(userdata)[..], "Rhino mesh proxy userdata scan")
+        .admit_iter(&userdata[..], "Rhino mesh proxy userdata scan")
         .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .any(|extra| {
@@ -743,19 +743,13 @@ fn native_proxy_fingerprint(
         .ok_or_else(|| ctx.refuse_codec_limit("Rhino mesh proxy SHA-1", u64::MAX, u64::MAX))?;
     ctx.charge_work(bytes, "Rhino mesh proxy SHA-1")?;
     let mut face_digest = Sha1::new();
-    for face in ctx
-        .admit_iter(faces, "Rhino native proxy fingerprint traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for face in ctx.admit_iter(faces, "Rhino native proxy fingerprint traversal")? {
         for index in face {
             face_digest.update(index.to_ne_bytes());
         }
     }
     let mut vertex_digest = Sha1::new();
-    for vertex in ctx
-        .admit_iter(vertices, "Rhino native proxy fingerprint traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for vertex in ctx.admit_iter(vertices, "Rhino native proxy fingerprint traversal")? {
         for coordinate in vertex {
             vertex_digest.update(coordinate.get().to_ne_bytes());
         }
@@ -840,7 +834,7 @@ pub(crate) fn triangulate_faces<P: Copy>(
     point: impl Fn(P) -> Point3,
 ) -> Result<Vec<[u32; 3]>, GeometryError> {
     let triangle_count = ctx
-        .admit_iter(&(faces)[..], "Rhino triangulate faces traversal")
+        .admit_iter(&faces[..], "Rhino triangulate faces traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .try_fold(0_usize, |count, face| {
             count.checked_add(match unique_face_vertices(face) {
@@ -1563,7 +1557,7 @@ fn read_v5_double_vertices(
         .collection_vec(values.len(), "Rhino V5 mesh admitted double vertices")
         .map_err(crate::curves::GeometryError::from)?;
     for point in ctx
-        .admit_iter(&(values)[..], "Rhino read v5 double vertices traversal")
+        .admit_iter(&values[..], "Rhino read v5 double vertices traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         let Some(point) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {

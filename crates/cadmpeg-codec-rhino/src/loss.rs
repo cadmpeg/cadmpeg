@@ -127,10 +127,7 @@ impl Diagnostics {
         other: &Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
         ctx.reserve_vec(&mut self.0, other.0.len(), "Rhino diagnostic copies")?;
-        for diagnostic in ctx
-            .admit_iter(&(other.0)[..], "Rhino extend cloned admitted traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for diagnostic in ctx.admit_iter(&other.0[..], "Rhino extend cloned admitted traversal")? {
             self.0.push(RhinoDiagnostic {
                 code: diagnostic.code,
                 message: ctx

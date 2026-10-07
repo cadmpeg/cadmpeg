@@ -42,10 +42,7 @@ pub(super) fn decode(
     }
     let mut losses = Vec::new();
     let mut representations = BTreeMap::new();
-    for (&id, record) in ctx
-        .admit_iter(exchange.records(), "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
         let Some(representation_items) = super::representation::items(ctx, record)? else {
             continue;
         };
@@ -205,10 +202,7 @@ pub(super) fn decode(
     }
     let mut referenced_validation_points = BTreeSet::new();
     if !validation_points.is_empty() {
-        for (&record_id, record) in ctx
-            .admit_iter(exchange.records(), "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for (&record_id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
             if validation_representations.contains(&record_id) {
                 continue;
             }
@@ -653,8 +647,7 @@ fn mesh_properties(
         }
         watertight &= !edge_uses.is_empty()
             && ctx
-                .admit_iter(&(edge_uses), "STEP mesh properties map traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+                .admit_iter(&(edge_uses), "STEP mesh properties map traversal")?
                 .map(|(_, value)| value)
                 .all(|uses| *uses == 2);
     }
@@ -728,13 +721,10 @@ fn collect_validation_references(
             ctx.insert_btree_set(referenced, *id, "step_validation_referenced_points")?;
         }
         Value::List(values) => {
-            for value in ctx
-                .admit_iter(
-                    values.as_slice(),
-                    "STEP collect validation references value traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for value in ctx.admit_iter(
+                values.as_slice(),
+                "STEP collect validation references value traversal",
+            )? {
                 collect_validation_references(value, validation_points, referenced, ctx)?;
             }
         }

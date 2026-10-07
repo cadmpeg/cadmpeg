@@ -99,9 +99,8 @@ fn try_clone_value(
         Value::Derived => Value::Derived,
         Value::List(values) => {
             let mut copied = budget.collection_vec(values.len(), operation)?;
-            for value in budget
-                .admit_iter(values.as_slice(), "STEP try clone value value traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+            for value in
+                budget.admit_iter(values.as_slice(), "STEP try clone value value traversal")?
             {
                 copied.push(try_clone_value(value, budget, operation)?);
             }
@@ -320,7 +319,7 @@ impl EntityIndex {
             .map_err(cadmpeg_core::CodecError::from)?
         {
             for partial in budget
-                .admit_iter(&(record.partials)[..], "STEP build traversal")
+                .admit_iter(&record.partials[..], "STEP build traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 if let Some(ids) = budget.get_mut_btree_map(
@@ -388,8 +387,7 @@ impl Exchange {
             .admit_iter(
                 &(self.schema_identifiers)[..],
                 "STEP joined schema identifiers traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            )?
             .enumerate()
             .try_fold(0usize, |sum, (index, identifier)| {
                 sum.checked_add(identifier.text().len())
@@ -1099,7 +1097,7 @@ impl Parser<'_, '_, '_> {
             let mut anchor_bindings = BTreeMap::new();
             for anchor in self
                 .budget
-                .admit_iter(&(anchors)[..], "STEP exchange traversal")
+                .admit_iter(&anchors[..], "STEP exchange traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 binding_storage.with_storage(|| {
@@ -1153,7 +1151,7 @@ impl Parser<'_, '_, '_> {
                     for record in self
                         .budget
                         .admit_iter(header.as_slice(), "STEP class-3 header traversal")
-                        .map_err(CodecError::from)?
+                        .map_err(cadmpeg_core::CodecError::from)?
                     {
                         for value in self
                             .budget
@@ -1161,7 +1159,7 @@ impl Parser<'_, '_, '_> {
                                 record.parameters.as_slice(),
                                 "STEP class-3 header parameters",
                             )
-                            .map_err(CodecError::from)?
+                            .map_err(cadmpeg_core::CodecError::from)?
                         {
                             if contains_class3_occurrence(self.budget, value)? {
                                 break 'occurrence true;
@@ -1171,7 +1169,7 @@ impl Parser<'_, '_, '_> {
                     for anchor in self
                         .budget
                         .admit_iter(anchors.as_slice(), "STEP class-3 anchor traversal")
-                        .map_err(CodecError::from)?
+                        .map_err(cadmpeg_core::CodecError::from)?
                     {
                         if contains_class3_occurrence(self.budget, &anchor.value)? {
                             break 'occurrence true;
@@ -1179,7 +1177,7 @@ impl Parser<'_, '_, '_> {
                         for tag in self
                             .budget
                             .admit_iter(anchor.tags.as_slice(), "STEP class-3 anchor tags")
-                            .map_err(CodecError::from)?
+                            .map_err(cadmpeg_core::CodecError::from)?
                         {
                             if contains_class3_occurrence(self.budget, &tag.value)? {
                                 break 'occurrence true;
@@ -1189,12 +1187,12 @@ impl Parser<'_, '_, '_> {
                     for (_, record) in self
                         .budget
                         .admit_iter(&records, "STEP class-3 record traversal")
-                        .map_err(CodecError::from)?
+                        .map_err(cadmpeg_core::CodecError::from)?
                     {
                         for partial in self
                             .budget
                             .admit_iter(&record.partials[..], "STEP class-3 partial traversal")
-                            .map_err(CodecError::from)?
+                            .map_err(cadmpeg_core::CodecError::from)?
                         {
                             for value in self
                                 .budget
@@ -1202,7 +1200,7 @@ impl Parser<'_, '_, '_> {
                                     partial.parameters.as_slice(),
                                     "STEP class-3 record parameters",
                                 )
-                                .map_err(CodecError::from)?
+                                .map_err(cadmpeg_core::CodecError::from)?
                             {
                                 if contains_class3_occurrence(self.budget, value)? {
                                     break 'occurrence true;
@@ -1243,7 +1241,7 @@ impl Parser<'_, '_, '_> {
         let mut value_refs = Vec::new();
         for anchor in self
             .budget
-            .admit_iter(&(anchors)[..], "STEP exchange traversal")
+            .admit_iter(&anchors[..], "STEP exchange traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             refs.clear();
@@ -1253,7 +1251,7 @@ impl Parser<'_, '_, '_> {
             })?;
             if self
                 .budget
-                .admit_iter(&(refs)[..], "STEP exchange traversal")
+                .admit_iter(&refs[..], "STEP exchange traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
             {
@@ -1261,7 +1259,7 @@ impl Parser<'_, '_, '_> {
             }
             if self
                 .budget
-                .admit_iter(&(value_refs)[..], "STEP exchange traversal")
+                .admit_iter(&value_refs[..], "STEP exchange traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .any(|id| !external_value_reference_ids.contains(id))
             {
@@ -1269,7 +1267,7 @@ impl Parser<'_, '_, '_> {
             }
             for tag in self
                 .budget
-                .admit_iter(&(anchor.tags)[..], "STEP exchange traversal")
+                .admit_iter(&anchor.tags[..], "STEP exchange traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 refs.clear();
@@ -1279,7 +1277,7 @@ impl Parser<'_, '_, '_> {
                 })?;
                 if self
                     .budget
-                    .admit_iter(&(refs)[..], "STEP exchange traversal")
+                    .admit_iter(&refs[..], "STEP exchange traversal")
                     .map_err(cadmpeg_core::CodecError::from)?
                     .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
                 {
@@ -1287,7 +1285,7 @@ impl Parser<'_, '_, '_> {
                 }
                 if self
                     .budget
-                    .admit_iter(&(value_refs)[..], "STEP exchange traversal")
+                    .admit_iter(&value_refs[..], "STEP exchange traversal")
                     .map_err(cadmpeg_core::CodecError::from)?
                     .any(|id| !external_value_reference_ids.contains(id))
                 {
@@ -1305,12 +1303,12 @@ impl Parser<'_, '_, '_> {
             value_refs.clear();
             for partial in self
                 .budget
-                .admit_iter(&(record.partials)[..], "STEP exchange traversal")
+                .admit_iter(&record.partials[..], "STEP exchange traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 for value in self
                     .budget
-                    .admit_iter(&(partial.parameters)[..], "STEP exchange traversal")
+                    .admit_iter(&partial.parameters[..], "STEP exchange traversal")
                     .map_err(cadmpeg_core::CodecError::from)?
                 {
                     reference_storage.with_storage(|| {
@@ -1320,7 +1318,7 @@ impl Parser<'_, '_, '_> {
             }
             if self
                 .budget
-                .admit_iter(&(refs)[..], "STEP exchange traversal")
+                .admit_iter(&refs[..], "STEP exchange traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
             {
@@ -1332,7 +1330,7 @@ impl Parser<'_, '_, '_> {
             }
             if self
                 .budget
-                .admit_iter(&(value_refs)[..], "STEP exchange traversal")
+                .admit_iter(&value_refs[..], "STEP exchange traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .any(|id| !external_value_reference_ids.contains(id))
             {
@@ -1350,7 +1348,7 @@ impl Parser<'_, '_, '_> {
             for record in self
                 .budget
                 .admit_iter(header.as_slice(), "STEP resource header traversal")
-                .map_err(CodecError::from)?
+                .map_err(cadmpeg_core::CodecError::from)?
             {
                 for value in self
                     .budget
@@ -1358,7 +1356,7 @@ impl Parser<'_, '_, '_> {
                         record.parameters.as_slice(),
                         "STEP resource header parameters",
                     )
-                    .map_err(CodecError::from)?
+                    .map_err(cadmpeg_core::CodecError::from)?
                 {
                     if contains_resource_value(self.budget, value)? {
                         break 'resource_value true;
@@ -1368,12 +1366,12 @@ impl Parser<'_, '_, '_> {
             for (_, record) in self
                 .budget
                 .admit_iter(&records, "STEP resource record traversal")
-                .map_err(CodecError::from)?
+                .map_err(cadmpeg_core::CodecError::from)?
             {
                 for partial in self
                     .budget
                     .admit_iter(&record.partials[..], "STEP resource partial traversal")
-                    .map_err(CodecError::from)?
+                    .map_err(cadmpeg_core::CodecError::from)?
                 {
                     for value in self
                         .budget
@@ -1381,7 +1379,7 @@ impl Parser<'_, '_, '_> {
                             partial.parameters.as_slice(),
                             "STEP resource record parameters",
                         )
-                        .map_err(CodecError::from)?
+                        .map_err(cadmpeg_core::CodecError::from)?
                     {
                         if contains_resource_value(self.budget, value)? {
                             break 'resource_value true;
@@ -1449,7 +1447,7 @@ impl Parser<'_, '_, '_> {
             let mut canonical_names = Vec::new();
             for part in self
                 .budget
-                .admit_iter(&(parts)[..], "STEP record traversal")
+                .admit_iter(&parts[..], "STEP record traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 name_storage.with_storage(|| {
@@ -1476,7 +1474,7 @@ impl Parser<'_, '_, '_> {
                     canonical_names.as_slice(),
                     "STEP complex partial pair traversal",
                 )
-                .map_err(CodecError::from)?
+                .map_err(cadmpeg_core::CodecError::from)?
                 .windows(pair_width)
             {
                 if self
@@ -1775,7 +1773,7 @@ fn validate_header(
         let mut count = 0usize;
         for record in budget
             .admit_iter(header, "STEP required header occurrence traversal")
-            .map_err(CodecError::from)?
+            .map_err(cadmpeg_core::CodecError::from)?
         {
             if budget.equal(
                 record.name.as_str(),
@@ -1958,10 +1956,7 @@ fn validate_header_sections(
     budget: &DecodeContext<'_>,
 ) -> Result<Vec<HeaderDataReferences>, ValidationError> {
     let has = |name: &str| -> Result<bool, CodecError> {
-        for record in budget
-            .admit_iter(header, "STEP validate header sections traversal")
-            .map_err(CodecError::from)?
-        {
+        for record in budget.admit_iter(header, "STEP validate header sections traversal")? {
             if budget.equal(
                 record.name.as_str(),
                 name,
@@ -1997,7 +1992,7 @@ fn validate_header_sections(
     let mut language_sections = BTreeSet::new();
     let mut context_sections = BTreeSet::new();
     for record in budget
-        .admit_iter(&(header)[..], "STEP validate header sections traversal")
+        .admit_iter(&header[..], "STEP validate header sections traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .skip(3)
     {
@@ -2177,7 +2172,7 @@ fn valid_section_language(
     if language.len() != 3
         || !budget
             .admit_iter(language.as_bytes(), "STEP section language validation")
-            .map_err(CodecError::from)?
+            .map_err(cadmpeg_core::CodecError::from)?
             .all(|byte| byte.is_ascii_alphabetic())
     {
         return invalid("SECTION_LANGUAGE has invalid parameters");
@@ -2528,13 +2523,13 @@ fn validate_header_data_references(
 ) -> Result<(), ValidationError> {
     for reference in budget
         .admit_iter(references, "STEP header DATA reference traversal")
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
     {
         match reference {
             HeaderDataReferences::FilePopulation(sections) => {
                 for section in budget
                     .admit_iter(sections, "STEP FILE_POPULATION section traversal")
-                    .map_err(CodecError::from)?
+                    .map_err(cadmpeg_core::CodecError::from)?
                 {
                     if !budget.contains_btree_set(
                         data_section_names,
@@ -3132,7 +3127,7 @@ fn resolve_local_references(
     let mut snapshot_storage = budget.reserve_scoped(0, "step_reference_anchor_copy_storage")?;
     let mut anchor_bindings = BTreeMap::new();
     for anchor in budget
-        .admit_iter(&(anchors)[..], "STEP resolve local references traversal")
+        .admit_iter(&anchors[..], "STEP resolve local references traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         snapshot_storage.with_storage(|| {
@@ -3254,7 +3249,7 @@ fn references(
             }
             Value::List(values) => {
                 for child in budget
-                    .admit_iter(&(values)[..], "STEP references traversal")
+                    .admit_iter(&values[..], "STEP references traversal")
                     .map_err(cadmpeg_core::CodecError::from)?
                     .rev()
                 {

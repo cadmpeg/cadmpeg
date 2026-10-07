@@ -628,7 +628,7 @@ pub(crate) fn v2_annotation_direct(
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
         if ctx
-            .admit_iter(&(raw_point)[..], "Rhino v2 annotation direct traversal")
+            .admit_iter(&raw_point[..], "Rhino v2 annotation direct traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
         {

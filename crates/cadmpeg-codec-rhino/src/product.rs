@@ -208,8 +208,7 @@ pub(crate) fn install(
     let mut losses = Vec::new();
     let mut object_records = HashMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in ctx
-        .admit_iter(&(scan.objects)[..], "Rhino install traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&scan.objects[..], "Rhino install traversal")?
         .enumerate()
     {
         if let Some(identity) = object.identity() {
@@ -230,13 +229,10 @@ pub(crate) fn install(
 
     let mut definitions = Vec::new();
     let mut external = Vec::new();
-    for definition in ctx
-        .admit_iter(
-            scan.definitions.definitions(),
-            "Rhino install borrowed traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for definition in ctx.admit_iter(
+        scan.definitions.definitions(),
+        "Rhino install borrowed traversal",
+    )? {
         let external_reference = external_record(ctx, definition.id(), &definition.link)?;
         let external_id = external_reference
             .as_ref()
@@ -248,8 +244,7 @@ pub(crate) fn install(
         }
         let mut links = Vec::new();
         for matches in ctx
-            .admit_iter(&(definition.members)[..], "Rhino install traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&definition.members[..], "Rhino install traversal")?
             .filter_map(|id| object_records.get(id))
             .filter(|matches| matches.len() == 1)
         {
@@ -268,10 +263,7 @@ pub(crate) fn install(
         )?;
         links.dedup();
         let mut member_object_ids = Vec::new();
-        for id in ctx
-            .admit_iter(&(definition.members)[..], "Rhino install traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for id in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
             ctx.reserve_vec(&mut member_object_ids, 1, "Rhino definition member UUIDs")?;
             member_object_ids.push(
                 ctx.format_retained(format_args!("{id}"), "Rhino definition member UUID text")?,
@@ -307,21 +299,15 @@ pub(crate) fn install(
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut member_definitions = HashMap::<Uuid, Vec<String>>::new();
     let mut definition_ids = HashSet::new();
-    for definition in ctx
-        .admit_iter(
-            scan.definitions.definitions(),
-            "Rhino install borrowed traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for definition in ctx.admit_iter(
+        scan.definitions.definitions(),
+        "Rhino install borrowed traversal",
+    )? {
         if !definition_ids.contains(&definition.id()) {
             ctx.reserve_set(&mut definition_ids, 1, "Rhino product definition keys")?;
         }
         definition_ids.insert(definition.id());
-        for member in ctx
-            .admit_iter(&(definition.members)[..], "Rhino install traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
             if !member_definitions.contains_key(member) {
                 ctx.reserve_map(&mut member_definitions, 1, "Rhino product member keys")?;
             }
@@ -344,8 +330,7 @@ pub(crate) fn install(
     }
     let mut occurrences = Vec::new();
     for (source_order, object) in ctx
-        .admit_iter(&(scan.objects)[..], "Rhino install traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&scan.objects[..], "Rhino install traversal")?
         .enumerate()
     {
         let Some(object) = object.framed() else {
@@ -404,10 +389,7 @@ pub(crate) fn install(
                 source_parents.len(),
                 "Rhino occurrence parents",
             )?;
-            for parent in ctx
-                .admit_iter(source_parents, "Rhino install borrowed traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for parent in ctx.admit_iter(source_parents, "Rhino install borrowed traversal")? {
                 parents.push(ctx.copy_retained_text(parent, "Rhino occurrence parent UUID")?);
             }
         }

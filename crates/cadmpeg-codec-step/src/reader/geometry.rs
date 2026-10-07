@@ -110,24 +110,18 @@ pub(super) fn infer_edge_parameter_ranges(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut points = HashMap::new();
-    for point in ctx
-        .admit_iter(
-            &(ir.model.points)[..],
-            "STEP infer edge parameter ranges traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for point in ctx.admit_iter(
+        &(ir.model.points)[..],
+        "STEP infer edge parameter ranges traversal",
+    )? {
         ctx.reserve_map(&mut points, 1, "step_parameter_inference_points")?;
         points.insert(point.id.as_str(), point.position().get());
     }
     let mut vertices = HashMap::new();
-    for vertex in ctx
-        .admit_iter(
-            &(ir.model.vertices)[..],
-            "STEP infer edge parameter ranges traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for vertex in ctx.admit_iter(
+        &(ir.model.vertices)[..],
+        "STEP infer edge parameter ranges traversal",
+    )? {
         if let Some(point) = points.get(vertex.point.as_str()).copied() {
             ctx.reserve_map(&mut vertices, 1, "step_parameter_inference_vertices")?;
             vertices.insert(vertex.id.as_str(), point);
@@ -138,8 +132,7 @@ pub(super) fn infer_edge_parameter_ranges(
         .admit_iter(
             &(ir.model.edges)[..],
             "STEP infer edge parameter ranges traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .enumerate()
     {
         if edge.param_range().is_some() {
@@ -332,8 +325,7 @@ fn resolve_source_curve_parameter_scales(
         .admit_iter(
             exchange.records(),
             "STEP resolve source curve parameter scales map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(key, _)| key)
     {
         let mut active_storage = ctx.reserve_scoped(0, "step source curve traversal storage")?;
@@ -648,13 +640,11 @@ pub(super) fn decode(
     decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses, ctx)?;
     let mut point_carriers = BTreeSet::new();
     for record in ctx
-        .admit_iter(exchange.records(), "STEP decode map traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(exchange.records(), "STEP decode map traversal")?
         .map(|(_, value)| value)
     {
         if ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .any(|partial| partial.name == "VERTEX_POINT")
         {
             if let Some(id) = vertex_point_reference(ctx, record)? {
@@ -662,8 +652,7 @@ pub(super) fn decode(
             }
         }
         if ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .any(|partial| super::representation::is_representation_name(&partial.name))
         {
             if let Some(items) = representation_items(ctx, record)? {
@@ -673,8 +662,7 @@ pub(super) fn decode(
             }
         }
         if ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .any(|partial| {
                 matches!(
                     partial.name.as_str(),
@@ -691,8 +679,7 @@ pub(super) fn decode(
             }
         }
         if ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .any(|partial| partial.name == "POLY_LOOP")
         {
             if let Some(items) = first_named_list(ctx, record, &["POLY_LOOP"])? {
@@ -702,10 +689,7 @@ pub(super) fn decode(
             }
         }
         if is_apll_leader_line(ctx, record)? {
-            for partial in ctx
-                .admit_iter(&(record.partials)[..], "STEP decode traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for partial in ctx.admit_iter(&record.partials[..], "STEP decode traversal")? {
                 for parameter in ctx.admit_iter(
                     partial.parameters.as_slice(),
                     "STEP record parameter traversal",
@@ -724,8 +708,7 @@ pub(super) fn decode(
             }
         }
         if let Some(item) = ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .find(|partial| {
                 matches!(
                     partial.name.as_str(),
@@ -2264,8 +2247,7 @@ pub(super) fn decode(
             let mut boundaries = boundary_steps.map(|_| Vec::new());
             if let (Some(values), Some(boundaries)) = (boundary_steps, boundaries.as_mut()) {
                 for boundary in ctx
-                    .admit_iter(&(values)[..], "STEP decode traversal")
-                    .map_err(cadmpeg_core::CodecError::from)?
+                    .admit_iter(&values[..], "STEP decode traversal")?
                     .filter_map(Value::reference)
                 {
                     ctx.push_vec(
@@ -2667,13 +2649,9 @@ pub(super) fn decode(
             )?;
         }
     }
-    for (&face_id, face) in ctx
-        .admit_iter(exchange.records(), "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&face_id, face) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
         if !ctx
-            .admit_iter(&(face.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&face.partials[..], "STEP decode traversal")?
             .any(|partial| matches!(partial.name.as_str(), "ADVANCED_FACE" | "FACE_SURFACE"))
         {
             continue;
@@ -2710,10 +2688,7 @@ pub(super) fn decode(
         }
     }
     let mut surface_parameter_scales = BTreeMap::new();
-    for surface in ctx
-        .admit_iter(&(ir.model.surfaces)[..], "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for surface in ctx.admit_iter(&ir.model.surfaces[..], "STEP decode traversal")? {
         let Some(id) = step_instance_id(ctx, surface.id.as_str())? else {
             continue;
         };
@@ -2812,10 +2787,7 @@ pub(super) fn decode(
     // boundaries do not depend on parameter-space geometry. Remove candidate
     // references whose pcurve carrier did not decode.
     let mut decoded_pcurve_steps = BTreeSet::new();
-    for pcurve in ctx
-        .admit_iter(&(ir.model.pcurves)[..], "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for pcurve in ctx.admit_iter(&ir.model.pcurves[..], "STEP decode traversal")? {
         if let Some(id) = step_instance_id(ctx, pcurve.id.as_str())? {
             ctx.insert_btree_set(&mut decoded_pcurve_steps, id, "step_decoded_pcurve_steps")?;
         }
@@ -2869,13 +2841,9 @@ pub(super) fn decode(
         )?;
     }
 
-    for (&id, record) in ctx
-        .admit_iter(exchange.records(), "STEP decode traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal")? {
         if ctx
-            .admit_iter(&(record.partials)[..], "STEP decode traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&record.partials[..], "STEP decode traversal")?
             .any(|partial| {
                 matches!(
                     partial.name.as_str(),
@@ -2918,13 +2886,10 @@ fn decode_tessellated_curve_sets(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    for (&id, record) in ctx
-        .admit_iter(
-            exchange.records(),
-            "STEP decode tessellated curve sets traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for (&id, record) in ctx.admit_iter(
+        exchange.records(),
+        "STEP decode tessellated curve sets traversal",
+    )? {
         if record.partial(ctx, "TESSELLATED_CURVE_SET")?.is_none() {
             continue;
         }
@@ -3130,8 +3095,7 @@ pub(super) fn associate_free_geometric_set_members(
         .admit_iter(
             exchange.records(),
             "STEP associate free geometric set members map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(_, value)| value)
     {
         let Some(set_type) = entity_type(ctx, set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])?
@@ -3220,8 +3184,7 @@ pub(super) fn associate_free_representation_members(
         .admit_iter(
             exchange.records(),
             "STEP associate free representation members map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(_, value)| value)
     {
         if !ctx
@@ -3323,13 +3286,10 @@ pub(super) fn associate_free_presentation_carriers(
         }
     }
     for (plane_id, plane) in exchange.entities(ctx, "ANNOTATION_PLANE")? {
-        for partial in ctx
-            .admit_iter(
-                &(plane.partials)[..],
-                "STEP associate free presentation carriers traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for partial in ctx.admit_iter(
+            &(plane.partials)[..],
+            "STEP associate free presentation carriers traversal",
+        )? {
             for parameter in ctx.admit_iter(
                 partial.parameters.as_slice(),
                 "STEP record parameter traversal",
@@ -3827,8 +3787,7 @@ pub(super) fn topology_owned_carriers(
         .admit_iter(
             &(ir.model.edges)[..],
             "STEP topology owned carriers traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .filter_map(|edge| edge.curve())
         .chain(
             ctx.admit_iter(
@@ -3849,8 +3808,7 @@ pub(super) fn topology_owned_carriers(
         .admit_iter(
             &(ir.model.faces)[..],
             "STEP topology owned carriers traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|face| step_instance_id(ctx, face.surface.as_str()))
         .filter_map(Result::transpose)
         .map(|id| id.map(|id| index.surfaces.get(&id).copied()))
@@ -3863,8 +3821,7 @@ pub(super) fn topology_owned_carriers(
         .admit_iter(
             &(ir.model.vertices)[..],
             "STEP topology owned carriers traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|vertex| step_instance_id(ctx, vertex.point.as_str()))
         .filter_map(Result::transpose)
         .map(|id| id.map(|id| index.points.get(&id).map(|point| &point.index).copied()))
@@ -4166,8 +4123,7 @@ fn retained_surface_curve_ids(
         .admit_iter(
             exchange.records(),
             "STEP retained surface curve ids map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(_, value)| value)
     {
         let Some(set_type) = entity_type(ctx, set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])?
@@ -4188,8 +4144,7 @@ fn retained_surface_curve_ids(
         .admit_iter(
             exchange.records(),
             "STEP retained surface curve ids map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(_, value)| value)
     {
         if !ctx
@@ -4215,8 +4170,7 @@ fn retained_surface_curve_ids(
         .admit_iter(
             exchange.records(),
             "STEP retained surface curve ids map traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|(_, value)| value)
     {
         if let Some(target) = super::presentation::styled_item_target(ctx, record)? {
@@ -4226,13 +4180,10 @@ fn retained_surface_curve_ids(
         }
     }
     for (_, plane) in exchange.entities(ctx, "ANNOTATION_PLANE")? {
-        for partial in ctx
-            .admit_iter(
-                &(plane.partials)[..],
-                "STEP retained surface curve ids traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for partial in ctx.admit_iter(
+            &(plane.partials)[..],
+            "STEP retained surface curve ids traversal",
+        )? {
             for parameter in ctx.admit_iter(
                 partial.parameters.as_slice(),
                 "STEP record parameter traversal",
@@ -4350,9 +4301,8 @@ fn resolve_unit_scales(
 ) -> Result<UnitScales, CodecError> {
     let mut length_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
     let mut angle_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
-    for (&representation_id, representation) in ctx
-        .admit_iter(exchange.records(), "STEP resolve unit scales traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+    for (&representation_id, representation) in
+        ctx.admit_iter(exchange.records(), "STEP resolve unit scales traversal")?
     {
         if !is_representation_record(ctx, representation)? {
             continue;
@@ -4581,13 +4531,10 @@ fn collect_unit_scope_members(
                                 ctx.push_vec(&mut pending, target, "step_unit_scope_pending")?;
                             }
                         } else {
-                            for partial in ctx
-                                .admit_iter(
-                                    &(record.partials)[..],
-                                    "STEP collect unit scope members traversal",
-                                )
-                                .map_err(cadmpeg_core::CodecError::from)?
-                            {
+                            for partial in ctx.admit_iter(
+                                &(record.partials)[..],
+                                "STEP collect unit scope members traversal",
+                            )? {
                                 for parameter in ctx.admit_iter(
                                     partial.parameters.as_slice(),
                                     "STEP record parameter traversal",
@@ -4710,8 +4657,7 @@ fn document_unit_scale(
     let mut has_context_unit = false;
 
     for record in ctx
-        .admit_iter(exchange.records(), "STEP document unit scale map traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(exchange.records(), "STEP document unit scale map traversal")?
         .map(|(_, value)| value)
     {
         let Some(units) = record
@@ -5109,13 +5055,11 @@ fn trim_parameter(
         Value::List(values) => (
             context
                 .ctx
-                .admit_iter(&(values)[..], "STEP trim parameter traversal")
-                .map_err(CodecError::from)?
+                .admit_iter(&values[..], "STEP trim parameter traversal")?
                 .find(|value| is_parameter_trim_value(value)),
             context
                 .ctx
-                .admit_iter(&(values)[..], "STEP trim parameter traversal")
-                .map_err(CodecError::from)?
+                .admit_iter(&values[..], "STEP trim parameter traversal")?
                 .find(|value| matches!(value, Value::Reference(_))),
         ),
         value if is_parameter_trim_value(value) => (Some(value), None),
@@ -5767,10 +5711,7 @@ fn coordinate_rows(
     scale: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
-    for partial in ctx
-        .admit_iter(&(record.partials)[..], "STEP coordinate rows traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for partial in ctx.admit_iter(&record.partials[..], "STEP coordinate rows traversal")? {
         for rows in ctx
             .admit_iter(
                 partial.parameters.as_slice(),
@@ -5780,10 +5721,7 @@ fn coordinate_rows(
         {
             let mut vertices = Vec::new();
             let mut valid = true;
-            for row in ctx
-                .admit_iter(rows, "STEP coordinate rows borrowed traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for row in ctx.admit_iter(rows, "STEP coordinate rows borrowed traversal")? {
                 let point = (|| {
                     let values = row.list()?;
                     if values.len() != 3 {
@@ -6219,8 +6157,7 @@ fn decode_pcurve_geometry(
             .admit_iter(
                 &(record.partials)[..],
                 "STEP decode pcurve geometry traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
+            )?
             .any(|partial| {
                 matches!(
                     partial.name.as_str(),
@@ -6641,8 +6578,7 @@ fn procedural_surface_parameter_scales(
                     .admit_iter(
                         &(ir.model.surfaces)[..],
                         "STEP procedural surface parameter scales traversal",
-                    )
-                    .map_err(cadmpeg_core::CodecError::from)?
+                    )?
                     .map(|surface| -> Result<Option<_>, CodecError> {
                         Ok((ctx.equal(
                             &surface.id,
@@ -6875,8 +6811,7 @@ fn directrix_parameter_scale_inner(
         .admit_iter(
             &(ir.model.curves)[..],
             "STEP directrix parameter scale inner traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .map(|curve| -> Result<Option<_>, CodecError> {
             Ok((ctx.equal(
                 &curve.id,
@@ -6981,10 +6916,7 @@ fn polyline_pcurve(
 ) -> Result<Option<PcurveGeometry>, CodecError> {
     let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
     let mut control_points = Vec::new();
-    for value in ctx
-        .admit_iter(&values[..], "STEP polyline pcurve value traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for value in ctx.admit_iter(&values[..], "STEP polyline pcurve value traversal")? {
         let point = geometry_or_none!(value.reference().and_then(|id| points.get(&id).copied()));
         ctx.push_vec(&mut control_points, point, "step_polyline_pcurve_points")?;
     }
@@ -7026,10 +6958,7 @@ fn polyline(
 ) -> Result<Option<NurbsCurve>, CodecError> {
     let values = geometry_or_none!(record.parameter(1).and_then(Value::list));
     let mut control_points = Vec::new();
-    for value in ctx
-        .admit_iter(&values[..], "STEP polyline value traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for value in ctx.admit_iter(&values[..], "STEP polyline value traversal")? {
         let point = geometry_or_none!(value
             .reference()
             .and_then(|id| points.get(&id).copied().map(FinitePoint3::get)));
@@ -7109,8 +7038,7 @@ fn nurbs_surface(
         .and_then(|degree| u32::try_from(degree).ok()));
     let rows = geometry_or_none!(base.parameters.get(offset + 2).and_then(Value::list));
     if !ctx
-        .admit_iter(&(rows)[..], "STEP nurbs surface traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&rows[..], "STEP nurbs surface traversal")?
         .all(|row| row.list().is_some())
     {
         return Ok(None);
@@ -7124,8 +7052,7 @@ fn nurbs_surface(
         || u_degree >= u_count
         || v_degree >= v_count
         || ctx
-            .admit_iter(&(rows)[..], "STEP nurbs surface traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
+            .admit_iter(&rows[..], "STEP nurbs surface traversal")?
             .any(|row| {
                 row.list()
                     .is_none_or(|row| row.len() != cadmpeg_core::decode::index_from_u32(v_count))
@@ -7134,18 +7061,12 @@ fn nurbs_surface(
         return Ok(None);
     }
     let mut control_points = Vec::new();
-    for row in ctx
-        .admit_iter(rows, "STEP nurbs surface borrowed traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for row in ctx.admit_iter(rows, "STEP nurbs surface borrowed traversal")? {
         let mut decoded_row = Vec::new();
-        for value in ctx
-            .admit_iter(
-                geometry_or_none!(row.list()),
-                "STEP nurbs surface borrowed traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for value in ctx.admit_iter(
+            geometry_or_none!(row.list()),
+            "STEP nurbs surface borrowed traversal",
+        )? {
             let point = geometry_or_none!(value
                 .reference()
                 .and_then(|id| points.get(&id).copied().map(FinitePoint3::get)));
@@ -7246,18 +7167,12 @@ fn nurbs_surface(
     let weights = if let Some(leaf) = record.partial(ctx, "RATIONAL_B_SPLINE_SURFACE")? {
         let rows = geometry_or_none!(leaf.parameters.first().and_then(Value::list));
         let mut values = Vec::new();
-        for row in ctx
-            .admit_iter(rows, "STEP nurbs surface borrowed traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for row in ctx.admit_iter(rows, "STEP nurbs surface borrowed traversal")? {
             let mut decoded_row = Vec::new();
-            for value in ctx
-                .admit_iter(
-                    geometry_or_none!(row.list()),
-                    "STEP nurbs surface borrowed traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for value in ctx.admit_iter(
+                geometry_or_none!(row.list()),
+                "STEP nurbs surface borrowed traversal",
+            )? {
                 let number = geometry_or_none!(value.number());
                 ctx.push_vec(&mut decoded_row, number, "step_nurbs_surface_weight_values")?;
             }
@@ -7303,12 +7218,8 @@ fn expand_knots(
     }
     let mut knots = Vec::new();
     for (multiplicity, knot) in ctx
-        .admit_iter(&(multiplicities)[..], "STEP expand knots traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-        .zip(
-            ctx.admit_iter(distinct, "STEP distinct knot traversal")
-                .map_err(cadmpeg_core::CodecError::from)?,
-        )
+        .admit_iter(&multiplicities[..], "STEP expand knots traversal")?
+        .zip(ctx.admit_iter(distinct, "STEP distinct knot traversal")?)
     {
         let count = geometry_or_none!(multiplicity
             .integer()
@@ -7331,10 +7242,7 @@ fn expand_knots(
 fn references(value: &Value, ctx: &DecodeContext<'_>) -> Result<Option<Vec<u64>>, CodecError> {
     let values = geometry_or_none!(value.list());
     let mut references = Vec::new();
-    for value in ctx
-        .admit_iter(&values[..], "STEP references value traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for value in ctx.admit_iter(&values[..], "STEP references value traversal")? {
         let id = geometry_or_none!(value.reference());
         ctx.push_vec(&mut references, id, "step_nurbs_control_point_ids")?;
     }
@@ -7367,10 +7275,7 @@ pub(super) fn curve_carrier_record(
 fn numbers(value: &Value, ctx: &DecodeContext<'_>) -> Result<Option<Vec<f64>>, CodecError> {
     let values = geometry_or_none!(value.list());
     let mut numbers = Vec::new();
-    for value in ctx
-        .admit_iter(&values[..], "STEP numbers value traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for value in ctx.admit_iter(&values[..], "STEP numbers value traversal")? {
         let number = geometry_or_none!(value.number());
         ctx.push_vec(&mut numbers, number, "step_nurbs_weight_values")?;
     }

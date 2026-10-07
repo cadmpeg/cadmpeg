@@ -226,7 +226,7 @@ pub(crate) fn parse_header(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Head
     }
     let version = &bytes[start_offset + file_header::ARCHIVE_VERSION..header_end];
     let first_digit = ctx
-        .admit_iter(&(version)[..], "Rhino parse header traversal")
+        .admit_iter(&version[..], "Rhino parse header traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .position(u8::is_ascii_digit)
         .ok_or(FramingError::InvalidHeader)?;

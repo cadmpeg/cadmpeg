@@ -262,28 +262,21 @@ fn inspect_parsed_exchange(
         .admit_iter(
             &(exchange.data())[..],
             "STEP inspect parsed exchange traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .enumerate()
     {
         let mut counts = BTreeMap::<&str, usize>::new();
-        for id in ctx
-            .admit_iter(
-                &(section.records)[..],
-                "STEP inspect parsed exchange traversal",
-            )
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
+        for id in ctx.admit_iter(
+            &(section.records)[..],
+            "STEP inspect parsed exchange traversal",
+        )? {
             if !opaque_offsets.contains(&exchange.records()[id].span.start) {
                 continue;
             }
-            for partial in ctx
-                .admit_iter(
-                    &(exchange.records()[id].partials)[..],
-                    "STEP inspect parsed exchange traversal",
-                )
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
+            for partial in ctx.admit_iter(
+                &(exchange.records()[id].partials)[..],
+                "STEP inspect parsed exchange traversal",
+            )? {
                 let name = partial.name.as_str();
                 ctx.admit_btree_entry(&counts, &name, "step_inspect_unknown_counts")?;
                 match counts.entry(name) {
@@ -365,8 +358,7 @@ fn inspect_parsed_exchange(
         .admit_iter(
             &(exchange.signatures())[..],
             "STEP inspect parsed exchange traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .enumerate()
     {
         ctx.push_vec(
@@ -406,10 +398,7 @@ fn inspect_parsed_exchange(
         )?,
         "step_codec_notes",
     )?;
-    for diagnostic in ctx
-        .admit_iter(diagnostics, "STEP inspect parsed exchange traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for diagnostic in ctx.admit_iter(diagnostics, "STEP inspect parsed exchange traversal")? {
         let note = ctx.format_retained(
             format_args!("{}", diagnostic.message),
             "step_inspect_diagnostic_copy",

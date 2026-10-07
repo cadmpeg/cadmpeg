@@ -625,7 +625,7 @@ impl ValidatedRawBrep {
             face_sides: Vec::new(),
         };
         for vertex in ctx
-            .admit_iter(&(raw.vertices)[..], "Rhino validate traversal")
+            .admit_iter(&raw.vertices[..], "Rhino validate traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             let edges = slots(ctx, &vertex.edges, raw.edges.len(), "vertex edge")?;
@@ -633,7 +633,7 @@ impl ValidatedRawBrep {
             resolved.vertices.push(ResolvedVertex { edges, tolerance });
         }
         for (index, edge) in ctx
-            .admit_iter(&(raw.edges)[..], "Rhino validate traversal")
+            .admit_iter(&raw.edges[..], "Rhino validate traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
@@ -650,7 +650,7 @@ impl ValidatedRawBrep {
             ordered_interval(ctx, edge.domain, "edge domain")?;
             let tolerance = finite_tolerance(ctx, edge.tolerance, "edge tolerance")?;
             for trim in ctx
-                .admit_iter(&(trims)[..], "Rhino validate traversal")
+                .admit_iter(&trims[..], "Rhino validate traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 if position(raw.trims[*trim].edge) != Some(index) {
@@ -668,7 +668,7 @@ impl ValidatedRawBrep {
             });
         }
         for (trim_index, trim) in ctx
-            .admit_iter(&(raw.trims)[..], "Rhino validate traversal")
+            .admit_iter(&raw.trims[..], "Rhino validate traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
@@ -746,12 +746,12 @@ impl ValidatedRawBrep {
         }
         validate_edge_incidences(ctx, raw, &resolved)?;
         for (index, vertex) in ctx
-            .admit_iter(&(resolved.vertices)[..], "Rhino validate traversal")
+            .admit_iter(&resolved.vertices[..], "Rhino validate traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
             for edge in ctx
-                .admit_iter(&(vertex.edges)[..], "Rhino validate traversal")
+                .admit_iter(&vertex.edges[..], "Rhino validate traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 if !resolved.edges[*edge].vertices.contains(&index) {
@@ -763,7 +763,7 @@ impl ValidatedRawBrep {
             }
         }
         for (index, loop_record) in ctx
-            .admit_iter(&(raw.loops)[..], "Rhino validate traversal")
+            .admit_iter(&raw.loops[..], "Rhino validate traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
@@ -791,7 +791,7 @@ impl ValidatedRawBrep {
             resolved.loops.push(ResolvedLoop { trims, face });
         }
         for (index, face) in ctx
-            .admit_iter(&(raw.faces)[..], "Rhino validate traversal")
+            .admit_iter(&raw.faces[..], "Rhino validate traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
@@ -813,7 +813,7 @@ impl ValidatedRawBrep {
                 ));
             }
             for loop_index in ctx
-                .admit_iter(&(loops)[..], "Rhino validate traversal")
+                .admit_iter(&loops[..], "Rhino validate traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .skip(1)
             {
@@ -826,7 +826,7 @@ impl ValidatedRawBrep {
                 }
             }
             for loop_index in ctx
-                .admit_iter(&(loops)[..], "Rhino validate traversal")
+                .admit_iter(&loops[..], "Rhino validate traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
                 if resolved.loops[*loop_index].face != index {
@@ -1083,7 +1083,7 @@ pub(crate) fn parse(
     };
     if !inline_region_loaded {
         if let Some(extra) = ctx
-            .admit_iter(&(userdata)[..], "Rhino parse traversal")
+            .admit_iter(&userdata[..], "Rhino parse traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .find(|value| {
@@ -1479,7 +1479,7 @@ fn parse_legacy_major2(
             Ok(Vec::<usize>::new())
         })?;
     for (trim_index, trim) in ctx
-        .admit_iter(&(trims)[..], "Rhino parse legacy major2 traversal")
+        .admit_iter(&trims[..], "Rhino parse legacy major2 traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -1501,7 +1501,7 @@ fn parse_legacy_major2(
         *parent = index;
     }
     for loop_record in ctx
-        .admit_iter(&(loops)[..], "Rhino parse legacy major2 traversal")
+        .admit_iter(&loops[..], "Rhino parse legacy major2 traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         let Some(head) = loop_record.trims.first() else {
@@ -1529,7 +1529,7 @@ fn parse_legacy_major2(
         }
     }
     for (trim_index, trim) in ctx
-        .admit_iter(&(trims)[..], "Rhino parse legacy major2 traversal")
+        .admit_iter(&trims[..], "Rhino parse legacy major2 traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -1552,7 +1552,7 @@ fn parse_legacy_major2(
             continue;
         };
         for trim_index in ctx
-            .admit_iter(&(trim_indexes)[..], "Rhino parse legacy major2 traversal")
+            .admit_iter(&trim_indexes[..], "Rhino parse legacy major2 traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .skip(1)
         {
@@ -1602,7 +1602,7 @@ fn parse_legacy_major2(
         .collection_vec(edge_count, "Rhino legacy Brep edges")
         .map_err(crate::curves::GeometryError::from)?;
     for (edge_index, curve) in ctx
-        .admit_iter(&(c3_meta)[..], "Rhino parse legacy major2 traversal")
+        .admit_iter(&c3_meta[..], "Rhino parse legacy major2 traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -1628,7 +1628,7 @@ fn parse_legacy_major2(
             .map_err(|_| error(curve.range.start, "legacy Brep edge index overflow"))?;
         let trim_indexes = &edge_trim_indexes[edge_index];
         let tolerance = ctx
-            .admit_iter(&(trim_indexes)[..], "Rhino parse legacy major2 traversal")
+            .admit_iter(&trim_indexes[..], "Rhino parse legacy major2 traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .map(|trim| trims[*trim].legacy_tolerances[1])
             .filter(|value| value.is_finite() && *value >= 0.0)
@@ -1681,7 +1681,7 @@ fn parse_legacy_major2(
         ];
     }
     for edge in ctx
-        .admit_iter(&(edges)[..], "Rhino parse legacy major2 traversal")
+        .admit_iter(&edges[..], "Rhino parse legacy major2 traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         for vertex in edge.vertices {
@@ -1695,17 +1695,17 @@ fn parse_legacy_major2(
         }
     }
     for edge in ctx
-        .admit_iter(&(edges)[..], "Rhino parse legacy major2 traversal")
+        .admit_iter(&edges[..], "Rhino parse legacy major2 traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         for trim_index in ctx
-            .admit_iter(&(edge.trims)[..], "Rhino parse legacy major2 traversal")
+            .admit_iter(&edge.trims[..], "Rhino parse legacy major2 traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             let trim_index = slot(ctx, *trim_index, trims.len(), "legacy Brep edge trim")?;
             let loop_index = trims[trim_index].loop_index;
             let same_loop = ctx
-                .admit_iter(&(edge.trims)[..], "Rhino parse legacy major2 traversal")
+                .admit_iter(&edge.trims[..], "Rhino parse legacy major2 traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .filter_map(|other| position(Some(*other)))
                 .filter(|other| trims[*other].loop_index == loop_index)
@@ -1722,7 +1722,7 @@ fn parse_legacy_major2(
     for (vertex_index, vertex) in vertices.iter_mut().enumerate() {
         let mut tolerance: f64 = 0.0;
         for edge_index in ctx
-            .admit_iter(&(vertex.edges)[..], "Rhino parse legacy major2 traversal")
+            .admit_iter(&vertex.edges[..], "Rhino parse legacy major2 traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             let edge_index = slot(ctx, *edge_index, edges.len(), "legacy Brep vertex edge")?;
@@ -1951,7 +1951,7 @@ fn legacy_vertex(
     position: usize,
 ) -> Result<usize, GeometryError> {
     if let Some((index, _)) = ctx
-        .admit_iter(&(vertices)[..], "Rhino legacy vertex traversal")
+        .admit_iter(&vertices[..], "Rhino legacy vertex traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
         .find(|(_, value)| value.vertex.point.get() == point)
@@ -2823,7 +2823,7 @@ fn validate_rings(
 ) -> Result<(), GeometryError> {
     for (loop_index, loop_record) in ctx
         .admit_iter(raw.loops.as_slice(), "Rhino Brep ring loop traversal")
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
         let ring = &resolved.loops[loop_index].trims;
@@ -2850,7 +2850,7 @@ fn validate_rings(
         }
         for pair in ctx
             .admit_iter(ring.as_slice(), "Rhino Brep ring adjacency traversal")
-            .map_err(CodecError::from)?
+            .map_err(cadmpeg_core::CodecError::from)?
             .windows(
                 std::num::NonZeroUsize::new(2)
                     .ok_or_else(|| ctx.refuse_codec_limit("Rhino Brep ring window width", 0, 1))?,
@@ -2903,7 +2903,7 @@ fn validate_regions(
         .collection_vec(raw.face_sides.len(), "Rhino resolved Brep region sides")
         .map_err(crate::curves::GeometryError::from)?;
     for (index, side) in ctx
-        .admit_iter(&(raw.face_sides)[..], "Rhino validate regions traversal")
+        .admit_iter(&raw.face_sides[..], "Rhino validate regions traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -2944,7 +2944,7 @@ fn validate_regions(
     }
     let mut listed_sides = HashSet::new();
     for (index, region) in ctx
-        .admit_iter(&(raw.regions)[..], "Rhino validate regions traversal")
+        .admit_iter(&raw.regions[..], "Rhino validate regions traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -2955,7 +2955,7 @@ fn validate_regions(
             infinite += 1;
         }
         for side in ctx
-            .admit_iter(&(region.sides)[..], "Rhino validate regions traversal")
+            .admit_iter(&region.sides[..], "Rhino validate regions traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             let side = slot(ctx, *side, raw.face_sides.len(), "region side")?;
@@ -2971,7 +2971,7 @@ fn validate_regions(
         }
     }
     if ctx
-        .admit_iter(&(sides)[..], "Rhino validate regions traversal")
+        .admit_iter(&sides[..], "Rhino validate regions traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
         .any(|(index, side)| side.region.is_some() && !listed_sides.contains(&index))
@@ -3156,7 +3156,7 @@ fn validate_edge_incidences(
             resolved.edges.as_slice(),
             "Rhino Brep edge incidence traversal",
         )
-        .map_err(CodecError::from)?
+        .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
         for trim_index in ctx
@@ -3164,7 +3164,7 @@ fn validate_edge_incidences(
                 edge.trims.as_slice(),
                 "Rhino Brep edge trim incidence traversal",
             )
-            .map_err(CodecError::from)?
+            .map_err(cadmpeg_core::CodecError::from)?
         {
             let trim = &resolved.trims[*trim_index];
             if trim.edge.is_some()
@@ -3189,7 +3189,7 @@ fn validate_edge_incidences(
                     resolved.vertices[*vertex].edges.as_slice(),
                     "Rhino Brep vertex incidence traversal",
                 )
-                .map_err(CodecError::from)?
+                .map_err(cadmpeg_core::CodecError::from)?
                 .filter(|value| **value == edge_index)
                 .count();
             if count != expected {

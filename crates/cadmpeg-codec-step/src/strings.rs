@@ -142,7 +142,7 @@ fn decode_chars(
                     })?;
                     for character in ctx
                         .admit_iter(text, "STEP decode chars traversal")
-                        .map_err(CodecError::from)?
+                        .map_err(cadmpeg_core::CodecError::from)?
                     {
                         emit(character)?;
                     }

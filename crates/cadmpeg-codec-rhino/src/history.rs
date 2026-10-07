@@ -529,7 +529,7 @@ fn subd_edge_chain(
     let orientations = array(ctx, &mut reader, 1, BoundedReader::u8)?;
     let orientation_start = reader.position() - orientations.len();
     for (index, orientation) in ctx
-        .admit_iter(&(orientations)[..], "Rhino subd edge chain traversal")
+        .admit_iter(&orientations[..], "Rhino subd edge chain traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -753,10 +753,7 @@ pub(crate) fn parse_records(
     table_typecode: u32,
 ) -> Result<HistoryScan, CodecError> {
     let mut result = HistoryScan::default();
-    for record in ctx
-        .admit_iter(records, "Rhino parse records traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for record in ctx.admit_iter(records, "Rhino parse records traversal")? {
         match parse_record(ctx, bytes, record, archive, warnings) {
             Ok(value) => {
                 ctx.reserve_vec(&mut result.records, 1, "Rhino history records")
@@ -1040,8 +1037,7 @@ fn object_reference_properties(
         .admit_iter(
             &(value.instance_path)[..],
             "Rhino object reference properties traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
+        )?
         .enumerate()
     {
         let path = ctx.format_retained(
@@ -2010,8 +2006,7 @@ fn structured_value_properties(
         Value::ObjectReferences(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, value) in ctx
-                .admit_iter(&(values)[..], "Rhino structured value properties traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+                .admit_iter(&values[..], "Rhino structured value properties traversal")?
                 .enumerate()
             {
                 let prefix = ctx.format_retained(
@@ -2024,8 +2019,7 @@ fn structured_value_properties(
         Value::Geometries(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, value) in ctx
-                .admit_iter(&(values)[..], "Rhino structured value properties traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+                .admit_iter(&values[..], "Rhino structured value properties traversal")?
                 .enumerate()
             {
                 insert_property(
@@ -2168,8 +2162,7 @@ fn structured_value_properties(
         Value::PolyEdges(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (edge_index, edge) in ctx
-                .admit_iter(&(values)[..], "Rhino structured value properties traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+                .admit_iter(&values[..], "Rhino structured value properties traversal")?
                 .enumerate()
             {
                 let edge_key = ctx.format_retained(
@@ -2198,8 +2191,7 @@ fn structured_value_properties(
                     .admit_iter(
                         &(edge.polyedge.segments)[..],
                         "Rhino structured value properties traversal",
-                    )
-                    .map_err(cadmpeg_core::CodecError::from)?
+                    )?
                     .enumerate()
                 {
                     let segment_key = ctx.format_retained(
@@ -2260,8 +2252,7 @@ fn structured_value_properties(
         Value::SubdEdgeChains(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, chain) in ctx
-                .admit_iter(&(values)[..], "Rhino structured value properties traversal")
-                .map_err(cadmpeg_core::CodecError::from)?
+                .admit_iter(&values[..], "Rhino structured value properties traversal")?
                 .enumerate()
             {
                 let chain_key = ctx
@@ -2368,7 +2359,7 @@ pub(crate) fn project(
     }
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
     for (index, record) in ctx
-        .admit_iter(&(records)[..], "Rhino project traversal")
+        .admit_iter(&records[..], "Rhino project traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
@@ -2380,7 +2371,7 @@ pub(crate) fn project(
         )
         .map_err(ProjectionError::Codec)?;
         for descendant in ctx
-            .admit_iter(&(record.descendants)[..], "Rhino project traversal")
+            .admit_iter(&record.descendants[..], "Rhino project traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             if !record_descendants.insert(*descendant) {
@@ -2408,12 +2399,12 @@ pub(crate) fn project(
     }
     let mut dropped_dependencies = 0;
     for (index, record) in ctx
-        .admit_iter(&(records)[..], "Rhino project traversal")
+        .admit_iter(&records[..], "Rhino project traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .enumerate()
     {
         for antecedent in ctx
-            .admit_iter(&(record.antecedents)[..], "Rhino project traversal")
+            .admit_iter(&record.antecedents[..], "Rhino project traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             match producers.get(antecedent) {
@@ -2436,7 +2427,7 @@ pub(crate) fn project(
             .map_err(crate::chunks::FramingError::from)
             .or_else(|error| Err(history_resource_error(ctx, error)?))?;
         for antecedent in ctx
-            .admit_iter(&(record.antecedents)[..], "Rhino project traversal")
+            .admit_iter(&record.antecedents[..], "Rhino project traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             let Some((producer_index, id)) = producers.get(antecedent).and_then(Option::as_ref)
@@ -2465,7 +2456,7 @@ pub(crate) fn project(
         )
         .map_err(ProjectionError::Codec)?;
         for value in ctx
-            .admit_iter(&(record.values)[..], "Rhino project traversal")
+            .admit_iter(&record.values[..], "Rhino project traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
             let occurrence = value_occurrences.entry(value.id).or_default();

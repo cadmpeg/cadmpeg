@@ -261,7 +261,7 @@ pub(crate) fn decode(
     };
     for mesh in expand
         .ctx()
-        .admit_iter(&(meshes)[..], "Rhino decode traversal")
+        .admit_iter(&meshes[..], "Rhino decode traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         warnings.extend_cloned_admitted(expand.ctx(), &mesh.warnings)?;
@@ -407,7 +407,7 @@ pub(crate) fn decode(
         && (orientations.first() != Some(&1)
             || expand
                 .ctx()
-                .admit_iter(&(orientations)[..], "Rhino decode traversal")
+                .admit_iter(&orientations[..], "Rhino decode traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .skip(1)
                 .any(|value| *value != -1)))
@@ -420,7 +420,7 @@ pub(crate) fn decode(
     }
     let all_closed = expand
         .ctx()
-        .admit_iter(&(orientations)[..], "Rhino decode traversal")
+        .admit_iter(&orientations[..], "Rhino decode traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .all(|orientation| *orientation != 0);
     let caps = if minor >= 2 {
@@ -997,7 +997,7 @@ fn read_v5_mesh_cache(
     } = format;
     let Some(cache) = expand
         .ctx()
-        .admit_iter(&(userdata)[..], "Rhino read v5 mesh cache traversal")
+        .admit_iter(&userdata[..], "Rhino read v5 mesh cache traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .filter_map(UserdataDescriptor::known)
         .find(|value| {

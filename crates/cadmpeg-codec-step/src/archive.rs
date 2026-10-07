@@ -62,10 +62,7 @@ pub(crate) fn open_root<'a>(
     root: View<'a>,
 ) -> Result<OpenedRoot<'a>, CodecError> {
     let archive = ArchiveSnapshot::new(ctx, root)?;
-    for entry in ctx
-        .admit_iter(archive.entries(), "STEP open root borrowed traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for entry in ctx.admit_iter(archive.entries(), "STEP open root borrowed traversal")? {
         validate_entry_name(ctx, &entry.name)?;
         if entry.uses_utf8_name_encoding() {
             return Err(CodecError::Malformed(
@@ -171,8 +168,7 @@ fn resolve_uri<'a>(
         )));
     }
     let member_len = ctx
-        .admit_iter(&(components)[..], "STEP resolve uri traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&components[..], "STEP resolve uri traversal")?
         .try_fold(0_usize, |total, component| {
             total.checked_add(component.len())
         })
@@ -182,8 +178,7 @@ fn resolve_uri<'a>(
 
     ctx.reserve_scoped_string(member_bytes, &mut member, member_len, "step_zip_uri_member")?;
     for (index, component) in ctx
-        .admit_iter(&(components)[..], "STEP resolve uri traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
+        .admit_iter(&components[..], "STEP resolve uri traversal")?
         .enumerate()
     {
         if index != 0 {
@@ -209,13 +204,10 @@ pub(crate) fn root_reference_notes(
     // CE-02: Annex A.4 makes subsidiary access a root reference operation;
     // this pass records the binding and does not import a subsidiary graph.
     let mut notes = Vec::new();
-    for reference in ctx
-        .admit_iter(
-            exchange.references(),
-            "STEP root reference notes borrowed traversal",
-        )
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
+    for reference in ctx.admit_iter(
+        exchange.references(),
+        "STEP root reference notes borrowed traversal",
+    )? {
         let name = reference.name;
         let uri = forwarded_reference_uri(exchange, &reference.uri, ctx)?;
         let mut member_bytes = ctx.reserve_scoped(0, "step_zip_uri_member_temp")?;

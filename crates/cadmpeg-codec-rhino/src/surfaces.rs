@@ -688,10 +688,10 @@ fn revolution_nurbs(
     for (theta, angular_weight) in angular {
         let radial_scale = 1.0 / angular_weight;
         for (profile_point, profile_weight) in ctx
-            .admit_iter(&(profile_points)[..], "Rhino revolution nurbs traversal")
+            .admit_iter(&profile_points[..], "Rhino revolution nurbs traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .zip(
-                ctx.admit_iter(&(profile_weights)[..], "Rhino revolution nurbs traversal")
+                ctx.admit_iter(&profile_weights[..], "Rhino revolution nurbs traversal")
                     .map_err(cadmpeg_core::CodecError::from)?
                     .copied(),
             )
@@ -814,19 +814,19 @@ fn sum_nurbs(
         None
     };
     for (first_point, first_weight) in ctx
-        .admit_iter(&(first_points)[..], "Rhino sum nurbs traversal")
+        .admit_iter(&first_points[..], "Rhino sum nurbs traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .zip(
-            ctx.admit_iter(&(first_weights)[..], "Rhino sum nurbs traversal")
+            ctx.admit_iter(&first_weights[..], "Rhino sum nurbs traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .copied(),
         )
     {
         for (second_point, second_weight) in ctx
-            .admit_iter(&(second_points)[..], "Rhino sum nurbs traversal")
+            .admit_iter(&second_points[..], "Rhino sum nurbs traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .zip(
-                ctx.admit_iter(&(second_weights)[..], "Rhino sum nurbs traversal")
+                ctx.admit_iter(&second_weights[..], "Rhino sum nurbs traversal")
                     .map_err(cadmpeg_core::CodecError::from)?
                     .copied(),
             )
@@ -1010,11 +1010,11 @@ fn extrusion_rows<T: Copy>(
     let mut rows = Vec::new();
     ctx.reserve_capacity(&mut rows, row_count, operation)?;
     for (first, second) in ctx
-        .admit_iter(&(start)[..], "Rhino extrusion rows traversal")
+        .admit_iter(&start[..], "Rhino extrusion rows traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .copied()
         .zip(
-            ctx.admit_iter(&(end)[..], "Rhino extrusion rows traversal")
+            ctx.admit_iter(&end[..], "Rhino extrusion rows traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
                 .copied(),
         )
