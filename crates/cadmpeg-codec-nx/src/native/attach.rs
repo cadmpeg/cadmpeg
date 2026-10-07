@@ -7319,14 +7319,7 @@ fn attach_sketch_graph(
             let Some(entity_id) = sketch_entity_identity(ctx, "coordinate-pair-", pair_key)? else {
                 return Ok(None);
             };
-            let Some(native_kind) = cadmpeg_core::text::NonBlankString::for_decode(
-                ctx,
-                "nx-coordinate-pair",
-                "NX attach sketch graph nx coordinate pair validation",
-            )?
-            else {
-                return Ok(None);
-            };
+            let native_kind = cadmpeg_core::nonblank_literal!("nx-coordinate-pair");
             let native_ref =
                 ctx.copy_retained_text(&pair.id, "NX attach sketch graph pair id copy")?;
             push_sketch_entity(
@@ -7793,14 +7786,7 @@ fn native_fixed_point_entities(
         let Some(entity_id) = sketch_entity_identity(ctx, "fixed-point-", point_key)? else {
             return Ok(None);
         };
-        let Some(native_kind) = cadmpeg_core::text::NonBlankString::for_decode(
-            ctx,
-            "nx-fixed-point",
-            "NX native fixed point entities nx fixed point validation",
-        )?
-        else {
-            return Ok(None);
-        };
+        let native_kind = cadmpeg_core::nonblank_literal!("nx-fixed-point");
         let native_ref =
             ctx.copy_retained_text(&point.id, "NX native fixed point entities point id copy")?;
         push_sketch_entity(
@@ -8269,12 +8255,7 @@ fn text_semantic_annotation(
     let mut text_values = Vec::new();
     ctx.reserve_capacity(&mut text_values, 1, "allocate NX TEXT annotation text list")?;
     text_values.push(copy(text)?);
-    let key = cadmpeg_core::text::NonBlankString::for_decode(
-        ctx,
-        copy(FONT_KEY)?,
-        "NX text semantic annotation copy font key validation",
-    )?
-    .ok_or_else(|| CodecError::malformed("NX TEXT annotation font key is blank"))?;
+    let key = cadmpeg_core::nonblank_const!(FONT_KEY);
     let mut parameters = BTreeMap::new();
     ctx.insert_btree_map(
         &mut parameters,
