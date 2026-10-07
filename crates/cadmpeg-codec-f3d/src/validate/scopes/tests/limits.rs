@@ -22,7 +22,7 @@ fn scope_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
         policy.limits.max_collection_items = max_items;
         policy.limits.max_retained_bytes = max_retained;
         let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let mut ctx = crate::validate::Ctx::new(&ir, &native, service_ctx).unwrap();
         ctx.decode = &decode;
         super::super::validate_parameter_scopes(&ctx, &mut Vec::new()).unwrap_err()
     })
@@ -72,7 +72,7 @@ fn invalid_parameter_scope_preserves_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let native = native();
-        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let ctx = crate::validate::Ctx::new(&ir, &native, service_ctx).unwrap();
         let mut findings = Vec::new();
         super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
         assert_eq!(findings.len(), 1);
@@ -141,7 +141,7 @@ fn component_pattern_occurrence_checks_preserve_work_refusal() {
     };
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     crate::test_support::with_decode_context(|decode| {
-        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
         assert!(super::super::valid_component_pattern_occurrences(
             &ctx,
             "f3d:Design/BulkStream.dat",
@@ -167,7 +167,7 @@ fn component_pattern_occurrence_checks_preserve_work_refusal() {
             operation,
             0,
             |decode| {
-                let ctx = super::super::Ctx::new(&ir, &native, decode)?;
+                let ctx = crate::validate::Ctx::new(&ir, &native, decode)?;
                 super::super::valid_component_pattern_occurrences(
                     &ctx,
                     "f3d:Design/BulkStream.dat",
