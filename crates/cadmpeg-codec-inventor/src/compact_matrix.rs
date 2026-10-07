@@ -114,7 +114,8 @@ mod tests {
         assert_eq!(matrix.rows(), [[2.5; 4]; 4]);
         let matrix = CompactMatrix::try_new(&ctx, u16::MAX, 0, |_| {
             panic!("implicit cells do not read explicit values")
-        }).expect("implicit cells need no variable work");
+        })
+        .expect("implicit cells need no variable work");
         assert_eq!(matrix.rows(), [[1.0; 4]; 4]);
     }
 
