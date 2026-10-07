@@ -266,7 +266,7 @@ fn sketch_block_identity_normalization_is_inverted_for_placement() {
     payload[body + 176..body + 184].copy_from_slice(&1.0_f64.to_le_bytes());
 
     assert_eq!(
-        sketch_block_identity_normalization_origin(&payload, 200, payload.len()),
+        sketch_block_identity_normalization_origin(&cadmpeg_test_support::service_decode_context(), &payload, 200, payload.len()).unwrap(),
         Some(Point3::new(210.0, -661.0, 0.0))
     );
 }
@@ -630,7 +630,6 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
 
 #[test]
 fn intersecting_reference_axis_pair_completes_legacy_triad() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let frames = [
         Some((Point3::new(0.0, 85.0, 0.0), Vector3::new(1.0, 0.0, 0.0))),
         None,
@@ -638,8 +637,7 @@ fn intersecting_reference_axis_pair_completes_legacy_triad() {
     ];
 
     assert_eq!(
-        super::complete_reference_axis_triad(&ctx, frames)
-            .expect("reference axis triad scan fits service policy"),
+        super::complete_reference_axis_triad(frames),
         Some(super::ReferenceAxisCompletion {
             axis_index: 1,
             origin: Point3::new(0.0, 85.0, 0.0),
@@ -650,7 +648,6 @@ fn intersecting_reference_axis_pair_completes_legacy_triad() {
 
 #[test]
 fn skew_reference_axes_do_not_complete_legacy_triad() {
-    let ctx = cadmpeg_test_support::service_decode_context();
     let frames = [
         Some((Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))),
         None,
@@ -658,8 +655,7 @@ fn skew_reference_axes_do_not_complete_legacy_triad() {
     ];
 
     assert_eq!(
-        super::complete_reference_axis_triad(&ctx, frames)
-            .expect("reference axis triad scan fits service policy"),
+        super::complete_reference_axis_triad(frames),
         None
     );
 }

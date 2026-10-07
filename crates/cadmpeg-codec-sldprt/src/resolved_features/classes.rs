@@ -82,6 +82,7 @@ impl<'lanes> TokenNames<'lanes> {
         temporary: &mut ScopedReservation<'_>,
         lanes: &'lanes [L],
     ) -> Result<Self, CodecError> {
+        let mut offset_storage = ctx.reserve_scoped(0, "SLDPRT direct class offsets")?;
         let mut direct_name_offsets = HashSet::new();
         for lane in ctx.admit_iter(lanes, "scan SLDPRT direct class lanes")? {
             let lane = lane.borrow();
@@ -89,7 +90,7 @@ impl<'lanes> TokenNames<'lanes> {
                 let Some(offset) = direct_name_offset(class) else {
                     continue;
                 };
-                temporary.with_storage(|| {
+                offset_storage.with_storage(|| {
                     ctx.insert_hash_set(
                         &mut direct_name_offsets,
                         (lane.id.as_str(), offset),
@@ -221,11 +222,13 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         }
     }
 
+    let mut object_storage = ctx.reserve_scoped(0, "SLDPRT object classes")?;
     let mut classes_by_object = HashMap::<u32, Vec<&str>>::new();
     let mut direct_classes_by_name = BTreeMap::<&str, Vec<&str>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT input class lanes")? {
         let lane = lane.borrow();
-        let names_by_offset = temporary.with_storage(|| {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT class lane names")?;
+        let names_by_offset = lane_storage.with_storage(|| {
             ctx.collect_hash_map(
                 lane.names.iter().map(|name| (name.offset, name)),
                 "index SLDPRT input class names",
@@ -241,7 +244,7 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
                 continue;
             };
             if let Some(object_id) = name.object_id.and_then(ObjectId::value) {
-                temporary.with_storage(|| {
+                object_storage.with_storage(|| {
                     ctx.push_hash_group(
                         &mut classes_by_object,
                         object_id,
@@ -297,6 +300,9 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         }
     }
 
+    drop(classes_by_object);
+    drop(object_storage);
+    // Direct-name bindings remain live through the next phase.
     for (_, classes) in ctx.admit_iter(&mut direct_classes_by_name, "sort SLDPRT bound classes")? {
         ctx.sort_unstable_by(
             classes,
@@ -306,7 +312,8 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         )?;
         ctx.dedup_vec(classes, "deduplicate SLDPRT history class names")?;
     }
-    let unique_names = super::unique_feature_names(ctx, &mut temporary, histories, false)?;
+    let mut unique_storage = ctx.reserve_scoped(0, "SLDPRT unique class names")?;
+    let unique_names = super::unique_feature_names(ctx, &mut unique_storage, histories, false)?;
     let mut unique = unique_names.iter();
     for history in ctx.admit_iter(&mut *histories, "bind SLDPRT unique history feature names")? {
         for feature in ctx.admit_iter(
@@ -332,10 +339,14 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         }
     }
 
+    drop(direct_classes_by_name);
+    drop(temporary);
+    let mut temporary = ctx.reserve_scoped(0, "SLDPRT cosmetic class workspace")?;
     let mut cosmetic_thread_classes = BTreeMap::<String, Vec<&str>>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT cosmetic thread lanes")? {
         let lane = lane.borrow();
-        let mut declared = temporary.with_storage(|| {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT cosmetic class lane workspace")?;
+        let mut declared = lane_storage.with_storage(|| {
             let classes = ctx.admit_iter(&lane.classes, "find SLDPRT cosmetic thread classes")?;
             ctx.collect_vec(
                 classes
@@ -356,7 +367,7 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         let [class] = declared.as_slice() else {
             continue;
         };
-        let direct_name_offsets = temporary.with_storage(|| {
+        let direct_name_offsets = lane_storage.with_storage(|| {
             ctx.collect_hash_set(
                 ctx.admit_iter(&lane.classes, "collect SLDPRT direct class offsets")?
                     .filter_map(direct_name_offset),
@@ -391,7 +402,7 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
                 else {
                     continue;
                 };
-                temporary.with_storage(|| {
+                lane_storage.with_storage(|| {
                     ctx.push_btree_group(
                         &mut groups,
                         token,
@@ -453,10 +464,14 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         }
     }
 
+    drop(cosmetic_thread_classes);
+    drop(temporary);
+    let mut temporary = ctx.reserve_scoped(0, "SLDPRT startup class workspace")?;
     let mut native_startups = Vec::<[&str; 6]>::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT native startup lanes")? {
         let lane = lane.borrow();
-        let resolved = temporary.with_storage(|| {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT startup class lane workspace")?;
+        let resolved = lane_storage.with_storage(|| {
             let classes = ctx.admit_iter(&lane.classes, "find SLDPRT native startup classes")?;
             ctx.collect_vec(
                 classes.filter_map(|class| {
@@ -505,11 +520,11 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         for history in ctx.admit_iter(&mut *histories, "scan SLDPRT idless startup histories")? {
             let mut first = None;
             let mut multiple = false;
-            for (index, records) in ctx
-                .admit_iter(&history.features, "scan SLDPRT idless startup features")?
-                .windows(const { crate::nonzero(6) })
-                .enumerate()
-            {
+            let mut windows = history.features.windows(6).enumerate();
+            while let Some((index, records)) = ctx.next_charged(
+                &mut windows,
+                "scan SLDPRT idless startup features",
+            )? {
                 if idless_legacy_startup_shape(ctx, records)? {
                     if first.is_some() {
                         multiple = true;
@@ -526,6 +541,9 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         }
     }
 
+    drop(native_startups);
+    drop(temporary);
+    let mut temporary = ctx.reserve_scoped(0, "SLDPRT classes by type workspace")?;
     let mut classes_by_type = BTreeMap::<String, Vec<String>>::new();
     for history in ctx.admit_iter(&*histories, "scan SLDPRT class-by-type histories")? {
         for feature in ctx.admit_iter(&history.features, "scan SLDPRT class-by-type features")? {
@@ -573,6 +591,9 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         }
     }
 
+    drop(classes_by_type);
+    drop(temporary);
+    let mut temporary = ctx.reserve_scoped(0, "SLDPRT token class workspace")?;
     let token_names = TokenNames::new(ctx, &mut temporary, lanes)?;
     let mut classes_by_token = BTreeMap::<(&str, u16), Vec<String>>::new();
     let mut unique = unique_names.iter();
@@ -618,13 +639,14 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
             let Some(names) = token_names.of(ctx, feature, name_is_unique)? else {
                 continue;
             };
+            let mut candidate_storage = ctx.reserve_scoped(0, "SLDPRT fallback class candidates")?;
             let mut candidates = Vec::<&str>::new();
             for key in ctx.admit_iter(names, "scan SLDPRT fallback class names")? {
                 if let Some(classes) =
                     ctx.get_btree_map(&classes_by_token, key, "find SLDPRT fallback token class")?
                 {
                     if let [class] = classes.as_slice() {
-                        temporary.with_storage(|| {
+                        candidate_storage.with_storage(|| {
                             ctx.push_vec(
                                 &mut candidates,
                                 class.as_str(),
@@ -647,6 +669,12 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         }
     }
 
+    drop(token_names);
+    drop(classes_by_token);
+    drop(temporary);
+    drop(unique_names);
+    drop(unique_storage);
+    let mut temporary = ctx.reserve_scoped(0, "SLDPRT legacy hole class bindings")?;
     let legacy_hole_bindings =
         legacy_repeated_hole_wizard_classes(ctx, &mut temporary, histories, lanes)?;
     for history in ctx.admit_iter(&mut *histories, "bind SLDPRT legacy hole classes")? {
@@ -664,6 +692,8 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
         }
     }
 
+    drop(legacy_hole_bindings);
+    drop(temporary);
     for history in ctx.admit_iter(
         &mut *histories,
         "bind SLDPRT classless dimension schema classes",
@@ -689,12 +719,13 @@ fn legacy_repeated_hole_wizard_classes<'lanes, L: Borrow<FeatureInputLane>>(
     histories: &[FeatureHistory],
     lanes: &'lanes [L],
 ) -> Result<HashMap<String, &'lanes str>, CodecError> {
+    let mut lookup_storage = ctx.reserve_scoped(0, "SLDPRT legacy hole class lookup")?;
     let mut by_name = HashMap::<&str, Option<&Feature>>::new();
     let mut hole_shapes = HashSet::<&str>::new();
     for history in ctx.admit_iter(histories, "scan SLDPRT legacy hole histories")? {
         for feature in ctx.admit_iter(&history.features, "index SLDPRT legacy hole features")? {
             if !feature.name.is_empty() {
-                temporary
+                lookup_storage
                     .with_storage(|| {
                         ctx.entry_hash_map(
                             &mut by_name,
@@ -728,7 +759,7 @@ fn legacy_repeated_hole_wizard_classes<'lanes, L: Borrow<FeatureInputLane>>(
                     "check SLDPRT legacy hole operation tag",
                 )?
             {
-                temporary.with_storage(|| {
+                lookup_storage.with_storage(|| {
                     ctx.insert_hash_set(
                         &mut hole_shapes,
                         operation.id.as_str(),
@@ -742,7 +773,8 @@ fn legacy_repeated_hole_wizard_classes<'lanes, L: Borrow<FeatureInputLane>>(
     let mut bindings = HashMap::new();
     for lane in ctx.admit_iter(lanes, "scan SLDPRT legacy hole lanes")? {
         let lane = lane.borrow();
-        let mut declared = temporary.with_storage(|| {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT legacy hole class lane workspace")?;
+        let mut declared = lane_storage.with_storage(|| {
             let classes = ctx.admit_iter(&lane.classes, "find SLDPRT hole wizard classes")?;
             ctx.collect_vec(
                 classes
@@ -761,7 +793,7 @@ fn legacy_repeated_hole_wizard_classes<'lanes, L: Borrow<FeatureInputLane>>(
         let [class] = declared.as_slice() else {
             continue;
         };
-        let direct_name_offsets = temporary.with_storage(|| {
+        let direct_name_offsets = lane_storage.with_storage(|| {
             ctx.collect_hash_set(
                 ctx.admit_iter(&lane.classes, "index SLDPRT legacy direct class names")?
                     .filter_map(direct_name_offset),
@@ -795,7 +827,7 @@ fn legacy_repeated_hole_wizard_classes<'lanes, L: Borrow<FeatureInputLane>>(
             else {
                 continue;
             };
-            temporary.with_storage(|| {
+            lane_storage.with_storage(|| {
                 ctx.push_btree_group(
                     &mut groups,
                     token,

@@ -1096,7 +1096,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     assert!(!bounded_profile_axis_endpoints(
         "profile-native",
         &markers,
-        &HashSet::from(["profile-point", "opposite-profile-point"]),
+        &std::collections::BTreeSet::from(["profile-point", "opposite-profile-point"]),
         [&lane.sketch_entities[0], &lane.sketch_entities[1]],
     ));
     lane.sketch_entities[4] =
@@ -1105,7 +1105,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     assert!(bounded_profile_axis_endpoints(
         "profile-native",
         &markers,
-        &HashSet::from(["profile-point", "opposite-profile-point"]),
+        &std::collections::BTreeSet::from(["profile-point", "opposite-profile-point"]),
         [&lane.sketch_entities[0], &lane.sketch_entities[1]],
     ));
     lane.sketch_entities.pop();
@@ -1326,25 +1326,25 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             .expect("profile axis input fits root policy");
 
     assert_eq!(
-        profile_roster_origin_axis_endpoints(&ctx, &lane, "profile-native", &markers)
+        profile_roster_origin_axis_endpoints(&ctx, &lane, "profile-native", &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap())
             .expect("origin axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 0.01]])
     );
     assert_eq!(
-        profile_roster_principal_axis_endpoints(&ctx, &lane, "profile-native", &markers)
+        profile_roster_principal_axis_endpoints(&ctx, &lane, "profile-native", &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap())
             .expect("principal axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 1.0]])
     );
     crate::test_support::work_refusal_at("collect SLDPRT principal axis candidates", |ctx| {
-        profile_roster_principal_axis_endpoints(ctx, &lane, "profile-native", &markers)
+        profile_roster_principal_axis_endpoints(ctx, &lane, "profile-native", &super::LaneMarkerIndex::new(ctx, markers.iter().copied())?)
     });
     assert!(
-        super::profile_roster_implicit_axis_endpoints(&ctx, &lane, "profile-native", &markers)
+        super::profile_roster_implicit_axis_endpoints(&ctx, &lane, "profile-native", &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap())
             .unwrap()
             .is_none()
     );
     crate::test_support::work_refusal_at("find SLDPRT implicit profile axis", |ctx| {
-        super::profile_roster_implicit_axis_endpoints(ctx, &lane, "profile-native", &markers)
+        super::profile_roster_implicit_axis_endpoints(ctx, &lane, "profile-native", &super::LaneMarkerIndex::new(ctx, markers.iter().copied())?)
     });
 }
 

@@ -45,7 +45,8 @@ pub(crate) fn validate_native(
             )?;
         }
         if !history.content.is_empty() {
-            let configurations = temporary.with_storage(|| {
+            let mut history_storage = ctx.reserve_scoped(0, "SLDPRT history content workspace")?;
+            let configurations = history_storage.with_storage(|| {
                 ctx.collect_btree_set(
                     history
                         .configurations
@@ -54,7 +55,7 @@ pub(crate) fn validate_native(
                     "index SLDPRT native history content",
                 )
             })?;
-            let root_features = temporary.with_storage(|| {
+            let root_features = history_storage.with_storage(|| {
                 ctx.collect_btree_set(
                     ctx.admit_iter(&history.features, "scan SLDPRT native features")?
                         .filter(|feature| feature.tree_parent.is_none())
@@ -62,7 +63,7 @@ pub(crate) fn validate_native(
                     "index SLDPRT native history content",
                 )
             })?;
-            let all_features = temporary.with_storage(|| {
+            let all_features = history_storage.with_storage(|| {
                 ctx.collect_btree_set(
                     history.features.iter().map(|feature| feature.id.as_str()),
                     "index SLDPRT native history content",
@@ -84,7 +85,7 @@ pub(crate) fn validate_native(
                                 ),
                                 "format SLDPRT native finding",
                             )?)
-                        } else if !temporary.with_storage(|| {
+                        } else if !history_storage.with_storage(|| {
                             ctx.insert_btree_set(
                                 &mut seen_configurations,
                                 id.as_str(),
@@ -122,7 +123,7 @@ pub(crate) fn validate_native(
                                 ),
                                 "format SLDPRT native finding",
                             )?)
-                        } else if !temporary.with_storage(|| {
+                        } else if !history_storage.with_storage(|| {
                             ctx.insert_btree_set(
                                 &mut seen_features,
                                 id.as_str(),

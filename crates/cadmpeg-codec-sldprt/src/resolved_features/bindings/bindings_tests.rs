@@ -1045,3 +1045,23 @@ fn spatial_range_deduplication_preserves_ranges_and_refusal() {
         super::spatial_relation_manager_ranges_charged(ctx, &lane)
     });
 }
+
+#[test]
+fn duplicate_binding_votes_release_candidate_identity_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 4096;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let id = FeatureId::mint("synthetic:test:feature#duplicate-candidate").unwrap();
+    let mut storage = ctx.reserve_scoped(0, super::PATTERN_INPUTS).unwrap();
+    let mut groups = BTreeMap::new();
+    for _ in 0..512 {
+        let (candidate, candidate_storage) = ctx.with_scoped_storage(super::PATTERN_INPUTS, || super::copy_feature_binding_id(&ctx, &id)).unwrap();
+        super::push_distinct_candidate(&ctx, &mut storage, &mut groups, 0, candidate, Some(candidate_storage)).unwrap();
+    }
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[&0].len(), 1);
+    assert_eq!(groups[&0][0].0, id);
+}
