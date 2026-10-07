@@ -102,15 +102,15 @@ fn revolution_history_enrichment_refuses_collection_limit() {
 }
 
 #[test]
-fn revolution_history_enrichment_refuses_retained_limit() {
+fn revolution_history_enrichment_refuses_scoped_limit() {
     let mut histories = single_revolution_history();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root fits service policy");
     let error = enrich_history_revolution_inputs(&ctx, &mut histories, &[])
-        .expect_err("feature name copy needs retained bytes");
+        .expect_err("feature name index needs scoped bytes");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
@@ -325,8 +325,14 @@ fn temporary_axis_reference(
     object_start: usize,
     object_end: usize,
 ) -> Option<(Point3, Vector3)> {
-    typed_temporary_axis_reference(payload, object_start, object_end)
-        .map(|(origin, direction)| (origin.get(), *direction.as_raw()))
+    typed_temporary_axis_reference(
+        &cadmpeg_test_support::service_decode_context(),
+        payload,
+        object_start,
+        object_end,
+    )
+    .unwrap()
+    .map(|(origin, direction)| (origin.get(), *direction.as_raw()))
 }
 
 #[test]
@@ -1208,6 +1214,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
 
 #[test]
 fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let cylinder = |id: &str, origin: Point3| Surface {
         id: SurfaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -1225,11 +1232,11 @@ fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
     let second = cylinder("second", Point3::new(10.0, 0.0, 0.0));
 
     assert_eq!(
-        common_generated_surface_axis(std::slice::from_ref(&first)),
+        common_generated_surface_axis(&ctx, std::slice::from_ref(&first)).unwrap(),
         None
     );
     assert_eq!(
-        common_generated_surface_axis(&[first.clone(), second]),
+        common_generated_surface_axis(&ctx, &[first.clone(), second]).unwrap(),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
@@ -1238,7 +1245,11 @@ fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
         })
     );
     assert_eq!(
-        common_generated_surface_axis(&[first, cylinder("offset", Point3::new(0.0, 1.0, 0.0)),]),
+        common_generated_surface_axis(
+            &ctx,
+            &[first, cylinder("offset", Point3::new(0.0, 1.0, 0.0))]
+        )
+        .unwrap(),
         None
     );
 }
@@ -1332,10 +1343,7 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             .unwrap()
             .is_none()
     );
-    for operation in [
-        "collect SLDPRT implicit axis curves",
-        "collect SLDPRT implicit axis endpoints",
-    ] {
+    for operation in ["find SLDPRT implicit profile axis"] {
         crate::test_support::work_refusal_at(operation, |ctx| {
             super::profile_roster_implicit_axis_endpoints(ctx, &lane, "profile-native", &markers)
         });
@@ -1439,7 +1447,7 @@ fn revolution_consumes_the_preceding_profile_object() {
         feature.source_id = None;
         feature.properties.clear();
     }
-    crate::test_support::work_refusal_at("deduplicate SLDPRT revolution profile sources", |ctx| {
+    crate::test_support::work_refusal_at("collect SLDPRT revolution profile sources", |ctx| {
         let mut candidates = histories.clone();
         super::enrich_history_revolution_inputs(ctx, &mut candidates, std::slice::from_ref(&lane))
     });
@@ -1526,62 +1534,35 @@ fn linear_pattern_dimension_lookup_propagates_work_refusal() {
 }
 
 #[test]
-fn line_reference_direction_propagates_slot_refusal() {
+fn line_reference_direction_reads_the_short_layout() {
     let mut payload = vec![0; 224];
     payload[136..144].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
     payload[148..152].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
     payload[200..208].copy_from_slice(&1.0f64.to_le_bytes());
-    for dimension in [
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-    ] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        match dimension {
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = 0
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = 0
-            }
-            _ => panic!("test dimension"),
-        }
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(super::line_reference_direction(&ctx, &payload, 0),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension
-                    && limit.operation == "collect SLDPRT line reference directions"
-                    && ctx.resource_refusal() == Some(limit)));
-    }
-    let direction = super::line_reference_direction(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        0,
-    )
-    .unwrap()
-    .expect("declared direction");
+    let direction = super::line_reference_direction(&payload, 0).expect("declared direction");
     assert_eq!(*direction.as_raw(), Vector3::new(1.0, 0.0, 0.0));
 }
 
 #[test]
 fn existing_revolution_vote_lookup_propagates_work_refusal() {
     let mut votes = std::collections::HashMap::from([(String::from("feature"), vec![1_u32])]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // One visit precedes hashing the existing feature identity.
-    policy.limits.max_work_units = 1;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        super::push_revolution_vote(&ctx, &mut votes, "feature", 2, "lookup SLDPRT test revolution vote"),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation == "lookup SLDPRT test revolution vote"
-    ));
-    assert_eq!(votes["feature"], [1]);
+    crate::test_support::work_refusal_at("lookup SLDPRT test revolution vote", |ctx| {
+        let mut storage = ctx.reserve_scoped(0, "test revolution votes")?;
+        let mut votes = votes.clone();
+        super::push_revolution_vote(
+            ctx,
+            &mut storage,
+            &mut votes,
+            "feature",
+            2,
+            "lookup SLDPRT test revolution vote",
+        )
+    });
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut storage = ctx.reserve_scoped(0, "test revolution votes").unwrap();
     super::push_revolution_vote(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
+        &mut storage,
         &mut votes,
         "feature",
         2,
@@ -1595,7 +1576,7 @@ fn existing_revolution_vote_lookup_propagates_work_refusal() {
 fn revolution_identity_lookups_propagate_work_refusal() {
     let histories = single_revolution_history();
     for operation in [
-        "lookup SLDPRT revolution feature name count",
+        "count SLDPRT history feature names",
         "lookup SLDPRT revolution profile owner",
     ] {
         crate::test_support::work_refusal_at(operation, |ctx| {

@@ -34,13 +34,7 @@ use cadmpeg_ir::{
 use std::collections::{BTreeMap, HashSet};
 
 fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
-    typed_line_reference_direction(
-        &cadmpeg_test_support::service_decode_context(),
-        payload,
-        class_offset,
-    )
-    .unwrap()
-    .map(|direction| *direction.as_raw())
+    typed_line_reference_direction(payload, class_offset).map(|direction| *direction.as_raw())
 }
 
 fn declared_line_reference_directions(
@@ -111,12 +105,14 @@ fn linear_pattern_display_directions(
     expected_spacing_m: [Option<f64>; 2],
 ) -> Vec<Vector3> {
     typed_linear_pattern_display_directions(
+        &cadmpeg_test_support::service_decode_context(),
         payload,
         object_start,
         object_end,
         names,
         expected_spacing_m,
     )
+    .unwrap()
     .into_iter()
     .map(|direction| *direction.as_raw())
     .collect()
@@ -521,10 +517,12 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         );
         assert_eq!(
             crate::resolved_features::axes::temporary_axis_reference(
+                &cadmpeg_test_support::service_decode_context(),
                 &lane.native_payload,
                 start,
                 end
-            ),
+            )
+            .unwrap(),
             None
         );
     }

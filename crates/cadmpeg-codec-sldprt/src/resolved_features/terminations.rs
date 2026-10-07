@@ -3,7 +3,7 @@
 use super::component_paths::{is_profile_feature_object, FeaturesBySource};
 use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::selections::{
     compact_general_curve_ref_at, compact_heterogeneous_component_path,
     compact_mixed_component_path, compact_profile_general_curve_ref_at,
@@ -1027,22 +1027,11 @@ fn history_object_offsets<'h>(
     lane: &FeatureInputLane,
     operation: &'static str,
 ) -> Result<Vec<(u64, &'h Feature)>, cadmpeg_core::CodecError> {
+    let object_names = ObjectNames::new(ctx, lane)?;
     let mut objects = Vec::new();
     for history in ctx.admit_iter(histories, operation)? {
         for feature in ctx.admit_iter(&history.features, operation)? {
-            for name in ctx.admit_iter(&lane.names, operation)? {
-                let helper_visits = if feature.source_value().is_some() {
-                    2_u64
-                } else {
-                    1_u64
-                };
-                let work = u64_from_index(name.value.len())
-                    .checked_add(u64_from_index(feature.name.len()))
-                    .and_then(|work| work.checked_add(helper_visits))
-                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, operation)?;
-            }
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = object_names.of(ctx, feature)? else {
                 continue;
             };
             storage
@@ -1145,20 +1134,9 @@ pub(crate) fn project_surface_sweep_profiles(
             .map_or(lane.id.as_str(), |(_, key)| key);
         let mut objects = Vec::new();
         let mut objects_storage = ctx.reserve_scoped(0, OPERATION)?;
+        let object_names = ObjectNames::new(ctx, lane)?;
         for feature in ctx.admit_iter(&history_features, OPERATION)? {
-            for name in ctx.admit_iter(&lane.names, OPERATION)? {
-                let helper_visits = if feature.source_value().is_some() {
-                    2_u64
-                } else {
-                    1_u64
-                };
-                let work = u64_from_index(name.value.len())
-                    .checked_add(u64_from_index(feature.name.len()))
-                    .and_then(|work| work.checked_add(helper_visits))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
-            }
-            if let Some(name) = feature_object_name(feature, lane) {
+            if let Some(name) = object_names.of(ctx, feature)? {
                 objects_storage.with_storage(|| {
                     ctx.push_vec(&mut objects, (name.offset, *feature), OPERATION)
                 })?;

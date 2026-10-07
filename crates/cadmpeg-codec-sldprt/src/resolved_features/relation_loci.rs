@@ -5241,7 +5241,7 @@ pub(super) fn marker_transform_candidates_in<'a>(
             if roster.is_empty() {
                 continue;
             }
-            let mut directly_bound = HashMap::<GridPoint, HashSet<GridPoint>>::new();
+            let mut directly_bound = BTreeMap::<GridPoint, BTreeSet<GridPoint>>::new();
             for marker in ctx.admit_iter(markers, OPERATION)?.copied() {
                 let Some([u, v]) = marker
                     .coordinates_m
@@ -5348,11 +5348,11 @@ fn compatible_marker_loci(
     roster: &[&SketchEntity],
     payload: &[u8],
     primary_only: bool,
-) -> Result<HashMap<GridPoint, HashSet<GridPoint>>, CodecError> {
+) -> Result<BTreeMap<GridPoint, BTreeSet<GridPoint>>, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = RELATION_GEOMETRY_QUANTUM_MM;
     const OPERATION: &str = "index SLDPRT marker transform candidates";
-    let mut points = HashMap::<GridPoint, HashSet<GridPoint>>::new();
+    let mut points = BTreeMap::<GridPoint, BTreeSet<GridPoint>>::new();
     for marker in ctx.admit_iter(markers, OPERATION)?.copied() {
         if !matches!(
             marker.kind(),
@@ -5409,14 +5409,14 @@ fn compatible_marker_loci(
 fn insert_compatible_locus(
     ctx: &DecodeContext<'_>,
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    points: &mut HashMap<GridPoint, HashSet<GridPoint>>,
+    points: &mut BTreeMap<GridPoint, BTreeSet<GridPoint>>,
     marker: GridPoint,
     locus: GridPoint,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "index SLDPRT compatible marker loci";
     storage.with_storage(|| {
-        let loci = ctx.entry_hash_map(points, marker, OPERATION)?.or_default();
-        ctx.insert_hash_set(loci, locus, OPERATION).map(|_| ())
+        let loci = ctx.entry_btree_map(points, marker, OPERATION)?.or_default();
+        ctx.insert_btree_set(loci, locus, OPERATION).map(|_| ())
     })
 }
 
