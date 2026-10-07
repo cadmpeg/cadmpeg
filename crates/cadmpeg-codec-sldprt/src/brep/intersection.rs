@@ -80,38 +80,36 @@ struct SolvedChart {
     endpoint_displacement: f64,
 }
 
-/// Offsets of every `00 tt` tag, with the optional `0xff` escape skipped.
-fn record_bodies(bytes: &[u8], tt: u8) -> impl Iterator<Item = usize> + '_ {
-    (0..bytes.len()).filter_map(move |at| {
-        if bytes.get(at) != Some(&0x00) || bytes.get(at + 1) != Some(&tt) {
-            return None;
-        }
-        let body = at + 2;
-        Some(if bytes.get(body) == Some(&0xff) {
-            body + 1
-        } else {
-            body
-        })
+/// Body offset of a `00 tt` record opening at `at`, with the optional `0xff`
+/// escape skipped.
+fn record_body(bytes: &[u8], at: usize, tt: u8) -> Option<usize> {
+    if bytes.get(at) != Some(&0x00) || bytes.get(at + 1) != Some(&tt) {
+        return None;
+    }
+    let body = at + 2;
+    Some(if bytes.get(body) == Some(&0xff) {
+        body + 1
+    } else {
+        body
     })
 }
 
-/// Carrier, body, and payload-marker offsets for both intersection forms.
-fn composite_records(bytes: &[u8]) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
-    record_bodies(bytes, 0x26)
-        .filter_map(|body| {
-            let marker = body.checked_add(isect::MARKER)?;
-            matches!(bytes.get(marker), Some(0x2b | 0x2d)).then_some((body - 2, body, marker))
-        })
-        .chain(
-            (0..bytes.len().checked_sub(20).map_or(0, |end| end)).filter_map(|offset| {
-                if bytes.get(offset..offset + 3) != Some(&[0x00, 0x01, 0x5a]) {
-                    return None;
-                }
-                let body = offset + 3;
-                let marker = body + isect::MARKER;
-                matches!(bytes.get(marker), Some(0x2b | 0x2d)).then_some((offset, body, marker))
-            }),
-        )
+/// Carrier and body offsets of a `00 26` composite record opening at `at`.
+fn composite_record(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
+    let body = record_body(bytes, at, 0x26)?;
+    let marker = body.checked_add(isect::MARKER)?;
+    // The carrier offset is the body start less the two tag bytes.
+    matches!(bytes.get(marker), Some(0x2b | 0x2d)).then_some((body - 2, body))
+}
+
+/// Carrier and body offsets of a `00 01 5a` intersection-data entity at `at`.
+fn intersection_data_record(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
+    if bytes.get(at..at + 3) != Some(&[0x00, 0x01, 0x5a]) {
+        return None;
+    }
+    let body = at + 3;
+    let marker = body + isect::MARKER;
+    matches!(bytes.get(marker), Some(0x2b | 0x2d)).then_some((at, body))
 }
 
 fn finite_point(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
@@ -151,13 +149,16 @@ fn chart_records(
     bytes: &[u8],
 ) -> Result<BTreeMap<u16, Vec<Chart>>, CodecError> {
     let mut out: BTreeMap<u16, Vec<Chart>> = BTreeMap::new();
-    for body in record_bodies(bytes, 0x28) {
+    for at in ctx.admit_iter(0..bytes.len(), "scan Parasolid intersection charts")? {
+        let Some(body) = record_body(bytes, at, 0x28) else {
+            continue;
+        };
         let Some((attr, candidates)) = chart_candidates(ctx, bytes, body)? else {
             continue;
         };
-        ctx.admit_btree_entry(&mut out, &attr, "collect Parasolid intersection charts")?;
         ctx.extend_vec(
-            out.entry(attr).or_default(),
+            ctx.entry_btree_map(&mut out, attr, "collect Parasolid intersection charts")?
+                .or_default(),
             candidates,
             "collect Parasolid intersection chart candidates",
         )?;
@@ -210,7 +211,13 @@ fn chart_candidates(
         if end > bytes.len() {
             continue;
         }
-        if extended && !(0..count).all(|index| finite_tangent(bytes, block + index * stride + 56)) {
+        if extended
+            && !ctx.all_by(
+                0..count,
+                |index| Ok(finite_tangent(bytes, block + index * stride + 56)),
+                "check Parasolid chart tangents",
+            )?
+        {
             continue;
         }
         let (Some(first), Some(last)) = (
@@ -219,12 +226,16 @@ fn chart_candidates(
         ) else {
             continue;
         };
-        if !(1..count - 1).all(|index| finite_point(bytes, block + index * stride).is_some()) {
+        if !ctx.all_by(
+            1..count - 1,
+            |index| Ok(finite_point(bytes, block + index * stride).is_some()),
+            "check Parasolid chart points",
+        )? {
             continue;
         }
         let mut interior_points =
             ctx.vector_storage(count - 2, "decode Parasolid chart interior points")?;
-        for index in 1..count - 1 {
+        for index in ctx.admit_iter(1..count - 1, "decode Parasolid chart interior points")? {
             if let Some(point) = finite_point(bytes, block + index * stride) {
                 ctx.push_vec(
                     &mut (interior_points),
@@ -235,9 +246,11 @@ fn chart_candidates(
         }
         if !extended
             && first == last
-            && ctx
-                .admit_iter(&interior_points[..], "scan SLDPRT chart_candidates values")?
-                .all(|point| *point == first)
+            && ctx.all_by(
+                &interior_points,
+                |point| Ok(*point == first),
+                "compare Parasolid chart points",
+            )?
         {
             continue;
         }
@@ -303,8 +316,10 @@ fn term_records(
     bytes: &[u8],
 ) -> Result<BTreeMap<u16, Vec<[f64; 3]>>, CodecError> {
     let mut out: BTreeMap<u16, Vec<[f64; 3]>> = BTreeMap::new();
-    for body in record_bodies(bytes, 0x29) {
-        term_at(ctx, bytes, body, &mut out)?;
+    for at in ctx.admit_iter(0..bytes.len(), "scan Parasolid intersection terminators")? {
+        if let Some(body) = record_body(bytes, at, 0x29) {
+            term_at(ctx, bytes, body, &mut out)?;
+        }
     }
     for label in ctx.find_bytes_iter(
         bytes,
@@ -353,21 +368,20 @@ fn uv_at(
     {
         return Ok(None);
     }
-    if !(0..count)
-        .all(|index| View::f64_be_at(bytes, values_at + index * 8).is_some_and(f64::is_finite))
-    {
+    if !ctx.all_by(
+        0..count,
+        |index| Ok(View::f64_be_at(bytes, values_at + index * 8).is_some_and(f64::is_finite)),
+        "check Parasolid support UV values",
+    )? {
         return Ok(None);
     }
     let mut values = ctx.vector_storage(count, "decode Parasolid support UV values")?;
-    for index in 0..count {
-        if let Some(value) = View::f64_be_at(bytes, body + support_uv::LEN + index * 8) {
+    for index in ctx.admit_iter(0..count, "decode Parasolid support UV values")? {
+        if let Some(value) = View::f64_be_at(bytes, values_at + index * 8) {
             ctx.push_vec(&mut (values), value, "decode Parasolid support UV values")?;
         }
     }
-    Ok(ctx
-        .admit_iter(&values[..], "scan SLDPRT uv_at values")?
-        .all(|value| value.is_finite())
-        .then_some((attr, UvRecord { width, values })))
+    Ok(Some((attr, UvRecord { width, values })))
 }
 
 /// Every `00 cc` or inline `values` support-UV record, keyed by attribute.
@@ -376,7 +390,10 @@ fn uv_records(
     bytes: &[u8],
 ) -> Result<BTreeMap<u16, Vec<UvRecord>>, CodecError> {
     let mut out: BTreeMap<u16, Vec<UvRecord>> = BTreeMap::new();
-    for body in record_bodies(bytes, 0xcc) {
+    for at in ctx.admit_iter(0..bytes.len(), "scan Parasolid support UV records")? {
+        let Some(body) = record_body(bytes, at, 0xcc) else {
+            continue;
+        };
         if let Some((attr, shape)) = uv_at(ctx, bytes, body)? {
             ctx.push_btree_group(
                 &mut out,
@@ -452,25 +469,19 @@ fn solved_curve(
     )?;
     points.extend(chart.interior_points.iter().copied());
     ctx.push_vec(&mut (points), end, "construct intersection chart points")?;
-    let reversed = if ctx
-        .admit_iter(&parameters, "scan Parasolid intersection parameter order")?
-        .windows(
-            std::num::NonZeroUsize::new(2)
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?,
-        )
-        .all(|pair| pair[0] < pair[1])
-    {
+    let reversed = if ctx.all_by(
+        parameters.windows(2),
+        |pair| Ok(pair[0] < pair[1]),
+        "scan Parasolid intersection parameter order",
+    )? {
         false
-    } else if ctx
-        .admit_iter(&parameters, "scan Parasolid intersection parameter order")?
-        .windows(
-            std::num::NonZeroUsize::new(2)
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("zero scan window width"))?,
-        )
-        .all(|pair| pair[0] > pair[1])
-    {
-        parameters.reverse();
-        points.reverse();
+    } else if ctx.all_by(
+        parameters.windows(2),
+        |pair| Ok(pair[0] > pair[1]),
+        "scan Parasolid intersection parameter order",
+    )? {
+        ctx.reverse(&mut parameters, "reverse Parasolid intersection parameters")?;
+        ctx.reverse(&mut points, "reverse Parasolid intersection points")?;
         true
     } else {
         return Ok(None);
@@ -526,37 +537,49 @@ fn solved_support_uv(
     let Some(records) = records else {
         return Ok(None);
     };
-    let mut candidate: Option<[Vec<Point2>; 2]> = None;
-    for record in records {
+    // The first complete width-4 record supplies the lanes; every later one
+    // must store the same values.
+    let mut candidate: Option<&UvRecord> = None;
+    for record in ctx.admit_iter(records, "scan Parasolid intersection support UV records")? {
         if record.width != UvWidth::Four || record.values.len() != expected_values {
             continue;
         }
-        let mut controls = [Vec::new(), Vec::new()];
-        for (support, control_points) in controls.iter_mut().enumerate() {
-            ctx.reserve_vec(
-                control_points,
-                parameters.len(),
-                "construct intersection support UV controls",
-            )?;
-            control_points.extend(
-                record
-                    .values
-                    .chunks_exact(4)
-                    .map(|row| Point2::new(row[support * 2], row[support * 2 + 1])),
-            );
-            if reversed {
-                control_points.reverse();
+        match candidate {
+            Some(previous) => {
+                if !ctx.equal(
+                    previous.values.as_slice(),
+                    record.values.as_slice(),
+                    "compare Parasolid intersection support UV records",
+                )? {
+                    return Ok(None);
+                }
             }
+            None => candidate = Some(record),
         }
-        if candidate
-            .as_ref()
-            .is_some_and(|previous| previous != &controls)
-        {
-            return Ok(None);
-        }
-        candidate = Some(controls);
     }
-    Ok(candidate)
+    let Some(record) = candidate else {
+        return Ok(None);
+    };
+    let mut controls = [Vec::new(), Vec::new()];
+    for (support, control_points) in controls.iter_mut().enumerate() {
+        *control_points = ctx.collection_vec(
+            parameters.len(),
+            "construct intersection support UV controls",
+        )?;
+        for row in ctx
+            .admit_iter(
+                record.values.as_slice(),
+                "construct intersection support UV controls",
+            )?
+            .chunks(const { crate::nonzero(4) })
+        {
+            control_points.push(Point2::new(row[support * 2], row[support * 2 + 1]));
+        }
+        if reversed {
+            ctx.reverse(control_points, "reverse intersection support UV controls")?;
+        }
+    }
+    Ok(Some(controls))
 }
 
 fn nearest_term(
@@ -565,7 +588,9 @@ fn nearest_term(
     attr: u16,
     endpoint: [f64; 3],
 ) -> Result<Option<([f64; 3], f64)>, CodecError> {
-    let Some(points) = records.get(&attr) else {
+    let Some(points) =
+        ctx.get_btree_map(records, &attr, "find Parasolid intersection terminators")?
+    else {
         return Ok(None);
     };
     Ok(ctx
@@ -595,101 +620,134 @@ pub(super) fn scan_intersection_carriers(
     bytes: &[u8],
     lane_refusals: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<u16, IntersectionCarrier>, CodecError> {
-    let charts = chart_records(ctx, bytes)?;
-    let terms = term_records(ctx, bytes)?;
-    let uvs = uv_records(ctx, bytes)?;
-    if charts.is_empty() || terms.is_empty() {
-        return Ok(BTreeMap::new());
-    }
+    let records = Records {
+        charts: chart_records(ctx, bytes)?,
+        terms: term_records(ctx, bytes)?,
+        uvs: uv_records(ctx, bytes)?,
+    };
     let mut out = BTreeMap::new();
-    for (offset, body, _) in composite_records(bytes) {
-        let Some(attr) = View::u16_be_at(bytes, body + isect::ATTR) else {
+    if records.charts.is_empty() || records.terms.is_empty() {
+        return Ok(out);
+    }
+    // Composite records precede intersection-data entities; the first carrier
+    // of an attribute is kept.
+    for at in ctx.admit_iter(0..bytes.len(), "scan Parasolid intersection composites")? {
+        if let Some(record) = composite_record(bytes, at) {
+            resolve_composite(ctx, bytes, &records, record, lane_refusals, &mut out)?;
+        }
+    }
+    let starts = 0..bytes.len().checked_sub(20).map_or(0, |end| end);
+    for at in ctx.admit_iter(starts, "scan Parasolid intersection data entities")? {
+        if let Some(record) = intersection_data_record(bytes, at) {
+            resolve_composite(ctx, bytes, &records, record, lane_refusals, &mut out)?;
+        }
+    }
+    Ok(out)
+}
+
+/// The chart, terminator and support-UV records of one stream, by attribute.
+struct Records {
+    charts: BTreeMap<u16, Vec<Chart>>,
+    terms: BTreeMap<u16, Vec<[f64; 3]>>,
+    uvs: BTreeMap<u16, Vec<UvRecord>>,
+}
+
+/// Resolve one composite's chart and terminators into a carrier.
+fn resolve_composite(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    records: &Records,
+    (offset, body): (usize, usize),
+    lane_refusals: &mut Vec<LossNote>,
+    out: &mut BTreeMap<u16, IntersectionCarrier>,
+) -> Result<(), CodecError> {
+    let Some(attr) = View::u16_be_at(bytes, body + isect::ATTR) else {
+        return Ok(());
+    };
+    let payload = body + isect::PAYLOAD;
+    let mut refs = [0_u16; 6];
+    for (index, reference) in refs.iter_mut().enumerate() {
+        let Some(value) = View::u16_be_at(bytes, payload + index * 2) else {
+            return Ok(());
+        };
+        *reference = value;
+    }
+    let (chart_ref, start_ref, end_ref, uv_ref) = (refs[2], refs[3], refs[4], refs[5]);
+    let Some(candidates) = ctx.get_btree_map(
+        &records.charts,
+        &chart_ref,
+        "find Parasolid intersection charts",
+    )?
+    else {
+        return Ok(());
+    };
+    let mut chart_refusal = crate::lane_refusal::LaneRefusals::new();
+    let mut selected: Option<SolvedChart> = None;
+    let mut ambiguous = false;
+    for chart in ctx.admit_iter(candidates, "scan Parasolid intersection chart candidates")? {
+        let [first, last] = chart.endpoints;
+        let Some((start, start_distance)) = nearest_term(ctx, &records.terms, start_ref, first)?
+        else {
             continue;
         };
-        let payload = body + isect::PAYLOAD;
-        let mut refs = [0_u16; 6];
-        let mut valid = true;
-        for (index, reference) in refs.iter_mut().enumerate() {
-            if let Some(value) = View::u16_be_at(bytes, payload + index * 2) {
-                *reference = value;
-            } else {
-                valid = false;
-                break;
-            }
-        }
-        if !valid {
-            continue;
-        }
-        let (chart_ref, start_ref, end_ref, uv_ref) = (refs[2], refs[3], refs[4], refs[5]);
-        let Some(candidates) = charts.get(&chart_ref) else {
+        let Some((end, end_distance)) = nearest_term(ctx, &records.terms, end_ref, last)? else {
             continue;
         };
-        let mut chart_refusal = crate::lane_refusal::LaneRefusals::new();
-        let mut selected: Option<SolvedChart> = None;
-        let mut ambiguous = false;
-        for chart in ctx.admit_iter(candidates, "scan Parasolid intersection chart candidates")? {
-            let [first, last] = chart.endpoints;
-            let Some((start, start_distance)) = nearest_term(ctx, &terms, start_ref, first)? else {
-                continue;
-            };
-            let Some((end, end_distance)) = nearest_term(ctx, &terms, end_ref, last)? else {
-                continue;
-            };
-            let endpoint_displacement = start_distance + end_distance;
-            let Some((geometry, parameters, reversed)) =
-                solved_curve(ctx, chart, start, end, attr, &mut chart_refusal)?
-            else {
-                continue;
-            };
-            let fit_tolerance_mm = chart.chordal_error * LEN_TO_MM;
-            if !fit_tolerance_mm.is_finite() {
-                continue;
-            }
-            let candidate = SolvedChart {
-                geometry,
-                parameters,
-                fit_tolerance_mm,
-                reversed,
-                endpoint_displacement,
-            };
-            match selected.as_ref() {
-                None => selected = Some(candidate),
-                Some(previous) => match candidate
-                    .endpoint_displacement
-                    .total_cmp(&previous.endpoint_displacement)
-                {
-                    std::cmp::Ordering::Less => {
-                        selected = Some(candidate);
-                        ambiguous = false;
-                    }
-                    std::cmp::Ordering::Equal => ambiguous = true,
-                    std::cmp::Ordering::Greater => {}
-                },
-            }
-        }
-        for record in chart_refusal.take_records() {
-            let note = crate::loss::spline_lane_refusal(
-                ctx,
-                format_args!("intersection chart for attr {attr}: {record}"),
-            )?;
-            ctx.reserve_vec(lane_refusals, 1, "collect intersection chart losses")?;
-            lane_refusals.push(note);
-        }
-        let Some(selected) = selected else {
+        let endpoint_displacement = start_distance + end_distance;
+        let Some((geometry, parameters, reversed)) =
+            solved_curve(ctx, chart, start, end, attr, &mut chart_refusal)?
+        else {
             continue;
         };
-        if ambiguous {
+        let fit_tolerance_mm = chart.chordal_error * LEN_TO_MM;
+        if !fit_tolerance_mm.is_finite() {
             continue;
         }
-        let supports = [refs[0], refs[1]];
-        let support_uv = solved_support_uv(
+        let candidate = SolvedChart {
+            geometry,
+            parameters,
+            fit_tolerance_mm,
+            reversed,
+            endpoint_displacement,
+        };
+        match selected.as_ref() {
+            None => selected = Some(candidate),
+            Some(previous) => match candidate
+                .endpoint_displacement
+                .total_cmp(&previous.endpoint_displacement)
+            {
+                std::cmp::Ordering::Less => {
+                    selected = Some(candidate);
+                    ambiguous = false;
+                }
+                std::cmp::Ordering::Equal => ambiguous = true,
+                std::cmp::Ordering::Greater => {}
+            },
+        }
+    }
+    for record in ctx.admit_iter(
+        chart_refusal.take_records(),
+        "collect intersection chart losses",
+    )? {
+        let note = crate::loss::spline_lane_refusal(
             ctx,
-            &selected.parameters,
-            selected.reversed,
-            uvs.get(&uv_ref).map(Vec::as_slice),
+            format_args!("intersection chart for attr {attr}: {record}"),
         )?;
-        ctx.admit_btree_entry(&mut out, &attr, "collect Parasolid intersection carriers")?;
-        out.entry(attr).or_insert(IntersectionCarrier {
+        ctx.push_vec(lane_refusals, note, "collect intersection chart losses")?;
+    }
+    let Some(selected) = selected else {
+        return Ok(());
+    };
+    if ambiguous {
+        return Ok(());
+    }
+    let supports = [refs[0], refs[1]];
+    let uv_records = ctx
+        .get_btree_map(&records.uvs, &uv_ref, "find Parasolid support UV records")?
+        .map(Vec::as_slice);
+    let support_uv = solved_support_uv(ctx, &selected.parameters, selected.reversed, uv_records)?;
+    ctx.entry_btree_map(out, attr, "collect Parasolid intersection carriers")?
+        .or_insert(IntersectionCarrier {
             carrier: CurveCarrier {
                 attr,
                 offset,
@@ -703,8 +761,7 @@ pub(super) fn scan_intersection_carriers(
                 support_uv,
             },
         });
-    }
-    Ok(out)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1073,13 +1130,17 @@ mod tests {
     #[test]
     fn parasolid_intersection_carriers_refuse_before_collection() {
         let bytes = stream();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 46;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let Err(error) = scan_intersection_carriers(&ctx, &bytes, &mut Vec::new()) else {
-            panic!("carrier insertion exceeds the collection limit");
-        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "collect Parasolid intersection carriers",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+                scan_intersection_carriers(&ctx, &bytes, &mut Vec::new())
+            },
+        );
         assert!(
             matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)

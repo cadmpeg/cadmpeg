@@ -1,10 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::{
-    chordal_hole_constraint, circular_outer_and_holes, is_simple_polygon, planar_arc_segments,
-    polygon_contains, triangulate_polygon, CircularHole, PlanarHole, EPS_DISPLAY_QUANTIZATION,
+    chordal_hole_constraint, circular_outer_and_holes, planar_arc_segments, polygon_contains,
+    simple_polygon_area_twice, CircularHole, PlanarHole, EPS_DISPLAY_QUANTIZATION,
     MAX_PLANAR_TRIM_ARC_SEGMENTS,
 };
+
+/// Whether `polygon` is simple at `tolerance`.
+pub(super) fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
+    simple_polygon_area_twice(
+        &cadmpeg_test_support::service_decode_context(),
+        polygon,
+        tolerance,
+    )
+    .unwrap()
+    .is_some()
+}
+
+/// Ear-clip `polygon` after deciding its simplicity, as a planar trim does.
+pub(super) fn triangulate_polygon(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    polygon: &[Point2],
+    tolerance: f64,
+) -> Result<Option<Vec<[Point2; 3]>>, cadmpeg_core::CodecError> {
+    let Some(area) = simple_polygon_area_twice(ctx, polygon, tolerance)? else {
+        return Ok(None);
+    };
+    super::super::triangulate_polygon(ctx, polygon, area.get().signum(), tolerance)
+}
+
+/// A polygonal hole after deciding the boundary's simplicity, as a planar trim does.
+pub(super) fn hole_polygon(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    boundary: Vec<Point2>,
+    tolerance: f64,
+) -> Result<Option<PlanarHole>, cadmpeg_core::CodecError> {
+    let Some(area) = simple_polygon_area_twice(ctx, &boundary, tolerance)? else {
+        return Ok(None);
+    };
+    PlanarHole::polygon(ctx, boundary, area, tolerance)
+}
 use cadmpeg_ir::math::planar::segments_intersect;
 use cadmpeg_ir::math::Point2;
 const EPS_DISTANCE: f64 = 1e-7;
@@ -73,11 +108,9 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
         Point2::new(0.0, 2.0),
     ];
     assert!(is_simple_polygon(&concave, CONTAINMENT_TOLERANCE));
-    assert!(
-        PlanarHole::polygon(&ctx, concave.clone(), CONTAINMENT_TOLERANCE)
-            .unwrap()
-            .is_some()
-    );
+    assert!(hole_polygon(&ctx, concave.clone(), CONTAINMENT_TOLERANCE)
+        .unwrap()
+        .is_some());
     assert!(
         polygon_contains(&ctx, &concave, Point2::new(1.0, 1.0), CONTAINMENT_TOLERANCE).unwrap()
     );

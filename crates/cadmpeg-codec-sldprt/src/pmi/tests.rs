@@ -1387,13 +1387,20 @@ fn pmi_alias_comparison_refuses_long_semantic_strings() {
     second.cad_text.push('y');
     let records = [first, second];
     let bound = std::collections::HashSet::from(["bound"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 100;
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::unbound_dimension_count(&ctx, &records, &bound).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare SLDPRT PMI aliases",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::unbound_dimension_count(&ctx, &records, &bound)
+        },
+    );
+    // The alias lookup pays for the long semantic text it compares.
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "compare SLDPRT PMI aliases")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional > 1024)
     );
     assert_eq!(
         super::unbound_dimension_count(

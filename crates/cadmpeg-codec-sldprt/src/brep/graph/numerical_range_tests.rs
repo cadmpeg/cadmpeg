@@ -175,7 +175,7 @@ fn derive_sphere(out: &mut Brep) {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    derive_spherical_pcurves(
+    derive_pcurves(
         &ctx,
         out,
         &mut AnnotationBuilder::new(),
