@@ -214,9 +214,17 @@ pub(crate) fn install(
     {
         if let Some(identity) = object.identity() {
             object_workspace.with_storage(|| -> Result<(), CodecError> {
-                match ctx.entry_hash_map(&mut object_records, identity.object_id, "Rhino product object keys")? {
-                    std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(Some(source_order)); }
-                    std::collections::hash_map::Entry::Occupied(mut entry) => { entry.insert(None); }
+                match ctx.entry_hash_map(
+                    &mut object_records,
+                    identity.object_id,
+                    "Rhino product object keys",
+                )? {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(Some(source_order));
+                    }
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        entry.insert(None);
+                    }
                 }
                 Ok(())
             })?;
@@ -242,10 +250,23 @@ pub(crate) fn install(
         let mut member_seen = HashSet::new();
         let mut member_workspace = ctx.reserve_scoped(0, "Rhino definition member workspace")?;
         for member in ctx.admit_iter(&definition.members[..], "Rhino install traversal")? {
-            if let Some(Some(source_order)) = ctx.get_hash_map(&object_records, member, "Rhino definition member lookup")? {
-                if !member_workspace.with_storage(|| ctx.insert_hash_set(&mut member_seen, *source_order, "Rhino definition member identities"))? { continue; }
+            if let Some(Some(source_order)) =
+                ctx.get_hash_map(&object_records, member, "Rhino definition member lookup")?
+            {
+                if !member_workspace.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut member_seen,
+                        *source_order,
+                        "Rhino definition member identities",
+                    )
+                })? {
+                    continue;
+                }
                 ctx.reserve_vec(&mut links, 1, "Rhino definition links")?;
-                links.push(ctx.format_retained(format_args!("rhino:object:record#{source_order:06}"), "Rhino definition member link")?);
+                links.push(ctx.format_retained(
+                    format_args!("rhino:object:record#{source_order:06}"),
+                    "Rhino definition member link",
+                )?);
             }
         }
         if let Some(id) = &external_id {
@@ -339,7 +360,9 @@ pub(crate) fn install(
             object.class_data_range.clone(),
         ) {
             Ok(reference) => reference,
-            Err(crate::chunks::FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Err(crate::chunks::FramingError::Resource(limit)) => {
+                return Err(CodecError::ResourceLimit(limit))
+            }
             Err(error) => {
                 ctx.reserve_vec(&mut losses, 1, "Rhino product occurrence losses")?;
                 let loss = crate::wire::admitted_loss(
@@ -393,7 +416,12 @@ pub(crate) fn install(
             }
         }
         let (key, _key_workspace) = if identity.object_id.is_nil()
-            || ctx.get_hash_map(&object_records, &identity.object_id, "Rhino occurrence identity lookup")?
+            || ctx
+                .get_hash_map(
+                    &object_records,
+                    &identity.object_id,
+                    "Rhino occurrence identity lookup",
+                )?
                 .is_some_and(Option::is_none)
         {
             ctx.format_scoped(
@@ -1016,25 +1044,65 @@ mod tests {
         use crate::wire::Uuid;
         let archive = ArchiveVersion::V5;
         let member = [0x62; 16];
-        let payload = support::v5_definition_payload(archive, 6, [0x51; 16], &[member, member], false);
+        let payload =
+            support::v5_definition_payload(archive, 6, [0x51; 16], &[member, member], false);
         let definition = support::definition_record(archive, &payload);
-        let mut scan = crate::container::scan_owned(support::document_with_definitions("50", archive, &[definition], &[])).expect("definition framing");
+        let mut scan = crate::container::scan_owned(support::document_with_definitions(
+            "50",
+            archive,
+            &[definition],
+            &[],
+        ))
+        .expect("definition framing");
         let bytes = support::fixed_attributes(1, 0, None);
         let ctx = cadmpeg_test_support::service_decode_context();
-        let mut attributes = crate::objects::parse_attributes(&ctx, &bytes, 0..bytes.len(), 0..bytes.len(), archive, None, &mut crate::loss::Diagnostics::new()).expect("member attributes");
+        let mut attributes = crate::objects::parse_attributes(
+            &ctx,
+            &bytes,
+            0..bytes.len(),
+            0..bytes.len(),
+            archive,
+            None,
+            &mut crate::loss::Diagnostics::new(),
+        )
+        .expect("member attributes");
         attributes.object_id = Uuid::from_wire(member);
-        scan.objects = crate::objects::resolve_identities(&ctx, vec![crate::objects::ObjectRecord::Framed(Box::new(support::descriptor(attributes, 0)))], &scan.metadata, &mut crate::loss::Diagnostics::new()).expect("member identity");
-        for operation in ["Rhino definition member identities", "Rhino definition links"] {
+        scan.objects = crate::objects::resolve_identities(
+            &ctx,
+            vec![crate::objects::ObjectRecord::Framed(Box::new(
+                support::descriptor(attributes, 0),
+            ))],
+            &scan.metadata,
+            &mut crate::loss::Diagnostics::new(),
+        )
+        .expect("member identity");
+        for operation in [
+            "Rhino definition member identities",
+            "Rhino definition links",
+        ] {
             // One object key and one distinct source-position entry precede the link slot.
-            cadmpeg_test_support::refusal::resource_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, operation, |cap| with_collection_limit(&scan, cap, |ctx| install(ctx, &scan, &mut CadIr::empty())));
+            cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                operation,
+                |cap| {
+                    with_collection_limit(&scan, cap, |ctx| {
+                        install(ctx, &scan, &mut CadIr::empty())
+                    })
+                },
+            );
         }
         let mut ir = CadIr::empty();
         install(&ctx, &scan, &mut ir).expect("product projection");
         let records = &ir.native.namespace("rhino").unwrap().arenas()["product_definitions"];
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].field("links"), Some(serde_json::json!(["rhino:object:record#000000"])));
+        assert_eq!(
+            records[0].field("links"),
+            Some(serde_json::json!(["rhino:object:record#000000"]))
+        );
         let uuid = Uuid::from_wire(member).to_string();
-        assert_eq!(records[0].field("member_object_ids"), Some(serde_json::json!([uuid, uuid])));
+        assert_eq!(
+            records[0].field("member_object_ids"),
+            Some(serde_json::json!([uuid, uuid]))
+        );
     }
-
 }

@@ -1442,7 +1442,9 @@ fn insert_dimension_text(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.copy_retained_text(key, "Rhino dimension parameter key")?;
     let key = cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
-        .ok_or_else(|| cadmpeg_core::CodecError::malformed("generated dimension key is blank"))?;
+        .ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("generated dimension key is blank")
+    })?;
     ctx.insert_btree_map(parameters, key, value, "Rhino dimension parameter entries")?;
     Ok(())
 }
@@ -1542,8 +1544,18 @@ pub(crate) fn project(
             "distance_scale",
             format_args!("{}", dimension.distance_scale.get())
         )?;
-        insert_dimension_text(ctx, &mut parameters, "rich_text", ctx.copy_retained_text(&dimension.rich_text, "Rhino dimension parameter value")?)?;
-        insert_dimension_text(ctx, &mut parameters, "user_text", ctx.copy_retained_text(&dimension.user_text, "Rhino dimension parameter value")?)?;
+        insert_dimension_text(
+            ctx,
+            &mut parameters,
+            "rich_text",
+            ctx.copy_retained_text(&dimension.rich_text, "Rhino dimension parameter value")?,
+        )?;
+        insert_dimension_text(
+            ctx,
+            &mut parameters,
+            "user_text",
+            ctx.copy_retained_text(&dimension.user_text, "Rhino dimension parameter value")?,
+        )?;
         put!(
             "use_default_text_point",
             format_args!("{}", dimension.use_default_text_point)
@@ -1611,8 +1623,17 @@ pub(crate) fn project(
                 points,
                 angular_radius,
             } => {
-                insert_dimension_text(ctx, &mut parameters, "v2_default_text", ctx.copy_retained_text(default_text, "Rhino dimension parameter value")?)?;
-                let points_text = ctx.join_display_retained(points.iter().map(PointText), ";", "Rhino dimension parameter value")?;
+                insert_dimension_text(
+                    ctx,
+                    &mut parameters,
+                    "v2_default_text",
+                    ctx.copy_retained_text(default_text, "Rhino dimension parameter value")?,
+                )?;
+                let points_text = ctx.join_display_retained(
+                    points.iter().map(PointText),
+                    ";",
+                    "Rhino dimension parameter value",
+                )?;
                 insert_dimension_text(ctx, &mut parameters, "v2_points", points_text)?;
                 if let Some(radius) = angular_radius {
                     let angle = dimension.measurement;
@@ -1710,7 +1731,12 @@ pub(crate) fn project(
         }
     }
     if let Some(name) = name {
-        insert_dimension_text(ctx, &mut parameters, "object_name", ctx.copy_retained_text(name, "Rhino dimension parameter value")?)?;
+        insert_dimension_text(
+            ctx,
+            &mut parameters,
+            "object_name",
+            ctx.copy_retained_text(name, "Rhino dimension parameter value")?,
+        )?;
     }
 
     // Model-space text point via the dimension plane (stored UV, not world xyz).

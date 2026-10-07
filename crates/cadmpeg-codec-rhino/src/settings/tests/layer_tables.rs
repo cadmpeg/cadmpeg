@@ -167,10 +167,16 @@ fn layer_parent_workspace_refuses_materialized_limit() {
             policy.limits.max_materialized_bytes = cap;
             policy.limits.max_retained_bytes = 0;
             let ctx = retained_limit_context(&data, &arena, &policy);
-            crate::settings::report_layer_parent_references(&ctx, &metadata.layers, &mut crate::loss::Diagnostics::new())
+            crate::settings::report_layer_parent_references(
+                &ctx,
+                &metadata.layers,
+                &mut crate::loss::Diagnostics::new(),
+            )
         },
     );
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else { panic!("materialized refusal") };
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("materialized refusal")
+    };
     assert_eq!(refusal.used, 0);
     assert!(refusal.additional > 0);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -178,6 +184,12 @@ fn layer_parent_workspace_refuses_materialized_limit() {
     policy.limits.max_materialized_bytes = refusal.additional;
     policy.limits.max_retained_bytes = 0;
     let ctx = retained_limit_context(&data, &arena, &policy);
-    crate::settings::report_layer_parent_references(&ctx, &metadata.layers, &mut crate::loss::Diagnostics::new()).expect("exact table bound admitted");
-    ctx.reserve_scoped(refusal.additional, "reclaimed layer parent workspace").expect("workspace released after the pass");
+    crate::settings::report_layer_parent_references(
+        &ctx,
+        &metadata.layers,
+        &mut crate::loss::Diagnostics::new(),
+    )
+    .expect("exact table bound admitted");
+    ctx.reserve_scoped(refusal.additional, "reclaimed layer parent workspace")
+        .expect("workspace released after the pass");
 }

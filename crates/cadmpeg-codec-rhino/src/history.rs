@@ -533,8 +533,10 @@ fn subd_edge_chain(
     let subd_id = uuid(&mut reader)?;
     let count = count(&mut reader, 1)?;
     let mut lane_workspace = ctx.reserve_scoped(0, "Rhino history edge lanes")?;
-    let edge_ids = lane_workspace.with_storage(|| array(ctx, &mut reader, 4, BoundedReader::u32))?;
-    let orientations = lane_workspace.with_storage(|| array(ctx, &mut reader, 1, BoundedReader::u8))?;
+    let edge_ids =
+        lane_workspace.with_storage(|| array(ctx, &mut reader, 4, BoundedReader::u32))?;
+    let orientations =
+        lane_workspace.with_storage(|| array(ctx, &mut reader, 1, BoundedReader::u8))?;
     let orientation_start = reader.position() - orientations.len();
     for (index, orientation) in ctx
         .admit_iter(&orientations[..], "Rhino subd edge chain traversal")
@@ -560,7 +562,8 @@ fn subd_edge_chain(
             .collection_vec(count, "Rhino history SubD edges")
             .map_err(crate::chunks::FramingError::from)?;
         edges.extend(
-            ctx.admit_iter(edge_ids, "Rhino history edge pairing").map_err(FramingError::Resource)?
+            ctx.admit_iter(edge_ids, "Rhino history edge pairing")
+                .map_err(FramingError::Resource)?
                 .zip(orientations)
                 .map(|(id, orientation)| SubdEdge {
                     id,
@@ -811,7 +814,9 @@ struct Joined<'a, T, const N: usize>(&'a [T; N], &'static str);
 impl<T: fmt::Display, const N: usize> fmt::Display for Joined<'_, T, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (index, value) in self.0.iter().enumerate() {
-            if index != 0 { f.write_str(self.1)?; }
+            if index != 0 {
+                f.write_str(self.1)?;
+            }
             write!(f, "{value}")?;
         }
         Ok(())
@@ -821,7 +826,11 @@ impl<T: fmt::Display, const N: usize> fmt::Display for Joined<'_, T, N> {
 struct ReferenceText<'a>(&'a ObjectReference);
 impl fmt::Display for ReferenceText<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}@{}:{}", self.0.object_id, self.0.component[0], self.0.component[1])
+        write!(
+            f,
+            "{}@{}:{}",
+            self.0.object_id, self.0.component[0], self.0.component[1]
+        )
     }
 }
 
@@ -858,13 +867,33 @@ fn value_text(ctx: &DecodeContext<'_>, value: &Value) -> Result<Option<String>, 
         Value::Booleans(values) => ctx.join_display_retained(values, ",", operation)?,
         Value::Integers(values) => ctx.join_display_retained(values, ",", operation)?,
         Value::Doubles(values) => ctx.join_display_retained(values, ",", operation)?,
-        Value::Colors(values) => ctx.join_display_retained(values.iter().map(|value| Joined(value, ",")), ";", operation)?,
-        Value::Points(values) => ctx.join_display_retained(values.iter().map(|value| Joined(value.0.as_raw(), ",")), ";", operation)?,
-        Value::Vectors(values) => ctx.join_display_retained(values.iter().map(|value| Joined(value.0.as_raw(), ",")), ";", operation)?,
-        Value::Transforms(values) => ctx.join_display_retained(values.iter().map(|value| Joined(value.0.as_raw(), ",")), ";", operation)?,
+        Value::Colors(values) => ctx.join_display_retained(
+            values.iter().map(|value| Joined(value, ",")),
+            ";",
+            operation,
+        )?,
+        Value::Points(values) => ctx.join_display_retained(
+            values.iter().map(|value| Joined(value.0.as_raw(), ",")),
+            ";",
+            operation,
+        )?,
+        Value::Vectors(values) => ctx.join_display_retained(
+            values.iter().map(|value| Joined(value.0.as_raw(), ",")),
+            ";",
+            operation,
+        )?,
+        Value::Transforms(values) => ctx.join_display_retained(
+            values.iter().map(|value| Joined(value.0.as_raw(), ",")),
+            ";",
+            operation,
+        )?,
         Value::Strings(values) => ctx.join_display_retained(values, "\u{1f}", operation)?,
-        Value::ObjectReferences(values) => ctx.join_display_retained(values.iter().map(ReferenceText), ",", operation)?,
-        Value::Geometries(values) => ctx.join_display_retained(values.iter().map(|value| value.class_id), ",", operation)?,
+        Value::ObjectReferences(values) => {
+            ctx.join_display_retained(values.iter().map(ReferenceText), ",", operation)?
+        }
+        Value::Geometries(values) => {
+            ctx.join_display_retained(values.iter().map(|value| value.class_id), ",", operation)?
+        }
         Value::Uuids(values) => ctx.join_display_retained(values, ",", operation)?,
         Value::PolyEdges(_) | Value::SubdEdgeChains(_) | Value::Opaque { .. } => return Ok(None),
     };
@@ -944,13 +973,11 @@ fn object_reference_properties(
         format_args!("{prefix}.osnap_mode"),
         value.osnap_mode,
     )?;
-    let (evaluation_prefix, _evaluation_workspace) = ctx.format_scoped(format_args!("{prefix}.evaluation"), "Rhino history evaluation prefix")?;
-evaluation_properties(
-        ctx,
-        &evaluation_prefix,
-        &value.evaluation,
-        properties,
+    let (evaluation_prefix, _evaluation_workspace) = ctx.format_scoped(
+        format_args!("{prefix}.evaluation"),
+        "Rhino history evaluation prefix",
     )?;
+    evaluation_properties(ctx, &evaluation_prefix, &value.evaluation, properties)?;
     insert_property(
         ctx,
         properties,
@@ -965,7 +992,9 @@ evaluation_properties(
         .enumerate()
     {
         let (path, _path_workspace) = ctx.format_scoped(
-            format_args!("{prefix}.instance_{index}"), "Rhino history instance prefix")?;
+            format_args!("{prefix}.instance_{index}"),
+            "Rhino history instance prefix",
+        )?;
         insert_property(
             ctx,
             properties,
@@ -997,13 +1026,11 @@ evaluation_properties(
                 format_args!("{path}.component"),
                 Joined(&evaluation.component, ","),
             )?;
-            let (evaluation_prefix, _evaluation_workspace) = ctx.format_scoped(format_args!("{path}.evaluation"), "Rhino history evaluation prefix")?;
-evaluation_properties(
-                ctx,
-                &evaluation_prefix,
-                &evaluation.parameter,
-                properties,
+            let (evaluation_prefix, _evaluation_workspace) = ctx.format_scoped(
+                format_args!("{path}.evaluation"),
+                "Rhino history evaluation prefix",
             )?;
+            evaluation_properties(ctx, &evaluation_prefix, &evaluation.parameter, properties)?;
         }
     }
     Ok(())
@@ -1530,9 +1557,15 @@ fn extended_geometry_json(
     refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Option<String> {
     let data = expand.data();
-    let mut geometry_workspace = match expand.ctx().reserve_scoped(0, "Rhino history geometry workspace") {
+    let mut geometry_workspace = match expand
+        .ctx()
+        .reserve_scoped(0, "Rhino history geometry workspace")
+    {
         Ok(workspace) => workspace,
-        Err(error) => { *refusal = Some(error); return None; }
+        Err(error) => {
+            *refusal = Some(error);
+            return None;
+        }
     };
     if crate::mesh::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
@@ -1560,17 +1593,19 @@ fn extended_geometry_json(
         )?;
         embedded_json(expand.ctx(), &MeshJson(&mesh), refusal)
     } else if crate::subd::supported_class(value.class_id) {
-        let subd = match geometry_workspace.with_storage(|| crate::subd::decode(
-            expand.ctx(),
-            data,
-            value.class_data_range.clone(),
-            archive,
-            scale,
-            cadmpeg_ir::ids::SubdId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "history", "subd"),
-                cadmpeg_ir::identity_key!("embedded"),
-            ),
-        )) {
+        let subd = match geometry_workspace.with_storage(|| {
+            crate::subd::decode(
+                expand.ctx(),
+                data,
+                value.class_data_range.clone(),
+                archive,
+                scale,
+                cadmpeg_ir::ids::SubdId::compose(
+                    &cadmpeg_ir::identity_namespace!("rhino", "history", "subd"),
+                    cadmpeg_ir::identity_key!("embedded"),
+                ),
+            )
+        }) {
             Ok(subd) => subd,
             Err(crate::subd::SubdError::Resource(limit)) => {
                 *refusal = Some(cadmpeg_core::CodecError::ResourceLimit(limit));
@@ -1623,13 +1658,17 @@ fn extended_geometry_json(
         embedded_json(expand.ctx(), &ExtrusionJson(&extrusion), refusal)
     } else if value.class_id == crate::cage::CLASS {
         let cage = optional_geometry(
-            geometry_workspace.with_storage(|| crate::cage::decode(expand, value.class_data_range.clone(), scale, archive)),
+            geometry_workspace.with_storage(|| {
+                crate::cage::decode(expand, value.class_data_range.clone(), scale, archive)
+            }),
             refusal,
         )?;
         embedded_json(expand.ctx(), &CageJson(&cage), refusal)
     } else if value.class_id == crate::morph::CLASS {
         let morph = optional_geometry(
-            geometry_workspace.with_storage(|| crate::morph::decode(expand, value.class_data_range.clone(), scale, archive)),
+            geometry_workspace.with_storage(|| {
+                crate::morph::decode(expand, value.class_data_range.clone(), scale, archive)
+            }),
             refusal,
         )?;
         embedded_json(expand.ctx(), &MorphJson(&morph), refusal)
@@ -1645,24 +1684,31 @@ fn extended_geometry_json(
         )
     } else if value.class_id == crate::hatch::CLASS {
         let mut hatch = optional_geometry(
-            geometry_workspace.with_storage(|| crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive)),
+            geometry_workspace.with_storage(|| {
+                crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive)
+            }),
             refusal,
         )?;
-        if let Err(errors) = match geometry_workspace.with_storage(|| crate::hatch::apply_userdata(
-            expand.ctx(),
-            data,
-            &value.userdata,
-            scale,
-            archive,
-            &mut hatch,
-        )) {
+        if let Err(errors) = match geometry_workspace.with_storage(|| {
+            crate::hatch::apply_userdata(
+                expand.ctx(),
+                data,
+                &value.userdata,
+                scale,
+                archive,
+                &mut hatch,
+            )
+        }) {
             Ok(result) => result,
             Err(error) => {
                 *refusal = Some(error);
                 return None;
             }
         } {
-            let errors = match expand.ctx().admit_iter(errors, "Rhino history hatch diagnostic traversal") {
+            let errors = match expand
+                .ctx()
+                .admit_iter(errors, "Rhino history hatch diagnostic traversal")
+            {
                 Ok(errors) => errors,
                 Err(error) => {
                     *refusal = Some(error.into());
@@ -1742,19 +1788,23 @@ fn extended_geometry_json(
         )
     } else if value.class_id == crate::detail::CLASS {
         let detail = optional_geometry(
-            geometry_workspace.with_storage(|| crate::detail::decode(expand.ctx(), data, value.class_data_range.clone(), archive)),
+            geometry_workspace.with_storage(|| {
+                crate::detail::decode(expand.ctx(), data, value.class_data_range.clone(), archive)
+            }),
             refusal,
         )?;
         embedded_json(expand.ctx(), &DetailJson(&detail), refusal)
     } else if crate::dimensions::supported_class(value.class_id) {
-        let dimension = match geometry_workspace.with_storage(|| crate::dimensions::decode(
-            expand.ctx(),
-            data,
-            value.class_id,
-            value.class_data_range.clone(),
-            scale,
-            archive,
-        )) {
+        let dimension = match geometry_workspace.with_storage(|| {
+            crate::dimensions::decode(
+                expand.ctx(),
+                data,
+                value.class_id,
+                value.class_data_range.clone(),
+                scale,
+                archive,
+            )
+        }) {
             Ok(dimension) => dimension,
             Err(crate::chunks::FramingError::Resource(limit)) => {
                 *refusal = Some(cadmpeg_core::CodecError::ResourceLimit(limit));
@@ -1774,14 +1824,16 @@ fn extended_geometry_json(
             }
         };
         let mut dimension = dimension;
-        if let Err(error) = geometry_workspace.with_storage(|| crate::dimensions::apply_userdata(
-            expand.ctx(),
-            data,
-            &value.userdata,
-            archive,
-            scale,
-            &mut dimension,
-        )) {
+        if let Err(error) = geometry_workspace.with_storage(|| {
+            crate::dimensions::apply_userdata(
+                expand.ctx(),
+                data,
+                &value.userdata,
+                archive,
+                scale,
+                &mut dimension,
+            )
+        }) {
             optional_warning(
                 expand.ctx(),
                 warnings,
@@ -1936,7 +1988,9 @@ fn structured_value_properties(
                 .enumerate()
             {
                 let (prefix, _prefix_workspace) = ctx.format_scoped(
-                    format_args!("{key}.{index}"), "Rhino history reference prefix")?;
+                    format_args!("{key}.{index}"),
+                    "Rhino history reference prefix",
+                )?;
                 object_reference_properties(ctx, &prefix, value, properties)?;
             }
         }
@@ -1954,16 +2008,19 @@ fn structured_value_properties(
                 )?;
                 if let Some((expand, archive, writer_version, scale)) = geometry_context {
                     let data = expand.data();
-                    let mut geometry_workspace = ctx.reserve_scoped(0, "Rhino history curve workspace")?;
+                    let mut geometry_workspace =
+                        ctx.reserve_scoped(0, "Rhino history curve workspace")?;
                     let decoded = optional_geometry(
-                        geometry_workspace.with_storage(|| crate::curves::decode(
-                            expand.ctx(),
-                            data,
-                            value.class_id,
-                            value.class_data_range.clone(),
-                            scale,
-                            archive,
-                        )),
+                        geometry_workspace.with_storage(|| {
+                            crate::curves::decode(
+                                expand.ctx(),
+                                data,
+                                value.class_id,
+                                value.class_data_range.clone(),
+                                scale,
+                                archive,
+                            )
+                        }),
                         &mut sink.refusal,
                     );
                     if sink.refusal.is_some() {
@@ -2013,7 +2070,12 @@ fn structured_value_properties(
                         };
                         match semantic {
                             Ok(semantic) => {
-                                insert_property_text(ctx, properties, format_args!("{key}.{index}.geometry"), semantic)?;
+                                insert_property_text(
+                                    ctx,
+                                    properties,
+                                    format_args!("{key}.{index}.geometry"),
+                                    semantic,
+                                )?;
                             }
                             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                             Err(_) => {}
@@ -2033,7 +2095,12 @@ fn structured_value_properties(
                         }
                         if let Some(semantic) = semantic {
                             sink.untyped += 1;
-                            insert_property_text(ctx, properties, format_args!("{key}.{index}.geometry"), semantic)?;
+                            insert_property_text(
+                                ctx,
+                                properties,
+                                format_args!("{key}.{index}.geometry"),
+                                semantic,
+                            )?;
                         } else {
                             sink.failed += 1;
                         }
@@ -2073,12 +2140,18 @@ fn structured_value_properties(
                 .enumerate()
             {
                 let (edge_key, _edge_key_workspace) = ctx.format_scoped(
-                    format_args!("{key}.{edge_index}"), "Rhino history edge prefix")?;
+                    format_args!("{key}.{edge_index}"),
+                    "Rhino history edge prefix",
+                )?;
                 insert_property_text(
                     ctx,
                     properties,
                     format_args!("{edge_key}.parameters"),
-                    ctx.join_display_retained(edge.polyedge.parameters.iter(), ",", "Rhino history property value")?,
+                    ctx.join_display_retained(
+                        edge.polyedge.parameters.iter(),
+                        ",",
+                        "Rhino history property value",
+                    )?,
                 )?;
                 insert_property(
                     ctx,
@@ -2100,9 +2173,13 @@ fn structured_value_properties(
                     .enumerate()
                 {
                     let (segment_key, _segment_key_workspace) = ctx.format_scoped(
-                        format_args!("{edge_key}.segment_{segment_index}"), "Rhino history segment prefix")?;
+                        format_args!("{edge_key}.segment_{segment_index}"),
+                        "Rhino history segment prefix",
+                    )?;
                     let (curve_key, _curve_key_workspace) = ctx.format_scoped(
-                        format_args!("{segment_key}.curve"), "Rhino history curve prefix")?;
+                        format_args!("{segment_key}.curve"),
+                        "Rhino history curve prefix",
+                    )?;
                     object_reference_properties(
                         ctx,
                         &curve_key,
@@ -2156,7 +2233,8 @@ fn structured_value_properties(
                 .admit_iter(&values[..], "Rhino structured value properties traversal")?
                 .enumerate()
             {
-                let (chain_key, _chain_workspace) = ctx.format_scoped(format_args!("{key}.{index}"), "Rhino history chain prefix")?;
+                let (chain_key, _chain_workspace) =
+                    ctx.format_scoped(format_args!("{key}.{index}"), "Rhino history chain prefix")?;
                 insert_property(
                     ctx,
                     properties,
@@ -2167,13 +2245,21 @@ fn structured_value_properties(
                     ctx,
                     properties,
                     format_args!("{chain_key}.edge_ids"),
-                    ctx.join_display_retained(chain.edges.iter().map(|edge| edge.id), ",", "Rhino history property value")?,
+                    ctx.join_display_retained(
+                        chain.edges.iter().map(|edge| edge.id),
+                        ",",
+                        "Rhino history property value",
+                    )?,
                 )?;
                 insert_property_text(
                     ctx,
                     properties,
                     format_args!("{chain_key}.orientations"),
-                    ctx.join_display_retained(chain.edges.iter().map(|edge| u8::from(edge.reversed)), ",", "Rhino history property value")?,
+                    ctx.join_display_retained(
+                        chain.edges.iter().map(|edge| u8::from(edge.reversed)),
+                        ",",
+                        "Rhino history property value",
+                    )?,
                 )?;
             }
         }
@@ -2222,9 +2308,14 @@ pub(crate) fn project(
         .admit_iter(records, "Rhino project traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
-        let unique = !record.id.is_nil() && identity_workspace.with_storage(||
-            ctx.insert_hash_set(&mut seen_record_ids, record.id, "Rhino history record identities")
-        )?;
+        let unique = !record.id.is_nil()
+            && identity_workspace.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut seen_record_ids,
+                    record.id,
+                    "Rhino history record identities",
+                )
+            })?;
         let (key, _key_workspace) = if unique {
             ctx.format_scoped(format_args!("{}", record.id), "Rhino history identity key")
         } else {
@@ -2234,10 +2325,12 @@ pub(crate) fn project(
             )
         }
         .map_err(ProjectionError::Codec)?;
-        let feature_id = id_workspace.with_storage(|| ctx.format_retained(
+        let feature_id = id_workspace.with_storage(|| {
+            ctx.format_retained(
                 format_args!("rhino:history:feature#{key}"),
                 "Rhino history feature identity",
-            ))?;
+            )
+        })?;
         ids.push(FeatureId::mint(feature_id).or_else(|error| {
             Err(ProjectionError::Admission(ctx.format_retained(
                 format_args!("{}", error),
@@ -2245,22 +2338,36 @@ pub(crate) fn project(
             )?))
         })?);
         native_ids.push(
-            native_workspace.with_storage(|| ctx.format_retained(
-                format_args!("rhino:history:record#{key}"),
-                "Rhino history native identity",
-            ))
-            .map_err(ProjectionError::Codec)?,
+            native_workspace
+                .with_storage(|| {
+                    ctx.format_retained(
+                        format_args!("rhino:history:record#{key}"),
+                        "Rhino history native identity",
+                    )
+                })
+                .map_err(ProjectionError::Codec)?,
         );
     }
     let mut producers = HashMap::<Uuid, Option<usize>>::new();
     let mut producer_workspace = ctx.reserve_scoped(0, "Rhino history producer workspace")?;
-    for (index, record) in ctx.admit_iter(records, "Rhino project traversal").map_err(CodecError::from)?.enumerate() {
-        for descendant in ctx.admit_iter(&record.descendants[..], "Rhino project traversal").map_err(CodecError::from)? {
-            if descendant.is_nil() { continue; }
+    for (index, record) in ctx
+        .admit_iter(records, "Rhino project traversal")
+        .map_err(CodecError::from)?
+        .enumerate()
+    {
+        for descendant in ctx
+            .admit_iter(&record.descendants[..], "Rhino project traversal")
+            .map_err(CodecError::from)?
+        {
+            if descendant.is_nil() {
+                continue;
+            }
             producer_workspace.with_storage(|| -> Result<(), CodecError> {
                 use std::collections::hash_map::Entry;
                 match ctx.entry_hash_map(&mut producers, *descendant, "Rhino history producers")? {
-                    Entry::Vacant(entry) => { entry.insert(Some(index)); }
+                    Entry::Vacant(entry) => {
+                        entry.insert(Some(index));
+                    }
                     Entry::Occupied(mut entry) => {
                         if entry.get().is_some_and(|producer| producer != index) {
                             entry.insert(None);
@@ -2278,20 +2385,40 @@ pub(crate) fn project(
         .enumerate()
     {
         let mut dependency_seen = HashSet::new();
-        let mut dependency_workspace = ctx.reserve_scoped(0, "Rhino history dependency workspace")?;
+        let mut dependency_workspace =
+            ctx.reserve_scoped(0, "Rhino history dependency workspace")?;
         let mut dependencies = Vec::new();
-        for antecedent in ctx.admit_iter(&record.antecedents[..], "Rhino project traversal").map_err(CodecError::from)? {
-            let producer_index = match ctx.get_hash_map(&producers, antecedent, "Rhino history producer lookup")? {
-                Some(None) => { dropped_dependencies += 1; continue; }
-                Some(Some(producer)) if *producer >= index => { dropped_dependencies += 1; continue; }
-                Some(Some(producer)) => *producer,
-                None => continue,
-            };
-            if !dependency_workspace.with_storage(|| ctx.insert_hash_set(
-                &mut dependency_seen, ids[producer_index].as_str(), "Rhino history seen dependencies",
-            ))? { continue; }
+        for antecedent in ctx
+            .admit_iter(&record.antecedents[..], "Rhino project traversal")
+            .map_err(CodecError::from)?
+        {
+            let producer_index =
+                match ctx.get_hash_map(&producers, antecedent, "Rhino history producer lookup")? {
+                    Some(None) => {
+                        dropped_dependencies += 1;
+                        continue;
+                    }
+                    Some(Some(producer)) if *producer >= index => {
+                        dropped_dependencies += 1;
+                        continue;
+                    }
+                    Some(Some(producer)) => *producer,
+                    None => continue,
+                };
+            if !dependency_workspace.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut dependency_seen,
+                    ids[producer_index].as_str(),
+                    "Rhino history seen dependencies",
+                )
+            })? {
+                continue;
+            }
             ctx.reserve_vec(&mut dependencies, 1, "Rhino history dependencies")?;
-            dependencies.push(ids[producer_index].try_clone_for_decode(ctx, "Rhino history dependency identity")?);
+            dependencies.push(
+                ids[producer_index]
+                    .try_clone_for_decode(ctx, "Rhino history dependency identity")?,
+            );
         }
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();
@@ -2301,23 +2428,34 @@ pub(crate) fn project(
             .admit_iter(&record.values[..], "Rhino project traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
-            let occurrence = value_workspace.with_storage(|| ctx.entry_hash_map(
-                &mut value_occurrences, value.id, "Rhino history value occurrences",
-            ))?.or_default();
-            let format_key = || if *occurrence == 0 {
-                ctx.format_retained(
-                    format_args!("value_{}", value.id),
-                    "Rhino history value key",
-                )
-            } else {
-                ctx.format_retained(
-                    format_args!("value_{}_{}", value.id, occurrence),
-                    "Rhino history value key",
-                )
-            }
-            ;
-            let mut key_workspace = ctx.reserve_scoped(0, "Rhino history value prefix workspace")?;
-            let key = if matches!(value.value, Value::PolyEdges(_) | Value::SubdEdgeChains(_) | Value::Opaque { .. }) {
+            let occurrence = value_workspace
+                .with_storage(|| {
+                    ctx.entry_hash_map(
+                        &mut value_occurrences,
+                        value.id,
+                        "Rhino history value occurrences",
+                    )
+                })?
+                .or_default();
+            let format_key = || {
+                if *occurrence == 0 {
+                    ctx.format_retained(
+                        format_args!("value_{}", value.id),
+                        "Rhino history value key",
+                    )
+                } else {
+                    ctx.format_retained(
+                        format_args!("value_{}_{}", value.id, occurrence),
+                        "Rhino history value key",
+                    )
+                }
+            };
+            let mut key_workspace =
+                ctx.reserve_scoped(0, "Rhino history value prefix workspace")?;
+            let key = if matches!(
+                value.value,
+                Value::PolyEdges(_) | Value::SubdEdgeChains(_) | Value::Opaque { .. }
+            ) {
                 key_workspace.with_storage(format_key)?
             } else {
                 format_key()?
@@ -2349,8 +2487,13 @@ pub(crate) fn project(
             if let Some(text) = value_text(ctx, &value.value).map_err(ProjectionError::Codec)? {
                 ctx.insert_btree_map(
                     &mut parameters,
-                    cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text").map_err(CodecError::from)?
-                        .ok_or_else(|| CodecError::malformed("Rhino history parameter key is blank"))?,
+                    cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx,
+                        key,
+                        "validate nonblank text",
+                    )
+                    .map_err(CodecError::from)?
+                    .ok_or_else(|| CodecError::malformed("Rhino history parameter key is blank"))?,
                     text,
                     "Rhino history parameter entries",
                 )
@@ -2390,14 +2533,22 @@ pub(crate) fn project(
             ctx,
             &mut properties,
             "antecedent_objects",
-            ctx.join_display_retained(record.antecedents.iter(), ",", "Rhino history property value")?,
+            ctx.join_display_retained(
+                record.antecedents.iter(),
+                ",",
+                "Rhino history property value",
+            )?,
         )
         .map_err(ProjectionError::Codec)?;
         insert_property_text(
             ctx,
             &mut properties,
             "descendant_objects",
-            ctx.join_display_retained(record.descendants.iter(), ",", "Rhino history property value")?,
+            ctx.join_display_retained(
+                record.descendants.iter(),
+                ",",
+                "Rhino history property value",
+            )?,
         )
         .map_err(ProjectionError::Codec)?;
         let dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)

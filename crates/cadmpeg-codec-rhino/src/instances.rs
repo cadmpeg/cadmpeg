@@ -433,12 +433,28 @@ impl DefinitionScan {
         &self.definitions
     }
 
-    pub(crate) fn is_ambiguous(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, id: Uuid) -> Result<bool, cadmpeg_core::CodecError> {
-        ctx.contains_hash_set(&self.ambiguous_ids, &id, "Rhino ambiguous definition lookup")
+    pub(crate) fn is_ambiguous(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: Uuid,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        ctx.contains_hash_set(
+            &self.ambiguous_ids,
+            &id,
+            "Rhino ambiguous definition lookup",
+        )
     }
 
-    pub(crate) fn contains_member(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, id: Uuid) -> Result<bool, cadmpeg_core::CodecError> {
-        ctx.contains_hash_set(&self.member_object_ids, &id, "Rhino definition member lookup")
+    pub(crate) fn contains_member(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: Uuid,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        ctx.contains_hash_set(
+            &self.member_object_ids,
+            &id,
+            "Rhino definition member lookup",
+        )
     }
 
     pub(crate) fn diagnostics(&self) -> &[DefinitionDiagnostic] {
@@ -1316,7 +1332,8 @@ fn parse_idef_alternative_path(
             "unsupported instance-definition alternate-path version",
         ));
     }
-    let path = workspace.with_storage(|| utf16_retained(ctx, &mut payload, "Rhino instance alternate path"))?;
+    let path = workspace
+        .with_storage(|| utf16_retained(ctx, &mut payload, "Rhino instance alternate path"))?;
     let relative = payload.bool()?;
     payload.skip_remaining()?;
     reader.skip_remaining()?;
@@ -1353,9 +1370,16 @@ fn apply_idef_alternative_path(
                     || item.application_uuid == Some(OPENNURBS5_APPLICATION))
         })
     {
-        let mut path_workspace = ctx.reserve_scoped(0, "Rhino instance alternate path workspace")?;
-        let (path, relative) = match parse_idef_alternative_path(ctx, &mut path_workspace, data, item, archive, warnings)
-        {
+        let mut path_workspace =
+            ctx.reserve_scoped(0, "Rhino instance alternate path workspace")?;
+        let (path, relative) = match parse_idef_alternative_path(
+            ctx,
+            &mut path_workspace,
+            data,
+            item,
+            archive,
+            warnings,
+        ) {
             Ok(value) => value,
             Err(error @ FramingError::Resource(_)) => return Err(error),
             Err(error) => {
@@ -1371,22 +1395,42 @@ fn apply_idef_alternative_path(
             }
         };
         let path = ctx.trim_text(path.as_str(), "Rhino instance alternative path trim")?;
-        if path.is_empty() { continue; }
-        let copy_path = || NonBlankString::for_decode(ctx, path, "validate nonblank text")
-            .map_err(FramingError::Resource)?
-            .ok_or_else(|| FramingError::structural(item.range.start, "alternate path is blank"));
+        if path.is_empty() {
+            continue;
+        }
+        let copy_path = || {
+            NonBlankString::for_decode(ctx, path, "validate nonblank text")
+                .map_err(FramingError::Resource)?
+                .ok_or_else(|| {
+                    FramingError::structural(item.range.start, "alternate path is blank")
+                })
+        };
         definition.link = match std::mem::replace(&mut definition.link, LinkSource::None) {
             LinkSource::Structured(mut reference) => {
                 if relative && reference.relative_path.is_empty() {
-                    reference.relative_path = ctx.copy_retained_text(path, "Rhino instance relative path")?;
+                    reference.relative_path =
+                        ctx.copy_retained_text(path, "Rhino instance relative path")?;
                 } else if !relative && reference.full_path.is_empty() {
-                    reference.full_path = ctx.copy_retained_text(path, "Rhino instance full path")?;
+                    reference.full_path =
+                        ctx.copy_retained_text(path, "Rhino instance full path")?;
                 }
                 LinkSource::Structured(reference)
             }
-            LinkSource::LegacyFull(full_path) if relative => LinkSource::LegacyRelative { relative_path: copy_path()?, full_path: Some(full_path) },
-            LinkSource::LegacyRelative { relative_path, full_path: None } if !relative => LinkSource::LegacyRelative { relative_path, full_path: Some(copy_path()?) },
-            LinkSource::None if relative => LinkSource::LegacyRelative { relative_path: copy_path()?, full_path: None },
+            LinkSource::LegacyFull(full_path) if relative => LinkSource::LegacyRelative {
+                relative_path: copy_path()?,
+                full_path: Some(full_path),
+            },
+            LinkSource::LegacyRelative {
+                relative_path,
+                full_path: None,
+            } if !relative => LinkSource::LegacyRelative {
+                relative_path,
+                full_path: Some(copy_path()?),
+            },
+            LinkSource::None if relative => LinkSource::LegacyRelative {
+                relative_path: copy_path()?,
+                full_path: None,
+            },
             LinkSource::None => LinkSource::LegacyFull(copy_path()?),
             link => link,
         };
@@ -1454,21 +1498,40 @@ pub(crate) fn parse_definitions(
             };
             let mut definition = match parsed_definition {
                 Ok(definition) => {
-                    for member in ctx.admit_iter(&definition.members[..], "Rhino instance member traversal").map_err(FramingError::Resource)? {
-                        ctx.insert_hash_set(&mut result.scan.member_object_ids, *member, "Rhino instance member identities")?;
+                    for member in ctx
+                        .admit_iter(&definition.members[..], "Rhino instance member traversal")
+                        .map_err(FramingError::Resource)?
+                    {
+                        ctx.insert_hash_set(
+                            &mut result.scan.member_object_ids,
+                            *member,
+                            "Rhino instance member identities",
+                        )?;
                     }
                     definition
                 }
                 Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
                 Err(error) => {
-                    let mut prefix_workspace = ctx.reserve_scoped(0, "Rhino definition prefix workspace")?;
-                    match prefix_workspace.with_storage(|| extract_member_ids(ctx, data, class_data_range, archive, v5_layout)) {
+                    let mut prefix_workspace =
+                        ctx.reserve_scoped(0, "Rhino definition prefix workspace")?;
+                    match prefix_workspace.with_storage(|| {
+                        extract_member_ids(ctx, data, class_data_range, archive, v5_layout)
+                    }) {
                         Ok(member_ids) => {
-                            for member in ctx.admit_iter(member_ids, "Rhino instance member traversal").map_err(FramingError::Resource)? {
-                                ctx.insert_hash_set(&mut result.scan.member_object_ids, member, "Rhino instance member identities")?;
+                            for member in ctx
+                                .admit_iter(member_ids, "Rhino instance member traversal")
+                                .map_err(FramingError::Resource)?
+                            {
+                                ctx.insert_hash_set(
+                                    &mut result.scan.member_object_ids,
+                                    member,
+                                    "Rhino instance member identities",
+                                )?;
                             }
                         }
-                        Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
+                        Err(FramingError::Resource(limit)) => {
+                            return Err(FramingError::Resource(limit))
+                        }
                         Err(_) => {}
                     }
                     return Err(error);
@@ -1490,24 +1553,50 @@ pub(crate) fn parse_definitions(
             "Rhino instance definition diagnostics",
         )?;
         let mut warnings = warnings.into_iter();
-        while let Some(diagnostic) = ctx.next_charged(&mut warnings, "Rhino definition diagnostic traversal")? {
-            result.scan.diagnostics.push(DefinitionDiagnostic { diagnostic, source_range: record.range.clone() });
+        while let Some(diagnostic) =
+            ctx.next_charged(&mut warnings, "Rhino definition diagnostic traversal")?
+        {
+            result.scan.diagnostics.push(DefinitionDiagnostic {
+                diagnostic,
+                source_range: record.range.clone(),
+            });
         }
         match parsed {
             Ok((definition, userdata_degraded)) => {
                 if userdata_degraded {
-                    ctx.insert_scoped_btree_value(&mut opaque_workspace, &mut opaque_indices, source_order, "Rhino opaque instance definition indexes")?;
+                    ctx.insert_scoped_btree_value(
+                        &mut opaque_workspace,
+                        &mut opaque_indices,
+                        source_order,
+                        "Rhino opaque instance definition indexes",
+                    )?;
                 }
-                if let Some(&first) = ctx.get_hash_map(&seen, &definition.id, "Rhino definition identity lookup")? {
-                    ctx.insert_scoped_btree_value(&mut opaque_workspace, &mut opaque_indices, first, "Rhino opaque instance definition indexes")?;
-                    ctx.insert_scoped_btree_value(&mut opaque_workspace, &mut opaque_indices, source_order, "Rhino opaque instance definition indexes")?;
+                if let Some(&first) =
+                    ctx.get_hash_map(&seen, &definition.id, "Rhino definition identity lookup")?
+                {
+                    ctx.insert_scoped_btree_value(
+                        &mut opaque_workspace,
+                        &mut opaque_indices,
+                        first,
+                        "Rhino opaque instance definition indexes",
+                    )?;
+                    ctx.insert_scoped_btree_value(
+                        &mut opaque_workspace,
+                        &mut opaque_indices,
+                        source_order,
+                        "Rhino opaque instance definition indexes",
+                    )?;
                     let duplicate_message = || {
                         ctx.format_retained(
                             format_args!("duplicate instance definition UUID {}", definition.id),
                             "Rhino duplicate instance definition diagnostic",
                         )
                     };
-                    if ctx.insert_hash_set(&mut result.scan.ambiguous_ids, definition.id, "Rhino ambiguous instance definitions")? {
+                    if ctx.insert_hash_set(
+                        &mut result.scan.ambiguous_ids,
+                        definition.id,
+                        "Rhino ambiguous instance definitions",
+                    )? {
                         ctx.reserve_vec(
                             &mut result.scan.diagnostics,
                             1,
@@ -1534,7 +1623,14 @@ pub(crate) fn parse_definitions(
                         source_range: record.range.clone(),
                     });
                 } else {
-                    seen_workspace.with_storage(|| ctx.insert_hash_map(&mut seen, definition.id, source_order, "Rhino instance definition identities"))?;
+                    seen_workspace.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut seen,
+                            definition.id,
+                            source_order,
+                            "Rhino instance definition identities",
+                        )
+                    })?;
                     ctx.reserve_vec(
                         &mut result.scan.definitions,
                         1,
@@ -1562,13 +1658,24 @@ pub(crate) fn parse_definitions(
                     },
                     source_range: record.range.clone(),
                 });
-                ctx.insert_scoped_btree_value(&mut opaque_workspace, &mut opaque_indices, source_order, "Rhino opaque instance definition indexes")?;
+                ctx.insert_scoped_btree_value(
+                    &mut opaque_workspace,
+                    &mut opaque_indices,
+                    source_order,
+                    "Rhino opaque instance definition indexes",
+                )?;
             }
         }
     }
     ctx.retain_vec(
         &mut result.scan.definitions,
-        |definition| Ok(!ctx.contains_hash_set(&result.scan.ambiguous_ids, &definition.id, "Rhino ambiguous definition lookup")?),
+        |definition| {
+            Ok(!ctx.contains_hash_set(
+                &result.scan.ambiguous_ids,
+                &definition.id,
+                "Rhino ambiguous definition lookup",
+            )?)
+        },
         "Rhino ambiguous instance definition retention",
     )?;
     let mut opaque_records =
