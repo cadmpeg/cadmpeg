@@ -214,13 +214,10 @@ fn validate_entry_name(ctx: &DecodeContext<'_>, name: &str) -> Result<(), CodecE
         )?;
         has_unsafe_byte || component != 3
     } {
-        ctx.charge_formatted_retained(
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!("Inventor Protein package has unsafe entry name {name:?}"),
             "retain Inventor unsafe Protein entry diagnostic",
-        )?;
-        return Err(CodecError::malformed(format_args!(
-            "Inventor Protein package has unsafe entry name {name:?}"
-        )));
+        )?));
     }
     Ok(())
 }

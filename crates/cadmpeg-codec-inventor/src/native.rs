@@ -515,19 +515,13 @@ impl AssemblyPlacementRecordWire {
             self.transform,
         )?;
         let Some(suffix_len) = std::num::NonZeroU64::new(self.suffix_len) else {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                "suffix_len must not be zero",
-                "retain Inventor placement conversion issue",
-            )?));
+            return Err(CodecError::malformed("suffix_len must not be zero"));
         };
         let suffix_sha256 =
             match cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256) {
                 Ok(suffix_sha256) => suffix_sha256,
                 Err(error) => {
-                    return Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("suffix_sha256: {error}"),
-                        "retain Inventor placement conversion issue",
-                    )?));
+                    return Err(CodecError::malformed(format_args!("suffix_sha256: {error}")));
                 }
             };
         Ok(AssemblyPlacementRecord {
@@ -665,7 +659,7 @@ pub(crate) struct PmAppRenderingStyleRecordWire {
 impl PmAppRenderingStyleRecordWire {
     pub(crate) fn into_record(
         self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
     ) -> Result<PmAppRenderingStyleRecord, CodecError> {
         let extension = match (
             self.style_state,
@@ -695,10 +689,7 @@ impl PmAppRenderingStyleRecordWire {
                 guid,
             }),
             _ => {
-                return Err(CodecError::Malformed(ctx.copy_retained_text(
-                    "rendering style extension fields must be present together",
-                    "retain Inventor rendering conversion issue",
-                )?));
+                return Err(CodecError::malformed("rendering style extension fields must be present together"));
             }
         };
         if let Some(detail) = rendering_style_issue(
@@ -706,19 +697,13 @@ impl PmAppRenderingStyleRecordWire {
             &self.comment,
             extension.is_some(),
         ) {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                detail,
-                "retain Inventor rendering conversion issue",
-            )?));
+            return Err(CodecError::malformed(detail));
         }
         let suffix_sha256 =
             match cadmpeg_ir::hash::digest::Sha256Digest::try_from(self.suffix_sha256) {
                 Ok(suffix_sha256) => suffix_sha256,
                 Err(error) => {
-                    return Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("suffix_sha256: {error}"),
-                        "retain Inventor rendering conversion issue",
-                    )?));
+                    return Err(CodecError::malformed(format_args!("suffix_sha256: {error}")));
                 }
             };
         Ok(PmAppRenderingStyleRecord {
@@ -1801,6 +1786,27 @@ mod tests {
             .map_err(|error| error.to_string())?;
         wire.into_record(&super::test_ctx())
             .map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn fixed_placement_conversion_error_uses_no_retained_bytes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+        let wire: AssemblyPlacementRecordWire = serde_json::from_value(serde_json::json!({
+            "id": "placement", "segment_token": "segment", "record_ordinal": 0,
+            "header_id": 0, "owner_reference": 0, "attribute_reference": 0,
+            "state": 0, "transform_prefix": false, "transform_encoding": [0, 0],
+            "transform": [[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]], "branch": 0, "graphics_state": 0,
+            "occurrence_id": 0, "graphics_index": 0, "object_reference": 0,
+            "suffix_len": 0, "suffix_sha256": "0".repeat(64)
+        })).expect("wire fixture");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // A fixed refusal message is returned, with no model text allocation.
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(matches!(wire.into_record(&ctx), Err(CodecError::Malformed(detail))
+            if detail == "suffix_len must not be zero"));
     }
 
     #[test]
