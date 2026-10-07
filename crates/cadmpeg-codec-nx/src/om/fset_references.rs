@@ -148,8 +148,16 @@ impl FsetReferences<()> {
             }
             let offset = cadmpeg_core::decode::u64_from_index(record.payload_offset() + start);
             if Self::validate(offset, selector, |selector, predicate| {
-                ctx.all_by(selector.chars(), |ch| Ok(predicate(ch)), "NX FSET selector syntax")
-            })?.is_err() { return Ok(None); }
+                ctx.all_by(
+                    selector.chars(),
+                    |ch| Ok(predicate(ch)),
+                    "NX FSET selector syntax",
+                )
+            })?
+            .is_err()
+            {
+                return Ok(None);
+            }
             Ok(Some((offset, selector, first, second)))
         };
         let Some(last) = bytes.len().checked_sub(1) else {
@@ -157,7 +165,9 @@ impl FsetReferences<()> {
         };
         let mut candidate = None;
         let mut starts = 0..last;
-        while let Some(start) = ctx.next_charged(&mut starts, "NX FSET reference candidate search")? {
+        while let Some(start) =
+            ctx.next_charged(&mut starts, "NX FSET reference candidate search")?
+        {
             let Some(next) = decode(start)? else {
                 continue;
             };
@@ -166,9 +176,16 @@ impl FsetReferences<()> {
             }
             candidate = Some(next);
         }
-        let Some((offset, selector, first, second)) = candidate else { return Ok(None); };
+        let Some((offset, selector, first, second)) = candidate else {
+            return Ok(None);
+        };
         let selector = ctx.copy_retained_text(selector, "NX FSET selector")?;
-        Ok(Some(Self { offset, selector, first, second }))
+        Ok(Some(Self {
+            offset,
+            selector,
+            first,
+            second,
+        }))
     }
 
     pub(crate) fn resolve<B>(

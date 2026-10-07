@@ -72,13 +72,18 @@ impl PatternReferences {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         record: OperationPayload<'_>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if !matches!(record.name(), "Pattern Feature" | "Pattern Geometry" | "Geometry Instance") {
+        if !matches!(
+            record.name(),
+            "Pattern Feature" | "Pattern Geometry" | "Geometry Instance"
+        ) {
             return Ok(None);
         }
         let bytes = record.payload();
         let consume = |at: &mut usize, expected: &[u8]| -> Option<()> {
             let end = at.checked_add(expected.len())?;
-            if bytes.get(*at..end) != Some(expected) { return None; }
+            if bytes.get(*at..end) != Some(expected) {
+                return None;
+            }
             *at = end;
             Some(())
         };
@@ -141,7 +146,9 @@ impl PatternReferences {
         };
         let mut candidate = None;
         let mut starts = 0..bytes.len();
-        while let Some(start) = ctx.next_charged(&mut starts, "NX pattern reference candidate search")? {
+        while let Some(start) =
+            ctx.next_charged(&mut starts, "NX pattern reference candidate search")?
+        {
             if let Some(parsed) = decode(start) {
                 if candidate.is_some() {
                     return Ok(None);
@@ -166,15 +173,30 @@ impl PatternReferences {
         }
     }
 
-    pub(crate) fn into_references(self) -> impl ExactSizeIterator<Item = PayloadObjectReference<PayloadIndexToken>> {
-        let first = match self.body { Body::Instance(token) => token, Body::Graph { required, .. } => required[0] };
-        let mut references: [_; 10] = std::array::from_fn(|_| PayloadObjectReference { offset: self.offset, token: first });
+    pub(crate) fn into_references(
+        self,
+    ) -> impl ExactSizeIterator<Item = PayloadObjectReference<PayloadIndexToken>> {
+        let first = match self.body {
+            Body::Instance(token) => token,
+            Body::Graph { required, .. } => required[0],
+        };
+        let mut references: [_; 10] = std::array::from_fn(|_| PayloadObjectReference {
+            offset: self.offset,
+            token: first,
+        });
         let len = match self.body {
             Body::Instance(token) => {
-                references[0] = PayloadObjectReference { offset: self.offset + INSTANCE_PREFIX.len(), token };
+                references[0] = PayloadObjectReference {
+                    offset: self.offset + INSTANCE_PREFIX.len(),
+                    token,
+                };
                 1
             }
-            Body::Graph { framing, required, terminal } => {
+            Body::Graph {
+                framing,
+                required,
+                terminal,
+            } => {
                 let mut at = self.offset + 1;
                 let len = required.len() + usize::from(terminal.is_some());
                 for (ordinal, token) in required.into_iter().chain(terminal).enumerate() {
@@ -193,7 +215,6 @@ impl PatternReferences {
         };
         references.into_iter().take(len)
     }
-
 }
 
 #[cfg(test)]

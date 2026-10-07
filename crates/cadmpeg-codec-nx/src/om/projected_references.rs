@@ -39,7 +39,9 @@ impl ProjectedCurveReferences {
         };
         let consume = |at: &mut usize, expected: &[u8]| -> Option<()> {
             let end = at.checked_add(expected.len())?;
-            if bytes.get(*at..end) != Some(expected) { return None; }
+            if bytes.get(*at..end) != Some(expected) {
+                return None;
+            }
             *at = end;
             Some(())
         };
@@ -99,7 +101,9 @@ impl ProjectedCurveReferences {
         };
         let mut candidate = None;
         let mut starts = 0..=candidate_end;
-        while let Some(start) = ctx.next_charged(&mut starts, "NX projected curve reference candidate search")? {
+        while let Some(start) =
+            ctx.next_charged(&mut starts, "NX projected curve reference candidate search")?
+        {
             if bytes.get(start..start + marker.len()) != Some(marker) {
                 continue;
             }
@@ -113,9 +117,17 @@ impl ProjectedCurveReferences {
         Ok(candidate)
     }
 
-    pub(crate) fn into_references(self) -> impl ExactSizeIterator<Item = PayloadObjectReference<PayloadIndexToken>> {
-        let first = match self.body { Body::Projected(tokens) => tokens[0], Body::Combined(tokens) => tokens[0] };
-        let mut references: [_; 8] = std::array::from_fn(|_| PayloadObjectReference { offset: self.offset, token: first });
+    pub(crate) fn into_references(
+        self,
+    ) -> impl ExactSizeIterator<Item = PayloadObjectReference<PayloadIndexToken>> {
+        let first = match self.body {
+            Body::Projected(tokens) => tokens[0],
+            Body::Combined(tokens) => tokens[0],
+        };
+        let mut references: [_; 8] = std::array::from_fn(|_| PayloadObjectReference {
+            offset: self.offset,
+            token: first,
+        });
         let mut len = 0;
         let mut append = |at: &mut usize, token: PayloadIndexToken| {
             references[len] = PayloadObjectReference { offset: *at, token };

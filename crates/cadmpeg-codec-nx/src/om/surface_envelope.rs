@@ -29,10 +29,14 @@ impl SurfaceFeaturePayloadReferenceField {
         })?;
         let trailing_len = self.tokens[11..].iter().try_fold(
             cadmpeg_core::decode::u64_from_index(TRAILING_SUFFIX.len()),
-            |length, token| length.checked_add(cadmpeg_core::decode::u64_from_index(token.raw().len())),
+            |length, token| {
+                length.checked_add(cadmpeg_core::decode::u64_from_index(token.raw().len()))
+            },
         )?;
         origin.checked_add(leading_len)?;
-        origin.checked_add(cadmpeg_core::decode::u64_from_index(self.trailing_start))?.checked_add(trailing_len)?;
+        origin
+            .checked_add(cadmpeg_core::decode::u64_from_index(self.trailing_start))?
+            .checked_add(trailing_len)?;
         self.origin = origin;
         Some(self)
     }
@@ -98,43 +102,64 @@ pub(crate) fn surface_feature_payload_references(
     ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
 ) -> Result<Option<SurfaceFeaturePayloadReferenceField>, CodecError> {
-    let Some(&discriminator) = record.payload().first() else { return Ok(None); };
+    let Some(&discriminator) = record.payload().first() else {
+        return Ok(None);
+    };
     match record.name() {
         "SKIN" if matches!(discriminator, 0x3e | 0x3f) => {}
         "Studio Surface" if discriminator == 0x14 => {}
         _ => return Ok(None),
     }
-    if record.payload().get(1..5) != Some(&[0, 0, 1, 0]) { return Ok(None); }
+    if record.payload().get(1..5) != Some(&[0, 0, 1, 0]) {
+        return Ok(None);
+    }
     let mut at = 5;
-    let Some(first) = record.payload().get(at..).and_then(PayloadIndexToken::read) else { return Ok(None); };
+    let Some(first) = record.payload().get(at..).and_then(PayloadIndexToken::read) else {
+        return Ok(None);
+    };
     at += first.raw().len();
     let mut tokens = [first; 14];
     for (slot, token) in tokens[..11].iter_mut().enumerate().skip(1) {
         if slot == 3 {
             if record.payload().get(at..at + 2) != Some(&[1, 9])
-                || record.payload().get(at + 10..at + 12) != Some(&[1, 9]) { return Ok(None); }
+                || record.payload().get(at + 10..at + 12) != Some(&[1, 9])
+            {
+                return Ok(None);
+            }
             at += 12;
         }
-        let Some(next) = record.payload().get(at..).and_then(PayloadIndexToken::read) else { return Ok(None); };
+        let Some(next) = record.payload().get(at..).and_then(PayloadIndexToken::read) else {
+            return Ok(None);
+        };
         *token = next;
         at += token.raw().len();
     }
     let mut windows = record.payload().windows(TRAILING_PREFIX.len()).enumerate();
     let mut trailing_start = None;
-    while let Some((start, bytes)) = ctx.next_charged(&mut windows, "NX surface trailing witness windows")? {
+    while let Some((start, bytes)) =
+        ctx.next_charged(&mut windows, "NX surface trailing witness windows")?
+    {
         if bytes == TRAILING_PREFIX {
-            if trailing_start.is_some() { return Ok(None); }
+            if trailing_start.is_some() {
+                return Ok(None);
+            }
             trailing_start = Some(start);
         }
     }
-    let Some(trailing_start) = trailing_start.map(|start| start + TRAILING_PREFIX.len()) else { return Ok(None); };
+    let Some(trailing_start) = trailing_start.map(|start| start + TRAILING_PREFIX.len()) else {
+        return Ok(None);
+    };
     at = trailing_start;
     for token in &mut tokens[11..] {
-        let Some(next) = record.payload().get(at..).and_then(PayloadIndexToken::read) else { return Ok(None); };
+        let Some(next) = record.payload().get(at..).and_then(PayloadIndexToken::read) else {
+            return Ok(None);
+        };
         *token = next;
         at += token.raw().len();
     }
-    if record.payload().get(at..at + TRAILING_SUFFIX.len()) != Some(&TRAILING_SUFFIX) { return Ok(None); }
+    if record.payload().get(at..at + TRAILING_SUFFIX.len()) != Some(&TRAILING_SUFFIX) {
+        return Ok(None);
+    }
     Ok(Some(SurfaceFeaturePayloadReferenceField {
         origin: cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         trailing_start,
@@ -235,18 +260,11 @@ mod tests {
         );
         assert_eq!([rows[11].1, rows[12].1, rows[13].1], [159, 161, 164]);
         assert_eq!(
-            frame.clone().relocate(1000)
-                .unwrap()
-                .references()[13]
-                .1,
+            frame.clone().relocate(1000).unwrap().references()[13].1,
             1164
         );
-        assert!(frame.clone().relocate(u64::MAX - 183)
-        .is_some());
-        assert!(
-            frame.clone().relocate(u64::MAX - 182)
-                .is_none()
-        );
+        assert!(frame.clone().relocate(u64::MAX - 183).is_some());
+        assert!(frame.clone().relocate(u64::MAX - 182).is_none());
         payload.extend(TRAILING_PREFIX);
         assert!(surface_feature_payload_references_test(
             OperationPayload::new(&payload, 100, "SKIN").unwrap()

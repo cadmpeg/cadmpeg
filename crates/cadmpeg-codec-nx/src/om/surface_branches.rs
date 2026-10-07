@@ -5,7 +5,7 @@ use super::branch_items::BranchItems;
 use super::discriminators::SurfaceBranchMode;
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -262,62 +262,130 @@ fn surface_feature_branch_paths<'a>(
     remaining: u8,
     terminator: &[u8],
     search: &mut SurfacePathSearch<'a>,
+    selected_storage: &mut ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     let payload = record.payload();
     let payload_offset = record.payload_offset();
     let _depth = ctx.enter_nested("NX surface branch path")?;
     ctx.charge_work(1, "scan NX surface branch path")?;
-    if remaining == 0 { return Ok(()); }
-    let Some(mode) = payload.get(at).copied().and_then(|value| SurfaceBranchMode::try_from(value).ok()) else { return Ok(()); };
-    if payload.get(at + 1) != Some(&1) { return Ok(()); }
-    let Some(&declared_count @ 2..) = payload.get(at + 2) else { return Ok(()); };
+    if remaining == 0 {
+        return Ok(());
+    }
+    let Some(mode) = payload
+        .get(at)
+        .copied()
+        .and_then(|value| SurfaceBranchMode::try_from(value).ok())
+    else {
+        return Ok(());
+    };
+    if payload.get(at + 1) != Some(&1) {
+        return Ok(());
+    }
+    let Some(&declared_count @ 2..) = payload.get(at + 2) else {
+        return Ok(());
+    };
     let mut cursor = at + 3;
     let member_start = cursor;
     let mut rows = 1..declared_count;
-    while ctx.next_charged(&mut rows, "NX surface feature branch paths range traversal")?.is_some() {
-        let Some(token) = payload.get(cursor..).and_then(PayloadIndexToken::read) else { return Ok(()); };
+    while ctx
+        .next_charged(&mut rows, "NX surface feature branch paths range traversal")?
+        .is_some()
+    {
+        let Some(token) = payload.get(cursor..).and_then(PayloadIndexToken::read) else {
+            return Ok(());
+        };
         cursor += token.raw().len();
     }
     let member_bytes = &payload[member_start..cursor];
     let witnessed = payload.get(cursor..cursor + 2) == Some(&[1, declared_count]);
-    if witnessed { cursor += 2; }
-    let zero_count = if witnessed { usize::from(declared_count) + 3 } else { 5 };
-    let Some(zero_lane) = payload.get(cursor..cursor + zero_count) else { return Ok(()); };
-    if (witnessed && !ctx.all_by(zero_lane, |&byte| Ok(byte == 0), "NX surface branch zero lane")?)
-        || (!witnessed && zero_lane != [0; 5]) { return Ok(()); }
+    if witnessed {
+        cursor += 2;
+    }
+    let zero_count = if witnessed {
+        usize::from(declared_count) + 3
+    } else {
+        5
+    };
+    let Some(zero_lane) = payload.get(cursor..cursor + zero_count) else {
+        return Ok(());
+    };
+    if (witnessed
+        && !ctx.all_by(
+            zero_lane,
+            |&byte| Ok(byte == 0),
+            "NX surface branch zero lane",
+        )?)
+        || (!witnessed && zero_lane != [0; 5])
+    {
+        return Ok(());
+    }
     cursor += zero_count;
-    if payload.get(cursor..cursor + 3) != Some(&[0xff, 1, 2]) { return Ok(()); }
+    if payload.get(cursor..cursor + 3) != Some(&[0xff, 1, 2]) {
+        return Ok(());
+    }
     cursor += 3;
     let terminal_relative = u64_from_index(cursor - at);
-    let Some(terminal) = payload.get(cursor..).and_then(PayloadIndexToken::read) else { return Ok(()); };
+    let Some(terminal) = payload.get(cursor..).and_then(PayloadIndexToken::read) else {
+        return Ok(());
+    };
     cursor += terminal.raw().len();
-    if payload.get(cursor) != Some(&0) { return Ok(()); }
+    if payload.get(cursor) != Some(&0) {
+        return Ok(());
+    }
     cursor += 1;
-    let Some(offset) = u64_from_index(payload_offset).checked_add(u64_from_index(at)) else { return Ok(()); };
+    let Some(offset) = u64_from_index(payload_offset).checked_add(u64_from_index(at)) else {
+        return Ok(());
+    };
     for suffix_len in 1..=5 {
-        let Some(suffix) = payload.get(cursor..cursor + suffix_len) else { continue; };
+        let Some(suffix) = payload.get(cursor..cursor + suffix_len) else {
+            continue;
+        };
         let next = cursor + suffix_len;
-        if offset.checked_add(u64_from_index(next - at)).is_none() { continue; }
+        if offset.checked_add(u64_from_index(next - at)).is_none() {
+            continue;
+        }
         let branch = SurfaceBranchShape {
-            offset, terminal_relative, mode, witnessed, declared_count, member_bytes, terminal, suffix,
+            offset,
+            terminal_relative,
+            mode,
+            witnessed,
+            declared_count,
+            member_bytes,
+            terminal,
+            suffix,
         };
         ctx.push_vec(&mut search.path, branch, "NX surface branch search stack")?;
         if remaining == 1 {
             if payload.get(next..next + terminator.len()) == Some(terminator) {
                 search.matches += 1;
                 if search.matches == 1 {
-                    let mut first_path = ctx.collection_vec(search.path.len(), "NX surface selected path shapes")?;
-                    for &shape in ctx.admit_iter(&search.path, "NX surface selected path shape copies")? {
-                        first_path.push(shape);
-                    }
-                    search.first_path = Some(first_path);
+                    search.first_path = Some(selected_storage.with_storage(|| {
+                        let mut first_path = ctx
+                            .collection_vec(search.path.len(), "NX surface selected path shapes")?;
+                        for &shape in
+                            ctx.admit_iter(&search.path, "NX surface selected path shape copies")?
+                        {
+                            first_path.push(shape);
+                        }
+                        Ok::<_, CodecError>(first_path)
+                    })?);
                 }
             }
         } else {
-            surface_feature_branch_paths(ctx, record, next, remaining - 1, terminator, search)?;
+            surface_feature_branch_paths(
+                ctx,
+                record,
+                next,
+                remaining - 1,
+                terminator,
+                search,
+                selected_storage,
+            )?;
         }
         search.path.pop();
-        if search.matches == 2 { return Ok(()); }
+        if search.matches == 2 {
+            return Ok(());
+        }
     }
     Ok(())
 }
@@ -362,31 +430,69 @@ pub(crate) fn surface_feature_payload_branches(
                 continue;
             };
             let mut search_storage = ctx.reserve_scoped(0, "NX surface branch search storage")?;
+            let mut selected_storage =
+                ctx.reserve_scoped(0, "NX surface selected shape storage")?;
             let (shapes, matches) = search_storage.with_storage(|| {
-                let mut search = SurfacePathSearch { path: Vec::new(), first_path: None, matches: 0 };
-                surface_feature_branch_paths(ctx, record, start + 6,
-                    declared_group_count, terminator, &mut search)?;
+                let mut search = SurfacePathSearch {
+                    path: Vec::new(),
+                    first_path: None,
+                    matches: 0,
+                };
+                surface_feature_branch_paths(
+                    ctx,
+                    record,
+                    start + 6,
+                    declared_group_count,
+                    terminator,
+                    &mut search,
+                    &mut selected_storage,
+                )?;
                 Ok::<_, CodecError>((search.first_path, search.matches))
             })?;
-            if matches != 1 { continue; }
-            let Some(shapes) = shapes else { continue; };
-            if candidate.is_some() { return Ok(None); }
-            candidate = Some((family, header_code, shapes, search_storage));
+            drop(search_storage);
+            if matches != 1 {
+                continue;
+            }
+            let Some(shapes) = shapes else {
+                continue;
+            };
+            if candidate.is_some() {
+                return Ok(None);
+            }
+            candidate = Some((family, header_code, shapes, selected_storage));
         }
     }
-    let Some((family, header_code, shapes, _search_storage)) = candidate else { return Ok(None); };
+    let Some((family, header_code, shapes, _selected_storage)) = candidate else {
+        return Ok(None);
+    };
     let mut branches = ctx.collection_vec(shapes.len(), "NX surface branches")?;
     for shape in ctx.admit_iter(shapes, "NX surface selected branch materialization")? {
-        let mut members = ctx.collection_vec(usize::from(shape.declared_count - 1), "NX surface branch members")?;
+        let mut members = ctx.collection_vec(
+            usize::from(shape.declared_count - 1),
+            "NX surface branch members",
+        )?;
         let mut at = 0;
-        for _ in ctx.admit_iter(&(1..shape.declared_count), "NX surface branch member materialization")? {
-            let Some(token) = shape.member_bytes.get(at..).and_then(PayloadIndexToken::read) else { return Ok(None); };
+        for _ in ctx.admit_iter(
+            &(1..shape.declared_count),
+            "NX surface branch member materialization",
+        )? {
+            let Some(token) = shape
+                .member_bytes
+                .get(at..)
+                .and_then(PayloadIndexToken::read)
+            else {
+                return Ok(None);
+            };
             at += token.raw().len();
             members.push((token, ()));
         }
-        let Ok(members) = BranchItems::new(members) else { return Ok(None); };
+        let Ok(members) = BranchItems::new(members) else {
+            return Ok(None);
+        };
         let suffix = ctx.copy_retained(shape.suffix, "NX surface suffix bytes")?;
-        let Ok(suffix) = SurfaceSuffix::new(suffix) else { return Ok(None); };
+        let Ok(suffix) = SurfaceSuffix::new(suffix) else {
+            return Ok(None);
+        };
         branches.push(SurfaceBranch {
             offset: shape.offset,
             terminal_relative: shape.terminal_relative,
@@ -397,7 +503,11 @@ pub(crate) fn surface_feature_payload_branches(
             suffix,
         });
     }
-    Ok(Some(SurfaceFeaturePayloadBranches { family, header_code, branches }))
+    Ok(Some(SurfaceFeaturePayloadBranches {
+        family,
+        header_code,
+        branches,
+    }))
 }
 
 #[cfg(test)]
@@ -408,21 +518,49 @@ mod tests {
         bytes.extend([0; 5]);
         bytes.extend([0xff, 1, 2, 0xf0, 2, 0, 0x81, 0x58]);
         bytes.extend([0, 0, 0, 1, 3, 0, 0, 0, 0xff, 0xff, 1]);
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| super::surface_feature_payload_branches(ctx,
-            super::OperationPayload::new(&bytes, 0, "SKIN").unwrap());
-        let group = crate::test_support::with_decode_context(decode).unwrap().unwrap();
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::surface_feature_payload_branches(
+                ctx,
+                super::OperationPayload::new(&bytes, 0, "SKIN").unwrap(),
+            )
+        };
+        let group = crate::test_support::with_decode_context(decode)
+            .unwrap()
+            .unwrap();
         assert_eq!(group.branches.len(), 1);
         assert_eq!(group.branches[0].members.as_slice()[0].0.value(), 1);
         assert_eq!(group.branches[0].terminal.0.value(), 2);
-        crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-            "NX surface branch search stack", decode);
-        crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            "NX surface branch members", decode);
+        crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "NX surface branch search stack",
+            decode,
+        );
+        crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "NX surface selected path shapes",
+            decode,
+        );
+        crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "NX surface branch members",
+            decode,
+        );
         bytes.pop();
-        crate::test_support::with_decode_context_over(&[],
+        crate::test_support::with_decode_context_over(
+            &[],
             |policy| policy.limits.max_retained_bytes = 0,
-            |ctx| assert!(super::surface_feature_payload_branches(ctx,
-                super::OperationPayload::new(&bytes, 0, "SKIN").unwrap()).unwrap().is_none()));
+            |ctx| {
+                assert!(super::surface_feature_payload_branches(
+                    ctx,
+                    super::OperationPayload::new(&bytes, 0, "SKIN").unwrap()
+                )
+                .unwrap()
+                .is_none())
+            },
+        );
     }
 
     use super::{SurfaceFamily, SurfaceSuffix};

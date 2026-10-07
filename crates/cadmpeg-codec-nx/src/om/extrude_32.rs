@@ -235,8 +235,11 @@ pub(crate) fn extrude_payload_32_branch(
 ) -> Result<Option<Extrude32Frame<()>>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "NX extrusion candidate storage")?;
     let candidate = storage.with_storage(|| read_extrude_payload_32_branch(ctx, record))?;
-    let Some(candidate) = candidate else { return Ok(None); };
-    Ok(Some(candidate.map_bindings(ctx, |_, ()| Ok(()))?))
+    let Some(candidate) = candidate else {
+        return Ok(None);
+    };
+    storage.commit()?;
+    Ok(Some(candidate))
 }
 
 fn read_extrude_payload_32_branch(
@@ -325,7 +328,10 @@ fn counted_lane<T>(
     let operation = "NX extrude 32 counted lane";
     let mut values = ctx.collection_vec(len, operation)?;
     let mut rows = 1..count;
-    while ctx.next_charged(&mut rows, "NX counted lane range traversal")?.is_some() {
+    while ctx
+        .next_charged(&mut rows, "NX counted lane range traversal")?
+        .is_some()
+    {
         let Some((token, width)) = bytes.get(*at..).and_then(&mut read) else {
             return Ok(None);
         };
@@ -343,18 +349,16 @@ mod tests {
     use super::super::reference_index::FeatureReferenceToken;
     use super::super::scalar::ShiftedBinary64;
     use super::Extrude32Frame;
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     fn refusal(dimension: cadmpeg_core::decode::ResourceDimension, operation: &str) -> CodecError {
         let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
 
-        crate::test_support::resource_refusal_at(bytes, dimension, operation,
-            |ctx| {
-                let record = super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap();
-                super::extrude_payload_32_branch(ctx, record)
-            },
-        )
+        crate::test_support::resource_refusal_at(bytes, dimension, operation, |ctx| {
+            let record = super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap();
+            super::extrude_payload_32_branch(ctx, record)
+        })
     }
 
     #[test]
@@ -362,18 +366,37 @@ mod tests {
         let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
         let mut malformed = bytes.to_vec();
         malformed.pop();
-        crate::test_support::with_decode_context_over(&[],
+        crate::test_support::with_decode_context_over(
+            &[],
             |policy| policy.limits.max_retained_bytes = 0,
-            |ctx| assert!(super::extrude_payload_32_branch(ctx,
-                super::OperationBodyInput::new(&malformed, 100, 0, "EXTRUDE").unwrap()).unwrap().is_none()));
-        crate::test_support::resource_refusal_at(&[], ResourceDimension::MaterializedBytes,
-            "NX extrude 32 counted lane", |ctx| super::extrude_payload_32_branch(ctx,
-                super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap()));
+            |ctx| {
+                assert!(super::extrude_payload_32_branch(
+                    ctx,
+                    super::OperationBodyInput::new(&malformed, 100, 0, "EXTRUDE").unwrap()
+                )
+                .unwrap()
+                .is_none())
+            },
+        );
+        crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::MaterializedBytes,
+            "NX extrude 32 counted lane",
+            |ctx| {
+                super::extrude_payload_32_branch(
+                    ctx,
+                    super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap(),
+                )
+            },
+        );
     }
 
     #[test]
     fn extrude_32_branch_refuses_collection_limit() {
-        let error = refusal(ResourceDimension::CollectionItems, "NX extrude 32 counted lane");
+        let error = refusal(
+            ResourceDimension::CollectionItems,
+            "NX extrude 32 counted lane",
+        );
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
         );
@@ -381,7 +404,10 @@ mod tests {
 
     #[test]
     fn extrude_32_branch_refuses_retained_limit() {
-        let error = refusal(ResourceDimension::RetainedBytes, "NX branch item mapping");
+        let error = refusal(
+            ResourceDimension::RetainedBytes,
+            "NX extrusion candidate storage",
+        );
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
         );
@@ -389,7 +415,10 @@ mod tests {
 
     #[test]
     fn extrude_32_branch_refuses_work_limit() {
-        let error = refusal(ResourceDimension::WorkUnits, "NX counted lane range traversal");
+        let error = refusal(
+            ResourceDimension::WorkUnits,
+            "NX counted lane range traversal",
+        );
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
         );

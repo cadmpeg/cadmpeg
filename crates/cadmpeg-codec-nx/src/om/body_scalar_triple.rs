@@ -88,18 +88,16 @@ pub(crate) fn operation_body_scalar_triples(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     fn refusal(dimension: cadmpeg_core::decode::ResourceDimension, operation: &str) -> CodecError {
         let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00";
 
-        crate::test_support::resource_refusal_at(bytes, dimension, operation,
-            |ctx| {
-                let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
-                super::operation_body_scalar_triples(ctx, record)
-            },
-        )
+        crate::test_support::resource_refusal_at(bytes, dimension, operation, |ctx| {
+            let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
+            super::operation_body_scalar_triples(ctx, record)
+        })
     }
 
     #[test]
@@ -120,7 +118,10 @@ mod tests {
 
     #[test]
     fn operation_body_scalar_triples_refuse_work_limit() {
-        let error = refusal(ResourceDimension::WorkUnits, "NX operation body reference traversal");
+        let error = refusal(
+            ResourceDimension::WorkUnits,
+            "NX operation body reference traversal",
+        );
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
         );

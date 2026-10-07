@@ -88,13 +88,17 @@ pub(crate) fn draft_feature_payload_references(
     };
     let mut candidate = None;
     let mut starts = PAYLOAD_PREFIX.len()..=candidate_end;
-    while let Some(start) = ctx.next_charged(&mut starts,
-        "NX draft feature payload references candidate search")? {
+    while let Some(start) = ctx.next_charged(
+        &mut starts,
+        "NX draft feature payload references candidate search",
+    )? {
         if record.payload().get(start..start + GRAPH_PREFIX.len()) != Some(&GRAPH_PREFIX) {
             continue;
         }
         if let Some(next) = decode(start) {
-            if candidate.is_some() { return Ok(None); }
+            if candidate.is_some() {
+                return Ok(None);
+            }
             candidate = Some(next);
         }
     }

@@ -53,7 +53,10 @@ impl<T> BranchItems<T> {
     ) -> Result<BranchItems<U>, CodecError> {
         let count = self.0.len();
         let mut mapped = ctx.collection_vec(count, "NX branch item mapping")?;
-        for (index, item) in ctx.admit_iter(self.0, "NX branch item mapping visits")?.enumerate() {
+        for (index, item) in ctx
+            .admit_iter(self.0, "NX branch item mapping visits")?
+            .enumerate()
+        {
             mapped.push(f(index, item));
         }
         Ok(BranchItems(mapped, self.1))
@@ -67,7 +70,9 @@ impl<T> BranchItems<T> {
         let count = self.0.len();
         let mut mapped = ctx.collection_vec(count, "NX branch item mapping")?;
         let mut items = self.0.into_iter().enumerate();
-        while let Some((index, item)) = ctx.next_charged(&mut items, "NX fallible branch item mapping visits")? {
+        while let Some((index, item)) =
+            ctx.next_charged(&mut items, "NX fallible branch item mapping visits")?
+        {
             mapped.push(f(index, item)?);
         }
         Ok(BranchItems(mapped, self.1))
@@ -95,15 +100,23 @@ mod tests {
     #[test]
     fn branch_mapping_refuses_at_its_own_visit_boundary() {
         crate::test_support::resource_refusal_at(
-            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "NX branch item mapping visits", |ctx| {
-                super::BranchItems::new(vec![1, 2]).unwrap().map_indexed_charged(ctx, |index, item| index + item)
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX branch item mapping visits",
+            |ctx| {
+                super::BranchItems::new(vec![1, 2])
+                    .unwrap()
+                    .map_indexed_charged(ctx, |index, item| index + item)
             },
         );
         crate::test_support::resource_refusal_at(
-            &[], cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "NX fallible branch item mapping visits", |ctx| {
-                super::BranchItems::new(vec![1, 2]).unwrap().try_map_indexed_charged(ctx, |index, item| Ok(index + item))
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX fallible branch item mapping visits",
+            |ctx| {
+                super::BranchItems::new(vec![1, 2])
+                    .unwrap()
+                    .try_map_indexed_charged(ctx, |index, item| Ok(index + item))
             },
         );
     }

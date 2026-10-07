@@ -96,23 +96,33 @@ impl CountedPatternReferences<()> {
             if bytes.get(start) != Some(&1) {
                 return Ok(None);
             }
-            let Some(count @ 1..) = bytes.get(start + 1).and_then(|value| value.checked_sub(1)) else {
+            let Some(count @ 1..) = bytes.get(start + 1).and_then(|value| value.checked_sub(1))
+            else {
                 return Ok(None);
             };
-            let Some(at) = start.checked_add(2) else { return Ok(None); };
-            let Some(remaining) = bytes.len().checked_sub(at) else { return Ok(None); };
+            let Some(at) = start.checked_add(2) else {
+                return Ok(None);
+            };
+            let Some(remaining) = bytes.len().checked_sub(at) else {
+                return Ok(None);
+            };
             if cadmpeg_core::decode::bounded_len(u64::from(count), 2, remaining).is_none() {
                 return Ok(None);
             }
             let mut scan_at = at;
             let mut rows = 0..count;
-            while ctx.next_charged(&mut rows, "NX counted pattern reference validation")?.is_some() {
+            while ctx
+                .next_charged(&mut rows, "NX counted pattern reference validation")?
+                .is_some()
+            {
                 let Some(token) = bytes.get(scan_at..).and_then(PayloadIndexToken::read) else {
                     return Ok(None);
                 };
                 scan_at += token.raw().len();
             }
-            let Some(end) = scan_at.checked_add(TRAILER.len()) else { return Ok(None); };
+            let Some(end) = scan_at.checked_add(TRAILER.len()) else {
+                return Ok(None);
+            };
             if bytes.get(scan_at..end) != Some(&TRAILER)
                 || record.payload_offset().checked_add(end).is_none()
             {
@@ -122,13 +132,19 @@ impl CountedPatternReferences<()> {
         };
         let mut candidate = None;
         let mut starts = 0..bytes.len();
-        while let Some(start) = ctx.next_charged(&mut starts, "scan NX counted pattern references")? {
+        while let Some(start) =
+            ctx.next_charged(&mut starts, "scan NX counted pattern references")?
+        {
             if let Some(next) = shape(start)? {
-                if candidate.is_some() { return Ok(None); }
+                if candidate.is_some() {
+                    return Ok(None);
+                }
                 candidate = Some(next);
             }
         }
-        let Some((start, count)) = candidate else { return Ok(None); };
+        let Some((start, count)) = candidate else {
+            return Ok(None);
+        };
         let count = usize::from(count);
 
         let mut entries = ctx.collection_vec(count, "NX counted pattern references")?;
@@ -136,7 +152,10 @@ impl CountedPatternReferences<()> {
             return Ok(None);
         };
         let mut rows = 0..count;
-        while ctx.next_charged(&mut rows, "NX counted pattern reference materialization")?.is_some() {
+        while ctx
+            .next_charged(&mut rows, "NX counted pattern reference materialization")?
+            .is_some()
+        {
             let Some(token) = bytes.get(at..).and_then(PayloadIndexToken::read) else {
                 return Ok(None);
             };

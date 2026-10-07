@@ -68,22 +68,38 @@ pub(super) struct SketchReferenceShape<'a> {
 }
 
 impl SketchReferenceShape<'_> {
-    pub(super) fn materialize(self, ctx: &DecodeContext<'_>) -> Result<SketchReferenceField, CodecError> {
+    pub(super) fn materialize(
+        self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<SketchReferenceField, CodecError> {
         let Some(count) = self.count else {
             return Ok(SketchReferenceField(References::Implicit(self.terminal)));
         };
         let leading_count = usize::from(count.get() - 1);
-        let mut references = ctx.collection_vec(usize::from(count.get()), "nx sketch references")?;
+        let mut references =
+            ctx.collection_vec(usize::from(count.get()), "nx sketch references")?;
         let mut at = 0;
         for _ in ctx.admit_iter(&(0..leading_count), "NX sketch reference materialization")? {
-            let Some(token) = self.leading.get(at..).and_then(ReferenceIndexToken::read_payload) else {
-                return Err(CodecError::malformed("validated sketch reference token is missing"));
+            let Some(token) = self
+                .leading
+                .get(at..)
+                .and_then(ReferenceIndexToken::read_payload)
+            else {
+                return Err(CodecError::malformed(
+                    "validated sketch reference token is missing",
+                ));
             };
-            references.push(PayloadObjectReference { offset: self.source_offset + at, token });
+            references.push(PayloadObjectReference {
+                offset: self.source_offset + at,
+                token,
+            });
             at += token.raw().len();
         }
         references.push(self.terminal);
-        Ok(SketchReferenceField(References::Explicit { count, references }))
+        Ok(SketchReferenceField(References::Explicit {
+            count,
+            references,
+        }))
     }
 }
 
@@ -93,12 +109,16 @@ impl SketchReferenceField {
         record: OperationPayload<'a>,
         start: usize,
     ) -> Result<Option<SketchReferenceShape<'a>>, CodecError> {
-        let Some(bytes) = record.payload().get(start..) else { return Ok(None); };
+        let Some(bytes) = record.payload().get(start..) else {
+            return Ok(None);
+        };
         let source_offset = record.payload_offset() + start;
         let (count, mut at) = match bytes.get(2) {
             Some(0) => (None, 3),
             Some(1) => {
-                let Some(count) = bytes.get(3).copied().and_then(NonZeroU8::new) else { return Ok(None); };
+                let Some(count) = bytes.get(3).copied().and_then(NonZeroU8::new) else {
+                    return Ok(None);
+                };
                 (Some(count), 4)
             }
             _ => return Ok(None),
@@ -107,18 +127,33 @@ impl SketchReferenceField {
         let leading_count = count.map_or(0, |count| usize::from(count.get() - 1));
         if leading_count != 0 {
             let mut rows = 0..leading_count;
-            while ctx.next_charged(&mut rows, "NX sketch reference traversal")?.is_some() {
-                let Some(token) = bytes.get(at..).and_then(ReferenceIndexToken::read_payload) else { return Ok(None); };
+            while ctx
+                .next_charged(&mut rows, "NX sketch reference traversal")?
+                .is_some()
+            {
+                let Some(token) = bytes.get(at..).and_then(ReferenceIndexToken::read_payload)
+                else {
+                    return Ok(None);
+                };
                 at += token.raw().len();
             }
         }
         let leading_end = at;
-        if bytes.get(at..at + 2) != Some(&[0, 0]) { return Ok(None); }
+        if bytes.get(at..at + 2) != Some(&[0, 0]) {
+            return Ok(None);
+        }
         at += 2;
-        let Some(token) = bytes.get(at..).and_then(ReferenceIndexToken::read_payload) else { return Ok(None); };
-        let terminal = PayloadObjectReference { offset: source_offset + at, token };
+        let Some(token) = bytes.get(at..).and_then(ReferenceIndexToken::read_payload) else {
+            return Ok(None);
+        };
+        let terminal = PayloadObjectReference {
+            offset: source_offset + at,
+            token,
+        };
         at += token.raw().len();
-        if bytes.get(at..at + 4) != Some(&[1, 0, 0, 0]) { return Ok(None); }
+        if bytes.get(at..at + 4) != Some(&[1, 0, 0, 0]) {
+            return Ok(None);
+        }
         Ok(Some(SketchReferenceShape {
             count,
             source_offset: source_offset + first_at,
@@ -150,7 +185,9 @@ impl SketchReferenceField {
             References::Implicit(terminal) => (Some(terminal), Vec::new()),
             References::Explicit { references, .. } => (None, references),
         };
-        implicit.into_iter().chain(references)
+        implicit
+            .into_iter()
+            .chain(references)
             .zip(0u8..=u8::MAX)
             .map(move |(reference, ordinal)| {
                 (
@@ -243,7 +280,8 @@ mod tests {
     fn read_field(record: OperationPayload<'_>, start: usize) -> Option<SketchReferenceField> {
         crate::test_support::with_decode_context(|ctx| {
             SketchReferenceField::read(ctx, record, start)?
-                .map(|shape| shape.materialize(ctx)).transpose()
+                .map(|shape| shape.materialize(ctx))
+                .transpose()
         })
         .unwrap()
     }
@@ -253,12 +291,15 @@ mod tests {
         let bytes = b"\x01\x00\x01\x02\xf0\x42\x00\x00\xf0\x43\x01\x00\x00\x00";
 
         let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
-                let error = crate::test_support::resource_refusal_at(bytes,
-cadmpeg_core::decode::ResourceDimension::CollectionItems,
-"nx sketch references", |ctx| crate::om::sketch_payload_references(ctx, record));
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
+        let error = crate::test_support::resource_refusal_at(
+            bytes,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "nx sketch references",
+            |ctx| crate::om::sketch_payload_references(ctx, record),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
@@ -266,12 +307,15 @@ cadmpeg_core::decode::ResourceDimension::CollectionItems,
         let bytes = b"\x01\x00\x01\x02\xf0\x42\x00\x00\xf0\x43\x01\x00\x00\x00";
 
         let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
-                let error = crate::test_support::resource_refusal_at(bytes,
-cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-"nx sketch references", |ctx| crate::om::sketch_payload_references(ctx, record));
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-                );
+        let error = crate::test_support::resource_refusal_at(
+            bytes,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "nx sketch references",
+            |ctx| crate::om::sketch_payload_references(ctx, record),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
@@ -279,12 +323,15 @@ cadmpeg_core::decode::ResourceDimension::RetainedBytes,
         let bytes = b"\x01\x00\x01\x02\xf0\x42\x00\x00\xf0\x43\x01\x00\x00\x00";
 
         let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
-                let error = crate::test_support::resource_refusal_at(bytes,
-cadmpeg_core::decode::ResourceDimension::WorkUnits,
-"NX sketch reference traversal", |ctx| crate::om::sketch_payload_references(ctx, record));
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-                );
+        let error = crate::test_support::resource_refusal_at(
+            bytes,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX sketch reference traversal",
+            |ctx| crate::om::sketch_payload_references(ctx, record),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 
     #[test]

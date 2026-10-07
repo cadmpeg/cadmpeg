@@ -4010,8 +4010,7 @@ pub(crate) fn operation_terminal_frame(
         .take(9)
     {
         let parsed = (|| {
-            let suffix =
-                CommonFrameSuffix::read(record.payload().get(start..)?)?;
+            let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
             (start + suffix.byte_len() == record.payload().len()).then_some(())?;
             let frame =
                 TerminalFrame::<usize>::new(suffix, record.payload_offset().checked_add(start)?)?;

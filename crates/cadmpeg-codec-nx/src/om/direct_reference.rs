@@ -103,9 +103,10 @@ pub(crate) fn operation_reference_fields(
 ) -> Result<Vec<DirectReferenceFrame<usize>>, CodecError> {
     let prefix = kind.prefix();
     let mut fields = Vec::new();
-    for end in ctx
-        .admit_iter(&(2..record.payload().len()), "NX direct reference prefix windows")?
-    {
+    for end in ctx.admit_iter(
+        &(2..record.payload().len()),
+        "NX direct reference prefix windows",
+    )? {
         let marker = end - 2;
         if record.payload()[marker..=end] != prefix {
             continue;
@@ -195,33 +196,41 @@ mod tests {
     fn direct_reference_fields_refuse_collection_limit() {
         let bytes = [1, 2, 3, 7, 1, 0, 0, 0, 0, 0];
 
-        let error = crate::test_support::resource_refusal_at(&bytes,
-cadmpeg_core::decode::ResourceDimension::CollectionItems,
-"nx direct reference fields", |ctx| super::operation_reference_fields(
+        let error = crate::test_support::resource_refusal_at(
+            &bytes,
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "nx direct reference fields",
+            |ctx| {
+                super::operation_reference_fields(
                     ctx,
                     record(&bytes, 0),
                     ReferenceFieldKind::DataBlock03,
                 )
-                );
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-                );
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
     fn direct_reference_fields_refuse_retained_limit() {
         let bytes = [1, 2, 3, 7, 1, 0, 0, 0, 0, 0];
 
-        let error = crate::test_support::resource_refusal_at(&bytes,
-cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-"nx direct reference fields", |ctx| super::operation_reference_fields(
+        let error = crate::test_support::resource_refusal_at(
+            &bytes,
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "nx direct reference fields",
+            |ctx| {
+                super::operation_reference_fields(
                     ctx,
                     record(&bytes, 0),
                     ReferenceFieldKind::DataBlock03,
                 )
-                );
-                assert!(
-                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-                );
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 }
