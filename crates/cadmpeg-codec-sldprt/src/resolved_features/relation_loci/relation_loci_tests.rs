@@ -21,6 +21,12 @@ use cadmpeg_ir::{
     scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, HashMap};
+
+/// The relation index over test entities, built under a service budget.
+fn profile(entities: &[SketchEntity]) -> super::ProfileEntities<'_> {
+    super::ProfileEntities::new(&cadmpeg_test_support::service_decode_context(), entities)
+        .expect("test entities fit the service budget")
+}
 mod direct_points;
 mod relation_geometry;
 
@@ -168,7 +174,7 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
             &cadmpeg_test_support::service_decode_context(),
             "center-marker",
             &sketch,
-            &entities,
+            &profile(&entities),
             &parameter
         )
         .unwrap(),
@@ -191,7 +197,7 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
             &cadmpeg_test_support::service_decode_context(),
             "center-marker",
             &sketch,
-            &ambiguous,
+            &profile(&ambiguous),
             &parameter
         )
         .unwrap(),
@@ -1661,9 +1667,9 @@ fn physical_locus_truncation_propagates_work_refusal() {
 }
 
 #[test]
-fn qualified_point_suffix_propagates_work_refusal() {
+fn qualified_point_lookup_propagates_work_refusal() {
     let loci = std::collections::HashMap::from([("marker:qualified-point".to_owned(), Vec::new())]);
-    crate::test_support::work_refusal_at("strip SLDPRT qualified point suffix", |ctx| {
+    crate::test_support::work_refusal_at("resolve SLDPRT qualified point loci", |ctx| {
         super::qualified_point_loci(ctx, "marker", &loci)
     });
     let ctx = cadmpeg_test_support::service_decode_context();

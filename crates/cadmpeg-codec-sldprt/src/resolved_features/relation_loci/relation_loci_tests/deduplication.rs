@@ -67,14 +67,21 @@ fn lines() -> Lines {
 #[test]
 fn dynamic_marker_line_deduplication_preserves_candidates_and_refusal() {
     let fixture = lines();
-    let markers = std::collections::HashMap::new();
+    let markers = super::super::RelationMarkers::from_map(
+        &cadmpeg_test_support::service_decode_context(),
+        &std::collections::HashMap::new(),
+    )
+    .unwrap();
+    let entities = super::profile(&fixture.entities);
     let solve = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         super::super::dynamic_marker_line_candidates(
             ctx,
             "root",
-            &markers,
-            &fixture.loci,
-            &fixture.entities,
+            super::super::RelationIndex {
+                entities: &entities,
+                markers: &markers,
+                loci_by_marker: &fixture.loci,
+            },
         )
     };
     assert_eq!(
@@ -95,7 +102,12 @@ fn dynamic_line_operand_deduplication_preserves_candidates_and_refusal() {
         FeatureInputRelationInstance,
     };
     let fixture = lines();
-    let markers = std::collections::HashMap::new();
+    let markers = super::super::RelationMarkers::from_map(
+        &cadmpeg_test_support::service_decode_context(),
+        &std::collections::HashMap::new(),
+    )
+    .unwrap();
+    let entities = super::profile(&fixture.entities);
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
@@ -124,9 +136,11 @@ fn dynamic_line_operand_deduplication_preserves_candidates_and_refusal() {
             &relation,
             0,
             &fixture.sketch,
-            &markers,
-            &fixture.loci,
-            &fixture.entities,
+            super::super::RelationIndex {
+                entities: &entities,
+                markers: &markers,
+                loci_by_marker: &fixture.loci,
+            },
         )
     };
     assert_eq!(
