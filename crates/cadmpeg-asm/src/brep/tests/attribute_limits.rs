@@ -61,7 +61,7 @@ fn source_attribute_record_name_refuses_retained_limit() {
 }
 
 #[test]
-fn unknown_record_kind_refuses_retained_limit() {
+fn unknown_record_kind_refuses_materialized_limit() {
     use crate::brep::attributes::unknown_record_id;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -75,14 +75,14 @@ fn unknown_record_kind_refuses_retained_limit() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = unknown_record_id(&ctx, &record, FORMAT)
-        .expect_err("one unknown kind exceeds zero retained bytes");
+        .expect_err("one unknown kind exceeds zero materialized bytes");
     let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected retained refusal: {error:?}");
+        panic!("expected materialized refusal: {error:?}");
     };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
 }
 
 #[test]
