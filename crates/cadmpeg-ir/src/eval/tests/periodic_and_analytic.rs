@@ -996,3 +996,26 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
         Ok(Point3::new(1.0e308, 0.5, 0.0))
     );
 }
+
+
+#[test]
+fn analytic_line_inverse_needs_no_variable_work_budget() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let curve = SolvedCurveGeometry::Line(
+        crate::geometry::analytic::LineCurve::try_new(
+            Point3::new(1.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
+        ).unwrap(),
+    );
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::super::direct_curve_parameter_near_point(
+        &ctx, &curve, Point3::new(3.5, 0.0, 0.0),
+        crate::scalar::FiniteReal::ZERO, crate::scalar::NonNegativeLength::new(0.0).unwrap(),
+    ).unwrap(), Some(crate::scalar::FiniteReal::new(2.5).unwrap()));
+    ctx.finish_session().unwrap();
+}
