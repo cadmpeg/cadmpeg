@@ -2380,6 +2380,7 @@ fn project_with_type_130_policy(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
+    let mut constructions = Vec::new();
     let mut index_storage = ctx.reserve_scoped(0, "IGES composite carrier index")?;
     let mut index = index_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?;
     let join_tolerance = global.minimum_resolution_mm();
@@ -2865,19 +2866,22 @@ fn project_with_type_130_policy(
         }
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        let _attached = ir.model.add_procedural_curve(
-            ctx,
-            &curve_id,
-            ProceduralCurve::new(
-                crate::ids::procedural_curve_admitted(&stem, ctx)?,
-                ProceduralCurveDefinition::Compound(
-                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
-                        boundaries, components, None,
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                ),
+        let procedural = ProceduralCurve::new(
+            crate::ids::procedural_curve_admitted(&stem, ctx)?,
+            ProceduralCurveDefinition::Compound(
+                cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                    boundaries, components, None,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
-        )?;
+        );
+        lookup_storage.with_storage(|| {
+            ctx.push_vec(
+                &mut constructions,
+                (curve_id, procedural),
+                "iges composite procedural constructions",
+            )
+        })?;
         ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
         wire_edges.push(edge);
         ctx.insert_btree_set(
@@ -2887,6 +2891,8 @@ fn project_with_type_130_policy(
         )?;
     }
 
+    // Attached together: the model indexes its curves once for the batch.
+    let _attached = ir.model.add_procedural_curves(ctx, constructions)?;
     Ok(WireProjectionOutcome {
         decoded,
         losses,
