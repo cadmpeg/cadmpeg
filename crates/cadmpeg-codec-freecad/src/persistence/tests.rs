@@ -146,8 +146,7 @@ fn persistence_extension_identity_refuses_at_retained_limit() {
     let child = "2:Proxy";
     let expected = crate::native::native_child_id("extension", owner, child);
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::extension_id(&ctx, owner, "Proxy", 2),
@@ -1439,21 +1438,30 @@ fn assert_duplicate_name_work_refusal<T>(
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("expected name comparison refusal: {error:?}");
         };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
         assert_eq!(Some(limit), ctx.resource_refusal());
-        let threshold = limit.used.checked_add(limit.additional).expect("work threshold");
+        let threshold = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("work threshold");
         assert!(threshold > policy.limits.max_work_units);
         if limit.operation == operation
             && limit.additional == cadmpeg_core::decode::u64_from_index(name_bytes)
         {
             // Each equal operand is admitted separately by its exact UTF-8 byte length.
             policy.limits.max_work_units = threshold - 1;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
-                .expect("root");
-            assert!(matches!(parse(&ctx), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+                    .expect("root");
+            assert!(
+                matches!(parse(&ctx), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                 if refusal.operation == operation && refusal.additional == limit.additional
                     && refusal.used + refusal.additional == threshold
-                    && Some(*refusal) == ctx.resource_refusal()));
+                    && Some(*refusal) == ctx.resource_refusal())
+            );
             return;
         }
         policy.limits.max_work_units = threshold;
@@ -1469,7 +1477,9 @@ fn duplicate_object_name_comparisons_admit_prefix_bytes() {
     );
     let xml = roxmltree::Document::parse(&document).expect("XML");
     assert_duplicate_name_work_refusal(
-        document.as_bytes(), "FCStd duplicate object names", prefix.len() + 1,
+        document.as_bytes(),
+        "FCStd duplicate object names",
+        prefix.len() + 1,
         |ctx| super::parse_document(&document, &xml, crate::dialect::FcstdDialect::Schema4, ctx),
     );
 }
@@ -1482,7 +1492,9 @@ fn duplicate_property_name_comparisons_admit_lookup_and_prefix_bytes() {
     );
     let xml = roxmltree::Document::parse(&document).expect("XML");
     assert_duplicate_name_work_refusal(
-        document.as_bytes(), "FCStd duplicate property names", prefix.len() + 1,
+        document.as_bytes(),
+        "FCStd duplicate property names",
+        prefix.len() + 1,
         |ctx| super::parse_properties(&document, xml.root_element(), "owner", &mut Vec::new(), ctx),
     );
 }

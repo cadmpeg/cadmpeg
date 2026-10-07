@@ -147,7 +147,8 @@ pub(crate) fn transfer(
             &by_owner,
             object.id().as_str(),
             "FreeCAD attachment object properties",
-        )? else {
+        )?
+        else {
             continue;
         };
         let support = sole_named_property(ctx, "attachment", owned, "AttachmentSupport")?;
@@ -221,7 +222,8 @@ fn support_links(
         .values()
         .first()
         .is_none_or(|value| value.tag != "LinkSubList")
-        || ctx.admit_iter(&property.values()[1..], "FreeCAD attachment support values")?
+        || ctx
+            .admit_iter(&property.values()[1..], "FreeCAD attachment support values")?
             .any(|value| value.tag != "Link")
     {
         return Err(CodecError::Malformed(ctx.format_retained(
