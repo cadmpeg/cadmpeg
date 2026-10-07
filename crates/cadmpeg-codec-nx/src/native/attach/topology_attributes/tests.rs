@@ -280,6 +280,7 @@ enum AttributeRoute {
 
 fn attribute_output_route(
     route: AttributeRoute,
+    with_reference: bool,
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<usize, cadmpeg_core::CodecError> {
     use crate::native::parasolid::structured_value_kind::StructuredValueKind;
@@ -306,13 +307,21 @@ fn attribute_output_route(
         let index = ParasolidTopologyAttributeIndex::new(
             index_ctx,
             &ir,
-            std::slice::from_ref(&reference),
+            if with_reference {
+                std::slice::from_ref(&reference)
+            } else {
+                &[]
+            },
             &[],
             &[],
             &[],
             &[],
         )?;
-        assert_eq!(index.contexts.len(), 1);
+        if with_reference {
+            assert_eq!(index.contexts.len(), 1);
+        } else {
+            assert!(index.contexts.is_empty());
+        }
 
         crate::test_support::with_decode_context_over(
             &[],
@@ -433,7 +442,7 @@ fn attribute_output_route(
 #[test]
 fn string_attribute_output_preserves_value() {
     assert_eq!(
-        attribute_output_route(AttributeRoute::String, |_| {}).unwrap(),
+        attribute_output_route(AttributeRoute::String, true, |_| {}).unwrap(),
         1
     );
 }
@@ -442,7 +451,7 @@ macro_rules! attribute_output_limit_test {
     ($name:ident, $route:expr, $field:ident, $dimension:ident) => {
         #[test]
         fn $name() {
-            let error = attribute_output_route($route, |policy| policy.limits.$field = 0).unwrap_err();
+            let error = attribute_output_route($route, true, |policy| policy.limits.$field = 0).unwrap_err();
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::$dimension));
         }
@@ -1366,17 +1375,59 @@ fn attribute_record_and_group_refusals_identify_the_record_family() {
             "NX Parasolid structured use groups",
         ),
     ] {
-        assert_eq!(attribute_output_route(route, |_| {}).unwrap(), 1);
+        assert_eq!(attribute_output_route(route, true, |_| {}).unwrap(), 1);
         for operation in [records, groups] {
             let error = cadmpeg_test_support::refusal::resource_limit_at(
                 ResourceDimension::WorkUnits,
                 operation,
-                |cap| attribute_output_route(route, |policy| policy.limits.max_work_units = cap),
+                |cap| {
+                    attribute_output_route(route, true, |policy| policy.limits.max_work_units = cap)
+                },
             );
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits)
             );
         }
+    }
+}
+
+#[test]
+fn attributes_without_references_need_no_topology_index_budget() {
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    assert!(!ir.model.faces.is_empty());
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let index =
+                ParasolidTopologyAttributeIndex::new(ctx, &ir, &[], &[], &[], &[], &[]).unwrap();
+            assert!(index.contexts.is_empty());
+        },
+    );
+}
+
+#[test]
+fn attribute_records_without_contexts_need_no_output_index_budget() {
+    for route in [
+        AttributeRoute::String,
+        AttributeRoute::Numeric,
+        AttributeRoute::Structured,
+    ] {
+        assert_eq!(
+            attribute_output_route(route, false, |policy| {
+                policy.limits.max_work_units = 0;
+                policy.limits.max_collection_items = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = 0;
+            })
+            .unwrap(),
+            0,
+        );
     }
 }
