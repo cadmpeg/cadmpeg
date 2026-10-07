@@ -637,3 +637,68 @@ fn alias_update_lookup_refusal_preserves_the_existing_binding() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(aliases.get("Width"), Some(&Some(parameter)));
 }
+
+fn scratch_parameters() -> Vec<DesignParameter> {
+    let mut owner = feature("owner", Some("1"), 0);
+    owner
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Note"), "plain text".into());
+    project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }],
+    )
+    .unwrap()
+}
+
+/// Alias tables are scratch: their copies count against the scoped limit.
+#[test]
+fn parameter_aliases_refuse_scoped_limit() {
+    let parameters = scratch_parameters();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "retain SLDPRT parameter alias",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            ParameterAliases::scoped(&ctx, &parameters, &HashMap::new(), &HashSet::new())
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+/// Evaluation value states are scratch: their copies count against the scoped limit.
+#[test]
+fn parameter_value_states_refuse_scoped_limit() {
+    let parameters = scratch_parameters();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "retain SLDPRT parameter value text",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            parameters_with_unevaluable_expressions(
+                &ctx,
+                &parameters,
+                &HashMap::new(),
+                &HashSet::new(),
+                &[],
+            )
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}

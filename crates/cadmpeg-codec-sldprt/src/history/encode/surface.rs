@@ -32,7 +32,7 @@ pub(super) struct ShellDefinition<'a> {
     pub(super) allow_self_intersections: Option<bool>,
 }
 
-impl NeutralFeatureEncoder<'_, '_, '_, '_> {
+impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_boundary_surface_unresolved(
         &self,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
