@@ -391,7 +391,7 @@ struct ShellFaceIndex<'a, 'ctx> {
     faces: &'a [Face],
     /// Face indices that name each shell, in face order.
     shells: BTreeMap<&'a str, Vec<usize>>,
-    /// Faces that share at least one edge with each face, in any shell.
+    /// A spanning star for each edge within one native shell.
     neighbors: BTreeMap<usize, BTreeSet<usize>>,
     /// Shell identities the component walk assigns to faces, applied once the
     /// walk no longer borrows the faces.
@@ -430,7 +430,7 @@ impl<'a, 'ctx> ShellFaceIndex<'a, 'ctx> {
                         )?;
                     }
                 }
-                let mut faces_by_edge = BTreeMap::<&str, BTreeSet<usize>>::new();
+                let mut faces_by_edge = BTreeMap::<(&str, &str), BTreeSet<usize>>::new();
                 for coedge in ctx.admit_iter(coedges, "index Parasolid shell edges")? {
                     if let Some(&face) = ctx.get_hash_map(
                         &loop_faces,
@@ -439,7 +439,7 @@ impl<'a, 'ctx> ShellFaceIndex<'a, 'ctx> {
                     )? {
                         ctx.insert_btree_group_set(
                             &mut faces_by_edge,
-                            coedge.edge.as_str(),
+                            (coedge.edge.as_str(), faces[face].shell.as_str()),
                             face,
                             "index Parasolid shell edges",
                             "index Parasolid edge faces",
@@ -450,22 +450,21 @@ impl<'a, 'ctx> ShellFaceIndex<'a, 'ctx> {
                 for (_, edge_faces) in
                     ctx.admit_iter(&faces_by_edge, "index Parasolid face neighbors")?
                 {
-                    for &face in ctx.admit_iter(edge_faces, "index Parasolid face neighbors")? {
-                        for &other in
-                            ctx.admit_iter(edge_faces, "index Parasolid face neighbors")?
-                        {
-                            if other != face {
-                                ctx.insert_btree_group_set(
-                                    &mut neighbors,
-                                    face,
-                                    other,
-                                    "index Parasolid face neighbors",
-                                    "index Parasolid face neighbors",
-                                )?;
-                            }
+                    let mut edge_faces = ctx.admit_iter(edge_faces, "index Parasolid face neighbors")?;
+                    let Some(&root) = edge_faces.next() else { continue; };
+                    for &other in edge_faces {
+                        for (face, neighbor) in [(root, other), (other, root)] {
+                            ctx.insert_btree_group_set(
+                                &mut neighbors,
+                                face,
+                                neighbor,
+                                "index Parasolid face neighbors",
+                                "index Parasolid face neighbors",
+                            )?;
                         }
                     }
                 }
+
                 let mut shells = BTreeMap::<&str, Vec<usize>>::new();
                 for (index, face) in ctx
                     .admit_iter(faces, "group Parasolid shell faces")?
@@ -8153,6 +8152,34 @@ mod tests {
     ) -> Result<Vec<Vec<usize>>, cadmpeg_core::CodecError> {
         let mut index = super::ShellFaceIndex::new(ctx, &brep.faces, &brep.loops, &brep.coedges)?;
         Ok(index.take_components(ctx, shell)?.0)
+    }
+
+    #[test]
+    fn shell_components_use_linear_stars_within_each_shell() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena,
+            &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+        let mut brep = one_face_shell();
+        let template = brep.faces[0].clone();
+        brep.faces = (0..5).map(|i| {
+            let mut face = template.clone();
+            face.id = super::id_face(i + 2);
+            if i < 2 { face.shell = super::ShellId::compose(&super::shell_namespace(), 2_u16); }
+            face
+        }).collect();
+        for (i, face) in brep.faces.iter().enumerate() {
+            let attr = u16::try_from(i + 2).unwrap();
+            let loop_id = super::id_loop(attr);
+            brep.loops.push(super::Loop { id: loop_id.clone(), face: face.id.clone(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Vertex { vertex: super::id_vertex(attr), pcurves: Vec::new() } });
+            brep.coedges.push(super::Coedge { id: super::id_coedge(attr), owner_loop: loop_id,
+                edge: super::id_edge(1), radial_next: super::id_coedge(attr), sense: super::Sense::Forward,
+                use_curve: None, pcurves: Vec::new() });
+        }
+        let mut index = super::ShellFaceIndex::new(&ctx, &brep.faces, &brep.loops, &brep.coedges).unwrap();
+        assert_eq!(index.neighbors.values().map(std::collections::BTreeSet::len).sum::<usize>(), 6);
+        assert_eq!(index.take_components(&ctx, "test:model:shell#1").unwrap().0, vec![vec![2, 3, 4]]);
+        assert_eq!(index.take_components(&ctx, "sldprt:brep:shell#2").unwrap().0, vec![vec![0, 1]]);
     }
 
     #[test]

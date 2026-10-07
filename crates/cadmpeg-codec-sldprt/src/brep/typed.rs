@@ -733,9 +733,8 @@ impl Facts {
 }
 
 /// The `(region, shell)` pairs where the shell lies on the region's shell
-/// chain. Each region named by a candidate walks its chain once, from the
-/// region's shell head along each shell's next reference, while the next
-/// attribute names exactly one candidate and has not been visited.
+/// chain. Shell links are resolved once per shell. Each region emits its own
+/// membership pairs until a link is absent, ambiguous, or already visited.
 fn reachable_shells(
     ctx: &DecodeContext<'_>,
     regions: &Regions<'_>,
@@ -748,6 +747,7 @@ fn reachable_shells(
     let mut storage = ctx.reserve_scoped(0, "hold typed Parasolid shell chains")?;
     let mut walked = BTreeSet::new();
     let mut reachable = BTreeSet::new();
+    let mut links = BTreeMap::<u16, Option<Option<u16>>>::new();
     for &(region, _) in ctx.admit_iter(candidates, "walk typed Parasolid shell chains")? {
         if !storage.with_storage(|| {
             ctx.insert_btree_set(&mut walked, region, "walk typed Parasolid shell chains")
@@ -765,11 +765,18 @@ fn reachable_shells(
         let mut next = u16_from_ref_or_none(region_node.refs[4]);
         while let Some(attr) = next {
             ctx.charge_work(1, "walk typed Parasolid shell chain")?;
-            let Some(Some(shell)) =
-                ctx.get_hash_map(&by_attr, &attr, "walk typed Parasolid shell chain")?
-            else {
-                break;
+            const RESOLVE: &str = "resolve typed Parasolid shell link";
+            let link = match ctx.get_btree_map(&links, &attr, RESOLVE)? {
+                Some(&link) => link,
+                None => {
+                    let link = ctx.get_hash_map(&by_attr, &attr, RESOLVE)?
+                        .and_then(Option::as_ref)
+                        .map(|shell| u16_from_ref_or_none(shell.refs[2]));
+                    storage.with_storage(|| ctx.insert_btree_map(&mut links, attr, link, RESOLVE))?;
+                    link
+                }
             };
+            let Some(link) = link else { break; };
             if !storage.with_storage(|| {
                 ctx.insert_btree_set(
                     &mut reachable,
@@ -779,7 +786,7 @@ fn reachable_shells(
             })? {
                 break;
             }
-            next = u16_from_ref_or_none(shell.refs[2]);
+            next = link;
         }
     }
     Ok(reachable)
@@ -1375,6 +1382,21 @@ mod tests {
                 .expect("region chain allocation")
                 .map(|(chain, _)| chain.into_iter().copied().collect())
         })
+    }
+
+    #[test]
+    fn shared_shell_chain_emits_each_region_membership_and_stops_cycles() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let shells = [8, 9].map(|attr| ShellNode { attr, node_id: u32::from(attr),
+            refs: [0, 3, if attr == 8 { 9 } else { 8 }, 0, 0, 0, 20, 0], offset: 0, end: 0 });
+        let regions = [20, 21].map(|attr| RegionNode { attr, node_id: u32::from(attr),
+            refs: [0, 3, 0, 0, 8], offset: 0, end: 0 });
+        let regions = Regions { by_attr: regions.iter().map(|r| (r.attr, r)).collect(), by_previous: Default::default() };
+        let candidates = [(20, &shells[0]), (21, &shells[1])];
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(super::reachable_shells(&ctx, &regions, &candidates).unwrap(),
+            std::collections::BTreeSet::from([(20, 8), (20, 9), (21, 8), (21, 9)]));
     }
 
     #[test]

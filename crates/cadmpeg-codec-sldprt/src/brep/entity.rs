@@ -4,7 +4,7 @@
 use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_ir::topology::Color;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::attrib::{Declaration, Family};
 use crate::layout::entity_common_header as entity_hdr;
@@ -78,63 +78,82 @@ fn attribute_slot_count(flo: u8) -> Option<usize> {
     (1..=0x20).contains(&flo).then_some(5 + usize::from(flo))
 }
 
-/// Locate an entity record's references and the offset after them. A prefixed
-/// record stores each reference after a `1` byte and ends the run with `0`; a
-/// bare record stores `count` contiguous references.
-fn refs(
-    ctx: &DecodeContext<'_>,
-    body: &[u8],
-    at: usize,
-    count: usize,
-    prefixed: bool,
-) -> Result<Option<(References, usize)>, cadmpeg_core::CodecError> {
-    if prefixed {
-        if body.get(at) != Some(&1) {
-            return Ok(None);
-        }
-        let mut found = 0_usize;
-        let mut p = at;
-        while body.get(p) == Some(&1) {
-            ctx.charge_work(1, "scan prefixed Parasolid entity references")?;
-            if p.checked_add(1)
-                .and_then(|value| View::u16_be_at(body, value))
-                .is_none()
-            {
+#[derive(Clone, Copy)]
+enum ReferenceTail {
+    Terminated(usize),
+    Bare,
+    Invalid,
+}
+
+/// A prefixed reference suffix is parsed once, including malformed endings.
+struct ReferenceRuns<'ctx> {
+    tails: BTreeMap<usize, ReferenceTail>,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> ReferenceRuns<'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            tails: BTreeMap::new(),
+            storage: ctx.reserve_scoped(0, "hold prefixed Parasolid reference tails")?,
+        })
+    }
+
+    fn refs(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        body: &[u8],
+        at: usize,
+        count: usize,
+        prefixed: bool,
+    ) -> Result<Option<(References, usize)>, cadmpeg_core::CodecError> {
+        if prefixed {
+            if body.get(at) != Some(&1) {
                 return Ok(None);
             }
-            found += 1;
-            let Some(next) = p.checked_add(3) else {
-                return Ok(None);
+            const INDEX: &str = "index prefixed Parasolid reference tails";
+            let mut path_storage = ctx.reserve_scoped(0, INDEX)?;
+            let mut path = Vec::new();
+            let mut p = at;
+            let tail = loop {
+                if let Some(&tail) = ctx.get_btree_map(&self.tails, &p, INDEX)? {
+                    break tail;
+                }
+                if body.get(p) != Some(&1) {
+                    break if body.get(p) == Some(&0) {
+                        ReferenceTail::Terminated(p + 1)
+                    } else {
+                        ReferenceTail::Bare
+                    };
+                }
+                ctx.charge_work(1, "scan prefixed Parasolid entity references")?;
+                if View::u16_be_at(body, p + 1).is_none() {
+                    break ReferenceTail::Invalid;
+                }
+                ctx.push_scoped_vec(&mut path_storage, &mut path, p, INDEX)?;
+                p += 3;
             };
-            p = next;
+            for p in ctx.admit_iter(path, INDEX)? {
+                self.storage.with_storage(|| ctx.insert_btree_map(&mut self.tails, p, tail, INDEX))?;
+            }
+            match tail {
+                ReferenceTail::Terminated(end) => return Ok(Some((References {
+                    at: at + 1,
+                    count: (end - 1 - at) / 3,
+                    stride: 3,
+                }, end))),
+                ReferenceTail::Invalid => return Ok(None),
+                ReferenceTail::Bare => {}
+            }
         }
-        if body.get(p) == Some(&0) {
-            return Ok(p.checked_add(1).map(|end| {
-                (
-                    References {
-                        at: at + 1,
-                        count: found,
-                        stride: 3,
-                    },
-                    end,
-                )
-            }));
+        let Some(end) = count.checked_mul(2).and_then(|size| at.checked_add(size)) else {
+            return Ok(None);
+        };
+        if count > 0 && View::u16_be_at(body, end - 2).is_none() {
+            return Ok(None);
         }
+        Ok(Some((References { at, count, stride: 2 }, end)))
     }
-    let Some(end) = count.checked_mul(2).and_then(|size| at.checked_add(size)) else {
-        return Ok(None);
-    };
-    if count > 0 && View::u16_be_at(body, end - 2).is_none() {
-        return Ok(None);
-    }
-    Ok(Some((
-        References {
-            at,
-            count,
-            stride: 2,
-        },
-        end,
-    )))
 }
 
 /// Scan the framed entity records of one stream. The records are decode
@@ -146,6 +165,7 @@ fn scan_entities<'ctx>(
 ) -> Result<(Vec<EntityRecord>, ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, "hold Parasolid entity records")?;
     let mut out = Vec::new();
+    let mut runs = ReferenceRuns::new(ctx)?;
     let starts = 0..body.len().checked_sub(25).map_or(0, |end| end);
     for off in ctx.admit_iter(starts, "scan Parasolid entity records")? {
         if body.get(off..off + 2) != Some(&[0x00, 0x51]) {
@@ -179,7 +199,7 @@ fn scan_entities<'ctx>(
             };
             count
         };
-        let Some((refs, end)) = refs(ctx, body, p + entity_hdr::LEN, count, prefixed)? else {
+        let Some((refs, end)) = runs.refs(ctx, body, p + entity_hdr::LEN, count, prefixed)? else {
             continue;
         };
         ctx.push_scoped_vec(
@@ -267,10 +287,32 @@ fn linked_colors<'ctx>(
 ) -> Result<(LinkedColors, ScopedReservation<'ctx>), cadmpeg_core::CodecError> {
     let mut storage = ctx.reserve_scoped(0, "hold Parasolid linked colors")?;
     let mut colors = LinkedColors::new();
+    let mut tails = BTreeMap::<usize, Option<usize>>::new();
+    let mut records = Vec::<(u16, Color, usize, Option<usize>)>::new();
     for parent in ctx.admit_iter(entities, "scan Parasolid linked color parents")? {
-        if color_record(body, parent.end).is_none() {
-            continue;
+        const INDEX: &str = "index Parasolid color tails";
+        let mut path_storage = ctx.reserve_scoped(0, INDEX)?;
+        let mut path = Vec::new();
+        let mut at = parent.end;
+        let mut tail = loop {
+            if let Some(&tail) = ctx.get_btree_map(&tails, &at, INDEX)? {
+                break tail;
+            }
+            ctx.charge_work(1, "scan Parasolid linked colors")?;
+            let Some((attr, color, end)) = color_record(body, at) else {
+                storage.with_storage(|| ctx.insert_btree_map(&mut tails, at, None, INDEX))?;
+                break None;
+            };
+            ctx.push_scoped_vec(&mut path_storage, &mut path, (attr, color, at), INDEX)?;
+            at = end;
+        };
+        for (attr, color, offset) in ctx.admit_iter(path, INDEX)?.rev() {
+            let index = records.len();
+            ctx.push_scoped_vec(&mut storage, &mut records, (attr, color, offset, tail), INDEX)?;
+            tail = Some(index);
+            storage.with_storage(|| ctx.insert_btree_map(&mut tails, offset, tail, INDEX))?;
         }
+        if tail.is_none() { continue; }
         let mut linked_faces_storage = ctx.reserve_scoped(0, "Parasolid temporary linked faces")?;
         let mut linked_faces = BTreeSet::new();
         for index in ctx.admit_iter(
@@ -295,12 +337,12 @@ fn linked_colors<'ctx>(
                 "collect Parasolid parent face reference",
             )
         })?;
-        let mut at = parent.end;
-        while let Some((color_attr, color, end)) = color_record(body, at) {
-            ctx.charge_work(1, "scan Parasolid linked colors")?;
+        while let Some(index) = tail {
+            ctx.charge_work(1, "frame Parasolid color run")?;
+            let (color_attr, color, offset, next) = records[index];
             let framed = FramedColor {
                 color,
-                offset: at,
+                offset,
                 parent_seq: parent.seq,
             };
             for &face_attr in ctx.admit_iter(&linked_faces, "frame Parasolid linked colors")? {
@@ -321,7 +363,7 @@ fn linked_colors<'ctx>(
                         agreed: true,
                     });
             }
-            at = end;
+            tail = next;
         }
     }
     Ok((colors, storage))
@@ -423,12 +465,17 @@ pub(crate) fn scan_metadata(
 #[cfg(test)]
 mod tests {
     use super::{
-        attribute_slot_count, linked_colors, refs, scan_entities, scan_metadata, EntityRecord,
+        attribute_slot_count, linked_colors, scan_entities, scan_metadata, EntityRecord, ReferenceRuns,
         References,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     const FACE_COLOR_FAMILY: &str = "SDL/TYSA_COLOUR";
+
+    fn refs(ctx: &DecodeContext<'_>, body: &[u8], at: usize, count: usize, prefixed: bool) -> Result<Option<(References, usize)>, cadmpeg_core::CodecError> {
+        ReferenceRuns::new(ctx)?.refs(ctx, body, at, count, prefixed)
+    }
+
 
     fn values(body: &[u8], refs: References) -> Vec<u16> {
         (0..refs.count)
@@ -501,6 +548,39 @@ mod tests {
 
     fn face_color_definition(definition: u16) -> Vec<u8> {
         attribute_definition(FACE_COLOR_FAMILY, definition)
+    }
+
+    #[test]
+    fn prefixed_reference_tails_reuse_overlapping_runs() {
+        let bytes = [1, 0, 2, 1, 0, 3, 1, 0, 4, 0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut runs = ReferenceRuns::new(&ctx).unwrap();
+        let (head, end) = runs.refs(&ctx, &bytes, 0, 0, true).unwrap().unwrap();
+        assert_eq!((values(&bytes, head), end), (vec![2, 3, 4], 10));
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "scan prefixed Parasolid entity references", None);
+        let (tail, end) = runs.refs(&ctx, &bytes, 3, 0, true).unwrap().unwrap();
+        assert_eq!((values(&bytes, tail), end), (vec![3, 4], 10));
+    }
+
+    #[test]
+    fn shared_color_run_keeps_highest_parent_sequence() {
+        let bytes = color(800, [0.25, 0.5, 0.75], false);
+        let parents = [1, 4, 2].map(|seq| EntityRecord {
+            attr: 700, seq, disc: 16,
+            refs: References { at: 0, count: 0, stride: 2 }, end: 0,
+        });
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (colors, _storage) = linked_colors(&ctx, &bytes, &parents).unwrap();
+        let linked = colors.get(&(700, 800)).unwrap();
+        assert!(linked.agreed);
+        assert_eq!(linked.current.parent_seq, 4);
+        assert_eq!(linked.current.offset, 0);
+        assert_eq!(linked.current.color, super::color_record(&bytes, 0).unwrap().1);
     }
 
     #[test]

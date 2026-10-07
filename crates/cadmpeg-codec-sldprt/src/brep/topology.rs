@@ -1000,18 +1000,15 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        buf,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    ) else {
-        return false;
-    };
-    let Ok(mut tables) = scan(&ctx, buf) else {
-        return false;
-    };
-    let Some(record) = tables.points.remove(&attr) else {
+    let mut selected = None;
+    for offset in 0..buf.len().saturating_sub(13) {
+        if let Some(point) = parse_point(buf, offset, false) {
+            if point.attr == attr {
+                selected = Some(point);
+            }
+        }
+    }
+    let Some(record) = selected else {
         return false;
     };
     patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m)
