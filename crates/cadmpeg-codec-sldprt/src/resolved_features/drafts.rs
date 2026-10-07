@@ -718,7 +718,6 @@ mod tests {
 
     #[test]
     fn draft_operand_candidates_refuses_declared_reference_collection_limit() {
-
         let token = 0x8096;
         let mut payload = vec![0; 64];
         let object_start = payload.len();
@@ -830,7 +829,6 @@ mod tests {
 
     #[test]
     fn draft_operand_candidates_refuses_compact_record_collection_limit() {
-
         let mut payload = vec![0; 64];
         let object_start = payload.len();
         payload.extend(compact_selection(2, &[&[(0x8083, 80, 900, 1)]]));

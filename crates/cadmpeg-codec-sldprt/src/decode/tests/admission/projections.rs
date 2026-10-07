@@ -935,7 +935,7 @@ fn metadata_adjacent_profiles_refuses_collection_limit() {
 
 #[test]
 fn metadata_adjacent_profiles_refuses_index_collection_limit() {
-    let limit = collection_refusal_with_options(
+    let refusal = collection_refusal_with_options(
         &class_binding_source(),
         DecodeOptions {
             container_only: true,
@@ -943,7 +943,10 @@ fn metadata_adjacent_profiles_refuses_index_collection_limit() {
         },
         "index SLDPRT adjacent profiles",
     );
-    assert_eq!(limit.operation, "index SLDPRT adjacent profiles");
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
 }
 
 #[test]
@@ -977,12 +980,15 @@ fn geometry_adjacent_profiles_refuses_collection_limit() {
 
 #[test]
 fn geometry_adjacent_profiles_refuses_index_collection_limit() {
-    let limit = collection_refusal_with_options(
+    let refusal = collection_refusal_with_options(
         &class_binding_source(),
         DecodeOptions::default(),
         "index SLDPRT adjacent profiles",
     );
-    assert_eq!(limit.operation, "index SLDPRT adjacent profiles");
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
 }
 
 #[test]
@@ -1229,21 +1235,18 @@ fn metadata_pattern_inputs_refuses_work_limit() {
 }
 
 #[test]
-fn metadata_pattern_inputs_refuses_retained_limit() {
-    let mut options = DecodeOptions {
-        container_only: true,
-        ..DecodeOptions::default()
-    };
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
+fn metadata_pattern_inputs_refuses_index_collection_limit() {
+    let refusal = collection_refusal_with_options(
         &class_binding_source(),
-        &mut options,
-        "retain SLDPRT pattern native identity",
+        DecodeOptions {
+            container_only: true,
+            ..DecodeOptions::default()
+        },
+        "index SLDPRT pattern inputs",
     );
-    assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT pattern native identity")
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
     );
 }
 
@@ -1274,18 +1277,15 @@ fn geometry_pattern_inputs_refuses_work_limit() {
 }
 
 #[test]
-fn geometry_pattern_inputs_refuses_retained_limit() {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
+fn geometry_pattern_inputs_refuses_index_collection_limit() {
+    let refusal = collection_refusal_with_options(
         &class_binding_source(),
-        &mut options,
-        "retain SLDPRT pattern native identity",
+        DecodeOptions::default(),
+        "index SLDPRT pattern inputs",
     );
-    assert!(
-        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT pattern native identity")
+    assert_eq!(
+        refusal.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
     );
 }
 
