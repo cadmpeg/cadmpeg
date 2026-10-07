@@ -54,10 +54,7 @@ fn native_brep_nurbs_subset_evaluation_refuses_scoped_limit() {
 fn body_stream_index_storage_refusal_uses_the_scoped_dimension() {
     let header = crate::parasolid::StreamHeader {
         description: String::from("test partition"),
-        words: crate::container::NameWords {
-            partition: true,
-            ..crate::container::NameWords::default()
-        },
+        words: crate::container::NameWords::PARTITION_ONLY,
         schema: cadmpeg_parasolid::OwnedSchemaToken::parse(
             &cadmpeg_test_support::service_decode_context(),
             "SCH_TEST_1_9999".into(),

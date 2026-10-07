@@ -476,7 +476,7 @@ fn patch_surfaces(
             payload,
             raw_annotation_offset(annotations, &surface.id)?,
             &values,
-        )?
+        )
         .is_none()
         {
             return Ok(None);
@@ -536,7 +536,7 @@ fn patch_curves(
             payload,
             raw_annotation_offset(annotations, &curve.id)?,
             &values,
-        )?
+        )
         .is_none()
         {
             return Ok(None);
@@ -545,30 +545,19 @@ fn patch_curves(
     Ok(Some(()))
 }
 
-fn patch_compact(
-    payload: &mut [u8],
-    offset: usize,
-    values: &[f64],
-) -> Result<Option<()>, cadmpeg_core::CodecError> {
-    let Some(carrier) = crate::brep::parse_carrier(payload, offset) else {
-        return Ok(None);
-    };
-    let end = match carrier {
+/// Overwrite the trailing scalar run of the compact carrier at `offset`.
+fn patch_compact(payload: &mut [u8], offset: usize, values: &[f64]) -> Option<()> {
+    let end = match crate::brep::parse_carrier(payload, offset)? {
         crate::brep::Carrier::Curve(carrier) => carrier.end,
         crate::brep::Carrier::Surface(carrier) => carrier.end,
     };
-    let start = match end.checked_sub(values.len() * 8) {
-        Some(value) => value,
-        None => return Ok(None),
-    };
+    let start = end.checked_sub(values.len() * 8)?;
     for (index, value) in values.iter().enumerate() {
-        match payload.get_mut(start + index * 8..start + (index + 1) * 8) {
-            Some(value) => value,
-            None => return Ok(None),
-        }
-        .copy_from_slice(&value.to_be_bytes());
+        payload
+            .get_mut(start + index * 8..start + (index + 1) * 8)?
+            .copy_from_slice(&value.to_be_bytes());
     }
-    Ok(Some(()))
+    Some(())
 }
 
 #[cfg(test)]
