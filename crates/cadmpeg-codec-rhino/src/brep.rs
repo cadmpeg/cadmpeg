@@ -870,7 +870,7 @@ impl ValidatedRawBrep {
                 }
             }
         }
-        for face in &mut raw.faces {
+        for face in ctx.admit_iter(&mut raw.faces[..], "Rhino repaired face traversal").map_err(cadmpeg_core::CodecError::from)? {
             if face.material_channel < 0 {
                 face.material_channel = 0;
             }
@@ -911,6 +911,12 @@ fn body_kind(
     resolved: &ResolvedBrep,
     writer_version: Option<i64>,
 ) -> Result<(BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>), cadmpeg_core::CodecError> {
+    // A stamped closed flag fixes the kind without a topology gauge.
+    if writer_version.is_some_and(|version| version >= SOLID_FLAG_WRITER_VERSION)
+        && matches!(raw.is_solid, RawSolidFlag::Known(SolidState::Closed | SolidState::ClosedManifold))
+    {
+        return Ok((BrepBodyKind::Solid, None));
+    }
     let mut closed = !raw.faces.is_empty();
     if closed && !resolved.edges.is_empty() {
         let mut storage = ctx.reserve_scoped(0, "Rhino body kind edge incidence")?;
@@ -1280,6 +1286,7 @@ fn parse_legacy_major2(
         .collection_vec(trim_count, "Rhino legacy Brep C2 metadata")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..trim_count {
+        ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
         let curve_range =
             crate::curves::consume_legacy_polycurve_2d(ctx, bytes, &mut reader, archive)?;
         let decoded = crate::curves::decode_2d(
@@ -1303,6 +1310,7 @@ fn parse_legacy_major2(
         .collection_vec(edge_count, "Rhino legacy Brep C3 metadata")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..edge_count {
+        ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
         let curve_range = crate::curves::consume_legacy_polycurve(
             ctx,
             bytes,
@@ -1332,6 +1340,7 @@ fn parse_legacy_major2(
         .collection_vec(face_count, "Rhino legacy Brep surface slots")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..face_count {
+        ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
         let start = reader.position();
         let _surface = crate::surfaces::read_nurbs_surface_prefix(
             ctx,
@@ -1358,6 +1367,7 @@ fn parse_legacy_major2(
         .map_err(crate::curves::GeometryError::from)?;
     let mut warnings = Diagnostics::new();
     for face_position in 0..face_count {
+        ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
         let face_index = reader.i32()?;
         let _obsolete_material = reader.i32()?;
         let reversed_surface = reader.i32()?;
@@ -1374,6 +1384,7 @@ fn parse_legacy_major2(
             .collection_vec(boundary_count, "Rhino legacy Brep face loops")
             .map_err(crate::curves::GeometryError::from)?;
         for _ in 0..boundary_count {
+            ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
             let loop_source_start = reader.position();
             let loop_index = reader.i32()?;
             let boundary_type = reader.i32()?;
@@ -1394,6 +1405,7 @@ fn parse_legacy_major2(
                 .collection_vec(trim_in_loop, "Rhino legacy Brep loop trims")
                 .map_err(crate::curves::GeometryError::from)?;
             for _ in 0..trim_in_loop {
+                ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
                 let trim_source_start = reader.position();
                 let stored_trim_index = reader.i32()?;
                 let _twin_index = reader.i32()?;
@@ -1510,11 +1522,10 @@ fn parse_legacy_major2(
             "legacy Brep trim endpoint count overflow",
         )
     })?;
-    let mut endpoint_parent =
-        ctx.alloc_filled(endpoint_count, 0usize, "Rhino legacy Brep endpoint parents")?;
-    for (index, parent) in endpoint_parent.iter_mut().enumerate() {
-        *parent = index;
-    }
+    let mut parent_storage = ctx.reserve_scoped(0, "Rhino legacy Brep endpoint parents")?;
+    let mut endpoint_parent = parent_storage.with_storage(|| {
+        ctx.collect_indexed_vec(endpoint_count, "Rhino legacy Brep endpoint parents", Ok)
+    })?;
     for loop_record in ctx
         .admit_iter(&loops[..], "Rhino parse legacy major2 traversal")
         .map_err(cadmpeg_core::CodecError::from)?
@@ -1530,17 +1541,16 @@ fn parse_legacy_major2(
             .map_err(cadmpeg_core::CodecError::from)?
             .enumerate()
         {
-            let next = index
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit("Rhino legacy Brep trim ring index", 0, 1))?;
+            let next = index + 1;
             let first = loop_record.trims.get(next).unwrap_or(head);
             let last = slot(ctx, *last, trims.len(), "legacy Brep loop trim")?;
             let first = slot(ctx, *first, trims.len(), "legacy Brep loop trim")?;
             legacy_union(
+                ctx,
                 &mut endpoint_parent,
                 legacy_trim_endpoint(last, 1),
                 legacy_trim_endpoint(first, 0),
-            );
+            )?;
         }
     }
     for (trim_index, trim) in ctx
@@ -1550,10 +1560,11 @@ fn parse_legacy_major2(
     {
         if trim.edge.is_none() {
             legacy_union(
+                ctx,
                 &mut endpoint_parent,
                 legacy_trim_endpoint(trim_index, 0),
                 legacy_trim_endpoint(trim_index, 1),
-            );
+            )?;
         }
     }
     for trim_indexes in ctx
@@ -1567,16 +1578,16 @@ fn parse_legacy_major2(
             continue;
         };
         for trim_index in ctx
-            .admit_iter(&trim_indexes[..], "Rhino parse legacy major2 traversal")
+            .admit_iter(&trim_indexes[1..], "Rhino parse legacy major2 traversal")
             .map_err(cadmpeg_core::CodecError::from)?
-            .skip(1)
         {
             for edge_endpoint in 0..2 {
                 legacy_union(
+                    ctx,
                     &mut endpoint_parent,
                     legacy_trim_endpoint_for_edge(&trims[*first], *first, edge_endpoint),
                     legacy_trim_endpoint_for_edge(&trims[*trim_index], *trim_index, edge_endpoint),
-                );
+                )?;
             }
         }
     }
@@ -1587,7 +1598,8 @@ fn parse_legacy_major2(
         .collection_vec(endpoint_count, "Rhino legacy Brep endpoint vertices")
         .map_err(crate::curves::GeometryError::from)?;
     for endpoint in 0..endpoint_count {
-        let root = legacy_find(&mut endpoint_parent, endpoint);
+        ctx.charge_work(1, "Rhino brep parse_legacy_major2 records")?;
+        let root = legacy_find(ctx, &mut endpoint_parent, endpoint)?;
         let index = match root_vertices[root] {
             Some(index) => index,
             None => {
@@ -1651,7 +1663,7 @@ fn parse_legacy_major2(
         let mut stored_trim_indexes = ctx
             .collection_vec(trim_indexes.len(), "Rhino legacy Brep edge trim references")
             .map_err(crate::curves::GeometryError::from)?;
-        for trim in trim_indexes {
+        for trim in ctx.admit_iter(trim_indexes, "Rhino legacy edge trim traversal").map_err(cadmpeg_core::CodecError::from)? {
             stored_trim_indexes.push(
                 i32::try_from(*trim)
                     .map_err(|_| error(curve.range.start, "legacy Brep trim index overflow"))?,
@@ -1678,7 +1690,7 @@ fn parse_legacy_major2(
     let mut normalized_vertices = ctx
         .collection_vec(vertices.len(), "Rhino legacy Brep resolved vertices")
         .map_err(crate::curves::GeometryError::from)?;
-    for vertex in vertices {
+    for vertex in ctx.admit_iter(vertices, "Rhino legacy normalized vertex traversal").map_err(cadmpeg_core::CodecError::from)? {
         normalized_vertices.push(vertex.into_vertex().ok_or_else(|| {
             error(
                 reader.position(),
@@ -1687,7 +1699,7 @@ fn parse_legacy_major2(
         })?);
     }
     let mut vertices = normalized_vertices;
-    for (trim_index, trim) in trims.iter_mut().enumerate() {
+    for (trim_index, trim) in ctx.admit_iter(&mut trims[..], "Rhino legacy trim endpoint traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         trim.vertices = [
             i32::try_from(endpoint_vertices[legacy_trim_endpoint(trim_index, 0)])
                 .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?,
@@ -1734,7 +1746,7 @@ fn parse_legacy_major2(
             };
         }
     }
-    for (vertex_index, vertex) in vertices.iter_mut().enumerate() {
+    for (vertex_index, vertex) in ctx.admit_iter(&mut vertices[..], "Rhino legacy vertex tolerance traversal").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
         let mut tolerance: f64 = 0.0;
         for edge_index in ctx
             .admit_iter(&vertex.edges[..], "Rhino parse legacy major2 traversal")
@@ -1779,13 +1791,13 @@ fn parse_legacy_major2(
     let mut c2_slots = ctx
         .collection_vec(c2_meta.len(), "Rhino legacy Brep C2 slots")
         .map_err(crate::curves::GeometryError::from)?;
-    for curve in c2_meta {
+    for curve in ctx.admit_iter(c2_meta, "Rhino legacy C2 slot traversal").map_err(cadmpeg_core::CodecError::from)? {
         c2_slots.push(Some(curve.into_child()));
     }
     let mut c3_slots = ctx
         .collection_vec(c3_meta.len(), "Rhino legacy Brep C3 slots")
         .map_err(crate::curves::GeometryError::from)?;
-    for curve in c3_meta {
+    for curve in ctx.admit_iter(c3_meta, "Rhino legacy C3 slot traversal").map_err(cadmpeg_core::CodecError::from)? {
         c3_slots.push(Some(curve.into_child()));
     }
     let mut raw = RawBrep {
@@ -1934,20 +1946,20 @@ fn legacy_trim_endpoint_for_edge(
     legacy_trim_endpoint(trim_index, trim_endpoint)
 }
 
-fn legacy_find(parent: &mut [usize], mut index: usize) -> usize {
+fn legacy_find(ctx: &DecodeContext<'_>, parent: &mut [usize], mut index: usize) -> Result<usize, cadmpeg_core::CodecError> {
     while parent[index] != index {
+        ctx.charge_work(1, "Rhino legacy Brep endpoint root walk")?;
         parent[index] = parent[parent[index]];
         index = parent[index];
     }
-    index
+    Ok(index)
 }
 
-fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
-    let left_root = legacy_find(parent, left);
-    let right_root = legacy_find(parent, right);
-    if left_root != right_root {
-        parent[right_root] = left_root;
-    }
+fn legacy_union(ctx: &DecodeContext<'_>, parent: &mut [usize], left: usize, right: usize) -> Result<(), cadmpeg_core::CodecError> {
+    let left_root = legacy_find(ctx, parent, left)?;
+    let right_root = legacy_find(ctx, parent, right)?;
+    if left_root != right_root { parent[right_root] = left_root; }
+    Ok(())
 }
 
 /// The index of the legacy Brep vertex at `point`, adding it when the archive
@@ -2004,6 +2016,7 @@ fn read_legacy_mesh_sides(
         .collection_vec(face_count, "Rhino legacy Brep mesh slots")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..face_count {
+        ctx.charge_work(1, "Rhino brep read_legacy_mesh_sides records")?;
         let present = match reader.u8() {
             Ok(value) => value != 0,
             Err(error) => {
@@ -2124,6 +2137,7 @@ fn read_children(
         .collection_vec(count, "Rhino Brep child slots")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino brep read_children records")?;
         let presence_start = child_reader.position();
         let present = child_reader.i32()?;
         direct_ranges.push(presence_start..child_reader.position());
@@ -2180,6 +2194,7 @@ fn read_vertices(
         .collection_vec(count, "Rhino Brep vertices")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino brep read_vertices records")?;
         let start = child.position();
         let index = child.i32()?;
         let point = point(&mut child)?;
@@ -2248,6 +2263,7 @@ fn read_edges(
         .collection_vec(count, "Rhino Brep edges")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino brep read_edges records")?;
         let start = child.position();
         let index = child.i32()?;
         let curve = child.i32()?;
@@ -2307,6 +2323,7 @@ fn read_trims(
         .collection_vec(count, "Rhino Brep trims")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino brep read_trims records")?;
         let start = child.position();
         let index = child.i32()?;
         let curve = child.i32().map(|value| (value != -1).then_some(value))?;
@@ -2375,6 +2392,7 @@ fn read_loops(
         .collection_vec(count, "Rhino Brep loops")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino brep read_loops records")?;
         let start = child.position();
         let index = child.i32()?;
         let trims = indexes(ctx, &mut child)?;
@@ -2424,6 +2442,7 @@ fn read_faces(
         .collection_vec(count, "Rhino Brep faces")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino brep read_faces records")?;
         let record_start = child.position();
         let index = child.i32()?;
         let loops = indexes(ctx, &mut child)?;
@@ -2446,7 +2465,7 @@ fn read_faces(
         });
     }
     if version & 0x0f >= 1 {
-        for face in &mut result {
+        for face in ctx.admit_iter(&mut result[..], "Rhino face suffix traversal").map_err(cadmpeg_core::CodecError::from)? {
             face.uuid = Some(uuid(&mut child)?);
         }
     }
@@ -2456,7 +2475,7 @@ fn read_faces(
             return Err(error(child.position() - 1, "invalid face-color presence"));
         }
         if present != 0 {
-            for face in &mut result {
+            for face in ctx.admit_iter(&mut result[..], "Rhino face suffix traversal").map_err(cadmpeg_core::CodecError::from)? {
                 face.color = Some(child.array::<4>()?);
             }
         }
@@ -2480,7 +2499,7 @@ fn read_mesh_sides(
         let mut result =
             ctx.collect_indexed_vec(face_count, "Rhino Brep mesh cache slots", |_| Ok(None))?;
         let mut children = Vec::new();
-        for slot in &mut result {
+        for slot in ctx.admit_iter(&mut result[..], "Rhino Brep mesh-side traversal").map_err(cadmpeg_core::CodecError::from)? {
             let present = child.bool()?;
             let mesh = if present {
                 let start = child.position();
@@ -2704,6 +2723,7 @@ fn read_region_sides<'a>(
         .collection_vec(count, "Rhino Brep region side ranges")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino brep read_region_sides records")?;
         let (body, source) = region_element(ctx, bytes, &mut child, archive, ON_BREP_FACE_SIDE)?;
         children.push(source.clone());
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
@@ -2736,6 +2756,7 @@ fn read_region_records<'a>(
         .map_err(crate::curves::GeometryError::from)?;
     let mut index_mismatch = false;
     for position in 0..count {
+        ctx.charge_work(1, "Rhino brep read_region_records records")?;
         let (body, source) = region_element(ctx, bytes, &mut child, archive, ON_BREP_REGION)?;
         children.push(source.clone());
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
@@ -3058,6 +3079,7 @@ fn indexes(
         .collection_vec(count, "Rhino Brep indexes")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino brep indexes records")?;
         result.push(reader.i32()?);
     }
     Ok(result)

@@ -160,6 +160,7 @@ fn captive_ids(
         .collection_vec(count, "Rhino morph captive IDs")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino morph captive_ids records")?;
         values.push(uuid(&mut ids)?);
     }
     ids.skip_remaining()?;
@@ -483,6 +484,7 @@ fn localizers(
         .collection_vec(localizer_count, "Rhino morph localizers")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..localizer_count {
+        ctx.charge_work(1, "Rhino morph localizers records")?;
         localizers.push(localizer(ctx, data, &mut list, scale, archive)?);
     }
     list.skip_remaining()?;

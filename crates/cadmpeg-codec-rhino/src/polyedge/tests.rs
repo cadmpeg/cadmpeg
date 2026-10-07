@@ -50,6 +50,33 @@ fn semantic_json_preserves_bytes_and_refuses_retained_limit() {
     ));
 }
 
+#[test]
+fn semantic_json_array_and_utf8_admission_preserves_work_refusals() {
+    let payload = polyedge_payload();
+    for operation in ["Rhino polyedge semantic parameters", "Rhino polyedge semantic segments", "Rhino polyedge semantic UTF-8"] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits, operation,
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+                let decoded = decode(crate::mesh::MeshExpand::new(&ctx, root), 0..payload.len(), ArchiveVersion::V8)
+                    .map_err(|error| match error {
+                        crate::chunks::FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
+                        other => cadmpeg_core::CodecError::malformed(other),
+                    })?;
+                let result = super::semantic_json(&ctx, &decoded);
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation));
+    }
+}
+
 fn polyedge_payload_with_domains(edge_domain: [f64; 2], trim_domain: [f64; 2]) -> Vec<u8> {
     let mut segment = 1_i32.to_le_bytes().to_vec();
     segment.extend(0_i32.to_le_bytes());
@@ -124,32 +151,35 @@ fn decodes_persistent_polyedge_segment_construction() {
     assert_eq!(decoded.segments[0].proxy_domain, [2.0, 6.0]);
 }
 
-fn polyedge_collection_refusal(limit: u64, operation: &str) {
+fn polyedge_collection_refusal(operation: &str) {
     let payload = polyedge_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-            .expect("root bytes admitted");
-    let expand = crate::mesh::MeshExpand::new(&ctx, root);
-    let error = decode(expand, 0..payload.len(), ArchiveVersion::V8)
-        .expect_err("polyedge allocation exceeds collection limit");
-    assert!(matches!(
-        error,
-        crate::chunks::FramingError::Resource(ref refusal)
-            if refusal.operation == operation
-    ));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("root bytes admitted");
+            decode(crate::mesh::MeshExpand::new(&ctx, root), 0..payload.len(), ArchiveVersion::V8)
+                .map_err(|error| match error {
+                    crate::chunks::FramingError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
+                    other => cadmpeg_core::CodecError::malformed(other),
+                })
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal) if refusal.operation == operation));
 }
 
 #[test]
 fn polyedge_parameters_refuse_collection_limit() {
-    polyedge_collection_refusal(1, "Rhino polyedge parameters");
+    polyedge_collection_refusal("Rhino polyedge parameters");
 }
 
 #[test]
 fn polyedge_segments_refuse_collection_limit() {
-    polyedge_collection_refusal(2, "Rhino polyedge segments");
+    polyedge_collection_refusal("Rhino polyedge segments");
 }
 
 #[test]

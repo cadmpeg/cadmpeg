@@ -72,7 +72,9 @@ fn raw_knot_reconstruction_preserves_work_across_successive_calls() {
 #[test]
 fn periodic_knot_scans_preserve_first_and_later_caller_refusals() {
     for checked in [false, true] {
-        let visits = if checked { 9 } else { 16 };
+        // Seven scale visits plus two comparisons. Raw knots also need one
+        // end probe for the combined finite-value and scale search.
+        let visits = if checked { 9 } else { 10 };
         for cap in 0..visits {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -89,12 +91,11 @@ fn periodic_knot_scans_preserve_first_and_later_caller_refusals() {
                 panic!("every visited knot and interval needs admission");
             };
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.used, cap);
-            assert_eq!(limit.additional, 1);
-            let operation = if cap < 7 {
+            // The checked lane admits all seven source items before reading.
+            assert_eq!(limit.used, if checked && cap < 7 { 0 } else { cap });
+            assert_eq!(limit.additional, if checked && cap < 7 { 7 } else { 1 });
+            let operation = if cap < if checked { 7 } else { 8 } {
                 "Rhino periodic knot scale"
-            } else if !checked && cap < 14 {
-                "Rhino periodic knot finiteness"
             } else {
                 "Rhino periodic knot comparison"
             };

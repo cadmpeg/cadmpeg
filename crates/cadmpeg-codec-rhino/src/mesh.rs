@@ -638,12 +638,12 @@ pub(crate) fn decode(
         Ok(())
     };
     if let Some(double_vertices) = double_vertices {
-        for point in double_vertices {
+        for point in expand.ctx.admit_iter(double_vertices, "Rhino double mesh vertex scaling").map_err(CodecError::from)? {
             let point = point.get();
             append([point.x, point.y, point.z])?;
         }
     } else {
-        for point in decoded.vertices {
+        for point in expand.ctx.admit_iter(decoded.vertices, "Rhino float mesh vertex scaling").map_err(CodecError::from)? {
             append(point.map(|value| f64::from(value.get())))?;
         }
     }
@@ -811,6 +811,7 @@ fn read_faces(
         .collection_vec(faces, "Rhino mesh faces")
         .map_err(crate::curves::GeometryError::from)?;
     for face in 0..faces {
+        ctx.charge_work(1, "Rhino mesh read_faces records")?;
         let mut indices = [0_u32; 4];
         for (slot, index) in indices.iter_mut().enumerate() {
             let offset = (face * 4 + slot) * width.bytes();
@@ -1336,21 +1337,19 @@ fn read_ngons(
         ));
     }
     let count = checked_u32(&mut child, 1 << 20)?;
-    ctx.charge_work(u64_from_index(count), "Rhino current mesh ngon records")?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino current mesh ngon records")?;
         let boundary = checked_u32(&mut child, vertices)?;
         if boundary == 0 {
             continue;
         }
         let face_count = checked_u32(&mut child, faces)?;
-        let indices = boundary.checked_add(face_count).ok_or_else(|| {
-            ctx.refuse_codec_limit("Rhino current mesh ngon indices", u64::MAX, u64::MAX)
-        })?;
-        ctx.charge_work(u64_from_index(indices), "Rhino current mesh ngon indices")?;
         for _ in 0..boundary {
+            ctx.charge_work(1, "Rhino current mesh ngon indices")?;
             checked_u32(&mut child, vertices)?;
         }
         for _ in 0..face_count {
+            ctx.charge_work(1, "Rhino current mesh ngon indices")?;
             checked_u32(&mut child, faces)?;
         }
     }
@@ -1553,6 +1552,7 @@ fn read_v5_double_vertices(
         .collection_vec(array_count, "Rhino V5 mesh double vertex values")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..array_count {
+        ctx.charge_work(1, "Rhino mesh read_v5_double_vertices records")?;
         values.push([reader.f64()?, reader.f64()?, reader.f64()?]);
     }
     reader.skip_remaining()?;
@@ -1625,7 +1625,6 @@ fn read_v4v5_ngon_userdata(
         .ok()
         .filter(|count| *count <= MAX_MESH_NGONS)
         .ok_or_else(|| error(reader.position() - 4, "mesh n-gon count exceeds cap"))?;
-    ctx.charge_work(u64_from_index(count), "Rhino V4V5 mesh ngon records")?;
     let mesh_face_count = i32::try_from(face_count)
         .map_err(|_| error(reader.position(), "mesh face count exceeds i32"))?;
     let mesh_vertex_count = i32::try_from(vertex_count)
@@ -1633,6 +1632,7 @@ fn read_v4v5_ngon_userdata(
     let mut record_count = 0;
     let mut valid_indices = true;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino V4V5 mesh ngon records")?;
         let raw_corner_count = reader.i32()?;
         if raw_corner_count <= 0 {
             continue;
@@ -1646,18 +1646,14 @@ fn read_v4v5_ngon_userdata(
         else {
             return Ok(None);
         };
-        ctx.charge_work(
-            u64_from_index(corner_count)
-                .checked_mul(2)
-                .ok_or_else(|| error(reader.position(), "mesh n-gon work count overflow"))?,
-            "Rhino V4V5 mesh ngon indices",
-        )?;
         for _ in 0..corner_count {
+            ctx.charge_work(1, "Rhino V4V5 mesh ngon indices")?;
             let vertex = reader.i32()?;
             valid_indices &= vertex >= 0 && vertex < mesh_vertex_count;
         }
         let mut unused_faces = false;
         for _ in 0..corner_count {
+            ctx.charge_work(1, "Rhino V4V5 mesh ngon indices")?;
             let face = reader.i32()?;
             if face == -1 {
                 unused_faces = true;
@@ -1709,6 +1705,7 @@ fn parse_f32_points(
         .collection_vec(count, "Rhino mesh f32 points")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino mesh parse_f32_points records")?;
         let point = [view.f32_le(), view.f32_le(), view.f32_le()];
         let [Some(x), Some(y), Some(z)] = point else {
             return Err(GeometryError::unpositioned(
@@ -1735,8 +1732,7 @@ fn parse_f32_vectors(
         .collection_vec(points.len(), "Rhino mesh f32 normals")
         .map_err(crate::curves::GeometryError::from)?;
     vectors.extend(
-        points
-            .into_iter()
+        ctx.admit_iter(points, "Rhino mesh normal projection").map_err(CodecError::from)?
             .map(|p| FiniteVector3::from_components(p[0].into(), p[1].into(), p[2].into())),
     );
     Ok(vectors)
@@ -1754,6 +1750,7 @@ fn parse_f64_points(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<[f64; 3
         .collection_vec(count, "Rhino mesh f64 points")
         .map_err(crate::curves::GeometryError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino mesh parse_f64_points records")?;
         let point = [view.f64_le(), view.f64_le(), view.f64_le()];
         let [Some(x), Some(y), Some(z)] = point else {
             return Err(GeometryError::unpositioned(
