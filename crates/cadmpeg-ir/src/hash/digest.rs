@@ -61,7 +61,9 @@ impl Sha256Digest {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
+        let mut text = ctx.retained_string(64, operation)?;
+        text.push_str(self.as_str());
+        Ok(Self(text))
     }
 
     /// Borrow the canonical hexadecimal spelling.
@@ -169,6 +171,19 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 3)
         );
+    }
+
+    #[test]
+    fn completed_digest_encoding_has_no_input_sized_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let digest = Sha256Digest::from_bytes_for_decode(&ctx, [0x5a; 32], "completed hash").unwrap();
+        assert_eq!(digest, Sha256Digest::from_bytes([0x5a; 32]));
+        assert_eq!(digest.try_clone_for_decode(&ctx, "completed hash clone").unwrap(), digest);
+        ctx.finish_session().unwrap();
     }
 
     #[cfg(feature = "schema")]

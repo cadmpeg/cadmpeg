@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
+use crate::index::{DecodeStorage, IndexStorage, PublicStorage};
 use cadmpeg_core::CodecError;
 
 use super::{ArenaName, CensusKey};
@@ -13,7 +14,8 @@ use crate::native::view::NativeView;
 
 pub(crate) trait CensusStorage {
     type Error;
-    fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error>;
+    fn admit_iter<'values, T>(&self, values: &'values [T], operation: &'static str) -> Result<impl Iterator<Item = &'values T>, Self::Error>;
+    fn native_counts(&self, view: NativeView<'_>, counts: &mut BTreeMap<CensusKey, usize>) -> Result<(), Self::Error>;
     fn native_key(&self, format: &str, arena: &str) -> Result<CensusKey, Self::Error>;
     fn insert(
         &self,
@@ -28,8 +30,11 @@ pub(crate) struct StandardStorage;
 
 impl CensusStorage for StandardStorage {
     type Error = Infallible;
-    fn work(&self, _count: usize, _operation: &'static str) -> Result<(), Self::Error> {
-        Ok(())
+    fn admit_iter<'values, T>(&self, values: &'values [T], _operation: &'static str) -> Result<impl Iterator<Item = &'values T>, Self::Error> {
+        Ok(values.iter())
+    }
+    fn native_counts(&self, view: NativeView<'_>, counts: &mut BTreeMap<CensusKey, usize>) -> Result<(), Self::Error> {
+        count_native(self, view, counts, &PublicStorage)
     }
     fn native_key(&self, format: &str, arena: &str) -> Result<CensusKey, Self::Error> {
         Ok(CensusKey::native(format, arena))
@@ -48,8 +53,11 @@ impl CensusStorage for StandardStorage {
 
 impl CensusStorage for DecodeContext<'_> {
     type Error = CodecError;
-    fn work(&self, count: usize, operation: &'static str) -> Result<(), Self::Error> {
-        self.charge_work(u64_from_index(count), operation)
+    fn admit_iter<'values, T>(&self, values: &'values [T], operation: &'static str) -> Result<impl Iterator<Item = &'values T>, Self::Error> {
+        Ok(DecodeContext::admit_iter(self, values, operation)?)
+    }
+    fn native_counts(&self, view: NativeView<'_>, counts: &mut BTreeMap<CensusKey, usize>) -> Result<(), Self::Error> {
+        count_native(self, view, counts, &DecodeStorage(self))
     }
     fn native_key(&self, format: &str, arena: &str) -> Result<CensusKey, Self::Error> {
         self.format_retained(
@@ -65,10 +73,21 @@ impl CensusStorage for DecodeContext<'_> {
         count: usize,
         operation: &'static str,
     ) -> Result<(), Self::Error> {
-        self.charge_work(1, operation)?;
         self.insert_btree_map(counts, key, count, operation)?;
         Ok(())
     }
+}
+
+fn count_native<S: CensusStorage, I: IndexStorage>(
+    storage: &S, view: NativeView<'_>, counts: &mut BTreeMap<CensusKey, usize>, index: &I,
+) -> Result<(), S::Error> where S::Error: From<I::Error> {
+    view.visit(index, "validation native census scan", |format, arena, records| {
+        if records.len() != 0 {
+            let key = storage.native_key(format, arena)?;
+            storage.insert(counts, key, records.len(), "validation native census slots")?;
+        }
+        Ok(())
+    })
 }
 
 macro_rules! define_census {
@@ -77,17 +96,10 @@ macro_rules! define_census {
         pub(crate) fn count<S: CensusStorage>(storage: &S, view: NativeView<'_>) -> Result<BTreeMap<CensusKey, usize>, S::Error> {
             let mut counts = BTreeMap::new();
             $(storage.insert(&mut counts, CensusKey::model(ArenaName::registered(stringify!($field))), view.ir.model.$field.len(), "validation model census slots")?;)*
-            storage.work(view.ir.model.surfaces.len(), "validation surface census scan")?;
-            let unknown_surfaces = view.ir.model.surfaces.iter().filter(|surface| matches!(surface.geometry,
+            let unknown_surfaces = storage.admit_iter(&view.ir.model.surfaces, "validation surface census scan")?.filter(|surface| matches!(surface.geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }))).count();
             storage.insert(&mut counts, CensusKey::surfaces_unknown_geometry(), unknown_surfaces, "validation surface census slot")?;
-            view.visit(|work| storage.work(work, "validation native census scan"), |format, arena, records| {
-                if records.len() != 0 {
-                    let key = storage.native_key(format, arena)?;
-                    storage.insert(&mut counts, key, records.len(), "validation native census slots")?;
-                }
-                Ok(())
-            })?;
+            storage.native_counts(view, &mut counts)?;
             Ok(counts)
         }
     };
