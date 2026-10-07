@@ -17,7 +17,12 @@ fn offset_store_identity<'a>(
     let Some(data_block) = data_block.strip_prefix("nx:om-data-blocks-") else {
         return Ok(None);
     };
-    Ok(ctx.split_once(data_block, ":block#", "NX body selection offset store parsing")?
+    Ok(ctx
+        .split_once(
+            data_block,
+            ":block#",
+            "NX body selection offset store parsing",
+        )?
         .map(|(store, _)| store))
 }
 
@@ -46,7 +51,7 @@ pub(super) fn local_body_selection(
         ctx.try_collect_retained_with(bodies.iter(), "NX local body selection members", |body| {
             ctx.copy_retained_text(body, "NX local body selection identity")
         })?;
-    let native_copy = ctx.copy_retained_text(&native, "NX feature projection text")?;
+    let native_copy = ctx.copy_retained_text(&native, "NX local body selection text")?;
     Ok(BodySelection::local(bodies, native_copy, ctx)?.unwrap_or(BodySelection::Native(native)))
 }
 
@@ -126,18 +131,50 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     let mut indices = object_indices.iter();
     while let Some(index) = ctx.next_charged(&mut indices, "NX body selection object indices")? {
         match (
-            ctx.get_btree_map(body_alias_roots, index, "NX body selection alias root lookup")?,
-            ctx.get_btree_map(offset_store_body_blocks, index, "NX body selection offset block lookup")?,
+            ctx.get_btree_map(
+                body_alias_roots,
+                index,
+                "NX body selection alias root lookup",
+            )?,
+            ctx.get_btree_map(
+                offset_store_body_blocks,
+                index,
+                "NX body selection offset block lookup",
+            )?,
         ) {
             (_, Some(data_block)) => {
-                if !ctx.any_by(&offset_blocks, |block| ctx.equal_bytes(block.as_bytes(), data_block.as_bytes(), "NX body selection offset block equality"), "NX body selection offset block uniqueness")? {
-                    ctx.reserve_scoped_vec(&mut reservation, &mut offset_blocks, 1, "NX feature body offset blocks")?;
+                if !ctx.any_by(
+                    &offset_blocks,
+                    |block| {
+                        ctx.equal_bytes(
+                            block.as_bytes(),
+                            data_block.as_bytes(),
+                            "NX body selection offset block equality",
+                        )
+                    },
+                    "NX body selection offset block uniqueness",
+                )? {
+                    ctx.reserve_scoped_vec(
+                        &mut reservation,
+                        &mut offset_blocks,
+                        1,
+                        "NX feature body offset blocks",
+                    )?;
                     offset_blocks.push(data_block);
                 }
             }
             (Some(root), None) => {
-                if !ctx.any_by(&roots, |candidate| Ok(candidate == root), "NX feature body root uniqueness")? {
-                    ctx.reserve_scoped_vec(&mut reservation, &mut roots, 1, "NX feature body roots")?;
+                if !ctx.any_by(
+                    &roots,
+                    |candidate| Ok(candidate == root),
+                    "NX feature body root uniqueness",
+                )? {
+                    ctx.reserve_scoped_vec(
+                        &mut reservation,
+                        &mut roots,
+                        1,
+                        "NX feature body roots",
+                    )?;
                     roots.push(*root);
                 }
             }
@@ -158,7 +195,11 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
                 |block| {
                     let candidate = offset_store_identity(ctx, block)?;
                     Ok(!match (candidate, offset_store) {
-                        (Some(left), Some(right)) => ctx.equal_bytes(left.as_bytes(), right.as_bytes(), "NX body selection offset store identity")?,
+                        (Some(left), Some(right)) => ctx.equal_bytes(
+                            left.as_bytes(),
+                            right.as_bytes(),
+                            "NX body selection offset store identity",
+                        )?,
                         (None, None) => true,
                         _ => false,
                     })
@@ -200,11 +241,28 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     let mut all_resolved = true;
     let mut root_iter = roots.iter();
     while let Some(root) = ctx.next_charged(&mut root_iter, "NX body selection resolved roots")? {
-        let Some([body]) = ctx.get_btree_map(bodies_by_object_index, root, "NX body selection resolved body lookup")?.map(Vec::as_slice) else {
+        let Some([body]) = ctx
+            .get_btree_map(
+                bodies_by_object_index,
+                root,
+                "NX body selection resolved body lookup",
+            )?
+            .map(Vec::as_slice)
+        else {
             all_resolved = false;
             break;
         };
-        if ctx.any_by(&resolved, |candidate: &BodyId| ctx.equal_bytes(candidate.as_str().as_bytes(), body.as_str().as_bytes(), "NX body selection resolved identity equality"), "NX feature body resolved uniqueness")? {
+        if ctx.any_by(
+            &resolved,
+            |candidate: &BodyId| {
+                ctx.equal_bytes(
+                    candidate.as_str().as_bytes(),
+                    body.as_str().as_bytes(),
+                    "NX body selection resolved identity equality",
+                )
+            },
+            "NX feature body resolved uniqueness",
+        )? {
             all_resolved = false;
             break;
         }
@@ -254,7 +312,7 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
         bodies.push(ctx.format_scoped_text(
             &mut reservation,
             format_args!("nx:om-body-object#{root}"),
-            "NX body selection text",
+            "NX feature body selection with offset blocks text",
         )?);
         identity_keys.push(FeatureBodyIdentity::Segment(root));
     }
@@ -279,8 +337,15 @@ pub(super) fn feature_body_set_selection(
     let mut roots = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX feature body set")?;
     for index in ctx.admit_iter(object_indices, "NX body selection object indices")? {
-        let root = ctx.get_btree_map(body_alias_roots, index, "NX body set alias root lookup")?.copied().unwrap_or(*index);
-        if !ctx.any_by(&roots, |candidate| Ok(*candidate == root), "NX feature body set roots")? {
+        let root = ctx
+            .get_btree_map(body_alias_roots, index, "NX body set alias root lookup")?
+            .copied()
+            .unwrap_or(*index);
+        if !ctx.any_by(
+            &roots,
+            |candidate| Ok(*candidate == root),
+            "NX feature body set roots",
+        )? {
             ctx.reserve_scoped_vec(&mut reservation, &mut roots, 1, "NX feature body set roots")?;
             roots.push(root);
         }
@@ -289,11 +354,28 @@ pub(super) fn feature_body_set_selection(
     let mut all_resolved = true;
     let mut root_iter = roots.iter();
     while let Some(root) = ctx.next_charged(&mut root_iter, "NX body selection resolved roots")? {
-        let Some([body]) = ctx.get_btree_map(bodies_by_object_index, root, "NX body selection resolved body lookup")?.map(Vec::as_slice) else {
+        let Some([body]) = ctx
+            .get_btree_map(
+                bodies_by_object_index,
+                root,
+                "NX body selection resolved body lookup",
+            )?
+            .map(Vec::as_slice)
+        else {
             all_resolved = false;
             break;
         };
-        if ctx.any_by(&resolved, |candidate: &BodyId| ctx.equal_bytes(candidate.as_str().as_bytes(), body.as_str().as_bytes(), "NX body selection resolved identity equality"), "NX feature body set uniqueness")? {
+        if ctx.any_by(
+            &resolved,
+            |candidate: &BodyId| {
+                ctx.equal_bytes(
+                    candidate.as_str().as_bytes(),
+                    body.as_str().as_bytes(),
+                    "NX body selection resolved identity equality",
+                )
+            },
+            "NX feature body set uniqueness",
+        )? {
             all_resolved = false;
             break;
         }
@@ -329,7 +411,7 @@ pub(super) fn feature_body_set_selection(
         bodies.push(ctx.format_scoped_text(
             &mut reservation,
             format_args!("nx:om-body-object#{root}"),
-            "NX body selection text",
+            "NX feature body set selection text",
         )?);
     }
     FeatureBodySelection::Local {
@@ -372,8 +454,15 @@ pub(super) fn atomic_disjoint_body_selections(
                     (
                         FeatureBodyIdentity::OffsetStore(left),
                         FeatureBodyIdentity::OffsetStore(right),
-                    ) => match (offset_store_identity(ctx, left)?, offset_store_identity(ctx, right)?) {
-                        (Some(left), Some(right)) => ctx.equal_bytes(left.as_bytes(), right.as_bytes(), "NX atomic disjoint body selections equality")?,
+                    ) => match (
+                        offset_store_identity(ctx, left)?,
+                        offset_store_identity(ctx, right)?,
+                    ) {
+                        (Some(left), Some(right)) => ctx.equal_bytes(
+                            left.as_bytes(),
+                            right.as_bytes(),
+                            "NX atomic disjoint body selections equality",
+                        )?,
                         (None, None) => true,
                         _ => false,
                     },
@@ -381,11 +470,31 @@ pub(super) fn atomic_disjoint_body_selections(
                 },
             };
             same_namespace
-                && !ctx.any_by(left, |key| ctx.any_by(right, |candidate| match (key, candidate) {
-                    (FeatureBodyIdentity::Segment(left), FeatureBodyIdentity::Segment(right)) => Ok(left == right),
-                    (FeatureBodyIdentity::OffsetStore(left), FeatureBodyIdentity::OffsetStore(right)) => ctx.equal_bytes(left.as_bytes(), right.as_bytes(), "NX body selection disjoint identity equality"),
-                    _ => Ok(false),
-                }, "NX body selection right disjointness"), "NX body selection disjointness")?
+                && !ctx.any_by(
+                    left,
+                    |key| {
+                        ctx.any_by(
+                            right,
+                            |candidate| match (key, candidate) {
+                                (
+                                    FeatureBodyIdentity::Segment(left),
+                                    FeatureBodyIdentity::Segment(right),
+                                ) => Ok(left == right),
+                                (
+                                    FeatureBodyIdentity::OffsetStore(left),
+                                    FeatureBodyIdentity::OffsetStore(right),
+                                ) => ctx.equal_bytes(
+                                    left.as_bytes(),
+                                    right.as_bytes(),
+                                    "NX body selection disjoint identity equality",
+                                ),
+                                _ => Ok(false),
+                            },
+                            "NX body selection right disjointness",
+                        )
+                    },
+                    "NX body selection disjointness",
+                )?
         }
         _ => false,
     };
@@ -415,7 +524,11 @@ pub(super) fn boolean_participant_writer<'a>(
     );
     if offset_store_selection {
         let block = match offset_store_body_blocks {
-            Some(blocks) => ctx.get_btree_map(blocks, &object_index, "NX Boolean participant offset block lookup")?,
+            Some(blocks) => ctx.get_btree_map(
+                blocks,
+                &object_index,
+                "NX Boolean participant offset block lookup",
+            )?,
             None => None,
         };
         return match block {
@@ -425,9 +538,13 @@ pub(super) fn boolean_participant_writer<'a>(
     }
     history.native_writer(
         ctx,
-        ctx.get_btree_map(body_alias_roots, &object_index, "NX Boolean participant alias root lookup")?
-            .copied()
-            .unwrap_or(object_index),
+        ctx.get_btree_map(
+            body_alias_roots,
+            &object_index,
+            "NX Boolean participant alias root lookup",
+        )?
+        .copied()
+        .unwrap_or(object_index),
     )
 }
 

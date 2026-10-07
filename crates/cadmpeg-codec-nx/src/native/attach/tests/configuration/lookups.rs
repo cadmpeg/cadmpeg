@@ -112,7 +112,7 @@ fn hole_output_relation_membership_refusal_propagates() {
     let operations = [operation.clone()];
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "NX admitted map membership",
+        "NX hole operations by body outputs membership",
         |cap| {
             crate::test_support::with_decode_context_over(
                 &[],
@@ -135,7 +135,7 @@ fn hole_output_relation_membership_refusal_propagates() {
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-        && limit.operation == "NX admitted map membership"));
+        && limit.operation == "NX hole operations by body outputs membership"));
 }
 
 #[test]
