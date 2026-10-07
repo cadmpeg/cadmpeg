@@ -99,9 +99,9 @@ fn sectioned_area_pattern_plane(
     Some((point, normal))
 }
 
-fn sectioned_area_curves_coplanar<'ir, 'ctx>(
+fn sectioned_area_curve_coplanar<'ir, 'ctx>(
     (ir, cached_index): (&'ir CadIr, &mut Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'ir>>),
-    sequences: impl Iterator<Item = u32>,
+    sequence: u32,
     pattern_plane: (Point3, Vector3),
     resolution: f64,
     ctx: &'ctx DecodeContext<'_>,
@@ -112,33 +112,25 @@ fn sectioned_area_curves_coplanar<'ir, 'ctx>(
     if cached_index.is_none() { *cached_index = Some(ModelIndex::new_model_only(ir, ctx)?); }
     let Some(index) = cached_index.as_ref() else { return Ok(false); };
     let identity = Transform::identity();
-    let mut sequences = sequences;
-    while let Some(sequence) = ctx.next_charged(&mut sequences, "iges section boundary traversal")? {
-        let mut active_storage = ctx.reserve_scoped(0, "iges section curve scratch")?;
-        let mut active = BTreeSet::new();
-        let curve_id = active_storage.with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx))?;
-        let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
-            return Ok(false);
-        };
-        let Some(geometry) = curve.geometry.solved() else {
-            return Ok(false);
-        };
-        active_storage.with_storage(|| ctx.insert_btree_set(&mut active, curve_id, "iges section active curves"))?;
-        let valid = active_storage.with_storage(|| curve_geometry_coplanar(
-            geometry,
-            index,
-            identity,
-            pattern_plane,
-            resolution,
-            &mut active,
-            ctx,
-        ))?;
-
-        if !valid {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    let mut active_storage = ctx.reserve_scoped(0, "iges section curve scratch")?;
+    let mut active = BTreeSet::new();
+    let curve_id = active_storage.with_storage(|| crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx))?;
+    let Some(curve) = index.curves(curve_id.as_str(), ctx)? else {
+        return Ok(false);
+    };
+    let Some(geometry) = curve.geometry.solved() else {
+        return Ok(false);
+    };
+    active_storage.with_storage(|| ctx.insert_btree_set(&mut active, curve_id, "iges section active curves"))?;
+    active_storage.with_storage(|| curve_geometry_coplanar(
+        geometry,
+        index,
+        identity,
+        pattern_plane,
+        resolution,
+        &mut active,
+        ctx,
+    ))
 }
 
 /// Maps a directory entry's type and form to its annotation kind, or `None`
@@ -936,9 +928,21 @@ fn sectioned_area_valid<'ir, 'ctx>(
     let coplanarity_valid = if matches!(global_table, GlobalTable::V4_0) {
         true
     } else if let Some(pattern_plane) = sectioned_area_pattern_plane(record, transform, length_factor) {
-        let definition_sequences = boundary_sequence.into_iter().flatten()
-            .chain(ctx.admit_iter(0..island_count, "iges section island reference traversal")?.filter_map(|offset| pointer(record, 9 + offset, entries)));
-        sectioned_area_curves_coplanar((ir, cached_index), definition_sequences, pattern_plane, resolution, ctx)?
+        let boundary_coplanar = match boundary_sequence {
+            Some(Some(sequence)) => sectioned_area_curve_coplanar(
+                (ir, cached_index), sequence, pattern_plane, resolution, ctx,
+            )?,
+            Some(None) => true,
+            None => false,
+        };
+        boundary_coplanar && ctx.all_by(0..island_count, |offset| {
+            let Some(sequence) = pointer(record, 9 + offset, entries) else {
+                return Ok(false);
+            };
+            sectioned_area_curve_coplanar(
+                (ir, cached_index), sequence, pattern_plane, resolution, ctx,
+            )
+        }, "iges section island reference traversal")?
     } else { false };
     let pattern = record
         .integer(2)

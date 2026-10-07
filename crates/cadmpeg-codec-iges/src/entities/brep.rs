@@ -284,13 +284,9 @@ fn surface_point_or_refusal(
     finite_or_refusal(evaluation).map_err(|limit| CodecError::from(limit).into())
 }
 
-// Validation hands back the resolved pcurve geometry instead of a verdict:
-// projection needs exactly what was just computed, from the same unmutated
-// `ir` with the same arguments, so returning it keeps each pcurve resolved
-// once instead of twice. The per-use interleave in the loop body is
-// load-bearing — `pcurve_geometry` can fuse the decode budget, so a later
-// use's geometry must not be resolved once an earlier use's evaluation has
-// already failed.
+// The resolved vector carries each pcurve and range into projection.
+// Resolve and evaluate each use before advancing to the next: either step
+// can refuse or invalidate the use. Both read the same immutable source.
 /// One resolved pcurve use: its geometry and the parameter range it covers.
 type ResolvedPcurveUses = Vec<(PcurveGeometry, [f64; 2])>;
 
@@ -335,7 +331,8 @@ fn resolve_pcurve_uses<'a>(
     };
     let mut resolved = ctx.collection_vec(uses.len(), "iges B-rep resolved pcurves")?;
     let (mut mapped, _mapped_storage) = ctx.temporary_vec(uses.len(), "iges B-rep mapped pcurves")?;
-    for (_, sequence) in ctx.admit_iter(uses, "iges B-rep pcurve resolution traversal")? {
+    let mut use_sequences = uses.iter();
+    while let Some((_, sequence)) = ctx.next_charged(&mut use_sequences, "iges B-rep pcurve resolution traversal")? {
         let Some((geometry, range)) = pcurve_geometry(
             source,
             *sequence,
@@ -394,6 +391,8 @@ pub(super) fn project(
     let factor = global.length_factor_mm();
     let tolerance = global.minimum_resolution_mm();
     let mut definition_storage = ctx.reserve_scoped(0, "iges B-rep definitions")?;
+    // Successful record reservations live as long as the definition tables.
+    let mut definition_reservations = Vec::new();
     let mut vertex_lists = BTreeMap::<u32, Vec<Point3>>::new();
     let mut edge_lists = BTreeMap::<u32, Vec<EdgeDefinition>>::new();
     let mut loops = BTreeMap::<u32, Vec<LoopUse>>::new();
@@ -429,8 +428,10 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut points = definition_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep vertex-list points"))?;
-        for index in ctx.admit_iter(0..count, "iges B-rep definition tuples")? {
+        let mut record_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+        let mut points = record_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep vertex-list points"))?;
+        let mut tuples = 0..count;
+        while let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
             let start = 2 + index * 3;
             let values = [
                 record.number(start),
@@ -462,6 +463,8 @@ pub(super) fn project(
             points,
             "iges B-rep vertex-list nodes",
         ))?;
+        definition_storage.with_storage(|| ctx.reserve_vec(&mut definition_reservations, 1, "iges B-rep definition reservations"))?;
+        definition_reservations.push(record_storage);
     }
 
     for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
@@ -494,8 +497,10 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut edges = definition_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep edge-list edges"))?;
-        for item in ctx.admit_iter(0..count, "iges B-rep definition tuples")? {
+        let mut record_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+        let mut edges = record_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep edge-list edges"))?;
+        let mut tuples = 0..count;
+        while let Some(item) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
             let start = 2 + item * 5;
             let Some(edge) = pointer(record, start)
                 .zip(pointer(record, start + 1))
@@ -542,6 +547,8 @@ pub(super) fn project(
             edges,
             "iges B-rep edge-list nodes",
         ))?;
+        definition_storage.with_storage(|| ctx.reserve_vec(&mut definition_reservations, 1, "iges B-rep definition reservations"))?;
+        definition_reservations.push(record_storage);
     }
 
     for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
@@ -575,8 +582,10 @@ pub(super) fn project(
             continue;
         };
         let mut index = 2;
-        let mut uses = definition_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep loop uses"))?;
-        for _ in ctx.admit_iter(0..count, "iges B-rep definition tuples")? {
+        let mut record_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+        let mut uses = record_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep loop uses"))?;
+        let mut tuples = 0..count;
+        while ctx.next_charged(&mut tuples, "iges B-rep definition tuples")?.is_some() {
             let Some(use_type) = record.integer(index) else {
                 uses.clear();
                 break;
@@ -593,8 +602,9 @@ pub(super) fn project(
                 uses.clear();
                 break;
             };
-            let mut pcurves = definition_storage.with_storage(|| ctx.collection_vec(pcurve_count, "iges B-rep use pcurves"))?;
-            for pcurve_index in ctx.admit_iter(0..pcurve_count, "iges B-rep definition tuples")? {
+            let mut pcurves = record_storage.with_storage(|| ctx.collection_vec(pcurve_count, "iges B-rep use pcurves"))?;
+            let mut pcurve_tuples = 0..pcurve_count;
+            while let Some(pcurve_index) = ctx.next_charged(&mut pcurve_tuples, "iges B-rep definition tuples")? {
                 let isoparametric = match record.integer(index + 5 + pcurve_index * 2) {
                     Some(1) => true,
                     Some(0) => false,
@@ -675,6 +685,8 @@ pub(super) fn project(
             continue;
         }
         definition_storage.with_storage(|| ctx.insert_btree_map(&mut loops, entry.sequence, uses, "iges B-rep loop nodes"))?;
+        definition_storage.with_storage(|| ctx.reserve_vec(&mut definition_reservations, 1, "iges B-rep definition reservations"))?;
+        definition_reservations.push(record_storage);
     }
 
     for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
@@ -738,9 +750,11 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut rest = definition_storage.with_storage(|| ctx.collection_vec(count - 1, "iges B-rep face loop pointers"))?;
+        let mut record_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+        let mut rest = record_storage.with_storage(|| ctx.collection_vec(count - 1, "iges B-rep face loop pointers"))?;
         let mut valid_pointers = true;
-        for index in ctx.admit_iter(1..count, "iges B-rep definition tuples")? {
+        let mut tuples = 1..count;
+        while let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
             let Some(sequence) = pointer(record, 4 + index) else {
                 valid_pointers = false;
                 break;
@@ -783,6 +797,10 @@ pub(super) fn project(
             },
             "iges B-rep face nodes",
         ))?;
+        if count > 1 {
+            definition_storage.with_storage(|| ctx.reserve_vec(&mut definition_reservations, 1, "iges B-rep definition reservations"))?;
+            definition_reservations.push(record_storage);
+        }
     }
 
     let mut shell_definitions = BTreeMap::new();
@@ -816,8 +834,10 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut face_uses = definition_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep shell face uses"))?;
-        for index in ctx.admit_iter(0..count, "iges B-rep definition tuples")? {
+        let mut record_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+        let mut face_uses = record_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep shell face uses"))?;
+        let mut tuples = 0..count;
+        while let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
             let Some(face) = pointer(record, 2 + index * 2) else {
                 face_uses.clear();
                 break;
@@ -854,6 +874,8 @@ pub(super) fn project(
             },
             "iges B-rep shell nodes",
         ))?;
+        definition_storage.with_storage(|| ctx.reserve_vec(&mut definition_reservations, 1, "iges B-rep definition reservations"))?;
+        definition_reservations.push(record_storage);
     }
 
     let mut body_definitions = Vec::new();
@@ -920,10 +942,12 @@ pub(super) fn project(
         let shell_count = void_count.checked_add(1).ok_or_else(|| {
             cadmpeg_core::decode::refuse_local_limit("iges B-rep solid shell uses", u64::MAX, 1)
         })?;
-        let mut shell_uses = definition_storage.with_storage(|| ctx.collection_vec(shell_count, "iges B-rep solid shell uses"))?;
+        let mut record_storage = ctx.reserve_scoped(0, "iges B-rep definition record scratch")?;
+        let mut shell_uses = record_storage.with_storage(|| ctx.collection_vec(shell_count, "iges B-rep solid shell uses"))?;
         shell_uses.push((outer, outer_sense));
         let mut valid = true;
-        for index in ctx.admit_iter(0..void_count, "iges B-rep definition tuples")? {
+        let mut tuples = 0..void_count;
+        while let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? {
             let Some(shell) = pointer(record, 4 + index * 2) else {
                 valid = false;
                 break;
@@ -985,6 +1009,8 @@ pub(super) fn project(
             closed: true,
             transform,
         });
+        definition_storage.with_storage(|| ctx.reserve_vec(&mut definition_reservations, 1, "iges B-rep definition reservations"))?;
+        definition_reservations.push(record_storage);
     }
     for entry in ctx.admit_iter(directory, "iges B-rep directory traversal")?
         .filter(|entry| entry.entity_type == 514 && entry.form == 1)
@@ -1008,9 +1034,8 @@ pub(super) fn project(
     // The surface and curve arenas never change while bodies project: the
     // only writer is the per-body draft commit, which appends, and a
     // topology draft carries no surface or curve. One first-occurrence
-    // position map per arena therefore serves the whole call, replacing a
-    // linear scan per face. The emptiness guard keeps files without
-    // explicit B-rep from paying for either map.
+    // position map per arena therefore serves the whole call. The guard
+    // keeps files without explicit B-rep from paying for either map.
     let mut index_storage = ctx.reserve_scoped(0, "iges B-rep geometry indexes")?;
     let mut surface_positions = BTreeMap::<String, usize>::new();
     let mut curve_positions = BTreeMap::<String, usize>::new();
@@ -1064,7 +1089,8 @@ pub(super) fn project(
             ctx.collection_vec(definition.shells.len(), "iges B-rep region shell ids")?;
         let mut consumed = BTreeSet::new();
         let mut valid = true;
-        for (shell_sequence, shell_sense) in ctx.admit_iter(&definition.shells, "iges B-rep body shell traversal")?.copied() {
+        let mut shell_uses = definition.shells.iter();
+        while let Some(&(shell_sequence, shell_sense)) = ctx.next_charged(&mut shell_uses, "iges B-rep body shell traversal")? {
             let shell_definition = &shell_definitions[&shell_sequence];
             let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
                 std::borrow::Cow::Borrowed(&stem)
@@ -1074,7 +1100,8 @@ pub(super) fn project(
             let shell_id = crate::ids::shell_admitted(&shell_stem, ctx)?;
             let mut shell_faces =
                 ctx.collection_vec(shell_definition.faces.len(), "iges B-rep shell face ids")?;
-            for &(face_sequence, native_face_sense) in ctx.admit_iter(&shell_definition.faces, "iges B-rep shell face traversal")? {
+            let mut face_uses = shell_definition.faces.iter();
+            while let Some(&(face_sequence, native_face_sense)) = ctx.next_charged(&mut face_uses, "iges B-rep shell face traversal")? {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = &faces[&face_sequence];
                 let surface_id = crate::ids::surface_admitted(
@@ -1109,7 +1136,8 @@ pub(super) fn project(
                     let mut predecessor = coedge_ids.last();
                     let vertex_use_count = uses.len() - edge_use_count;
                     let (mut loop_vertex_uses, vertex_use_storage) = ctx.temporary_vec(vertex_use_count, "iges B-rep loop vertex uses")?;
-                    for (use_index, use_) in ctx.admit_iter(uses, "iges B-rep loop use traversal")?.enumerate() {
+                    let mut loop_uses = uses.iter().enumerate();
+                    while let Some((use_index, use_)) = ctx.next_charged(&mut loop_uses, "iges B-rep loop use traversal")? {
                         let LoopUse::Edge {
                             edge_list,
                             edge_index,
