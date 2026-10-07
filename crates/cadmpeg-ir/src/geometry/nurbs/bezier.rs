@@ -383,21 +383,37 @@ pub fn boundaries_within_resolution(
         // A control pair contributes when its indices sum to the product index.
         let end = index.min(degree);
         let start = index - end;
-        for (offset, first_control) in first[start..=end].iter().enumerate() {
-            ctx.charge_work_limit(1, "IR Bezier boundary control pair")?;
-            let first_index = start + offset;
-            let second_index = index - first_index;
-            let second_control = &second[second_index];
-            let coefficient = value!(binomial(degree, first_index)?)
-                * value!(binomial(degree, second_index)?)
-                / value!(binomial(product_degree, index)?);
-            if !coefficient.is_finite() {
-                return Ok(None);
-            }
-            for (axis, component) in cross.iter_mut().enumerate() {
-                component.add_factors([coefficient, first_control[axis], second_control[3]]);
-                component.add_factors([-coefficient, second_control[axis], first_control[3]]);
-            }
+        let mut pair_index = start;
+        if !ctx.all_by_limit(
+            &first[start..=end],
+            |first_control| {
+                let first_index = pair_index;
+                pair_index += 1;
+                let second_index = index - first_index;
+                let second_control = &second[second_index];
+                let Some(first_coefficient) = binomial(degree, first_index)? else {
+                    return Ok(false);
+                };
+                let Some(second_coefficient) = binomial(degree, second_index)? else {
+                    return Ok(false);
+                };
+                let product = first_coefficient * second_coefficient;
+                let Some(denominator) = binomial(product_degree, index)? else {
+                    return Ok(false);
+                };
+                let coefficient = product / denominator;
+                if !coefficient.is_finite() {
+                    return Ok(false);
+                }
+                for (axis, component) in cross.iter_mut().enumerate() {
+                    component.add_factors([coefficient, first_control[axis], second_control[3]]);
+                    component.add_factors([-coefficient, second_control[axis], first_control[3]]);
+                }
+                Ok(true)
+            },
+            "IR Bezier boundary control pair",
+        )? {
+            return Ok(None);
         }
         for component in cross {
             if let Some(value) = component.finish() {
