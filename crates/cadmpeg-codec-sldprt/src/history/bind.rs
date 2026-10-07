@@ -557,7 +557,7 @@ pub(crate) fn order_features_for_regeneration(
 
 /// The structural parents a tree node names for each child: the first and
 /// the last tree node, in feature order, listing it.
-fn tree_parents<'f>(
+pub(super) fn tree_parents<'f>(
     ctx: &DecodeContext<'_>,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     features: &'f [cadmpeg_ir::features::Feature],
