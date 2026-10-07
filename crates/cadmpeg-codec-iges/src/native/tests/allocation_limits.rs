@@ -297,18 +297,20 @@ fn native_display_definition_refuses_retained_limit() {
     let (directory, _) = crate::directory::parse(&scan, global.global_table(&parse_ctx).unwrap(), &parse_ctx).unwrap();
     let graph = crate::graph::build(&directory, &parse_ctx).unwrap();
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        super::super::resolve_display_ref(
-            &ctx, &graph, 1, -3, crate::graph::ReferenceKind::Color, "color"
-        ),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "iges native display definition"
-    ));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "iges native display definition", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::super::resolve_display_ref(
+                &ctx, &graph, 1, -3, crate::graph::ReferenceKind::Color, "color",
+            )
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "iges native display definition"));
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -959,7 +961,6 @@ fn native_occurrence_indexes_paths_and_copied_links_refuse_limits() {
     let bytes = nested_subfigure_file();
     for operation in [
         "iges contained occurrence instances",
-        "iges admitted occurrence definition nodes",
         "iges occurrence neutral link map nodes",
         "iges occurrence neutral link slots",
         "iges occurrence expansion path slots",
@@ -972,7 +973,6 @@ fn native_occurrence_indexes_paths_and_copied_links_refuse_limits() {
         assert_collection_refusal_at(&bytes, operation);
     }
     for operation in [
-        "iges occurrence neutral link id",
         "iges native occurrence id",
         "iges native occurrence member",
         "iges native occurrence instance",

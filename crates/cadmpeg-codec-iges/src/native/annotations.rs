@@ -231,8 +231,8 @@ impl Subject<'_, '_> {
         &self,
         count_index: usize,
         stride: usize,
-        overdeclared: &mut OverdeclaredCounts,
-    ) -> usize {
+        overdeclared: &mut OverdeclaredCounts<'_, '_>,
+    ) -> Result<usize, CodecError> {
         overdeclared.counted_tail(
             self.sequence,
             self.record,
@@ -247,8 +247,8 @@ impl Subject<'_, '_> {
         count_index: usize,
         item_start: usize,
         stride: usize,
-        overdeclared: &mut OverdeclaredCounts,
-    ) -> usize {
+        overdeclared: &mut OverdeclaredCounts<'_, '_>,
+    ) -> Result<usize, CodecError> {
         overdeclared.counted_tail_at(
             self.sequence,
             self.record,
@@ -335,9 +335,9 @@ impl Subject<'_, '_> {
         &self,
         count_index: usize,
         leader_start: usize,
-        overdeclared: &mut OverdeclaredCounts,
+        overdeclared: &mut OverdeclaredCounts<'_, '_>,
     ) -> Result<Vec<Option<String>>, CodecError> {
-        let count = self.counted_tail_at(count_index, leader_start, 1, overdeclared);
+        let count = self.counted_tail_at(count_index, leader_start, 1, overdeclared)?;
         self.ctx
             .collect_indexed_vec(count, "iges native annotation leader slots", |offset| {
                 self.leader_link(leader_start + offset)
@@ -473,10 +473,10 @@ impl Subject<'_, '_> {
 fn general_note(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let count = subject.counted_tail(1, 12, overdeclared);
+    let count = subject.counted_tail(1, 12, overdeclared)?;
     Ok(NativeAnnotation::GeneralNote {
         id: subject.id()?,
         source_entity: subject.source_entity()?,
@@ -494,10 +494,10 @@ fn general_note(
 fn new_general_note(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let count = subject.counted_tail(12, 20, overdeclared);
+    let count = subject.counted_tail(12, 20, overdeclared)?;
     Ok(NativeAnnotation::NewGeneralNote {
         id: subject.id()?,
         source_entity: subject.source_entity()?,
@@ -555,10 +555,10 @@ fn new_general_note(
 fn leader(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let count = subject.counted_tail_at(1, 7, 2, overdeclared);
+    let count = subject.counted_tail_at(1, 7, 2, overdeclared)?;
     let z = record.and_then(|record| record.number(4));
     Ok(NativeAnnotation::Leader {
         id: subject.id()?,
@@ -592,7 +592,7 @@ fn leader(
 fn flag_note(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let leaders = subject.leader_list(6, 7, overdeclared)?;
@@ -615,7 +615,7 @@ fn flag_note(
 fn general_label(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
     let leaders = subject.leader_list(2, 3, overdeclared)?;
@@ -683,10 +683,10 @@ fn general_symbol(
 fn sectioned_area(
     subject: &Subject<'_, '_>,
     transformation: Option<String>,
-    overdeclared: &mut OverdeclaredCounts,
+    overdeclared: &mut OverdeclaredCounts<'_, '_>,
 ) -> Result<NativeAnnotation, CodecError> {
     let record = subject.record;
-    let island_count = subject.counted_tail_at(8, 9, 1, overdeclared);
+    let island_count = subject.counted_tail_at(8, 9, 1, overdeclared)?;
     Ok(NativeAnnotation::SectionedArea {
         id: subject.id()?,
         source_entity: subject.source_entity()?,
@@ -715,7 +715,7 @@ pub(super) fn build(
     records: &[ParameterRecord],
     parameter_resolver: &ParameterResolver<'_, '_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
-    overdeclared_counts: &mut OverdeclaredCounts,
+    overdeclared_counts: &mut OverdeclaredCounts<'_, '_>,
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
