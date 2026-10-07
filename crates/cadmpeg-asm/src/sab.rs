@@ -830,30 +830,23 @@ mod tests {
                 .expect("binary header");
                 let boundary = bytes.len() - 13;
                 for with_header in [false, true] {
-                    let mut policy = *service.policy();
-                    // Both entry points rescan three tagged strings and three
-                    // tolerances before the first history-record probe.
-                    policy.limits.max_work_units = 6;
-                    let arena = DecodeArena::new();
-                    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                        .expect("source fits policy");
+                    let refusal = crate::test_support::resource_limit_at(&bytes,
+                        ResourceDimension::WorkUnits, "scan SAB history record", |ctx| {
                     let result = match (acis, with_header) {
-                        (false, false) => crate::asm_header::solved_record_limit(&ctx, &bytes),
+                        (false, false) => crate::asm_header::solved_record_limit(ctx, &bytes),
                         (false, true) => crate::asm_header::solved_record_limit_with_header(
-                            &ctx, &bytes, &header,
+                            ctx, &bytes, &header,
                         ),
-                        (true, false) => crate::acis_header::solved_record_limit(&ctx, &bytes),
+                        (true, false) => crate::acis_header::solved_record_limit(ctx, &bytes),
                         (true, true) => crate::acis_header::solved_record_limit_with_header(
-                            &ctx, &bytes, &header,
+                            ctx, &bytes, &header,
                         ),
                     };
-                    // The first record-loop admission refuses after the six
-                    // header-region slot probes and before any token is lexed.
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
-                        if limit.dimension == ResourceDimension::WorkUnits
-                            && limit.operation == "scan SAB history record"
-                            && limit.used == 6
-                            && limit.additional == 1));
+                        result
+                    });
+                    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(refusal.operation, "scan SAB history record");
+                    assert_eq!(refusal.additional, 1);
                 }
                 let result = if acis {
                     crate::acis_header::solved_record_limit_with_header(service, &bytes, &header)

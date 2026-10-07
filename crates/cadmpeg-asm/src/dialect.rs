@@ -65,7 +65,8 @@ pub fn classify(
             if let Some(key) =
                 cadmpeg_core::text::NonBlankString::for_decode(ctx, key, "validate nonblank text")?
             {
-                declared.insert(key, value.to_string());
+                let value = ctx.format_retained(format_args!("{value}"), "retain kernel dialect declarations")?;
+                ctx.insert_btree_map(&mut declared, key, value, "retain kernel dialect declarations")?;
             }
         }
     }
@@ -128,10 +129,6 @@ pub fn classify_layer(
     let mut declared = BTreeMap::new();
     for (key, value) in declaration_fields(header) {
         if let Some(value) = value {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(key.len()) + 10,
-                operation,
-            )?;
             let key = cadmpeg_core::text::NonBlankString::for_decode(
                 ctx,
                 ctx.copy_retained_text(key, operation)?,
@@ -142,30 +139,18 @@ pub fn classify_layer(
             ctx.insert_btree_map(&mut declared, key, value, operation)?;
         }
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(DECLARED_CARRIER.len()),
-        operation,
-    )?;
     let key = cadmpeg_core::text::NonBlankString::for_decode(
         ctx,
         ctx.copy_retained_text(DECLARED_CARRIER, operation)?,
         "validate nonblank text",
     )?
     .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty kernel carrier key"))?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(carrier.len()),
-        operation,
-    )?;
     let value = ctx.copy_retained_text(carrier, operation)?;
     ctx.insert_btree_map(&mut declared, key, value, operation)?;
     let matched = match_header(ctx, header)?.with_declared(declared);
     match instance {
         LayerInstance::Sole => Ok(matched),
         LayerInstance::Tagged => {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(carrier.len()),
-                operation,
-            )?;
             Ok(matched.with_instance(ctx.copy_retained_text(carrier, operation)?))
         }
     }
