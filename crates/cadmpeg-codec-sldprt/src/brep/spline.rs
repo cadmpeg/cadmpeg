@@ -70,6 +70,9 @@ struct SurfaceDescriptor {
 // five terminal array references.
 const MAX_ARRAY_VALUES: usize = 1_000_000;
 
+/// Lookup of the arrays a curve descriptor names.
+const CURVE_ARRAYS: &str = "find Parasolid curve arrays";
+
 fn charge_items(
     ctx: &DecodeContext<'_>,
     count: usize,
@@ -1131,17 +1134,18 @@ pub(crate) fn scan_curve_carriers(
         let Some(descriptor) = curve_descriptor(ctx, bytes, p, &descriptors)? else {
             continue;
         };
-        const ARRAYS: &str = "find Parasolid curve arrays";
-        let Some(control) = ctx.get_btree_map(&arrays.f64s, &descriptor.control_attr, ARRAYS)?
+        let Some(control) =
+            ctx.get_btree_map(&arrays.f64s, &descriptor.control_attr, CURVE_ARRAYS)?
         else {
             continue;
         };
         let Some(multiplicities) =
-            ctx.get_btree_map(&arrays.u16s, &descriptor.multiplicity_attr, ARRAYS)?
+            ctx.get_btree_map(&arrays.u16s, &descriptor.multiplicity_attr, CURVE_ARRAYS)?
         else {
             continue;
         };
-        let Some(unique_knots) = ctx.get_btree_map(&arrays.f64s, &descriptor.knot_attr, ARRAYS)?
+        let Some(unique_knots) =
+            ctx.get_btree_map(&arrays.f64s, &descriptor.knot_attr, CURVE_ARRAYS)?
         else {
             continue;
         };
@@ -1271,12 +1275,15 @@ fn scan_surface_descriptors(
     Ok(out)
 }
 
+/// Distinct knots and their multiplicities, of one declared length.
+type KnotLanes<'a> = (&'a [f64], &'a [u16]);
+
 fn surface_knot_arrays<'a>(
     ctx: &DecodeContext<'_>,
     unique: &'a [f64],
     multiplicities: &'a [u16],
     declared_count: usize,
-) -> Result<Option<(&'a [f64], &'a [u16])>, cadmpeg_core::CodecError> {
+) -> Result<Option<KnotLanes<'a>>, cadmpeg_core::CodecError> {
     if declared_count == 0 || unique.len() != multiplicities.len() || unique.len() < declared_count
     {
         return Ok(None);
