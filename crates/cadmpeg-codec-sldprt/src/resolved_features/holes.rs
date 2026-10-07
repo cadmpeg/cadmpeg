@@ -8,7 +8,7 @@ use super::grid::{quantize, GridCoordinate};
 use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
-use super::scalars::feature_object_name;
+use super::scalars::{lane_object_names, ObjectNames};
 use super::transforms::sketch_frame_marker_transform;
 use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
@@ -68,6 +68,20 @@ pub(crate) fn project_helix_axes(
             })?;
         }
     }
+    let object_names = lane_object_names(ctx, &mut records_storage, lanes)?;
+    let mut object_offsets = Vec::new();
+    for names in ctx.admit_iter(&object_names, "index SLDPRT helix object boundaries")? {
+        let mut offsets = Vec::new();
+        for history in ctx.admit_iter(histories, "index SLDPRT helix object boundaries")? {
+            for feature in ctx.admit_iter(&history.features, "index SLDPRT helix object boundaries")? {
+                if let Some(name) = names.of(ctx, feature)? {
+                    records_storage.with_storage(|| ctx.push_vec(&mut offsets, name.offset, "index SLDPRT helix object boundaries"))?;
+                }
+            }
+        }
+        ctx.sort_unstable_by(&mut offsets, |offset| offset, Ord::cmp, "sort SLDPRT helix object boundaries")?;
+        records_storage.with_storage(|| ctx.push_vec(&mut object_offsets, offsets, "index SLDPRT helix object boundaries"))?;
+    }
     for model_feature in model_features {
         ctx.charge_work(1, "scan SLDPRT helix features")?;
         let FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
@@ -90,28 +104,14 @@ pub(crate) fn project_helix_axes(
             continue;
         };
         let mut meshes = Vec::new();
-        for lane in ctx.admit_iter(lanes, "scan SLDPRT holes records")? {
-            let Some(name) = feature_object_name(record, lane) else {
+        for (lane_index, (lane, names)) in ctx.admit_iter(lanes, "scan SLDPRT holes records")?.zip(&object_names).enumerate() {
+            let Some(name) = names.of(ctx, record)? else {
                 continue;
             };
             let start = usize::try_from(name.offset).ok();
-            let mut next_offset = None;
-            for history in ctx.admit_iter(histories, "scan SLDPRT helix object boundaries")? {
-                for feature in
-                    ctx.admit_iter(&history.features, "scan SLDPRT helix object boundaries")?
-                {
-                    let Some(candidate) = feature_object_name(feature, lane) else {
-                        continue;
-                    };
-                    if candidate.offset > name.offset
-                        && next_offset.is_none_or(|offset| candidate.offset < offset)
-                    {
-                        next_offset = Some(candidate.offset);
-                    }
-                }
-            }
-            let end = next_offset
-                .and_then(|offset| usize::try_from(offset).ok())
+            let offsets = &object_offsets[lane_index];
+            let next = ctx.partition_point(offsets, |offset| Ok(*offset <= name.offset), "find SLDPRT helix object boundary")?;
+            let end = offsets.get(next).and_then(|offset| usize::try_from(*offset).ok())
                 .unwrap_or(lane.native_payload.len());
             let Some(object) = start.and_then(|start| lane.native_payload.get(start..end)) else {
                 continue;
@@ -190,12 +190,13 @@ fn hole_position_sketch_source(
     ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
+    object_names: &ObjectNames<'_, '_>,
 ) -> Result<Option<u32>, CodecError> {
     const OPERATION: &str = "scan SLDPRT hole position source";
     if classify(feature) != Some(FeatureClass::Hole) {
         return Ok(None);
     }
-    let Some(name) = feature_object_name(feature, lane) else {
+    let Some(name) = object_names.of(ctx, feature)? else {
         return Ok(None);
     };
     // Legacy keyword records may omit the XML source id while the serialized
@@ -295,8 +296,21 @@ pub(crate) fn enrich_history_hole_constructions(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "enrich SLDPRT hole profile ownership";
+    let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
+    let object_names = lane_object_names(ctx, &mut names_storage, lanes)?;
     for history in histories {
         ctx.charge_work(1, OPERATION)?;
+        let mut object_orders = Vec::new();
+        for names in ctx.admit_iter(&object_names, OPERATION)? {
+            let mut objects = Vec::new();
+            for (index, feature) in ctx.admit_iter(&history.features, OPERATION)?.enumerate() {
+                if let Some(name) = names.of(ctx, feature)? {
+                    names_storage.with_storage(|| ctx.push_vec(&mut objects, (name.offset, index), OPERATION))?;
+                }
+            }
+            ctx.sort_unstable_by(&mut objects, |value| value, Ord::cmp, OPERATION)?;
+            names_storage.with_storage(|| ctx.push_vec(&mut object_orders, objects, OPERATION))?;
+        }
         let mut additions = Vec::new();
         for (feature_index, feature) in history.features.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
@@ -306,16 +320,10 @@ pub(crate) fn enrich_history_hole_constructions(
                 continue;
             }
             let profile = if let Some(profile) =
-                hole_profile_from_position_source(ctx, feature, history, lanes)?
+                hole_profile_from_position_source(ctx, feature, history, lanes, &object_names, &object_orders)?
             {
                 Some(profile)
             } else {
-                ctx.charge_work(
-                    u64_from_index(history.features.len())
-                        .checked_mul(2)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
                 hole_profile_from_child_order(ctx, feature, history)?
             };
             let Some((profile, rank)) = profile else {
@@ -583,19 +591,13 @@ fn hole_profile_from_position_source<'a>(
     feature: &crate::records::Feature,
     history: &'a crate::records::FeatureHistory,
     lanes: &[FeatureInputLane],
+    object_names: &[ObjectNames<'_, '_>],
+    object_orders: &[Vec<(u64, usize)>],
 ) -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT hole profile ownership";
-    for lane in ctx.admit_iter(lanes, "scan SLDPRT holes records")? {
-        ctx.charge_work(
-            u64_from_index(lane.names.len())
-                .checked_add(128)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-    }
     let mut source = None;
-    for lane in ctx.admit_iter(lanes, OPERATION)? {
-        let Some(candidate) = hole_position_sketch_source(ctx, feature, lane)? else {
+    for (lane, names) in ctx.admit_iter(lanes, OPERATION)?.zip(object_names) {
+        let Some(candidate) = hole_position_sketch_source(ctx, feature, lane, names)? else {
             continue;
         };
         if source.is_some_and(|source| source != candidate) {
@@ -606,69 +608,33 @@ fn hole_profile_from_position_source<'a>(
     let Some(source) = source else {
         return Ok(None);
     };
-    let unique_position = || {
-        let mut positions = history.features.iter().filter(|candidate| {
-            (candidate.source_value() == Some(source) || candidate.ordinal == source)
-                && classify(candidate) == Some(FeatureClass::Sketch)
-        });
-        let position = positions.next()?;
-        positions.next().is_none().then_some(position)
+    let unique_position = || -> Result<Option<&crate::records::Feature>, CodecError> {
+        let mut remaining = history.features.iter();
+        let matches = |candidate: &crate::records::Feature| {
+            Ok((candidate.source_value() == Some(source) || candidate.ordinal == source)
+                && classify(candidate) == Some(FeatureClass::Sketch))
+        };
+        let Some(position) = ctx.find_by(&mut remaining, |candidate| matches(candidate), OPERATION)? else {
+            return Ok(None);
+        };
+        Ok((!ctx.any_by(&mut remaining, matches, OPERATION)?).then_some(position))
     };
     let serialized_successor =
         || -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
-            ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
-            let Some(position) = unique_position() else {
+            let Some(position) = unique_position()? else {
                 return Ok(None);
             };
             let mut profile: Option<&crate::records::Feature> = None;
-            for lane in ctx.admit_iter(lanes, "scan SLDPRT holes records")? {
-                ctx.charge_work(
-                    u64_from_index(lane.names.len())
-                        .checked_add(128)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                if hole_position_sketch_source(ctx, feature, lane)? != Some(source) {
-                    continue;
-                }
-                ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
-                let Some(position_offset) =
-                    feature_object_name(position, lane).map(|name| name.offset)
-                else {
-                    return Ok(None);
-                };
-                let scan_work =
-                    u64_from_index(history.features.len())
-                        .checked_mul(u64_from_index(lane.names.len()).checked_add(1).ok_or_else(
-                            || ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX),
-                        )?)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(scan_work, OPERATION)?;
-                let Some(minimum_offset) = history
-                    .features
-                    .iter()
-                    .filter_map(|candidate| {
-                        let offset = feature_object_name(candidate, lane)?.offset;
-                        (offset > position_offset).then_some(offset)
-                    })
-                    .min()
-                else {
-                    return Ok(None);
-                };
-                ctx.charge_work(scan_work, OPERATION)?;
-                let mut successors = history.features.iter().filter(|candidate| {
-                    feature_object_name(candidate, lane)
-                        .is_some_and(|name| name.offset == minimum_offset)
-                });
-                let Some(successor) = successors.next() else {
-                    return Ok(None);
-                };
-                if successors.next().is_some()
+            for (lane_index, (lane, names)) in ctx.admit_iter(lanes, OPERATION)?.zip(object_names).enumerate() {
+                if hole_position_sketch_source(ctx, feature, lane, names)? != Some(source) { continue; }
+                let Some(position_offset) = names.of(ctx, position)?.map(|name| name.offset) else { return Ok(None); };
+                let objects = &object_orders[lane_index];
+                let next = ctx.partition_point(objects, |(offset, _)| Ok(*offset <= position_offset), OPERATION)?;
+                let Some(&(offset, feature_index)) = objects.get(next) else { return Ok(None); };
+                let successor = &history.features[feature_index];
+                if objects.get(next + 1).is_some_and(|(next_offset, _)| *next_offset == offset)
                     || classify(successor) != Some(FeatureClass::Sketch)
-                    || !crate::history::project::solid::is_hole_profile_construction(
-                        ctx, successor,
-                    )?
-                {
+                    || !crate::history::project::solid::is_hole_profile_construction(ctx, successor)? {
                     return Ok(None);
                 }
                 if match profile {
@@ -691,10 +657,10 @@ fn hole_profile_from_position_source<'a>(
         return Ok(Some(profile));
     }
     let adjacent_sources = [source.checked_sub(1), source.checked_add(1)];
-    ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
     let mut first = None;
     let mut ambiguous = false;
-    for candidate in &history.features {
+    let mut candidates = history.features.iter();
+    while let Some(candidate) = ctx.next_charged(&mut candidates, OPERATION)? {
         if !candidate
             .source_value()
             .is_some_and(|source| adjacent_sources.contains(&Some(source)))
@@ -722,9 +688,9 @@ fn hole_profile_from_position_source<'a>(
     } else {
         (source, hole_source)
     };
-    ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
     let mut bounded = None;
-    for candidate in &history.features {
+    let mut candidates = history.features.iter();
+    while let Some(candidate) = ctx.next_charged(&mut candidates, OPERATION)? {
         if !candidate
             .source_value()
             .is_some_and(|source| lower < source && source < upper)
@@ -741,17 +707,16 @@ fn hole_profile_from_position_source<'a>(
     if let Some(profile) = bounded {
         return Ok(Some((profile, 2)));
     }
-    ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
-    let Some(position) = unique_position() else {
+    let Some(position) = unique_position()? else {
         return Ok(None);
     };
     let adjacent_ordinals = [
         position.ordinal.checked_sub(1),
         position.ordinal.checked_add(1),
     ];
-    ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
     let mut first = None;
-    for candidate in &history.features {
+    let mut candidates = history.features.iter();
+    while let Some(candidate) = ctx.next_charged(&mut candidates, OPERATION)? {
         if !adjacent_ordinals.contains(&Some(candidate.ordinal))
             || ctx.equal(
                 &(candidate.id),
@@ -1602,6 +1567,8 @@ pub(crate) fn project_profiled_hole_constructions(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "project SLDPRT profiled hole constructions";
+    let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
+    let object_names = lane_object_names(ctx, &mut names_storage, lanes)?;
     let mut enriched_histories = crate::records::charged_clone::clone_histories_charged(
         ctx,
         histories,
@@ -1868,7 +1835,7 @@ pub(crate) fn project_profiled_hole_constructions(
         }) else {
             continue;
         };
-        let position = hole_position_feature(ctx, native, histories, lanes)?
+        let position = hole_position_feature(ctx, native, histories, lanes, &object_names)?
             .map(|feature| feature.id.as_str());
         let mut direct = None;
         if let Some(children) = native.properties.get("DissectableChildren") {
@@ -1979,6 +1946,8 @@ pub(crate) fn project_hole_position_sketches(
     const OPERATION: &str = "project SLDPRT hole position sketches";
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
+    let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
+    let object_names = lane_object_names(ctx, &mut names_storage, lanes)?;
     let mut native_features = BTreeMap::new();
     for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
         for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
@@ -2066,7 +2035,7 @@ pub(crate) fn project_hole_position_sketches(
             }) else {
                 break 'feature_edit;
             };
-            let position_feature = match hole_position_feature(ctx, native, histories, lanes)? {
+            let position_feature = match hole_position_feature(ctx, native, histories, lanes, &object_names)? {
                 Some(position) => Some(position),
                 None => direct_hole_position_feature(
                     ctx,
@@ -2430,61 +2399,34 @@ fn paired_object_locus_markers<'a>(
 }
 
 fn hole_position_feature<'a>(
-    ctx: &DecodeContext<'_>,
-    hole: &crate::records::Feature,
-    histories: &'a [crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    ctx: &DecodeContext<'_>, hole: &crate::records::Feature,
+    histories: &'a [crate::records::FeatureHistory], lanes: &[FeatureInputLane],
+    object_names: &[ObjectNames<'_, '_>],
 ) -> Result<Option<&'a crate::records::Feature>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT hole position source";
     let mut source = None;
-    for lane in ctx.admit_iter(lanes, "scan SLDPRT holes records")? {
-        ctx.charge_work(
-            u64_from_index(lane.names.len())
-                .checked_add(128)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
-        for name in &lane.names {
-            ctx.charge_work(u64_from_index(name.value.len()), OPERATION)?;
-        }
-        let Some(candidate) = hole_position_sketch_source(ctx, hole, lane)? else {
-            continue;
-        };
-        if source.is_some_and(|source| source != candidate) {
-            return Ok(None);
-        }
+    let mut lane_pairs = lanes.iter().zip(object_names);
+    while let Some((lane, names)) = ctx.next_charged(&mut lane_pairs, OPERATION)? {
+        let Some(candidate) = hole_position_sketch_source(ctx, hole, lane, names)? else { continue; };
+        if source.is_some_and(|source| source != candidate) { return Ok(None); }
         source = Some(candidate);
     }
-    let Some(source) = source else {
-        return Ok(None);
-    };
+    let Some(source) = source else { return Ok(None); };
     let mut position = None;
-    for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
-        for candidate in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
-            if classify(candidate) != Some(FeatureClass::Sketch) {
-                continue;
-            }
-            let mut matches = false;
-            for lane in ctx.admit_iter(lanes, "scan SLDPRT holes records")? {
-                ctx.charge_work(
-                    u64_from_index(lane.names.len())
-                        .checked_add(1)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                if candidate.source_value().or_else(|| {
-                    feature_object_name(candidate, lane)
-                        .and_then(|name| name.object_id.and_then(ObjectId::value))
-                }) == Some(source)
-                {
-                    matches = true;
-                    break;
-                }
-            }
+    let mut histories = histories.iter();
+    while let Some(history) = ctx.next_charged(&mut histories, OPERATION)? {
+        let mut features = history.features.iter();
+        while let Some(candidate) = ctx.next_charged(&mut features, OPERATION)? {
+            if classify(candidate) != Some(FeatureClass::Sketch) { continue; }
+            let matches = ctx.any_by(lanes.iter().zip(object_names), |(_, names)| {
+                let candidate_source = match candidate.source_value() {
+                    Some(source) => Some(source),
+                    None => names.of(ctx, candidate)?.and_then(|name| name.object_id.and_then(ObjectId::value)),
+                };
+                Ok(candidate_source == Some(source))
+            }, OPERATION)?;
             if matches {
-                if position.is_some() {
-                    return Ok(None);
-                }
+                if position.is_some() { return Ok(None); }
                 position = Some(candidate);
             }
         }
@@ -2506,13 +2448,15 @@ pub(crate) fn hole_position_carrier_present(
     let Some(native_ref) = feature.native_ref.as_deref() else {
         return Ok(false);
     };
+    let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
+    let object_names = lane_object_names(ctx, &mut names_storage, lanes)?;
     for history in ctx.admit_iter(histories, OPERATION)? {
         for native in ctx.admit_iter(&history.features, OPERATION)? {
             if !ctx.equal(native.id.as_str(), native_ref, OPERATION)? {
                 continue;
             }
-            for lane in ctx.admit_iter(lanes, OPERATION)? {
-                if hole_position_sketch_source(ctx, native, lane)?.is_some() {
+            for (lane, names) in ctx.admit_iter(lanes, OPERATION)?.zip(&object_names) {
+                if hole_position_sketch_source(ctx, native, lane, names)?.is_some() {
                     return Ok(true);
                 }
             }
@@ -2532,6 +2476,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     const INDEX_OPERATION: &str = "index SLDPRT spatial position features";
+    let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
+    let object_names = lane_object_names(ctx, &mut names_storage, lanes)?;
     let mut native_features = BTreeMap::new();
     for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
         for feature in ctx.admit_iter(&iteration_history.features, "scan SLDPRT holes records")? {
@@ -2570,7 +2516,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
         }) else {
             continue;
         };
-        let Some(position_feature) = hole_position_feature(ctx, native, histories, lanes)? else {
+        let Some(position_feature) = hole_position_feature(ctx, native, histories, lanes, &object_names)? else {
             continue;
         };
         let Some(sketch_index) = ctx.rposition_by(
@@ -4148,6 +4094,8 @@ pub(crate) fn project_hole_axes(
 ) -> Result<(), CodecError> {
     const INDEX_OPERATION: &str = "index SLDPRT hole position features";
 
+    let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
+    let object_names = lane_object_names(ctx, &mut names_storage, lanes)?;
     let surfaces = topology.surfaces;
     let mut native_features = BTreeMap::new();
     for iteration_history in ctx.admit_iter(histories, "scan SLDPRT holes source records")? {
@@ -4200,7 +4148,7 @@ pub(crate) fn project_hole_axes(
         if classify(hole) != Some(FeatureClass::Hole) {
             continue;
         }
-        let position = match hole_position_feature(ctx, hole, histories, lanes)? {
+        let position = match hole_position_feature(ctx, hole, histories, lanes, &object_names)? {
             Some(position) => Some(position),
             None => direct_hole_position_feature(
                 ctx,
@@ -5005,6 +4953,8 @@ pub(crate) fn project_bore_backed_position_sketches(
         sketch: Sketch,
         entities: Vec<SketchEntity>,
     }
+    let mut names_storage = ctx.reserve_scoped(0, "index SLDPRT hole object names")?;
+    let object_names = lane_object_names(ctx, &mut names_storage, lanes)?;
     let copy_text = |text: &str| -> Result<String, CodecError> {
         ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
         ctx.format_retained(format_args!("{text}"), OPERATION)
@@ -5073,7 +5023,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         }) else {
             continue;
         };
-        let Some(position) = hole_position_feature(ctx, native_hole, histories, lanes)? else {
+        let Some(position) = hole_position_feature(ctx, native_hole, histories, lanes, &object_names)? else {
             continue;
         };
         let Some(position_feature) = ctx.get_hash_map(
@@ -5160,21 +5110,10 @@ pub(crate) fn project_bore_backed_position_sketches(
             continue;
         }
         let (origin, normal, u_axis) = frame;
-        for lane in ctx.admit_iter(lanes, "scan SLDPRT holes records")? {
-            ctx.charge_work(
-                u64_from_index(lane.names.len())
-                    .checked_add(128)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            for name in &lane.names {
-                ctx.charge_work(u64_from_index(name.value.len()), OPERATION)?;
-            }
-        }
         let mut owning_lane: Option<&FeatureInputLane> = None;
         let mut ambiguous = false;
-        for candidate in ctx.admit_iter(lanes, OPERATION)? {
-            if hole_position_sketch_source(ctx, native_hole, candidate)? != position.source_value()
+        for (candidate, names) in ctx.admit_iter(lanes, OPERATION)?.zip(&object_names) {
+            if hole_position_sketch_source(ctx, native_hole, candidate, names)? != position.source_value()
             {
                 continue;
             }
@@ -5723,6 +5662,8 @@ pub(super) fn feature_object_byte_ranges<'a>(
     lane: &FeatureInputLane,
 ) -> Result<HashMap<&'a str, (usize, usize, usize)>, CodecError> {
     const OPERATION: &str = "index SLDPRT feature object byte ranges";
+    let object_names = ObjectNames::new(ctx, lane)?;
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut objects = Vec::new();
     let mut next_input_index = 0usize;
     for history in ctx.admit_iter(histories, OPERATION)? {
@@ -5731,17 +5672,10 @@ pub(super) fn feature_object_byte_ranges<'a>(
             next_input_index = next_input_index
                 .checked_add(1)
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(
-                u64_from_index(lane.names.len())
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            let Some(name) = feature_object_name(feature, lane) else {
+            let Some(name) = object_names.of(ctx, feature)? else {
                 continue;
             };
-            ctx.reserve_vec(&mut objects, 1, OPERATION)?;
-            objects.push((name.offset, input_index, feature));
+            storage.with_storage(|| ctx.push_vec(&mut objects, (name.offset, input_index, feature), OPERATION))?;
         }
     }
     ctx.sort_unstable_by_key(
@@ -5754,8 +5688,7 @@ pub(super) fn feature_object_byte_ranges<'a>(
         OPERATION,
     )?;
     let mut ranges = HashMap::new();
-    for (index, (offset, _, feature)) in objects.iter().enumerate() {
-        ctx.charge_work(1, OPERATION)?;
+    for (index, (offset, _, feature)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
         let Some(start) = usize::try_from(*offset).ok() else {
             continue;
         };

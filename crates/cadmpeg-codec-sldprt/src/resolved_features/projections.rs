@@ -3,7 +3,7 @@
 use super::component_paths::{
     compact_body_selection_value_charged, compact_edge_path_value_charged,
     compact_edge_selection_set_value_charged, component_path_feature,
-    component_path_terminal_feature, ComponentPathEnd,
+    FeaturesBySource, ComponentPathEnd,
 };
 use super::drafts::{draft_operand_candidates, same_draft_operands, DraftAnchor, DraftOperands};
 use super::holes::feature_object_byte_ranges;
@@ -2643,14 +2643,11 @@ fn draft_face_selection(
         "sldprt:feature-input:draft-surface-vectors:",
         "format SLDPRT draft surface selection set",
     )?;
+    let by_source = FeaturesBySource::new(ctx, ctx.admit_iter(histories, OPERATION)?.flat_map(|history| &history.features))?;
     let mut generated = Vec::new();
     let mut generated_dependencies = Vec::new();
     for path in ctx.admit_iter(paths, OPERATION)? {
-        let Some(terminal) = component_path_terminal_feature(
-            ctx,
-            path,
-            histories.iter().flat_map(|history| &history.features),
-        )?
+        let Some(terminal) = by_source.terminal(ctx, path)?
         else {
             return Ok(cadmpeg_ir::features::FaceSelection::Native(native));
         };
