@@ -2823,9 +2823,9 @@ cadmpeg_core::named_optional_field!(
     "fit_tolerance"
 );
 
-#[cfg(test)]
-mod tests;
-
 mod identity_rewrite;
 
 mod decode_cost;
+
+#[cfg(test)]
+mod tests;

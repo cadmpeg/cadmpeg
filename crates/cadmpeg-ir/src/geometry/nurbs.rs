@@ -2199,9 +2199,6 @@ fn knots_ordered<E>(
     Ok(true)
 }
 
-#[cfg(test)]
-mod tests;
-
 impl From<CodecError> for NurbsError {
     fn from(error: CodecError) -> Self {
         match error {
@@ -2214,3 +2211,6 @@ impl From<CodecError> for NurbsError {
 mod identity_rewrite;
 
 mod decode_cost;
+
+#[cfg(test)]
+mod tests;

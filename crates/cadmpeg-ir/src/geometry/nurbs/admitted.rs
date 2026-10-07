@@ -238,9 +238,6 @@ impl NurbsSurface {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 /// Admit both edit passes before calling a deterministic pole map.
 pub(in crate::geometry) fn map_positions<T, P: Copy, E>(
     ctx: &DecodeContext<'_>,
@@ -265,3 +262,6 @@ pub(in crate::geometry) fn map_positions<T, P: Copy, E>(
     }
     Ok(Ok(()))
 }
+
+#[cfg(test)]
+mod tests;
