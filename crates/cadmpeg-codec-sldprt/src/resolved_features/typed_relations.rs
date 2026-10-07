@@ -33,7 +33,7 @@ use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
 };
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::nonblank_literal;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
@@ -41,7 +41,7 @@ use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12: f64 = 1.0e-12;
 const EPS_TYPED_RELATIONS_SKETCH_ENTITY_MIDPOINT_E12: f64 = 1.0e-12;
@@ -525,7 +525,7 @@ fn native_marker_relation(
     }
     sort_marker_entity_ids(ctx, &mut entities, OPERATION)?;
     let owners = relation_owner_markers_in(ctx, marker, index.markers)?;
-    for owner in ctx.admit_iter(&owners, OPERATION)?.copied() {
+    for owner in ctx.admit_iter(&owners, OPERATION)? {
         let additions = marker_entities(
             ctx,
             owner.id(),
@@ -2463,6 +2463,100 @@ fn line_endpoint_markers_from<'a>(
     Ok(endpoints)
 }
 
+/// A lane roster and its offset, object and reverse-link joins. Groups preserve
+/// source order and include every occurrence, including repeated identities.
+pub(super) struct CurveMarkers<'roster, 'a> {
+    roster: &'roster [&'a SketchInputEntity],
+    by_feature: HashMap<Option<&'a str>, Vec<&'a SketchInputEntity>>,
+    by_offset: BTreeMap<Option<&'a str>, Vec<&'a SketchInputEntity>>,
+    by_object: HashMap<(Option<&'a str>, Option<u32>), Vec<&'a SketchInputEntity>>,
+    linked_from: HashMap<&'a str, Vec<&'a SketchInputEntity>>,
+}
+
+impl<'roster, 'a> CurveMarkers<'roster, 'a> {
+    pub(super) fn new<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        roster: &'roster [&'a SketchInputEntity],
+    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
+        const OPERATION: &str = "index SLDPRT curve markers";
+        ctx.with_scoped_storage(OPERATION, || {
+            let mut index = Self {
+                roster,
+                by_feature: HashMap::new(),
+                by_offset: BTreeMap::new(),
+                by_object: HashMap::new(),
+                linked_from: HashMap::new(),
+            };
+            for &marker in ctx.admit_iter(roster, OPERATION)? {
+                let feature = marker.feature_ref.as_deref();
+                ctx.push_hash_group(&mut index.by_feature, feature, marker, OPERATION, OPERATION)?;
+                ctx.push_btree_group(&mut index.by_offset, feature, marker, OPERATION, OPERATION)?;
+                ctx.push_hash_group(&mut index.by_object, (feature, marker.object_index()), marker, OPERATION, OPERATION)?;
+                let mut seen_storage = ctx.reserve_scoped(0, OPERATION)?;
+                let mut seen = std::collections::BTreeSet::new();
+                for link in ctx.admit_iter(marker.links(), OPERATION)? {
+                    let target = link.entity_ref.as_str();
+                    if seen_storage.with_storage(|| ctx.insert_btree_set(&mut seen, target, OPERATION))? {
+                        ctx.push_hash_group(&mut index.linked_from, target, marker, OPERATION, OPERATION)?;
+                    }
+                }
+            }
+            for (_, markers) in ctx.admit_iter(&mut index.by_offset, OPERATION)? {
+                ctx.stable_sort_by_key(markers, |marker| marker.offset(), Ord::cmp, OPERATION)?;
+            }
+            Ok(index)
+        })
+    }
+
+    fn next_after(
+        &self,
+        ctx: &DecodeContext<'_>,
+        curve: &SketchInputEntity,
+    ) -> Result<Option<&'a SketchInputEntity>, CodecError> {
+        const OPERATION: &str = "resolve SLDPRT curve marker offset";
+        let markers = ctx.get_btree_map(&self.by_offset, &curve.feature_ref.as_deref(), OPERATION)?
+            .map_or(&[][..], Vec::as_slice);
+        let next = ctx.partition_point(markers, |marker| Ok(marker.offset() <= curve.offset()), OPERATION)?;
+        Ok(markers.get(next).copied())
+    }
+}
+
+/// Resolves a curve against a lane index built once for the pass. Direct object
+/// and reverse-link endpoints use keyed groups. Layout rosters retain their
+/// original source order.
+pub(super) fn marker_curve_endpoint_markers_in<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    curve: &'a SketchInputEntity,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+    index: &CurveMarkers<'_, 'a>,
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
+    let feature = curve.feature_ref.as_deref();
+    let markers = ctx.get_hash_map(&index.by_feature, &feature, OPERATION)?
+        .map_or(&[][..], Vec::as_slice);
+    let linking = ctx.get_hash_map(&index.linked_from, curve.id(), OPERATION)?
+        .map_or(&[][..], Vec::as_slice);
+    let direct = usize::try_from(curve.offset()).ok()
+        .and_then(|offset| extended_direct_object_line_endpoint_ids(payload, offset));
+    if curve.kind() == SketchInputKind::LineOrCircle {
+        if let Some(ids) = direct {
+            let resolve = |id| {
+                let object = (id != 0).then_some(id);
+                let candidates = ctx.get_hash_map(&index.by_object, &(feature, object), OPERATION)?
+                    .map_or(&[][..], Vec::as_slice);
+                unique_feature_marker(ctx, candidates, curve, OPERATION, is_coordinate_point)
+            };
+            if let (Some(first), Some(second)) = (resolve(ids[0])?, resolve(ids[1])?) {
+                if let Some(pair) = distinct_endpoints(ctx, [first, second], OPERATION)? {
+                    return copy_endpoint_markers(ctx, &pair);
+                }
+            }
+        }
+    }
+    marker_curve_endpoint_markers_from(ctx, payload, curve, markers_by_id, markers, linking, Some(index))
+}
+
 /// The two endpoint markers of a curve marker, resolved by the first layout
 /// that names them. `markers_by_id` resolves the curve's links and `markers`
 /// is the roster the layouts index into, which also supplies the markers that
@@ -2474,11 +2568,25 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    marker_curve_endpoint_markers_from(ctx, payload, curve, markers_by_id, markers, markers, None)
+}
+
+fn marker_curve_endpoint_markers_from<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    curve: &'a SketchInputEntity,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+    markers: &[&'a SketchInputEntity],
+    linking: &[&'a SketchInputEntity],
+    index: Option<&CurveMarkers<'_, 'a>>,
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
-    if let Some(endpoints) = extended_direct_object_line_endpoints(ctx, payload, curve, markers)? {
-        return copy_endpoint_markers(ctx, &endpoints);
+    if index.is_none() {
+        if let Some(endpoints) = extended_direct_object_line_endpoints(ctx, payload, curve, markers)? {
+            return copy_endpoint_markers(ctx, &endpoints);
+        }
     }
-    let endpoints = line_endpoint_markers_from(ctx, curve, markers_by_id, markers)?;
+    let endpoints = line_endpoint_markers_from(ctx, curve, markers_by_id, linking)?;
     if endpoints.len() == 2 {
         return Ok(endpoints);
     }
@@ -2547,7 +2655,8 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, markers)?;
+    let roster = index.map_or(markers, |index| index.roster);
+    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, roster)?;
     if endpoints.len() == 2 {
         if let Some(direct) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
             let roster = [endpoints[0], endpoints[1]];
@@ -2574,7 +2683,7 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    let endpoints = consecutive_legacy_profile_line_endpoints(ctx, payload, curve, markers)?;
+    let endpoints = consecutive_legacy_profile_line_endpoints_from(ctx, payload, curve, markers, index)?;
     if endpoints.len() == 2 {
         return Ok(endpoints);
     }
@@ -3281,11 +3390,22 @@ fn coordinate_centered_line_center(
     None
 }
 
+#[cfg(test)]
 fn consecutive_legacy_profile_line_endpoints<'a>(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     line: &'a SketchInputEntity,
     markers: &[&'a SketchInputEntity],
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    consecutive_legacy_profile_line_endpoints_from(ctx, payload, line, markers, None)
+}
+
+fn consecutive_legacy_profile_line_endpoints_from<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    line: &'a SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+    index: Option<&CurveMarkers<'_, 'a>>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT consecutive legacy profile line endpoints";
     let Some(offset) = usize::try_from(line.offset()).ok() else {
@@ -3302,15 +3422,20 @@ fn consecutive_legacy_profile_line_endpoints<'a>(
     }
     // The first marker of the line's feature after the line.
     let feature = line.feature_ref.as_deref();
-    let mut next: Option<&SketchInputEntity> = None;
-    for marker in ctx.admit_iter(markers, OPERATION)?.copied() {
-        if marker.offset() > line.offset()
-            && next.is_none_or(|next| marker.offset() < next.offset())
-            && ctx.equal(&marker.feature_ref.as_deref(), &feature, OPERATION)?
-        {
-            next = Some(marker);
+    let next = if let Some(index) = index {
+        index.next_after(ctx, line)?
+    } else {
+        let mut next: Option<&SketchInputEntity> = None;
+        for marker in ctx.admit_iter(markers, OPERATION)?.copied() {
+            if marker.offset() > line.offset()
+                && next.is_none_or(|next| marker.offset() < next.offset())
+                && ctx.equal(&marker.feature_ref.as_deref(), &feature, OPERATION)?
+            {
+                next = Some(marker);
+            }
         }
-    }
+        next
+    };
     let Some(next) = next else {
         return Ok(Vec::new());
     };
@@ -3335,15 +3460,38 @@ fn consecutive_legacy_profile_line_endpoints<'a>(
     Ok(endpoints)
 }
 
-pub(super) fn legacy_terminal_indexed_profile_line(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    curve: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
-) -> Result<bool, CodecError> {
-    const OPERATION: &str = "resolve SLDPRT legacy terminal indexed profile line";
+/// The first legacy profile-line offset of each feature in a lane.
+pub(super) struct LegacyTerminalLines<'a> {
+    first_by_feature: HashMap<Option<&'a str>, u64>,
+}
+
+impl<'a> LegacyTerminalLines<'a> {
+    pub(super) fn new<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        payload: &[u8],
+        markers: &[&'a SketchInputEntity],
+    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
+        const OPERATION: &str = "index SLDPRT legacy terminal profile lines";
+        ctx.with_scoped_storage(OPERATION, || {
+            let mut first_by_feature = HashMap::new();
+            for &marker in ctx.admit_iter(markers, OPERATION)? {
+                let Ok(offset) = usize::try_from(marker.offset()) else { continue; };
+                if marker.kind() != SketchInputKind::LineOrCircle
+                    || marker_native_code(payload, offset) != Some(0)
+                    || legacy_extended_profile_curve_kind(payload, offset) != Some(SketchInputKind::LineOrCircle)
+                { continue; }
+                let first = ctx.entry_hash_map(&mut first_by_feature, marker.feature_ref.as_deref(), OPERATION)?
+                    .or_insert(marker.offset());
+                *first = (*first).min(marker.offset());
+            }
+            Ok(Self { first_by_feature })
+        })
+    }
+}
+
+fn is_legacy_terminal_indexed_profile_line(payload: &[u8], curve: &SketchInputEntity) -> bool {
     let Some(offset) = usize::try_from(curve.offset()).ok() else {
-        return Ok(false);
+        return false;
     };
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -3360,24 +3508,32 @@ pub(super) fn legacy_terminal_indexed_profile_line(
             .checked_add(84)
             .is_some_and(|at| sketch_marker_prefix_at(payload, at))
     {
-        return Ok(false);
+        return false;
     }
-    let feature = curve.feature_ref.as_deref();
-    ctx.any_by(
-        markers,
-        |sibling| {
-            let Some(sibling_offset) = usize::try_from(sibling.offset()).ok() else {
-                return Ok(false);
-            };
-            Ok(sibling.offset() < curve.offset()
-                && sibling.kind() == SketchInputKind::LineOrCircle
-                && marker_native_code(payload, sibling_offset) == Some(0)
-                && legacy_extended_profile_curve_kind(payload, sibling_offset)
-                    == Some(SketchInputKind::LineOrCircle)
-                && ctx.equal(&sibling.feature_ref.as_deref(), &feature, OPERATION)?)
-        },
-        OPERATION,
-    )
+    true
+}
+
+pub(super) fn legacy_terminal_indexed_profile_line(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Result<bool, CodecError> {
+    if !is_legacy_terminal_indexed_profile_line(payload, curve) { return Ok(false); }
+    let (index, _storage) = LegacyTerminalLines::new(ctx, payload, markers)?;
+    legacy_terminal_indexed_profile_line_in(ctx, payload, curve, &index)
+}
+
+pub(super) fn legacy_terminal_indexed_profile_line_in(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    index: &LegacyTerminalLines<'_>,
+) -> Result<bool, CodecError> {
+    if !is_legacy_terminal_indexed_profile_line(payload, curve) { return Ok(false); }
+    Ok(ctx.get_hash_map(&index.first_by_feature, &curve.feature_ref.as_deref(),
+        "resolve SLDPRT legacy terminal indexed profile line")?
+        .is_some_and(|offset| *offset < curve.offset()))
 }
 
 #[cfg(test)]

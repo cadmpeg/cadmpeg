@@ -26,7 +26,7 @@ use super::transforms::{
     ProfileAxis,
 };
 use super::typed_relations::{
-    current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
+    current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers_in, CurveMarkers,
     marker_relation_definition, marker_relation_is_inactive_in, RelationMarkers,
 };
 use crate::records::operand_tag::NativeOperandTag;
@@ -1048,6 +1048,7 @@ pub(crate) fn project_relation_point_geometry(
             marker_roster_storage
                 .with_storage(|| ctx.push_vec(&mut marker_roster, marker, operation))?;
         }
+        let curve_markers = std::cell::OnceCell::new();
         for marker in ctx.admit_iter(&lane.sketch_entities, "scan SLDPRT relation-line markers")? {
             let marker_offset = usize::try_from(marker.offset()).ok();
             let undetailed_arc_line = marker.kind() == SketchInputKind::Arc
@@ -1149,12 +1150,19 @@ pub(crate) fn project_relation_point_geometry(
             else {
                 continue;
             };
-            let mut endpoints = marker_curve_endpoint_markers(
+            let (curve_index, _) = match curve_markers.get() {
+                Some(index) => index,
+                None => {
+                    let built = CurveMarkers::new(ctx, &marker_roster)?;
+                    curve_markers.get_or_init(|| built)
+                }
+            };
+            let mut endpoints = marker_curve_endpoint_markers_in(
                 ctx,
                 &lane.native_payload,
                 marker,
                 &markers_by_id,
-                &marker_roster,
+                curve_index,
             )?;
             if endpoints.len() != 2 && linked_curve_handle {
                 let linked_endpoints =
@@ -1528,16 +1536,11 @@ pub(crate) fn project_relation_solved_line_geometry(
     let markers_by_id = markers.by_id();
 
     for lane in ctx.admit_iter(lanes, "scan SLDPRT solved-line lanes")? {
-        let mut marker_roster = Vec::new();
-        ctx.reserve_vec(
-            &mut marker_roster,
-            lane.sketch_entities.len(),
+        let (marker_roster, _roster_storage) = ctx.with_scoped_storage(
             "collect SLDPRT solved-line marker roster",
+            || ctx.collect_vec(lane.sketch_entities.iter(), "collect SLDPRT solved-line marker roster"),
         )?;
-        marker_roster.extend(ctx.admit_iter(
-            &lane.sketch_entities,
-            "scan SLDPRT solved-line marker roster",
-        )?);
+        let curve_markers = std::cell::OnceCell::new();
         for relation in ctx.admit_iter(
             &lane.relation_instances,
             "scan SLDPRT solved-line relations",
@@ -1716,12 +1719,19 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let Some(marker) = marker else {
                     return Ok(None);
                 };
-                let endpoints = marker_curve_endpoint_markers(
+                let (curve_index, _) = match curve_markers.get() {
+                    Some(index) => index,
+                    None => {
+                        let built = CurveMarkers::new(ctx, &marker_roster)?;
+                        curve_markers.get_or_init(|| built)
+                    }
+                };
+                let endpoints = marker_curve_endpoint_markers_in(
                     ctx,
                     &lane.native_payload,
                     marker,
-                    &markers_by_id,
-                    &marker_roster,
+                    markers_by_id,
+                    curve_index,
                 )?;
                 let [first, second] = endpoints.as_slice() else {
                     return Ok(None);
@@ -2028,8 +2038,7 @@ pub(crate) fn project_relation_solved_line_geometry(
             > {
                 let operation = "collect SLDPRT relation operand lines";
                 let mut storage = ctx.reserve_scoped(0, operation)?;
-                let mut lines =
-                    storage.with_storage(|| ctx.collection_vec(line_operands.len(), operation))?;
+                let mut lines = Vec::new();
                 for &(operand_index, operand) in
                     ctx.admit_iter(&line_operands, "build SLDPRT relation operand lines")?
                 {
@@ -2048,7 +2057,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     let Some(line) = candidate(start, end)? else {
                         return Ok((Vec::new(), ctx.reserve_scoped(0, operation)?));
                     };
-                    lines.push((operand, markers, line));
+                    storage.with_storage(|| ctx.push_vec(&mut lines, (operand, markers, line), operation))?;
                 }
                 Ok((lines, storage))
             };
@@ -2660,7 +2669,8 @@ pub(crate) fn project_relation_solved_point_geometry(
                 else {
                     continue;
                 };
-                let mut resolved_positions = Vec::with_capacity(relation.operands.len());
+                let mut resolved_positions = [None; 2];
+                let mut resolved = true;
                 for (index, operand) in ctx
                     .admit_iter(&relation.operands, "scan SLDPRT solved-point operands")?
                     .enumerate()
@@ -2684,7 +2694,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                         }
                     }
                     if already_present {
-                        resolved_positions.push(None);
+                        resolved_positions[index] = None;
                         continue;
                     }
                     let Some(coordinates) = ctx
@@ -2695,7 +2705,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                         )?
                         .copied()
                     else {
-                        resolved_positions.clear();
+                        resolved = false;
                         break;
                     };
                     let native = quantize(
@@ -2741,12 +2751,12 @@ pub(crate) fn project_relation_solved_point_geometry(
                         unique_position
                     };
                     let Some(position) = position else {
-                        resolved_positions.clear();
+                        resolved = false;
                         break;
                     };
-                    resolved_positions.push(Some(position));
+                    resolved_positions[index] = Some(position);
                 }
-                if resolved_positions.len() != relation.operands.len() {
+                if !resolved {
                     continue;
                 }
                 for (index, position) in ctx

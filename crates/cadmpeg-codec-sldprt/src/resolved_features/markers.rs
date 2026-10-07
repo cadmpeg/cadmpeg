@@ -26,7 +26,7 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
 use cadmpeg_ir::math::Point3;
@@ -490,7 +490,6 @@ impl<'a, 'ctx> SpatialLaneIndex<'a, 'ctx> {
         let payload = &self.lane.native_payload;
         for marker in ctx
             .admit_iter(markers, "scan SLDPRT spatial sketch markers")?
-            .copied()
         {
             let Ok(offset) = usize::try_from(marker.offset()) else {
                 continue;
@@ -1506,10 +1505,10 @@ pub(super) fn relation_bindings_scoped(
     scalars: &[FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
 ) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
+    const IDENTITY: &str = "retain SLDPRT reference identity";
     let lane_key = ctx
         .rsplit_once(parent, "#", "split SLDPRT relation parent")?
         .map_or(parent, |(_, key)| key);
-    const IDENTITY: &str = "retain SLDPRT reference identity";
     let candidates =
         unique_relation_declaration_candidates_charged(ctx, classes, scalars, intervals)?;
     let mut bindings = Vec::new();
@@ -3714,66 +3713,87 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
 ) -> Result<Option<[u64; 2]>, CodecError> {
-    const OPERATION: &str = "resolve SLDPRT reverse incidence endpoints";
-    let curve_index = (|| {
-        let offset = usize::try_from(curve.offset()).ok()?;
-        let curve_index = u16::try_from(curve.object_index()?).ok()?;
-        if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
-            || marker_native_code(payload, offset) != Some(1)
-            || marker_profile_curve_role(payload, offset) != Some(1)
-            || compact_indexed_curve_endpoint_indices(payload, offset).is_none()
-        {
-            return None;
-        }
-        Some(curve_index)
-    })();
-    let Some(curve_index) = curve_index else {
+    if reverse_incidence_curve_index(payload, curve).is_none() {
         return Ok(None);
-    };
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut by_selector = BTreeMap::<u16, ReverseIncidenceOffsets>::new();
-    for marker in ctx.admit_iter(markers, OPERATION)? {
-        if !ctx.equal(&marker.feature_ref, &curve.feature_ref, OPERATION)? {
-            continue;
-        }
-        let Ok(marker_offset) = usize::try_from(marker.offset()) else {
-            return Ok(None);
-        };
-        let Some((_, links)) = linked_profile_point(payload, marker_offset) else {
-            continue;
-        };
-        for (selector, linked_curve) in links {
-            if linked_curve != curve_index {
-                continue;
-            }
-            storage.with_storage(|| {
-                match ctx.entry_btree_map(&mut by_selector, selector, OPERATION)? {
-                    std::collections::btree_map::Entry::Occupied(mut offsets) => {
-                        offsets.get_mut().include_offset(marker.offset());
-                    }
-                    std::collections::btree_map::Entry::Vacant(offsets) => {
-                        offsets.insert(ReverseIncidenceOffsets::One(marker.offset()));
-                    }
-                }
-                Ok::<_, CodecError>(())
-            })?;
-        }
     }
-    // Exactly one selector links the curve to two distinct markers.
-    let mut selectors = by_selector.into_values();
-    let pair = |offsets: ReverseIncidenceOffsets| {
-        Ok(match offsets {
-            ReverseIncidenceOffsets::Pair(pair) => Some(pair),
-            ReverseIncidenceOffsets::One(_) | ReverseIncidenceOffsets::Many => None,
+    let (index, _storage) = ReverseIncidenceIndex::new(ctx, payload, markers)?;
+    current_reverse_incidence_endpoint_offsets_in(ctx, payload, curve, &index)
+}
+
+fn reverse_incidence_curve_index(payload: &[u8], curve: &SketchInputEntity) -> Option<u16> {
+    let offset = usize::try_from(curve.offset()).ok()?;
+    let curve_index = u16::try_from(curve.object_index()?).ok()?;
+    (payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(1)
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && compact_indexed_curve_endpoint_indices(payload, offset).is_some())
+        .then_some(curve_index)
+}
+
+/// The distinct endpoint offsets by feature, curve index and selector.
+pub(super) struct ReverseIncidenceIndex<'a> {
+    by_curve: HashMap<(Option<&'a str>, u16), Option<[u64; 2]>>,
+    invalid_features: std::collections::BTreeSet<Option<&'a str>>,
+}
+
+impl<'a> ReverseIncidenceIndex<'a> {
+    pub(super) fn new<'ctx>(
+        ctx: &'ctx DecodeContext<'_>,
+        payload: &[u8],
+        markers: &[&'a SketchInputEntity],
+    ) -> Result<(Self, ScopedReservation<'ctx>), CodecError> {
+        const OPERATION: &str = "index SLDPRT reverse incidence endpoints";
+        ctx.with_scoped_storage(OPERATION, || {
+            let mut selectors_storage = ctx.reserve_scoped(0, OPERATION)?;
+            let mut selectors = BTreeMap::<(Option<&str>, u16, u16), ReverseIncidenceOffsets>::new();
+            let mut index = Self { by_curve: HashMap::new(), invalid_features: std::collections::BTreeSet::new() };
+            for &marker in ctx.admit_iter(markers, OPERATION)? {
+                let feature = marker.feature_ref.as_deref();
+                let Ok(offset) = usize::try_from(marker.offset()) else {
+                    ctx.insert_btree_set(&mut index.invalid_features, feature, OPERATION)?;
+                    continue;
+                };
+                let Some((_, links)) = linked_profile_point(payload, offset) else {
+                    continue;
+                };
+                for (selector, curve) in links {
+                    selectors_storage.with_storage(|| {
+                        match ctx.entry_btree_map(&mut selectors, (feature, curve, selector), OPERATION)? {
+                            std::collections::btree_map::Entry::Occupied(mut entry) => entry.get_mut().include_offset(marker.offset()),
+                            std::collections::btree_map::Entry::Vacant(entry) => { entry.insert(ReverseIncidenceOffsets::One(marker.offset())); }
+                        }
+                        Ok::<_, CodecError>(())
+                    })?;
+                }
+            }
+            for ((feature, curve, _), offsets) in ctx.admit_iter(selectors, OPERATION)? {
+                let ReverseIncidenceOffsets::Pair(pair) = offsets else { continue; };
+                match ctx.entry_hash_map(&mut index.by_curve, (feature, curve), OPERATION)? {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => { entry.insert(None); }
+                    std::collections::hash_map::Entry::Vacant(entry) => { entry.insert(Some(pair)); }
+                }
+            }
+            Ok(index)
         })
-    };
-    let Some(endpoints) = ctx.find_map(&mut selectors, pair, OPERATION)? else {
+    }
+}
+
+pub(super) fn current_reverse_incidence_endpoint_offsets_in(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    index: &ReverseIncidenceIndex<'_>,
+) -> Result<Option<[u64; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT reverse incidence endpoints";
+    let Some(curve_index) = reverse_incidence_curve_index(payload, curve) else {
         return Ok(None);
     };
-    Ok(ctx
-        .find_map(&mut selectors, pair, OPERATION)?
-        .is_none()
-        .then_some(endpoints))
+    let feature = curve.feature_ref.as_deref();
+    if ctx.contains_btree_set(&index.invalid_features, &feature, OPERATION)? {
+        return Ok(None);
+    }
+    Ok(ctx.get_hash_map(&index.by_curve, &(feature, curve_index), OPERATION)?
+        .and_then(Option::as_ref).copied())
 }
 
 fn linked_profile_vertex(payload: &[u8], offset: usize) -> bool {

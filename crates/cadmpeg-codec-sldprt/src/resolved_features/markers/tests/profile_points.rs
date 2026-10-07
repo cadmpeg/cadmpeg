@@ -115,6 +115,26 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
             cadmpeg_core::decode::u64_from_index(second)
         ])
     );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let duplicated = [&entities[2], &entities[1], &entities[1], &entities[0]];
+    let (index, _storage) = crate::resolved_features::markers::ReverseIncidenceIndex::new(&ctx, &payload, &duplicated).unwrap();
+    assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_in(
+        &ctx, &payload, &entities[0], &index).unwrap(),
+        Some([cadmpeg_core::decode::u64_from_index(first), cadmpeg_core::decode::u64_from_index(second)]));
+    let mut foreign = entities[0].clone();
+    foreign.feature_ref = Some("other".into());
+    assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_in(
+        &ctx, &payload, &foreign, &index).unwrap(), None);
+    crate::test_support::work_refusal_at("index SLDPRT reverse incidence endpoints", |ctx| {
+        crate::resolved_features::markers::ReverseIncidenceIndex::new(ctx, &payload, &markers).map(|_| ())
+    });
+    for offset in [first, second] {
+        payload[offset + 92..offset + 94].copy_from_slice(&7u16.to_le_bytes());
+    }
+    let (ambiguous, _storage) = crate::resolved_features::markers::ReverseIncidenceIndex::new(&ctx, &payload, &markers).unwrap();
+    assert_eq!(crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets_in(
+        &ctx, &payload, &entities[0], &ambiguous).unwrap(), None);
+
 }
 
 #[test]
