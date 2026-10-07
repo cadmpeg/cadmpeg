@@ -8499,9 +8499,6 @@ impl CurveOffsetDistanceLaw {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 impl CompoundCurveConstruction {
     /// Solved-cache fit contract this construction states.
     #[must_use]
@@ -8672,3 +8669,6 @@ mod identity_rewrite;
 mod serialization;
 
 mod decode_cost;
+
+#[cfg(test)]
+mod tests;
