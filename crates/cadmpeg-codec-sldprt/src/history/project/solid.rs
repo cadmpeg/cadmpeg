@@ -197,6 +197,24 @@ pub(super) fn project_extrude(
         }
         None => None,
     };
+    let direction = match property_literal(ctx, feature, "Direction")? {
+        Some(value) => {
+            let Some(vector) =
+                parse_vector3(value).and_then(cadmpeg_ir::features::FeatureDirection3::new)
+            else {
+                return Ok(None);
+            };
+            cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector,
+                source: None,
+            }
+        }
+        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+    };
+    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
+    {
+        return Ok(None);
+    }
     let one_sided = |termination| ExtrudeExtent::OneSided {
         side: ExtrudeSide { termination, draft },
     };
@@ -301,24 +319,6 @@ pub(super) fn project_extrude(
         }
         Some(_) => one_sided(LinearTermination::Unresolved {}),
     };
-    let direction = match property_literal(ctx, feature, "Direction")? {
-        Some(value) => {
-            let Some(vector) =
-                parse_vector3(value).and_then(cadmpeg_ir::features::FeatureDirection3::new)
-            else {
-                return Ok(None);
-            };
-            cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector,
-                source: None,
-            }
-        }
-        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-    };
-    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
-    {
-        return Ok(None);
-    }
     let native_profile = |source: &str| -> Result<ProfileRef, CodecError> {
         let native = ctx
             .get_hash_map(native_by_source, source, "look up SLDPRT hash key")?

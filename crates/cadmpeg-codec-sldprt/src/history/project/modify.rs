@@ -125,14 +125,21 @@ pub(super) fn project_fillet(
     let radius = if let Some(radius) = stated {
         RadiusSpec::Constant { radius }
     } else {
-        let points = match variable_radius_points(ctx, feature)? {
-            Some(radii) => {
-                cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(radii, ctx)?.ok()
-            }
-            None => None,
-        };
+        let (points, storage) =
+            ctx.with_scoped_storage("collect SLDPRT variable fillet controls", || {
+                Ok::<_, CodecError>(match variable_radius_points(ctx, feature)? {
+                    Some(radii) => {
+                        cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(
+                            radii, ctx,
+                        )?
+                        .ok()
+                    }
+                    None => None,
+                })
+            })?;
         match points {
             None => {
+                drop(storage);
                 if ctx.any_by(
                     &feature.parameters,
                     |(name, _)| {
@@ -167,7 +174,10 @@ pub(super) fn project_fillet(
                     RadiusSpec::Unresolved { form: None }
                 }
             }
-            Some(points) => RadiusSpec::Variable { points },
+            Some(points) => {
+                storage.commit()?;
+                RadiusSpec::Variable { points }
+            }
         }
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
@@ -432,14 +442,16 @@ pub(super) fn project_replace_face(
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let (Some(faces), Some(replacement)) = (
-        property_text(ctx, feature, "Faces")?,
-        property_text(ctx, feature, "ReplacementFaces")?,
+        property_value(ctx, feature, "Faces")?,
+        property_value(ctx, feature, "ReplacementFaces")?,
     ) else {
         return Ok(None);
     };
     Ok(cadmpeg_ir::features::ReplaceFaceOperands::new(
-        FaceSelection::Native(faces),
-        FaceSelection::Native(replacement),
+        FaceSelection::Native(ctx.copy_retained_text(faces, "retain SLDPRT feature property")?),
+        FaceSelection::Native(
+            ctx.copy_retained_text(replacement, "retain SLDPRT feature property")?,
+        ),
         ctx,
     )?
     .ok()

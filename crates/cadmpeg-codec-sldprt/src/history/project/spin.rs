@@ -167,12 +167,6 @@ pub(super) fn project_sweep(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let profile = property_value(ctx, feature, "Profile")?
-        .map(|source| native_ref(ctx, native_by_source, source).map(PlanarProfileRef::native))
-        .transpose()?;
-    let path = property_value(ctx, feature, "Path")?
-        .map(|source| native_ref(ctx, native_by_source, source).map(PathRef::Native))
-        .transpose()?;
     let mode = if feature_input_class(feature, NativeClassKind::SweepReferenceSurface)
         || feature.xml_tag == "Surface-Sweep"
         || feature.kind == "Surface-Sweep"
@@ -208,6 +202,12 @@ pub(super) fn project_sweep(
         },
         None => None,
     };
+    let profile = property_value(ctx, feature, "Profile")?
+        .map(|source| native_ref(ctx, native_by_source, source).map(PlanarProfileRef::native))
+        .transpose()?;
+    let path = property_value(ctx, feature, "Path")?
+        .map(|source| native_ref(ctx, native_by_source, source).map(PathRef::Native))
+        .transpose()?;
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Sweep {
             shape: cadmpeg_ir::features::SweepShape::sheet_sections(

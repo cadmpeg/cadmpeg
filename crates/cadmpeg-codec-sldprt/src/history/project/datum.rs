@@ -192,15 +192,23 @@ pub(super) fn project_equation_curve(
     let start = require!(ctx.parse_text::<f64>(start, super::FEATURE_LITERAL)?.ok());
     let end = require!(trimmed("End")?);
     let end = require!(ctx.parse_text::<f64>(end, super::FEATURE_LITERAL)?.ok());
-    Ok(cadmpeg_ir::features::FeatureEquationCurve::new(
-        copy_reference_text(ctx, parameter)?,
-        copy_reference_text(ctx, x_expression)?,
-        copy_reference_text(ctx, y_expression)?,
-        copy_reference_text(ctx, z_expression)?,
-        start,
-        end,
-    )
-    .map(|curve| FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve })))
+    let (curve, storage) = ctx.with_scoped_storage("retain SLDPRT equation curve", || {
+        Ok::<_, CodecError>(cadmpeg_ir::features::FeatureEquationCurve::new(
+            copy_reference_text(ctx, parameter)?,
+            copy_reference_text(ctx, x_expression)?,
+            copy_reference_text(ctx, y_expression)?,
+            copy_reference_text(ctx, z_expression)?,
+            start,
+            end,
+        ))
+    })?;
+    let Some(curve) = curve else {
+        return Ok(None);
+    };
+    storage.commit()?;
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::EquationCurve { curve },
+    )))
 }
 
 /// The native record a source names, or the source text itself.
@@ -247,6 +255,7 @@ pub(super) fn project_composite_curve(
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     const OPERATION: &str = "project SLDPRT composite curve segments";
     let segment_text = require!(property_value(ctx, feature, "Segments")?);
+    let mut closed = None;
     let mut segments = Vec::new();
     let mut characters = segment_text.char_indices();
     let mut start = 0;
@@ -264,14 +273,18 @@ pub(super) fn project_composite_curve(
         if source.is_empty() {
             continue;
         }
+        if closed.is_none() {
+            closed = Some(require!(
+                property_value(ctx, feature, "Closed")?.map_or(Some(false), parse_bool)
+            ));
+        }
         let source = native_source(ctx, native_by_source, source)?;
         let segment = PathRef::Native(copy_reference_text(ctx, source)?);
         ctx.push_vec(&mut segments, segment, OPERATION)?;
     }
-    if segments.is_empty() {
+    let Some(closed) = closed else {
         return Ok(None);
-    }
-    let closed = require!(property_value(ctx, feature, "Closed")?.map_or(Some(false), parse_bool));
+    };
     Ok(segments.try_into().ok().map(|segments| {
         FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, closed })
     }))
