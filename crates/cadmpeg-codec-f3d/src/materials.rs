@@ -361,16 +361,18 @@ fn patch_instance_colors(
     patched: &mut std::collections::BTreeSet<String>,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    let frames = cadmpeg_protein::framing::record_frames_for_edit(bytes)?;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let (ctx, protein_view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         protein,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
-    let schema_driven = cadmpeg_protein::has_schemas(&ctx, protein)?;
-    let decoded = if schema_driven {
-        let outcome = cadmpeg_protein::decode_frames_for_edit(protein, &frames)?;
+    let ctx = &ctx;
+    let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, bytes)?;
+    let catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein_view)?;
+    let schema_driven = catalog.is_some();
+    let decoded = if let Some(mut catalog) = catalog {
+        let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
         notes.extend(outcome.rejected.iter().map(|rejected| {
             format!(
                 "Protein record {} rejected: {}",
@@ -381,7 +383,7 @@ fn patch_instance_colors(
     } else {
         Vec::new()
     };
-    for frame in frames {
+    for frame in frames.frames() {
         let record = frame.bytes();
         let mut position = RECORD_MARKER.len();
         let schema = take_lp_utf8(record, &mut position).ok_or_else(|| {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Paged logical-record framing.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::{continuation_page, instance_stream_header, record_start_page, terminal_page};
@@ -29,20 +29,6 @@ impl RecordFrame {
     }
 }
 
-/// Split a paged `InstanceProperties` stream into logical records.
-///
-/// The stream is a [`STREAM_HEADER_LEN`]-byte header followed by fixed
-/// [`PAGE_SIZE`] pages. A page whose bytes 4..8 hold [`RECORD_MARKER`] opens a
-/// record, [`CONTINUATION_MARKER`] extends it, and a page opening with
-/// [`TERMINAL_MARKER`] closes it and carries the used byte count as a `u16` at
-/// offset 4. Every record is returned with the opening marker restored so
-/// record offsets match the on-page layout.
-pub fn record_frames_for_edit(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())?;
-    frame_records(bytes, &ctx, None)
-}
-
 /// Temporary frames and the reservation that remains live while their bytes exist.
 #[derive(Debug)]
 pub struct RecordFrames<'ctx> {
@@ -57,13 +43,21 @@ impl RecordFrames<'_> {
     }
 }
 
-/// Split an instance stream into caller-owned temporary frames.
+/// Split a paged `InstanceProperties` stream into caller-owned temporary
+/// logical records.
+///
+/// The stream is a [`STREAM_HEADER_LEN`]-byte header followed by fixed
+/// [`PAGE_SIZE`] pages. A page whose bytes 4..8 hold [`RECORD_MARKER`] opens a
+/// record, [`CONTINUATION_MARKER`] extends it, and a page opening with
+/// [`TERMINAL_MARKER`] closes it and carries the used byte count as a `u16` at
+/// offset 4. Every record is returned with the opening marker restored so
+/// record offsets match the on-page layout.
 pub fn record_frames_admitted<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<RecordFrames<'ctx>, CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "Protein temporary frames")?;
-    let frames = frame_records(bytes, ctx, Some(&mut reservation))?;
+    let frames = frame_records(bytes, ctx, &mut reservation)?;
     Ok(RecordFrames {
         frames,
         _reservation: reservation,
@@ -73,7 +67,7 @@ pub fn record_frames_admitted<'ctx>(
 fn frame_records(
     bytes: &[u8],
     ctx: &DecodeContext<'_>,
-    mut scope: Option<&mut ScopedReservation<'_>>,
+    scope: &mut ScopedReservation<'_>,
 ) -> Result<Vec<RecordFrame>, CodecError> {
     if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
         return Err(CodecError::Malformed(
@@ -96,12 +90,10 @@ fn frame_records(
     let mut records: Vec<RecordFrame> = Vec::new();
     let mut current = false;
     let mut logical_offset = 0usize;
-    let page_size = std::num::NonZeroUsize::new(PAGE_SIZE)
-        .ok_or_else(|| CodecError::Malformed("Protein page size is zero".into()))?;
-    for page in ctx
-        .admit_iter(&bytes[STREAM_HEADER_LEN..], "Protein page framing scan")?
-        .chunks(page_size)
-    {
+    // Each page costs one step of fixed marker tests; its payload copy is
+    // charged by the copy itself.
+    let mut pages = bytes[STREAM_HEADER_LEN..].chunks_exact(PAGE_SIZE);
+    while let Some(page) = ctx.next_charged(&mut pages, "Protein page framing scan")? {
         let (payload, terminal) = if page.get(record_start_page::MARKER..record_start_page::BODY)
             == Some(RECORD_MARKER)
         {
@@ -150,41 +142,25 @@ fn frame_records(
                 logical_offset,
                 bytes: Vec::new(),
             };
-            if let Some(scope) = scope.as_deref_mut() {
-                ctx.push_scoped_vec(scope, &mut records, frame, "Protein logical record frame")?;
-            } else {
-                ctx.push_vec(&mut records, frame, "Protein logical record frame")?;
-            }
+            ctx.push_scoped_vec(scope, &mut records, frame, "Protein logical record frame")?;
             let frame = records
                 .last_mut()
                 .ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
-            if let Some(scope) = scope.as_deref_mut() {
-                scope.with_storage(|| {
-                    ctx.extend_from_slice(
-                        &mut frame.bytes,
-                        RECORD_MARKER,
-                        "Protein copied record range",
-                    )
-                })?;
-            } else {
+            scope.with_storage(|| {
                 ctx.extend_from_slice(
                     &mut frame.bytes,
                     RECORD_MARKER,
                     "Protein copied record range",
-                )?;
-            }
+                )
+            })?;
             current = true;
         }
         let frame = records
             .last_mut()
             .ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
-        if let Some(scope) = scope.as_deref_mut() {
-            scope.with_storage(|| {
-                ctx.extend_from_slice(&mut frame.bytes, payload, "Protein copied record range")
-            })?;
-        } else {
-            ctx.extend_from_slice(&mut frame.bytes, payload, "Protein copied record range")?;
-        }
+        scope.with_storage(|| {
+            ctx.extend_from_slice(&mut frame.bytes, payload, "Protein copied record range")
+        })?;
         if terminal {
             logical_offset = logical_offset
                 .checked_add(frame.bytes.len())
