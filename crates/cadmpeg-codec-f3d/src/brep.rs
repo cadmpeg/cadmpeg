@@ -20,6 +20,29 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod graph_ops;
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum BodySelectorKey {
+    Native(u64),
+    Ordinal(u32),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for BodySelectorKey {
+    const FIXED_BYTES: Option<u64> =
+        Some(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()));
+
+    fn decode_cost(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<u64, CodecError> {
+        Ok(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Self,
+        >()))
+    }
+}
+
 fn merge_brep_counts(
     ctx: &DecodeContext<'_>,
     target: &mut BTreeMap<String, usize>,
@@ -172,13 +195,55 @@ impl Brep {
         selectors: &BTreeSet<u64>,
     ) -> Result<BTreeMap<BodyId, u64>, cadmpeg_core::CodecError> {
         let mut resolved = BTreeMap::new();
+        ctx.charge_work(0, "scan F3D body selectors")?;
+        if selectors.is_empty() {
+            return Ok(resolved);
+        }
+        let (body_keys, _body_keys_storage) = ctx.unique_index(
+            ctx.admit_iter(&self.asm.body_native_keys, "scan F3D indexed body keys")?
+                .flat_map(|body| {
+                    [
+                        body.asm_body_key
+                            .map(|key| (BodySelectorKey::Native(key), &body.body)),
+                        Some((BodySelectorKey::Ordinal(body.body_ordinal), &body.body)),
+                    ]
+                    .into_iter()
+                    .flatten()
+                }),
+            "index F3D native body selectors",
+        )?;
         for selector in ctx.admit_iter(selectors, "scan F3D body selectors")? {
-            let Some(body) =
-                resolve_body_selector(ctx, self.asm.body_native_keys.iter(), *selector)?
-            else {
+            let native = ctx.get_hash_map(
+                &body_keys,
+                &BodySelectorKey::Native(*selector),
+                "match F3D native body selector",
+            )?;
+            let (body, domain) = match native {
+                Some(body) => (Some(body), "native body keys"),
+                None => {
+                    let Ok(ordinal) = u32::try_from(*selector) else {
+                        continue;
+                    };
+                    (
+                        ctx.get_hash_map(
+                            &body_keys,
+                            &BodySelectorKey::Ordinal(ordinal),
+                            "match F3D ordinal body selector",
+                        )?,
+                        "body ordinals",
+                    )
+                }
+            };
+            let Some(body) = body else {
                 continue;
             };
-            let id = (body).try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
+            let Some(body) = *body else {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("F3D body selector {selector} matches multiple {domain}"),
+                    "describe ambiguous F3D body selector",
+                )?));
+            };
+            let id = body.try_clone_for_decode(ctx, "copy F3D BREP body ID")?;
 
             if let Some(previous) = ctx.insert_btree_map(
                 &mut resolved,

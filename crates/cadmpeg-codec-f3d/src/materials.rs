@@ -1480,8 +1480,7 @@ pub(crate) fn decode_stream_materials(
         // A body-map pair is selected by its entity suffix; a repeated suffix
         // is kept as ambiguous and refused when a record names it.
         let (map_by_suffix, _map_by_suffix_storage) = ctx.unique_index(
-            body_map
-                .iter()
+            ctx.admit_iter(&body_map, "scan F3D indexed material body-map pairs")?
                 .map(|binding| (binding.entity_suffix, binding)),
             "index F3D body-map pairs by entity",
         )?;
@@ -2365,18 +2364,19 @@ impl<'a, 'ctx> BodyPairIndex<'a, 'ctx> {
         // Pairs whose id names no stream cannot match an owner; they are kept
         // under the absent key, which no lookup asks for.
         let (pairs, storage) = ctx.unique_index(
-            body_bindings.iter().map(|binding| {
-                let key = crate::ids::native_stream(binding.id()).map(|stream| {
-                    (
-                        stream,
-                        binding.asm_body_key,
-                        binding.asm_body_key_offset(),
-                        binding.entity_suffix,
-                        binding.entity_suffix_offset(),
-                    )
-                });
-                (key, binding)
-            }),
+            ctx.admit_iter(body_bindings, "scan F3D indexed material body bindings")?
+                .map(|binding| {
+                    let key = crate::ids::native_stream(binding.id()).map(|stream| {
+                        (
+                            stream,
+                            binding.asm_body_key,
+                            binding.asm_body_key_offset(),
+                            binding.entity_suffix,
+                            binding.entity_suffix_offset(),
+                        )
+                    });
+                    (key, binding)
+                }),
             "index F3D material body-map pairs",
         )?;
         Ok(Self {

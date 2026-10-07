@@ -969,14 +969,121 @@ fn selected_body_index_refuses_collection_limit() {
         },
         ..Brep::default()
     };
-    let error = with_limits(0, u64::MAX, |ctx| {
-        brep.body_selectors_for(ctx, &BTreeSet::from([7]))
-            .unwrap_err()
-    });
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "index F3D selected BREP bodies",
+        0,
+        |ctx| brep.body_selectors_for(ctx, &BTreeSet::from([7])),
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D selected BREP bodies")
     );
+}
+
+fn selector_graph(keys: &[(u32, u32, Option<u64>)]) -> Brep {
+    Brep {
+        asm: AsmBrep {
+            body_native_keys: keys
+                .iter()
+                .map(|&(body, ordinal, key)| BodyNativeKey {
+                    source_namespace:
+                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                            crate::ids::ID_FORMAT,
+                        ),
+                    body: BodyId::mint(format!("f3d:brep:entity#{body}")).unwrap(),
+                    record_index: body,
+                    body_ordinal: ordinal,
+                    source_brep: None,
+                    asm_body_key: key,
+                })
+                .collect(),
+            ..AsmBrep::default()
+        },
+        ..Brep::default()
+    }
+}
+
+#[test]
+fn indexed_body_selectors_keep_repeated_keys_ambiguous() {
+    for (keys, selector, domain) in [
+        ([(1, 0, Some(7)); 3], 7, "native body keys"),
+        (
+            [(1, 0, Some(7)), (1, 0, Some(8)), (1, 0, Some(9))],
+            0,
+            "body ordinals",
+        ),
+    ] {
+        let brep = selector_graph(&keys);
+        let error = with_context(|ctx| {
+            brep.body_selectors_for(ctx, &BTreeSet::from([selector]))
+                .unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+            if message == format!("F3D body selector {selector} matches multiple {domain}")));
+    }
+}
+
+#[test]
+fn indexed_body_selectors_preserve_precedence_and_conflicts() {
+    let brep = selector_graph(&[(1, 0, Some(0)), (2, 0, Some(7)), (3, 1, Some(u64::MAX))]);
+    let selected = with_context(|ctx| {
+        brep.body_selectors_for(ctx, &BTreeSet::from([0, u64::MAX - 1, u64::MAX]))
+            .unwrap()
+    });
+    assert_eq!(
+        selected,
+        BTreeMap::from([
+            (BodyId::mint("f3d:brep:entity#1").unwrap(), 0),
+            (BodyId::mint("f3d:brep:entity#3").unwrap(), u64::MAX),
+        ])
+    );
+
+    let brep = selector_graph(&[(1, 0, Some(7))]);
+    let error = with_context(|ctx| {
+        brep.body_selectors_for(ctx, &BTreeSet::from([0, 7]))
+            .unwrap_err()
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+        if message == "F3D body f3d:brep:entity#1 is selected by both 0 and 7"));
+}
+
+#[test]
+fn indexed_body_selectors_preserve_index_and_lookup_refusals() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let brep = selector_graph(&[(1, 0, Some(7))]);
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            dimension,
+            "index F3D native body selectors",
+            0,
+            |ctx| brep.body_selectors_for(ctx, &BTreeSet::from([7])),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == "index F3D native body selectors")
+        );
+    }
+    for (selector, operation) in [
+        (7, "match F3D native body selector"),
+        (0, "match F3D ordinal body selector"),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| brep.body_selectors_for(ctx, &BTreeSet::from([selector])),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
+    }
 }
 
 #[test]
