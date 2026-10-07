@@ -63,11 +63,11 @@ pub(crate) fn definitions(
     let mut definitions = Vec::new();
     for section in scan.sections(ctx)? {
         let bytes = section.payload();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(bytes.len()),
-            "scan SLDPRT appearance definitions",
-        )?;
-        for (offset, token) in bytes.windows(VISUAL_PROPERTIES_CLASS.len()).enumerate() {
+        for (offset, token) in ctx
+            .admit_iter(bytes, "scan SLDPRT appearance definitions")?
+            .windows(const { crate::nonzero(VISUAL_PROPERTIES_CLASS.len()) })
+            .enumerate()
+        {
             if token != VISUAL_PROPERTIES_CLASS {
                 continue;
             }
@@ -116,18 +116,10 @@ fn definition_at(
             Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
             Err(error) => return Err(error),
         };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(decoded.len()),
-        "trim SLDPRT appearance name",
-    )?;
-    let trimmed = decoded.trim();
+    let trimmed = ctx.trim_text(&decoded, "trim SLDPRT appearance name")?;
     if trimmed.is_empty() {
         return Ok(None);
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(trimmed.len()),
-        "retain SLDPRT appearance name",
-    )?;
     let name = ctx.copy_retained_text(trimmed, "retain SLDPRT appearance name")?;
     let source_name = clone_stream_name(ctx, section.source_stream())?;
     Ok(Some(AppearanceDefinition {
@@ -170,12 +162,12 @@ fn inline_definitions(
     let Some(bytes) = section.payload().get(start..end) else {
         return Ok(Vec::new());
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "scan inline SLDPRT appearances",
-    )?;
     let mut definitions = Vec::new();
-    for (relative, marker) in bytes.windows(inline_visual::MARKER_VALUE.len()).enumerate() {
+    for (relative, marker) in ctx
+        .admit_iter(bytes, "scan inline SLDPRT appearances")?
+        .windows(const { crate::nonzero(inline_visual::MARKER_VALUE.len()) })
+        .enumerate()
+    {
         if marker != inline_visual::MARKER_VALUE {
             continue;
         }
@@ -233,6 +225,7 @@ fn display_assignments(
     // A body owns the faces whose tables lie between the previous body record
     // and its own; those windows are disjoint, so the faces ordered by table
     // start are visited once across all bodies.
+    let mut face_order_storage = ctx.reserve_scoped(0, "order SLDPRT appearance faces")?;
     let mut faces_by_start = Vec::new();
     let mut previous_body_end = 0;
     for class in ctx.admit_iter(&classes, "scan SLDPRT display_assignments values")? {
@@ -246,7 +239,9 @@ fn display_assignments(
             continue;
         }
         if faces_by_start.len() != faces.len() {
-            faces_by_start = ctx.collect_vec(0..faces.len(), "order SLDPRT appearance faces")?;
+            faces_by_start = face_order_storage.with_storage(|| {
+                ctx.collect_vec(0..faces.len(), "order SLDPRT appearance faces")
+            })?;
             ctx.sort_unstable_by_key(
                 &mut faces_by_start,
                 |&index| (faces[index].table.start(), index),
@@ -260,8 +255,10 @@ fn display_assignments(
             "match SLDPRT body appearance faces",
         )?;
         let mut face_indexes = Vec::new();
-        for &table_index in faces_by_start.get(first..).unwrap_or_default() {
-            ctx.charge_work(1, "match SLDPRT body appearance faces")?;
+        let mut remaining = faces_by_start.get(first..).unwrap_or_default().iter();
+        while let Some(&table_index) =
+            ctx.next_charged(&mut remaining, "match SLDPRT body appearance faces")?
+        {
             let table = &faces[table_index].table;
             if table.start() > class.class_offset {
                 break;
@@ -421,7 +418,10 @@ pub(crate) fn resolve_display_appearances(
 
     let mut feature_by_source =
         HashMap::<FeatureSourceId, Option<FeatureAppearanceAssignment>>::new();
-    for assignment in feature_assignments(ctx, scan)? {
+    for assignment in ctx.admit_iter(
+        feature_assignments(ctx, scan)?,
+        "scan SLDPRT feature appearance assignments",
+    )? {
         if let Some(existing) = ctx.get_mut_hash_map(
             &mut feature_by_source,
             &assignment.feature_source_id,

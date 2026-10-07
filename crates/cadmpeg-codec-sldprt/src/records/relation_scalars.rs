@@ -60,10 +60,11 @@ impl RelationScalars {
         let mut members = std::collections::HashSet::new();
         for value in ctx.admit_iter(scalars, "select SLDPRT relation scalar roles")? {
             let scalar = scalar_ref(value);
-            if ctx
-                .trim_text(&scalar.id, "check SLDPRT relation scalar identity")?
-                .is_empty()
-            {
+            if !ctx.any_by(
+                scalar.id.chars(),
+                |character| Ok(!character.is_whitespace()),
+                "check SLDPRT relation scalar identity",
+            )? {
                 return Err(cadmpeg_core::CodecError::malformed(BLANK_MEMBER));
             }
             if !storage.with_storage(|| {
@@ -211,19 +212,22 @@ fn admit_member(
     refs: &[String],
     id: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let length = cadmpeg_core::decode::u64_from_index(id.len());
-    let work = ctx
-        .admit_iter(&refs[..], "scan SLDPRT admit_member values")?
-        .try_fold(length, |work, member| {
-            work.checked_add(length)?
-                .checked_add(cadmpeg_core::decode::u64_from_index(member.len()))?
-                .checked_add(1)
-        })
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("check SLDPRT relation scalar identity", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_work(work, "check SLDPRT relation scalar identity")?;
-    check_member(refs, id).map_err(cadmpeg_core::CodecError::malformed)
+    const OPERATION: &str = "check SLDPRT relation scalar identity";
+    if !ctx.any_by(
+        id.chars(),
+        |character| Ok(!character.is_whitespace()),
+        OPERATION,
+    )? {
+        return Err(cadmpeg_core::CodecError::malformed(BLANK_MEMBER));
+    }
+    if ctx.any_by(
+        refs,
+        |member| ctx.equal(member.as_str(), id, OPERATION),
+        OPERATION,
+    )? {
+        return Err(cadmpeg_core::CodecError::malformed(REPEATED_MEMBER));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -261,7 +265,11 @@ impl RelationScalarsWire {
             let mut storage = ctx.reserve_scoped(0, OPERATION)?;
             let mut positions = std::collections::HashMap::new();
             for (index, id) in ctx.admit_iter(&self.scalar_refs, OPERATION)?.enumerate() {
-                if ctx.trim_text(id, OPERATION)?.is_empty() {
+                if !ctx.any_by(
+                    id.chars(),
+                    |character| Ok(!character.is_whitespace()),
+                    OPERATION,
+                )? {
                     return Err(refuse(BLANK_MEMBER));
                 }
                 if storage
@@ -403,17 +411,22 @@ mod tests {
     #[test]
     fn relation_membership_checks_refuse_unadmitted_comparison_work() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut members = RelationScalars::from_refs(vec!["s".into()], None, None).unwrap();
-        let before = members.clone();
-        assert!(matches!(
-            members.push(&ctx, "other"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
-        assert_eq!(members, before);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "check SLDPRT relation scalar identity",
+            |cap| {
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let mut members = RelationScalars::from_refs(vec!["s".into()], None, None).unwrap();
+                let before = members.clone();
+                let result = members.push(&ctx, "other");
+                assert_eq!(members, before);
+                result
+            },
+        );
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 }
 

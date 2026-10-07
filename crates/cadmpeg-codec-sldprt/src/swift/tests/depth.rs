@@ -115,7 +115,7 @@ fn swift_pattern_depth_refuses_instead_of_visiting_parent() {
 #[test]
 fn swift_cycles_remain_absent_and_pattern_leaves_are_visited() {
     let ctx = cadmpeg_test_support::service_decode_context();
-    let mut visited = BTreeSet::from(["cycle".to_owned()]);
+    let mut visited = BTreeSet::from(["cycle"]);
     assert!(!crate::swift::feature_reaches(
         &ctx,
         "cycle",
@@ -217,14 +217,53 @@ fn assert_work_refusal_at(
 #[test]
 fn swift_reachability_membership_refusal_reaches_the_caller() {
     assert_work_refusal_at("check SWIFT reachability path", |ctx| {
-        let mut visited = BTreeSet::from(["F0".to_owned()]);
+        let mut visited = BTreeSet::from(["F0"]);
         let result =
             crate::swift::feature_reaches(ctx, "F0", "target", &BTreeMap::new(), &mut visited, 0);
         if matches!(&result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "check SWIFT reachability path")
         {
-            assert_eq!(visited, BTreeSet::from(["F0".to_owned()]));
+            assert_eq!(visited, BTreeSet::from(["F0"]));
         }
         result.map(|_| ())
     });
+}
+
+#[test]
+fn swift_reachability_explores_shared_descendants_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut features = Vec::new();
+    for level in 0..20 {
+        for branch in 0..2 {
+            let mut feature = entity("GdtCompoundHole");
+            if level < 19 {
+                for child in 0..2 {
+                    feature.features.references.push(reference(
+                        &format!("F{}-{child}", level + 1),
+                        "GdtCompoundHole",
+                    ));
+                }
+            }
+            features.push((format!("F{level}-{branch}"), feature));
+        }
+    }
+    let index = features
+        .iter()
+        .map(|(id, entity)| (id.as_str(), entity))
+        .collect::<BTreeMap<_, _>>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 100_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut visited = BTreeSet::new();
+    let (reaches, storage) = ctx
+        .with_scoped_storage("reachability test workspace", || {
+            crate::swift::feature_reaches(&ctx, "F0-0", "absent", &index, &mut visited, 0)
+        })
+        .unwrap();
+    assert!(!reaches);
+    assert_eq!(visited.len(), 39);
+    assert!(visited.contains("F19-0") && visited.contains("F19-1"));
+    drop((visited, storage));
+    ctx.finish_session().unwrap();
 }

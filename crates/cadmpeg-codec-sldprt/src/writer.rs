@@ -549,21 +549,18 @@ fn remapped_partition_section(
     native: &SldprtNative,
     section: &str,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let old_index = match crate::container::configuration_index(ctx, section)? {
-        Some(value) => value,
-        None => return Ok(None),
+    let Some(old_index) = crate::container::configuration_index(ctx, section)? else {
+        return Ok(None);
     };
-    let native_id = match native
+    let Some(configuration) = native
         .feature_histories
         .iter()
         .flat_map(|history| &history.configurations)
         .find(|configuration| configuration.source_index == u32::try_from(old_index).ok())
-    {
-        Some(value) => value,
-        None => return Ok(None),
-    }
-    .id
-    .as_str();
+    else {
+        return Ok(None);
+    };
+    let native_id = configuration.id.as_str();
     let new_index = match match ir
         .model
         .configurations
@@ -1991,7 +1988,7 @@ pub(crate) fn validate_feature_graph(
     features: &[crate::records::Feature],
 ) -> Result<(), CodecError> {
     if ctx
-        .admit_iter(&features[..], "scan SLDPRT validate_feature_graph values")?
+        .admit_iter(features, "scan SLDPRT validate_feature_graph values")?
         .try_fold(false, |invalid, feature| {
             Ok::<_, CodecError>(invalid || !valid_xml_name(ctx, &feature.xml_tag)?)
         })?
@@ -2011,7 +2008,7 @@ pub(crate) fn validate_feature_graph(
     }
     if by_id.len()
         != ctx
-            .admit_iter(&features[..], "scan SLDPRT validate_feature_graph values")?
+            .admit_iter(features, "scan SLDPRT validate_feature_graph values")?
             .filter(|feature| feature.source_id.is_some())
             .count()
     {

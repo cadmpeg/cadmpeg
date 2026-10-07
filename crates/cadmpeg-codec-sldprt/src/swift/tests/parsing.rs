@@ -157,7 +157,7 @@ fn parse_root_with_service(payload: &[u8]) -> Option<Entity> {
 }
 
 #[test]
-fn swift_annotations_refuse_retained_stream_limit() {
+fn swift_annotations_refuse_scoped_stream_limit() {
     let root = Entity {
         class: crate::swift::ROOT_CLASS.into(),
         ..Entity::default()
@@ -172,17 +172,22 @@ fn swift_annotations_refuse_retained_stream_limit() {
     ));
     let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(root.class.len()).expect("fixture length");
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&source, &arena, &policy).expect("source fits policy");
-    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    let Err(CodecError::ResourceLimit(limit)) =
-        crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
-    else {
-        panic!("expected retained refusal")
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "copy SWIFT source stream name",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+            let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+            crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected scoped refusal");
     };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "copy SWIFT source stream name");
 }
 
 fn swift_rendered_annotation_limit_error(
@@ -555,7 +560,12 @@ fn source_with_swift_annotation(annotation: Entity) -> Vec<u8> {
 }
 
 fn assert_malformed_swift_projection(annotation: Entity, reason: &str) {
-    let class = crate::swift::short_class(&annotation.class).to_owned();
+    let class = crate::swift::short_class(
+        &cadmpeg_test_support::service_decode_context(),
+        &annotation.class,
+    )
+    .unwrap()
+    .to_owned();
     let source = source_with_swift_annotation(annotation);
     let scan = crate::test_support::container::scan(&source);
     let ctx = cadmpeg_test_support::service_decode_context();
@@ -688,4 +698,51 @@ fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("GdtWidth (1)")));
+}
+
+#[test]
+fn swift_provenance_index_preserves_overlapping_source_prefixes() {
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    for id in ["A:child", "A", "Aother"] {
+        let mut annotation = super::entity("GdtFlatness");
+        annotation.doubles.insert("Tolerance".into(), 0.25);
+        root.annotations.references.push(Reference {
+            id: id.into(),
+            class: annotation.class.clone(),
+        });
+        root.annotations.entities.push(annotation);
+    }
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let parsed = parse_root_with_service(&payload).unwrap();
+    let mut source = crate::test_support::container::outer_header();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &payload,
+    ));
+    let scan = crate::test_support::container::scan(&source);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+    let projected = crate::swift::annotations(&ctx, &scan, &mut provenance, None, None).unwrap();
+    assert_eq!(
+        projected
+            .iter()
+            .map(|annotation| annotation.id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "sldprt:model:pmi#A:child",
+            "sldprt:model:pmi#A",
+            "sldprt:model:pmi#Aother"
+        ]
+    );
+    for (id, index) in [("A:child", 1), ("A", 1), ("Aother", 2)] {
+        assert_eq!(
+            provenance.provenance[pmi_id(id).unwrap().as_str()].offset,
+            cadmpeg_core::decode::u64_from_index(parsed.annotations.entities[index].offset)
+        );
+    }
 }

@@ -182,23 +182,28 @@ fn decoded_brep_site_collection_refuses_limit() {
 }
 
 #[test]
-fn decoded_brep_header_copy_refuses_retained_limit() {
+fn decoded_brep_header_copy_refuses_work_limit() {
     use cadmpeg_core::decode::ResourceDimension;
-
     let source = sldprt_with_body(&triangle_body());
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &source,
-        &mut options,
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
         "retain SLDPRT B-rep header description",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_work_units = cap;
+            SldprtCodec
+                .decode(&mut Cursor::new(&source), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode refusal: {other:?}"),
+                })
+        },
     );
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT B-rep header description"
-    ));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "retain SLDPRT B-rep header description")
+    );
 }
 
 #[test]
@@ -530,6 +535,9 @@ fn geometry_history_xml_refuses_scoped_limit() {
     policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(payload.len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let decoded = super::super::DecodedBrep {
+        _workspace: ctx
+            .reserve_scoped(0, "geometry history test workspace")
+            .unwrap(),
         metadata_header: None,
         brep: crate::brep::graph::Brep::default(),
         configuration_bodies: Vec::new(),
