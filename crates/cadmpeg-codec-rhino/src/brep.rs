@@ -667,6 +667,22 @@ impl ValidatedRawBrep {
                 tolerance,
             });
         }
+        let mut membership_storage = ctx.reserve_scoped(0, "Rhino Brep membership flags")?;
+        let mut listed_trims = membership_storage.with_storage(|| {
+            ctx.alloc_filled(raw.trims.len(), false, "Rhino Brep trim membership")
+        })?;
+        for (loop_index, loop_record) in ctx
+            .admit_iter(&raw.loops[..], "Rhino Brep trim membership").map_err(cadmpeg_core::CodecError::from)?
+            .enumerate()
+        {
+            for value in ctx.admit_iter(&loop_record.trims[..], "Rhino Brep trim membership").map_err(cadmpeg_core::CodecError::from)? {
+                if let Some(trim_index) = position(Some(*value)).filter(|&index| index < raw.trims.len()) {
+                    if position(Some(raw.trims[trim_index].loop_index)) == Some(loop_index) {
+                        listed_trims[trim_index] = true;
+                    }
+                }
+            }
+        }
         for (trim_index, trim) in ctx
             .admit_iter(&raw.trims[..], "Rhino validate traversal")
             .map_err(cadmpeg_core::CodecError::from)?
@@ -694,11 +710,7 @@ impl ValidatedRawBrep {
             };
             let vertices = slot_pair(ctx, trim.vertices, raw.vertices.len(), "trim vertex")?;
             let loop_index = slot(ctx, trim.loop_index, raw.loops.len(), "trim loop")?;
-            if !ctx.any_by(
-                &(raw.loops[loop_index].trims)[..],
-                |value| Ok(position(Some(*value)) == Some(trim_index)),
-                "Rhino validate traversal",
-            )? {
+            if !listed_trims[trim_index] {
                 return Err(error(
                     trim.source_range.start,
                     "trim/loop reciprocity mismatch",
@@ -759,6 +771,18 @@ impl ValidatedRawBrep {
                 }
             }
         }
+        let mut listed_loops = membership_storage.with_storage(|| {
+            ctx.alloc_filled(raw.loops.len(), false, "Rhino Brep loop membership")
+        })?;
+        for (face_index, face) in ctx.admit_iter(&raw.faces[..], "Rhino Brep loop membership").map_err(cadmpeg_core::CodecError::from)?.enumerate() {
+            for value in ctx.admit_iter(&face.loops[..], "Rhino Brep loop membership").map_err(cadmpeg_core::CodecError::from)? {
+                if let Some(loop_index) = position(Some(*value)).filter(|&index| index < raw.loops.len()) {
+                    if position(Some(raw.loops[loop_index].face)) == Some(face_index) {
+                        listed_loops[loop_index] = true;
+                    }
+                }
+            }
+        }
         for (index, loop_record) in ctx
             .admit_iter(&raw.loops[..], "Rhino validate traversal")
             .map_err(cadmpeg_core::CodecError::from)?
@@ -767,11 +791,7 @@ impl ValidatedRawBrep {
             let trims = slots(ctx, &loop_record.trims, raw.trims.len(), "loop trim")?;
             unique(ctx, &loop_record.trims, "loop trim")?;
             let face = slot(ctx, loop_record.face, raw.faces.len(), "loop face")?;
-            if !ctx.any_by(
-                &(raw.faces[face].loops)[..],
-                |value| Ok(position(Some(*value)) == Some(index)),
-                "Rhino validate traversal",
-            )? {
+            if !listed_loops[index] {
                 return Err(error(
                     loop_record.source_range.start,
                     "loop/face reciprocity mismatch",
@@ -810,9 +830,8 @@ impl ValidatedRawBrep {
                 ));
             }
             for loop_index in ctx
-                .admit_iter(&loops[..], "Rhino validate traversal")
+                .admit_iter(&loops[1..], "Rhino validate traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
-                .skip(1)
             {
                 let loop_type = raw.loops[*loop_index].loop_type;
                 if matches!(loop_type, RawLoopKind::Unknown | RawLoopKind::Outer) {
@@ -893,21 +912,17 @@ fn body_kind(
     writer_version: Option<i64>,
 ) -> Result<(BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>), cadmpeg_core::CodecError> {
     let mut closed = !raw.faces.is_empty();
-    if closed {
-        for edge in 0..resolved.edges.len() {
-            if ctx
-                .admit_iter(
-                    resolved.trims.as_slice(),
-                    "Rhino body kind trim incidence traversal",
-                )?
-                .filter(|trim| trim.edge == Some(edge))
-                .count()
-                != 2
-            {
-                closed = false;
-                break;
+    if closed && !resolved.edges.is_empty() {
+        let mut storage = ctx.reserve_scoped(0, "Rhino body kind edge incidence")?;
+        let mut counts = storage.with_storage(|| {
+            ctx.alloc_filled(resolved.edges.len(), 0_usize, "Rhino body kind edge incidence")
+        })?;
+        for trim in ctx.admit_iter(&resolved.trims[..], "Rhino body kind trim incidence traversal").map_err(cadmpeg_core::CodecError::from)? {
+            if let Some(count) = trim.edge.and_then(|edge| counts.get_mut(edge)) {
+                *count += 1;
             }
         }
+        closed = ctx.all_by(&counts[..], |count| Ok(*count == 2), "Rhino body kind edge incidence")?;
     }
     let kind = serialized_body_kind(raw.is_solid, writer_version, closed);
     let loss = if body_kind_rests_on_missing_stamp(raw.is_solid, writer_version, closed) {
@@ -5305,8 +5320,16 @@ mod tests {
                 source_range: 0..0,
             },
         ];
-        let error = with_collection_limit(&[], 30, |ctx| ValidatedRawBrep::try_new(ctx, raw))
-            .expect_err("two resolved region sides exceed the preceding 30 collection items");
+        // Two trim/loop membership flag arrays now precede the two region sides.
+        let error = GeometryError::from(cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "Rhino resolved Brep region sides",
+            |limit| with_collection_limit(&[], limit, |ctx| ValidatedRawBrep::try_new(ctx, raw.clone()))
+                .map_err(|error| match error {
+                    GeometryError::Codec(error) => error,
+                    other => cadmpeg_core::CodecError::malformed(other),
+                }),
+        ));
         assert!(matches!(error,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.operation == "Rhino resolved Brep region sides"));

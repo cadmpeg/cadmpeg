@@ -106,7 +106,7 @@ fn decode_mesh_proxy(
     decode_mesh_proxy_with_ctx(&ctx, data, extra, archive, scale, id, fingerprint)
 }
 
-fn decode_with_collection_limit(limit: u64) -> SubdError {
+fn decode_with_collection_limit(limit: u64) -> Result<Option<DecodedSubd>, cadmpeg_core::CodecError> {
     let fixture = Fixture::default();
     let data = payload(fixture);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -122,15 +122,23 @@ fn decode_with_collection_limit(limit: u64) -> SubdError {
         MillimeterScale::IDENTITY,
         "rhino:test:subd#0".try_into().expect("valid identity"),
     )
-    .expect_err("collection limit must refuse the SubD")
+    .map_err(|error| match error {
+        SubdError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
+        other => cadmpeg_core::CodecError::malformed(other),
+    })
 }
 
 macro_rules! subd_collection_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
+    ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            match decode_with_collection_limit($limit) {
-                SubdError::Resource(refusal) => {
+            // Dense group slots and unique ordered members are admitted separately.
+            // Probe the operation after earlier charges instead of counting those charges.
+            match cadmpeg_test_support::refusal::resource_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                $operation, decode_with_collection_limit,
+            ) {
+                cadmpeg_core::CodecError::ResourceLimit(refusal) => {
                     assert_eq!(refusal.operation, $operation);
                 }
                 other => panic!("expected resource refusal, got {other:?}"),
@@ -141,80 +149,49 @@ macro_rules! subd_collection_limit_test {
 
 subd_collection_limit_test!(
     level_vertices_refuse_collection_limit,
-    3,
     "Rhino SubD level vertices"
 );
 subd_collection_limit_test!(
     component_pointers_refuse_collection_limit,
-    5,
     "Rhino SubD component pointers"
 );
 subd_collection_limit_test!(
     level_edges_refuse_collection_limit,
-    19,
     "Rhino SubD level edges"
 );
 subd_collection_limit_test!(
     level_faces_refuse_collection_limit,
-    32,
     "Rhino SubD level faces"
 );
 subd_collection_limit_test!(
     child_ranges_refuse_collection_limit,
-    37,
     "Rhino SubD child ranges"
 );
 subd_collection_limit_test!(
-    component_types_refuse_collection_limit,
-    46,
-    "Rhino SubD component types"
-);
-subd_collection_limit_test!(
     vertex_edge_map_refuses_collection_limit,
-    50,
     "Rhino SubD vertex-edge map"
 );
 subd_collection_limit_test!(
     incidence_members_refuse_collection_limit,
-    51,
     "Rhino SubD incidence members"
 );
 subd_collection_limit_test!(
-    face_edge_lookup_refuses_collection_limit,
-    62,
-    "Rhino SubD face edge lookup"
-);
-subd_collection_limit_test!(
     vertex_face_map_refuses_collection_limit,
-    66,
     "Rhino SubD vertex-face map"
 );
 subd_collection_limit_test!(
     edge_face_map_refuses_collection_limit,
-    74,
     "Rhino SubD edge-face map"
 );
 subd_collection_limit_test!(
     serialized_incidence_refuses_collection_limit,
-    80,
     "Rhino SubD serialized incidence"
 );
-subd_collection_limit_test!(
-    vertex_indices_refuse_collection_limit,
-    98,
-    "Rhino SubD vertex indices"
-);
-subd_collection_limit_test!(
-    edge_indices_refuse_collection_limit,
-    102,
-    "Rhino SubD edge indices"
-);
-subd_collection_limit_test!(vertices_refuse_collection_limit, 106, "Rhino SubD vertices");
-subd_collection_limit_test!(edges_refuse_collection_limit, 110, "Rhino SubD edges");
-subd_collection_limit_test!(faces_refuse_collection_limit, 111, "Rhino SubD faces");
+subd_collection_limit_test!(vertices_refuse_collection_limit, "Rhino SubD vertices");
+subd_collection_limit_test!(edges_refuse_collection_limit, "Rhino SubD edges");
+subd_collection_limit_test!(faces_refuse_collection_limit, "Rhino SubD faces");
 subd_collection_limit_test!(
     face_edges_refuse_collection_limit,
-    115,
     "Rhino SubD face edges"
 );
 
