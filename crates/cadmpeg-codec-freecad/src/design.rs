@@ -130,7 +130,7 @@ pub(crate) fn transfer(
             .map(|object| (object.id().as_str(), object)),
         "fcstd design object index",
     )?;
-    let (feature_ids, _feature_ids_storage) =
+    let (feature_ids, feature_ids_storage) =
         ctx.with_scoped_storage("fcstd design feature index storage", || {
             let mut feature_ids = HashMap::new();
             for object in ctx.admit_iter(objects, "fcstd design feature objects")? {
@@ -146,9 +146,9 @@ pub(crate) fn transfer(
             }
             Ok::<_, CodecError>(feature_ids)
         })?;
-    let (predecessors, _predecessor_storage) =
+    let (predecessors, predecessor_storage) =
         body_predecessors(ctx, objects, &feature_ids, &properties_by_owner)?;
-    let (parent_by_member, _parent_by_member_storage) =
+    let (parent_by_member, parent_by_member_storage) =
         ctx.with_scoped_storage("fcstd design membership index storage", || {
             let mut parent_by_member = HashMap::new();
             for body in ctx
@@ -207,7 +207,7 @@ pub(crate) fn transfer(
             }
             Ok::<_, CodecError>(sketch_ids)
         })?;
-    let (body_ids, _body_ids_storage) =
+    let (body_ids, body_ids_storage) =
         ctx.with_scoped_storage("fcstd design body id storage", || {
             let mut body_ids =
                 ctx.vector_storage(ir.model.bodies.len(), "fcstd design body ids")?;
@@ -216,11 +216,14 @@ pub(crate) fn transfer(
             }
             Ok::<_, CodecError>(body_ids)
         })?;
-    let (feature_ordinals, mut cycle_affected, _feature_ordinal_storage) =
-        feature_ordinals(ctx, objects, &properties_by_owner, &parent_by_member)?;
+    let FeatureOrdering {
+        ordinals: feature_ordinals,
+        mut cycle_affected,
+        storage: feature_ordinal_storage,
+    } = feature_ordinals(ctx, objects, &properties_by_owner, &parent_by_member)?;
     drop(parent_by_member);
-    drop(_parent_by_member_storage);
-    let (ordinal_by_feature, _ordinal_by_feature_storage) =
+    drop(parent_by_member_storage);
+    let (ordinal_by_feature, ordinal_by_feature_storage) =
         ctx.with_scoped_storage("fcstd design ordinal index storage", || {
             let mut ordinal_by_feature = HashMap::new();
             for object in ctx.admit_iter(objects, "fcstd design feature objects")? {
@@ -705,17 +708,17 @@ pub(crate) fn transfer(
         )?;
     }
     drop(body_ids);
-    drop(_body_ids_storage);
+    drop(body_ids_storage);
     drop(predecessors);
-    drop(_predecessor_storage);
+    drop(predecessor_storage);
     drop(feature_ids);
-    drop(_feature_ids_storage);
+    drop(feature_ids_storage);
     drop(sketch_ids);
     drop(sketch_ids_storage);
     drop(ordinal_by_feature);
-    drop(_ordinal_by_feature_storage);
+    drop(ordinal_by_feature_storage);
     drop(feature_ordinals);
-    drop(_feature_ordinal_storage);
+    drop(feature_ordinal_storage);
     let mut initial_cycle_storage = ctx.reserve_scoped(0, "fcstd initial cycle feature storage")?;
     let mut initial_cycle_affected_features = BTreeSet::new();
     for object in ctx.admit_iter(objects, "fcstd design cycle objects")? {
@@ -930,19 +933,18 @@ fn body_tip(
     })
 }
 
+struct FeatureOrdering<'ctx, 'a> {
+    ordinals: HashMap<&'a str, u64>,
+    cycle_affected: BTreeSet<String>,
+    storage: ScopedReservation<'ctx>,
+}
+
 fn feature_ordinals<'ctx, 'a>(
     ctx: &'ctx DecodeContext<'_>,
     objects: &'a [ObjectRecord],
     properties_by_owner: &BTreeMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
-) -> Result<
-    (
-        HashMap<&'a str, u64>,
-        BTreeSet<String>,
-        ScopedReservation<'ctx>,
-    ),
-    CodecError,
-> {
+) -> Result<FeatureOrdering<'ctx, 'a>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "fcstd design ordinal working storage")?;
     let mut design_objects = Vec::new();
     for object in ctx.admit_iter(objects, "fcstd design ordered objects")? {
@@ -1196,7 +1198,11 @@ fn feature_ordinals<'ctx, 'a>(
             )
         })?;
     }
-    Ok((ordinals, cycle_affected, ordinal_storage))
+    Ok(FeatureOrdering {
+        ordinals,
+        cycle_affected,
+        storage: ordinal_storage,
+    })
 }
 
 /// Apply an operation's shape-refinement and boolean-tolerance controls.
@@ -1504,7 +1510,7 @@ fn external_geometry_metadata(
             else {
                 continue;
             };
-            if !(kind == "Sketcher::ExternalGeometryExtension") {
+            if kind != "Sketcher::ExternalGeometryExtension" {
                 continue;
             }
             if extension.is_some() {
@@ -1535,7 +1541,7 @@ fn external_geometry_metadata(
         }
     }
     let reference = match extension_ref.or(geometry_ref) {
-        Some(value) if !(value == "") => {
+        Some(value) if !value.is_empty() => {
             Some(ctx.copy_retained_text(value, "fcstd external geometry reference")?)
         }
         _ => None,
@@ -1762,7 +1768,7 @@ fn parse_sketch(
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
                 .unwrap_or("unknown");
             let geometry_value = match carrier
-                .map(|carrier| sketch_nurbs(ctx, &native_kind, carrier))
+                .map(|carrier| sketch_nurbs(ctx, native_kind, carrier))
                 .transpose()?
                 .flatten()
             {
@@ -1903,7 +1909,7 @@ fn parse_sketch(
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
                 .unwrap_or("unknown");
             let geometry = match carrier
-                .map(|carrier| sketch_nurbs(ctx, &native_kind, carrier))
+                .map(|carrier| sketch_nurbs(ctx, native_kind, carrier))
                 .transpose()?
                 .flatten()
             {
@@ -3354,7 +3360,7 @@ fn expression_binding(
     let Some(value) = ctx.find_by(
         engine.values(),
         |value| {
-            if !(value.tag.as_str() == "Expression") {
+            if value.tag.as_str() != "Expression" {
                 return Ok(false);
             }
             let Some(value_path) =
@@ -4114,8 +4120,7 @@ fn constraint_operands(
             let mut positions = ctx
                 .admit_iter(&positions, "fcstd constraint position values")?
                 .copied();
-            loop {
-                let Some(entity) = ids.next() else { break };
+            while let Some(entity) = ids.next() {
                 let Some(position) = positions.next() else {
                     return Err(malformed_design(
                         ctx,
@@ -4364,19 +4369,18 @@ fn resolve_operand(
     entities: &[SketchEntity],
 ) -> Result<Option<SketchLocus>, CodecError> {
     let reference = |suffix: &str| -> Result<Option<SketchLocus>, CodecError> {
-        Ok(ctx
-            .find_by(
-                entities,
-                |candidate| Ok(candidate.id().as_str().ends_with(suffix)),
-                "fcstd sketch reference entity search",
-            )?
-            .map(|candidate| {
-                candidate
-                    .id()
-                    .try_clone_for_decode(ctx, "fcstd resolved operand identity")
-                    .map(SketchLocus::Entity)
-            })
-            .transpose()?)
+        ctx.find_by(
+            entities,
+            |candidate| Ok(candidate.id().as_str().ends_with(suffix)),
+            "fcstd sketch reference entity search",
+        )?
+        .map(|candidate| {
+            candidate
+                .id()
+                .try_clone_for_decode(ctx, "fcstd resolved operand identity")
+                .map(SketchLocus::Entity)
+        })
+        .transpose()
     };
     match (entity, position) {
         (-1, 0) => return reference(":reference-horizontal-axis"),
@@ -5431,8 +5435,14 @@ struct ExtrudeSource {
 struct ExtrudeExtentSelector {
     side_type: Option<u64>,
     legacy_two_lengths: bool,
-    // None leaves Type unread when SideType already determines the extent.
-    first_termination: Option<Option<u64>>,
+    first_termination: FirstTermination,
+}
+
+#[derive(Clone, Copy)]
+enum FirstTermination {
+    Unread,
+    Invalid,
+    Value(u64),
 }
 
 /// The draft angle the extrude states under `key`, in canonical radians.
@@ -5465,11 +5475,14 @@ fn extrude_side_type(
 ) -> Result<ExtrudeExtentSelector, CodecError> {
     let side_type_property = property(ctx, properties, "SideType")?;
     let first_termination = if side_type_property.is_none() {
-        Some(enumeration_selector(ctx, properties, "Type", 0)?)
+        match enumeration_selector(ctx, properties, "Type", 0)? {
+            Some(value) => FirstTermination::Value(value),
+            None => FirstTermination::Invalid,
+        }
     } else {
-        None
+        FirstTermination::Unread
     };
-    let legacy_two_lengths = first_termination == Some(Some(4));
+    let legacy_two_lengths = matches!(first_termination, FirstTermination::Value(4));
     let side_type = if legacy_two_lengths {
         Some(1)
     } else {
@@ -5746,13 +5759,16 @@ fn extrusion_shape(
             0
         } else if side == 1 {
             match source.extent.first_termination {
-                Some(value) => required!(value),
-                None => required!(enumeration_selector(ctx, properties, type_name, 0)?),
+                FirstTermination::Value(value) => value,
+                FirstTermination::Invalid => return Ok(None),
+                FirstTermination::Unread => {
+                    required!(enumeration_selector(ctx, properties, type_name, 0)?)
+                }
             }
         } else {
             required!(enumeration_selector(ctx, properties, type_name, 0)?)
         };
-        let offset = if property(ctx, properties, &offset_name)?.is_some() {
+        let offset = if property(ctx, properties, offset_name)?.is_some() {
             Some(Length::from_assigned_real(required!(scalar_named(
                 ctx,
                 properties,
@@ -5772,14 +5788,14 @@ fn extrusion_shape(
             2 => Some(LinearTermination::ToFirst {}),
             3 => Some(LinearTermination::ToFace {
                 face: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(
-                    &required!(singular_operand(ctx, properties, &face_name)?).id,
+                    &required!(singular_operand(ctx, properties, face_name)?).id,
                     "fcstd extrusion face termination",
                 )?),
                 offset,
             }),
             5 => Some(LinearTermination::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(
-                    &required!(singular_operand(ctx, properties, &shape_name)?).id,
+                    &required!(singular_operand(ctx, properties, shape_name)?).id,
                     "fcstd extrusion shape termination",
                 )?),
             }),
@@ -6656,7 +6672,7 @@ fn property<'a>(
         |property| Ok(property.name == name),
         "fcstd design property lookup",
     )
-    .map(|property| property.copied())
+    .map(Option::<&&PropertyRecord>::copied)
 }
 
 fn nonempty_link(link: Option<&crate::native::LinkTarget>) -> bool {
@@ -8223,7 +8239,7 @@ fn enumeration_label(
     }
     let custom = match ctx.xml_attribute(integer, "CustomEnum", "FreeCAD design XML attribute")? {
         None => false,
-        Some(value) if value == "true" => true,
+        Some("true") => true,
         Some(_) => return Ok(None),
     };
     if custom != custom_list.is_some() {
@@ -9449,7 +9465,7 @@ fn feature_base_definition(
         return Ok(None);
     }
     let property = properties[index];
-    if !(property.type_name.as_str() == "App::PropertyLink") || property.links().len() != 1 {
+    if property.type_name.as_str() != "App::PropertyLink" || property.links().len() != 1 {
         return Ok(None);
     }
     let Some(source) = property.links()[0]

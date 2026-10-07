@@ -253,6 +253,7 @@ fn finish_profile_chain(
             "FCStd profile chain extraction",
         )?;
     }
+    drop(chain);
     Ok(profile)
 }
 
