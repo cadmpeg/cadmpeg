@@ -273,32 +273,33 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges analytic-surface parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges analytic-surface directory index",
-        )?;
-    }
+    // The transform resolver requires sequence maps. Their storage is local to this projection.
+    let mut transform_storage = ctx.reserve_scoped(0, "iges analytic-surface transform indexes")?;
+    let (records, entries) = transform_storage.with_storage(|| {
+        let mut records = BTreeMap::new();
+        for record in ctx.admit_iter(parameters, "iges analytic-surface parameter index traversal")? {
+            ctx.insert_btree_map(
+                &mut records, record.directory_sequence, record,
+                "iges analytic-surface parameter index",
+            )?;
+        }
+        let mut entries = BTreeMap::new();
+        for entry in ctx.admit_iter(directory, "iges analytic-surface directory index traversal")? {
+            ctx.insert_btree_map(
+                &mut entries, entry.sequence, entry,
+                "iges analytic-surface directory index",
+            )?;
+        }
+        Ok::<_, CodecError>((records, entries))
+    })?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
-    for entry in directory.iter().filter(|entry| {
+    for entry in ctx.admit_iter(directory, "iges analytic-surface directory pass")?.filter(|entry| {
         matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
     }) {
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
             push_entity_loss(
                 ctx,
                 &mut losses,

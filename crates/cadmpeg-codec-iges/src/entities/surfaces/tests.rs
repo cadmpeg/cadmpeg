@@ -1583,3 +1583,22 @@ mod projection;
 mod implicit_planes;
 
 mod tabulated;
+
+#[test]
+fn surfaces_directory_pass_refuses_before_traversal() {
+    let bytes = plane_file();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges surfaces directory pass",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
+                policy, ..DecodeOptions::default()
+            }).map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
+        },
+    );
+}
