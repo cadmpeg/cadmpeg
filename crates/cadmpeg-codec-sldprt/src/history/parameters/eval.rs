@@ -4,7 +4,7 @@
 use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i64, truncate_f64_to_u32};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
-    features::{ParameterId, ParameterValue},
+    features::{DesignParameter, ParameterId, ParameterValue},
     scalar::{Angle, FiniteReal, Length},
 };
 use std::borrow::Cow;
@@ -34,8 +34,23 @@ pub(super) struct ParameterExpressionParser<'a, 'ctx, 'arena> {
     input: &'a str,
     offset: usize,
     aliases: ParameterAliasMap<'a>,
-    values: &'a HashMap<ParameterId, ParameterValue>,
+    values: ParameterValues<'a>,
     blocked: Option<&'a ParameterId>,
+}
+
+/// Value snapshots or positions in the parameter model currently being evaluated.
+pub(super) enum ParameterValues<'a> {
+    Stored(&'a HashMap<ParameterId, ParameterValue>),
+    Indexed {
+        parameters: &'a [DesignParameter],
+        positions: &'a HashMap<ParameterId, usize>,
+    },
+}
+
+impl<'a> From<&'a HashMap<ParameterId, ParameterValue>> for ParameterValues<'a> {
+    fn from(values: &'a HashMap<ParameterId, ParameterValue>) -> Self {
+        Self::Stored(values)
+    }
 }
 
 pub(super) enum ParameterEvaluation {
@@ -69,14 +84,14 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         ctx: &'ctx DecodeContext<'arena>,
         input: &'a str,
         aliases: ParameterAliasView<'a>,
-        values: &'a HashMap<ParameterId, ParameterValue>,
+        values: impl Into<ParameterValues<'a>>,
     ) -> Self {
         Self {
             ctx,
             input,
             offset: 0,
             aliases: ParameterAliasMap::Layered(aliases),
-            values,
+            values: values.into(),
             blocked: None,
         }
     }
@@ -93,7 +108,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             input,
             offset: 0,
             aliases: ParameterAliasMap::Flat(aliases),
-            values,
+            values: values.into(),
             blocked: None,
         }
     }
@@ -272,7 +287,13 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 .get(self.ctx, token)?
                 .and_then(Option::as_ref)
                 .ok_or(ExpressionFailure::NoValue)?;
-            let Some(value) = self.ctx.get_hash_map(self.values, id, "look up SLDPRT hash key")? else {
+            let value = match &self.values {
+                ParameterValues::Stored(values) => self.ctx.get_hash_map(values, id, "look up SLDPRT hash key")?,
+                ParameterValues::Indexed { parameters, positions } => self.ctx.get_hash_map(positions, id, "look up SLDPRT hash key")?
+                    .and_then(|index| parameters.get(*index))
+                    .and_then(|parameter| parameter.value.as_ref()),
+            };
+            let Some(value) = value else {
                 self.blocked = Some(id);
                 return Err(ExpressionFailure::NoValue);
             };
