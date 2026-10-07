@@ -226,6 +226,7 @@ pub(crate) struct DirectoryEntry {
     pub(crate) transform: i64,
     pub(crate) label_display: Option<i64>,
     pub(crate) status: SourceStatus,
+    pub(crate) status_padding_recovered: bool,
     pub(crate) line_weight: Option<i64>,
     pub(crate) color: Option<i64>,
     pub(crate) parameter_line_count: i64,
@@ -270,6 +271,16 @@ pub(crate) fn metadata_losses(
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     for entry in entries {
+        if entry.status_padding_recovered {
+            let message = ctx.format_retained(format_args!("Directory D{} status number used unambiguous leading blank padding; retained its dependency and use codes", entry.sequence), "IGES recovered status diagnostic")?;
+            ctx.push_vec(
+                &mut losses,
+                IgesLossCode::DirectoryMetadataNoncanonical
+                    .note(message)
+                    .with_provenance(entry.admitted_loss_provenance(ctx)?),
+                "IGES recovered status losses",
+            )?;
+        }
         for (name, value) in [
             ("line font", entry.line_font),
             ("level", entry.level),
@@ -430,7 +441,7 @@ fn directory_integer(
     integer(field, name)
 }
 
-fn status(field: [u8; 8], global_table: GlobalTable) -> Result<SourceStatus, DirectoryDefect> {
+fn status(field: [u8; 8]) -> Result<SourceStatus, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
         return Ok(SourceStatus {
             blank: 0,
@@ -440,28 +451,18 @@ fn status(field: [u8; 8], global_table: GlobalTable) -> Result<SourceStatus, Dir
         });
     }
     let mut digits = [b'0'; 8];
-    if matches!(
-        global_table,
-        GlobalTable::Legacy | GlobalTable::V4_0 | GlobalTable::V5_0
-    ) {
-        let first_digit = field
+    let first_digit = field
+        .iter()
+        .position(u8::is_ascii_digit)
+        .ok_or(DirectoryDefect::StatusNumberInvalid)?;
+    if field[..first_digit].iter().any(|byte| *byte != b' ')
+        || field[first_digit..]
             .iter()
-            .position(u8::is_ascii_digit)
-            .ok_or(DirectoryDefect::StatusNumberInvalid)?;
-        if field[..first_digit].iter().any(|byte| *byte != b' ')
-            || field[first_digit..]
-                .iter()
-                .any(|byte| !byte.is_ascii_digit())
-        {
-            return Err(DirectoryDefect::StatusNumberInvalid);
-        }
-        digits[first_digit..].copy_from_slice(&field[first_digit..]);
-    } else {
-        if field.iter().any(|byte| !byte.is_ascii_digit()) {
-            return Err(DirectoryDefect::StatusNumberInvalid);
-        }
-        digits = field;
+            .any(|byte| !byte.is_ascii_digit())
+    {
+        return Err(DirectoryDefect::StatusNumberInvalid);
     }
+    digits[first_digit..].copy_from_slice(&field[first_digit..]);
     let digit = |at: usize| digits[at] - b'0';
     let pair = |at: usize| digit(at) * 10 + digit(at + 1);
     Ok(SourceStatus {
@@ -505,7 +506,12 @@ fn parse_pair(
         view: directory_integer(first_fields[5], "view", 6, global_table).ok(),
         transform: directory_integer(first_fields[6], "transformation", 7, global_table)?,
         label_display: directory_integer(first_fields[7], "label display", 8, global_table).ok(),
-        status: status(first_fields[8], global_table)?,
+        status: status(first_fields[8])?,
+        status_padding_recovered: !matches!(
+            global_table,
+            GlobalTable::Legacy | GlobalTable::V4_0 | GlobalTable::V5_0
+        ) && first_fields[8][0] == b' '
+            && first_fields[8].iter().any(u8::is_ascii_digit),
         line_weight: directory_integer(second_fields[1], "line weight", 12, global_table).ok(),
         color: directory_integer(second_fields[2], "color", 13, global_table).ok(),
         parameter_line_count: directory_integer(

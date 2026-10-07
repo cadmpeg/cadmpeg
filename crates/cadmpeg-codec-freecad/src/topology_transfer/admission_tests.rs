@@ -280,6 +280,7 @@ fn placed_nurbs_surface_basis_refuses_at_collection_limit() {
 #[test]
 fn placed_geometry_source_association_refuses_at_retained_limit() {
     let source = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("source").expect("nonblank source"),
         name: None,

@@ -123,7 +123,7 @@ fn anchor_memo_retrieval_text_has_one_storage_admission() {
         resolver.memo.insert("a", (anchors["a"].clone(), 1));
         assert_eq!(
             resolver
-                .resolve_root(&Value::Resource("a".into()))
+                .resolve_root(&Value::Resource("#a".into()))
                 .expect("one four-byte memo copy"),
             anchors["a"]
         );
@@ -139,7 +139,7 @@ fn anchor_memo_population_text_has_one_storage_admission() {
         let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
         assert_eq!(
             resolver
-                .resolve_root(&Value::Resource("a".into()))
+                .resolve_root(&Value::Resource("#a".into()))
                 .expect("leaf and memo buffers fit once each"),
             anchors["a"]
         );

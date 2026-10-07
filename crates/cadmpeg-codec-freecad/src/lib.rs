@@ -157,13 +157,14 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let mut findings = Vec::new();
     let mut source_entry_storage =
         ctx.reserve_scoped(0, "FCStd source entry validation indexes")?;
-    let mut payload_spans = HashMap::new();
+    let mut payload_spans = HashSet::new();
     let mut decoded_names = HashSet::new();
     if !unreadable.is_empty() {
         for span in &physical {
             ctx.charge_work(1, "FCStd source payload span indexing")?;
             let (name, range) = match &span.role {
-                native::ArchiveSpanRole::CompressedPayload(name) => {
+                native::ArchiveSpanRole::CompressedPayload(name)
+                | native::ArchiveSpanRole::EntryArchivePadding(name) => {
                     (name, (span.span.start(), span.span.end()))
                 }
                 native::ArchiveSpanRole::LocalName(name)
@@ -178,19 +179,13 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                     ctx.refuse_codec_limit("FCStd source payload name hashing", u64::MAX, u64::MAX)
                 })?;
             ctx.charge_work(hash_work, "FCStd source payload name hashing")?;
-            if payload_spans
-                .get(name.as_str())
-                .is_none_or(|prior: &(u64, u64)| prior.1 < range.1)
-            {
-                source_entry_storage.with_storage(|| {
-                    ctx.insert_hash_map(
-                        &mut payload_spans,
-                        name.as_str(),
-                        range,
-                        "FCStd source payload span index",
-                    )
-                })?;
-            }
+            source_entry_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut payload_spans,
+                    (name.as_str(), range),
+                    "FCStd source payload span index",
+                )
+            })?;
         }
         for entry in &entries {
             ctx.charge_work(
@@ -228,8 +223,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 != Some(cadmpeg_core::decode::u64_from_index(
                     entry.stored_data.len(),
                 ))
-            || payload_spans.get(entry.name.as_str()) != Some(&(entry.data_start, entry.data_end))
-            || entry.data_end > physical.last().map_or(0, |span| span.span.end())
+            || !payload_spans.contains(&(entry.name.as_str(), (entry.data_start, entry.data_end)))
             || decoded_names.contains(entry.name.as_str())
             || !unique
         {
@@ -946,6 +940,17 @@ impl CodecBackend for FcstdCodec {
             "detect input",
         )?;
         if !prefix.starts_with(b"PK\x03\x04") {
+            if cadmpeg_container::ArchiveSnapshot::has_footer(ctx, prefix)? {
+                match cadmpeg_container::ArchiveSnapshot::contains_matching_name(
+                    ctx,
+                    cadmpeg_core::decode::View::over_retained(prefix),
+                    |name| name == "Document.xml",
+                ) {
+                    Ok(true) => return Ok(Confidence::Medium),
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Ok(false) | Err(_) => {}
+                }
+            }
             return Ok(Confidence::No);
         }
         if container::has_document_markers(ctx, prefix)? {

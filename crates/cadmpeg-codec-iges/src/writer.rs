@@ -5,8 +5,9 @@
 //! source image byte for byte. Otherwise the semantic writer emits the current
 //! supported neutral profile and refuses unsupported models or native records.
 
+use crate::entities::affine_parameter_map;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
-use crate::entities::{affine_parameter_map, line_directrix};
+use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -986,8 +987,12 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             ) {
                 return false;
             }
-            let Some(surface) = ir.model.surfaces.iter().find(|surface| {
-                ir.model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            let owner = ir.model.procedural_surface_owner(&procedural.id);
+            let Some(surface) = owner.and_then(|owner| {
+                ir.model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *owner)
             }) else {
                 return true;
             };
@@ -3877,10 +3882,20 @@ fn procedural_pcurve_source_map(
     ir: &CadIr,
     surface_id: &SurfaceId,
 ) -> Result<Option<(f64, f64, f64, f64)>, CodecError> {
-    let Some(procedural) =
-        ir.model.procedural_surfaces.iter().find(|procedural| {
-            ir.model.procedural_surface_owner(&procedural.id) == Some(surface_id)
-        })
+    let Some(construction) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == *surface_id)
+        .and_then(|surface| surface.geometry.procedural_construction())
+    else {
+        return Ok(None);
+    };
+    let Some(procedural) = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.id == *construction)
     else {
         return Ok(None);
     };
@@ -3920,12 +3935,11 @@ fn procedural_pcurve_source_map(
     let mut v_map = (1.0, 0.0);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-            let directrix = definition_payload.directrix();
             let parameter_interval = definition_payload
                 .parameter_interval()
                 .map(cadmpeg_ir::units::FiniteVector::get);
             {
-                let source_interval = if line_directrix(ir, directrix) {
+                let source_interval = if curve_is_line(source_curve) {
                     parameter_interval.unwrap_or([0.0, 1.0])
                 } else {
                     parameter_interval.unwrap_or(carrier_interval)
@@ -3939,7 +3953,6 @@ fn procedural_pcurve_source_map(
             }
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-            let directrix = definition_payload.directrix();
             let angular_interval = definition_payload.angular_interval().endpoints();
             let angular_parameter_interval = definition_payload
                 .angular_parameter_interval()
@@ -3949,7 +3962,7 @@ fn procedural_pcurve_source_map(
                 .map(IncreasingParameterInterval::endpoints);
             let transposed = definition_payload.transposed();
             {
-                let source_interval = if line_directrix(ir, directrix) {
+                let source_interval = if curve_is_line(source_curve) {
                     parameter_interval.unwrap_or([0.0, 1.0])
                 } else {
                     parameter_interval.unwrap_or(carrier_interval)

@@ -462,7 +462,10 @@ pub(crate) fn scan<'a>(
             Err(error)
                 if matches!(
                     role,
-                    ContainerRole::Preview | ContainerRole::Image | ContainerRole::OgsCache
+                    ContainerRole::Preview
+                        | ContainerRole::Image
+                        | ContainerRole::OgsCache
+                        | ContainerRole::Other
                 ) =>
             {
                 let diagnostic = ctx.format_retained(

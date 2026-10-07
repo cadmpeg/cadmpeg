@@ -694,7 +694,7 @@ fn staged_regions_refuse_collection_limit() {
 
 #[test]
 fn staged_bodies_refuse_collection_limit() {
-    assert!(matches!(staged_topology_refusal(1, u64::MAX, 0),
+    assert!(matches!(staged_topology_refusal(3, u64::MAX, 0),
         super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "draft entity arena"));

@@ -77,6 +77,7 @@ fn header_recovery_does_not_hide_lost_framing_or_ambiguous_schema() {
         "FILE_SCHEMA(('AP242'));FILE_NAME('unterminated);",
         "FILE_SCHEMA($);",
         "FILE_SCHEMA((1.E999));",
+        "FILE_SCHEMA(VENDOR());",
     ] {
         let source =
             format!("ISO-10303-21;HEADER;{header}ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;");
@@ -100,6 +101,9 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
     for literal in [
         "999999999999999999999999999999999",
         "1.E999",
+        "VENDOR()",
+        "VENDOR(1.,2.)",
+        "VENDOR(VENDOR())",
         "-1.E999",
         "\"0ZZ\"",
         "<uri>",
@@ -267,4 +271,46 @@ fn invalid_header_resource_encoding_preserves_bounded_data() {
         &b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));FILE_NOTE(\"41);ENDSEC;DATA;ENDSEC;END-ISO-10303-21;"[..],
         &b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));FILE_NOTE(<broken);ENDSEC;DATA;ENDSEC;END-ISO-10303-21;"[..],
     ] { assert!(with_service_context(source, parse_inner).is_err()); }
+}
+
+#[test]
+fn unusable_presentation_literals_preserve_shape_and_exact_record() {
+    let original = include_str!("../../writer/tests/data/periodic_two_rims.p21");
+    let codec = crate::StepCodec::default();
+    let expected = codec
+        .decode(&mut Cursor::new(original), &DecodeOptions::default())
+        .unwrap();
+    for record in [
+        "#900001=COLOUR_RGB('',1.E999,0.,0.);",
+        "#900001=SURFACE_STYLE_TRANSPARENT(1.E999);",
+        "#900001=CURVE_STYLE('',.CONTINUOUS.,LENGTH_MEASURE(1.E999),$);",
+    ] {
+        let data_end = original.rfind("ENDSEC;").unwrap();
+        let source = format!(
+            "{}{}\n{}",
+            &original[..data_end],
+            record,
+            &original[data_end..]
+        );
+        let recovered = EditableDecodeResult::from(
+            codec
+                .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+                .unwrap(),
+        );
+        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert!(recovered
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::StepLossCode::ParseNoncanonicalSyntax.kind()));
+        assert!(recovered
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .any(|record_source| record_source.data() == Some(record.as_bytes())));
+        assert_eq!(
+            recovered.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
+            "0"
+        );
+    }
 }

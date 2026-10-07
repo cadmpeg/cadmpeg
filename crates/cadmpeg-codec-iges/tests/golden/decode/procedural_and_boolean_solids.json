@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -31,6 +31,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "PROFILE1",
             "object_id": "D1",
@@ -64,6 +65,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "PROFILE2",
             "object_id": "D3",

@@ -5364,6 +5364,21 @@ fn stage_brep_carriers(
             }
         }
     }
+    let model = staged.draft.model_mut();
+    for source in model
+        .surfaces
+        .iter_mut()
+        .filter_map(|surface| surface.source_object.as_mut())
+        .chain(
+            model
+                .curves
+                .iter_mut()
+                .filter_map(|curve| curve.source_object.as_mut()),
+        )
+    {
+        ctx.charge_work(1, "Rhino Brep support ownership")?;
+        source.geometry_role = Some(cadmpeg_ir::SourceGeometryRole::Support);
+    }
     Ok(BrepCarrierDraft {
         staged,
         c3,
@@ -6045,6 +6060,7 @@ pub(crate) fn embedded_brep_json(
         crate::brep::BrepParse::SemanticInvalid { .. } => return None,
     };
     let association = SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("embedded-history-brep".to_string())?,
         name: None,
@@ -7377,6 +7393,7 @@ fn source_association(
             .push(ctx.copy_retained_text(segment, "Rhino source association instance ID")?);
     }
     Ok(SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id,
         name,

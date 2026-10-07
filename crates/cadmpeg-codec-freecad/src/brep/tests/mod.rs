@@ -324,6 +324,7 @@ fn transferred_curve_refuses_at_caller_limit() {
             .expect("finite direction"),
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
         name: None,
@@ -357,6 +358,7 @@ fn transferred_surface_refuses_at_caller_limit() {
         v_reversed: false,
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
         name: None,
@@ -1703,6 +1705,7 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
         radius: FiniteReal::ZERO,
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("object")
             .expect("nonempty source identity"),
@@ -1824,6 +1827,7 @@ fn transfers_occt_revolution_surface_parameter_order() {
         .expect("one inline directrix is admitted"),
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
             .expect("nonempty source identity"),
@@ -1865,6 +1869,7 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
         u_reversed: false,
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
             .expect("nonempty source identity"),

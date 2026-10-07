@@ -276,6 +276,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     id: surface_id,
                     geometry: surface,
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: if let Some(id) = native_surface {
                             crate::identity::source_object_id_checked(
@@ -351,6 +352,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         id: surface_id,
                         geometry: surface,
                         source_object: Some(SourceObjectAssociation {
+                            geometry_role: None,
                             format: cadmpeg_ir::CodecFormat::Creo,
                             object_id: crate::identity::source_object_id_checked(
                                 ctx,
@@ -478,6 +480,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
                             ctx,
@@ -630,6 +633,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(
                         || {
@@ -731,6 +735,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(
                         || {

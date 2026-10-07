@@ -26,6 +26,7 @@ use crate::parse::schema_identifier::{
     split_schema_identifier, valid_schema_identifier, AdmittedSchemaIdentifier,
 };
 
+mod metadata;
 pub(crate) mod schema_identifier;
 
 /// One parsed Part 21 parameter value.
@@ -488,6 +489,8 @@ pub(crate) enum ParseError {
 pub(crate) enum ParseDiagnosticKind {
     /// Descriptive header metadata is nonconforming but readable.
     HeaderMetadataNoncanonical,
+    /// A bounded presentation value remains source-only.
+    PresentationMetadataUnusable,
     /// Complex-entity partials are not in their canonical alphabetical order.
     ComplexPartialsNotAlphabetical,
     /// A simple named carrier omits its inherited `name` value.
@@ -1253,6 +1256,7 @@ impl Parser<'_, '_, '_> {
 
     fn record(&mut self) -> Result<(u64, RawRecord), ParseError> {
         let start = self.current_offset();
+        let diagnostic_start = self.diagnostics.len();
         let TokenKind::Instance(id) = self.next_kind()? else {
             return self.err("expected instance name");
         };
@@ -1315,6 +1319,11 @@ impl Parser<'_, '_, '_> {
             let first = self.partial(true)?;
             partials::RecordPartials::single_charged(first, self.budget)?
         };
+        for diagnostic in &mut self.diagnostics[diagnostic_start..] {
+            if diagnostic.kind == ParseDiagnosticKind::PresentationMetadataUnusable {
+                diagnostic.offset = start;
+            }
+        }
         partials.0.shrink_to_fit();
         self.punct(&TokenKind::Semicolon)?;
         Ok((
@@ -1327,16 +1336,29 @@ impl Parser<'_, '_, '_> {
     }
 
     fn partial(&mut self, simple: bool) -> Result<PartialRecord, ParseError> {
+        let offset = self.current_offset();
         let name = self.take_name()?;
+        let presentation = metadata::presentation_record(&name);
+        if presentation {
+            self.lexer.set_literal_admission(LiteralAdmission::Metadata);
+        }
         let first_is_name =
             (simple || name == "REPRESENTATION_ITEM") && !named_carrier_arities(&name).is_empty();
-        let parameters =
-            self.parameter_nesting(|parser| parser.parameters_with_name(first_is_name))?;
+        let parameters = self.parameter_nesting(|parser| {
+            parser.parameters_with_name(first_is_name && !presentation)
+        })?;
         if first_is_name
             && matches!(parameters.first(), Some(Value::UninterpretedLiteral))
             && !named_carrier_arities(&name).contains(&parameters.len())
         {
             return self.err("unreadable literal in a required DATA attribute");
+        }
+        self.lexer.set_literal_admission(LiteralAdmission::Required);
+        if presentation && metadata::unreadable_literal(&parameters, self.budget)? {
+            self.budget.push_vec(&mut self.diagnostics, ParseDiagnostic {
+                offset, kind: ParseDiagnosticKind::PresentationMetadataUnusable,
+                message: self.budget.format_retained(format_args!("{name} contains an unusable bounded presentation literal; exact record retained"), "STEP presentation literal diagnostic")?,
+            }, "step_parse_diagnostics")?;
         }
         Ok(PartialRecord { name, parameters })
     }
@@ -1439,13 +1461,27 @@ impl Parser<'_, '_, '_> {
 
     fn typed_parameter(&mut self, name: String) -> Result<Value, ParseError> {
         self.parameter_nesting(|parser| {
+            let metadata = parser.lexer.allows_uninterpreted_literals();
             parser.punct(&TokenKind::LParen)?;
             if parser.peek(&TokenKind::RParen) {
+                if metadata {
+                    parser.punct(&TokenKind::RParen)?;
+                    return Ok(Value::UninterpretedLiteral);
+                }
                 return parser.err("typed parameter requires one value");
             }
             let value = parser.value()?;
             if parser.peek(&TokenKind::Comma) {
-                return parser.err("typed parameter requires one value");
+                if !metadata {
+                    return parser.err("typed parameter requires one value");
+                }
+                while parser.peek(&TokenKind::Comma) {
+                    parser.next_kind()?;
+                    // discarded-value: consume balanced metadata values; the raw record owns their exact bytes.
+                    let _ = parser.value()?;
+                }
+                parser.punct(&TokenKind::RParen)?;
+                return Ok(Value::UninterpretedLiteral);
             }
             parser.punct(&TokenKind::RParen)?;
             parser
@@ -2564,7 +2600,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 .into());
         }
         if let Value::Resource(name) = value {
-            if let Some((name, source)) = self.anchors.get_key_value(name) {
+            if let Some((name, source)) = name
+                .strip_prefix('#')
+                .and_then(|name| self.anchors.get_key_value(name))
+            {
                 let name = name.as_str();
                 if let Some((value, nodes)) = self.memo.get(name) {
                     if *nodes > budget {

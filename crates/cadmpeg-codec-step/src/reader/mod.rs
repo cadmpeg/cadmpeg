@@ -24,6 +24,7 @@ pub(crate) mod dependencies;
 mod drawing;
 pub(crate) mod geometry;
 mod index;
+mod ownership;
 pub(crate) mod pmi;
 pub(crate) mod presentation;
 pub(crate) mod product;
@@ -170,6 +171,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 crate::parse::ParseDiagnosticKind::HeaderMetadataNoncanonical => {
                     (StepLossCode::HeaderMetadataNoncanonical, "header_metadata")
                 }
+                crate::parse::ParseDiagnosticKind::PresentationMetadataUnusable => (
+                    StepLossCode::ParseNoncanonicalSyntax,
+                    "presentation_metadata",
+                ),
                 crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
                     (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
                 }
@@ -429,6 +434,8 @@ fn decode_exchange_mode(
         &owned_carriers,
         session.ctx,
     )?;
+    session.charge_stage("step_source_ownership")?;
+    ownership::mark_supports(exchange, &mut session.ir, session.ctx)?;
     session.charge_stage("step_product_decode")?;
     let mut product = product::decode(
         exchange,
@@ -536,6 +543,24 @@ fn decode_exchange_mode(
     let mut opaque_sources = Vec::new();
     let mut source_fidelity = SourceFidelity::default();
     if matches!(mode, DecodeMode::Decode(_)) {
+        let metadata_offsets = session.ctx.collect_btree_set(
+            diagnostics
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic.kind
+                        == crate::parse::ParseDiagnosticKind::PresentationMetadataUnusable
+                })
+                .map(|diagnostic| diagnostic.offset),
+            "STEP unreadable metadata source offsets",
+        )?;
+        for (&id, record) in exchange.records() {
+            session
+                .ctx
+                .charge_work(1, "STEP unreadable metadata source lookup")?;
+            if metadata_offsets.contains(&record.span.start) {
+                session.typed_records.remove(&id);
+            }
+        }
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(&id) {
                 continue;
@@ -970,21 +995,33 @@ fn retain_unowned_carriers(
             ir.model
                 .points
                 .iter()
-                .filter(|point| point.source_object.is_some())
+                .filter(|point| {
+                    point.source_object.as_ref().is_some_and(|source| {
+                        source.geometry_role != Some(cadmpeg_ir::SourceGeometryRole::Support)
+                    })
+                })
                 .map(|point| point.id.as_str()),
         )
         .chain(
             ir.model
                 .curves
                 .iter()
-                .filter(|curve| curve.source_object.is_some())
+                .filter(|curve| {
+                    curve.source_object.as_ref().is_some_and(|source| {
+                        source.geometry_role != Some(cadmpeg_ir::SourceGeometryRole::Support)
+                    })
+                })
                 .map(|curve| curve.id.as_str()),
         )
         .chain(
             ir.model
                 .surfaces
                 .iter()
-                .filter(|surface| surface.source_object.is_some())
+                .filter(|surface| {
+                    surface.source_object.as_ref().is_some_and(|source| {
+                        source.geometry_role != Some(cadmpeg_ir::SourceGeometryRole::Support)
+                    })
+                })
                 .map(|surface| surface.id.as_str()),
         )
         .chain(
@@ -1112,6 +1149,7 @@ fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
 /// A source association for a STEP record.
 fn step_source_association(id: u64, name: Option<String>) -> SourceObjectAssociation {
     SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id: step_source_id(id),
         name,

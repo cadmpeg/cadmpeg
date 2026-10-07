@@ -105,6 +105,7 @@ pub(crate) fn directory_target(
         view: Some(0),
         transform: 0,
         label_display: Some(0),
+        status_padding_recovered: false,
         status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
         line_weight: Some(0),
         color: Some(0),

@@ -99,7 +99,10 @@ impl CodecBackend for StepCodec {
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let bytes = root.window();
-        if archive::has_zip_magic(bytes) {
+        if archive::has_zip_magic(bytes)
+            || (!starts_with_step_magic(bytes)
+                && cadmpeg_container::ArchiveSnapshot::has_footer(ctx, bytes)?)
+        {
             return inspect_zip(ctx, root);
         }
         let inspected = inspect_exchange(self, ctx, root)?;
@@ -118,7 +121,10 @@ impl CodecBackend for StepCodec {
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<Decoded, CodecError> {
         let bytes = root.window();
-        if archive::has_zip_magic(bytes) {
+        if archive::has_zip_magic(bytes)
+            || (!starts_with_step_magic(bytes)
+                && cadmpeg_container::ArchiveSnapshot::has_footer(ctx, bytes)?)
+        {
             return decode_zip(ctx, root);
         }
         refuse_alternate_encoding(bytes)?;
@@ -493,7 +499,12 @@ fn inspect_zip(
         std::mem::take(&mut inspected.notes),
         "step_codec_notes",
     )?;
-    let losses = std::mem::take(&mut inspected.losses);
+    let mut losses = std::mem::take(&mut inspected.losses);
+    ctx.extend_vec(
+        &mut losses,
+        archive::recovery::losses(ctx, &archive)?,
+        "STEP ZIP combined losses",
+    )?;
     ctx.extend_vec(&mut notes, resource_notes, "step_codec_notes")?;
     // ZIP packaging is a container fact, not an identity axis: the
     // `ISO-10303.p21` root carries the FILE_SCHEMA that classifies the
@@ -539,6 +550,12 @@ fn decode_zip(
         "step_codec_container_note",
     )?;
     ctx.extend_vec(&mut decoded.body.notes, resource_notes, "step_codec_notes")?;
+    ctx.extend_vec(
+        &mut decoded.body.losses,
+        archive::recovery::losses(ctx, &archive)?,
+        "STEP ZIP combined losses",
+    )?;
+    archive::recovery::retain(ctx, &archive, root, &mut decoded)?;
     Ok(decoded)
 }
 

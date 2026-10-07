@@ -1020,19 +1020,25 @@ fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
     ));
 
     let zstd = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Zstd)]);
-    assert!(matches!(
-        codec.inspect(&mut Cursor::new(zstd), &InspectOptions::default()),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let summary = codec
+        .inspect(&mut Cursor::new(zstd), &InspectOptions::default())
+        .expect("recover safely readable noncanonical root compression");
+    assert!(summary
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()));
 
     let unicode_name = step_zip(&[
         ("ISO-10303.p21", root, CompressionMethod::Stored),
         ("π-preview.bin", b"ancillary", CompressionMethod::Stored),
     ]);
-    assert!(matches!(
-        codec.inspect(&mut Cursor::new(unicode_name), &InspectOptions::default()),
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    let summary = codec
+        .inspect(&mut Cursor::new(unicode_name), &InspectOptions::default())
+        .expect("recover ancillary Unicode declaration");
+    assert!(summary
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()));
 
     let duplicate_name = duplicate_first_central_record(step_zip(&[(
         "ISO-10303.p21",
@@ -1213,4 +1219,133 @@ fn zip_detection_reads_names_without_payload_admission() {
             Confidence::Medium
         );
     }
+}
+
+#[test]
+fn repeated_root_anchor_forwarding_reaches_the_actual_member() {
+    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<first>=<#second>;<second>=<parts/child.p21#shape>;ENDSEC;REFERENCE;#10=<#first>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let bytes = step_zip(&[
+        ("ISO-10303.p21", root, CompressionMethod::Stored),
+        (
+            "parts/child.p21",
+            b"opaque subsidiary",
+            CompressionMethod::Stored,
+        ),
+    ]);
+    let summary = StepCodec::default()
+        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+        .unwrap();
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note == "internal resource #10 -> parts/child.p21#shape"));
+    let missing = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Stored)]);
+    assert!(StepCodec::default()
+        .inspect(&mut Cursor::new(missing), &InspectOptions::default())
+        .is_err());
+}
+
+#[test]
+fn optional_archive_profile_defects_preserve_geometry_and_declarations() {
+    let root = include_bytes!("../writer/tests/data/periodic_two_rims.p21");
+    let baseline = StepCodec::default()
+        .decode(&mut Cursor::new(root), &DecodeOptions::default())
+        .unwrap();
+    for (name, compression) in [
+        ("preview.bin", CompressionMethod::Zstd),
+        ("π-preview.bin", CompressionMethod::Stored),
+    ] {
+        let bytes = step_zip(&[
+            ("ISO-10303.p21", root, CompressionMethod::Stored),
+            (name, b"preview", compression),
+        ]);
+        let result = EditableDecodeResult::from(
+            StepCodec::default()
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap(),
+        );
+        assert_eq!(result.ir().model, baseline.ir().model);
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code
+                    == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind())
+        );
+        assert!(result
+            .source_fidelity()
+            .retained_records()
+            .keys()
+            .any(|id| id.as_str().contains(":zip-declaration#")));
+        assert!(cadmpeg_ir::validate_neutral_with_source_fidelity(
+            result.ir(),
+            result.source_fidelity(),
+            Vec::new()
+        )
+        .unwrap()
+        .is_ok());
+    }
+}
+
+#[test]
+fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
+    let root = include_bytes!("../writer/tests/data/periodic_two_rims.p21");
+    let codec = StepCodec::default();
+    let baseline = codec
+        .decode(&mut Cursor::new(root), &DecodeOptions::default())
+        .unwrap();
+    let mut bytes = step_zip(&[
+        ("preview.bin", b"preview", CompressionMethod::Stored),
+        (ROOT_NAME, root, CompressionMethod::Deflated),
+    ]);
+    bytes[0] ^= 1;
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&codec, &bytes),
+        Confidence::Medium
+    );
+    let result = EditableDecodeResult::from(
+        codec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .unwrap(),
+    );
+    assert_eq!(result.ir().model, baseline.ir().model);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()));
+    assert!(result
+        .source_fidelity()
+        .retained_records()
+        .keys()
+        .any(|id| id.as_str().contains(":zip-declaration#")));
+    let mut strict = DecodeOptions::default();
+    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    assert!(matches!(
+        codec.decode(&mut Cursor::new(&bytes), &strict),
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })
+    ));
+}
+
+#[test]
+fn zip_root_parse_obeys_caller_recursion_ceiling() {
+    let root = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM((((((((((1))))))))));ENDSEC;END-ISO-10303-21;";
+    let bytes = step_zip(&[(ROOT_NAME, root, CompressionMethod::Stored)]);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_recursion_depth = 6;
+    for input in [root.as_slice(), bytes.as_slice()] {
+        assert!(
+            matches!(StepCodec::default().decode(&mut Cursor::new(input), &options), Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))) if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth)
+        );
+        let inspect = InspectOptions {
+            limits: options.policy.limits,
+        };
+        assert!(
+            matches!(StepCodec::default().inspect(&mut Cursor::new(input), &inspect), Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth)
+        );
+    }
+    StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("ordinary limits admit the same bounded root");
 }

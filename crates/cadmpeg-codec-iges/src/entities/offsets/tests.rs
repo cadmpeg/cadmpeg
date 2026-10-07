@@ -168,6 +168,7 @@ fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         view: Some(0),
         transform: 0,
         label_display: Some(0),
+        status_padding_recovered: false,
         status: SourceStatus::from_codes([0, 1, 0, 0]),
         line_weight: Some(0),
         color: Some(0),

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -44,6 +44,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "SEAMUV0",
             "object_id": "D13",
@@ -71,6 +72,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "SEAMEDGE",
             "object_id": "D7",
@@ -127,6 +129,7 @@
           "id": "iges:model:surface#D5",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "CYLINDER",
             "object_id": "D5",

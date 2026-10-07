@@ -32,6 +32,18 @@ const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
+pub(crate) fn curve_is_line(curve: &Curve) -> bool {
+    // PlacedCurve construction bounds the transformed basis chain.
+    fn is_line(geometry: &SolvedCurveGeometry) -> bool {
+        match geometry {
+            SolvedCurveGeometry::Line(_) => true,
+            SolvedCurveGeometry::Transformed(placed) => is_line(placed.basis()),
+            _ => false,
+        }
+    }
+    curve.geometry.solved().is_some_and(is_line)
+}
+
 pub(super) fn planar_polyline_has_self_intersection(
     points: &[[f64; 2]],
     ctx: &DecodeContext<'_>,
@@ -1539,6 +1551,11 @@ pub(super) fn source_object(
         .map(|level| render(format_args!("{level}"), "iges source object layer"))
         .transpose()?;
     Ok(SourceObjectAssociation {
+        geometry_role: Some(if entry.status.is_physically_dependent() {
+            cadmpeg_ir::SourceGeometryRole::Support
+        } else {
+            cadmpeg_ir::SourceGeometryRole::Independent
+        }),
         format: cadmpeg_ir::CodecFormat::Iges,
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
@@ -2370,13 +2387,13 @@ pub(crate) fn project_geometry(
             record.integer(6),
         ];
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
-            super::push_entity_loss(
+            super::push_attributed_loss(
                 ctx,
                 &mut losses,
                 entry,
+                crate::loss::IgesLossCode::SplineClaimRecovered,
                 format_args!("{}", "one or more spline flags are not 0 or 1"),
             )?;
-            continue;
         }
         let Some(control_count) = k.checked_add(1) else {
             super::push_entity_loss(
@@ -2516,28 +2533,33 @@ pub(crate) fn project_geometry(
                 )
             })
         });
-        let polynomial = flags[2] == Some(1);
-        if polynomial && !equal_weights {
-            super::push_entity_loss(
+        let declared_polynomial = flags[2] == Some(1);
+        if declared_polynomial && !equal_weights {
+            super::push_attributed_loss(
                 ctx,
                 &mut losses,
                 entry,
+                crate::loss::IgesLossCode::SplineClaimRecovered,
                 format_args!("{}", "polynomial spline has unequal weights"),
             )?;
-            continue;
         }
-        if !polynomial && equal_weights {
-            super::push_entity_loss(
+        if !declared_polynomial && equal_weights {
+            super::push_attributed_loss(
                 ctx,
                 &mut losses,
                 entry,
+                crate::loss::IgesLossCode::SplineClaimRecovered,
                 format_args!(
                     "{}",
                     "rational spline has equal weights but PROP3 declares rational"
                 ),
             )?;
-            continue;
         }
+        let polynomial = native_weights.first().is_some_and(|first| {
+            native_weights
+                .iter()
+                .all(|weight| weight.get() == first.get())
+        });
         let Some(native_poles) =
             collect_numbers(pole_start, pole_value_count, "iges NURBS source poles")?
         else {
@@ -2632,7 +2654,13 @@ pub(crate) fn project_geometry(
         };
         let mut raw_control_points =
             ctx.collection_vec(control_points.len(), "iges NURBS plane controls")?;
-        raw_control_points.extend(control_points.iter().copied().map(FinitePoint3::get));
+        raw_control_points.extend(native_poles.chunks_exact(3).map(|point| {
+            Point3::new(
+                point[0].get() * factor,
+                point[1].get() * factor,
+                point[2].get() * factor,
+            )
+        }));
         let point_scale = raw_control_points
             .iter()
             .skip(1)
@@ -2644,81 +2672,34 @@ pub(crate) fn project_geometry(
             .max(point_scale * COMPUTATION_TOLERANCE);
         let plane = classify_control_point_plane(&raw_control_points, plane_tolerance);
         let planar = flags[0] == Some(1);
-        if planar {
-            let Some(normal_start) = range_start.checked_add(2) else {
-                super::push_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{}", "plane-normal offset overflows"),
-                )?;
-                continue;
-            };
-            let Some(normal_values) = collect_numbers(normal_start, 3, "iges NURBS source normal")?
-            else {
-                super::push_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{}", "plane-normal fields are missing or non-finite"),
-                )?;
-                continue;
-            };
-            let normal_definition = Vector3::new(
-                normal_values[0].get(),
-                normal_values[1].get(),
-                normal_values[2].get(),
-            );
-            if declared_unit_vector(record, normal_start, normal_definition, precision).is_none() {
-                super::push_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{}", "planar spline normal is not a declared unit vector"),
-                )?;
-                continue;
-            }
-            let Some(normal) = transform.apply_vector(normal_definition) else {
-                super::push_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{}", "placement produces a non-finite vector"),
-                )?;
-                continue;
-            };
-            let normal_length = normal.get().norm();
-            if !normal_length.is_finite()
-                || normal_length <= 0.0
-                || !control_points_fit_plane(
-                    &raw_control_points,
-                    normal.get().scale(1.0 / normal_length),
-                    plane_tolerance,
-                )
-                || matches!(plane, ControlPointPlane::NonPlanar)
-            {
-                super::push_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!(
-                        "{}",
-                        "planar spline flag disagrees with the control-point geometry"
-                    ),
-                )?;
-                continue;
-            }
-        } else if matches!(plane, ControlPointPlane::Unique) {
-            super::push_entity_loss(
-                ctx,
-                &mut losses,
-                entry,
-                format_args!(
-                    "{}",
-                    "non-planar spline flag disagrees with a unique control-point plane"
-                ),
-            )?;
-            continue;
+        let plane_claim_valid = if planar {
+            let normal_start = range_start + 2;
+            let normal = record
+                .number(normal_start)
+                .zip(record.number(normal_start + 1))
+                .zip(record.number(normal_start + 2))
+                .map(|((x, y), z)| Vector3::new(x, y, z))
+                .filter(|normal| {
+                    declared_unit_vector(record, normal_start, *normal, precision).is_some()
+                });
+            normal.is_some_and(|normal| {
+                let length = normal.norm();
+                length.is_finite()
+                    && length > 0.0
+                    && control_points_fit_plane(
+                        &raw_control_points,
+                        normal.scale(1.0 / length),
+                        plane_tolerance,
+                    )
+                    && !matches!(plane, ControlPointPlane::NonPlanar)
+            })
+        } else {
+            !matches!(plane, ControlPointPlane::Unique)
+        };
+        if !plane_claim_valid {
+            super::push_attributed_loss(ctx, &mut losses, entry,
+                crate::loss::IgesLossCode::SplineClaimRecovered,
+                format_args!("spline planarity or normal claim disagrees with its carrier; retained the serialized knots, poles, weights and active bounds"))?;
         }
         let weights = if polynomial {
             None
@@ -2777,16 +2758,16 @@ pub(crate) fn project_geometry(
         let resolution = global.minimum_resolution_mm();
         let closed = endpoint_distance == 0.0 || endpoint_distance < resolution;
         if flags[1] != Some(i64::from(closed)) {
-            super::push_entity_loss(
+            super::push_attributed_loss(
                 ctx,
                 &mut losses,
                 entry,
+                crate::loss::IgesLossCode::SplineClaimRecovered,
                 format_args!(
                     "{}",
                     "closed spline flag disagrees with evaluated endpoints"
                 ),
             )?;
-            continue;
         }
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;

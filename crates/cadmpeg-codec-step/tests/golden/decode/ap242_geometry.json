@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [
         {
@@ -236,7 +236,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#29"
+          "id": "step:data:curve#29",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#29"
+          }
         },
         {
           "geometry": {
@@ -339,6 +344,7 @@
           "id": "step:data:curve#8",
           "source_object": {
             "format": "step",
+            "geometry_role": "independent",
             "object_id": "#8"
           }
         }
@@ -362,6 +368,7 @@
           },
           "source_object": {
             "format": "step",
+            "geometry_role": "independent",
             "object_id": "#3"
           }
         }
@@ -525,7 +532,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:surface#12"
+          "id": "step:data:surface#12",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#12"
+          }
         },
         {
           "geometry": {

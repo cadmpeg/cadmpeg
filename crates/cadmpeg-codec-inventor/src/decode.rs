@@ -860,6 +860,16 @@ fn decode_container<'a>(
                 ),
             )?);
         }
+        let unnamed_labels = feature_inventory
+            .labels
+            .iter()
+            .filter(|label| label.name().is_none())
+            .count();
+        if unnamed_labels != 0 {
+            losses.push(admitted_loss(ctx, InventorLossCode::FeatureLabelUnusable, format_args!(
+                "{unnamed_labels} optional feature label(s) have no display name; their exact native records are retained."
+            ))?);
+        }
         if !feature_inventory.issues.is_empty() {
             losses.push(admitted_loss(
                 ctx,

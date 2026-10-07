@@ -1131,6 +1131,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
     let association = SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Step,
         object_id: cadmpeg_core::text::NonBlankString::new("object-1")
             .expect("nonempty source identity"),

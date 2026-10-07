@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [
         {
@@ -170,6 +170,7 @@
           "id": "iges:model:surface#D3",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "SPHERE",
             "object_id": "D3",

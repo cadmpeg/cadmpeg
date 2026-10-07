@@ -106,6 +106,7 @@ fn placed_source_object(
         "creo placed section source object",
     )?;
     Ok(SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Creo,
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")

@@ -54,6 +54,8 @@ pub(crate) enum F3dLossCode {
     FeatureDefinitionIncomplete,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
+    /// A decoded native feature envelope has no interpreted specialized payload.
+    FeatureScopePayloadUninterpreted,
     /// Decoded Design parameters have no neutral parameter.
     ParameterUnprojected,
     /// Design parameter owner bindings have no recognized feature scope.
@@ -205,6 +207,7 @@ impl F3dLossCode {
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
         Self::FeatureScopeUnprojected,
+        Self::FeatureScopePayloadUninterpreted,
         Self::ParameterUnprojected,
         Self::ParameterOwnerUnrecognized,
         Self::ParameterUnitUntyped,
@@ -294,6 +297,7 @@ impl F3dLossCode {
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
+            Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
@@ -398,6 +402,7 @@ impl F3dLossCode {
             | Self::EdgeReferenceLostUnrepaired
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
+            | Self::FeatureScopePayloadUninterpreted
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
@@ -476,6 +481,7 @@ impl F3dLossCode {
             Self::HistoryBindingBudgetExceeded
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
+            | Self::FeatureScopePayloadUninterpreted
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
@@ -589,6 +595,7 @@ mod tests {
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
                 "feature.scope-unprojected",
+                "feature.scope-payload-uninterpreted",
                 "parameter.unprojected",
                 "parameter.owner-unrecognized",
                 "parameter.unit-untyped",

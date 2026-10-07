@@ -12,6 +12,64 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_configuration;
 use crate::F3dCodec;
 
+#[test]
+fn damaged_first_optional_frame_keeps_detection_and_required_brep_admission() {
+    use std::io::{Read as _, Write as _};
+    let optional = "FusionAssetName[Active]/Previews/thumbnail.png";
+    let original = f3d_with_configuration(&synthetic_geometry_smbh(), optional, b"preview");
+    let baseline = super::decode(original.clone());
+    let mut source = zip::ZipArchive::new(Cursor::new(original)).unwrap();
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let names = std::iter::once(optional.to_owned())
+        .chain(
+            source
+                .file_names()
+                .filter(|name| *name != optional)
+                .map(str::to_owned),
+        )
+        .collect::<Vec<_>>();
+    for name in names {
+        let mut payload = Vec::new();
+        source
+            .by_name(&name)
+            .unwrap()
+            .read_to_end(&mut payload)
+            .unwrap();
+        writer.start_file(name, options).unwrap();
+        writer.write_all(&payload).unwrap();
+    }
+    let mut changed = writer.finish().unwrap().into_inner();
+    changed[0] ^= 1;
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&F3dCodec, &changed),
+        cadmpeg_ir::Confidence::Medium
+    );
+    let decoded = super::decode(changed);
+    assert_eq!(decoded.ir().model, baseline.ir().model);
+    super::assert_valid(&decoded);
+    assert!(!decoded.report().losses.is_empty());
+    assert!(<F3dCodec as CodecBackend>::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .is_empty());
+
+    let mut unrelated = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    unrelated.start_file("notes.txt", options).unwrap();
+    unrelated
+        .write_all(b"FusionDocType Breps.BlobParts .smbh")
+        .unwrap();
+    let mut unrelated = unrelated.finish().unwrap().into_inner();
+    unrelated[0] ^= 1;
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&F3dCodec, &unrelated),
+        cadmpeg_ir::Confidence::No
+    );
+}
+
 #[derive(Clone, Copy)]
 enum Defect {
     Crc,
@@ -28,7 +86,7 @@ fn damage_entry(bytes: &mut [u8], name: &str, defect: Defect) {
     let entry = archive.entry(name).unwrap();
     let central = usize::try_from(entry.central_start).unwrap();
     let local = usize::try_from(entry.header_start).unwrap();
-    let payload = usize::try_from(entry.data_start).unwrap();
+    let payload = usize::try_from(entry.data_start.expect("readable frame")).unwrap();
     match defect {
         Defect::Crc => bytes[payload] ^= 1,
         Defect::Encryption => {

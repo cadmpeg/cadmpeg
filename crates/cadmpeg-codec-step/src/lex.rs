@@ -195,6 +195,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         self.literal_admission = admission;
     }
 
+    pub(crate) fn allows_uninterpreted_literals(&self) -> bool {
+        matches!(self.literal_admission, LiteralAdmission::Metadata)
+    }
+
     pub(crate) fn set_allow_print_controls(&mut self, allow: bool) {
         self.allow_print_controls = allow;
     }

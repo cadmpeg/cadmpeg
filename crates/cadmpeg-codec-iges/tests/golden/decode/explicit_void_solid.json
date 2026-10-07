@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -209,6 +209,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTE0",
             "object_id": "D21",
@@ -236,6 +237,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTE1",
             "object_id": "D23",
@@ -263,6 +265,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTE2",
             "object_id": "D25",
@@ -290,6 +293,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTE3",
             "object_id": "D27",
@@ -317,6 +321,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTE4",
             "object_id": "D29",
@@ -344,6 +349,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTE5",
             "object_id": "D31",
@@ -371,6 +377,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDE0",
             "object_id": "D75",
@@ -398,6 +405,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDE1",
             "object_id": "D77",
@@ -425,6 +433,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDE2",
             "object_id": "D79",
@@ -452,6 +461,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDE3",
             "object_id": "D81",
@@ -479,6 +489,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDE4",
             "object_id": "D83",
@@ -506,6 +517,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDE5",
             "object_id": "D85",
@@ -1011,6 +1023,7 @@
           "id": "iges:model:surface#D13",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTS0",
             "object_id": "D13",
@@ -1039,6 +1052,7 @@
           "id": "iges:model:surface#D15",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTS1",
             "object_id": "D15",
@@ -1067,6 +1081,7 @@
           "id": "iges:model:surface#D17",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTS2",
             "object_id": "D17",
@@ -1095,6 +1110,7 @@
           "id": "iges:model:surface#D19",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "OUTS3",
             "object_id": "D19",
@@ -1123,6 +1139,7 @@
           "id": "iges:model:surface#D67",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDS0",
             "object_id": "D67",
@@ -1151,6 +1168,7 @@
           "id": "iges:model:surface#D69",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDS1",
             "object_id": "D69",
@@ -1179,6 +1197,7 @@
           "id": "iges:model:surface#D71",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDS2",
             "object_id": "D71",
@@ -1207,6 +1226,7 @@
           "id": "iges:model:surface#D73",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "VOIDS3",
             "object_id": "D73",

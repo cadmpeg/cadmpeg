@@ -397,12 +397,9 @@ only member that a URI from outside the archive may address. A root
 `REFERENCE` entry or a root `ANCHOR` forwarding a resource may address a
 subsidiary. An internal relative address is resolved from the directory of its
 referencing member and cannot address a file outside the archive. Archive
-member paths use `/`; the reader
-rejects an unsafe path, a duplicate name, an encrypted or Unicode-name entry,
-an unsupported compression method, or a root member with a size or CRC
-mismatch. For each member it retains the central-directory name, compression,
-CRC-32, compressed and uncompressed sizes, and local-header, payload, and
-central-directory offsets.
+member paths use `/`. The Part 21 ZIP profile uses stored or Deflate compression and excludes Unicode filename support.
+
+CADIR decision: the default recovery route rejects unsafe paths and duplicate names, and requires a readable root with matching size and CRC. Ancillary Unicode names, unsupported compression, encryption, and damaged local frames do not prevent that root from being decoded. A safely readable root with nonprofile compression is also recoverable. Each such recovery carries `step/container.member-noncanonical`, which strict admission rejects, and retains the exact central declaration as a source record. Container metadata records central names, compression, CRC, sizes and offsets; an unreadable local frame has no admitted payload offset.
 
 The STEP detector uses a bounded prefix. A medium-confidence ZIP result
 requires the prefix to parse as a ZIP archive whose central directory has an

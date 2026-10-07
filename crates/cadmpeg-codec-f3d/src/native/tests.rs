@@ -1555,7 +1555,7 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
 fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
     let mut archive = f3d_with_deflated_smbh(&synthetic_geometry_smbh());
     let target = b"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
-    set_zip_entry_uncompressed_size(&mut archive, target, u32::MAX);
+    set_zip_entry_uncompressed_size(&mut archive, target, u32::MAX - 1);
 
     let error = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
@@ -1612,7 +1612,7 @@ fn nested_protein_decode_charges_through_session_expand_ceilings() {
         .unwrap();
     nested.write_all(b"properties").unwrap();
     let mut protein = nested.finish().unwrap().into_inner();
-    set_zip_entry_uncompressed_size(&mut protein, target, u32::MAX);
+    set_zip_entry_uncompressed_size(&mut protein, target, u32::MAX - 1);
 
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut outer = zip::ZipWriter::new(Cursor::new(Vec::new()));

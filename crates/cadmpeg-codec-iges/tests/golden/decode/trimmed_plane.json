@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -84,6 +84,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "MODEL",
             "object_id": "D3",
@@ -142,6 +143,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "PCURVE",
             "object_id": "D5",
@@ -315,6 +317,7 @@
           "id": "iges:model:surface#D1",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "PLANE",
             "object_id": "D1",

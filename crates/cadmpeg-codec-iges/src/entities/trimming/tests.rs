@@ -1993,4 +1993,5 @@ fn boundary_clustering_root_walk_refuses_before_traversal() {
     });
 }
 
+mod parameter_mapping;
 mod work_admission;

@@ -102,14 +102,14 @@ fn entity_use_flag_range_follows_the_declared_dialect() {
 #[test]
 fn early_dialects_left_pad_right_justified_status_numbers() {
     for global_table in [GlobalTable::Legacy, GlobalTable::V4_0, GlobalTable::V5_0] {
-        let status = status(*b"     201", global_table).unwrap();
+        let status = status(*b"     201").unwrap();
         assert!(status.is_visible());
         assert_eq!(status.subordinate(), Some(Subordinate::Independent));
         assert_eq!(status.use_flag(global_table), Some(UseFlag::Definition));
         assert_eq!(status.hierarchy(), Some(Hierarchy::GlobalDefer));
     }
 
-    assert!(status(*b"     201", GlobalTable::V5Later).is_err());
+    assert!(status(*b"     201").is_ok());
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn eight_digit_directory_status_supplies_four_two_digit_fields() {
 
 #[test]
 fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
-    for status in ["     201", "0000 201", "0000020 "] {
+    for status in ["0000 201", "0000020 "] {
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
@@ -245,7 +245,7 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
 #[test]
 fn residual_status_fields_preserve_numeric_wire_values() {
     for global_table in [GlobalTable::V4_0, GlobalTable::V5Later] {
-        let parsed = status(*b"99999999", global_table).unwrap();
+        let parsed = status(*b"99999999").unwrap();
         assert!(parsed.use_flag(global_table).is_none());
         assert!(!parsed.is_physically_dependent());
         assert!(!parsed.is_logically_dependent());
@@ -259,8 +259,8 @@ fn residual_status_fields_preserve_numeric_wire_values() {
             })
         );
     }
-    let early = status(*b"00000600", GlobalTable::V4_0).unwrap();
-    let later = status(*b"00000600", GlobalTable::V5Later).unwrap();
+    let early = status(*b"00000600").unwrap();
+    let later = status(*b"00000600").unwrap();
     assert_eq!(early, later);
     assert!(early.use_flag(GlobalTable::V4_0).is_none());
     assert_eq!(
@@ -328,4 +328,24 @@ fn unreadable_directory_metadata_preserves_independent_point_geometry() {
             .unwrap()
             .is_ok());
     }
+}
+
+#[test]
+fn late_directory_status_padding_preserves_required_use_codes_with_a_loss() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "       0",
+        parameters: "116,1,2,3,0;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DirectoryMetadataNoncanonical.kind()));
 }

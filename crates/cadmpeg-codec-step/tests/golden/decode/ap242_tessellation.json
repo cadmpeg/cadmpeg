@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [
         {
@@ -76,7 +76,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#23"
+          "id": "step:data:curve#23",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#23"
+          }
         },
         {
           "geometry": {
@@ -92,7 +97,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#24"
+          "id": "step:data:curve#24",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#24"
+          }
         },
         {
           "geometry": {
@@ -108,7 +118,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#25"
+          "id": "step:data:curve#25",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#25"
+          }
         }
       ],
       "drawings": [],
@@ -189,6 +204,11 @@
             "x": 0.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#10"
           }
         },
         {
@@ -197,6 +217,11 @@
             "x": 10.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#11"
           }
         },
         {
@@ -205,6 +230,11 @@
             "x": 0.0,
             "y": 10.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#12"
           }
         }
       ],
@@ -262,7 +292,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:surface#35"
+          "id": "step:data:surface#35",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#35"
+          }
         }
       ],
       "tessellations": [

@@ -11,6 +11,100 @@ use std::fmt::Write as _;
 use std::io::Cursor;
 
 #[test]
+fn damaged_first_optional_frame_preserves_detection_and_the_required_document() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let original = archive_entries(&[
+        ("Thumbnail.png", b"preview"),
+        ("Document.xml", document.as_bytes()),
+    ]);
+    let mut changed = original.clone();
+    changed[0] ^= 1;
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&FcstdCodec, &changed),
+        cadmpeg_ir::Confidence::Medium
+    );
+    let baseline = FcstdCodec
+        .decode(&mut Cursor::new(original), &DecodeOptions::default())
+        .expect("baseline document");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(changed), &DecodeOptions::default())
+        .expect("required document remains readable");
+    assert_eq!(decoded.ir().model, baseline.ir().model);
+    assert!(!decoded.report().losses.is_empty());
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+
+    let mut unrelated = archive_entries(&[("Thumbnail.png", b"Document.xml")]);
+    unrelated[0] ^= 1;
+    assert_eq!(
+        cadmpeg_test_support::detection::confidence(&FcstdCodec, &unrelated),
+        cadmpeg_ir::Confidence::No
+    );
+}
+
+#[test]
+fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
+    let mut original = crate::test_support::test_archive::GEOMETRY.to_vec();
+    // Place the damaged member beyond span 99, the last lexicographic ID.
+    for ordinal in 0..24 {
+        original = crate::test_support::test_archive::rewrite_entry(
+            &original,
+            &format!("auxiliary-{ordinal}.bin"),
+            |_| b"ancillary".to_vec(),
+        );
+    }
+    let original =
+        crate::test_support::test_archive::rewrite_entry(&original, "Thumbnail.png", |_| {
+            b"preview".to_vec()
+        });
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(&original, &arena, &policy).unwrap();
+    let snapshot = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+    let entry = snapshot.entry("Thumbnail.png").unwrap();
+    let mut changed = original.clone();
+    changed[usize::try_from(entry.header_start).unwrap()] ^= 1;
+    let baseline = FcstdCodec
+        .decode(&mut Cursor::new(original), &DecodeOptions::default())
+        .unwrap();
+    assert!(!baseline.ir().model.faces.is_empty());
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model, baseline.ir().model);
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+    crate::test_support::test_archive::assert_valid_document(decoded.ir());
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let unreadable = namespace
+        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
+        .unwrap();
+    assert_eq!(unreadable.len(), 1);
+    let physical = namespace
+        .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
+        .unwrap();
+    assert!(physical.last().unwrap().span.end() < unreadable[0].data_end);
+    let start = usize::try_from(unreadable[0].data_start).unwrap();
+    let end = usize::try_from(unreadable[0].data_end).unwrap();
+    assert_eq!(unreadable[0].stored_data, changed[start..end]);
+
+    let mut shifted = unreadable;
+    shifted[0].data_start += 1;
+    shifted[0].data_end += 1;
+    let mut invalid = decoded.ir().clone();
+    invalid
+        .native
+        .namespace_mut("fcstd")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "unreadable_entries",
+            &shifted,
+        )
+        .unwrap();
+    assert!(crate::test_support::validate_native(&invalid)
+        .iter()
+        .any(|finding| finding.message == "invalid source-only FCStd entry"));
+}
+
+#[test]
 fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let original = archive_entries(&[
@@ -22,7 +116,7 @@ fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
     let (ctx, root) = DecodeContext::from_root_bytes(&original, &arena, &policy).expect("root");
     let snapshot = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).expect("index");
     let file = snapshot.entry("Thumbnail.png").expect("thumbnail");
-    let payload = usize::try_from(file.data_start).expect("offset");
+    let payload = usize::try_from(file.data_start.expect("readable frame")).expect("offset");
     let mut changed = original.clone();
     changed[payload] ^= 1;
     let decoded = FcstdCodec

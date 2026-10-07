@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -125,6 +125,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "AB",
             "object_id": "D21",
@@ -152,6 +153,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "AC",
             "object_id": "D23",
@@ -179,6 +181,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "AD",
             "object_id": "D25",
@@ -206,6 +209,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "BC",
             "object_id": "D27",
@@ -233,6 +237,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "BD",
             "object_id": "D29",
@@ -260,6 +265,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "CD",
             "object_id": "D31",
@@ -546,6 +552,7 @@
           "id": "iges:model:surface#D13",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "SURF1",
             "object_id": "D13",
@@ -574,6 +581,7 @@
           "id": "iges:model:surface#D15",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "SURF2",
             "object_id": "D15",
@@ -602,6 +610,7 @@
           "id": "iges:model:surface#D17",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "SURF3",
             "object_id": "D17",
@@ -630,6 +639,7 @@
           "id": "iges:model:surface#D19",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "SURF4",
             "object_id": "D19",

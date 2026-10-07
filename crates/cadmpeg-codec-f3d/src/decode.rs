@@ -1952,6 +1952,15 @@ fn report_design_projection_gaps(
             IncompleteFamilyCounts(&incomplete_families)
         ),
     )?;
+    let mut uninterpreted_scopes = 0;
+    for scope in &native.design_parameter_scopes {
+        ctx.charge_work(1, "F3D optional scope payload census")?;
+        if scope.payload().is_uninterpreted() {
+            uninterpreted_scopes += 1;
+        }
+    }
+    push(F3dLossCode::FeatureScopePayloadUninterpreted, uninterpreted_scopes,
+        format_args!("{uninterpreted_scopes} native feature scope(s) retain their source envelope without interpreted specialized operation data."))?;
     push(
         F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,

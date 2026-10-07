@@ -400,9 +400,8 @@ fn decode_propagates_spline_grid_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    // Input byte slots precede the parser's fixed 45-item allowance.
-    options.policy.limits.max_collection_items =
-        45 + cadmpeg_core::decode::u64_from_index(data.len());
+    // Five scalar slots remain after the parser's fixed 40-item storage.
+    options.policy.limits.max_collection_items = 45;
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("six scalar slots exceed the five-item limit");
@@ -438,9 +437,8 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    // Input byte slots precede the parser's fixed 43-item allowance.
-    options.policy.limits.max_collection_items =
-        43 + cadmpeg_core::decode::u64_from_index(data.len());
+    // Three scalar slots remain after the parser's fixed 40-item storage.
+    options.policy.limits.max_collection_items = 43;
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("four scalar slots exceed the three-item limit");

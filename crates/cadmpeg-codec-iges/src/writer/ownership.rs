@@ -59,6 +59,14 @@ impl SourceCurveOwnership {
             .and_then(|sequence| sequence.parse::<u32>().ok())
             .and_then(|sequence| self.statuses.get(&sequence))
             .copied()
-            .unwrap_or(EntityStatus::Independent)
+            .unwrap_or_else(|| {
+                if curve.source_object.as_ref().is_some_and(|source| {
+                    source.geometry_role == Some(cadmpeg_ir::SourceGeometryRole::Support)
+                }) {
+                    EntityStatus::PhysicallyDependent
+                } else {
+                    EntityStatus::Independent
+                }
+            })
     }
 }

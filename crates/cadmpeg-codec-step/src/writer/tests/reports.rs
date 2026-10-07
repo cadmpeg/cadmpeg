@@ -28,7 +28,7 @@ use super::round_trips::cylinder_surface_doc;
 
 /// A one-face document whose single edge has no attributed curve, so the writer
 /// must omit that edge and record a loss.
-fn edgeless_doc() -> CadIr {
+pub(super) fn edgeless_doc() -> CadIr {
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId, VertexId,
     };
@@ -1322,6 +1322,7 @@ fn edge_without_curve_is_reported_and_omitted() {
 #[test]
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("object-0")
             .expect("nonempty source identity"),

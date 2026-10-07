@@ -35,13 +35,72 @@ macro_rules! rewrite_scalar {
     };
 }
 
+// Full-fidelity references use string wire fields, but their owner declares
+// identity semantics. Ordinary display/source text remains ordinary text.
+macro_rules! rewrite_record_field {
+    (native_ref, $value:expr, $ctx:expr, $map:expr) => {
+        crate::schema::rewrite::typed::native_fields::FullFidelityReference::rewrite(
+            $value, $ctx, $map,
+        )
+    };
+    (geometry_ref, $value:expr, $ctx:expr, $map:expr) => {
+        crate::schema::rewrite::typed::native_fields::FullFidelityReference::rewrite(
+            $value, $ctx, $map,
+        )
+    };
+    (endpoint_refs, $value:expr, $ctx:expr, $map:expr) => {
+        crate::schema::rewrite::typed::native_fields::FullFidelityReference::rewrite(
+            $value, $ctx, $map,
+        )
+    };
+    ($field:ident, $value:expr, $ctx:expr, $map:expr) => {
+        crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities($value, $ctx, $map)
+    };
+}
+
+macro_rules! rewrite_native_record_field {
+    (native_ref, $ctx:expr, $value:expr, $map:expr, $owner:ty) => {
+        crate::schema::rewrite::typed::native_fields::rewrite_reference(
+            $ctx,
+            $value,
+            "native_ref",
+            $map,
+        )
+    };
+    (geometry_ref, $ctx:expr, $value:expr, $map:expr, $owner:ty) => {
+        crate::schema::rewrite::typed::native_fields::rewrite_reference(
+            $ctx,
+            $value,
+            "geometry_ref",
+            $map,
+        )
+    };
+    (endpoint_refs, $ctx:expr, $value:expr, $map:expr, $owner:ty) => {
+        crate::schema::rewrite::typed::native_fields::rewrite_reference(
+            $ctx,
+            $value,
+            "endpoint_refs",
+            $map,
+        )
+    };
+    ($field:ident, $ctx:expr, $value:expr, $map:expr, $owner:ty) => {
+        crate::schema::rewrite::typed::native_fields::rewrite_field(
+            $ctx,
+            $value,
+            stringify!($field),
+            $map,
+            |owner: &$owner| Some(&owner.$field),
+        )
+    };
+}
+
 macro_rules! rewrite_record {
     ($type:ty, [$($generic:ident $(: $bound:path)?),*]; {$($field:ident),* $(,)?}) => {
         impl<$($generic: crate::schema::rewrite::typed::RewriteIdentities $(+ $bound)?),*> crate::schema::rewrite::typed::RewriteIdentities for $type {
             fn rewrite_native_value<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut crate::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk native typed fields")?;
                 ctx.charge_work(1, "walk native typed fields")?;
-                $(crate::schema::rewrite::typed::native_fields::rewrite_field(ctx, value, stringify!($field), map, |owner: &Self| Some(&owner.$field))?;)*
+                $(rewrite_native_record_field!($field, ctx, value, map, Self)?;)*
                 Ok(())
             }
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
@@ -55,7 +114,7 @@ macro_rules! rewrite_record {
                 let _depth = rewrite_context.enter_nested("typed rewrite record")?;
                 rewrite_context.charge_work(1, "typed rewrite record")?;
                 let Self { $($field),* } = self;
-                Ok(Self { $($field: crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities($field, rewrite_context, identity_map)?),* })
+                Ok(Self { $($field: rewrite_record_field!($field, $field, rewrite_context, identity_map)?),* })
             }
         }
     };

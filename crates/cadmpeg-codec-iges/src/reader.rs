@@ -663,6 +663,7 @@ fn decode_with_occurrence_limits(
         "iges combined projection losses",
     )?;
     losses.extend(std::mem::take(&mut projection.losses));
+    entities::ownership::mark_supports(&mut ir, &parse.directory, &parse.parameters, ctx)?;
     let graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters, ctx)?;
     ctx.reserve_vec(
         &mut losses,

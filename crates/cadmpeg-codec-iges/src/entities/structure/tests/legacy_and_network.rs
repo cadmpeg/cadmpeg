@@ -1009,6 +1009,7 @@ fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
         view: Some(0),
         transform: 0,
         label_display: Some(0),
+        status_padding_recovered: false,
         status: SourceStatus::from_codes([0, subordinate, use_flag, hierarchy]),
         line_weight: Some(0),
         color: Some(0),

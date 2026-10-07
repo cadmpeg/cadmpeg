@@ -6092,6 +6092,7 @@ pub(crate) fn transfer_text_curves(
                 property.owner.as_str()
             });
         let association = SourceObjectAssociation {
+            geometry_role: None,
             format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id: cadmpeg_core::text::NonBlankString::new(
                 ctx.copy_retained_text(object_id, "FreeCAD curve source object")?,
@@ -6379,6 +6380,7 @@ pub(crate) fn transfer_text_surfaces(
                 property.owner.as_str()
             });
         let association = SourceObjectAssociation {
+            geometry_role: None,
             format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id: cadmpeg_core::text::NonBlankString::new(
                 ctx.copy_retained_text(object_id, "FreeCAD surface source object")?,

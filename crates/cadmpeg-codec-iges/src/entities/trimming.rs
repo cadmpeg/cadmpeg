@@ -3,11 +3,11 @@
 
 use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
 use super::geometry::{
-    linear_nurbs_parameters, planar_polyline_has_self_intersection, planar_polylines_intersect,
-    plane_coordinates, source_object, BoundaryEndpoint, BoundaryVertexDerivation,
-    BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
+    curve_is_line, linear_nurbs_parameters, planar_polyline_has_self_intersection,
+    planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
+    BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
-use super::{affine_parameter_map, line_directrix, pointer};
+use super::{affine_parameter_map, pointer};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -24,7 +24,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{CurveId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
@@ -358,36 +358,49 @@ enum ProceduralSourceParameterMap {
 }
 
 fn procedural_source_parameter_map(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     support: &PcurveSupport<'_>,
-) -> ProceduralSourceParameterMap {
-    let procedural = ir.model.procedural_surfaces.iter().find(|procedural| {
-        ir.model.procedural_surface_owner(&procedural.id) == Some(support.surface_id)
-    });
-    if let Some(procedural) = procedural.filter(|procedural| {
+    ctx: &DecodeContext<'_>,
+) -> Result<ProceduralSourceParameterMap, CodecError> {
+    let procedural = index.procedural_surface_for_surface(support.surface_id.as_str(), ctx)?;
+    let procedural = match procedural.filter(|procedural| {
         matches!(
             procedural.definition(),
             ProceduralSurfaceDefinition::Extrusion(_) | ProceduralSurfaceDefinition::Revolution(_)
         )
     }) {
-        return procedural_pcurve_parameter_map(ir, &procedural.id).map_or(
+        Some(procedural) => Some(procedural),
+        None => match support.geometry {
+            SurfaceGeometry::Procedural { construction, .. } => {
+                index.procedural_surfaces(construction.as_str(), ctx)?
+            }
+            SurfaceGeometry::Solved(_) => return Ok(ProceduralSourceParameterMap::NotApplicable),
+        },
+    };
+    let Some(procedural) = procedural else {
+        return Ok(ProceduralSourceParameterMap::Unavailable);
+    };
+    let directrix = match procedural.definition() {
+        ProceduralSurfaceDefinition::Extrusion(definition) => definition.directrix(),
+        ProceduralSurfaceDefinition::Revolution(definition) => definition.directrix(),
+        _ => return Ok(ProceduralSourceParameterMap::Unavailable),
+    };
+    let directrix_is_line = index
+        .curves(directrix.as_str(), ctx)?
+        .is_some_and(curve_is_line);
+    Ok(
+        procedural_pcurve_parameter_map(procedural, directrix_is_line).map_or(
             ProceduralSourceParameterMap::Unavailable,
             ProceduralSourceParameterMap::Mapped,
-        );
-    }
-    match support.geometry {
-        SurfaceGeometry::Procedural { construction, .. } => {
-            procedural_pcurve_parameter_map(ir, construction).map_or(
-                ProceduralSourceParameterMap::Unavailable,
-                ProceduralSourceParameterMap::Mapped,
-            )
-        }
-        SurfaceGeometry::Solved(_) => ProceduralSourceParameterMap::NotApplicable,
-    }
+        ),
+    )
 }
 
-fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64, f64, f64, f64)> {
-    match procedural_source_parameter_map(ir, support) {
+fn pcurve_parameter_map(
+    source_map: ProceduralSourceParameterMap,
+    support: &PcurveSupport<'_>,
+) -> Option<(f64, f64, f64, f64)> {
+    match source_map {
         ProceduralSourceParameterMap::Mapped(parameter_map) => {
             source_parameter_map_to_neutral(parameter_map, support.factor)
         }
@@ -453,7 +466,7 @@ fn source_parameter_point_to_neutral(
 }
 
 pub(super) fn pcurve_geometry(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     sequence: u32,
     support: &PcurveSupport<'_>,
     tolerance: Option<f64>,
@@ -461,18 +474,25 @@ pub(super) fn pcurve_geometry(
     composite_index: Option<&CompositeIndex>,
 ) -> Result<Option<(PcurveGeometry, [f64; 2])>, super::composite::CompositeCurveError> {
     let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
-    let Some((nurbs, range)) =
-        bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?
+    let Some((nurbs, range)) = bounded_nurbs_for_curve_with_tolerance(
+        index.ir(),
+        &curve_id,
+        tolerance,
+        ctx,
+        composite_index,
+    )?
     else {
         return Ok(None);
     };
-    let source_parameter_map = match procedural_source_parameter_map(ir, support) {
+    let source_map = procedural_source_parameter_map(index, support, ctx)?;
+    let source_parameter_map = match source_map {
         ProceduralSourceParameterMap::Mapped(parameter_map) => Some(parameter_map),
         ProceduralSourceParameterMap::NotApplicable | ProceduralSourceParameterMap::Unavailable => {
             None
         }
     };
-    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
+    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(source_map, support)
+    else {
         return Ok(None);
     };
     let map_point = |point: FinitePoint3| -> Result<FinitePoint2, NurbsError> {
@@ -528,14 +548,9 @@ pub(super) fn pcurve_geometry(
 }
 
 fn procedural_pcurve_parameter_map(
-    ir: &CadIr,
-    construction: &ProceduralSurfaceId,
+    procedural: &ProceduralSurface,
+    directrix_is_line: bool,
 ) -> Option<(f64, f64, f64, f64)> {
-    let procedural = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.id == *construction)?;
     let Some([Some(carrier_start), Some(carrier_end), _, _]) =
         procedural.record_bounds().map(RecordBounds::get)
     else {
@@ -549,10 +564,9 @@ fn procedural_pcurve_parameter_map(
     let mut v_map = (1.0, 0.0);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-            let directrix = definition_payload.directrix();
             let parameter_interval = definition_payload.parameter_interval();
             {
-                if line_directrix(ir, directrix) {
+                if directrix_is_line {
                     u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
                 } else if let Some(parameter_interval) = parameter_interval {
                     u_map = affine_parameter_map(parameter_interval.get(), carrier_interval)?;
@@ -560,7 +574,6 @@ fn procedural_pcurve_parameter_map(
             }
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-            let directrix = definition_payload.directrix();
             let angular_interval = definition_payload.angular_interval().endpoints();
             let angular_parameter_interval = definition_payload
                 .angular_parameter_interval()
@@ -570,7 +583,7 @@ fn procedural_pcurve_parameter_map(
                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
             let transposed = definition_payload.transposed();
             {
-                let directrix_map = if line_directrix(ir, directrix) {
+                let directrix_map = if directrix_is_line {
                     affine_parameter_map([0.0, 1.0], carrier_interval)?
                 } else if let Some(parameter_interval) = parameter_interval {
                     affine_parameter_map(parameter_interval, carrier_interval)?
@@ -847,7 +860,7 @@ fn parameter_interval_reaches_bounds(
 }
 
 fn source_curve_control_polygon_within_bounds(
-    ir: &CadIr,
+    index: &ModelIndex<'_>,
     curve_id: &CurveId,
     support: &PcurveSupport<'_>,
     bounds: Option<[Option<DeclaredInterval>; 4]>,
@@ -861,11 +874,13 @@ fn source_curve_control_polygon_within_bounds(
     let Some(bounds) = bounds else {
         return Ok(true);
     };
-    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
+    let source_map = procedural_source_parameter_map(index, support, ctx)?;
+    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(source_map, support)
+    else {
         return Ok(false);
     };
     let Some(controls) = source_curve_control_intervals(
-        ir,
+        index.ir(),
         curve_id,
         tables,
         precision,
@@ -2649,7 +2664,7 @@ pub(super) fn project(
                         CodecError::Malformed("IGES trimming composite index is absent".into())
                     })?;
                     match pcurve_geometry(
-                        ir,
+                        &carrier_index,
                         *sequence,
                         &PcurveSupport {
                             surface_id: &surface_id,
@@ -2710,7 +2725,7 @@ pub(super) fn project(
                         periodic_parameters,
                         ctx,
                     )? && !source_curve_control_polygon_within_bounds(
-                        ir,
+                        &carrier_index,
                         &crate::ids::curve_admitted(&crate::ids::Stem::directory(*sequence), ctx)?,
                         &PcurveSupport {
                             surface_id: &surface_id,

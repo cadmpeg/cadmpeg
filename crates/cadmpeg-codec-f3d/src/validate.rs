@@ -2121,13 +2121,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             };
         let extrude_profile_link = scope.extrude_profile().is_none_or(valid_sketch_profile);
         let sweep_profile_link = scope.sweep_profile().is_none_or(valid_sketch_profile);
-        let is_base_flange =
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange;
-        let base_flange_profile_link = scope
-            .base_flange_profile()
-            .map_or(!is_base_flange, valid_sketch_profile);
+        let base_flange_profile_link = scope.base_flange_profile().is_none_or(valid_sketch_profile);
         let base_flange_link = match scope.base_flange_operation() {
-            None => scope.kind() != crate::records::feature::scope::DesignFeatureKind::BaseFlange,
+            None => true,
             Some(operation) => {
                 scope.reference_members().values().copied().eq([
                     operation.profile_group_record_index,
@@ -2255,9 +2251,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let copy_paste_link = match scope.copy_paste_bodies_operation() {
-            None => {
-                scope.kind() != crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies
-            }
+            None => true,
             Some(operation) => {
                 let group_header =
                     records_by_index.get(&(native_stream, operation.body_group_record_index));
@@ -2303,10 +2297,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let rectangular_pattern_link = match scope.rectangular_pattern_construction() {
-            None => {
-                design::design_feature_family(&scope.kind())
-                    != Some(design::DesignFeatureFamily::RectangularPattern)
-            }
+            None => true,
             Some(construction) => {
                 let instances_link = construction.instances().is_none_or(|instances| {
                     let active = [
@@ -2440,10 +2431,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let assembly_alignment_link = match scope.assembly_alignment() {
-            None => {
-                design::design_feature_family(&scope.kind())
-                    != Some(design::DesignFeatureFamily::Assemble)
-            }
+            None => true,
             Some(alignment) => {
                 let values = if alignment.owners.len() == 2 {
                     vec![alignment.angle(), alignment.offset()[2]]
@@ -2860,9 +2848,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let component_insert_link = match scope.component_insert_construction() {
-            None => {
-                scope.kind() != crate::records::feature::scope::DesignFeatureKind::ComponentInsert
-            }
+            None => true,
             Some(construction) => {
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
@@ -2945,7 +2931,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let copy_paste_component_link = match scope.copy_paste_component_operation() {
-            None => scope.kind() != crate::records::feature::scope::DesignFeatureKind::CopyPaste,
+            None => true,
             Some(operation) => {
                 let source = native
                     .design_component_occurrences
@@ -3004,10 +2990,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let draft_link = match scope.draft_operation() {
-            None => {
-                design::design_feature_family(&scope.kind())
-                    != Some(design::DesignFeatureFamily::Draft)
-            }
+            None => true,
             Some(operation) => {
                 scope.reference_members().len() >= 6
                     && scope
@@ -4163,9 +4146,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             .values()
             .all(|record_index| records_by_index.contains_key(&(native_stream, *record_index)))
             && records_by_index.contains_key(&(native_stream, scope.record_index))
-            && entity_link.unwrap_or(
-                scope.kind() != crate::records::feature::scope::DesignFeatureKind::Sketch,
-            )
+            && entity_link.unwrap_or(true)
             && extrude_profile_link
             && sweep_profile_link
             && base_flange_profile_link
@@ -4183,7 +4164,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && joint_origin_link
             && work_point_link
             && work_plane_link
-            && (scope.kind() != crate::records::feature::scope::DesignFeatureKind::Sketch
+            && (scope.sketch_entity().is_none()
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
         if !valid {

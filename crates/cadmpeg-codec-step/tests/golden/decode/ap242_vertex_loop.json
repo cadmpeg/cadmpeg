@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -65,6 +65,11 @@
             "x": 0.0,
             "y": 0.0,
             "z": 5.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#8"
           }
         },
         {
@@ -73,6 +78,11 @@
             "x": 0.0,
             "y": 0.0,
             "z": -5.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#9"
           }
         }
       ],
@@ -131,7 +141,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:surface#7"
+          "id": "step:data:surface#7",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#7"
+          }
         }
       ],
       "tessellations": [],

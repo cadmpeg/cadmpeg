@@ -110,7 +110,7 @@ fn anchor_budget_still_bounds_resource_materialization() {
         resolver.remaining_nodes = 2;
 
         assert!(resolver
-            .resolve_root(&Value::Resource("a".to_string()))
+            .resolve_root(&Value::Resource("#a".to_string()))
             .is_err());
     });
 }

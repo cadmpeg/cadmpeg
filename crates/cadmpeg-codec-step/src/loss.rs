@@ -31,6 +31,8 @@ const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("step") {
 pub(crate) enum StepLossCode {
     /// Parser recovered noncanonical Part 21 syntax.
     ParseNoncanonicalSyntax,
+    /// ZIP metadata violates the Part 21 profile without preventing root decoding.
+    ContainerMemberNoncanonical,
     /// A decode stage surfaced a per-record warning.
     DecodeWarning,
     /// Byte accounting left source bytes unclassified.
@@ -269,6 +271,8 @@ pub(crate) enum StepLossCode {
     SourceAttributeNotWritten,
     /// Procedural definitions were reduced to solved STEP carriers.
     ProceduralReducedToCarrier,
+    /// A procedural definition has no emitted native construction or solved carrier.
+    ProceduralDefinitionNotWritten,
     /// Source-native records were not represented.
     SourceNativeRecordOmitted,
     /// A region has no writable outer shell.
@@ -324,6 +328,7 @@ impl StepLossCode {
     #[cfg(test)]
     const ALL: &'static [StepLossCode] = &[
         Self::ParseNoncanonicalSyntax,
+        Self::ContainerMemberNoncanonical,
         Self::DecodeWarning,
         Self::ByteAccountingUnclassified,
         Self::OpaqueRecordPreserved,
@@ -443,6 +448,7 @@ impl StepLossCode {
         Self::AppearanceBindingMetadataReduced,
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
+        Self::ProceduralDefinitionNotWritten,
         Self::SourceNativeRecordOmitted,
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
@@ -473,6 +479,7 @@ impl StepLossCode {
     #[must_use]
     pub(crate) const fn code(self) -> &'static str {
         match self {
+            Self::ContainerMemberNoncanonical => "container.member-noncanonical",
             Self::ParseNoncanonicalSyntax => "parse.noncanonical-syntax",
             Self::DecodeWarning => "decode.warning",
             Self::ByteAccountingUnclassified => "decode.byte-accounting-unclassified",
@@ -613,6 +620,7 @@ impl StepLossCode {
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
+            Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
             Self::SourceNativeRecordOmitted => "native.source-record-omitted",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
@@ -699,7 +707,8 @@ impl StepLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ParseNoncanonicalSyntax
+            Self::ContainerMemberNoncanonical
+            | Self::ParseNoncanonicalSyntax
             | Self::OrientedShellOmitsCfsFaces
             | Self::HeaderMetadataNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::DecodeWarning
@@ -756,7 +765,8 @@ impl StepLossCode {
             | Self::PmiLengthUnitUnresolved
             | Self::PmiAngleUnitUnresolved
             | Self::ValidationMeasureUnitUnresolved
-            | Self::GeometryCarrierNotWritten => LossTaxonomy::GeometryNotTransferred,
+            | Self::GeometryCarrierNotWritten
+            | Self::ProceduralDefinitionNotWritten => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyRootRejected
             | Self::TopologyRootIncomplete
             | Self::AssemblyGraphInvalid
@@ -880,6 +890,7 @@ mod tests {
             codes,
             [
                 "parse.noncanonical-syntax",
+                "container.member-noncanonical",
                 "decode.warning",
                 "decode.byte-accounting-unclassified",
                 "decode.opaque-record-preserved",
@@ -999,6 +1010,7 @@ mod tests {
                 "appearance.binding-metadata-reduced",
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
+                "geometry.procedural-definition-not-written",
                 "native.source-record-omitted",
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",

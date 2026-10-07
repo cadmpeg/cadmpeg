@@ -687,6 +687,7 @@ pub(super) fn transfer_fc05_cap_circles(
                     id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                             format_args!("VisibGeom:{}", circle.curve_id),
@@ -747,6 +748,7 @@ pub(super) fn transfer_fc05_cap_circles(
                     cylinder_surface,
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("VisibGeom:{cylinder_id}"),

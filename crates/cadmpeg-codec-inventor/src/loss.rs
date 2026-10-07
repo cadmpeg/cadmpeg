@@ -50,6 +50,8 @@ pub(crate) enum InventorLossCode {
     SketchRecordMalformed,
     /// Typed feature records could not be parsed exactly.
     FeatureRecordMalformed,
+    /// An optional feature label is empty and has no neutral display name.
+    FeatureLabelUnusable,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
     /// Inventor operations retain native result-body identity with unresolved state.
@@ -116,6 +118,7 @@ impl InventorLossCode {
         Self::DesignRecordMalformed,
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
+        Self::FeatureLabelUnusable,
         Self::FeatureOperationGraphOpen,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
@@ -159,6 +162,7 @@ impl InventorLossCode {
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
             Self::FeatureRecordMalformed => "feature.record-malformed",
+            Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
@@ -222,7 +226,9 @@ impl InventorLossCode {
             | Self::FeatureStateUnresolved
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen => LossTaxonomy::ParametricRecordOmitted,
-            Self::MetadataPropertyUnmapped => LossTaxonomy::MetadataNotTransferred,
+            Self::MetadataPropertyUnmapped | Self::FeatureLabelUnusable => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::ProteinCatalogUndecodable
             | Self::ProteinAssetRejected
             | Self::ProteinAppearanceAbsent
@@ -287,6 +293,7 @@ mod tests {
                 "design.record-malformed",
                 "sketch.record-malformed",
                 "feature.record-malformed",
+                "feature.label-unusable",
                 "feature.operation-graph-open",
                 "feature.state-unresolved",
                 "parameter.graph-open",

@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -61,6 +61,7 @@
           "id": "iges:model:surface#D7",
           "source_object": {
             "format": "iges",
+            "geometry_role": "independent",
             "layer": "0",
             "name": "SURFACE",
             "object_id": "D7",

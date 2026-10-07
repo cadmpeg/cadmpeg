@@ -227,10 +227,10 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     .expect("write curve-bounded surface");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
     assert!(!text.contains("CURVE_BOUNDED_SURFACE"));
-    assert!(text.contains("GEOMETRIC_SET"));
+    assert!(!text.contains("GEOMETRIC_SET"));
     assert!(report.losses.iter().any(|loss| loss
         .message
-        .contains("reduced to their solved STEP carriers")));
+        .contains("geometry carrier(s) were not written")));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written curve-bounded surface");

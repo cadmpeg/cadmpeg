@@ -205,6 +205,21 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             && finding.message == "Fusion Design parameter scope has an invalid paired frame"
     }));
 
+    // A decoded envelope can retain a family without its specialized operation.
+    let mut envelope_only = ir.clone();
+    if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
+        f3d_native_mut(&mut envelope_only).design_parameter_scopes[0].payload_mut()
+    {
+        *slot = None;
+    }
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &envelope_only).unwrap()
+    });
+    assert!(!findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(scope_id.as_str())
+            && finding.message == "Fusion Design parameter scope has an invalid paired frame"
+    }));
+
     f3d_native_mut(&mut ir).design_parameter_scopes[0].paired_class_tag =
         crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
     let findings = crate::test_support::with_decode_context(|ctx| {

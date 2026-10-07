@@ -50,6 +50,7 @@ pub(crate) fn cgm_source_key(
     let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_cgm_source_object_id", 1, 1))?;
     Ok(SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id,
         name: None,

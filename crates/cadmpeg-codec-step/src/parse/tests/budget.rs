@@ -619,7 +619,7 @@ fn anchor_memo_entry_is_admitted_before_the_clone() {
         "a".to_string(),
         Value::List(vec![Value::Integer(1), Value::Integer(2)]),
     )]);
-    let value = Value::Resource("a".into());
+    let value = Value::Resource("#a".into());
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
@@ -676,7 +676,7 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
 #[test]
 fn anchor_reference_stack_refuses_collection_limit() {
     let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
-    let value = Value::Resource("a".into());
+    let value = Value::Resource("#a".into());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -696,8 +696,8 @@ fn anchor_reference_stack_refuses_collection_limit() {
 
 #[test]
 fn cyclic_anchor_error_text_refuses_retained_limit() {
-    let anchors = BTreeMap::from([("a".into(), Value::Resource("a".into()))]);
-    let value = Value::Resource("a".into());
+    let anchors = BTreeMap::from([("a".into(), Value::Resource("#a".into()))]);
+    let value = Value::Resource("#a".into());
     let arena = DecodeArena::new();
     let refused = {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
@@ -734,7 +734,7 @@ fn cyclic_anchor_error_text_refuses_retained_limit() {
 #[test]
 fn anchor_reference_stack_refuses_retained_limit() {
     let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
-    let value = Value::Resource("a".into());
+    let value = Value::Resource("#a".into());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
@@ -1060,7 +1060,7 @@ fn parser_accounts_for_anchor_tag_collection_storage() {
 
 #[test]
 fn anchor_materialization_uses_the_decode_session_budget() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;DATA;#1=ITEM(<a>);ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;DATA;#1=ITEM(<#a>);ENDSEC;END-ISO-10303-21;";
     let mut materialization_limit = None;
     for max_work_units in 1..=1024 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1124,11 +1124,11 @@ fn local_reference_materialization_uses_the_decode_session_budget() {
 fn parser_bounds_exponential_anchor_expansion() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..40 {
-        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
+        writeln!(anchors, "<a{index}>=(<#a{}>,<#a{}>);", index - 1, index - 1)
             .expect("write anchor fixture");
     }
     let source = format!(
-        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<#a39>);ENDSEC;END-ISO-10303-21;"
     );
     let error =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
@@ -1146,11 +1146,11 @@ fn parser_bounds_exponential_anchor_expansion() {
 fn parser_bounds_aggregate_anchor_materialization() {
     let mut anchors = String::from("<a0>=(1,1);\n");
     for index in 1..18 {
-        writeln!(anchors, "<a{index}>=(<a{}>,<a{}>);", index - 1, index - 1)
+        writeln!(anchors, "<a{index}>=(<#a{}>,<#a{}>);", index - 1, index - 1)
             .expect("write anchor fixture");
     }
     let records = (1..=8).fold(String::new(), |mut records, id| {
-        write!(records, "#{id}=ITEM(<a17>);").expect("write anchor record fixture");
+        write!(records, "#{id}=ITEM(<#a17>);").expect("write anchor record fixture");
         records
     });
     let source = format!(

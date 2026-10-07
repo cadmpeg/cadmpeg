@@ -1497,8 +1497,10 @@ fn resolve(
     resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table)?;
     resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table)?;
     let integer_bits = resolution
-        .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |_| true)?
-        .and_then(|value| u32::try_from(value).ok().filter(|value| *value > 0));
+        .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |value| {
+            value > 0 && u32::try_from(value).is_ok()
+        })?
+        .and_then(|value| u32::try_from(value).ok());
     let single_magnitude =
         resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true)?;
     let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE)?.value();

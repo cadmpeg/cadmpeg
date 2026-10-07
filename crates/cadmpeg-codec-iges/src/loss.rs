@@ -59,6 +59,8 @@ loss_codes! {
     EntityOutsideEnvelope => "entity.outside-envelope",
     /// An entity was not projected; the instance message names the reason.
     EntityNotProjected => "entity.not-projected",
+    /// Redundant spline claims disagreed with the serialized carrier mathematics.
+    SplineClaimRecovered => "geometry.spline-claim-recovered",
     /// A NURBS coordinate or parameter transformation produced a non-finite value.
     NurbsTransformNonFinite => "geometry.nurbs-transform-non-finite",
     /// A boundary pcurve leaves the finite parameter domain of its support surface.
@@ -137,6 +139,7 @@ impl IgesLossCode {
             | Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected
+            | Self::SplineClaimRecovered
             | Self::NurbsTransformNonFinite
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::PointerUnresolved
@@ -193,7 +196,8 @@ impl IgesLossCode {
             Self::CompositeCarrierDegraded
             | Self::GlobalLengthUnitUnresolved
             | Self::NurbsTransformNonFinite => LossTaxonomy::GeometryNotTransferred,
-            Self::GlobalSemanticContextSubstituted
+            Self::SplineClaimRecovered
+            | Self::GlobalSemanticContextSubstituted
             | Self::GlobalNumericSyntaxRecovered
             | Self::DirectoryMetadataUnreadable
             | Self::DirectoryMetadataNoncanonical
@@ -263,6 +267,7 @@ mod tests {
                 "entity.retained-unprojected",
                 "entity.outside-envelope",
                 "entity.not-projected",
+                "geometry.spline-claim-recovered",
                 "geometry.nurbs-transform-non-finite",
                 "topology.boundary-pcurve-outside-support-domain",
                 "graph.pointer-unresolved",

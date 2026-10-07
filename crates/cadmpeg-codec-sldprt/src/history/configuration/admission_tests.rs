@@ -38,6 +38,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         id: cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#polygonal").unwrap(),
         geometry: SurfaceGeometry::Solved(placed),
         source_object: Some(SourceObjectAssociation {
+            geometry_role: None,
             format: CodecFormat::Sldprt,
             object_id: cadmpeg_core::text::NonBlankString::new("carrier").unwrap(),
             name: Some("Retained surface".into()),

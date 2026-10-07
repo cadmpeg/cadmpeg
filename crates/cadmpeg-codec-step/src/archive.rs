@@ -6,9 +6,11 @@ use cadmpeg_core::container::ContainerRole;
 use std::fmt::Write;
 use std::path::Path;
 
-use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
+use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
+
+pub(crate) mod recovery;
 
 /// The required root member name from Part 21 Annex A.4.
 pub(crate) const ROOT_NAME: &str = "ISO-10303.p21";
@@ -34,15 +36,14 @@ pub(crate) fn has_root_marker(
     prefix: View<'_>,
 ) -> Result<bool, CodecError> {
     // The root name is evidence only in the structured central directory.
-    const MAX_PROBE_BYTES: usize = 1024 * 1024;
     ctx.charge_work(
         u64_from_index(prefix.window().len().min(4)),
         "STEP ZIP detection magic",
     )?;
-    if !has_zip_magic(prefix.window()) || prefix.window().len() > MAX_PROBE_BYTES {
+    if !has_zip_magic(prefix.window()) && !ArchiveSnapshot::has_footer(ctx, prefix.window())? {
         return Ok(false);
     }
-    match ArchiveSnapshot::contains_name(ctx, prefix, ROOT_NAME) {
+    match ArchiveSnapshot::contains_matching_name(ctx, prefix, |name| name == ROOT_NAME) {
         Ok(found) => Ok(found),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(_) => Ok(false),
@@ -64,21 +65,13 @@ pub(crate) fn open_root<'a>(
     let archive = ArchiveSnapshot::new(ctx, root)?;
     for entry in archive.entries() {
         validate_entry_name(&entry.name)?;
-        if entry.uses_utf8_name_encoding() {
-            return Err(CodecError::Malformed(
-                "STEP ZIP uses prohibited Unicode filename support".into(),
-            ));
-        }
-        if entry.compression == ZipCompression::Zstd {
-            return Err(CodecError::NotImplemented(
-                "STEP ZIP requires PKZIP 2.04g stored or Deflate entries".into(),
-            ));
-        }
     }
     let root_entry = archive.entry(ROOT_NAME).ok_or_else(|| {
         CodecError::WrongFormat(format!("STEP ZIP has no required root {ROOT_NAME}"))
     })?;
-    let data_start = root_entry.data_start;
+    let data_start = root_entry
+        .data_start
+        .ok_or_else(|| CodecError::malformed("STEP ZIP root has no readable local frame"))?;
     let root_view = archive.open(ctx, &root_entry.name)?;
     Ok(OpenedRoot {
         archive,

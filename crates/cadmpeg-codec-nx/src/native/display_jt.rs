@@ -6545,6 +6545,7 @@ fn display_jt_tessellation_rows(
                 }))?;
             tessellations.push((
                 tessellation.with_source_object(Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: required!(cadmpeg_core::text::NonBlankString::new(
                         (ctx.join_retained(

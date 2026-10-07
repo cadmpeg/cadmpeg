@@ -45,7 +45,7 @@ pub(crate) fn load_artifact(
     let mut prefix =
         cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, DETECTION_PREFIX_LEN)?;
     let resolved = catalog
-        .resolve_source(&ctx, View::over_retained(&prefix), forced)
+        .resolve_seekable_source(&ctx, View::over_retained(&prefix), &mut file, forced)
         .map_err(|error| match error {
             ResolveSourceError::Codec(error) => ApplicationError::from(error),
             error => ApplicationError::from(detection_failure(&error)),

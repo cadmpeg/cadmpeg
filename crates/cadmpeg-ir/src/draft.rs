@@ -284,6 +284,7 @@ impl From<CodecError> for DraftError {
 #[derive(Debug)]
 pub struct ModelDraft<A = ()> {
     model: Model,
+    insertion_index: Option<IdentityIndex>,
     accounting: A,
 }
 
@@ -297,6 +298,7 @@ impl Default for ModelDraft {
     fn default() -> Self {
         Self {
             model: Model::default(),
+            insertion_index: Some(IdentityIndex::new()),
             accounting: (),
         }
     }
@@ -331,6 +333,7 @@ impl ModelDraft {
     pub fn with_accounting(self) -> ModelDraft<DraftAccounting> {
         ModelDraft {
             model: self.model,
+            insertion_index: self.insertion_index,
             accounting: DraftAccounting::default(),
         }
     }
@@ -353,16 +356,43 @@ impl<A> ModelDraft<A> {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), DraftError> {
         let identity = entity.identity();
-        macro_rules! check_identity {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-                $(for existing in &self.model.$field {
-                    ctx.charge_work(1, "draft insertion identity scan")?;
-                    if identities_equal(ctx, existing.identity(), identity, "compare draft insertion identities")? { return Err(DraftError::IdentityCollision(ctx.copy_retained_text(identity, "draft identity collision")?)); }
-                })*
-            };
+        if self.insertion_index.is_none() {
+            self.insertion_index = Some(match index_model_identities(&self.model, ctx)? {
+                Ok(index) => index,
+                Err(identity) => {
+                    return Err(DraftError::IdentityCollision(
+                        ctx.copy_retained_text(identity, "draft identity collision")?,
+                    ))
+                }
+            });
         }
-        crate::document::arena_registry!(check_identity);
+        let index = self
+            .insertion_index
+            .as_mut()
+            .expect("draft insertion index rebuilt");
+        if identity_index_contains(&self.model, index, identity, ctx)? {
+            return Err(DraftError::IdentityCollision(
+                ctx.copy_retained_text(identity, "draft identity collision")?,
+            ));
+        }
+        ctx.charge_work(
+            u64_from_index(identity.len()),
+            "hash draft insertion identity",
+        )?;
+        let hash = identity_hash(identity);
+        let slot = IdentitySlot {
+            kind: T::KIND,
+            index: T::arena(&self.model).len(),
+        };
         ctx.reserve_vec(T::arena_mut(&mut self.model), 1, "draft entity arena")?;
+        insert_identity(
+            index,
+            hash,
+            slot,
+            &DecodeStorage(ctx),
+            "draft insertion identity slots",
+        )
+        .map_err(DraftError::Resource)?;
         T::arena_mut(&mut self.model).push(entity);
         Ok(())
     }
@@ -377,6 +407,7 @@ impl<A> ModelDraft<A> {
     /// Commit still checks all identities and references, including entities inserted
     /// through this lower-level surface.
     pub fn model_mut(&mut self) -> &mut Model {
+        self.insertion_index = None;
         &mut self.model
     }
 
@@ -698,7 +729,11 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     ) -> Result<Result<(), DraftError>, CodecError> {
         let ctx = self.ctx;
         let transaction = annotations.copy_transaction(ctx, "draft annotation transaction")?;
-        let ModelDraft { model, accounting } = draft;
+        let ModelDraft {
+            model,
+            accounting,
+            insertion_index,
+        } = draft;
         let ((), transaction) = transaction.update(|annotations| {
             let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
             for (identity, exactness) in accounting.exactness {
@@ -710,6 +745,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         match self.state.commit_with_storage(
             ModelDraft {
                 model,
+                insertion_index,
                 accounting: (),
             },
             ctx,
@@ -1189,6 +1225,46 @@ mod tests {
             )
             .expect("insert vertex into draft");
         draft
+    }
+
+    #[test]
+    fn large_draft_insertion_fits_a_linear_work_budget() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2_000_000;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut draft = ModelDraft::new();
+        for index in 0..4096 {
+            draft
+                .insert(point(&format!("test:model:point#{index}")), &ctx)
+                .unwrap();
+        }
+        assert_eq!(draft.entity_count(), 4096);
+        assert!(matches!(
+            draft.insert(point("test:model:point#4095"), &ctx),
+            Err(DraftError::IdentityCollision(_))
+        ));
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn direct_draft_edits_invalidate_insertion_identity_slots() {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let mut draft = ModelDraft::new();
+        draft.insert(point("test:model:point#old"), &ctx).unwrap();
+        draft.model_mut().points.clear();
+        draft.insert(point("test:model:point#old"), &ctx).unwrap();
+        draft
+            .model_mut()
+            .points
+            .push(point("test:model:point#direct"));
+        assert!(matches!(
+            draft.insert(point("test:model:point#direct"), &ctx),
+            Err(DraftError::IdentityCollision(_))
+        ));
+        assert_eq!(draft.entity_count(), 2);
     }
 
     #[test]

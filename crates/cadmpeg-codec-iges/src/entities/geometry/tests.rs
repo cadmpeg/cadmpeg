@@ -570,6 +570,7 @@ fn transform_entry(sequence: u32, transform: i64) -> crate::directory::Directory
         view: Some(0),
         transform,
         label_display: Some(0),
+        status_padding_recovered: false,
         status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
         line_weight: Some(0),
         color: Some(0),
@@ -1145,7 +1146,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
 }
 
 #[test]
-fn decode_rejects_a_rational_declaration_with_equal_weights() {
+fn decode_recovers_a_rational_declaration_with_equal_weights() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(equal_weight_rational_nurbs_curve_file()),
@@ -1153,16 +1154,16 @@ fn decode_rejects_a_rational_declaration_with_equal_weights() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.curves.len(), 1);
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].code,
-        IgesLossCode::EntityNotProjected.kind()
+        IgesLossCode::SplineClaimRecovered.kind()
     );
 }
 
 #[test]
-fn decode_rejects_inconsistent_type_126_planar_and_closed_flags() {
+fn decode_recovers_inconsistent_type_126_planar_and_closed_flags() {
     for (flags, normal) in [
         ([1, 0, 0, 0], [1, 0, 0]),
         ([1, 1, 0, 0], [0, 0, 1]),
@@ -1179,14 +1180,14 @@ fn decode_rejects_inconsistent_type_126_planar_and_closed_flags() {
             )
             .unwrap();
         assert!(
-            result.ir().model.curves.is_empty(),
+            result.ir().model.curves.len() == 1,
             "flags={flags:?}: losses={:?}",
             result.report().losses
         );
         assert_eq!(result.report().losses.len(), 1, "flags={flags:?}");
         assert_eq!(
             result.report().losses[0].code,
-            IgesLossCode::EntityNotProjected.kind(),
+            IgesLossCode::SplineClaimRecovered.kind(),
             "flags={flags:?}"
         );
     }
@@ -1211,7 +1212,7 @@ fn decode_uses_strict_global_resolution_for_type_126_closed_flag() {
 
         assert_eq!(
             result.ir().model.curves.len(),
-            usize::from(decoded),
+            1,
             "endpoint={endpoint}, PROP2={prop2}"
         );
         assert_eq!(
@@ -1223,7 +1224,7 @@ fn decode_uses_strict_global_resolution_for_type_126_closed_flag() {
         if !decoded {
             assert_eq!(
                 result.report().losses[0].code,
-                IgesLossCode::EntityNotProjected.kind()
+                IgesLossCode::SplineClaimRecovered.kind()
             );
         }
     }
@@ -1327,7 +1328,7 @@ fn decode_treats_type_126_periodic_flag_as_evaluation_metadata() {
 }
 
 #[test]
-fn decode_rejects_type_126_without_required_normal_fields() {
+fn decode_recovers_type_126_without_required_normal_fields() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(polynomial_nurbs_curve_file(
@@ -1337,11 +1338,11 @@ fn decode_rejects_type_126_without_required_normal_fields() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.curves.len(), 1);
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].code,
-        IgesLossCode::EntityNotProjected.kind()
+        IgesLossCode::SplineClaimRecovered.kind()
     );
 }
 
@@ -1458,8 +1459,8 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
 }
 
 #[test]
-fn decode_applies_declared_real_significance_to_polynomial_weights() {
-    for (weights, decoded) in [
+fn decode_preserves_actual_weights_when_polynomial_claim_disagrees() {
+    for (weights, claim_usable) in [
         ("1.,0.9999999", true),
         ("1.,0.99", false),
         ("1.D0,0.9999999D0", false),
@@ -1471,24 +1472,22 @@ fn decode_applies_declared_real_significance_to_polynomial_weights() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-
-        assert_eq!(
-            result.ir().model.curves.len(),
-            usize::from(decoded),
-            "{weights}"
+        assert_eq!(result.ir().model.curves.len(), 1, "{weights}");
+        assert_eq!(result.report().losses.is_empty(), claim_usable, "{weights}");
+        let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+        else {
+            panic!("expected NURBS");
+        };
+        assert!(
+            nurbs.weights().is_some(),
+            "actual unequal weights must survive {weights}"
         );
-        assert_eq!(result.report().losses.is_empty(), decoded, "{weights}");
-        if decoded {
-            let Some(SolvedCurveGeometry::Nurbs(nurbs)) =
-                result.ir().model.curves[0].geometry.solved()
-            else {
-                panic!("expected a NURBS carrier");
-            };
-            assert_eq!(nurbs.weights(), None);
-        } else {
-            assert!(result.report().losses[0]
-                .message
-                .contains("polynomial spline has unequal weights"));
+        if !claim_usable {
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == crate::loss::IgesLossCode::SplineClaimRecovered.kind()));
         }
     }
 }
@@ -1978,3 +1977,24 @@ fn decode_reports_transform_translation_overflow_after_inch_scaling() {
 }
 
 mod ownership;
+
+#[test]
+fn spline_claim_recovery_is_rejected_by_strict_mode() {
+    let parameters = b"126,1,1,2,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1;";
+    let input = polynomial_nurbs_curve_file(parameters);
+    let recovered = IgesCodec
+        .decode(&mut Cursor::new(&input), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(recovered.ir().model.curves.len(), 1);
+    assert!(recovered
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::SplineClaimRecovered.kind()));
+    let mut strict = DecodeOptions::default();
+    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    assert!(matches!(
+        IgesCodec.decode(&mut Cursor::new(input), &strict),
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })
+    ));
+}

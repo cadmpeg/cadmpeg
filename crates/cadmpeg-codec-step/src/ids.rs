@@ -80,6 +80,14 @@ pub(crate) fn header(offset: usize) -> UnknownId {
     UnknownId::from(Identity::compose(&namespace, IdentityKey::from(offset)))
 }
 
+/// Retained ZIP member declaration, keyed by its physical central offset.
+#[must_use]
+pub(crate) fn zip_declaration(offset: u64) -> UnknownId {
+    let namespace =
+        IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("zip-declaration"));
+    UnknownId::from(Identity::compose(&namespace, IdentityKey::from(offset)))
+}
+
 /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.
 #[must_use]
 pub(crate) fn data(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {

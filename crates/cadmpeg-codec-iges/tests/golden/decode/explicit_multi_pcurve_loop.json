@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -31,6 +31,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "EDGE3",
             "object_id": "D11",
@@ -58,6 +59,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "EDGE4",
             "object_id": "D13",
@@ -98,6 +100,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "PCURVE1",
             "object_id": "D19",
@@ -138,6 +141,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "PCURVE2",
             "object_id": "D21",
@@ -165,6 +169,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "EDGE1",
             "object_id": "D7",
@@ -192,6 +197,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "EDGE2",
             "object_id": "D9",
@@ -247,6 +253,7 @@
           "id": "iges:model:surface#D5",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "SURFACE",
             "object_id": "D5",

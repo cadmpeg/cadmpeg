@@ -2876,7 +2876,7 @@ pub(super) fn project(
         )?;
     }
 
-    'surface: for entry in directory
+    for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 128 && (0..=9).contains(&entry.form))
     {
@@ -2965,13 +2965,13 @@ pub(super) fn project(
         }
         let flags: [Option<i64>; 5] = std::array::from_fn(|offset| record.integer(5 + offset));
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
-            super::push_entity_loss(
+            super::push_attributed_loss(
                 ctx,
                 &mut losses,
                 entry,
+                crate::loss::IgesLossCode::SplineClaimRecovered,
                 format_args!("{}", "one or more surface flags are not 0 or 1"),
             )?;
-            continue;
         }
         let (Some(u_count), Some(v_count)) = (k1.checked_add(1), k2.checked_add(1)) else {
             super::push_entity_loss(
@@ -3193,28 +3193,33 @@ pub(super) fn project(
                 )
             })
         });
-        let polynomial = flags[2] == Some(1);
-        if polynomial && !equal_weights {
-            super::push_entity_loss(
+        let declared_polynomial = flags[2] == Some(1);
+        if declared_polynomial && !equal_weights {
+            super::push_attributed_loss(
                 ctx,
                 &mut losses,
                 entry,
+                crate::loss::IgesLossCode::SplineClaimRecovered,
                 format_args!("{}", "polynomial surface has unequal weights"),
             )?;
-            continue;
         }
-        if !polynomial && equal_weights {
-            super::push_entity_loss(
+        if !declared_polynomial && equal_weights {
+            super::push_attributed_loss(
                 ctx,
                 &mut losses,
                 entry,
+                crate::loss::IgesLossCode::SplineClaimRecovered,
                 format_args!(
                     "{}",
                     "rational surface has equal weights but PROP3 declares rational"
                 ),
             )?;
-            continue;
         }
+        let polynomial = native_weights.first().is_some_and(|first| {
+            native_weights
+                .iter()
+                .all(|weight| weight.get() == first.get())
+        });
         let Some(native_poles) = collect_numbers(
             pole_start,
             pole_value_count,
@@ -3403,22 +3408,23 @@ pub(super) fn project(
                 global.minimum_resolution_mm(),
             )?
             else {
-                super::push_entity_loss(
+                super::push_attributed_loss(
                     ctx,
                     &mut losses,
                     entry,
-                    format_args!("{direction}-closed surface boundary cannot be evaluated"),
+                    crate::loss::IgesLossCode::SplineClaimRecovered,
+                    format_args!("{direction}-closed surface consistency claim could not be checked; retained the serialized carrier"),
                 )?;
-                continue 'surface;
+                continue;
             };
             if actual != declared {
-                super::push_entity_loss(
+                super::push_attributed_loss(
                     ctx,
                     &mut losses,
                     entry,
+                    crate::loss::IgesLossCode::SplineClaimRecovered,
                     format_args!("{direction}-closed surface flag disagrees with boundary curves"),
                 )?;
-                continue 'surface;
             }
         }
         let surface_id =

@@ -40,6 +40,7 @@ fn id_strategy() -> impl Strategy<Value = String> {
 
 fn free_carrier(object_id: &str) -> SourceObjectAssociation {
     SourceObjectAssociation {
+        geometry_role: None,
         format: crate::CodecFormat::Step,
         object_id: cadmpeg_core::text::NonBlankString::new(object_id)
             .expect("nonempty source identity"),
@@ -59,6 +60,7 @@ fn source_association_is_a_free_carrier_root() {
         id: CurveId::mint("synthetic:source:curve#0").expect("valid identity"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: Some(SourceObjectAssociation {
+            geometry_role: None,
             format: crate::CodecFormat::Rhino,
             object_id: cadmpeg_core::text::NonBlankString::new(
                 "00000000-0000-0000-0000-000000000000",

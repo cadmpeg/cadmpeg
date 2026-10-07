@@ -32,6 +32,7 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+mod ownership;
 mod wire;
 
 const EPS_IDENTITY: f64 = 1.0e-12;
@@ -99,7 +100,7 @@ pub(crate) fn write_step_outcome(
             )));
         }
     }
-    let mut b = Builder::new(ir, schema);
+    let mut b = Builder::new(ir, schema)?;
     b.build();
     let outcome = b.finish_outcome();
     let lines = b.emitter.into_lines()?;
@@ -292,10 +293,12 @@ pub(crate) struct Builder<'a> {
     angle_unit: Option<Ref>,
     ratio_unit: Option<Ref>,
     geometry_emission_depth: usize,
+    construction_supports: BTreeSet<String>,
 }
 
 impl<'a> Builder<'a> {
-    pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Self {
+    pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Result<Self, cadmpeg_core::CodecError> {
+        let construction_supports = ownership::construction_supports(ir)?;
         let loop_faces = ir
             .model
             .faces
@@ -330,7 +333,7 @@ impl<'a> Builder<'a> {
                 ));
             }
         }
-        Builder {
+        Ok(Builder {
             ir,
             schema,
             emitter: Emitter::new(),
@@ -451,7 +454,8 @@ impl<'a> Builder<'a> {
             angle_unit: None,
             ratio_unit: None,
             geometry_emission_depth: 0,
-        }
+            construction_supports,
+        })
     }
 
     fn loss(&mut self, code: StepLossCode, message: String) {
@@ -1863,18 +1867,120 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_standalone_geometry(&mut self) -> Vec<Ref> {
+        // Ownership is a property of the source/model graph, not of successful
+        // emission. A failed face must never expose its full support as a root.
+        let owned_surfaces: BTreeSet<_> = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .map(|face| face.surface.as_str())
+            .collect();
+        let owned_curves: BTreeSet<_> = self
+            .ir
+            .model
+            .edges
+            .iter()
+            .filter_map(|edge| edge.carrier.curve())
+            .map(cadmpeg_ir::ids::CurveId::as_str)
+            .chain(
+                self.ir
+                    .model
+                    .coedges
+                    .iter()
+                    .filter_map(|coedge| coedge.use_curve.as_ref())
+                    .map(|use_| use_.curve.as_str()),
+            )
+            .collect();
+        let owned_points: BTreeSet<_> = self
+            .ir
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.point.as_str())
+            .collect();
+        for surface in &self.ir.model.surfaces {
+            if !self.surface_refs.contains_key(surface.id.as_str())
+                && (owned_surfaces.contains(surface.id.as_str())
+                    || ownership::is_support(
+                        surface.id.as_str(),
+                        surface.source_object.as_ref(),
+                        &self.construction_supports,
+                    ))
+            {
+                self.unwritten_geometry_carriers
+                    .insert(surface.id.as_str().to_owned());
+            }
+        }
+        for curve in &self.ir.model.curves {
+            if !self.curve_refs.contains_key(curve.id.as_str())
+                && (owned_curves.contains(curve.id.as_str())
+                    || ownership::is_support(
+                        curve.id.as_str(),
+                        curve.source_object.as_ref(),
+                        &self.construction_supports,
+                    ))
+            {
+                self.unwritten_geometry_carriers
+                    .insert(curve.id.as_str().to_owned());
+            }
+        }
+        for point in &self.ir.model.points {
+            if !self.point_refs.contains_key(point.id.as_str())
+                && (owned_points.contains(point.id.as_str())
+                    || ownership::is_support(
+                        point.id.as_str(),
+                        point.source_object.as_ref(),
+                        &self.construction_supports,
+                    ))
+            {
+                self.unwritten_geometry_carriers
+                    .insert(point.id.as_str().to_owned());
+            }
+        }
         let surface_ids = self
             .ir
             .model
             .surfaces
             .iter()
-            .filter(|surface| !self.surface_refs.contains_key(surface.id.as_str()))
+            .filter(|surface| {
+                !self.surface_refs.contains_key(surface.id.as_str())
+                    && !owned_surfaces.contains(surface.id.as_str())
+                    && !ownership::is_support(
+                        surface.id.as_str(),
+                        surface.source_object.as_ref(),
+                        &self.construction_supports,
+                    )
+            })
             .map(|surface| surface.id.as_str().to_owned())
             .collect::<Vec<_>>();
         let mut members = Vec::new();
         let mut has_surfaces = false;
         for surface_id in surface_ids {
             if let Some(reference) = self.emit_surface(&surface_id) {
+                let ranges =
+                    self.procedural_surfaces
+                        .get(surface_id.as_str())
+                        .and_then(|procedural| match procedural.definition() {
+                            ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
+                                cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => {
+                                    Some(ranges.map(|range| {
+                                        range.map(cadmpeg_ir::scalar::FiniteReal::get)
+                                    }))
+                                }
+                                cadmpeg_ir::geometry::ExactSpline::Revision { .. } => None,
+                            },
+                            _ => None,
+                        });
+                let reference = match ranges {
+                    Some(ranges) => self.emit_rectangular_trim(
+                        reference,
+                        ranges,
+                        [true, true],
+                        self.surface_chart_reversed(&surface_id),
+                    ),
+                    None => reference,
+                };
                 members.push(reference);
                 has_surfaces = true;
             } else {
@@ -1886,11 +1992,29 @@ impl<'a> Builder<'a> {
             .model
             .curves
             .iter()
-            .filter(|curve| !self.curve_refs.contains_key(curve.id.as_str()))
+            .filter(|curve| {
+                !self.curve_refs.contains_key(curve.id.as_str())
+                    && !owned_curves.contains(curve.id.as_str())
+                    && !ownership::is_support(
+                        curve.id.as_str(),
+                        curve.source_object.as_ref(),
+                        &self.construction_supports,
+                    )
+            })
             .map(|curve| curve.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
             if let Some(reference) = self.emit_curve(&curve_id) {
+                let reference = if let Some(range) = self
+                    .curves
+                    .get(curve_id.as_str())
+                    .and_then(|curve| curve.parameter_range)
+                {
+                    let [start, end] = range.endpoints();
+                    self.emitter.emit("TRIMMED_CURVE", &format!("'',{reference},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.", self.emitter.real(start), self.emitter.real(end)))
+                } else {
+                    reference
+                };
                 members.push(reference);
             } else {
                 self.unwritten_geometry_carriers.insert(curve_id);
@@ -1901,7 +2025,15 @@ impl<'a> Builder<'a> {
             .model
             .points
             .iter()
-            .filter(|point| !self.point_refs.contains_key(point.id.as_str()))
+            .filter(|point| {
+                !self.point_refs.contains_key(point.id.as_str())
+                    && !owned_points.contains(point.id.as_str())
+                    && !ownership::is_support(
+                        point.id.as_str(),
+                        point.source_object.as_ref(),
+                        &self.construction_supports,
+                    )
+            })
             .map(|point| point.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for point_id in point_ids {
@@ -2736,38 +2868,18 @@ impl<'a> Builder<'a> {
             }
             ProceduralSurfaceDefinition::Subset(payload) => {
                 let support = payload.support();
-                let mut parameter_ranges = payload
+                let parameter_ranges = payload
                     .parameter_ranges()
                     .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
                 let u_sense = payload.u_sense().as_ref()?;
                 let v_sense = payload.v_sense().as_ref()?;
                 let support = self.emit_surface(support.as_str())?;
                 let reverse_chart = self.surface_chart_reversed(payload.support().as_str());
-                if reverse_chart {
-                    for range in &mut parameter_ranges {
-                        range[0] = -range[0];
-                        range[1] = -range[1];
-                    }
-                }
-                Some(self.emitter.emit(
-                    "RECTANGULAR_TRIMMED_SURFACE",
-                    &format!(
-                        "'',{support},{},{},{},{},{},{}",
-                        self.emitter.real(parameter_ranges[0][0]),
-                        self.emitter.real(parameter_ranges[0][1]),
-                        self.emitter.real(parameter_ranges[1][0]),
-                        self.emitter.real(parameter_ranges[1][1]),
-                        if *u_sense == reverse_chart {
-                            ".F."
-                        } else {
-                            ".T."
-                        },
-                        if *v_sense == reverse_chart {
-                            ".F."
-                        } else {
-                            ".T."
-                        },
-                    ),
+                Some(self.emit_rectangular_trim(
+                    support,
+                    parameter_ranges,
+                    [*u_sense, *v_sense],
+                    reverse_chart,
                 ))
             }
             ProceduralSurfaceDefinition::Replica { source, transform } => {
@@ -2803,6 +2915,41 @@ impl<'a> Builder<'a> {
             }
             _ => None,
         }
+    }
+
+    fn emit_rectangular_trim(
+        &mut self,
+        support: Ref,
+        mut ranges: [[f64; 2]; 2],
+        senses: [bool; 2],
+        reverse_chart: bool,
+    ) -> Ref {
+        if reverse_chart {
+            for range in &mut ranges {
+                range[0] = -range[0];
+                range[1] = -range[1];
+            }
+        }
+        self.emitter.emit(
+            "RECTANGULAR_TRIMMED_SURFACE",
+            &format!(
+                "'',{support},{},{},{},{},{},{}",
+                self.emitter.real(ranges[0][0]),
+                self.emitter.real(ranges[0][1]),
+                self.emitter.real(ranges[1][0]),
+                self.emitter.real(ranges[1][1]),
+                if senses[0] == reverse_chart {
+                    ".F."
+                } else {
+                    ".T."
+                },
+                if senses[1] == reverse_chart {
+                    ".F."
+                } else {
+                    ".T."
+                },
+            ),
+        )
     }
 
     pub(crate) fn emit_curve(&mut self, curve_id: &str) -> Option<Ref> {
@@ -3917,6 +4064,11 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        self.unwritten_geometry_carriers.retain(|id| {
+            !self.surface_refs.contains_key(id.as_str())
+                && !self.curve_refs.contains_key(id.as_str())
+                && !self.point_refs.contains_key(id.as_str())
+        });
         if !self.unwritten_geometry_carriers.is_empty() {
             let carriers = self
                 .unwritten_geometry_carriers
@@ -4601,7 +4753,29 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let procedural_surface_count = self
+        let reduced_surfaces: BTreeSet<_> = self
+            .procedural_surfaces
+            .iter()
+            .filter(|(owner, procedural)| {
+                self.surface_refs.contains_key::<str>(owner)
+                    && !self
+                        .written_procedural_surfaces
+                        .contains(procedural.id.as_str())
+            })
+            .map(|(_, procedural)| procedural.id.as_str())
+            .collect();
+        let reduced_curves: BTreeSet<_> = self
+            .procedural_curves
+            .iter()
+            .filter(|(owner, procedural)| {
+                self.curve_refs.contains_key::<str>(owner)
+                    && !self
+                        .written_procedural_curves
+                        .contains(procedural.id.as_str())
+            })
+            .map(|(_, procedural)| procedural.id.as_str())
+            .collect();
+        let omitted_surface_count = self
             .ir
             .model
             .procedural_surfaces
@@ -4610,9 +4784,10 @@ impl<'a> Builder<'a> {
                 !self
                     .written_procedural_surfaces
                     .contains(procedural.id.as_str())
+                    && !reduced_surfaces.contains(procedural.id.as_str())
             })
             .count();
-        let procedural_curve_count = self
+        let omitted_curve_count = self
             .ir
             .model
             .procedural_curves
@@ -4621,14 +4796,23 @@ impl<'a> Builder<'a> {
                 !self
                     .written_procedural_curves
                     .contains(procedural.id.as_str())
+                    && !reduced_curves.contains(procedural.id.as_str())
             })
             .count();
+        let procedural_surface_count = reduced_surfaces.len();
+        let procedural_curve_count = reduced_curves.len();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
                     "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
                 ),
+            );
+        }
+        if omitted_surface_count > 0 || omitted_curve_count > 0 {
+            self.loss(
+                StepLossCode::ProceduralDefinitionNotWritten,
+                format!("{omitted_surface_count} procedural surface definition(s) and {omitted_curve_count} procedural curve definition(s) had no emitted STEP construction or solved carrier"),
             );
         }
         let source_native_records: usize = self

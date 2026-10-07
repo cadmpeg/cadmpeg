@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -76,6 +76,7 @@
           "id": "iges:model:surface#D1",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "PLANE",
             "object_id": "D1",
@@ -104,6 +105,7 @@
           "id": "iges:model:surface#D3",
           "source_object": {
             "format": "iges",
+            "geometry_role": "independent",
             "layer": "0",
             "name": "OFFSET",
             "object_id": "D3",

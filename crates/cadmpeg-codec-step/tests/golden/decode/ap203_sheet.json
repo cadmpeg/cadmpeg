@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -54,7 +54,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#16"
+          "id": "step:data:curve#16",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#16"
+          }
         },
         {
           "geometry": {
@@ -70,7 +75,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#17"
+          "id": "step:data:curve#17",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#17"
+          }
         },
         {
           "geometry": {
@@ -86,7 +96,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#18"
+          "id": "step:data:curve#18",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#18"
+          }
         },
         {
           "geometry": {
@@ -100,7 +115,12 @@
             ],
             "self_intersect": false
           },
-          "id": "step:data:curve#34"
+          "id": "step:data:curve#34",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#34"
+          }
         },
         {
           "geometry": {
@@ -114,7 +134,12 @@
             ],
             "self_intersect": false
           },
-          "id": "step:data:curve#36"
+          "id": "step:data:curve#36",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#36"
+          }
         }
       ],
       "drawings": [],
@@ -191,6 +216,11 @@
             "x": 0.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#3"
           }
         },
         {
@@ -199,6 +229,11 @@
             "x": 10.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#4"
           }
         },
         {
@@ -207,6 +242,11 @@
             "x": 0.0,
             "y": 10.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#5"
           }
         }
       ],
@@ -277,7 +317,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:surface#28"
+          "id": "step:data:surface#28",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#28"
+          }
         },
         {
           "geometry": {
@@ -298,7 +343,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:surface#37"
+          "id": "step:data:surface#37",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#37"
+          }
         }
       ],
       "tessellations": [],

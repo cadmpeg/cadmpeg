@@ -329,6 +329,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
 
     fn source_association(&self) -> Result<SourceObjectAssociation, CodecError> {
         Ok(SourceObjectAssociation {
+            geometry_role: None,
             format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id: cadmpeg_core::text::NonBlankString::new(self.ctx.copy_retained_text(
                 self.source_object.as_str(),

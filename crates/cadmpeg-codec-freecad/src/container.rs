@@ -149,8 +149,9 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
                 Ok(view) => view,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    let end = file.data_end()?;
-                    let start_index = usize::try_from(file.data_start)
+                    let range = file.stored_range()?;
+                    let end = range.end;
+                    let start_index = usize::try_from(range.start)
                         .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
                     let end_index = usize::try_from(end)
                         .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
@@ -179,7 +180,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
                                 "FCStd unreadable entry identity",
                             )?,
                             name,
-                            data_start: file.data_start,
+                            data_start: range.start,
                             data_end: end,
                             stored_data: ctx
                                 .copy_retained(bytes, "FCStd unreadable stored payload")?,

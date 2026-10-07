@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "8",
+    "ir_version": "9",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -69,6 +69,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "EDGE1",
             "object_id": "D3",
@@ -96,6 +97,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "EDGE2",
             "object_id": "D5",
@@ -123,6 +125,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "EDGE3",
             "object_id": "D7",
@@ -150,6 +153,7 @@
           ],
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "EDGE4",
             "object_id": "D9",
@@ -338,6 +342,7 @@
           "id": "iges:model:surface#D1",
           "source_object": {
             "format": "iges",
+            "geometry_role": "support",
             "layer": "0",
             "name": "PLANE",
             "object_id": "D1",

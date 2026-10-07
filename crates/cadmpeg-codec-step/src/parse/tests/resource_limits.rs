@@ -77,7 +77,7 @@ fn anchor_memo_output_node_slice_refuses_as_resource() {
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
         let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
-        let value = Value::Resource("a".into());
+        let value = Value::Resource("#a".into());
         resolver
             .resolve_root(&value)
             .expect("fixture operation succeeds");
@@ -102,7 +102,7 @@ fn anchor_first_expansion_output_node_slice_refuses_as_resource() {
         resolver.remaining_nodes = 2;
         assert_local_refusal(
             resolver
-                .resolve_root(&Value::Resource("a".into()))
+                .resolve_root(&Value::Resource("#a".into()))
                 .expect_err("local ceiling refuses"),
             "step_anchor_output_node_limit",
         );

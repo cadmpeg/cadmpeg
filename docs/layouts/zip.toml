@@ -5,9 +5,31 @@ spec = "docs/formats/zip.md"
 endianness = "little"
 
 [[record]]
-name = "central_header"
+name = "digital_signature"
 kind = "byte"
 parsed_by = "crates/cadmpeg-container/src/archive.rs"
+section = "3"
+anchor = "The directory digital-signature record has a 6-byte fixed prefix."
+size = 6
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "offset 0"
+
+[[record.field]]
+name = "data_length"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "offset 4"
+
+[[record]]
+name = "central_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-container/src/archive/entry.rs"
 section = "1"
 anchor = "The central-directory file header is 46 bytes in little-endian order."
 size = 46
@@ -130,3 +152,266 @@ offset = 42
 type = "u32"
 source = "spec"
 anchor = "offsets 38 and 42"
+
+[[record]]
+name = "local_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-container/src/archive/entry.rs"
+section = "2"
+anchor = "The local-file header is 30 bytes in little-endian order."
+size = 30
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "offset 0"
+
+[[record.field]]
+name = "extraction_version"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, and 8"
+
+[[record.field]]
+name = "flags"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, and 8"
+
+[[record.field]]
+name = "compression"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, and 8"
+
+[[record.field]]
+name = "time"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "offsets 10 and 12"
+
+[[record.field]]
+name = "date"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "offsets 10 and 12"
+
+[[record.field]]
+name = "crc32"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "offsets 14, 18, and 22"
+
+[[record.field]]
+name = "compressed_length"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "offsets 14, 18, and 22"
+
+[[record.field]]
+name = "expanded_length"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "offsets 14, 18, and 22"
+
+[[record.field]]
+name = "name_length"
+offset = 26
+type = "u16"
+source = "spec"
+anchor = "offsets 26 and 28"
+
+[[record.field]]
+name = "extra_length"
+offset = 28
+type = "u16"
+source = "spec"
+anchor = "offsets 26 and 28"
+
+[[record]]
+name = "end_record"
+kind = "byte"
+parsed_by = "crates/cadmpeg-container/src/archive/probe.rs"
+section = "3"
+anchor = "The end-of-central-directory record is 22 bytes in little-endian order."
+size = 22
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "offset 0"
+
+[[record.field]]
+name = "disk"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, 8, and 10"
+
+[[record.field]]
+name = "directory_disk"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, 8, and 10"
+
+[[record.field]]
+name = "disk_entries"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, 8, and 10"
+
+[[record.field]]
+name = "entries"
+offset = 10
+type = "u16"
+source = "spec"
+anchor = "offsets 4, 6, 8, and 10"
+
+[[record.field]]
+name = "directory_size"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "offsets 12 and 16"
+
+[[record.field]]
+name = "directory_position"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "offsets 12 and 16"
+
+[[record.field]]
+name = "comment_length"
+offset = 20
+type = "u16"
+source = "spec"
+anchor = "offset 20"
+
+[[record]]
+name = "zip64_end"
+kind = "byte"
+parsed_by = "crates/cadmpeg-container/src/archive/probe.rs"
+section = "3"
+anchor = "The ZIP64 end record has a 56-byte fixed prefix."
+size = 56
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "offset 0"
+
+[[record.field]]
+name = "record_size"
+offset = 4
+type = "u64"
+source = "spec"
+anchor = "offset 4"
+
+[[record.field]]
+name = "producer_version"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "offsets 12 and 14"
+
+[[record.field]]
+name = "extraction_version"
+offset = 14
+type = "u16"
+source = "spec"
+anchor = "offsets 12 and 14"
+
+[[record.field]]
+name = "disk"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "offsets 16 and 20"
+
+[[record.field]]
+name = "directory_disk"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "offsets 16 and 20"
+
+[[record.field]]
+name = "disk_entries"
+offset = 24
+type = "u64"
+source = "spec"
+anchor = "offsets 24, 32, 40, and 48"
+
+[[record.field]]
+name = "entries"
+offset = 32
+type = "u64"
+source = "spec"
+anchor = "offsets 24, 32, 40, and 48"
+
+[[record.field]]
+name = "directory_size"
+offset = 40
+type = "u64"
+source = "spec"
+anchor = "offsets 24, 32, 40, and 48"
+
+[[record.field]]
+name = "directory_position"
+offset = 48
+type = "u64"
+source = "spec"
+anchor = "offsets 24, 32, 40, and 48"
+
+[[record]]
+name = "zip64_locator"
+kind = "byte"
+parsed_by = "crates/cadmpeg-container/src/archive/probe.rs"
+section = "3"
+anchor = "The 20-byte ZIP64 locator has signature"
+size = 20
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "offset 0"
+
+[[record.field]]
+name = "end_record_disk"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "offset 4"
+
+[[record.field]]
+name = "end_record_position"
+offset = 8
+type = "u64"
+source = "spec"
+anchor = "offset 8"
+
+[[record.field]]
+name = "disks"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "offset 16"

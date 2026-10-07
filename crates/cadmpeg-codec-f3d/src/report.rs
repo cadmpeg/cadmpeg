@@ -102,7 +102,7 @@ pub(crate) fn build_inspection_summary(
 }
 
 /// Preserve per-entry recovery diagnostics on all inspection and decode routes.
-fn header_losses(
+pub(crate) fn header_losses(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     losses: &mut Vec<LossNote>,

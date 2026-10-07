@@ -276,6 +276,7 @@ fn transfer_reference_lines(
                     cadmpeg_ir::geometry::analytic::LineCurve::new(line.start(), direction),
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id,
                     name: None,
@@ -372,6 +373,7 @@ fn transfer_reference_circles(
                     ),
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id,
                     name: None,
@@ -471,6 +473,7 @@ fn transfer_reference_ellipses(
                     .map_err(CodecError::malformed)?,
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id,
                     name: None,
@@ -686,6 +689,7 @@ fn transfer_datum_plane_surfaces(
                     .map_err(CodecError::malformed)?,
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: source_object_id_checked(
                         ctx,
@@ -778,6 +782,7 @@ fn transfer_placed_plane_surfaces_into_ir(
                     .map_err(CodecError::malformed)?,
                 )),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: source_object_id_checked(
                         ctx,

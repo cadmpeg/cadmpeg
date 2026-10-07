@@ -135,6 +135,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                         sphere_surface,
                     )),
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
                             ctx,
@@ -270,6 +271,7 @@ pub(in super::super) fn transfer_positional_tori(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
@@ -404,6 +406,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 id: curve_id.try_clone_for_decode(ctx, "creo construction curve identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
@@ -427,6 +430,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                     .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
@@ -660,6 +664,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 id: curve_id.try_clone_for_decode(ctx, "creo construction curve identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
@@ -683,6 +688,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                     .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
