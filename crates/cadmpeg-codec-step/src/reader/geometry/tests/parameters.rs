@@ -2,9 +2,10 @@
 use crate::parse::Value;
 use crate::reader::geometry::{
     curve_endpoint_seed, decode_pcurve_geometry, directrix_geometry_parameter_scale,
-    edge_parameter_range, nurbs_surface_parameter_domain, pcurve_trim_parameter, si_prefix,
-    surface_parameter_scales_for_step, surface_periodic_domains, trimmed_curve_parameter_range,
-    trimmed_pcurve_parameterization, unit_scale_mm, unit_scale_radians,
+    edge_parameter_range, nurbs_surface_parameter_domain, pcurve_trim_parameter,
+    procedural_surface_parameter_scales, si_prefix, surface_periodic_domains,
+    trimmed_curve_parameter_range, trimmed_pcurve_parameterization, unit_scale_mm,
+    unit_scale_radians, SurfaceScaleIndex,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_curve_parameter_near_point;
@@ -48,6 +49,29 @@ fn source_curve_refusal(
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     super::super::resolve_source_curve_parameter_scales(&exchange, &scales, &ctx)
         .expect_err("source curve admission exceeds the limit")
+}
+
+/// Runs the parameter-scale walk over a fresh index of `ir`.
+fn surface_parameter_scales_for_step(
+    ir: &CadIr,
+    surface_id: &SurfaceId,
+    geometry: &SurfaceGeometry,
+    length_scale: f64,
+    angle_scale: f64,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    let (index, _workspace) = SurfaceScaleIndex::build(ir, ctx)?;
+    procedural_surface_parameter_scales(
+        ir,
+        &index,
+        surface_id,
+        geometry,
+        length_scale,
+        angle_scale,
+        source_curve_parameter_scales,
+        ctx,
+    )
 }
 
 #[test]

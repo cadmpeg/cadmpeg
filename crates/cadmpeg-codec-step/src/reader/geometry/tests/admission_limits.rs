@@ -106,8 +106,11 @@ fn surface_scale_refusal(
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let ir = cadmpeg_ir::document::CadIr::empty();
     let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#1").expect("valid identity");
-    super::super::surface_parameter_scales_for_step(
+    let (index, _workspace) =
+        super::super::SurfaceScaleIndex::build(&ir, &ctx).expect("empty model index");
+    super::super::procedural_surface_parameter_scales(
         &ir,
+        &index,
         &id,
         &cadmpeg_ir::geometry::SurfaceGeometry::Solved(
             cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
