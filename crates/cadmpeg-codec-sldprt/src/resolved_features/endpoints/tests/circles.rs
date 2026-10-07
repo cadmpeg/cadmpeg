@@ -598,12 +598,10 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::compact_legacy_profile_full_circle(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[4],
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context();
+            let result = super::compact_legacy_profile_full_circle(&ctx, &payload, &entities[4],
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap(),
+                &crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()); result }
         .unwrap(),
         Some(([0.0, 0.0], 12.0))
     );
@@ -616,23 +614,19 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     payload[circle_offset + 118..circle_offset + 120].copy_from_slice(&11u16.to_le_bytes());
     payload[circle_offset + 120..circle_offset + 131].copy_from_slice(b"sgCircleDim");
     assert_eq!(
-        super::compact_legacy_profile_full_circle(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[4],
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context();
+            let result = super::compact_legacy_profile_full_circle(&ctx, &payload, &entities[4],
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap(),
+                &crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()); result }
         .unwrap(),
         Some(([0.0, 0.0], 5.5))
     );
     payload[circle_offset + 120] = b'x';
     assert_eq!(
-        super::compact_legacy_profile_full_circle(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &entities[4],
-            &markers
-        )
+        { let ctx = cadmpeg_test_support::service_decode_context();
+            let result = super::compact_legacy_profile_full_circle(&ctx, &payload, &entities[4],
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(&ctx, &markers).unwrap(),
+                &crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(&ctx, &payload).unwrap()); result }
         .unwrap(),
         None
     );
