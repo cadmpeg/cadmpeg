@@ -629,11 +629,13 @@ impl<'ctx> SlotReferences<'ctx> {
     }
 }
 
+type SlotCurveAndCenterIndices = ([usize; 4], [usize; 2]);
+
 pub(super) fn slot_curve_and_center_indices(
     ctx: &DecodeContext<'_>,
     slots: &SlotReferences<'_>,
     offset: usize,
-) -> Result<Option<([usize; 4], [usize; 2])>, CodecError> {
+) -> Result<Option<SlotCurveAndCenterIndices>, CodecError> {
     Ok(ctx
         .get_hash_map(&slots.records, &offset, "resolve SLDPRT indexed slot")?
         .map(|layout| {

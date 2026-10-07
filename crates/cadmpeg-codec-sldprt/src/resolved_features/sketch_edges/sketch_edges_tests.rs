@@ -464,7 +464,7 @@ fn projected_rational_sketch_nurbs_preserves_pole_order_weights_and_knots() {
         curve.weights().map(|weights| {
             weights
                 .into_iter()
-                .map(|weight| weight.get())
+                .map(cadmpeg_ir::scalar::NonZeroReal::get)
                 .collect::<Vec<_>>()
         }),
         Some(vec![2.0, 3.0, 5.0])

@@ -205,7 +205,12 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
         };
         ctx.find_by(
             positions.iter().copied(),
-            |position| Ok(std::ptr::eq(&self.lanes[*position], lane)),
+            |position| {
+                Ok(std::ptr::eq(
+                    std::ptr::from_ref(&self.lanes[*position]),
+                    std::ptr::from_ref(lane),
+                ))
+            },
             DIMENSIONED_CARRIER_OPERATION,
         )
     }
@@ -1881,8 +1886,12 @@ fn terminal_repeated_radial_circle_pairs<'a>(
                 }
                 let Some(([cu, cv], [ru, rv])) = center
                     .coordinates_m
-                    .map(|point| point.get())
-                    .zip(radial.coordinates_m.map(|point| point.get()))
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                    .zip(
+                        radial
+                            .coordinates_m
+                            .map(cadmpeg_ir::units::FiniteVector::get),
+                    )
                 else {
                     continue;
                 };
@@ -2493,7 +2502,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                             carrier_id.try_clone_for_decode(ctx, MARKER_CIRCLE_OPERATION)
                         })?;
                         let carrier_ref = feature_storage.with_storage(|| {
-                            ctx.copy_retained_text(&carrier_ref, MARKER_CIRCLE_OPERATION)
+                            ctx.copy_retained_text(carrier_ref, MARKER_CIRCLE_OPERATION)
                         })?;
                         ctx.retain_vec(
                             entities,

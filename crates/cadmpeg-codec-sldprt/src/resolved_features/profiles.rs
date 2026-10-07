@@ -1028,11 +1028,11 @@ pub(crate) fn project_compact_sketch_profiles(
                 );
                 continue;
             }
-            let placement =
-                match cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis) {
-                    Ok(placement) => placement,
-                    Err(_) => continue,
-                };
+            let Ok(placement) =
+                cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
+            else {
+                continue;
+            };
             let (sketch, sketch_fields_storage) = ctx.with_scoped_storage(OPERATION, || {
                 let sketch = Sketch {
                     id: sketch_id.try_clone_for_decode(ctx, OPERATION)?,
@@ -2811,7 +2811,7 @@ marker,
                             ctx.admit_iter(&endpoints, "collect SLDPRT marker endpoint references")?
                         {
                             let reference = endpoint_refs_storage.with_storage(|| ctx.copy_retained_text(
-                                &endpoint.id(),
+                                endpoint.id(),
                                 "copy SLDPRT marker endpoint reference",
                             ))?;
                             endpoint_refs_storage.with_storage(|| ctx.reserve_vec(
@@ -2838,7 +2838,7 @@ marker,
                     let owner = sketch_id
                         .try_clone_for_decode(ctx, "copy SLDPRT marker entity sketch identity")?;
                     let native_ref = ctx
-                        .copy_retained_text(&marker.id(), "copy SLDPRT marker native reference")?;
+                        .copy_retained_text(marker.id(), "copy SLDPRT marker native reference")?;
                     let entity = SketchEntity::new(entity_id, owner, geometry)
                         .with_construction(construction)
                         .with_native_ref(Some(native_ref))
@@ -3128,7 +3128,7 @@ marker,
                     })?;
                 }
             }
-            let (_, resolved_fields_storage) =
+            let ((), resolved_fields_storage) =
                 ctx.with_scoped_storage("build SLDPRT resolved marker fields", || {
                     resolve_two_center_semicircle_profile(
                         ctx,
@@ -4099,7 +4099,7 @@ fn assemble_sketch_block_profile<'ctx>(
                 None => None,
             };
             let native_ref = ctx.copy_retained_text(
-                &input.native_ref,
+                input.native_ref,
                 "copy SLDPRT assembled sketch block native reference",
             )?;
             Ok::<_, CodecError>(Some((
@@ -4505,11 +4505,10 @@ fn project_detached_legacy_config_sketches(
                     .get_hash_map(feature_frames, native_ref, "resolve SLDPRT profiles keys")?
                     .copied()
                     .unwrap_or(detached_frame);
-                let placement = match cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-                    origin, normal, u_axis,
-                ) {
-                    Ok(placement) => placement,
-                    Err(_) => break 'feature_edit,
+                let Ok(placement) =
+                    cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
+                else {
+                    break 'feature_edit;
                 };
                 let (sketch, _base_storage) = ctx.with_scoped_storage(OPERATION, || {
                     let sketch_text = ctx.format_retained(

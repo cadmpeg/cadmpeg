@@ -356,7 +356,7 @@ pub(in crate::resolved_features) enum MarkerRoster {
     Points,
 }
 
-impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
+impl<'a> MarkerGeometryIndex<'a, '_, '_> {
     pub(in crate::resolved_features) fn roster<'query>(
         &'query self,
         curve: &'query SketchInputEntity,
@@ -417,7 +417,7 @@ struct EmbeddedRoster<'a> {
     failed: bool,
 }
 
-impl<'payload, 'ctx> MarkerPrefixIndex<'payload, 'ctx> {
+impl MarkerPrefixIndex<'_, '_> {
     fn coordinate_records(
         &self,
         ctx: &DecodeContext<'_>,
@@ -464,7 +464,7 @@ impl<'payload, 'ctx> MarkerPrefixIndex<'payload, 'ctx> {
     }
 }
 
-impl<'a, 'payload, 'ctx> MarkerGeometryIndex<'a, 'payload, 'ctx> {
+impl<'a> MarkerGeometryIndex<'a, '_, '_> {
     /// Resolves each legacy coordinate once per owner and extends the cached prefix as needed.
     pub(in crate::resolved_features) fn embedded_roster<'query>(
         &'query self,

@@ -902,7 +902,7 @@ pub(super) fn compact_surface_selections(
                     NativeClassKind::Fillet
                         if feature.input_class.as_deref() == Some("Fillet_c") =>
                     {
-                        fillet_face_selection_candidates(ctx, lane, &face_classes, start, end)?
+                        fillet_face_selection_candidates(ctx, lane, face_classes, start, end)?
                     }
                     NativeClassKind::Fillet => return Ok(Vec::new()),
                     NativeClassKind::MirrorPattern => {
@@ -945,7 +945,7 @@ pub(super) fn compact_surface_selections(
                     NativeClassKind::ReferencePlane => face_reference_plane_selection_candidates(
                         ctx,
                         lane,
-                        &face_classes,
+                        face_classes,
                         &reference_plane_classes,
                         start,
                         end,
@@ -1449,7 +1449,7 @@ pub(crate) struct SelectionHistory<'history, 'ctx> {
     histories: &'history [crate::records::FeatureHistory],
     features: Option<Vec<crate::records::Feature>>,
     missing_sources: Vec<usize>,
-    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 impl<'history, 'ctx> SelectionHistory<'history, 'ctx> {
@@ -1461,7 +1461,7 @@ impl<'history, 'ctx> SelectionHistory<'history, 'ctx> {
             histories,
             features: None,
             missing_sources: Vec::new(),
-            _storage: ctx.reserve_scoped(0, "clone SLDPRT selection history features")?,
+            storage: ctx.reserve_scoped(0, "clone SLDPRT selection history features")?,
         })
     }
 
@@ -1475,7 +1475,7 @@ impl<'history, 'ctx> SelectionHistory<'history, 'ctx> {
             let mut features = Vec::new();
             for history in ctx.admit_iter(self.histories, OPERATION)? {
                 for feature in ctx.admit_iter(&history.features, OPERATION)? {
-                    self._storage.with_storage(|| {
+                    self.storage.with_storage(|| {
                         if feature.source_id.is_none() {
                             ctx.push_vec(&mut self.missing_sources, features.len(), OPERATION)?;
                         }
@@ -4535,7 +4535,7 @@ pub(super) fn unique_marker_candidate<'a>(
     )? {
         return Ok(None);
     }
-    Ok(coordinate.or_else(|| match candidates {
+    Ok(coordinate.or(match candidates {
         [(id, _)] => Some(id.as_str()),
         _ => None,
     }))
