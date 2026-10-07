@@ -676,6 +676,7 @@ fn type402_form18_entity_table_boundary_follows_all_class_lists() {
                 .collect(),
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -798,6 +799,7 @@ fn type402_form18_malformed_fields_do_not_enable_generic_recovery() {
             tokens,
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -851,6 +853,7 @@ fn type402_form20_entity_table_boundary_follows_all_class_lists() {
                 .collect(),
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -896,6 +899,7 @@ fn type402_form20_entity_table_boundary_beats_target_valid_generic_alternative()
             .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -1008,6 +1012,7 @@ fn type402_form20_malformed_fields_do_not_enable_generic_recovery() {
             tokens,
             parameter_end,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {

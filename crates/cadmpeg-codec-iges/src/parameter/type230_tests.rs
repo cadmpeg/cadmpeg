@@ -26,6 +26,7 @@ fn type230_form1_entity_table_boundary_follows_island_count() {
             .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     assert_eq!(entity_primary_end(&record, &directory), Some(10));

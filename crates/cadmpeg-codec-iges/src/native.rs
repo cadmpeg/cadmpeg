@@ -2548,7 +2548,27 @@ pub(crate) fn store(
         });
     }
     // The native reading boundary is the retained trailing-group boundary
-    // clamped to the entity's primary layout.
+    // clamped to the entity's primary layout. Each record's layout is walked
+    // once here and read back by sequence.
+    let mut primary_end_storage = ctx.reserve_scoped(0, "iges native primary ends")?;
+    let mut primary_ends = BTreeMap::new();
+    for record in ctx.admit_iter(parameters, "iges native primary ends")? {
+        let layout_end = crate::parameter::entity_primary_end_for_global_table(
+            record,
+            &entries,
+            global_table,
+            ctx,
+        )?
+        .unwrap_or(record.parameter_end());
+        primary_end_storage.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut primary_ends,
+                record.directory_sequence,
+                layout_end,
+                "iges native primary ends",
+            )
+        })?;
+    }
     let clamped_primary_end = |sequence: u32, record: &ParameterRecord| {
         trailing_pointer_analysis
             .get(&sequence)
@@ -2558,12 +2578,10 @@ pub(crate) fn store(
             })
             .map_or(record.parameter_end(), |groups| groups.token_start)
             .min(
-                crate::parameter::entity_primary_end_for_global_table(
-                    record,
-                    &entries,
-                    global_table,
-                )
-                .unwrap_or(record.parameter_end()),
+                primary_ends
+                    .get(&sequence)
+                    .copied()
+                    .unwrap_or(record.parameter_end()),
             )
     };
     let parameter_resolver = ParameterResolver::new(directory, ctx)?;

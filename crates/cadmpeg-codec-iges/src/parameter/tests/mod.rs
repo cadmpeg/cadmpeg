@@ -210,16 +210,14 @@ fn resolved_pointer_groups_refuse_collection_limit_before_allocation() {
 #[test]
 fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use std::collections::BTreeMap;
 
     let bytes = crate::test_support::test_curves_and_surfaces::point_file();
     let scan = scan(&bytes).unwrap();
-    let lines = scan
-        .section(Section::Parameter)
-        .iter()
-        .map(|card| (card.sequence, &card.line))
-        .collect::<BTreeMap<_, _>>();
-    let cards = [*lines.keys().next().unwrap()];
+    let lines = crate::test_support::with_service_context(&[], |ctx| {
+        super::ParameterCards::new(scan.section(Section::Parameter), ctx)
+    })
+    .unwrap();
+    let cards = [1];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 63;
@@ -243,16 +241,12 @@ fn owned_parameter_bytes_refuse_retained_limit_before_copy() {
 fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use std::collections::BTreeMap;
 
         let bytes = crate::test_support::test_curves_and_surfaces::point_file();
         let scan = scan(&bytes).unwrap();
-        let lines = scan
-            .section(Section::Parameter)
-            .iter()
-            .map(|card| (card.sequence, &card.line))
-            .collect::<BTreeMap<_, _>>();
-        let cards = [*lines.keys().next().unwrap()];
+        let lines =
+            super::ParameterCards::new(scan.section(Section::Parameter), decode_ctx).unwrap();
+        let cards = [1];
         let (directory, _) =
             crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx)
                 .unwrap();
@@ -296,40 +290,36 @@ fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
 fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use std::collections::BTreeMap;
 
         let bytes = crate::test_support::test_curves_and_surfaces::point_file();
         let scan = scan(&bytes).unwrap();
         let (directory, _) =
             crate::directory::parse(&scan, crate::global::GlobalTable::V5Later, decode_ctx)
                 .unwrap();
-        let lines = scan
-            .section(Section::Parameter)
-            .iter()
-            .map(|card| (card.sequence, &card.line))
-            .collect::<BTreeMap<_, _>>();
-        let back_pointers = lines
-            .iter()
-            .map(|(sequence, line)| (*sequence, super::back_pointer(line)))
-            .collect::<BTreeMap<_, _>>();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let result = super::resolve_ownership(
-            &directory,
-            &lines,
-            &back_pointers,
-            &mut crate::card::FramingRecoveries::default(),
-            &ctx,
+        let lines =
+            super::ParameterCards::new(scan.section(Section::Parameter), decode_ctx).unwrap();
+        let result = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            "iges named parameter owners",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                super::resolve_ownership(
+                    &directory,
+                    &lines,
+                    &mut crate::card::FramingRecoveries::default(),
+                    &ctx,
+                )
+                .map(|_| ())
+            },
         );
         assert!(matches!(
             result,
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.used == 2
                     && limit.additional == 1
-                    && limit.operation == "iges named parameter owners"
         ));
 
         let arena = DecodeArena::new();
@@ -338,7 +328,6 @@ fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
         assert!(super::resolve_ownership(
             &directory,
             &lines,
-            &back_pointers,
             &mut crate::card::FramingRecoveries::default(),
             &ctx,
         )
@@ -419,6 +408,7 @@ fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
             .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     }
 }
 
@@ -446,6 +436,7 @@ fn token_parameter_record(sequence: u32, values: Vec<TokenValue>) -> ParameterRe
             .collect(),
         parameter_end,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     }
 }
 

@@ -149,48 +149,53 @@ fn parameter_hollerith_parse_refuses_after_utf8_admission() {
 }
 
 #[test]
-fn parameter_numeric_exponent_refuses_utf8_work() {
+fn parameter_numeric_real_shape_refuses_work_before_scan() {
     let error = with_work_limit(b"1E2", 0, |ctx| {
         super::super::decimal_shape(b"1E2", ctx).unwrap_err()
     });
-    assert_work_limit(error, "iges numeric exponent", 1);
+    assert_work_limit(error, "iges numeric real shape", 3);
 }
 
 #[test]
-fn parameter_numeric_exponent_parse_refuses_after_utf8_admission() {
-    // One exponent byte is validated before its one-byte integer parse.
-    let error = with_work_limit(b"1E2", 1, |ctx| {
-        super::super::decimal_shape(b"1E2", ctx).unwrap_err()
-    });
-    assert_work_limit_at(error, "iges numeric exponent value", 1, 1);
-}
-
-#[test]
-fn parameter_numeric_token_refuses_utf8_work() {
+fn parameter_numeric_token_refuses_work_before_scan() {
     let error = with_work_limit(b"12", 0, |ctx| {
         super::super::numeric_with_limits(b"12", 0..2, declared_numeric_limits(), ctx).unwrap_err()
     });
-    assert_tokenize_work_refusal(error, "iges numeric token text", 2);
+    assert_tokenize_work_refusal(error, "iges numeric token scan", 2);
+}
+
+fn numeric_parse_refusal(text: &'static [u8], operation: &str) -> cadmpeg_core::CodecError {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            with_work_limit(text, cap, |ctx| {
+                super::super::numeric_with_limits(
+                    text,
+                    0..text.len(),
+                    declared_numeric_limits(),
+                    ctx,
+                )
+                .map(|_| ())
+                .map_err(|failure| match failure {
+                    TokenizeFailure::Refusal(error) => error,
+                    TokenizeFailure::Defect(defect, _) => panic!("{defect:?}"),
+                })
+            })
+        },
+    )
 }
 
 #[test]
-fn parameter_numeric_real_parse_refuses_after_utf8_admission() {
-    // The three token bytes are validated before the same-sized real parse.
-    let error = with_work_limit(b"1.5", 3, |ctx| {
-        super::super::numeric_with_limits(b"1.5", 0..3, declared_numeric_limits(), ctx)
-            .unwrap_err()
-    });
-    assert_tokenize_work_refusal_at(error, "iges numeric real token", 3, 3);
+fn parameter_numeric_real_parse_refuses_by_token_length() {
+    let error = numeric_parse_refusal(b"1.5", "iges numeric real token");
+    assert_work_limit(error, "iges numeric real token", 3);
 }
 
 #[test]
-fn parameter_numeric_integer_parse_refuses_after_utf8_admission() {
-    // The two token bytes are validated before the same-sized integer parse.
-    let error = with_work_limit(b"12", 2, |ctx| {
-        super::super::numeric_with_limits(b"12", 0..2, declared_numeric_limits(), ctx)
-            .unwrap_err()
-    });
-    assert_tokenize_work_refusal_at(error, "iges numeric integer token", 2, 2);
+fn parameter_numeric_integer_parse_refuses_by_token_length() {
+    let error = numeric_parse_refusal(b"12", "iges numeric integer token");
+    assert_work_limit(error, "iges numeric integer token", 2);
 }
 
 #[test]
@@ -237,7 +242,8 @@ fn hollerith_token_refuses_retained_limit_before_copy() {
 fn numeric_token_text_refuses_materialization_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let bytes = b"116,1.5;";
+    // A `D` exponent is respelled in a scoped copy of the token.
+    let bytes = b"116,1.5D0;";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 2;
@@ -247,7 +253,7 @@ fn numeric_token_text_refuses_materialization_limit() {
         result,
         Err(TokenizeFailure::Refusal(cadmpeg_core::CodecError::ResourceLimit(limit)))
             if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.additional == 3
+                && limit.additional == 5
     ));
 
     let arena = DecodeArena::new();
@@ -371,7 +377,7 @@ fn tokenize_with_declared_limits(value: &str) -> Result<Vec<Token>, TokenizeFail
             declared_numeric_limits(),
             decode_ctx,
         )
-        .map(|(tokens, _)| tokens)
+        .map(|(tokens, _, _)| tokens)
     })
 }
 

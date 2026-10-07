@@ -40,6 +40,7 @@ fn type126_entity_table_boundary_uses_k_and_degree() {
                 .collect(),
             parameter_end: expected_start + 3,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -101,6 +102,7 @@ fn type126_entity_table_boundary_precedes_valid_generic_alternative() {
         .collect(),
         parameter_end: 27,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -158,6 +160,7 @@ fn type126_malformed_k_or_degree_does_not_enable_generic_recovery() {
                 .collect(),
             parameter_end: 27,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -207,6 +210,7 @@ fn type112_entity_table_boundary_uses_segment_count() {
                 .collect(),
             parameter_end: expected_start + 3,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -262,6 +266,7 @@ fn type112_entity_table_boundary_precedes_valid_generic_alternatives() {
         .collect(),
         parameter_end: 34,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -319,6 +324,7 @@ fn type112_malformed_segment_count_does_not_enable_generic_recovery() {
                 .collect(),
             parameter_end: 34,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -397,6 +403,7 @@ fn type106_entity_table_boundary_uses_interpretation_width() {
                 .collect(),
             parameter_end: expected_start + 3,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -439,6 +446,7 @@ fn type106_form_interpretation_mismatch_does_not_enable_generic_recovery() {
             .collect(),
         parameter_end: 6,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -477,6 +485,7 @@ fn type106_form63_rejects_nonplanar_interpretation_for_boundary_recovery() {
             .collect(),
         parameter_end: 12,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -529,6 +538,7 @@ fn type116_entity_table_boundary_keeps_defaulted_display_pointer_slot() {
                 .collect(),
             parameter_end: 8,
             comment: Vec::new(),
+            double_precision_reals: Vec::new(),
         };
 
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -569,6 +579,7 @@ fn multiple_valid_trailing_pointer_group_boundaries_are_ambiguous() {
             .collect(),
         parameter_end: 7,
         comment: Vec::new(),
+        double_precision_reals: Vec::new(),
     };
 
     let analysis = crate::test_support::with_service_context(&[], |ctx| {

@@ -191,9 +191,8 @@ fn general_note_valid_for_global_table(
     global_table: GlobalTable,
     form: i64,
 ) -> bool {
-    let parameter_end =
-        crate::parameter::entity_primary_end_for_global_table(record, entries, global_table)
-            .unwrap_or_else(|| record.parameter_end());
+    let parameter_end = crate::parameter::general_note_layout_end(record, form)
+        .unwrap_or_else(|| record.parameter_end());
     if !general_note_suffix_structurally_valid(record, parameter_end) {
         return false;
     }
