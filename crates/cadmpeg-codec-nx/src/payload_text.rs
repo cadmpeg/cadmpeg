@@ -5,9 +5,9 @@
 pub(crate) struct PayloadText<S>(S);
 
 impl<S: crate::immutable_text::ImmutableText> PayloadText<S> {
-    pub(crate) fn new(value: S) -> Result<Self, &'static str> {
-        match Self::validate(value.as_ref(), |text| {
-            Ok::<_, std::convert::Infallible>(text.chars())
+    pub(crate) fn from_text(value: S) -> Result<Self, &'static str> {
+        match Self::validate(value.as_ref(), |chars| {
+            Ok::<_, std::convert::Infallible>(chars.next())
         }) {
             Ok(valid) => valid?,
             Err(error) => match error {},
@@ -19,20 +19,24 @@ impl<S: crate::immutable_text::ImmutableText> PayloadText<S> {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         value: S,
     ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        Ok(Self::validate(value.as_ref(), |text| {
-            ctx.admit_iter(text, "NX payload text syntax")
+        Ok(Self::validate(value.as_ref(), |chars| {
+            ctx.next_charged(chars, "NX payload text syntax")
         })?
         .map(|()| Self(value)))
     }
 
-    fn validate<'a, E, I: Iterator<Item = char>>(
-        text: &'a str,
-        admit: impl FnOnce(&'a str) -> Result<I, E>,
+    fn validate<E>(
+        text: &str,
+        mut next: impl FnMut(&mut std::str::Chars<'_>) -> Result<Option<char>, E>,
     ) -> Result<Result<(), &'static str>, E> {
-        if text.is_empty() || admit(text)?.any(char::is_control) {
-            return Ok(Err(
-                "value: must be nonempty text without control characters",
-            ));
+        if text.is_empty() {
+            return Ok(Err("value: must be nonempty text without control characters"));
+        }
+        let mut chars = text.chars();
+        while let Some(ch) = next(&mut chars)? {
+            if ch.is_control() {
+                return Ok(Err("value: must be nonempty text without control characters"));
+            }
         }
         Ok(Ok(()))
     }
@@ -58,7 +62,7 @@ impl<S: crate::immutable_text::ImmutableText> serde::Serialize for PayloadText<S
 impl<'de> serde::Deserialize<'de> for PayloadText<String> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = <String as serde::Deserialize>::deserialize(deserializer)?;
-        Self::new(value).map_err(serde::de::Error::custom)
+        Self::from_text(value).map_err(serde::de::Error::custom)
     }
 }
 
@@ -69,7 +73,7 @@ mod tests {
     #[test]
     fn payload_text_preserves_wire_and_owned_transfer() {
         let text = " ×Name42";
-        let value = PayloadText::new(text).unwrap().into_owned();
+        let value = PayloadText::from_text(text).unwrap().into_owned();
         let json = serde_json::to_string(&value).unwrap();
         assert_eq!(json, serde_json::to_string(text).unwrap());
         assert_eq!(
@@ -81,7 +85,7 @@ mod tests {
     #[test]
     fn payload_text_rejects_empty_and_control() {
         for text in ["", "\0", "\n", "\t", "\u{7f}"] {
-            assert!(PayloadText::new(text).is_err());
+            assert!(PayloadText::from_text(text).is_err());
             let json = serde_json::to_string(text).unwrap();
             let error = serde_json::from_str::<PayloadText<String>>(&json).unwrap_err();
             assert!(error.to_string().contains("value"));
@@ -90,8 +94,8 @@ mod tests {
     #[test]
     fn payloadtext_serializes_the_checked_borrowed_and_owned_text() {
         let text = "μ Name";
-        let borrowed = super::PayloadText::new(text).unwrap();
-        let owned = super::PayloadText::new(text.to_owned()).unwrap();
+        let borrowed = super::PayloadText::from_text(text).unwrap();
+        let owned = super::PayloadText::from_text(text.to_owned()).unwrap();
         for _ in 0..3 {
             assert_eq!(borrowed.as_str(), text);
             assert_eq!(owned.as_str(), text);
@@ -120,5 +124,18 @@ mod tests {
             assert!(matches!(error, CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX payload text syntax"));
         }
+    }
+
+    #[test]
+    fn validation_stops_before_an_unread_suffix() {
+        let text = format!("\n{}", "a".repeat(4096));
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 1,
+            |ctx| {
+                assert!(PayloadText::from_wire(ctx, text.as_str()).unwrap().is_err());
+                assert!(PayloadText::from_text(text.as_str()).is_err());
+            },
+        );
     }
 }

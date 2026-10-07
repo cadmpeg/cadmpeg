@@ -6,31 +6,9 @@ pub(crate) struct CanonicalUuid<S>(S);
 
 impl<S: crate::immutable_text::ImmutableText> CanonicalUuid<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
-        match Self::validate(value.as_ref(), |text| {
-            Ok::<_, std::convert::Infallible>(text.chars())
-        }) {
-            Ok(valid) => valid?,
-            Err(error) => match error {},
-        }
-        Ok(Self(value))
-    }
-
-    pub(crate) fn from_wire(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        value: S,
-    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
-        Ok(Self::validate(value.as_ref(), |text| {
-            ctx.admit_iter(text, "NX canonical UUID syntax")
-        })?
-        .map(|()| Self(value)))
-    }
-
-    fn validate<'a, E, I: Iterator<Item = char>>(
-        text: &'a str,
-        admit: impl FnOnce(&'a str) -> Result<I, E>,
-    ) -> Result<Result<(), &'static str>, E> {
+        let text = value.as_ref();
         if text.len() != 36
-            || !admit(text)?.enumerate().all(|(index, ch)| {
+            || !text.chars().enumerate().all(|(index, ch)| {
                 if matches!(index, 8 | 13 | 18 | 23) {
                     ch == '-'
                 } else {
@@ -38,9 +16,9 @@ impl<S: crate::immutable_text::ImmutableText> CanonicalUuid<S> {
                 }
             })
         {
-            return Ok(Err("uuid: must be canonical lowercase UUID text"));
+            return Err("uuid: must be canonical lowercase UUID text");
         }
-        Ok(Ok(()))
+        Ok(Self(value))
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -117,21 +95,14 @@ mod tests {
     }
 
     #[test]
-    fn canonical_uuid_iteration_refusal_propagates() {
-        use cadmpeg_core::decode::ResourceDimension;
-        use cadmpeg_core::CodecError;
-        for text in [
-            "01234567-89ab-cdef-0123-456789abcdef",
-            "01234567-89AB-cdef-0123-456789abcdef",
-        ] {
-            let error = crate::test_support::resource_refusal_at(
-                &[],
-                ResourceDimension::WorkUnits,
-                "NX canonical UUID syntax",
-                |ctx| CanonicalUuid::from_wire(ctx, text).map(|value| value.is_ok()),
-            );
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX canonical UUID syntax"));
-        }
+    fn canonical_uuid_validation_needs_no_work_budget() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |_ctx| {
+                assert!(CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcdef").is_ok());
+                assert!(CanonicalUuid::new("01234567-89AB-cdef-0123-456789abcdef").is_err());
+            },
+        );
     }
 }

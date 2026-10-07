@@ -125,14 +125,14 @@ fn nx_feature_source_content_orders_payload_text() {
             id: "text".into(),
             operation_record: "record".into(),
             ordinal: 0,
-            value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
+            value: crate::payload_text::PayloadText::from_text("Through".to_owned()).unwrap(),
             source_offset: 30,
         };
         let later = FeaturePayloadString {
             id: "later".into(),
             operation_record: "record".into(),
             ordinal: 1,
-            value: crate::payload_text::PayloadText::new("Later".to_owned()).unwrap(),
+            value: crate::payload_text::PayloadText::from_text("Later".to_owned()).unwrap(),
             source_offset: 40,
         };
         let content = crate::native::attach::feature_projection::feature_source_content(
@@ -178,7 +178,7 @@ fn feature_source_text_with_limit(
             id: "text".into(),
             operation_record: "record".into(),
             ordinal: 0,
-            value: crate::payload_text::PayloadText::new("Through".to_owned()).unwrap(),
+            value: crate::payload_text::PayloadText::from_text("Through".to_owned()).unwrap(),
             source_offset: 30,
         };
         let content =

@@ -714,7 +714,7 @@ fn owned_symbolic_thread(
         let owner = ctx.copy_retained_text(&id, "NX symbolic thread text frame owner")?;
         let value =
             ctx.copy_retained_text(frame.value.as_str(), "NX symbolic thread text frame value")?;
-        let value = crate::payload_text::PayloadText::new(value)
+        let value = crate::payload_text::PayloadText::from_wire(ctx, value)?
             .map_err(cadmpeg_core::CodecError::malformed)?;
         let source_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))
