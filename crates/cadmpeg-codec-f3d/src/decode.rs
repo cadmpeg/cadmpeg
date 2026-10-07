@@ -1263,71 +1263,87 @@ fn design_projection_gaps(
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
     use std::collections::HashSet;
 
-    let source_lost_edge_reference_ids = ctx.collect_hash_set(
-        native
-            .lost_edge_references
-            .iter()
-            .map(|reference| reference.id.as_str()),
-        "index F3D lost edge references",
-    )?;
-    let mut complete_edge_selection_native_ids = HashSet::<String>::new();
-    let projected_constraint_refs = ctx.collect_hash_set(
-        ctx.admit_iter(
-            &ir.model.sketch_constraints,
-            "scan F3D projection sketch_constraints",
-        )?
-        .filter_map(|constraint| constraint.native_ref.as_deref())
-        .chain(
+    let mut scratch = ctx.reserve_scoped(0, "stage F3D projection gap indexes")?;
+    let source_lost_edge_reference_ids = scratch.with_storage(|| {
+        ctx.collect_hash_set(
             ctx.admit_iter(
-                &ir.model.spatial_sketch_constraints,
-                "scan F3D projection spatial_sketch_constraints",
+                &native.lost_edge_references,
+                "scan F3D lost edge references",
             )?
-            .filter_map(|constraint| constraint.native_ref.as_deref()),
-        ),
-        "index projected F3D constraints",
-    )?;
-    let projected_sketch_refs = ctx.collect_hash_set(
-        ctx.admit_iter(&ir.model.sketches, "scan F3D projection sketches")?
-            .filter_map(|sketch| sketch.native_ref.as_deref())
+            .map(|reference| reference.id.as_str()),
+            "index F3D lost edge references",
+        )
+    })?;
+    let mut complete_edge_selection_native_ids = HashSet::<String>::new();
+    let projected_constraint_refs = scratch.with_storage(|| {
+        ctx.collect_hash_set(
+            ctx.admit_iter(
+                &ir.model.sketch_constraints,
+                "scan F3D projection sketch_constraints",
+            )?
+            .filter_map(|constraint| constraint.native_ref.as_deref())
             .chain(
                 ctx.admit_iter(
-                    &ir.model.spatial_sketches,
-                    "scan F3D projection spatial_sketches",
+                    &ir.model.spatial_sketch_constraints,
+                    "scan F3D projection spatial_sketch_constraints",
                 )?
-                .filter_map(|sketch| sketch.native_ref.as_deref()),
+                .filter_map(|constraint| constraint.native_ref.as_deref()),
             ),
-        "index projected F3D sketches",
-    )?;
-    let projected_sketch_entity_refs = ctx.collect_hash_set(
-        ctx.admit_iter(
-            &ir.model.sketch_entities,
-            "scan F3D projection sketch_entities",
-        )?
-        .filter_map(|entity| entity.native_ref.as_deref())
-        .chain(
+            "index projected F3D constraints",
+        )
+    })?;
+    let projected_sketch_refs = scratch.with_storage(|| {
+        ctx.collect_hash_set(
+            ctx.admit_iter(&ir.model.sketches, "scan F3D projection sketches")?
+                .filter_map(|sketch| sketch.native_ref.as_deref())
+                .chain(
+                    ctx.admit_iter(
+                        &ir.model.spatial_sketches,
+                        "scan F3D projection spatial_sketches",
+                    )?
+                    .filter_map(|sketch| sketch.native_ref.as_deref()),
+                ),
+            "index projected F3D sketches",
+        )
+    })?;
+    let projected_sketch_entity_refs = scratch.with_storage(|| {
+        ctx.collect_hash_set(
             ctx.admit_iter(
-                &ir.model.spatial_sketch_entities,
-                "scan F3D projection spatial_sketch_entities",
+                &ir.model.sketch_entities,
+                "scan F3D projection sketch_entities",
             )?
-            .filter_map(|entity| entity.native_ref.as_deref()),
-        ),
-        "index projected F3D sketch entities",
-    )?;
-    let projected_feature_refs = ctx.collect_hash_set(
-        ctx.admit_iter(&ir.model.features, "scan F3D projection features")?
-            .filter_map(|feature| feature.native_ref.as_deref()),
-        "index projected F3D features",
-    )?;
-    let projected_parameter_refs = ctx.collect_hash_set(
-        ctx.admit_iter(&ir.model.parameters, "scan F3D projection parameters")?
-            .filter_map(|parameter| parameter.native_ref.as_deref()),
-        "index projected F3D parameters",
-    )?;
-    let projected_features = ctx.collect_hash_map(
-        ctx.admit_iter(&ir.model.features, "scan F3D projection features")?
-            .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature))),
-        "index projected F3D feature records",
-    )?;
+            .filter_map(|entity| entity.native_ref.as_deref())
+            .chain(
+                ctx.admit_iter(
+                    &ir.model.spatial_sketch_entities,
+                    "scan F3D projection spatial_sketch_entities",
+                )?
+                .filter_map(|entity| entity.native_ref.as_deref()),
+            ),
+            "index projected F3D sketch entities",
+        )
+    })?;
+    let projected_feature_refs = scratch.with_storage(|| {
+        ctx.collect_hash_set(
+            ctx.admit_iter(&ir.model.features, "scan F3D projection features")?
+                .filter_map(|feature| feature.native_ref.as_deref()),
+            "index projected F3D features",
+        )
+    })?;
+    let projected_parameter_refs = scratch.with_storage(|| {
+        ctx.collect_hash_set(
+            ctx.admit_iter(&ir.model.parameters, "scan F3D projection parameters")?
+                .filter_map(|parameter| parameter.native_ref.as_deref()),
+            "index projected F3D parameters",
+        )
+    })?;
+    let projected_features = scratch.with_storage(|| {
+        ctx.collect_hash_map(
+            ctx.admit_iter(&ir.model.features, "scan F3D projection features")?
+                .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature))),
+            "index projected F3D feature records",
+        )
+    })?;
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
@@ -1390,7 +1406,7 @@ fn design_projection_gaps(
             unprojected_history_dependencies += 1;
         }
     }
-    let projected_dimension_parameters = ctx.collect_hash_set(ctx.admit_iter(&ir.model.sketch_constraints, "scan F3D projection sketch_constraints")?
+    let projected_dimension_parameters = scratch.with_storage(|| ctx.collect_hash_set(ctx.admit_iter(&ir.model.sketch_constraints, "scan F3D projection sketch_constraints")?
             .flat_map(|constraint| {
                 crate::design::dimensions::constraint_parameters(constraint.definition.kind())
             })
@@ -1436,15 +1452,15 @@ fn design_projection_gaps(
                         _ => None,
                     },
                 ),
-            ), "index projected F3D dimension parameters")?;
+            ), "index projected F3D dimension parameters"))?;
 
-    let native_sketch_relation_ids = ctx.collect_hash_set(
-        native
-            .sketch_relations
-            .iter()
-            .map(|relation| relation.id.as_str()),
-        "index native F3D sketch relations",
-    )?;
+    let native_sketch_relation_ids = scratch.with_storage(|| {
+        ctx.collect_hash_set(
+            ctx.admit_iter(&native.sketch_relations, "scan F3D native sketch relations")?
+                .map(|relation| relation.id.as_str()),
+            "index native F3D sketch relations",
+        )
+    })?;
     let mut native_sketch_relations = 0;
     let mut native_dimensions = 0;
     for constraint in ctx.admit_iter(
@@ -1617,7 +1633,7 @@ fn design_projection_gaps(
             .try_fold(0usize, |count, relation| { let selected = !ctx.contains_hash_set(&projected_constraint_refs, relation.id.as_str(), "find F3D projection projected_constraint_refs")?; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
         unprojected_dimensions: {
             let container_only = container_only_dimension_parameters(ctx, native)?;
-            let relation_bearing_companions = ctx.collect_hash_set(ctx.admit_iter(&native.design_parameter_companions, "scan F3D projection design_parameter_companions")?
+            let relation_bearing_companions = scratch.with_storage(|| ctx.collect_hash_set(ctx.admit_iter(&native.design_parameter_companions, "scan F3D projection design_parameter_companions")?
                 .filter(|companion| {
                     companion
                         .payload()
@@ -1673,7 +1689,7 @@ fn design_projection_gaps(
                                 record.companion_record_index,
                             ))
                         }),
-                ), "index F3D relation-bearing companions")?;
+                ), "index F3D relation-bearing companions"))?;
             let mut relation_storage = ctx.reserve_scoped(0, "hold F3D relation-bearing parameters")?;
             let mut relation_bearing_parameters = HashSet::new();
             for owner in ctx.admit_iter(&native.design_parameter_owners, "scan F3D relation-bearing parameter owners")? {
@@ -2472,13 +2488,20 @@ fn report_design_projection_gaps(
     Ok(())
 }
 
-fn model_brep_candidates<'s>(
-    ctx: &DecodeContext<'_>,
+fn model_brep_candidates<'s, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &'s ContainerScan<'_>,
     blob_names: &[String],
-) -> Result<Vec<&'s BrepFacts>, CodecError> {
+) -> Result<
+    (
+        Vec<&'s BrepFacts>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    let mut candidates_storage = ctx.reserve_scoped(0, "stage F3D model BREP candidates")?;
     if blob_names.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), candidates_storage));
     }
     // Design BREP entries by archive basename, built once; a repeated
     // basename is kept as ambiguous and refused when a body map names it.
@@ -2522,9 +2545,14 @@ fn model_brep_candidates<'s>(
             }
             Some(Some(brep)) => *brep,
         };
-        ctx.push_vec(&mut candidates, brep, "collect F3D model BREP candidates")?;
+        ctx.push_scoped_vec(
+            &mut candidates_storage,
+            &mut candidates,
+            brep,
+            "collect F3D model BREP candidates",
+        )?;
     }
-    Ok(candidates)
+    Ok((candidates, candidates_storage))
 }
 
 /// The text after the last `/` of an archive path, or the whole path.
@@ -2651,10 +2679,11 @@ fn finish_model_decode<'a>(
 ///
 /// Absence means the document is assembled from Design / mesh / presentation
 /// content alone; product decoding still runs through the same session path.
-struct GeometryIndex {
-    primary_model_brep_name: String,
+struct GeometryIndex<'ctx> {
+    primary_model_brep_name: &'ctx str,
     annotation_records: Vec<cadmpeg_asm::brep::annotations::AnnotationRecord>,
     mesh_projection: MeshProjection,
+    _mesh_projection_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 /// State shared by every finalization path for one decoded F3D member.
@@ -2671,19 +2700,19 @@ struct DeferredBodylessInputs {
 }
 
 /// Geometry-path inputs carried from construction to product decoding.
-struct GeometrySessionPath {
-    index: GeometryIndex,
+struct GeometrySessionPath<'ctx> {
+    index: GeometryIndex<'ctx>,
     materials: materials::DecodedMaterials,
 }
 
-enum SessionPath {
-    Geometry(Box<GeometrySessionPath>),
+enum SessionPath<'ctx> {
+    Geometry(Box<GeometrySessionPath<'ctx>>),
     Bodyless(Box<materials::DecodedMaterials>),
 }
 
 /// The inputs one decoded path hands to finalization.
-enum FinalizePath {
-    Geometry(GeometryIndex),
+enum FinalizePath<'ctx> {
+    Geometry(GeometryIndex<'ctx>),
     Bodyless(DeferredBodylessInputs),
 }
 
@@ -2704,12 +2733,12 @@ impl<'a> F3dDecodeSession<'a> {
     fn from_geometry(
         ctx: &'a DecodeContext<'a>,
         scan: &'a ContainerScan<'a>,
-        primary_model_brep: &BrepFacts,
+        primary_model_brep: &'a BrepFacts,
         brep: Brep,
         body_visibilities: Vec<crate::records::bodies::BodyVisibility>,
         undecoded_candidates: usize,
         session_state: DecodeSessionState,
-    ) -> Result<(Self, SessionPath), CodecError> {
+    ) -> Result<(Self, SessionPath<'a>), CodecError> {
         let DecodeSessionState {
             admitted_entities: _,
             report_scope,
@@ -2752,7 +2781,8 @@ impl<'a> F3dDecodeSession<'a> {
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
         ir.model.subds = subds;
-        let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        let (mesh_projection, mesh_projection_storage) =
+            project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         ctx.extend_vec(
             &mut report.losses,
             subd_losses,
@@ -2779,12 +2809,10 @@ impl<'a> F3dDecodeSession<'a> {
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
-                    primary_model_brep_name: ctx.copy_retained_text(
-                        &primary_model_brep.name,
-                        "retain F3D primary BREP name",
-                    )?,
+                    primary_model_brep_name: primary_model_brep.name.as_str(),
                     annotation_records,
                     mesh_projection,
+                    _mesh_projection_storage: mesh_projection_storage,
                 },
                 materials: geometry_materials,
             })),
@@ -2795,7 +2823,7 @@ impl<'a> F3dDecodeSession<'a> {
         ctx: &'a DecodeContext<'a>,
         scan: &'a ContainerScan<'a>,
         session_state: DecodeSessionState,
-    ) -> Result<(Self, SessionPath), CodecError> {
+    ) -> Result<(Self, SessionPath<'a>), CodecError> {
         let DecodeSessionState {
             admitted_entities,
             report_scope,
@@ -2836,7 +2864,7 @@ impl<'a> F3dDecodeSession<'a> {
     }
 
     /// Decode design graph, products, annotations, and the report.
-    fn into_result(mut self, path: SessionPath) -> Result<AuthoredDecoded, CodecError> {
+    fn into_result(mut self, path: SessionPath<'a>) -> Result<AuthoredDecoded, CodecError> {
         self.admit_model_entities("admit F3D geometry entities")?;
         let mut path = path;
         self.decode_design_graph(&mut path)?;
@@ -2844,7 +2872,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.finalize(path)
     }
 
-    fn decode_design_graph(&mut self, path: &mut SessionPath) -> Result<(), CodecError> {
+    fn decode_design_graph(&mut self, path: &mut SessionPath<'a>) -> Result<(), CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
         for history_brep in container::history_breps(ctx, scan)? {
@@ -3411,7 +3439,7 @@ impl<'a> F3dDecodeSession<'a> {
         Ok(())
     }
 
-    fn decode_products(&mut self, path: SessionPath) -> Result<FinalizePath, CodecError> {
+    fn decode_products(&mut self, path: SessionPath<'a>) -> Result<FinalizePath<'a>, CodecError> {
         let scan = self.scan;
         let act = crate::act::decode(self.ctx, scan)?;
         let non_root_act_component_links = act.non_root_component_links;
@@ -3583,7 +3611,7 @@ impl<'a> F3dDecodeSession<'a> {
         Ok(finalize_path)
     }
 
-    fn finalize(mut self, path: FinalizePath) -> Result<AuthoredDecoded, CodecError> {
+    fn finalize(mut self, path: FinalizePath<'a>) -> Result<AuthoredDecoded, CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
         let geometry = match path {
@@ -3591,7 +3619,7 @@ impl<'a> F3dDecodeSession<'a> {
             FinalizePath::Bodyless(inputs) => {
                 report_unretained_act_component_links(ctx, &mut self.report, inputs.non_root_act)?;
                 reconcile_appearance_loss(ctx, &mut self.report, &self.ir, inputs.has_appearance)?;
-                let mesh_projection = project_mesh_bodies(
+                let (mesh_projection, _mesh_projection_storage) = project_mesh_bodies(
                     ctx,
                     scan,
                     &mut self.ir,
@@ -3656,8 +3684,15 @@ impl<'a> F3dDecodeSession<'a> {
                     }
                     Err(error) => report_xref_parse_loss(ctx, &mut self.report, &error)?,
                 }
-                self.native
-                    .store(ctx, self.ir.native.namespace_mut("f3d"))?;
+                self.native.store(
+                    ctx,
+                    ctx.entry_btree_map(
+                        &mut self.ir.native.0,
+                        "f3d".to_owned(),
+                        "select F3D native namespace",
+                    )?
+                    .or_default(),
+                )?;
                 let annotations =
                     populate_annotations(ctx, &self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(ctx, scan)?;
@@ -3685,15 +3720,22 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.admitted_entities,
             "admit F3D entities",
         )?;
-        self.native
-            .store(ctx, self.ir.native.namespace_mut("f3d"))?;
+        self.native.store(
+            ctx,
+            ctx.entry_btree_map(
+                &mut self.ir.native.0,
+                "f3d".to_owned(),
+                "select F3D native namespace",
+            )?
+            .or_default(),
+        )?;
         let annotations = populate_annotations(
             ctx,
             &self.ir,
             scan,
             &self.native,
             Some((
-                &geometry.primary_model_brep_name,
+                geometry.primary_model_brep_name,
                 &geometry.annotation_records,
             )),
             &self.unknowns,
@@ -3807,7 +3849,7 @@ fn decode_scanned_document<'a>(
         crate::design::decode::body::design_model_blob_names(ctx, scan)?;
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
-    let model_breps = model_brep_candidates(ctx, scan, &model_blob_names)?;
+    let (model_breps, _model_breps_storage) = model_brep_candidates(ctx, scan, &model_blob_names)?;
 
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
@@ -3852,7 +3894,7 @@ fn decode_scanned_document<'a>(
                 continue;
             }
             primary_model_brep.get_or_insert(candidate);
-            let mut body_selectors = match ctx.get_hash_map(
+            let (mut body_selectors, mut _body_selectors_storage) = match ctx.get_hash_map(
                 &selected_body_keys,
                 blob_name,
                 "find F3D selected body keys",
@@ -3881,7 +3923,7 @@ fn decode_scanned_document<'a>(
                         ))
                     })?;
                 part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
-                body_selectors = match ctx.get_hash_map(
+                (body_selectors, _body_selectors_storage) = match ctx.get_hash_map(
                     &selected_body_keys,
                     blob_name,
                     "find F3D selected body keys",
@@ -4059,11 +4101,12 @@ fn collect_mesh_outcome(
     bodies: &mut Vec<crate::design::decode::mesh::MeshBody>,
     report: &mut DecodeBody,
     outcome: crate::design::decode::mesh::MeshContainerOutcome,
+    bodies_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     use crate::design::decode::mesh::MeshContainerOutcome;
     match outcome {
         MeshContainerOutcome::Joined(body) => {
-            ctx.push_vec(bodies, body, "collect F3D joined mesh bodies")?;
+            ctx.push_scoped_vec(bodies_storage, bodies, body, "collect F3D joined mesh bodies")?;
         }
         MeshContainerOutcome::Unjoined { entry_name } => push_loss_vec(ctx, &mut report.losses, F3dLossCode::MeshContainerUnjoined, format_args!(
                 "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
@@ -4230,15 +4273,22 @@ fn corner_shaded_mesh(
 /// the neutral tessellation arena is where a standalone triangle list belongs.
 /// Returns the number of bodies projected and reports every mesh-geometry
 /// container that no body claimed.
-fn project_mesh_bodies(
-    ctx: &DecodeContext<'_>,
+fn project_mesh_bodies<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     native: &mut F3dNative,
     report: &mut DecodeBody,
-) -> Result<MeshProjection, CodecError> {
+) -> Result<
+    (
+        MeshProjection,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let decoded = crate::design::decode::mesh::decode_mesh_bodies(ctx, scan)?;
     native.design_mesh_features = decoded.features;
+    let mut texture_assets_storage = ctx.reserve_scoped(0, "stage F3D mesh texture assets")?;
     let mut texture_assets = Vec::new();
     for feature in ctx.admit_iter(
         &native.design_mesh_features,
@@ -4327,7 +4377,8 @@ fn project_mesh_bodies(
                     "retain F3D native scope",
                 )?),
             )?;
-            ctx.push_vec(
+            ctx.push_scoped_vec(
+                &mut texture_assets_storage,
                 &mut texture_assets,
                 asset,
                 "collect F3D mesh texture assets",
@@ -4379,10 +4430,12 @@ fn project_mesh_bodies(
         }
         Ok::<(), CodecError>(())
     })?;
+    let mut bodies_storage = ctx.reserve_scoped(0, "stage F3D joined mesh bodies")?;
     let mut bodies = Vec::new();
     for outcome in ctx.admit_iter(decoded.outcomes, "scan F3D mesh container outcomes")? {
-        collect_mesh_outcome(ctx, &mut bodies, report, outcome)?;
+        collect_mesh_outcome(ctx, &mut bodies, report, outcome, &mut bodies_storage)?;
     }
+    let mut unresolved_storage = ctx.reserve_scoped(0, "count F3D unresolved mesh attributes")?;
     let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
         count: bodies.len(),
@@ -4423,6 +4476,7 @@ fn project_mesh_bodies(
             body.vertices.len(),
             &body.triangles,
             &mut unresolved,
+            &mut unresolved_storage,
         )?;
         // The paramesh registry states an unshaded mesh by carrying no
         // corner-normal channel, so the lane arrives absent, never empty.
@@ -4481,22 +4535,27 @@ fn project_mesh_bodies(
             "F3D mesh texture table has no joined tessellation body".into(),
         ));
     }
-    for feature in ctx.admit_iter(
-        &native.design_mesh_features,
-        "scan F3D native design mesh features",
-    )? {
-        let stream = crate::ids::native_stream(&feature.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        insert_mesh_scope_tessellations(
-            ctx,
-            &mut projection.tessellations_by_scope,
-            stream,
-            feature.scope().record().record_index(),
-            ctx.admit_iter(feature.bodies(), "scan F3D mesh scope body bindings")?,
-            |body| body.tessellation_id.as_deref(),
-        )?;
-    }
+    let mut projection_storage = ctx.reserve_scoped(0, "index F3D mesh feature scopes")?;
+    projection_storage.with_storage(|| {
+        for feature in ctx.admit_iter(
+            &native.design_mesh_features,
+            "scan F3D native design mesh features",
+        )? {
+            let stream =
+                crate::ids::native_stream(&feature.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+            insert_mesh_scope_tessellations(
+                ctx,
+                &mut projection.tessellations_by_scope,
+                stream,
+                feature.scope().record().record_index(),
+                ctx.admit_iter(feature.bodies(), "scan F3D mesh scope body bindings")?,
+                |body| body.tessellation_id.as_deref(),
+            )?;
+        }
+        Ok::<(), CodecError>(())
+    })?;
     report_unresolved_mesh_attributes(ctx, report, &unresolved)?;
-    Ok(projection)
+    Ok((projection, projection_storage))
 }
 
 /// Resolve one-based `tid` values through a Design texture table. Zero leaves
@@ -4515,9 +4574,11 @@ fn mesh_texture_assignments(
             "F3D mesh texture-id count differs from the triangle count".into(),
         ));
     }
-    let mut triangles =
-        ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| {
-            Ok(Vec::new())
+    let (mut triangles, _triangles_storage) =
+        ctx.with_scoped_storage("stage F3D mesh texture assignments", || {
+            ctx.collect_indexed_vec(textures.len(), "f3d mesh texture assignments", |_| {
+                Ok(Vec::new())
+            })
         })?;
     for (triangle, texture_id) in ctx
         .admit_iter(texture_ids, "resolve F3D mesh texture triangle")?
@@ -4661,6 +4722,7 @@ fn mesh_attribute_channels(
     vertices: usize,
     triangles: &[[u32; 3]],
     unresolved: &mut std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
+    unresolved_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Vec<cadmpeg_ir::tessellation::TessellationChannel>, CodecError> {
     use crate::paramesh::MeshAttributeDomain;
 
@@ -4683,12 +4745,28 @@ fn mesh_attribute_channels(
                         ctx.reserve_vec(&mut channels, 1, "collect F3D mesh channels")?;
                         channels.push(channel);
                     }
-                    Err(_) => *unresolved.entry(MeshAttributeDomain::Vertex).or_default() += 1,
+                    Err(_) => unresolved_storage.with_storage(|| {
+                        *ctx.entry_btree_map(
+                            unresolved,
+                            MeshAttributeDomain::Vertex,
+                            "count F3D unresolved mesh attributes",
+                        )?
+                        .or_default() += 1;
+                        Ok::<(), CodecError>(())
+                    })?,
                 }
             }
             (MeshAttributeDomain::Corner, Some(item_size), Some(_)) => {
                 let Some(selectors) = attribute.corner_selectors(ctx, vertices, triangles)? else {
-                    *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
+                    unresolved_storage.with_storage(|| {
+                        *ctx.entry_btree_map(
+                            unresolved,
+                            MeshAttributeDomain::Corner,
+                            "count F3D unresolved mesh attributes",
+                        )?
+                        .or_default() += 1;
+                        Ok::<(), CodecError>(())
+                    })?;
                     continue;
                 };
                 match cadmpeg_ir::tessellation::TessellationChannel::new(
@@ -4702,14 +4780,30 @@ fn mesh_attribute_channels(
                         ctx.reserve_vec(&mut channels, 1, "collect F3D mesh channels")?;
                         channels.push(channel);
                     }
-                    Err(_) => *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1,
+                    Err(_) => unresolved_storage.with_storage(|| {
+                        *ctx.entry_btree_map(
+                            unresolved,
+                            MeshAttributeDomain::Corner,
+                            "count F3D unresolved mesh attributes",
+                        )?
+                        .or_default() += 1;
+                        Ok::<(), CodecError>(())
+                    })?,
                 }
             }
             (MeshAttributeDomain::Triangle, Some(item_size), Some(count))
                 if usize::try_from(count) == Ok(triangles.len()) && item_size == 4 =>
             {
                 if u32::try_from(triangles.len()).is_err() {
-                    *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1;
+                    unresolved_storage.with_storage(|| {
+                        *ctx.entry_btree_map(
+                            unresolved,
+                            MeshAttributeDomain::Triangle,
+                            "count F3D unresolved mesh attributes",
+                        )?
+                        .or_default() += 1;
+                        Ok::<(), CodecError>(())
+                    })?;
                     continue;
                 }
 
@@ -4738,10 +4832,26 @@ fn mesh_attribute_channels(
                         ctx.reserve_vec(&mut channels, 1, "collect F3D mesh channels")?;
                         channels.push(channel);
                     }
-                    Err(_) => *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1,
+                    Err(_) => unresolved_storage.with_storage(|| {
+                        *ctx.entry_btree_map(
+                            unresolved,
+                            MeshAttributeDomain::Triangle,
+                            "count F3D unresolved mesh attributes",
+                        )?
+                        .or_default() += 1;
+                        Ok::<(), CodecError>(())
+                    })?,
                 }
             }
-            (domain, _, _) => *unresolved.entry(domain).or_default() += 1,
+            (domain, _, _) => unresolved_storage.with_storage(|| {
+                *ctx.entry_btree_map(
+                    unresolved,
+                    domain,
+                    "count F3D unresolved mesh attributes",
+                )?
+                .or_default() += 1;
+                Ok::<(), CodecError>(())
+            })?,
         }
     }
     Ok(channels)
@@ -5299,17 +5409,25 @@ fn populate_annotations(
             })?;
         }
     }
-    let planar_sketches = ctx.collect_hash_set(
-        ir.model.sketches.iter().map(|sketch| sketch.id.as_str()),
-        "index F3D annotation planar sketches",
-    )?;
-    let spatial_sketches = ctx.collect_hash_set(
-        ir.model
-            .spatial_sketches
-            .iter()
-            .map(|sketch| sketch.id.as_str()),
-        "index F3D annotation spatial sketches",
-    )?;
+    let (planar_sketches, _planar_sketches_storage) =
+        ctx.with_scoped_storage("stage F3D annotation planar_sketches", || {
+            ctx.collect_hash_set(
+                ctx.admit_iter(&ir.model.sketches, "scan F3D annotation planar_sketches")?
+                    .map(|sketch| sketch.id.as_str()),
+                "index F3D annotation planar sketches",
+            )
+        })?;
+    let (spatial_sketches, _spatial_sketches_storage) =
+        ctx.with_scoped_storage("stage F3D annotation spatial_sketches", || {
+            ctx.collect_hash_set(
+                ctx.admit_iter(
+                    &ir.model.spatial_sketches,
+                    "scan F3D annotation spatial_sketches",
+                )?
+                .map(|sketch| sketch.id.as_str()),
+                "index F3D annotation spatial sketches",
+            )
+        })?;
 
     let native_stream = StreamHandle::new(
         ctx,

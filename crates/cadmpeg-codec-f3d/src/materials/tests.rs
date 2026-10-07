@@ -231,7 +231,11 @@ fn definition_catalog_schema_refuses_retained_limit() {
     );
 }
 
-fn catalog_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
+fn catalog_field_refusal(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+    skip: usize,
+) -> cadmpeg_core::CodecError {
     let mut record = RECORD_MARKER.to_vec();
     lp_ascii(&mut record, "S");
     record.push(0);
@@ -244,63 +248,90 @@ fn catalog_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
     record.extend_from_slice(&1u32.to_le_bytes());
     lp_ascii(&mut record, "E");
     record.extend_from_slice(&0u32.to_le_bytes());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = retained_before;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    super::decode_definition_catalog_record(&ctx, &record)
-        .expect_err("catalog field must exceed retained budget")
+    crate::test_support::resource_refusal_at(dimension, operation, skip, |ctx| {
+        super::decode_definition_catalog_record(ctx, &record)
+    })
 }
 
 macro_rules! catalog_field_limit_test {
-    ($name:ident, $retained_before:literal) => {
+    ($name:ident, $dimension:ident, $operation:literal, $skip:literal) => {
         #[test]
         fn $name() {
-            let error = catalog_field_refusal($retained_before);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "retain F3D UTF-8 string"));
+            let error = catalog_field_refusal(cadmpeg_core::decode::ResourceDimension::$dimension, $operation, $skip);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == $operation));
         }
     };
 }
 
-catalog_field_limit_test!(definition_catalog_asset_refuses_retained_limit, 1);
-catalog_field_limit_test!(definition_catalog_base_refuses_retained_limit, 2);
-catalog_field_limit_test!(definition_catalog_category_refuses_retained_limit, 3);
-catalog_field_limit_test!(definition_catalog_group_refuses_retained_limit, 4);
-catalog_field_limit_test!(definition_catalog_subgroup_refuses_retained_limit, 5);
-catalog_field_limit_test!(definition_catalog_description_refuses_retained_limit, 6);
-catalog_field_limit_test!(definition_catalog_extension_refuses_retained_limit, 7);
+catalog_field_limit_test!(
+    definition_catalog_asset_refuses_retained_limit,
+    RetainedBytes,
+    "retain F3D UTF-8 string",
+    1
+);
+catalog_field_limit_test!(
+    definition_catalog_category_refuses_retained_limit,
+    RetainedBytes,
+    "retain F3D UTF-8 string",
+    2
+);
+catalog_field_limit_test!(
+    definition_catalog_base_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    2
+);
+catalog_field_limit_test!(
+    definition_catalog_group_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    4
+);
+catalog_field_limit_test!(
+    definition_catalog_subgroup_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    5
+);
+catalog_field_limit_test!(
+    definition_catalog_description_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    6
+);
+catalog_field_limit_test!(
+    definition_catalog_extension_validates_utf8_with_work_refusal,
+    WorkUnits,
+    "decode F3D UTF-8 string",
+    7
+);
 
 #[test]
-fn fixed_material_schema_refuses_retained_limit() {
+fn fixed_material_schema_validates_utf8_with_work_refusal() {
     let mut record = RECORD_MARKER.to_vec();
     lp_ascii(&mut record, "GenericSchema");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    let error = super::decode_fixed_record(&ctx, &record)
-        .expect_err("fixed material schema must exceed retained budget");
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "decode F3D UTF-8 string",
+        0,
+        |ctx| super::decode_fixed_record(ctx, &record),
+    );
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "retain F3D UTF-8 string")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode F3D UTF-8 string")
     );
 }
 
-fn fixed_material_field_refusal(retained_before: u64) -> cadmpeg_core::CodecError {
+fn fixed_material_field_refusal(skip: usize) -> cadmpeg_core::CodecError {
     let mut record = RECORD_MARKER.to_vec();
     for field in ["S", "G", "B", "L"] {
         lp_ascii(&mut record, field);
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = retained_before;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    super::decode_fixed_record(&ctx, &record)
-        .expect_err("fixed material field must exceed retained budget")
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "decode F3D UTF-8 string",
+        skip,
+        |ctx| super::decode_fixed_record(ctx, &record),
+    )
 }
 
 macro_rules! fixed_material_field_limit_test {
@@ -309,14 +340,14 @@ macro_rules! fixed_material_field_limit_test {
         fn $name() {
             let error = fixed_material_field_refusal($retained_before);
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "retain F3D UTF-8 string"));
+                if limit.operation == "decode F3D UTF-8 string"));
         }
     };
 }
 
-fixed_material_field_limit_test!(fixed_material_guid_refuses_retained_limit, 1);
-fixed_material_field_limit_test!(fixed_material_base_refuses_retained_limit, 2);
-fixed_material_field_limit_test!(fixed_material_library_refuses_retained_limit, 3);
+fixed_material_field_limit_test!(fixed_material_guid_validates_utf8_with_work_refusal, 1);
+fixed_material_field_limit_test!(fixed_material_base_validates_utf8_with_work_refusal, 2);
+fixed_material_field_limit_test!(fixed_material_library_validates_utf8_with_work_refusal, 3);
 
 #[test]
 fn definition_catalog_version_one_omits_category() {
@@ -939,6 +970,7 @@ fn schema_appearances(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     super::appearances_from_schema_records(&ctx, records)
+        .map(|(appearances, count, _)| (appearances, count))
 }
 
 #[test]
@@ -1853,4 +1885,48 @@ fn appearance_for_visual_token<'a>(
         token,
         fallback_name,
     )
+}
+
+#[test]
+fn appearance_token_grammar_pays_visited_suffix_bytes() {
+    let guid = "11111111-2222-3333-4444-555555555555";
+    for suffix in [
+        "",
+        "_Post2015",
+        "_Post2015_Post2015",
+        "_post2015",
+        "_Post",
+        "_Post2015_bad",
+    ] {
+        let token = format!("{guid}{suffix}");
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(
+                super::appearance_token_is_complete(ctx, &token).unwrap(),
+                crate::design::presentation::visual_token(&token).is_some()
+            );
+        });
+    }
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(super::appearance_token_is_complete(ctx, guid).unwrap())
+    });
+    policy.limits.max_work_units = 1;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(!super::appearance_token_is_complete(
+            ctx,
+            &format!("{guid}x{}", "_Post2015".repeat(64))
+        )
+        .unwrap())
+    });
+    let token = format!("{guid}_Post2015");
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "f3d appearance visual token grammar",
+        0,
+        |ctx| super::appearance_token_is_complete(ctx, &token),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "f3d appearance visual token grammar")
+    );
 }

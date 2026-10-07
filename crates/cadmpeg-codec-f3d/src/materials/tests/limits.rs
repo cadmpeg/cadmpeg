@@ -297,7 +297,10 @@ fn schema_texture_key_refuses_retained_limit() {
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "copy F3D texture asset key",
         0,
-        |ctx| super::super::appearances_from_schema_records(ctx, std::slice::from_ref(&record)),
+        |ctx| {
+            super::super::appearances_from_schema_records(ctx, std::slice::from_ref(&record))
+                .map(|_| ())
+        },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -340,22 +343,22 @@ fn browser_node_candidate_fold_refuses_materialized_limit() {
     );
 }
 
-fn fixed_appearance_error(asset_lib_id: &str, max_retained: u64) -> cadmpeg_core::CodecError {
+fn fixed_appearance_error(asset_lib_id: &str, operation: &str) -> cadmpeg_core::CodecError {
     let mut record = super::super::RECORD_MARKER.to_vec();
     for value in ["PhysMatSchema", "g", "b", asset_lib_id] {
         super::super::push_lp(&mut record, value).unwrap();
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = max_retained;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    super::super::decode_fixed_record(&ctx, &record).unwrap_err()
+    crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        0,
+        |ctx| super::super::decode_fixed_record(ctx, &record),
+    )
 }
 
 #[test]
 fn fixed_appearance_guid_copy_refuses_retained_limit() {
-    let error = fixed_appearance_error("", 38);
+    let error = fixed_appearance_error("", "copy F3D fixed appearance GUID");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D fixed appearance GUID")
@@ -364,7 +367,7 @@ fn fixed_appearance_guid_copy_refuses_retained_limit() {
 
 #[test]
 fn fixed_appearance_library_copy_refuses_retained_limit() {
-    let error = fixed_appearance_error("L", 40);
+    let error = fixed_appearance_error("L", "copy F3D appearance library ID");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D appearance library ID")
@@ -758,28 +761,118 @@ fn definition_catalog_string_range_refuses_work_after_valid_input() {
 }
 
 #[test]
-fn generic_connection_range_refuses_work_after_valid_input() {
+fn generic_connection_checks_eight_slots_without_work_charge() {
     let mut record = vec![0; 113];
     record[102] = 1;
     record[104..108].copy_from_slice(&1_u32.to_le_bytes());
     record[108..112].copy_from_slice(&1_u32.to_le_bytes());
     record[112] = b'x';
-    crate::test_support::with_decode_context(|ctx| {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    {
         assert_eq!(
-            super::super::generic_connection_delta(ctx, &record, 0)
+            super::super::generic_connection_delta(&ctx, &record, 0)
                 .expect("valid GenericSchema connections"),
             Some(10)
         );
-    });
+    }
+    ctx.finish_session().unwrap();
+}
 
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "scan F3D GenericSchema connections",
+#[test]
+fn unsupported_fixed_schema_borrows_fields_without_storage() {
+    let mut record = super::super::RECORD_MARKER.to_vec();
+    for value in ["S", "G", "B", "L"] {
+        super::super::push_lp(&mut record, value).unwrap();
+    }
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(super::super::decode_fixed_record(ctx, &record)
+            .unwrap()
+            .is_none());
+    });
+}
+
+#[test]
+fn scanned_face_strings_release_scratch_without_retained_output() {
+    let mut bytes = Vec::new();
+    crate::test_support::lp_utf16(&mut bytes, "Alpha");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        super::super::face_appearance_assignments_in_frame(&ctx, &bytes)
+            .unwrap()
+            .is_empty()
+    );
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "scanned face scratch released",
+        )
+        .unwrap(),
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn schema_scalar_aliases_copy_only_the_final_neutral_name() {
+    let properties = [
+        ("generic_refraction_index", 1.0),
+        ("refraction_index", 2.0),
+        ("transparent_refraction_index", 3.0),
+    ]
+    .into_iter()
+    .map(|(name, value)| {
+        (
+            name.to_owned(),
+            cadmpeg_protein::property::DecodedProperty {
+                value_offset: 0,
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::Float(
+                        cadmpeg_ir::scalar::FiniteReal::new(value).unwrap(),
+                    ),
+                    connections: Vec::new(),
+                },
+            },
+        )
+    })
+    .collect();
+    let record = appearance_record("GenericSchema", properties);
+    let (out, count) = super::schema_appearances(std::slice::from_ref(&record)).unwrap();
+    assert_eq!(count, 0);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].properties.len(), 1);
+    assert_eq!(out[0].properties["refraction_index"].get(), 3.0);
+    let boundary = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "copy F3D appearance property name",
         0,
-        |ctx| super::super::generic_connection_delta(ctx, &record, 0).map(|_| ()),
+        |ctx| {
+            super::super::appearances_from_schema_records(ctx, std::slice::from_ref(&record))
+                .map(|_| ())
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(boundary) = boundary else {
+        panic!("final property name must refuse");
+    };
+    let error = material_context_with_limits(
+        u64::MAX,
+        boundary.used.checked_add(boundary.additional).unwrap(),
+        |ctx| {
+            super::super::appearances_from_schema_records(ctx, std::slice::from_ref(&record))
+                .unwrap_err()
+        },
     );
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "scan F3D GenericSchema connections")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "retain F3D native record ID")
     );
 }

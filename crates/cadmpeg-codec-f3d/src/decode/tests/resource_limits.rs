@@ -579,7 +579,7 @@ fn model_brep_candidate_index_refuses_collection_limit() {
         |cap| {
             let limited_arena = DecodeArena::new();
             let limited = context(&limited_arena, cap);
-            super::super::model_brep_candidates(&limited, &scan, &blob_names)
+            super::super::model_brep_candidates(&limited, &scan, &blob_names).map(|_| ())
         },
     );
     assert!(
@@ -781,6 +781,7 @@ macro_rules! mesh_outcome_loss_refuses_collection_limit {
             let arena = DecodeArena::new();
             let ctx = context(&arena, 0);
             let mut bodies = Vec::new();
+            let mut bodies_storage = ctx.reserve_scoped(0, "test joined mesh bodies").unwrap();
             let mut report = cadmpeg_ir::codec::DecodeBody::new(
                 cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
             );
@@ -789,6 +790,7 @@ macro_rules! mesh_outcome_loss_refuses_collection_limit {
                 &mut bodies,
                 &mut report,
                 $outcome,
+                &mut bodies_storage,
             )
             .unwrap_err();
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -826,6 +828,7 @@ fn failed_mesh_resource_limit_propagates() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
     let mut bodies = Vec::new();
+    let mut bodies_storage = ctx.reserve_scoped(0, "test joined mesh bodies").unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
@@ -837,6 +840,7 @@ fn failed_mesh_resource_limit_propagates() {
             entry_name: "mesh.paramesh".into(),
             error: ctx.refuse_codec_limit("synthetic mesh refusal", 0, 1),
         },
+        &mut bodies_storage,
     )
     .unwrap_err();
     assert!(
