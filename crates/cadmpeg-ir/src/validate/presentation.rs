@@ -4,6 +4,7 @@
 use super::{orders::Orders, record_finding};
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
+use crate::index::ModelIndex;
 use crate::presentation::PresentationItem;
 use crate::report::{
     check::{Check, Finding},
@@ -13,7 +14,7 @@ use crate::report::{
 pub(super) fn check_presentation(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-    all_ids: &BorrowedIdentities<'_, '_>,
+    all_ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if ir.model.presentation_documents.len() > 1 {
@@ -29,7 +30,7 @@ pub(super) fn check_presentation(
     for document in &ir.model.presentation_documents {
         ctx.charge_work(1, "presentation document scan")?;
         let native_valid = match &document.native_ref {
-            Some(native) => all_ids.contains(ctx, native)?,
+            Some(native) => all_ids.contains(native.as_str(), ctx)?,
             None => true,
         };
         let mut assets_valid = true;
@@ -37,7 +38,7 @@ pub(super) fn check_presentation(
             ctx.charge_work(1, "presentation state scan")?;
             for asset in &state.assets {
                 ctx.charge_work(1, "presentation asset scan")?;
-                if !all_ids.contains(ctx, asset)? {
+                if !all_ids.contains(asset.as_str(), ctx)? {
                     assets_valid = false;
                     break 'states;
                 }
@@ -59,12 +60,12 @@ pub(super) fn check_presentation(
     for view in &ir.model.view_presentations {
         ctx.charge_work(1, "view presentation scan")?;
         let mut references_valid = match &view.object {
-            Some(object) => all_ids.contains(ctx, object)?,
+            Some(object) => all_ids.contains(object.as_str(), ctx)?,
             None => true,
         };
         if references_valid {
             if let Some(native) = &view.native_ref {
-                references_valid = all_ids.contains(ctx, native)?;
+                references_valid = all_ids.contains(native.as_str(), ctx)?;
             }
         }
         if !references_valid || !orders.insert(view.order)? {
@@ -80,67 +81,100 @@ pub(super) fn check_presentation(
     }
 
     let bodies = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.bodies {
+        for item in ctx.admit_iter(
+            ir.model.bodies.as_slice(),
+            "presentation body identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let faces = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.faces {
+        for item in ctx.admit_iter(
+            ir.model.faces.as_slice(),
+            "presentation face identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let edges = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.edges {
+        for item in ctx.admit_iter(
+            ir.model.edges.as_slice(),
+            "presentation edge identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let vertices = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.vertices {
+        for item in ctx.admit_iter(
+            ir.model.vertices.as_slice(),
+            "presentation vertex identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let points = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.points {
+        for item in ctx.admit_iter(
+            ir.model.points.as_slice(),
+            "presentation point identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let curves = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.curves {
+        for item in ctx.admit_iter(
+            ir.model.curves.as_slice(),
+            "presentation curve identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let surfaces = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.surfaces {
+        for item in ctx.admit_iter(
+            ir.model.surfaces.as_slice(),
+            "presentation surface identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let products = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.product_definitions {
+        for item in ctx.admit_iter(
+            ir.model.product_definitions.as_slice(),
+            "presentation product definition identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let occurrences = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.occurrences {
+        for item in ctx.admit_iter(
+            ir.model.occurrences.as_slice(),
+            "presentation occurrence identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let pmi = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.pmi {
+        for item in ctx.admit_iter(
+            ir.model.pmi.as_slice(),
+            "presentation PMI identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
     })?;
     let tessellations = BorrowedIdentities::build(ctx, |add| {
-        for item in &ir.model.tessellations {
+        for item in ctx.admit_iter(
+            ir.model.tessellations.as_slice(),
+            "presentation tessellation identity source scan",
+        )? {
             add(item.id.as_str(), ())?;
         }
         Ok(())
@@ -188,6 +222,7 @@ pub(super) fn check_presentation(
 
 #[cfg(test)]
 mod tests {
+    use crate::index::ModelIndex;
     #[test]
     fn presentation_typed_indexes_preserve_resource_refusals_and_release_storage() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -198,8 +233,7 @@ mod tests {
             crate::features::FinitePoint3::ZERO,
             None,
         ));
-        let source = cadmpeg_test_support::service_decode_context();
-        let ids = super::BorrowedIdentities::build(&source, |_| Ok(())).unwrap();
+        let ids = ModelIndex::build(&ir, crate::index::StandardIndex);
         for dimension in [
             ResourceDimension::MaterializedBytes,
             ResourceDimension::CollectionItems,

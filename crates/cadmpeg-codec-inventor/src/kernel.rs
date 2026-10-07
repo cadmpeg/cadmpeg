@@ -83,13 +83,13 @@ fn parse_kernel_header(
             "Inventor ACIS carrier has no parseable header",
         ),
     };
-    if parsed.is_none() {
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(absent.len()),
+    match parsed {
+        Some(header) => Ok(Ok(header)),
+        None => Ok(Err(ctx.copy_retained_text(
+            absent,
             "retain Inventor absent kernel header detail",
-        )?;
+        )?)),
     }
-    Ok(parsed.ok_or_else(|| absent.to_owned()))
 }
 
 fn copy_kernel_header(
@@ -158,17 +158,13 @@ pub(crate) fn decode_kernel_carrier(
             ))
         })
     })?;
-    ctx.charge_formatted_retained(
+    let stream = ctx.format_retained(
         format_args!(
             "RSeStorage/B{}:record:{}",
             carrier.segment_token, carrier.record_ordinal
         ),
         "retain Inventor kernel carrier stream name",
     )?;
-    let stream = format!(
-        "RSeStorage/B{}:record:{}",
-        carrier.segment_token, carrier.record_ordinal
-    );
     let brep = decode_with_header(
         ctx,
         &records,
@@ -262,11 +258,11 @@ pub(crate) fn select_active_carrier<'a>(
         Ok(carrier) => Ok(ActiveCarrierState::Selected(carrier)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            ctx.charge_formatted_retained(
+            let detail = ctx.format_retained(
                 format_args!("{error}"),
                 "retain Inventor carrier unavailable detail",
             )?;
-            Ok(ActiveCarrierState::Unavailable(error.to_string()))
+            Ok(ActiveCarrierState::Unavailable(detail))
         }
     }
 }
