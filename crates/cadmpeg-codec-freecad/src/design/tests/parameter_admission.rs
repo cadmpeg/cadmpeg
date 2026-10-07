@@ -66,7 +66,7 @@ fn design_parameter_candidates_refuse_at_collection_limit() {
 }
 
 #[test]
-fn design_qualified_parameter_name_refuses_at_retained_limit() {
+fn design_qualified_parameter_name_refuses_at_materialized_limit() {
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#Feature".into(),
@@ -99,14 +99,16 @@ fn design_qualified_parameter_name_refuses_at_retained_limit() {
         pmi: None,
         native_ref: None,
     };
-    crate::test_support::assert_retained_refusal_at(&[], "fcstd qualified candidate name", |ctx| {
-        super::super::bind_parameter_dependencies(
-            ctx,
-            &mut vec![parameter.clone()],
-            std::slice::from_ref(&object),
-            &std::collections::BTreeSet::default(),
-        )
-    });
+    let _error =
+        crate::test_support::materialized_refusal_at("fcstd qualified candidate name", |ctx| {
+            super::super::bind_parameter_dependencies(
+                ctx,
+                &mut vec![parameter.clone()],
+                std::slice::from_ref(&object),
+                &std::collections::BTreeSet::default(),
+            )
+            .map(|(features, _storage)| features)
+        });
 }
 
 fn parameter_dependency_fixture(
@@ -190,6 +192,7 @@ fn design_parameter_dependency_stages_refuse_at_collection_limits() {
                 std::slice::from_ref(&object),
                 &std::collections::BTreeSet::default(),
             )
+            .map(|(features, _storage)| features)
         });
     }
 }
@@ -204,5 +207,6 @@ fn design_parameter_cycle_owners_refuse_at_collection_limit() {
             std::slice::from_ref(&object),
             &std::collections::BTreeSet::default(),
         )
+        .map(|(features, _storage)| features)
     });
 }

@@ -146,6 +146,7 @@ fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
                 std::slice::from_ref(&consumer),
                 &properties_by_owner,
             )
+            .map(|seeds| seeds.map(|(seeds, _storage)| seeds))
         },
     );
     crate::test_support::assert_retained_refusal_at(
@@ -159,6 +160,7 @@ fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
                 std::slice::from_ref(&consumer),
                 &properties_by_owner,
             )
+            .map(|seeds| seeds.map(|(seeds, _storage)| seeds))
         },
     );
 }
@@ -1704,11 +1706,21 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
 fn audit_regression_distinct_tiny_pattern_steps_stay_explicit() {
     let finite = |value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
     assert_eq!(
-        crate::design::uniform_step(&[finite(0.), finite(1e-16), finite(3e-16)]),
+        crate::test_support::with_service_context(&[], |ctx| crate::design::uniform_step(
+            ctx,
+            &[finite(0.), finite(1e-16), finite(3e-16)],
+            "test spacing"
+        )
+        .expect("spacing admission")),
         None
     );
     assert_eq!(
-        crate::design::uniform_step(&[finite(0.), finite(1e-16), finite(2e-16)]),
+        crate::test_support::with_service_context(&[], |ctx| crate::design::uniform_step(
+            ctx,
+            &[finite(0.), finite(1e-16), finite(2e-16)],
+            "test spacing"
+        )
+        .expect("spacing admission")),
         Some(finite(1e-16))
     );
 }
