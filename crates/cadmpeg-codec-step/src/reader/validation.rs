@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometric validation-property decoding and mesh self-checks.
 
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -30,12 +30,12 @@ pub(super) fn decode(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
-    if !exchange.has_entity("PROPERTY_DEFINITION")
-        || !exchange.has_entity("PROPERTY_DEFINITION_REPRESENTATION")
+    if !exchange.has_entity(ctx, "PROPERTY_DEFINITION")?
+        || !exchange.has_entity(ctx, "PROPERTY_DEFINITION_REPRESENTATION")?
     {
         return Ok(StageOutcome {
             value: (),
-            claims: HashSet::new(),
+            claims: BTreeSet::new(),
             notes: Vec::new(),
             losses: Vec::new(),
         });
@@ -110,7 +110,7 @@ pub(super) fn decode(
         }
     }
     let computed = mesh_properties(ir, ctx)?;
-    let mut typed = HashSet::new();
+    let mut typed = BTreeSet::new();
     let mut validation_points = BTreeSet::new();
     let mut validation_representations = BTreeSet::new();
     let mut notes = Vec::new();
@@ -158,7 +158,7 @@ pub(super) fn decode(
                 ctx.insert_btree_set(&mut validation_points, item_id, "step_validation_points")?;
             }
             for id in [property_id, relation_id, representation_id, item_id] {
-                ctx.insert_hash_set(&mut typed, id, "step_validation_claims")?;
+                ctx.insert_btree_set(&mut typed, id, "step_validation_claims")?;
             }
             if let Some(unit) = measure_unit(ctx, item)? {
                 collect_unit_records(unit, exchange, &mut typed, ctx)?;
@@ -386,10 +386,10 @@ fn derived_unit_elements<'a>(ctx: &DecodeContext<'_>, record: &'a RawRecord) -> 
 fn collect_unit_records(
     id: u64,
     exchange: &Exchange,
-    typed: &mut HashSet<u64>,
+    typed: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.insert_hash_set(typed, id, "step_validation_claims")?;
+    ctx.insert_btree_set(typed, id, "step_validation_claims")?;
     let Some(record) = exchange.records().get(&id) else {
         return Ok(());
     };
@@ -397,7 +397,7 @@ fn collect_unit_records(
         return Ok(());
     };
     for element in elements.iter().filter_map(ValueExt::reference) {
-        ctx.insert_hash_set(typed, element, "step_validation_claims")?;
+        ctx.insert_btree_set(typed, element, "step_validation_claims")?;
         if let Some(base) = exchange
             .records()
             .get(&element)
@@ -405,7 +405,7 @@ fn collect_unit_records(
             .and_then(|record| record.parameters.first())
             .and_then(ValueExt::reference)
         {
-            ctx.insert_hash_set(typed, base, "step_validation_claims")?;
+            ctx.insert_btree_set(typed, base, "step_validation_claims")?;
         }
     }
     Ok(())

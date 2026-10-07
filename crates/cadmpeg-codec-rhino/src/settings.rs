@@ -2872,21 +2872,13 @@ pub(crate) fn parse_metadata(
             }
         }
     }
-    let mut layer_index_counts = Vec::<(i32, usize)>::new();
-    let mut index_workspace = ctx.reserve_scoped(0, "Rhino layer index workspace")?;
-    for layer in ctx.admit_iter(&(metadata.layers)[..], "Rhino parse metadata traversal").map_err(cadmpeg_core::CodecError::from)? {
-        match layer_index_counts.binary_search_by_key(&layer.index, |(index, _)| *index) {
-            Ok(position) => layer_index_counts[position].1 += 1,
-            Err(position) => {
-                index_workspace.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(i32, usize)>(),
-                ))?;
-                ctx.reserve_vec(&mut layer_index_counts, 1, "Rhino layer index counts")?;
-                layer_index_counts.insert(position, (layer.index, 1));
-            }
-        }
-    }
-    for (index, count) in layer_index_counts {
+    let (layer_index_counts, _layer_index_workspace) = index_occurrences(
+        ctx,
+        &metadata.layers,
+        |layer| layer.index,
+        "Rhino layer index counts",
+    )?;
+    for &(index, count) in ctx.admit_iter(&layer_index_counts, "Rhino layer index count traversal")? {
         if count > 1 {
             warnings.push_coded_admitted(ctx,
                 crate::loss::RhinoLossCode::DuplicateRecordResolved,
@@ -2899,6 +2891,37 @@ pub(crate) fn parse_metadata(
     metadata.opaque_records = opaque_records;
     report_layer_parent_references(ctx, &metadata.layers, warnings)?;
     Ok(metadata)
+}
+
+/// Counts how often each table index occurs, in ascending index order.
+///
+/// The indexes are copied into scoped storage, sorted once, and each run of
+/// equal indexes is folded into one `(index, count)` entry in place, so the
+/// work is one sort and two linear passes whatever order the indexes arrive in.
+pub(crate) fn index_occurrences<'ctx, T>(
+    ctx: &'ctx DecodeContext<'_>,
+    records: &[T],
+    index_of: impl Fn(&T) -> i32,
+    operation: &'static str,
+) -> Result<(Vec<(i32, usize)>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+    let (mut occurrences, workspace) = ctx.temporary_vec::<(i32, usize)>(records.len(), operation)?;
+    for record in ctx.admit_iter(records, operation)? {
+        occurrences.push((index_of(record), 1));
+    }
+    ctx.sort_unstable_by_key(&mut occurrences, |&(index, _)| index, Ord::cmp, operation)?;
+    let mut runs = 0_usize;
+    for read in ctx.admit_iter(0..occurrences.len(), operation)? {
+        let index = occurrences[read].0;
+        match runs.checked_sub(1).and_then(|last| occurrences.get_mut(last)) {
+            Some(run) if run.0 == index => run.1 += 1,
+            _ => {
+                occurrences[runs] = (index, 1);
+                runs += 1;
+            }
+        }
+    }
+    ctx.truncate_vec(&mut occurrences, runs, operation)?;
+    Ok((occurrences, workspace))
 }
 
 fn report_layer_parent_references(

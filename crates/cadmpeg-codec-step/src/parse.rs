@@ -6,7 +6,7 @@
 //! producer, represented by its own diagnostic kind, and rejectable by strict
 //! decode policy. Ambiguous records and duplicate names remain parse errors.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::mem::size_of;
 use std::num::NonZeroUsize;
@@ -298,7 +298,7 @@ pub(crate) struct Exchange {
 }
 
 #[derive(Debug, Clone, Default)]
-struct EntityIndex(Arc<HashMap<String, Vec<u64>>>);
+struct EntityIndex(Arc<BTreeMap<String, Vec<u64>>>);
 
 impl PartialEq for EntityIndex {
     fn eq(&self, _other: &Self) -> bool {
@@ -311,16 +311,20 @@ impl EntityIndex {
         records: &BTreeMap<u64, RawRecord>,
         budget: &DecodeContext<'_>,
     ) -> Result<Self, ParseError> {
-        let mut index = HashMap::<String, Vec<u64>>::new();
+        let mut index = BTreeMap::<String, Vec<u64>>::new();
         for (&id, record) in budget.admit_iter(records, "STEP build traversal").map_err(cadmpeg_core::CodecError::from)? {
             for partial in budget.admit_iter(&(record.partials)[..], "STEP build traversal").map_err(cadmpeg_core::CodecError::from)? {
-                if let Some(ids) = index.get_mut(partial.name.as_str()) {
+                if let Some(ids) = budget.get_mut_btree_map(
+                    &mut index,
+                    partial.name.as_str(),
+                    "step_entity_index_lookup",
+                )? {
                     budget.push_vec(ids, id, "step_entity_index_ids")?;
                 } else {
                     let name = budget
                         .copy_retained_text(&partial.name, "step_entity_index_name_storage")?;
                     let ids = budget.collect_vec([id], "step_entity_index_ids")?;
-                    budget.insert_hash_map(&mut index, name, ids, "step_entity_index_names")?;
+                    budget.insert_btree_map(&mut index, name, ids, "step_entity_index_names")?;
                 }
             }
         }
@@ -428,16 +432,16 @@ impl Exchange {
     }
 
     // The record graph is immutable while its charged name index exists.
-    fn entity_ids(&self) -> &HashMap<String, Vec<u64>> {
+    fn entity_ids(&self) -> &BTreeMap<String, Vec<u64>> {
         &self.entity_ids.0
     }
 
-    pub(crate) fn has_entity(&self, name: &str) -> bool {
-        self.entity_ids().contains_key(name)
+    pub(crate) fn has_entity(&self, ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
+        ctx.contains_key_btree_map(self.entity_ids(), name, "STEP entity name lookup")
     }
 
     pub(crate) fn has_entity_matching(&self, ctx: &DecodeContext<'_>, matches: impl Fn(&str) -> bool) -> Result<bool, CodecError> {
-        Ok(ctx.admit_iter(self.entity_ids(), "STEP entity name index traversal")?.any(|(name, _)| matches(name)))
+        ctx.any_by(self.entity_ids().keys(), |name| Ok(matches(name)), "STEP entity name index search")
     }
 
     pub(crate) fn matching_entity_ids<'a>(
@@ -454,7 +458,9 @@ impl Exchange {
     }
 
     pub(crate) fn entities<'a>(&'a self, ctx: &DecodeContext<'_>, name: &str) -> Result<impl Iterator<Item = (u64, &'a RawRecord)> + 'a, CodecError> {
-        let ids = self.entity_ids().get(name).map_or(&[][..], Vec::as_slice);
+        let ids = ctx
+            .get_btree_map(self.entity_ids(), name, "STEP entity name lookup")?
+            .map_or(&[][..], Vec::as_slice);
         Ok(ctx.admit_iter(ids, "STEP indexed entity identifier traversal")?
             .map(|id| (*id, &self.records[id])))
     }

@@ -2,7 +2,7 @@
 //! STEP product prototypes, occurrence identity, and relative placement.
 
 use crate::ids::{key_word, kind};
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use super::{named_parameter, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -83,7 +83,7 @@ pub(super) fn decode(
     ctx: &DecodeContext<'_>,
     admitted_ir_entities: &mut u64,
 ) -> Result<StageOutcome<ProductData>, CodecError> {
-    let mut typed = HashSet::new();
+    let mut typed = BTreeSet::new();
     let mut losses = Vec::new();
     let mut formations = BTreeMap::new();
     for entity in exchange.entities_any(ctx, PRODUCT_DEFINITION_FORMATION_TYPES)? {
@@ -373,7 +373,7 @@ pub(super) fn decode(
             ctx.reserve_vec(grouped, 1, "step_product_source_group_members")?;
             grouped.push(product_definition_id);
         }
-        ctx.insert_hash_set(&mut typed, step_id, "step_product_typed_claims")?;
+        ctx.insert_btree_set(&mut typed, step_id, "step_product_typed_claims")?;
     }
     let mut product_definition_ids_by_shape = BTreeMap::new();
     for (shape_id, record) in exchange.entities(ctx, "PRODUCT_DEFINITION_SHAPE")? {
@@ -394,7 +394,7 @@ pub(super) fn decode(
         );
     }
     for id in ctx.admit_iter(&(formations), "STEP decode map traversal").map_err(cadmpeg_core::CodecError::from)?.map(|(key, _)| key).chain(ctx.admit_iter(&definitions, "STEP decode chain traversal")?.map(|(key, _)| key)) {
-        ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims")?;
+        ctx.insert_btree_set(&mut typed, *id, "step_product_typed_claims")?;
     }
 
     let mut usages = BTreeMap::new();
@@ -723,7 +723,7 @@ pub(super) fn decode(
                 (usage.child_definition, id),
                 "step_pending_occurrence",
             )?;
-            ctx.insert_hash_set(&mut typed, usage_id, "step_product_typed_claims")?;
+            ctx.insert_btree_set(&mut typed, usage_id, "step_product_typed_claims")?;
         }
     }
     if !had_roots && !usages.is_empty() {
@@ -777,13 +777,13 @@ pub(super) fn decode(
                 .partial(ctx, "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")?
                 .is_some()
         {
-            ctx.insert_hash_set(&mut typed, id, "step_product_typed_claims")?;
+            ctx.insert_btree_set(&mut typed, id, "step_product_typed_claims")?;
         }
     }
     for (&usage_id, source_ids) in ctx.admit_iter(&ambiguous_placements, "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
-        typed.remove(&usage_id);
-        for &source_id in source_ids {
-            typed.remove(&source_id);
+        ctx.remove_btree_set(&mut typed, &usage_id, "step_product_typed_claims")?;
+        for source_id in ctx.admit_iter(source_ids, "step_product_typed_claims")? {
+            ctx.remove_btree_set(&mut typed, source_id, "step_product_typed_claims")?;
         }
     }
     Ok(StageOutcome {

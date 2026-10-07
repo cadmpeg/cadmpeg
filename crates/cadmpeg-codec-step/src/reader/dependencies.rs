@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! External document and source dependency decoding.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -78,7 +78,7 @@ pub(super) fn decode(
             }
         }
     }
-    let mut typed = HashSet::new();
+    let mut typed = BTreeSet::new();
     let mut notes = BTreeSet::new();
 
     for (&id, record) in ctx.admit_iter(exchange.records(), "STEP decode traversal").map_err(cadmpeg_core::CodecError::from)? {
@@ -110,10 +110,10 @@ pub(super) fn decode(
                 document_note(identifier, name, &source, ctx)?,
                 "step_dependency_note_set",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
-            ctx.insert_hash_set(&mut typed, document_id, "step_dependency_claims")?;
+            ctx.insert_btree_set(&mut typed, id, "step_dependency_claims")?;
+            ctx.insert_btree_set(&mut typed, document_id, "step_dependency_claims")?;
             if let Some(kind) = kind {
-                ctx.insert_hash_set(&mut typed, *kind, "step_dependency_claims")?;
+                ctx.insert_btree_set(&mut typed, *kind, "step_dependency_claims")?;
             }
         }
         if let Some(partial) = record.partial(ctx, "EXTERNALLY_DEFINED_ITEM")? {
@@ -139,8 +139,8 @@ pub(super) fn decode(
                 )?,
                 "step_dependency_note_set",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
-            ctx.insert_hash_set(&mut typed, source_id, "step_dependency_claims")?;
+            ctx.insert_btree_set(&mut typed, id, "step_dependency_claims")?;
+            ctx.insert_btree_set(&mut typed, source_id, "step_dependency_claims")?;
         }
     }
 

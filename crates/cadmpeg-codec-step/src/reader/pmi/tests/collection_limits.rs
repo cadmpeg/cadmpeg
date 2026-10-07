@@ -2,7 +2,6 @@
 //! Collection admissions in the STEP PMI reader.
 
 use std::collections::BTreeMap;
-use std::collections::HashSet;
 use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -313,7 +312,7 @@ fn pmi_datum_modifier_text_refuses_retained_limit() {
     };
     let value = crate::parse::Value::Enumeration("ABC".into());
     assert!(matches!(
-        super::super::modifier_text(&value, &exchange, &mut HashSet::new(), &mut measurements, &ctx),
+        super::super::modifier_text(&value, &exchange, &mut std::collections::BTreeSet::new(), &mut measurements, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_pmi_datum_modifier_text"
@@ -358,7 +357,7 @@ fn datum_reference_refuses(records: &str, operation: &str) {
             losses: &mut losses,
         };
         matches!(
-            super::super::datum_references_for_compartment(&crate::parse::Value::Reference(1), NonZeroU32::new(1).expect("positive precedence"), &exchange, &annotations, &mut HashSet::new(), &mut measurements, &ctx),
+            super::super::datum_references_for_compartment(&crate::parse::Value::Reference(1), NonZeroU32::new(1).expect("positive precedence"), &exchange, &annotations, &mut std::collections::BTreeSet::new(), &mut measurements, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation

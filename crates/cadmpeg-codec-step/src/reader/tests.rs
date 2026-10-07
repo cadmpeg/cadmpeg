@@ -1430,7 +1430,7 @@ fn stage_claims_refuse_collection_limit() {
         "step_stage_claims",
         || super::StageOutcome {
             value: (),
-            claims: HashSet::from([1]),
+            claims: std::collections::BTreeSet::from([1]),
             losses: Vec::new(),
             notes: Vec::new(),
         }
@@ -1443,7 +1443,7 @@ fn stage_losses_refuse_collection_limit() {
         "step_stage_losses",
         || super::StageOutcome {
             value: (),
-            claims: HashSet::new(),
+            claims: std::collections::BTreeSet::new(),
             losses: vec![StepLossCode::DecodeWarning.note("test")],
             notes: Vec::new(),
         }
@@ -1456,7 +1456,7 @@ fn stage_notes_refuse_collection_limit() {
         "step_stage_notes",
         || super::StageOutcome {
             value: (),
-            claims: HashSet::new(),
+            claims: std::collections::BTreeSet::new(),
             losses: Vec::new(),
             notes: vec!["stage note".into()],
         }

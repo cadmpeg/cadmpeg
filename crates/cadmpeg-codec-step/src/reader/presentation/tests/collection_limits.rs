@@ -75,7 +75,7 @@ fn style_target_refuses(operation: &str, depth_limit: bool) {
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits style target policy");
         matches!(
-            super::super::expand_style_targets(1, &exchange, &mut HashSet::new(), &mut BTreeSet::new(), 0, 128, &ctx),
+            super::super::expand_style_targets(1, &exchange, &mut std::collections::BTreeSet::new(), &mut BTreeSet::new(), 0, 128, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.operation == operation
                     && refusal.dimension == if depth_limit { ResourceDimension::RecursionDepth } else { ResourceDimension::CollectionItems }

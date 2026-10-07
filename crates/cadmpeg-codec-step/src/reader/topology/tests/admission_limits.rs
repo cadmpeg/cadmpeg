@@ -181,7 +181,7 @@ fn built_outcome_refuses_collection_limit() {
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let mut outcome = super::super::BuildOutcome::Built(Vec::new());
     let built = super::super::Built {
-        typed: std::collections::HashSet::new(),
+        typed: std::collections::BTreeSet::new(),
         draft: cadmpeg_ir::draft::ModelDraft::new(),
         body_id: body_id(),
         shell_sources: std::collections::BTreeSet::new(),
@@ -445,7 +445,7 @@ fn shell_definition_typed_copy_refuses_collection_limit() {
     let definition = super::super::ShellDef {
         base: 1,
         forward: true,
-        typed: std::collections::HashSet::from([2]),
+        typed: std::collections::BTreeSet::from([2]),
     };
     assert!(matches!(super::super::copy_shell_def(&definition, &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -463,11 +463,11 @@ fn shell_definition_claims_refuse_collection_limit() {
     let definition = super::super::ShellDef {
         base: 1,
         forward: true,
-        typed: std::collections::HashSet::from([2]),
+        typed: std::collections::BTreeSet::from([2]),
     };
     let shells = BTreeMap::from([(1, definition)]);
     assert!(
-        matches!(super::super::shell_def_for(1, &shells, &mut std::collections::HashSet::new(), &ctx),
+        matches!(super::super::shell_def_for(1, &shells, &mut std::collections::BTreeSet::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_shell_definition_claims")
@@ -509,7 +509,7 @@ fn topology_root_refusal(collection_limit: u64, include_distinct: bool) -> Codec
         super::super::ShellDef {
             base: 1,
             forward: true,
-            typed: std::collections::HashSet::new(),
+            typed: std::collections::BTreeSet::new(),
         },
     )]);
     let key = super::super::root_key(root, &exchange, &shells, &ctx)
@@ -631,7 +631,7 @@ fn staged_topology_refusal(
         .collect();
     super::super::staged_topology(
         super::super::StagedTopologyParts {
-            typed: std::collections::HashSet::new(),
+            typed: std::collections::BTreeSet::new(),
             vertices: Vec::new(),
             edges: Vec::new(),
             coedges: Vec::new(),
@@ -717,7 +717,7 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
         super::super::ShellDef {
             base: 1,
             forward: true,
-            typed: std::collections::HashSet::new(),
+            typed: std::collections::BTreeSet::new(),
         },
     )]);
     let region =

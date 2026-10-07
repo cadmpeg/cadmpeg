@@ -433,7 +433,7 @@ pub(super) fn decode(
     let angle_scale = angle_scale.get();
     let source_curve_parameter_scales =
         resolve_source_curve_parameter_scales(exchange, &unit_scales, ctx)?;
-    let mut typed = HashSet::new();
+    let mut typed = BTreeSet::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
     let mut apll_point_names = BTreeMap::new();
@@ -535,10 +535,10 @@ pub(super) fn decode(
                     named_coordinates(ctx, record, "CARTESIAN_POINT", 1, record_scale)?
                 {
                     ctx.insert_btree_map(&mut points, id, position, "step_geometry_points")?;
-                    ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+                    ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
                 } else if let Some(position) = named_coordinates2(ctx, record, "CARTESIAN_POINT", 1)? {
                     ctx.insert_btree_map(&mut points2, id, position, "step_geometry_points2")?;
-                    ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+                    ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
                 } else {
                     ctx.push_vec(
                         &mut losses,
@@ -558,7 +558,7 @@ pub(super) fn decode(
                         direction,
                         "step_geometry_directions",
                     )?;
-                    ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+                    ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
                 } else if let Some(direction) = direction2(named_parameter(ctx, record, "DIRECTION", 1)?)
                 {
                     ctx.insert_btree_map(
@@ -567,7 +567,7 @@ pub(super) fn decode(
                         direction,
                         "step_geometry_directions2",
                     )?;
-                    ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+                    ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
                 } else {
                     ctx.push_vec(
                         &mut losses,
@@ -697,10 +697,10 @@ pub(super) fn decode(
                 });
             if let Some(value) = value {
                 ctx.insert_btree_map(&mut vectors, id, value, "step_geometry_vectors")?;
-                ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+                ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
             } else if let Some(value) = value2 {
                 ctx.insert_btree_map(&mut vectors2, id, value, "step_geometry_vectors2")?;
-                ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+                ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
             } else {
                 ctx.push_vec(
                     &mut losses,
@@ -750,7 +750,7 @@ pub(super) fn decode(
             }
             if let Some(placement) = placement {
                 ctx.insert_btree_map(&mut placements, id, placement, "step_geometry_placements")?;
-                ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+                ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
             } else {
                 ctx.push_vec(
                     &mut losses,
@@ -770,7 +770,7 @@ pub(super) fn decode(
                 transform,
                 "step_geometry_transformation_operators",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
             ctx.push_vec(
                 &mut losses,
@@ -792,7 +792,7 @@ pub(super) fn decode(
                 transform,
                 "step_geometry_transformation_operators2",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
             ctx.push_vec(
                 &mut losses,
@@ -816,7 +816,7 @@ pub(super) fn decode(
         } else { None };
         if let Some(placement) = placement {
             ctx.insert_btree_map(&mut placements2, id, placement, "step_geometry_placements2")?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
             ctx.push_vec(
                 &mut losses,
@@ -1034,7 +1034,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_curves",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
             ctx.push_vec(
                 &mut losses,
@@ -1061,7 +1061,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_curves",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
             ctx.push_vec(
                 &mut losses,
@@ -1182,8 +1182,8 @@ pub(super) fn decode(
                     "step_geometry_curve_parameter_offsets",
                 )?;
             }
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
-            ctx.insert_hash_set(&mut typed, operator_step, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, operator_step, "step_geometry_typed_ids")?;
             wake_deferred_dependents(
                 id,
                 &mut waiting_on,
@@ -1324,7 +1324,7 @@ pub(super) fn decode(
                     "step_geometry_curve_parameter_offsets",
                 )?;
             }
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
             wake_deferred_dependents(
                 id,
                 &mut waiting_on,
@@ -1360,7 +1360,7 @@ pub(super) fn decode(
             };
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             for &(segment, _) in &segments {
-                ctx.insert_hash_set(&mut typed, segment, "step_geometry_typed_ids")?;
+                ctx.insert_btree_set(&mut typed, segment, "step_geometry_typed_ids")?;
             }
             let mut model_segments = Vec::new();
             for (_, segment) in segments {
@@ -1402,7 +1402,7 @@ pub(super) fn decode(
                 curve_index,
                 "step_geometry_curve_index",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
             wake_deferred_dependents(
                 id,
                 &mut waiting_on,
@@ -1506,7 +1506,7 @@ pub(super) fn decode(
                 "step_geometry_curve_parameter_offsets",
             )?;
         }
-        ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+        ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         wake_deferred_dependents(
             id,
             &mut waiting_on,
@@ -1646,7 +1646,7 @@ pub(super) fn decode(
             continue;
         };
         if carrier_index.curves.contains_key(&basis) {
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
             ctx.push_vec(
                 &mut losses,
@@ -1743,7 +1743,7 @@ pub(super) fn decode(
                 None,
             ),
         )?;
-        ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+        ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
     }
 
     for entity in exchange.entities_any(ctx, LeafSurfaceEntity::NAMES)? {
@@ -1849,7 +1849,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
             ctx.push_vec(
                 &mut losses,
@@ -1875,7 +1875,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         } else {
             ctx.push_vec(
                 &mut losses,
@@ -2067,7 +2067,7 @@ pub(super) fn decode(
                 SurfaceIndex(ir.model.surfaces.len() - 1),
                 "step_geometry_surface_index",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
             true
         } else if record.partial(ctx, "CURVE_BOUNDED_SURFACE")?.is_some() {
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
@@ -2172,7 +2172,7 @@ pub(super) fn decode(
                 surface_index,
                 "step_geometry_surface_index",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
             true
         } else if record.partial(ctx, "OFFSET_SURFACE")?.is_some() {
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
@@ -2231,7 +2231,7 @@ pub(super) fn decode(
                 surface_index,
                 "step_geometry_surface_index",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
             true
         } else if record.partial(ctx, "SURFACE_REPLICA")?.is_some() {
             let Some(parent_step) =
@@ -2309,8 +2309,8 @@ pub(super) fn decode(
                 surface_index,
                 "step_geometry_surface_index",
             )?;
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
-            ctx.insert_hash_set(&mut typed, operator_step, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, operator_step, "step_geometry_typed_ids")?;
             true
         } else {
             false
@@ -2589,15 +2589,15 @@ pub(super) fn decode(
             },
             "step_geometry_ir_pcurves",
         )?;
-        ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+        ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         if let Some(representation) =
             named_parameter(ctx, record, "PCURVE", 2)?.and_then(Value::reference)
         {
-            ctx.insert_hash_set(&mut typed, representation, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, representation, "step_geometry_typed_ids")?;
         }
-        ctx.insert_hash_set(&mut typed, curve_step, "step_geometry_typed_ids")?;
+        ctx.insert_btree_set(&mut typed, curve_step, "step_geometry_typed_ids")?;
         for &record in geometry_records {
-            ctx.insert_hash_set(&mut typed, record, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, record, "step_geometry_typed_ids")?;
         }
     }
 
@@ -2674,7 +2674,7 @@ pub(super) fn decode(
             )
         }) || entity_type(ctx, record, &["SHAPE_REPRESENTATION"])?.is_some()
         {
-            ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids")?;
         }
     }
     Ok(StageOutcome {
@@ -2693,7 +2693,7 @@ fn decode_tessellated_curve_sets(
     exchange: &Exchange,
     unit_scales: &UnitScales,
     ir: &mut CadIr,
-    typed: &mut HashSet<u64>,
+    typed: &mut BTreeSet<u64>,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
@@ -2801,7 +2801,7 @@ fn decode_tessellated_curve_sets(
             )?;
         }
         for source_id in [id, coordinates_id] {
-            ctx.insert_hash_set(typed, source_id, "step_geometry_typed_ids")?;
+            ctx.insert_btree_set(typed, source_id, "step_geometry_typed_ids")?;
         }
     }
     Ok(())
