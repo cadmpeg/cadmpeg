@@ -948,22 +948,24 @@ impl<'a> DecodeContext<'a> {
                     crate::mesh::MeshDecodeOptions {
                         writer_version: self.scan.metadata.properties.writer_version,
                         association: Some(self.source_association(identity)?),
-                        id: crate::mesh::MeshId::Ready(
-                            cadmpeg_ir::tessellation::TessellationId::mint(
-                                self.expand.ctx().format_retained(
-                                    format_args!("rhino:object:tessellation#{key}"),
-                                    "Rhino decode_geometry text",
-                                )?,
-                            )
-                            .or_else(|error| {
-                                Err(cadmpeg_core::CodecError::Malformed(
-                                    self.expand.ctx().format_retained(
-                                        format_args!("{}", error),
-                                        "Rhino decode_geometry text",
-                                    )?,
-                                ))
-                            })?,
-                        ),
+                        id: crate::mesh::MeshId::Ready({
+                            let ctx = self.expand.ctx();
+                            let id = ctx.format_retained(
+                                format_args!("rhino:object:tessellation#{key}"),
+                                "Rhino mesh tessellation identity",
+                            )?;
+                            ctx.charge_work(
+                                u64_from_index(id.len()),
+                                "Rhino mesh tessellation identity validation",
+                            )?;
+                            cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
+                                ctx.format_retained(
+                                    format_args!("{error}"),
+                                    "Rhino mesh tessellation identity error",
+                                )
+                                .map_or_else(std::convert::identity, cadmpeg_core::CodecError::Malformed)
+                            })?
+                        }),
                         scale,
                         userdata: &object.userdata,
                     },
@@ -4207,10 +4209,22 @@ impl<'a> DecodeContext<'a> {
                 )?);
             }
             for (index, mut mesh) in extrusion.meshes.into_iter().enumerate() {
-                mesh.tessellation.id = cadmpeg_ir::tessellation::TessellationId::mint(ctx.format_retained(format_args!(
-                    "rhino:object:tessellation#{key}.cache-{index}"
-                ), "Rhino commit_extrusion text")?)
-                .or_else(|error| Err(CandidateError::Admission(ctx.format_retained(format_args!("{}", error), "Rhino commit_extrusion text")?)))?;
+                let id = ctx.format_retained(
+                    format_args!("rhino:object:tessellation#{key}.cache-{index}"),
+                    "Rhino extrusion cache tessellation identity",
+                )?;
+                ctx.charge_work(
+                    u64_from_index(id.len()),
+                    "Rhino extrusion cache tessellation identity validation",
+                )?;
+                mesh.tessellation.id = cadmpeg_ir::tessellation::TessellationId::mint(id)
+                    .map_err(|error| {
+                        ctx.format_retained(
+                            format_args!("{error}"),
+                            "Rhino extrusion cache tessellation identity error",
+                        )
+                        .map_or_else(CandidateError::Codec, CandidateError::Admission)
+                    })?;
                 mesh.tessellation.source_object = Some(association.try_clone_for_decode(ctx, "Rhino source association copy")?);
                 annotate_derived(ctx, candidate_annotations, mesh.tessellation.id.as_str())?;
                 links.push(ctx.format_retained(format_args!("{}", mesh.tessellation.id), "Rhino commit_extrusion text")?);
