@@ -361,18 +361,13 @@ fn patch_instance_colors(
     patched: &mut std::collections::BTreeSet<String>,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, protein_view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        protein,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let ctx = &ctx;
-    let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, bytes)?;
-    let catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein_view)?;
+    let admission = cadmpeg_protein::admission::StandardAdmission;
+    let frames = cadmpeg_protein::framing::record_frames_admitted(admission, bytes)?;
+    let catalog = cadmpeg_protein::SchemaCatalog::load(admission, protein)?;
     let schema_driven = catalog.is_some();
     let decoded = if let Some(mut catalog) = catalog {
-        let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, frames.frames())?;
+        let outcome =
+            cadmpeg_protein::decode_frames_admitted(admission, &mut catalog, frames.frames())?;
         notes.extend(outcome.rejected.iter().map(|rejected| {
             format!(
                 "Protein record {} rejected: {}",
