@@ -380,7 +380,10 @@ fn optional_modifier<T>(
 ) -> Result<Option<T>, FramingError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino optional modifier output")?;
     match storage.with_storage(parse) {
-        Ok(value) => { storage.commit()?; Ok(Some(value)) },
+        Ok(value) => {
+            storage.commit()?;
+            Ok(Some(value))
+        }
         Err(error @ FramingError::Resource(_)) => Err(error),
         Err(error) => {
             warnings.push_admitted(
@@ -499,10 +502,12 @@ fn parse_xml_userdata<'ctx>(
                 ));
             }
             let raw = reader.take(length)?;
-            let text = ctx.validate_utf8(raw, "Rhino mesh modifier XML text")?
+            let text = ctx
+                .validate_utf8(raw, "Rhino mesh modifier XML text")?
                 .map_err(|_| FramingError::structural(length_offset, "XML payload is not UTF-8"))?;
             let mut reservation = ctx.reserve_scoped(0, "Rhino mesh modifier XML text")?;
-            let text = ctx.copy_scoped_text(text, &mut reservation, "Rhino mesh modifier XML text")?;
+            let text =
+                ctx.copy_scoped_text(text, &mut reservation, "Rhino mesh modifier XML text")?;
             (text, reservation)
         }
         version => {
@@ -554,7 +559,12 @@ fn parse_xml(
     let mut sub_items = Vec::new();
     let mut nodes = displacement.children();
     while let Some(node) = ctx.next_charged(&mut nodes, "Rhino displacement sub-items")? {
-        if node.is_element() && node.tag_name().name().eq_ignore_ascii_case(DISPLACEMENT_SUB) {
+        if node.is_element()
+            && node
+                .tag_name()
+                .name()
+                .eq_ignore_ascii_case(DISPLACEMENT_SUB)
+        {
             ctx.reserve_vec(&mut sub_items, 1, "Rhino displacement sub-items")?;
             sub_items.push(parse_sub_item(ctx, node)?);
         }
@@ -794,7 +804,11 @@ fn direct_child<'a, 'input>(
     parent: roxmltree::Node<'a, 'input>,
     name: &'static str,
 ) -> Result<Option<roxmltree::Node<'a, 'input>>, cadmpeg_core::CodecError> {
-    ctx.find_by(parent.children(), |node| Ok(node.is_element() && node.tag_name().name().eq_ignore_ascii_case(name)), "Rhino XML child search")
+    ctx.find_by(
+        parent.children(),
+        |node| Ok(node.is_element() && node.tag_name().name().eq_ignore_ascii_case(name)),
+        "Rhino XML child search",
+    )
 }
 
 fn typed_child<'a, 'input>(
@@ -816,7 +830,16 @@ fn attribute<'a>(
     node: roxmltree::Node<'a, '_>,
     name: &'static str,
 ) -> Result<Option<&'a str>, cadmpeg_core::CodecError> {
-    ctx.find_map(node.attributes(), |attribute| Ok(attribute.name().eq_ignore_ascii_case(name).then_some(attribute.value())), "Rhino XML attribute search")
+    ctx.find_map(
+        node.attributes(),
+        |attribute| {
+            Ok(attribute
+                .name()
+                .eq_ignore_ascii_case(name)
+                .then_some(attribute.value()))
+        },
+        "Rhino XML attribute search",
+    )
 }
 
 fn malformed_typed_field(
@@ -864,7 +887,14 @@ fn field_bool(
         }
     } else if kind.eq_ignore_ascii_case("bool") {
         parse_bool_text(text)
-    } else if kind.eq_ignore_ascii_case("int") || kind.eq_ignore_ascii_case("short") || kind.eq_ignore_ascii_case("char") || kind.eq_ignore_ascii_case("long") || kind.eq_ignore_ascii_case("float") || kind.eq_ignore_ascii_case("double") || kind.eq_ignore_ascii_case("real") {
+    } else if kind.eq_ignore_ascii_case("int")
+        || kind.eq_ignore_ascii_case("short")
+        || kind.eq_ignore_ascii_case("char")
+        || kind.eq_ignore_ascii_case("long")
+        || kind.eq_ignore_ascii_case("float")
+        || kind.eq_ignore_ascii_case("double")
+        || kind.eq_ignore_ascii_case("real")
+    {
         ctx.parse_text::<f64>(text, "Rhino field bool number parse")?
             .ok()
             .filter(|value| value.is_finite())
@@ -897,39 +927,43 @@ fn field_i32_optional(
         "Rhino field i32 optional text trim",
     )?;
     let kind = attribute(ctx, node, "type")?.unwrap_or_default();
-    let value =
-        if kind.eq_ignore_ascii_case("bool") {
-            parse_bool_text(text).map(i32::from)
-        } else if kind.eq_ignore_ascii_case("float") || kind.eq_ignore_ascii_case("double") || kind.eq_ignore_ascii_case("real") {
-            ctx.parse_text::<f64>(text, "Rhino field i32 optional number parse")?
-                .ok()
-                .and_then(|value| {
-                    if value.is_finite()
-                        && value >= f64::from(i32::MIN)
-                        && value < f64::from(i32::MAX) + 1.0
-                    {
-                        cadmpeg_core::convert::truncate_f64_to_i32(value)
-                    } else {
-                        None
-                    }
-                })
-        } else if kind.eq_ignore_ascii_case("string") {
-            if text.eq_ignore_ascii_case("true")
-                || text.eq_ignore_ascii_case("t")
-            {
-                Some(1)
-            } else if text.eq_ignore_ascii_case("false") || text.eq_ignore_ascii_case("f") {
-                Some(0)
-            } else {
-                ctx.parse_text::<i32>(text, "Rhino field i32 optional number parse")?
-                    .ok()
-            }
-        } else if kind.eq_ignore_ascii_case("int") || kind.eq_ignore_ascii_case("short") || kind.eq_ignore_ascii_case("char") || kind.eq_ignore_ascii_case("long") {
+    let value = if kind.eq_ignore_ascii_case("bool") {
+        parse_bool_text(text).map(i32::from)
+    } else if kind.eq_ignore_ascii_case("float")
+        || kind.eq_ignore_ascii_case("double")
+        || kind.eq_ignore_ascii_case("real")
+    {
+        ctx.parse_text::<f64>(text, "Rhino field i32 optional number parse")?
+            .ok()
+            .and_then(|value| {
+                if value.is_finite()
+                    && value >= f64::from(i32::MIN)
+                    && value < f64::from(i32::MAX) + 1.0
+                {
+                    cadmpeg_core::convert::truncate_f64_to_i32(value)
+                } else {
+                    None
+                }
+            })
+    } else if kind.eq_ignore_ascii_case("string") {
+        if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
+            Some(1)
+        } else if text.eq_ignore_ascii_case("false") || text.eq_ignore_ascii_case("f") {
+            Some(0)
+        } else {
             ctx.parse_text::<i32>(text, "Rhino field i32 optional number parse")?
                 .ok()
-        } else {
-            None
-        };
+        }
+    } else if kind.eq_ignore_ascii_case("int")
+        || kind.eq_ignore_ascii_case("short")
+        || kind.eq_ignore_ascii_case("char")
+        || kind.eq_ignore_ascii_case("long")
+    {
+        ctx.parse_text::<i32>(text, "Rhino field i32 optional number parse")?
+            .ok()
+    } else {
+        None
+    };
     value
         .map(Some)
         .map_or_else(|| Err(malformed_typed_field(ctx, name, kind)?), Ok)
@@ -949,7 +983,14 @@ fn field_f64(
     let kind = attribute(ctx, node, "type")?.unwrap_or_default();
     let value = if kind.eq_ignore_ascii_case("bool") {
         parse_bool_text(text).map(|value| f64::from(u8::from(value)))
-    } else if kind.eq_ignore_ascii_case("int") || kind.eq_ignore_ascii_case("short") || kind.eq_ignore_ascii_case("char") || kind.eq_ignore_ascii_case("long") || kind.eq_ignore_ascii_case("float") || kind.eq_ignore_ascii_case("double") || kind.eq_ignore_ascii_case("real") || kind.eq_ignore_ascii_case("string")
+    } else if kind.eq_ignore_ascii_case("int")
+        || kind.eq_ignore_ascii_case("short")
+        || kind.eq_ignore_ascii_case("char")
+        || kind.eq_ignore_ascii_case("long")
+        || kind.eq_ignore_ascii_case("float")
+        || kind.eq_ignore_ascii_case("double")
+        || kind.eq_ignore_ascii_case("real")
+        || kind.eq_ignore_ascii_case("string")
     {
         ctx.parse_text::<f64>(text, "Rhino field f64 number parse")?
             .ok()
@@ -970,15 +1011,16 @@ fn field_uuid(
         return Ok(None);
     };
     let kind = attribute(ctx, node, "type")?.unwrap_or_default();
-    if !(kind.eq_ignore_ascii_case("uuid")
-        || kind.eq_ignore_ascii_case("string"))
-    {
+    if !(kind.eq_ignore_ascii_case("uuid") || kind.eq_ignore_ascii_case("string")) {
         return Ok(None);
     }
-    Ok(parse_uuid(ctx, ctx.trim_text(
-        node.text().unwrap_or_default(),
-        "Rhino field uuid text trim",
-    )?)?
+    Ok(parse_uuid(
+        ctx,
+        ctx.trim_text(
+            node.text().unwrap_or_default(),
+            "Rhino field uuid text trim",
+        )?,
+    )?
     .filter(|uuid| !uuid.is_nil()))
 }
 
@@ -990,10 +1032,13 @@ fn field_uuid_untyped(
     let Some(node) = direct_child(ctx, parent, name)? else {
         return Ok(None);
     };
-    Ok(parse_uuid(ctx, ctx.trim_text(
-        node.text().unwrap_or_default(),
-        "Rhino field uuid untyped text trim",
-    )?)?
+    Ok(parse_uuid(
+        ctx,
+        ctx.trim_text(
+            node.text().unwrap_or_default(),
+            "Rhino field uuid untyped text trim",
+        )?,
+    )?
     .filter(|uuid| !uuid.is_nil()))
 }
 
@@ -1010,13 +1055,11 @@ fn field_bool_untyped(
         node.text().unwrap_or_default(),
         "Rhino field bool untyped text trim",
     )?;
-    Ok(
-        text.eq_ignore_ascii_case("true")
-            || text.eq_ignore_ascii_case("t")
-            || ctx
-                .parse_text::<i32>(text, "Rhino field bool untyped number parse")?
-                .is_ok_and(|value| value != 0),
-    )
+    Ok(text.eq_ignore_ascii_case("true")
+        || text.eq_ignore_ascii_case("t")
+        || ctx
+            .parse_text::<i32>(text, "Rhino field bool untyped number parse")?
+            .is_ok_and(|value| value != 0))
 }
 
 fn field_i32_untyped(
@@ -1032,9 +1075,7 @@ fn field_i32_untyped(
         node.text().unwrap_or_default(),
         "Rhino field i32 untyped text trim",
     )?;
-    if text.eq_ignore_ascii_case("true")
-        || text.eq_ignore_ascii_case("t")
-    {
+    if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
         Ok(1)
     } else {
         match ctx.parse_text::<f64>(text, "Rhino field i32 untyped number parse")? {
@@ -1102,23 +1143,39 @@ fn parse_uuid(
     value: &str,
 ) -> Result<Option<Uuid>, cadmpeg_core::CodecError> {
     let raw = value.as_bytes();
-    let Some(start) = ctx.position_by(raw, |byte| Ok(!matches!(byte, b'{' | b'}')), "Rhino XML UUID braces")? else {
+    let Some(start) = ctx.position_by(
+        raw,
+        |byte| Ok(!matches!(byte, b'{' | b'}')),
+        "Rhino XML UUID braces",
+    )?
+    else {
         return Ok(None);
     };
-    let Some(last) = ctx.rposition_by(&raw[start..], |byte| Ok(!matches!(byte, b'{' | b'}')), "Rhino XML UUID braces")? else { return Ok(None); };
+    let Some(last) = ctx.rposition_by(
+        &raw[start..],
+        |byte| Ok(!matches!(byte, b'{' | b'}')),
+        "Rhino XML UUID braces",
+    )?
+    else {
+        return Ok(None);
+    };
     let end = last + start + 1;
     let mut bytes = [0_u8; 16];
     let mut count = 0;
     let mut source = raw[start..end].iter();
     while let Some(byte) = ctx.next_charged(&mut source, "Rhino XML UUID digits")? {
-        if *byte == b'-' { continue; }
+        if *byte == b'-' {
+            continue;
+        }
         let digit = match *byte {
             b'0'..=b'9' => byte - b'0',
             b'a'..=b'f' => byte - b'a' + 10,
             b'A'..=b'F' => byte - b'A' + 10,
             _ => return Ok(None),
         };
-        if count == 32 { return Ok(None); }
+        if count == 32 {
+            return Ok(None);
+        }
         bytes[count / 2] |= if count % 2 == 0 { digit << 4 } else { digit };
         count += 1;
     }

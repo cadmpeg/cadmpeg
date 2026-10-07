@@ -239,7 +239,7 @@ impl MeshId {
                 )?)
                 .or_else(|error| {
                     Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("{}", error),
+                        format_args!("{error}"),
                         "Rhino into_tessellation_id text",
                     )?))
                 })
@@ -251,7 +251,7 @@ impl MeshId {
                 )?)
                 .or_else(|error| {
                     Err(CodecError::Malformed(ctx.format_retained(
-                        format_args!("{}", error),
+                        format_args!("{error}"),
                         "Rhino into_tessellation_id text",
                     )?))
                 })
@@ -351,10 +351,13 @@ pub(crate) fn decode(
             )?;
         }
     }
-    let mut vertex_storage = expand.ctx().reserve_scoped(0, "Rhino mesh source vertex scratch")?;
+    let mut vertex_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino mesh source vertex scratch")?;
     let mut _double_storage = None;
     let mut face_storage = expand.ctx().reserve_scoped(0, "Rhino mesh face scratch")?;
-    let faces = face_storage.with_storage(|| read_faces(expand.ctx(), &mut reader, vertex_count, face_count))?;
+    let faces = face_storage
+        .with_storage(|| read_faces(expand.ctx(), &mut reader, vertex_count, face_count))?;
     let mut ngon_count = 0;
     if major == 1 {
         read_raw_channels(
@@ -380,7 +383,9 @@ pub(crate) fn decode(
     }
     if major == 3 && minor >= 3 {
         let _mapping_id = uuid(&mut reader)?;
-        let mut surface_storage = expand.ctx().reserve_scoped(0, "Rhino mesh surface buffer scratch")?;
+        let mut surface_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino mesh surface buffer scratch")?;
         let surface = read_buffer(
             expand,
             &mut reader,
@@ -391,16 +396,24 @@ pub(crate) fn decode(
             &mut decoded.warnings,
             document_budget,
             archive,
-         Some(&mut surface_storage))?;
+            Some(&mut surface_storage),
+        )?;
         if let Some(bytes) = surface {
-            expand.ctx().reserve_vec(&mut decoded.channels, 1, "Rhino mesh channel entries")?;
+            expand
+                .ctx()
+                .reserve_vec(&mut decoded.channels, 1, "Rhino mesh channel entries")?;
             decoded.channels.push(channel(
                 expand.ctx(),
                 CHANNEL_SURFACE_PARAMETERS,
                 16,
                 match bytes {
-                    Cow::Owned(bytes) => { surface_storage.commit()?; bytes },
-                    Cow::Borrowed(bytes) => expand.ctx().copy_retained(bytes, "rhino_mesh_buffer")?,
+                    Cow::Owned(bytes) => {
+                        surface_storage.commit()?;
+                        bytes
+                    }
+                    Cow::Borrowed(bytes) => {
+                        expand.ctx().copy_retained(bytes, "rhino_mesh_buffer")?
+                    }
                 },
             )?);
         }
@@ -413,7 +426,10 @@ pub(crate) fn decode(
             for _ in 0..3 {
                 let value = reader.u8()?;
                 if value > 2 {
-                    decoded.warnings.push_admitted(expand.ctx(), format_args!("invalid mesh tri-state flag retained"))?;
+                    decoded.warnings.push_admitted(
+                        expand.ctx(),
+                        format_args!("invalid mesh tri-state flag retained"),
+                    )?;
                 }
             }
         }
@@ -431,7 +447,9 @@ pub(crate) fn decode(
     let mut double_vertices = None;
     if post_2006_fields {
         if minor >= 7 && reader.bool_with_writer_version(writer_version)? {
-            let mut buffer_storage = expand.ctx().reserve_scoped(0, "Rhino mesh double buffer scratch")?;
+            let mut buffer_storage = expand
+                .ctx()
+                .reserve_scoped(0, "Rhino mesh double buffer scratch")?;
             let (count, bytes) = read_double_chunk(
                 expand,
                 &mut reader,
@@ -443,15 +461,33 @@ pub(crate) fn decode(
             )?;
             if count == vertex_count {
                 if let Some(bytes) = bytes {
-                    let mut numeric_storage = expand.ctx().reserve_scoped(0, "Rhino mesh raw double scratch")?;
-                    let mut candidate_storage = expand.ctx().reserve_scoped(0, "Rhino mesh finite double scratch")?;
-                    let values = numeric_storage.with_storage(|| parse_f64_points(expand.ctx(), &bytes))?;
-                    let mut finite = candidate_storage.with_storage(|| expand.ctx().collection_vec(values.len(), "Rhino mesh admitted double vertices"))?;
-                    let valid = expand.ctx().all_by(&values, |point| {
-                        if let Some(point) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) {
-                            finite.push(point); Ok(true)
-                        } else { Ok(false) }
-                    }, "Rhino mesh double finite validation")?;
+                    let mut numeric_storage = expand
+                        .ctx()
+                        .reserve_scoped(0, "Rhino mesh raw double scratch")?;
+                    let mut candidate_storage = expand
+                        .ctx()
+                        .reserve_scoped(0, "Rhino mesh finite double scratch")?;
+                    let values =
+                        numeric_storage.with_storage(|| parse_f64_points(expand.ctx(), &bytes))?;
+                    let mut finite = candidate_storage.with_storage(|| {
+                        expand
+                            .ctx()
+                            .collection_vec(values.len(), "Rhino mesh admitted double vertices")
+                    })?;
+                    let valid = expand.ctx().all_by(
+                        &values,
+                        |point| {
+                            if let Some(point) =
+                                FinitePoint3::new(Point3::new(point[0], point[1], point[2]))
+                            {
+                                finite.push(point);
+                                Ok(true)
+                            } else {
+                                Ok(false)
+                            }
+                        },
+                        "Rhino mesh double finite validation",
+                    )?;
                     if valid && synchronization_ok(expand.ctx(), &values, &decoded.vertices)? {
                         double_vertices = Some(finite);
                         _double_storage = Some(candidate_storage);
@@ -554,7 +590,9 @@ pub(crate) fn decode(
             },
             "Rhino decode traversal",
         )? {
-            let mut candidate_storage = expand.ctx().reserve_scoped(0, "Rhino V5 mesh double scratch")?;
+            let mut candidate_storage = expand
+                .ctx()
+                .reserve_scoped(0, "Rhino V5 mesh double scratch")?;
             match candidate_storage.with_storage(|| read_v5_double_vertices(expand.ctx(), data, extra, archive, &decoded.vertices)) {
                 Ok(Some(values)) => { double_vertices = Some(values); _double_storage = Some(candidate_storage); },
                 Ok(None) => decoded.warnings.push_coded_admitted(expand.ctx(), crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!(
@@ -583,7 +621,7 @@ pub(crate) fn decode(
     ] {
         for extra in expand
             .ctx()
-            .admit_iter(&userdata[..], "Rhino decode traversal")
+            .admit_iter(userdata, "Rhino decode traversal")
             .map_err(cadmpeg_core::CodecError::from)?
             .filter_map(UserdataDescriptor::known)
             .filter(|value| value.class_uuid == class && value.item_uuid == class)
@@ -636,12 +674,20 @@ pub(crate) fn decode(
         Ok(())
     };
     if let Some(double_vertices) = double_vertices {
-        for point in expand.ctx.admit_iter(double_vertices, "Rhino double mesh vertex scaling").map_err(CodecError::from)? {
+        for point in expand
+            .ctx
+            .admit_iter(double_vertices, "Rhino double mesh vertex scaling")
+            .map_err(CodecError::from)?
+        {
             let point = point.get();
             append([point.x, point.y, point.z])?;
         }
     } else {
-        for point in expand.ctx.admit_iter(decoded.vertices, "Rhino float mesh vertex scaling").map_err(CodecError::from)? {
+        for point in expand
+            .ctx
+            .admit_iter(decoded.vertices, "Rhino float mesh vertex scaling")
+            .map_err(CodecError::from)?
+        {
             append(point.map(|value| f64::from(value.get())))?;
         }
     }
@@ -661,7 +707,7 @@ pub(crate) fn decode(
                     reader.position(),
                     expand
                         .ctx()
-                        .format_retained(format_args!("{}", lanes), "Rhino decode text")?,
+                        .format_retained(format_args!("{lanes}"), "Rhino decode text")?,
                 ))
             })?,
             decoded.channels,
@@ -671,7 +717,7 @@ pub(crate) fn decode(
                 reader.position(),
                 expand
                     .ctx()
-                    .format_retained(format_args!("{}", err), "Rhino decode text")?,
+                    .format_retained(format_args!("{err}"), "Rhino decode text")?,
             ))
         })?
         .with_source_object(association),
@@ -830,7 +876,7 @@ pub(crate) fn triangulate_faces<P: Copy>(
     point: impl Fn(P) -> Point3,
 ) -> Result<Vec<[u32; 3]>, GeometryError> {
     let triangle_count = ctx
-        .admit_iter(&faces[..], "Rhino triangulate faces traversal")
+        .admit_iter(faces, "Rhino triangulate faces traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .try_fold(0_usize, |count, face| {
             count.checked_add(match unique_face_vertices(face) {
@@ -923,7 +969,13 @@ fn read_raw_channels(
     vertices: usize,
     decoded: &mut MeshChannels,
 ) -> Result<(), GeometryError> {
-    let MeshChannels { vertices: points, normals, channels, warnings, .. } = decoded;
+    let MeshChannels {
+        vertices: points,
+        normals,
+        channels,
+        warnings,
+        ..
+    } = decoded;
     let vertex_bytes = read_counted_raw(ctx, reader, vertices, 12, "vertices", warnings)?;
     if let Some(bytes) = vertex_bytes {
         *points = storage.with_storage(|| parse_f32_points(ctx, bytes))?;
@@ -1031,7 +1083,9 @@ fn read_compressed_channels(
     archive: ArchiveVersion,
 ) -> Result<(), GeometryError> {
     for spec in MeshChannelSpec::ALL {
-        let mut buffer_storage = expand.ctx().reserve_scoped(0, "Rhino mesh numeric buffer scratch")?;
+        let mut buffer_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino mesh numeric buffer scratch")?;
         let bytes = read_buffer(
             expand,
             reader,
@@ -1045,27 +1099,39 @@ fn read_compressed_channels(
             &mut decoded.warnings,
             document_budget,
             archive,
-         Some(&mut buffer_storage))?;
+            Some(&mut buffer_storage),
+        )?;
         let Some(bytes) = bytes else { continue };
         match spec.action {
             MeshChannelAction::Vertices => {
-                decoded.vertices = vertex_storage.with_storage(|| parse_f32_points(expand.ctx(), &bytes))?;
+                decoded.vertices =
+                    vertex_storage.with_storage(|| parse_f32_points(expand.ctx(), &bytes))?;
             }
             MeshChannelAction::Normals => match parse_f32_vectors(expand.ctx(), &bytes) {
                 Ok(value) => decoded.normals = Some(value),
                 Err(error @ GeometryError::Codec(_)) => return Err(error),
-                Err(_) => decoded.warnings.push_admitted(expand.ctx(), format_args!("normals channel contains nonfinite values"))?,
+                Err(_) => decoded.warnings.push_admitted(
+                    expand.ctx(),
+                    format_args!("normals channel contains nonfinite values"),
+                )?,
             },
             MeshChannelAction::Raw(kind) => {
-                expand.ctx().reserve_vec(&mut decoded.channels, 1, "Rhino mesh channel entries")?;
-            decoded.channels.push(channel(
+                expand
+                    .ctx()
+                    .reserve_vec(&mut decoded.channels, 1, "Rhino mesh channel entries")?;
+                decoded.channels.push(channel(
                     expand.ctx(),
                     kind,
                     spec.item_size,
                     match bytes {
-                    Cow::Owned(bytes) => { buffer_storage.commit()?; bytes },
-                    Cow::Borrowed(bytes) => expand.ctx().copy_retained(bytes, "rhino_mesh_buffer")?,
-                },
+                        Cow::Owned(bytes) => {
+                            buffer_storage.commit()?;
+                            bytes
+                        }
+                        Cow::Borrowed(bytes) => {
+                            expand.ctx().copy_retained(bytes, "rhino_mesh_buffer")?
+                        }
+                    },
                 )?);
             }
         }
@@ -1189,11 +1255,13 @@ fn read_buffer<'a>(
                         "compressed buffer body escapes the archive bytes",
                     )
                 })?;
-            if !std::ptr::eq(source.window(), body) && !expand.ctx().equal_bytes(
-                source.window(),
-                body,
-                "Rhino compressed mesh source equality",
-            )? {
+            if !std::ptr::eq(source.window(), body)
+                && !expand.ctx().equal_bytes(
+                    source.window(),
+                    body,
+                    "Rhino compressed mesh source equality",
+                )?
+            {
                 return Err(error(
                     chunk.body().start,
                     format!(
@@ -1259,7 +1327,9 @@ fn read_buffer<'a>(
     let output = match expanded {
         Some(view) => Cow::Borrowed(view.window()),
         None => Cow::Owned(match storage {
-            Some(storage) => storage.with_storage(|| expand.ctx().copy_retained(bytes, "rhino_mesh_buffer"))?,
+            Some(storage) => {
+                storage.with_storage(|| expand.ctx().copy_retained(bytes, "rhino_mesh_buffer"))?
+            }
             None => expand.ctx().copy_retained(bytes, "rhino_mesh_buffer")?,
         }),
     };
@@ -1291,7 +1361,8 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
         &mut warnings,
         &mut document_budget,
         ArchiveVersion::V8,
-     None);
+        None,
+    );
 }
 
 /// Inflates one anonymous zlib mesh buffer to exactly `expected` bytes.
@@ -1466,14 +1537,15 @@ fn read_double_chunk<'a>(
         warnings,
         document_budget,
         archive,
-     Some(storage))?;
+        Some(storage),
+    )?;
     child.skip_remaining()?;
-    let mut range_storage = expand.ctx().reserve_scoped(0, "Rhino mesh double checksum ranges")?;
-    let direct = range_storage.with_storage(|| crate::chunks::direct_checksum_ranges(
-        expand.ctx(),
-        &chunk.body(),
-        nested_buffer.as_slice(),
-    ))?;
+    let mut range_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino mesh double checksum ranges")?;
+    let direct = range_storage.with_storage(|| {
+        crate::chunks::direct_checksum_ranges(expand.ctx(), &chunk.body(), nested_buffer.as_slice())
+    })?;
     if matches!(
         crate::chunks::verify_checksum_ranges(
             expand.ctx(),
@@ -1554,24 +1626,38 @@ fn read_v5_double_vertices(
     }
     let mut finite = ctx.collection_vec(array_count, "Rhino V5 mesh admitted double vertices")?;
     let mut read_failure = None;
-    let synchronized = ctx.all_by(float_vertices, |float| {
-        let point = match (|| -> Result<_, FramingError> {
-            Ok([reader.f64()?, reader.f64()?, reader.f64()?])
-        })() {
-            Ok(point) => point,
-            Err(error) => { read_failure = Some(error); return Ok(false); }
-        };
-        let Some(admitted) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
-            return Ok(false);
-        };
-        if !point.iter().zip(float).all(|(double, float)| cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())) {
-            return Ok(false);
-        }
-        finite.push(admitted);
-        Ok(true)
-    }, "Rhino mesh read_v5_double_vertices records")?;
-    if let Some(error) = read_failure { return Err(error.into()); }
-    if !synchronized { return Ok(None); }
+    let synchronized = ctx.all_by(
+        float_vertices,
+        |float| {
+            let point = match (|| -> Result<_, FramingError> {
+                Ok([reader.f64()?, reader.f64()?, reader.f64()?])
+            })() {
+                Ok(point) => point,
+                Err(error) => {
+                    read_failure = Some(error);
+                    return Ok(false);
+                }
+            };
+            let Some(admitted) = FinitePoint3::new(Point3::new(point[0], point[1], point[2]))
+            else {
+                return Ok(false);
+            };
+            if !point.iter().zip(float).all(|(double, float)| {
+                cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())
+            }) {
+                return Ok(false);
+            }
+            finite.push(admitted);
+            Ok(true)
+        },
+        "Rhino mesh read_v5_double_vertices records",
+    )?;
+    if let Some(error) = read_failure {
+        return Err(error.into());
+    }
+    if !synchronized {
+        return Ok(None);
+    }
     reader.skip_remaining()?;
     Ok(Some(finite))
 }
@@ -1704,7 +1790,11 @@ fn parse_f32_vectors(
     bytes: &[u8],
 ) -> Result<Vec<FiniteVector3>, GeometryError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino mesh normal scratch")?;
-    let values = storage.with_storage(|| parse_f32_records(ctx, bytes, "Rhino mesh f32 normals", |point| FiniteVector3::from_components(point[0].into(), point[1].into(), point[2].into())))?;
+    let values = storage.with_storage(|| {
+        parse_f32_records(ctx, bytes, "Rhino mesh f32 normals", |point| {
+            FiniteVector3::from_components(point[0].into(), point[1].into(), point[2].into())
+        })
+    })?;
     storage.commit()?;
     Ok(values)
 }
@@ -1716,17 +1806,23 @@ fn parse_f32_records<T>(
     project: impl Fn([FiniteBinary32; 3]) -> T,
 ) -> Result<Vec<T>, GeometryError> {
     if !bytes.len().is_multiple_of(12) {
-        return Err(GeometryError::unpositioned("invalid f32 point channel length"));
+        return Err(GeometryError::unpositioned(
+            "invalid f32 point channel length",
+        ));
     }
     let mut view = View::over_retained(bytes);
     let mut values = ctx.collection_vec(bytes.len() / 12, operation)?;
     for _ in 0..bytes.len() / 12 {
         ctx.charge_work(1, "Rhino mesh f32 records")?;
         let [Some(x), Some(y), Some(z)] = [view.f32_le(), view.f32_le(), view.f32_le()] else {
-            return Err(GeometryError::unpositioned("invalid f32 point channel length"));
+            return Err(GeometryError::unpositioned(
+                "invalid f32 point channel length",
+            ));
         };
         let [Some(x), Some(y), Some(z)] = [x, y, z].map(FiniteBinary32::new) else {
-            return Err(GeometryError::unpositioned("f32 point channel contains nonfinite values"));
+            return Err(GeometryError::unpositioned(
+                "f32 point channel contains nonfinite values",
+            ));
         };
         values.push(project([x, y, z]));
     }
@@ -1777,7 +1873,6 @@ fn synchronization_ok(
         "Rhino mesh synchronized double vertices",
     )
 }
-
 
 fn channel(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1975,7 +2070,10 @@ mod tests {
                     let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
                     read_raw_channels(
                         expand.ctx(),
-                        &mut expand.ctx().reserve_scoped(0, "Rhino mesh source vertex scratch").expect("scratch"),
+                        &mut expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino mesh source vertex scratch")
+                            .expect("scratch"),
                         &mut reader,
                         1,
                         &mut super::MeshChannels::default(),
@@ -2008,23 +2106,26 @@ mod tests {
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             "Rhino mesh f32 normals",
             |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let refused = with_expand_policy(&raw, policy, |expand| {
-            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-            read_raw_channels(
-                expand.ctx(),
-                &mut expand.ctx().reserve_scoped(0, "Rhino mesh source vertex scratch").expect("scratch"),
-                &mut reader,
-                1,
-                &mut super::MeshChannels::default(),
-            )
-            .expect_err("normal output exceeds the collection limit")
-        });
-        match refused {
-            GeometryError::Codec(error) => Err::<(), _>(error),
-            error => panic!("unexpected refusal: {error:?}"),
-        }
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let refused = with_expand_policy(&raw, policy, |expand| {
+                    let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+                    read_raw_channels(
+                        expand.ctx(),
+                        &mut expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino mesh source vertex scratch")
+                            .expect("scratch"),
+                        &mut reader,
+                        1,
+                        &mut super::MeshChannels::default(),
+                    )
+                    .expect_err("normal output exceeds the collection limit")
+                });
+                match refused {
+                    GeometryError::Codec(error) => Err::<(), _>(error),
+                    error => panic!("unexpected refusal: {error:?}"),
+                }
             },
         );
     }
@@ -2373,34 +2474,34 @@ mod tests {
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             operation,
             |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let refused = with_expand_policy(&bytes, policy, |expand| {
-                decode(
-                    expand,
-                    &bytes,
-                    0..payload_start,
-                    ArchiveVersion::V5,
-                    MeshDecodeOptions {
-                        writer_version: None,
-                        association: None,
-                        id: crate::mesh::MeshId::Ready(
-                            cadmpeg_ir::tessellation::TessellationId::mint(
-                                "synthetic:test:tessellation#v5-double-limit",
-                            )
-                            .expect("valid identity"),
-                        ),
-                        scale: MillimeterScale::IDENTITY,
-                        userdata: std::slice::from_ref(&descriptor),
-                    },
-                    &mut MeshBudget::new(),
-                )
-                .expect_err("double vertex collection exceeds its item limit")
-            });
-            match refused {
-                GeometryError::Codec(error) => Err::<(), _>(error),
-                error => panic!("unexpected refusal: {error:?}"),
-            }
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let refused = with_expand_policy(&bytes, policy, |expand| {
+                    decode(
+                        expand,
+                        &bytes,
+                        0..payload_start,
+                        ArchiveVersion::V5,
+                        MeshDecodeOptions {
+                            writer_version: None,
+                            association: None,
+                            id: crate::mesh::MeshId::Ready(
+                                cadmpeg_ir::tessellation::TessellationId::mint(
+                                    "synthetic:test:tessellation#v5-double-limit",
+                                )
+                                .expect("valid identity"),
+                            ),
+                            scale: MillimeterScale::IDENTITY,
+                            userdata: std::slice::from_ref(&descriptor),
+                        },
+                        &mut MeshBudget::new(),
+                    )
+                    .expect_err("double vertex collection exceeds its item limit")
+                });
+                match refused {
+                    GeometryError::Codec(error) => Err::<(), _>(error),
+                    error => panic!("unexpected refusal: {error:?}"),
+                }
             },
         );
     }
@@ -2739,7 +2840,8 @@ mod tests {
                     &mut warnings,
                     &mut document_budget,
                     ArchiveVersion::V8,
-                 None)
+                    None
+                )
                 .expect("buffer")
                 .as_deref(),
                 Some(&[1, 2, 3][..])
@@ -2768,7 +2870,8 @@ mod tests {
                     &mut warnings,
                     &mut document_budget,
                     ArchiveVersion::V8,
-                 None)
+                    None
+                )
                 .expect("buffer")
                 .as_deref(),
                 Some(&[4, 5, 6, 7][..])
@@ -2784,7 +2887,8 @@ mod tests {
                     &mut warnings,
                     &mut document_budget,
                     ArchiveVersion::V8,
-                 None)
+                    None
+                )
                 .expect("next")
                 .as_deref(),
                 Some(&[8][..])
@@ -2811,7 +2915,8 @@ mod tests {
                     &mut warnings,
                     &mut document_budget,
                     ArchiveVersion::V8,
-                 None)
+                    None
+                )
                 .expect("buffer"),
                 None
             );
@@ -2842,7 +2947,8 @@ mod tests {
                     &mut warnings,
                     &mut document_budget,
                     ArchiveVersion::V8,
-                 None)
+                    None
+                )
                 .expect("first buffer inflates then drops"),
                 None
             );
@@ -2859,7 +2965,8 @@ mod tests {
                 &mut warnings,
                 &mut document_budget,
                 ArchiveVersion::V8,
-             None);
+                None,
+            );
             assert!(
                 refused.is_err(),
                 "a dropped-but-retained buffer must still occupy the document cap"
@@ -2884,7 +2991,8 @@ mod tests {
                 &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
-             None)
+                None
+            )
             .is_err());
         });
         let mut truncated = buffer(&[1, 2, 3], 1);
@@ -2901,7 +3009,8 @@ mod tests {
                 &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
-             None)
+                None
+            )
             .is_err());
         });
     }
@@ -2924,7 +3033,8 @@ mod tests {
                 &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
-             None)
+                None
+            )
             .is_err());
         });
     }
@@ -2963,7 +3073,8 @@ mod tests {
                     &mut Diagnostics::new(),
                     &mut document_budget,
                     ArchiveVersion::V8,
-                 None);
+                    None,
+                );
                 assert_eq!(result.is_ok(), expected_success);
             }
         });
@@ -3237,7 +3348,8 @@ mod tests {
                 &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
-             None)
+                None,
+            )
             .expect("nested buffer");
             assert_eq!(decoded.as_deref(), Some(&[9, 8, 7, 6][..]));
         });
@@ -3264,7 +3376,8 @@ mod tests {
                 &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
-             None)
+                None,
+            )
             .expect("first expansion");
             assert_eq!(decoded.as_deref(), Some(&[1, 2, 3][..]));
             let refused = read_buffer(
@@ -3277,7 +3390,8 @@ mod tests {
                 &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
-             None);
+                None,
+            );
             assert!(refused.is_err(), "cumulative expansion must be refused");
         });
     }
@@ -3299,7 +3413,8 @@ mod tests {
                 &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
-             None)
+                None,
+            )
             .expect_err("three expanded bytes exceed the two-byte limit")
         });
         assert!(matches!(
@@ -3325,7 +3440,8 @@ mod tests {
                 &mut Diagnostics::new(),
                 &mut MeshBudget::new(),
                 ArchiveVersion::V8,
-             None)
+                None,
+            )
             .expect_err("three stored bytes exceed the two-byte limit")
         });
         assert!(matches!(

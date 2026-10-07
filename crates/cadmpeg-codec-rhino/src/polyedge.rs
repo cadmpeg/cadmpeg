@@ -116,10 +116,7 @@ fn req_bool(view: &mut View<'_>) -> Result<bool, FramingError> {
 /// `ITEM_CAP`.
 ///
 /// [`BoundedCount`]: cadmpeg_core::decode::BoundedCount
-fn counted(
-    view: &mut View<'_>,
-    width: usize,
-) -> Result<usize, FramingError> {
+fn counted(view: &mut View<'_>, width: usize) -> Result<usize, FramingError> {
     let offset = view.position();
     let value = req_i32(view)?;
     let count = usize::try_from(value).map_err(|_| FramingError::Overflow { offset })?;
@@ -129,8 +126,7 @@ fn counted(
             "polyedge count exceeds cap",
         ));
     }
-    view
-        .counted(cadmpeg_core::decode::u64_from_index(count), width)
+    view.counted(cadmpeg_core::decode::u64_from_index(count), width)
         .ok_or_else(|| {
             FramingError::structural(offset, "polyedge count exceeds remaining window")
         })?;
@@ -219,7 +215,9 @@ pub(crate) fn decode(
         .ok_or_else(|| FramingError::structural(body.position(), "polyedge record truncated"))?;
     let parameter_count = counted(&mut body, 8)?;
 
-    let mut parameters = expand.ctx().collection_vec(parameter_count, "Rhino polyedge parameters")?;
+    let mut parameters = expand
+        .ctx()
+        .collection_vec(parameter_count, "Rhino polyedge parameters")?;
     let mut previous: Option<FiniteReal> = None;
     for _ in 0..parameter_count {
         expand.ctx().charge_work(1, "Rhino polyedge parameters")?;
@@ -241,26 +239,37 @@ pub(crate) fn decode(
         parameters.push(value);
     }
 
-    let mut segments = expand.ctx().collection_vec(segment_count, "Rhino polyedge segments")?;
+    let mut segments = expand
+        .ctx()
+        .collection_vec(segment_count, "Rhino polyedge segments")?;
     for _ in 0..segment_count {
         expand.ctx().charge_work(1, "Rhino polyedge segments")?;
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
-        let mut wrapper_storage = expand.ctx().reserve_scoped(0, "Rhino polyedge wrapper scratch")?;
-        let class = wrapper_storage.with_storage(|| parse_class_wrapper(
-            expand.ctx(),
-            data,
-            start..wrapper.next_offset(),
-            archive,
-            &mut Diagnostics::new(),
-        ))?;
+        let mut wrapper_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino polyedge wrapper scratch")?;
+        let class = wrapper_storage.with_storage(|| {
+            parse_class_wrapper(
+                expand.ctx(),
+                data,
+                start..wrapper.next_offset(),
+                archive,
+                &mut Diagnostics::new(),
+            )
+        })?;
         if class.class_uuid != SEGMENT_CLASS {
             return Err(FramingError::structural(
                 start,
                 "polyedge child is not a persistent segment",
             ));
         }
-        segments.push(segment(expand.root(), data, class.class_data_range, archive)?);
+        segments.push(segment(
+            expand.root(),
+            data,
+            class.class_data_range,
+            archive,
+        )?);
         body.skip(wrapper.next_offset() - start).ok_or_else(|| {
             FramingError::structural(body.position(), "polyedge segment overruns body")
         })?;
@@ -283,7 +292,10 @@ impl Serialize for SemanticJson<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(3))?;
         map.serialize_entry("kind", "polyedge_reference")?;
-        map.serialize_entry("parameters", &SemanticParameters(&self.0.parameters, self.1))?;
+        map.serialize_entry(
+            "parameters",
+            &SemanticParameters(&self.0.parameters, self.1),
+        )?;
         map.serialize_entry("segments", &SemanticSegments(&self.0.segments, self.1))?;
         map.end()
     }
@@ -294,21 +306,32 @@ struct SemanticParameters<'a, 'arena>(&'a [FiniteReal], &'a DecodeContext<'arena
 impl Serialize for SemanticParameters<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
-        for parameter in self.1.admit_iter(self.0, "Rhino polyedge semantic parameters")
-            .map_err(cadmpeg_core::CodecError::from).map_err(serde::ser::Error::custom)? {
+        for parameter in self
+            .1
+            .admit_iter(self.0, "Rhino polyedge semantic parameters")
+            .map_err(cadmpeg_core::CodecError::from)
+            .map_err(serde::ser::Error::custom)?
+        {
             sequence.serialize_element(parameter)?;
         }
         sequence.end()
     }
 }
 
-struct SemanticSegments<'a, 'arena>(&'a [Segment<PersistentReference, FiniteVector<2>>], &'a DecodeContext<'arena>);
+struct SemanticSegments<'a, 'arena>(
+    &'a [Segment<PersistentReference, FiniteVector<2>>],
+    &'a DecodeContext<'arena>,
+);
 
 impl Serialize for SemanticSegments<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
-        for segment in self.1.admit_iter(self.0, "Rhino polyedge semantic segments")
-            .map_err(cadmpeg_core::CodecError::from).map_err(serde::ser::Error::custom)? {
+        for segment in self
+            .1
+            .admit_iter(self.0, "Rhino polyedge semantic segments")
+            .map_err(cadmpeg_core::CodecError::from)
+            .map_err(serde::ser::Error::custom)?
+        {
             sequence.serialize_element(&SemanticSegment(segment))?;
         }
         sequence.end()
@@ -381,7 +404,10 @@ pub(crate) fn semantic_json(
     if serialized.is_err() {
         return Ok(None);
     }
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(writer.bytes.len()), "Rhino polyedge semantic UTF-8")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(writer.bytes.len()),
+        "Rhino polyedge semantic UTF-8",
+    )?;
     Ok(String::from_utf8(writer.bytes).ok())
 }
 

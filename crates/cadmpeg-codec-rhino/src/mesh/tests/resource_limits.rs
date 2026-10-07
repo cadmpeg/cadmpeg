@@ -29,7 +29,8 @@ fn mesh_per_buffer_ceiling_fuses_and_propagates_resource_refusal() {
             &mut Diagnostics::new(),
             &mut MeshBudget::new(),
             ArchiveVersion::V5,
-         None)
+            None,
+        )
         .unwrap_err();
         let GeometryError::Codec(CodecError::ResourceLimit(limit)) = error else {
             panic!("expected unchanged codec resource refusal");
@@ -82,7 +83,8 @@ fn document_mesh_ceiling_refuses_before_copy_and_preserves_usage() {
             &mut Diagnostics::new(),
             &mut budget,
             ArchiveVersion::V5,
-         None)
+            None,
+        )
         .unwrap();
         assert_eq!(budget.used(), 4);
         let mut second = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
@@ -96,7 +98,8 @@ fn document_mesh_ceiling_refuses_before_copy_and_preserves_usage() {
             &mut Diagnostics::new(),
             &mut budget,
             ArchiveVersion::V5,
-         None)
+            None,
+        )
         .unwrap_err();
         let GeometryError::Codec(CodecError::ResourceLimit(limit)) = error else {
             panic!("expected unchanged codec resource refusal");
@@ -131,7 +134,8 @@ fn independent_mesh_channels_each_use_the_per_expansion_ceiling() {
                     &mut Diagnostics::new(),
                     &mut budget,
                     ArchiveVersion::V5,
-                 None)
+                    None,
+                )
                 .unwrap()
                 .unwrap();
                 assert_eq!(result.as_ref(), [value; 12]);

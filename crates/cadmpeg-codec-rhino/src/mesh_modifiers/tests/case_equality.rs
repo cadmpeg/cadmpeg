@@ -30,37 +30,63 @@ fn xml_attribute_search_preserves_refusal() {
 fn xml_uuid_braces_and_skipped_hyphens_preserve_refusal() {
     let value = "{{---12345678-1234-5678-90ab-cdef01234567---}}";
     for operation in ["Rhino XML UUID braces", "Rhino XML UUID digits"] {
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::super::parse_uuid(&ctx, value);
-            if let Err(CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-            }
-            result
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+                let result = super::super::parse_uuid(&ctx, value);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
+        );
     }
-    assert_eq!(super::super::parse_uuid(&cadmpeg_test_support::service_decode_context(), value).unwrap().unwrap().to_string(), "12345678-1234-5678-90ab-cdef01234567");
+    assert_eq!(
+        super::super::parse_uuid(&cadmpeg_test_support::service_decode_context(), value)
+            .unwrap()
+            .unwrap()
+            .to_string(),
+        "12345678-1234-5678-90ab-cdef01234567"
+    );
 }
 
 #[test]
 fn xml_child_search_pays_for_skipped_nodes() {
-    let document = roxmltree::Document::parse("<root>text<!--skip--><other/><wanted/></root>").unwrap();
+    let document =
+        roxmltree::Document::parse("<root>text<!--skip--><other/><wanted/></root>").unwrap();
     let root = document.root_element();
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "Rhino XML child search", |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let result = super::super::direct_child(&ctx, root, "wanted");
-        if let Err(CodecError::ResourceLimit(limit)) = &result {
-            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
-        }
-        result
-    });
-    assert_eq!(super::super::direct_child(&cadmpeg_test_support::service_decode_context(), root, "wanted").unwrap().unwrap().tag_name().name(), "wanted");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino XML child search",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+            let result = super::super::direct_child(&ctx, root, "wanted");
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    assert_eq!(
+        super::super::direct_child(
+            &cadmpeg_test_support::service_decode_context(),
+            root,
+            "wanted"
+        )
+        .unwrap()
+        .unwrap()
+        .tag_name()
+        .name(),
+        "wanted"
+    );
 }
 
 #[test]
@@ -532,7 +558,7 @@ fn xml_untyped_real_number_parse_preserves_refusal() {
 
 #[test]
 fn xml_untyped_real_child_search_preserves_refusal() {
-    let document = roxmltree::Document::parse(r#"<root><value>1.0</value></root>"#).unwrap();
+    let document = roxmltree::Document::parse(r"<root><value>1.0</value></root>").unwrap();
     let root = document.root_element();
     cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
@@ -560,7 +586,7 @@ fn xml_untyped_real_child_search_preserves_refusal() {
 #[test]
 fn xml_untyped_uuid_child_search_preserves_refusal() {
     let document = roxmltree::Document::parse(
-        r#"<root><value>12345678-1234-5678-90ab-cdef01234567</value></root>"#,
+        r"<root><value>12345678-1234-5678-90ab-cdef01234567</value></root>",
     )
     .unwrap();
     let root = document.root_element();
@@ -622,17 +648,27 @@ fn optional_modifier_child_search_preserves_refusal_without_warning() {
 fn dropped_modifier_does_not_retain_its_numeric_array() {
     let xml = "<xml><new-displacement-object-data><sub/><on type=\"bool\">bad</on></new-displacement-object-data></xml>";
     let payload = super::v2_payload(xml);
-    let descriptors = [super::descriptor(&payload, Some(super::MESH_MODIFIER_PLUGIN))];
+    let descriptors = [super::descriptor(
+        &payload,
+        Some(super::MESH_MODIFIER_PLUGIN),
+    )];
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::RetainedBytes, "Rhino displacement sub-items", None,
+        ResourceDimension::RetainedBytes,
+        "Rhino displacement sub-items",
+        None,
     );
     let mut warnings = crate::loss::Diagnostics::new();
     let modifier = super::super::parse_attribute_userdata(
-        &ctx, &payload, &descriptors, crate::chunks::ArchiveVersion::V6, &mut warnings,
-    ).unwrap();
+        &ctx,
+        &payload,
+        &descriptors,
+        crate::chunks::ArchiveVersion::V6,
+        &mut warnings,
+    )
+    .unwrap();
     assert!(modifier.is_none());
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("XML field `on` has invalid bool value"));
@@ -643,10 +679,19 @@ fn dropped_modifier_does_not_retain_its_numeric_array() {
 fn optional_modifier_array_refuses_speculative_and_retained_boundaries() {
     let xml = "<xml><new-displacement-object-data><sub/></new-displacement-object-data></xml>";
     let payload = super::v2_payload(xml);
-    let descriptors = [super::descriptor(&payload, Some(super::MESH_MODIFIER_PLUGIN))];
+    let descriptors = [super::descriptor(
+        &payload,
+        Some(super::MESH_MODIFIER_PLUGIN),
+    )];
     for (dimension, operation) in [
-        (ResourceDimension::MaterializedBytes, "Rhino displacement sub-items"),
-        (ResourceDimension::RetainedBytes, "Rhino optional modifier output"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "Rhino displacement sub-items",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "Rhino optional modifier output",
+        ),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let arena = DecodeArena::new();
@@ -659,20 +704,33 @@ fn optional_modifier_array_refuses_speculative_and_retained_boundaries() {
             let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
             let mut warnings = crate::loss::Diagnostics::new();
             let result = super::super::parse_attribute_userdata(
-                &ctx, &payload, &descriptors, crate::chunks::ArchiveVersion::V6, &mut warnings,
+                &ctx,
+                &payload,
+                &descriptors,
+                crate::chunks::ArchiveVersion::V6,
+                &mut warnings,
             );
             assert!(warnings.is_empty());
             if let Err(FramingError::Resource(limit)) = &result {
                 assert_eq!(ctx.resource_refusal(), Some(*limit));
             }
-            result.map_err(|error| match error { FramingError::Resource(limit) => CodecError::ResourceLimit(limit), error => panic!("unexpected modifier error: {error:?}") })
+            result.map_err(|error| match error {
+                FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+                error => panic!("unexpected modifier error: {error:?}"),
+            })
         });
     }
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut warnings = crate::loss::Diagnostics::new();
     let modifier = super::super::parse_attribute_userdata(
-        &ctx, &payload, &descriptors, crate::chunks::ArchiveVersion::V6, &mut warnings,
-    ).unwrap().unwrap();
+        &ctx,
+        &payload,
+        &descriptors,
+        crate::chunks::ArchiveVersion::V6,
+        &mut warnings,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(modifier.displacement.unwrap().sub_items.len(), 1);
     assert!(warnings.is_empty());
 }

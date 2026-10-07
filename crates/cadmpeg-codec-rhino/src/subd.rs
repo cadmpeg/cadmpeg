@@ -104,7 +104,7 @@ pub(crate) enum SubdError {
     Unpositioned { message: String },
     /// An owned core error rendered at the decode boundary.
     Core(cadmpeg_core::CodecError),
-    /// A framing cause with the serialized SubD offset suffix.
+    /// A framing cause with the serialized `SubD` offset suffix.
     Framing {
         error: FramingError,
         offset: Option<usize>,
@@ -317,7 +317,8 @@ pub(crate) fn decode_mesh_proxy(
     let embedded_start = reader.position();
     let embedded_end = embedded_subd_end(ctx, &reader, archive)?;
     let mut candidate_storage = ctx.reserve_scoped(0, "Rhino SubD mesh proxy candidate")?;
-    let decoded = candidate_storage.with_storage(|| decode(ctx, data, embedded_start..embedded_end, archive, scale, id))?;
+    let decoded = candidate_storage
+        .with_storage(|| decode(ctx, data, embedded_start..embedded_end, archive, scale, id))?;
     reader.skip(embedded_end - reader.position())?;
     let face_count = reader.i32()?;
     let vertex_count = reader.i32()?;
@@ -414,7 +415,8 @@ fn read_subdimple<'ctx>(
         ctx.charge_work(1, "Rhino subd read_subdimple records")?;
         let start = reader.position();
         let level = read_level(ctx, reader, archive, expected_level, warnings)?;
-        child_storage.with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
+        child_storage
+            .with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
             .map_err(SubdError::from)?;
         children.push(start..reader.position());
         validate_level(ctx, &level, expected_level)?;
@@ -427,14 +429,16 @@ fn read_subdimple<'ctx>(
         reader.u8()?;
         let start = reader.position();
         read_mapping_tag(ctx, reader, archive, warnings)?;
-        child_storage.with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
+        child_storage
+            .with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
             .map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
     if minor >= 2 {
         let start = reader.position();
         read_symmetry(ctx, reader, archive, enum_diagnostics, warnings)?;
-        child_storage.with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
+        child_storage
+            .with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
             .map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
@@ -447,7 +451,8 @@ fn read_subdimple<'ctx>(
         reader.bool()?;
         let start = reader.position();
         read_subd_hash(ctx, reader, archive, warnings)?;
-        child_storage.with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
+        child_storage
+            .with_storage(|| ctx.reserve_vec(&mut children, 1, "Rhino SubD child ranges"))
             .map_err(SubdError::from)?;
         children.push(start..reader.position());
     }
@@ -514,7 +519,8 @@ fn read_level<'ctx>(
     }
 
     let mut storage = ctx.reserve_scoped(0, "Rhino SubD raw level")?;
-    let mut vertices = storage.with_storage(|| ctx.collection_vec(vertex_count, "Rhino SubD level vertices"))?;
+    let mut vertices =
+        storage.with_storage(|| ctx.collection_vec(vertex_count, "Rhino SubD level vertices"))?;
     for archive_id in partitions[0]..partitions[1] {
         ctx.charge_work(1, "Rhino subd read_level records")?;
         vertices.push(read_vertex(
@@ -526,7 +532,8 @@ fn read_level<'ctx>(
             level_index,
         )?);
     }
-    let mut edges = storage.with_storage(|| ctx.collection_vec(edge_count, "Rhino SubD level edges"))?;
+    let mut edges =
+        storage.with_storage(|| ctx.collection_vec(edge_count, "Rhino SubD level edges"))?;
     for archive_id in partitions[1]..partitions[2] {
         ctx.charge_work(1, "Rhino subd read_level records")?;
         edges.push(read_edge(
@@ -538,7 +545,8 @@ fn read_level<'ctx>(
             level_index,
         )?);
     }
-    let mut faces = storage.with_storage(|| ctx.collection_vec(face_count, "Rhino SubD level faces"))?;
+    let mut faces =
+        storage.with_storage(|| ctx.collection_vec(face_count, "Rhino SubD level faces"))?;
     for archive_id in partitions[2]..partitions[3] {
         ctx.charge_work(1, "Rhino subd read_level records")?;
         faces.push(read_face(
@@ -676,7 +684,10 @@ fn read_edge(
         ));
     }
     if reader.remaining() < 10 {
-        return Err(malformed(reader.position(), "SubD pointer count exceeds bounded cap"));
+        return Err(malformed(
+            reader.position(),
+            "SubD pointer count exceeds bounded cap",
+        ));
     }
     let vertices = [read_pointer(reader, false)?, read_pointer(reader, false)?];
     let serialized_faces = usize::from(reader.u16()?);
@@ -876,7 +887,7 @@ fn read_base(
             }
             Addition::Absent => {}
             Addition::Present => {
-                read_finite_values(ctx, reader, 3, "deprecated SubD displacement")?
+                read_finite_values(ctx, reader, 3, "deprecated SubD displacement")?;
             }
         }
         match consume_known_addition(ctx, reader, archive, 4, "SubD group ID")? {
@@ -1047,8 +1058,14 @@ fn validate_level(
         .admit_iter(&level.edges[..], "Rhino validate level traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
-        if edge.vertices.iter().any(|pointer| !vertex_partition.contains(&u64::from(pointer.archive_id))) {
-            return Err(unpositioned("SubD component pointer does not resolve within its partition"));
+        if edge
+            .vertices
+            .iter()
+            .any(|pointer| !vertex_partition.contains(&u64::from(pointer.archive_id)))
+        {
+            return Err(unpositioned(
+                "SubD component pointer does not resolve within its partition",
+            ));
         }
         resolve_all(ctx, &edge.faces, &face_partition)?;
         if edge.vertices[0].archive_id == edge.vertices[1].archive_id {
@@ -1081,13 +1098,21 @@ fn validate_level(
         compare_incidence(
             ctx,
             &vertex.edges,
-            vertex_edges.get(usize::try_from(vertex.base.archive_id - 1).map_err(|_| malformed(vertex.base.source_offset, "SubD vertex index overflow"))?),
+            vertex_edges.get(
+                usize::try_from(vertex.base.archive_id - 1).map_err(|_| {
+                    malformed(vertex.base.source_offset, "SubD vertex index overflow")
+                })?,
+            ),
             "vertex-edge",
         )?;
         compare_incidence(
             ctx,
             &vertex.faces,
-            vertex_faces.get(usize::try_from(vertex.base.archive_id - 1).map_err(|_| malformed(vertex.base.source_offset, "SubD vertex index overflow"))?),
+            vertex_faces.get(
+                usize::try_from(vertex.base.archive_id - 1).map_err(|_| {
+                    malformed(vertex.base.source_offset, "SubD vertex index overflow")
+                })?,
+            ),
             "vertex-face",
         )?;
     }
@@ -1098,7 +1123,10 @@ fn validate_level(
         compare_incidence(
             ctx,
             &edge.faces,
-            edge_faces.get(usize::try_from(u64::from(edge.base.archive_id) - edge_partition.start).map_err(|_| malformed(edge.base.source_offset, "SubD edge index overflow"))?),
+            edge_faces.get(
+                usize::try_from(u64::from(edge.base.archive_id) - edge_partition.start)
+                    .map_err(|_| malformed(edge.base.source_offset, "SubD edge index overflow"))?,
+            ),
             "edge-face",
         )?;
     }
@@ -1133,17 +1161,25 @@ fn incidence_from_edges<'ctx>(
 ) -> Result<(Vec<BTreeSet<u32>>, ScopedReservation<'ctx>), SubdError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino SubD vertex-edge map")?;
     let mut result = storage.with_storage(|| {
-        ctx.collect_indexed_vec(level.vertices.len(), "Rhino SubD vertex-edge map", |_| Ok(BTreeSet::new()))
+        ctx.collect_indexed_vec(level.vertices.len(), "Rhino SubD vertex-edge map", |_| {
+            Ok(BTreeSet::new())
+        })
     })?;
     for edge in ctx
         .admit_iter(&level.edges[..], "Rhino incidence from edges traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
         for vertex in edge.vertices {
-            storage.with_storage(|| ctx.insert_btree_set(
-                &mut result[usize::try_from(vertex.archive_id - 1).map_err(|_| malformed(edge.base.source_offset, "SubD vertex index overflow"))?],
-                edge.base.archive_id, "Rhino SubD incidence members",
-            ).map_err(SubdError::from))?;
+            storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut result[usize::try_from(vertex.archive_id - 1).map_err(|_| {
+                        malformed(edge.base.source_offset, "SubD vertex index overflow")
+                    })?],
+                    edge.base.archive_id,
+                    "Rhino SubD incidence members",
+                )
+                .map_err(SubdError::from)
+            })?;
         }
     }
     Ok((result, storage))
@@ -1155,7 +1191,9 @@ fn incidence_from_faces<'ctx>(
 ) -> Result<(Vec<BTreeSet<u32>>, ScopedReservation<'ctx>), SubdError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino SubD vertex-face map")?;
     let mut result = storage.with_storage(|| {
-        ctx.collect_indexed_vec(level.vertices.len(), "Rhino SubD vertex-face map", |_| Ok(BTreeSet::new()))
+        ctx.collect_indexed_vec(level.vertices.len(), "Rhino SubD vertex-face map", |_| {
+            Ok(BTreeSet::new())
+        })
     })?;
     for face in ctx
         .admit_iter(&level.faces[..], "Rhino incidence from faces traversal")
@@ -1169,10 +1207,13 @@ fn incidence_from_faces<'ctx>(
         {
             let edge_start = 1 + level.vertices.len();
             let edge_index = usize::try_from(edge_use.archive_id)
-                .ok().and_then(|id| id.checked_sub(edge_start));
-            let edge = edge_index.and_then(|index| level.edges.get(index)).ok_or_else(|| {
-                malformed(face.base.source_offset, "face references missing SubD edge")
-            })?;
+                .ok()
+                .and_then(|id| id.checked_sub(edge_start));
+            let edge = edge_index
+                .and_then(|index| level.edges.get(index))
+                .ok_or_else(|| {
+                    malformed(face.base.source_offset, "face references missing SubD edge")
+                })?;
             let endpoints = [edge.vertices[0].archive_id, edge.vertices[1].archive_id];
             let (start, end) = if edge_use.direction {
                 (endpoints[1], endpoints[0])
@@ -1187,14 +1228,26 @@ fn incidence_from_faces<'ctx>(
             }
             first.get_or_insert(start);
             previous_end = Some(end);
-            storage.with_storage(|| ctx.insert_btree_set(
-                &mut result[usize::try_from(start - 1).map_err(|_| malformed(face.base.source_offset, "SubD vertex index overflow"))?],
-                face.base.archive_id, "Rhino SubD incidence members",
-            ).map_err(SubdError::from))?;
-            storage.with_storage(|| ctx.insert_btree_set(
-                &mut result[usize::try_from(end - 1).map_err(|_| malformed(face.base.source_offset, "SubD vertex index overflow"))?],
-                face.base.archive_id, "Rhino SubD incidence members",
-            ).map_err(SubdError::from))?;
+            storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut result[usize::try_from(start - 1).map_err(|_| {
+                        malformed(face.base.source_offset, "SubD vertex index overflow")
+                    })?],
+                    face.base.archive_id,
+                    "Rhino SubD incidence members",
+                )
+                .map_err(SubdError::from)
+            })?;
+            storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut result[usize::try_from(end - 1).map_err(|_| {
+                        malformed(face.base.source_offset, "SubD vertex index overflow")
+                    })?],
+                    face.base.archive_id,
+                    "Rhino SubD incidence members",
+                )
+                .map_err(SubdError::from)
+            })?;
         }
         if first != previous_end {
             return Err(malformed(
@@ -1212,7 +1265,9 @@ fn edge_face_incidence<'ctx>(
 ) -> Result<(Vec<BTreeSet<u32>>, ScopedReservation<'ctx>), SubdError> {
     let mut storage = ctx.reserve_scoped(0, "Rhino SubD edge-face map")?;
     let mut result = storage.with_storage(|| {
-        ctx.collect_indexed_vec(level.edges.len(), "Rhino SubD edge-face map", |_| Ok(BTreeSet::new()))
+        ctx.collect_indexed_vec(level.edges.len(), "Rhino SubD edge-face map", |_| {
+            Ok(BTreeSet::new())
+        })
     })?;
     for face in ctx
         .admit_iter(&level.faces[..], "Rhino edge face incidence traversal")
@@ -1222,10 +1277,17 @@ fn edge_face_incidence<'ctx>(
             .admit_iter(&face.edges[..], "Rhino edge face incidence traversal")
             .map_err(cadmpeg_core::CodecError::from)?
         {
-            let edge_index = usize::try_from(edge.archive_id).map_err(|_| malformed(face.base.source_offset, "SubD edge index overflow"))? - 1 - level.vertices.len();
-            if !storage.with_storage(|| ctx.insert_btree_set(
-                &mut result[edge_index], face.base.archive_id, "Rhino SubD incidence members",
-            ))? {
+            let edge_index = usize::try_from(edge.archive_id)
+                .map_err(|_| malformed(face.base.source_offset, "SubD edge index overflow"))?
+                - 1
+                - level.vertices.len();
+            if !storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut result[edge_index],
+                    face.base.archive_id,
+                    "Rhino SubD incidence members",
+                )
+            })? {
                 return Err(malformed(
                     face.base.source_offset,
                     "SubD face repeats an edge",
@@ -1248,14 +1310,23 @@ fn compare_incidence(
         .admit_iter(serialized, "Rhino compare incidence traversal")
         .map_err(cadmpeg_core::CodecError::from)?
     {
-        storage.with_storage(|| ctx.insert_btree_set(&mut serialized_ids, pointer.archive_id, "Rhino SubD serialized incidence"))?;
+        storage.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut serialized_ids,
+                pointer.archive_id,
+                "Rhino SubD serialized incidence",
+            )
+        })?;
     }
     let empty = BTreeSet::new();
     let derived = derived.unwrap_or(&empty);
-    if serialized_ids.len() != derived.len() || !ctx.all_by(
-        serialized_ids.iter().zip(derived.iter()), |(left, right)| Ok(left == right),
-        "Rhino SubD incidence equality",
-    )? {
+    if serialized_ids.len() != derived.len()
+        || !ctx.all_by(
+            serialized_ids.iter().zip(derived.iter()),
+            |(left, right)| Ok(left == right),
+            "Rhino SubD incidence equality",
+        )?
+    {
         return Err(unpositioned(ctx.format_retained(
             format_args!("SubD {label} incidence is not reciprocal"),
             "Rhino compare_incidence text",
@@ -1269,8 +1340,14 @@ fn resolve_all(
     pointers: &[ComponentPointer],
     expected: &Range<u64>,
 ) -> Result<(), SubdError> {
-    if !ctx.all_by(pointers, |pointer| Ok(expected.contains(&u64::from(pointer.archive_id))), "Rhino SubD pointer partition search")? {
-        return Err(unpositioned("SubD component pointer does not resolve within its partition"));
+    if !ctx.all_by(
+        pointers,
+        |pointer| Ok(expected.contains(&u64::from(pointer.archive_id))),
+        "Rhino SubD pointer partition search",
+    )? {
+        return Err(unpositioned(
+            "SubD component pointer does not resolve within its partition",
+        ));
     }
     Ok(())
 }
@@ -1281,11 +1358,16 @@ fn materialize(
     scale: MillimeterScale,
     id: cadmpeg_ir::ids::SubdId,
 ) -> Result<SubdSurface, SubdError> {
-    let edge_start = u32::try_from(level.vertices.len()).map_err(|_| malformed(level.source_offset, "SubD vertex index overflow"))? + 1;
+    let edge_start = u32::try_from(level.vertices.len())
+        .map_err(|_| malformed(level.source_offset, "SubD vertex index overflow"))?
+        + 1;
     let mut vertices = ctx
         .collection_vec(level.vertices.len(), "Rhino SubD vertices")
         .map_err(SubdError::from)?;
-    for vertex in ctx.admit_iter(level.vertices, "Rhino materialize traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for vertex in ctx
+        .admit_iter(level.vertices, "Rhino materialize traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let tag = vertex.tag.ok_or_else(|| {
             malformed(
                 vertex.base.source_offset,
@@ -1312,7 +1394,10 @@ fn materialize(
     let mut edges = ctx
         .collection_vec(level.edges.len(), "Rhino SubD edges")
         .map_err(SubdError::from)?;
-    for edge in ctx.admit_iter(level.edges, "Rhino materialize traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for edge in ctx
+        .admit_iter(level.edges, "Rhino materialize traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let tag = edge.tag.ok_or_else(|| {
             malformed(
                 edge.base.source_offset,
@@ -1335,7 +1420,7 @@ fn materialize(
             .or_else(|error| {
                 Err(malformed(
                     edge.base.source_offset,
-                    ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?,
+                    ctx.format_retained(format_args!("{error}"), "Rhino materialize text")?,
                 ))
             })?,
         );
@@ -1343,11 +1428,17 @@ fn materialize(
     let mut faces = ctx
         .collection_vec(level.faces.len(), "Rhino SubD faces")
         .map_err(SubdError::from)?;
-    for face in ctx.admit_iter(level.faces, "Rhino materialize traversal").map_err(cadmpeg_core::CodecError::from)? {
+    for face in ctx
+        .admit_iter(level.faces, "Rhino materialize traversal")
+        .map_err(cadmpeg_core::CodecError::from)?
+    {
         let mut face_edges = ctx
             .collection_vec(face.edges.len(), "Rhino SubD face edges")
             .map_err(SubdError::from)?;
-        for edge in ctx.admit_iter(face.edges, "Rhino materialize traversal").map_err(cadmpeg_core::CodecError::from)? {
+        for edge in ctx
+            .admit_iter(face.edges, "Rhino materialize traversal")
+            .map_err(cadmpeg_core::CodecError::from)?
+        {
             face_edges.push(SubdEdgeUse {
                 edge: edge.archive_id - edge_start,
                 reversed: edge.direction,
@@ -1356,7 +1447,7 @@ fn materialize(
         faces.push(SubdFace::new(face_edges).or_else(|error| {
             Err(malformed(
                 face.base.source_offset,
-                ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?,
+                ctx.format_retained(format_args!("{error}"), "Rhino materialize text")?,
             ))
         })?);
     }
@@ -1369,7 +1460,7 @@ fn materialize(
             .or_else(|error| {
                 Err(malformed(
                     level.source_offset,
-                    ctx.format_retained(format_args!("{}", error), "Rhino materialize text")?,
+                    ctx.format_retained(format_args!("{error}"), "Rhino materialize text")?,
                 ))
             })?,
     })
@@ -1792,7 +1883,8 @@ fn finish_chunk_children(
             .map_err(FramingError::from)?;
     }
     let mut ranges = ctx.reserve_scoped(0, "Rhino subd checksum ranges")?;
-    let direct = ranges.with_storage(|| crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children))?;
+    let direct = ranges
+        .with_storage(|| crate::chunks::direct_checksum_ranges(ctx, &chunk.body(), children))?;
     if matches!(
         crate::chunks::verify_checksum_ranges(ctx, parent.backing_bytes(), chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }

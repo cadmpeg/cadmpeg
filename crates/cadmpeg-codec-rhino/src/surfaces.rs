@@ -539,7 +539,8 @@ fn read_sum(
     let second = decode_embedded_curve(ctx, data, reader, scale, archive, depth + 1)?;
     let mut profile_storage = ctx.reserve_scoped(0, "Rhino sum source NURBS")?;
     let first_nurbs = profile_storage.with_storage(|| exact_nurbs(ctx, &first, version_offset))?;
-    let second_nurbs = profile_storage.with_storage(|| exact_nurbs(ctx, &second, version_offset))?;
+    let second_nurbs =
+        profile_storage.with_storage(|| exact_nurbs(ctx, &second, version_offset))?;
     let geometry = sum_nurbs(ctx, &first_nurbs, &second_nurbs, basepoint, version_offset)?;
     reader.skip_remaining()?;
     Ok(DecodedSurface::Procedural {
@@ -610,7 +611,8 @@ fn revolution_nurbs(
         .map(FiniteReal::get)
         .ok_or_else(|| error(offset, "revolution parameter interval is invalid"))
     };
-    let mut angular = temporary.with_storage(|| ctx.collection_vec(angular_count, "Rhino revolution temporary lanes"))?;
+    let mut angular = temporary
+        .with_storage(|| ctx.collection_vec(angular_count, "Rhino revolution temporary lanes"))?;
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, knot_count, "Rhino revolution angular knots")?;
     for span in 0..span_count {
@@ -640,12 +642,23 @@ fn revolution_nurbs(
             knots.extend([t1, t1, t1]);
         }
     }
-    let mut control_points = temporary.with_storage(|| ctx.collection_vec(output_count, "Rhino revolution temporary lanes"))?;
-    let mut weights = temporary.with_storage(|| ctx.collection_vec(output_count, "Rhino revolution temporary lanes"))?;
-    for (theta, angular_weight) in ctx.admit_iter(angular, "Rhino revolution angular traversal").map_err(CodecError::from)? {
+    let mut control_points = temporary
+        .with_storage(|| ctx.collection_vec(output_count, "Rhino revolution temporary lanes"))?;
+    let mut weights = temporary
+        .with_storage(|| ctx.collection_vec(output_count, "Rhino revolution temporary lanes"))?;
+    for (theta, angular_weight) in ctx
+        .admit_iter(angular, "Rhino revolution angular traversal")
+        .map_err(CodecError::from)?
+    {
         let radial_scale = 1.0 / angular_weight;
-        for index in ctx.admit_iter(0..profile_count, "Rhino revolution nurbs traversal").map_err(CodecError::from)? {
-            let profile_point = profile.pole_rows().point_at(index).ok_or_else(|| error(offset, "revolution profile pole is absent"))?;
+        for index in ctx
+            .admit_iter(0..profile_count, "Rhino revolution nurbs traversal")
+            .map_err(CodecError::from)?
+        {
+            let profile_point = profile
+                .pole_rows()
+                .point_at(index)
+                .ok_or_else(|| error(offset, "revolution profile pole is absent"))?;
             let profile_weight = profile.pole_rows().weight_at(index).unwrap_or(1.0);
             let relative = Vector3::new(
                 profile_point.x - axis_origin.x,
@@ -667,8 +680,10 @@ fn revolution_nurbs(
         }
     }
     let row_len = profile_count;
-    let point_rows = temporary.with_storage(|| copy_rows(ctx, &control_points, row_len, "Rhino revolution pole grid"))?;
-    let weight_rows = temporary.with_storage(|| copy_rows(ctx, &weights, row_len, "Rhino revolution weight grid"))?;
+    let point_rows = temporary
+        .with_storage(|| copy_rows(ctx, &control_points, row_len, "Rhino revolution pole grid"))?;
+    let weight_rows = temporary
+        .with_storage(|| copy_rows(ctx, &weights, row_len, "Rhino revolution weight grid"))?;
     let profile_knots = ctx
         .copy_slice(profile.knots(), "Rhino revolution profile knots")
         .map_err(crate::curves::GeometryError::from)?;
@@ -683,7 +698,7 @@ fn revolution_nurbs(
     .or_else(|error| {
         Err(GeometryError::malformed(
             offset,
-            ctx.format_retained(format_args!("{}", error), "Rhino revolution_nurbs text")?,
+            ctx.format_retained(format_args!("{error}"), "Rhino revolution_nurbs text")?,
         ))
     })?;
     if transposed {
@@ -701,23 +716,40 @@ fn sum_nurbs(
 ) -> Result<NurbsSurface, GeometryError> {
     let u_count = first.pole_count();
     let v_count = second.pole_count();
-    let product_count = u_count.checked_mul(v_count).ok_or_else(|| GeometryError::not_implemented("Rhino sum surface control count exceeds address space"))?;
+    let product_count = u_count.checked_mul(v_count).ok_or_else(|| {
+        GeometryError::not_implemented("Rhino sum surface control count exceeds address space")
+    })?;
     let first_rational = matches!(first.pole_rows(), NurbsPoles3::Rational { .. });
     let second_rational = matches!(second.pole_rows(), NurbsPoles3::Rational { .. });
     let rational = first_rational || second_rational;
     let mut temporary = ctx.reserve_scoped(0, "Rhino sum surface temporary lanes")?;
-    let mut control_points = temporary.with_storage(|| ctx.collection_vec(product_count, "Rhino sum surface temporary lanes"))?;
+    let mut control_points = temporary
+        .with_storage(|| ctx.collection_vec(product_count, "Rhino sum surface temporary lanes"))?;
     let mut weights = if rational {
-        let values = temporary.with_storage(|| ctx.collection_vec(product_count, "Rhino sum surface temporary lanes"))?;
+        let values = temporary.with_storage(|| {
+            ctx.collection_vec(product_count, "Rhino sum surface temporary lanes")
+        })?;
         Some(values)
     } else {
         None
     };
-    for first_index in ctx.admit_iter(0..u_count, "Rhino sum nurbs traversal").map_err(CodecError::from)? {
-        let first_point = first.pole_rows().point_at(first_index).ok_or_else(|| error(offset, "first sum profile pole is absent"))?;
+    for first_index in ctx
+        .admit_iter(0..u_count, "Rhino sum nurbs traversal")
+        .map_err(CodecError::from)?
+    {
+        let first_point = first
+            .pole_rows()
+            .point_at(first_index)
+            .ok_or_else(|| error(offset, "first sum profile pole is absent"))?;
         let first_weight = first.pole_rows().weight_at(first_index).unwrap_or(1.0);
-        for second_index in ctx.admit_iter(0..v_count, "Rhino sum nurbs traversal").map_err(CodecError::from)? {
-            let second_point = second.pole_rows().point_at(second_index).ok_or_else(|| error(offset, "second sum profile pole is absent"))?;
+        for second_index in ctx
+            .admit_iter(0..v_count, "Rhino sum nurbs traversal")
+            .map_err(CodecError::from)?
+        {
+            let second_point = second
+                .pole_rows()
+                .point_at(second_index)
+                .ok_or_else(|| error(offset, "second sum profile pole is absent"))?;
             let second_weight = second.pole_rows().weight_at(second_index).unwrap_or(1.0);
             let Some(product) = NonZeroReal::new(first_weight * second_weight) else {
                 return Err(error(offset, "sum surface weight is invalid"));
@@ -733,10 +765,14 @@ fn sum_nurbs(
         }
     }
     let row_len = v_count;
-    let point_rows = temporary.with_storage(|| copy_rows(ctx, &control_points, row_len, "Rhino sum surface pole grid"))?;
+    let point_rows = temporary
+        .with_storage(|| copy_rows(ctx, &control_points, row_len, "Rhino sum surface pole grid"))?;
     let weight_rows = weights
         .as_deref()
-        .map(|values| temporary.with_storage(|| copy_rows(ctx, values, row_len, "Rhino sum surface weight grid")))
+        .map(|values| {
+            temporary
+                .with_storage(|| copy_rows(ctx, values, row_len, "Rhino sum surface weight grid"))
+        })
         .transpose()?;
     let u_knots = first
         .knots()
@@ -756,7 +792,7 @@ fn sum_nurbs(
     .or_else(|error| {
         Err(GeometryError::malformed(
             offset,
-            ctx.format_retained(format_args!("{}", error), "Rhino sum_nurbs text")?,
+            ctx.format_retained(format_args!("{error}"), "Rhino sum_nurbs text")?,
         ))
     })
 }
@@ -830,7 +866,7 @@ pub(crate) fn extrusion_nurbs(
             .or_else(|error| {
                 Err(GeometryError::malformed(
                     offset,
-                    ctx.format_retained(format_args!("{}", error), "Rhino extrusion_nurbs text")?,
+                    ctx.format_retained(format_args!("{error}"), "Rhino extrusion_nurbs text")?,
                 ))
             })?;
     let mut surface = NurbsSurface::new(
@@ -843,7 +879,7 @@ pub(crate) fn extrusion_nurbs(
     .or_else(|error| {
         Err(GeometryError::malformed(
             offset,
-            ctx.format_retained(format_args!("{}", error), "Rhino extrusion_nurbs text")?,
+            ctx.format_retained(format_args!("{error}"), "Rhino extrusion_nurbs text")?,
         ))
     })?;
     if transposed {
@@ -883,12 +919,10 @@ fn extrusion_rows<T: Copy>(
     let mut rows = Vec::new();
     ctx.reserve_capacity(&mut rows, row_count, operation)?;
     for (first, second) in ctx
-        .admit_iter(&start[..], "Rhino extrusion rows traversal")
+        .admit_iter(start, "Rhino extrusion rows traversal")
         .map_err(cadmpeg_core::CodecError::from)?
         .copied()
-        .zip(
-            end.iter().copied(),
-        )
+        .zip(end.iter().copied())
     {
         let mut row = Vec::new();
         ctx.reserve_capacity(&mut row, 2, operation)?;
@@ -973,8 +1007,21 @@ fn read_nurbs_curve_inner(
         return Err(error(reader.position(), "NURBS curve CV count mismatch"));
     }
     let mut pole_storage = ctx.reserve_scoped(0, "Rhino NURBS curve lane scratch")?;
-    let mut read = || read_poles(ctx, reader, stored_cv_count, rational != 0, dimension, scale);
-    let (control_points, weights) = if rational != 0 { pole_storage.with_storage(read)? } else { read()? };
+    let mut read = || {
+        read_poles(
+            ctx,
+            reader,
+            stored_cv_count,
+            rational != 0,
+            dimension,
+            scale,
+        )
+    };
+    let (control_points, weights) = if rational != 0 {
+        pole_storage.with_storage(read)?
+    } else {
+        read()?
+    };
     if minor >= 1 {
         reader.bool()?;
     }
@@ -985,10 +1032,7 @@ fn read_nurbs_curve_inner(
         NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?.or_else(|error| {
             Err(GeometryError::malformed(
                 reader.position(),
-                ctx.format_retained(
-                    format_args!("{}", error),
-                    "Rhino read_nurbs_curve_inner text",
-                )?,
+                ctx.format_retained(format_args!("{error}"), "Rhino read_nurbs_curve_inner text")?,
             ))
         })?;
     NurbsCurve::new(
@@ -1001,10 +1045,7 @@ fn read_nurbs_curve_inner(
     .or_else(|error| {
         Err(GeometryError::malformed(
             reader.position(),
-            ctx.format_retained(
-                format_args!("{}", error),
-                "Rhino read_nurbs_curve_inner text",
-            )?,
+            ctx.format_retained(format_args!("{error}"), "Rhino read_nurbs_curve_inner text")?,
         ))
     })
 }
@@ -1086,22 +1127,45 @@ pub(crate) fn read_nurbs_surface_prefix(
         return Err(error(reader.position(), "NURBS surface CV count mismatch"));
     }
     let mut pole_storage = ctx.reserve_scoped(0, "Rhino NURBS surface lane scratch")?;
-    let (control_points, weights) = pole_storage.with_storage(|| read_poles(ctx, reader, stored_cv_count, rational != 0, dimension, scale))?;
+    let (control_points, weights) = pole_storage.with_storage(|| {
+        read_poles(
+            ctx,
+            reader,
+            stored_cv_count,
+            rational != 0,
+            dimension,
+            scale,
+        )
+    })?;
     let u_knots = reconstruct_checked_knots(ctx, &u_knots, u_order, u_count)?;
     let v_knots = reconstruct_checked_knots(ctx, &v_knots, v_order, v_count)?;
     let row_len = v_count;
-    let copy_points = || copy_rows(ctx, &control_points, row_len, "Rhino NURBS surface pole grid");
-    let point_rows = if weights.is_some() { pole_storage.with_storage(copy_points)? } else { copy_points()? };
+    let copy_points = || {
+        copy_rows(
+            ctx,
+            &control_points,
+            row_len,
+            "Rhino NURBS surface pole grid",
+        )
+    };
+    let point_rows = if weights.is_some() {
+        pole_storage.with_storage(copy_points)?
+    } else {
+        copy_points()?
+    };
     let weight_rows = weights
         .as_deref()
-        .map(|values| pole_storage.with_storage(|| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid")))
+        .map(|values| {
+            pole_storage
+                .with_storage(|| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid"))
+        })
         .transpose()?;
     let poles =
         NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?.or_else(|error| {
             Err(GeometryError::malformed(
                 reader.position(),
                 ctx.format_retained(
-                    format_args!("{}", error),
+                    format_args!("{error}"),
                     "Rhino read_nurbs_surface_prefix text",
                 )?,
             ))
@@ -1127,7 +1191,7 @@ pub(crate) fn read_nurbs_surface_prefix(
         Err(GeometryError::malformed(
             reader.position(),
             ctx.format_retained(
-                format_args!("{}", error),
+                format_args!("{error}"),
                 "Rhino read_nurbs_surface_prefix text",
             )?,
         ))
@@ -1419,18 +1483,28 @@ fn periodic_knots_by<T>(
     }
     let mut scale = 0.0_f64;
     if require_source_finite {
-        if !ctx.all_by(knots, |knot| {
-            let value = value(knot);
-            if !value.is_finite() { return Ok(false); }
-            scale = scale.max(value.abs());
-            Ok(true)
-        }, "Rhino periodic knot scale")? { return Ok(false); }
+        if !ctx.all_by(
+            knots,
+            |knot| {
+                let value = value(knot);
+                if !value.is_finite() {
+                    return Ok(false);
+                }
+                scale = scale.max(value.abs());
+                Ok(true)
+            },
+            "Rhino periodic knot scale",
+        )? {
+            return Ok(false);
+        }
     } else {
         for knot in ctx.admit_iter(knots, "Rhino periodic knot scale")? {
             scale = scale.max(value(knot).abs());
         }
     }
-    if scale == 0.0 || !scale.is_finite() { return Ok(false); }
+    if scale == 0.0 || !scale.is_finite() {
+        return Ok(false);
+    }
     let knot = |index: usize| value(&knots[index]) / scale;
     let mut tolerance = (knot(order - 1) - knot(order - 3)).abs() * f64::EPSILON.sqrt();
     tolerance = tolerance.max((knot(cv_count - 1) - knot(order - 2)).abs() * f64::EPSILON.sqrt());
