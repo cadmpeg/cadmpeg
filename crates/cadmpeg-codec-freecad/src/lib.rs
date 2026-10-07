@@ -865,27 +865,27 @@ impl CodecBackend for FcstdCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        container::summarize(ctx, &scan)
+        container::summarize(ctx, scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        let scan = container::scan(ctx, root)?;
+        let mut scan = container::scan(ctx, root)?;
         let mut admitted_entities = 0_u64;
         let mut attributes = container::source_attributes(ctx, &scan)?;
-        let thumbnail = scan
-            .data
-            .get("thumbnails/Thumbnail.png")
-            .map(|view| ("thumbnails/Thumbnail.png", view.window()))
-            .or_else(|| {
-                scan.data
-                    .get("Thumbnail.png")
-                    .map(|view| ("Thumbnail.png", view.window()))
-            });
+        let mut thumbnail = None;
+        for name in ["thumbnails/Thumbnail.png", "Thumbnail.png"] {
+            if let Some(view) = ctx.get_btree_map(&scan.data, name, "FCStd thumbnail lookup")? {
+                thumbnail = Some((name, view.window()));
+                break;
+            }
+        }
         if let Some((_, thumbnail)) = thumbnail {
-            attributes.insert(
+            ctx.insert_btree_map(
+                &mut attributes,
                 cadmpeg_core::nonblank_literal!("thumbnail_bytes"),
                 thumbnail.len().to_string(),
-            );
+                "FCStd source attribute records",
+            )?;
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
@@ -921,17 +921,26 @@ impl CodecBackend for FcstdCodec {
         namespace.set_arena(ctx, "physical_ledger", &scan.ledger)?;
         let decode_document = !ctx.container_only();
         if decode_document {
-            let document_bytes = scan
-                .data
-                .get("Document.xml")
-                .map(|view| view.window())
-                .ok_or_else(|| {
-                    CodecError::Malformed("Document.xml disappeared after scan".into())
-                })?;
-            let graph = persistence::parse_with_context(document_bytes, &scan.schema_version, ctx)?;
-            for property in &graph.properties {
-                for side_entry in property.side_entries() {
-                    if !scan.data.contains_key(side_entry) {
+            // The scan's Document.xml tree serves persistence and element maps,
+            // then is dropped before the shape payloads are read.
+            let document_xml = scan.document_xml.take().ok_or_else(|| {
+                CodecError::Malformed("Document.xml disappeared after scan".into())
+            })?;
+            let graph = persistence::parse_document(
+                document_xml.text,
+                document_xml.xml.document(),
+                dialect::FcstdDialect::from_schema_version(&scan.schema_version),
+                ctx,
+            )?;
+            for property in ctx.admit_iter(&graph.properties, "FCStd side entry check")? {
+                for side_entry in
+                    ctx.admit_iter(property.side_entries(), "FCStd side entry check")?
+                {
+                    if !ctx.contains_key_btree_map(
+                        &scan.data,
+                        side_entry.as_str(),
+                        "FCStd archive entry map",
+                    )? {
                         return Err(CodecError::Malformed(ctx.format_retained(
                             format_args!(
                                 "property {} references missing side entry {side_entry}",
@@ -943,14 +952,15 @@ impl CodecBackend for FcstdCodec {
                 }
             }
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
-            let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
                 ctx,
-                document_bytes,
+                document_xml.xml.document(),
                 scan.document.file_version.value(),
                 &graph.properties,
                 &entry_records,
             )?;
+            drop(document_xml);
+            let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
             namespace.set_arena(ctx, "properties", &graph.properties)?;
@@ -998,13 +1008,17 @@ impl CodecBackend for FcstdCodec {
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
             ir.model.curves = curve_transfer.curves;
-            for (owner, procedural) in curve_transfer.procedural {
+            for (owner, procedural) in
+                ctx.admit_iter(curve_transfer.procedural, "FCStd procedural curves")?
+            {
                 ir.model
                     .add_procedural_curve(ctx, &owner, procedural)?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
             ir.model.surfaces = surface_transfer.surfaces;
-            for (owner, procedural) in surface_transfer.procedural {
+            for (owner, procedural) in
+                ctx.admit_iter(surface_transfer.procedural, "FCStd procedural surfaces")?
+            {
                 ir.model
                     .add_procedural_surface(ctx, &owner, procedural)?
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
@@ -1080,31 +1094,7 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
-            for (entry_name, owner) in gui_graph
-                .properties
-                .iter()
-                .flat_map(|property| {
-                    property
-                        .side_entries
-                        .iter()
-                        .map(move |entry| (entry.as_str(), property.id.as_str()))
-                })
-                .chain(gui_graph.documents.iter().flat_map(|document| {
-                    document.states.iter().flat_map(|state| {
-                        state
-                            .side_entries
-                            .iter()
-                            .map(move |entry| (entry.as_str(), state.id.as_str()))
-                    })
-                }))
-            {
-                if let Some(entry) = entry_records
-                    .iter_mut()
-                    .find(|entry| entry.name() == entry_name)
-                {
-                    entry.add_reference(ctx, owner)?;
-                }
-            }
+            bind_gui_entry_references(ctx, &mut entry_records, &gui_graph)?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "entries", &entry_records)?;
@@ -1169,19 +1159,14 @@ impl CodecBackend for FcstdCodec {
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
-        ctx.reserve_vec(
+        ctx.append_vec(
             &mut losses,
-            topology_losses.len(),
+            &mut topology_losses,
             "FCStd topology loss output",
         )?;
-        losses.extend(topology_losses);
-        let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
-        ctx.reserve_vec(
-            &mut losses,
-            usize::from(dialect_losses.is_some()),
-            "FCStd dialect loss output",
-        )?;
-        losses.extend(dialect_losses);
+        if let Some(loss) = dialect::FcstdDialect::dialect_loss(dialects.primary()) {
+            ctx.push_vec(&mut losses, loss, "FCStd dialect loss output")?;
+        }
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             &mut admitted_entities,
@@ -1218,6 +1203,57 @@ impl EncoderBackend for FcstdCodec {
     ) -> Result<ExportBody, CodecError> {
         writer::target::plan(input, &target)
     }
+}
+
+/// Adds each GUI property and state as a referencing owner of the archive
+/// entries it names, once per entry, through one index of entry names.
+fn bind_gui_entry_references(
+    ctx: &DecodeContext<'_>,
+    entry_records: &mut [native::EntryRecord],
+    gui_graph: &gui::Graph,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "FCStd GUI entry references";
+    let (entry_index, _entry_index_storage) = ctx.unique_index(
+        ctx.admit_iter(&*entry_records, OPERATION)?
+            .enumerate()
+            .map(|(index, entry)| (entry.name(), index)),
+        OPERATION,
+    )?;
+    let mut bound_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut bound = HashSet::new();
+    let mut additions = Vec::new();
+    let property_references = ctx
+        .admit_iter(&gui_graph.properties, OPERATION)?
+        .map(|property| (property.side_entries.as_slice(), property.id.as_str()));
+    let state_references = ctx
+        .admit_iter(&gui_graph.documents, OPERATION)?
+        .flat_map(|document| document.states.iter())
+        .map(|state| (state.side_entries.as_slice(), state.id.as_str()));
+    let mut owners = property_references.chain(state_references);
+    while let Some((names, owner)) = ctx.next_charged(&mut owners, OPERATION)? {
+        for name in ctx.admit_iter(names, OPERATION)? {
+            // Archive entry names are unique, so every named record is indexed.
+            let Some(&Some(index)) = ctx.get_hash_map(&entry_index, name.as_str(), OPERATION)?
+            else {
+                continue;
+            };
+            if bound_storage
+                .with_storage(|| ctx.insert_hash_set(&mut bound, (index, owner), OPERATION))?
+            {
+                ctx.push_scoped_vec(
+                    &mut bound_storage,
+                    &mut additions,
+                    (index, owner),
+                    OPERATION,
+                )?;
+            }
+        }
+    }
+    drop(entry_index);
+    for (index, owner) in ctx.admit_iter(additions, OPERATION)? {
+        entry_records[index].push_reference(ctx, owner)?;
+    }
+    Ok(())
 }
 
 fn semantic_losses(

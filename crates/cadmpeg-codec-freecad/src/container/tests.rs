@@ -27,7 +27,7 @@ fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
 fn document_root_error_refuses_at_retained_limit() {
     let bytes = b"<UnexpectedRoot SchemaVersion=\"4\"/>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document root error", |ctx| {
-        super::parse_document(ctx, bytes)
+        super::parse_document(ctx, bytes).map(|(facts, version, _)| (facts, version))
     });
 }
 
@@ -35,7 +35,7 @@ fn document_root_error_refuses_at_retained_limit() {
 fn document_parse_error_refuses_at_retained_limit() {
     let bytes = b"<Document>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document parse error", |ctx| {
-        super::parse_document(ctx, bytes)
+        super::parse_document(ctx, bytes).map(|(facts, version, _)| (facts, version))
     });
 }
 
@@ -93,7 +93,7 @@ fn collection_context<T>(limit: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) ->
     f(&ctx)
 }
 
-fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
+fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_, '_>) -> T) -> T {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let bytes = archive(document);
     let arena = DecodeArena::new();
@@ -193,13 +193,11 @@ fn entry_referencing_property_refuses_at_collection_limit() {
             xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
                 .expect("valid XML span"),
         };
-        collection_context(
-            cadmpeg_core::decode::u64_from_index(scan.entries.len()),
-            |ctx| {
-                assert!(matches!(super::entry_records(ctx, scan, &[property]),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "FCStd entry referencing properties"));
-            },
+        crate::test_support::refusal_at(
+            ResourceDimension::CollectionItems,
+            &[],
+            "FCStd entry referencing properties",
+            |ctx| super::entry_records(ctx, scan, std::slice::from_ref(&property)),
         );
     });
 }
@@ -275,9 +273,11 @@ fn resource_entry_record() -> crate::native::EntryRecord {
 fn gui_entry_reference_refuses_at_collection_limit() {
     collection_context(0, |ctx| {
         let mut entry = resource_entry_record();
-        assert!(matches!(entry.add_reference(ctx, "fcstd:native:gui#owner"),
+        assert!(
+            matches!(entry.push_reference(ctx, "fcstd:native:gui#owner"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FCStd GUI entry references"));
+                if limit.operation == "FCStd GUI entry references")
+        );
     });
 }
 
@@ -292,7 +292,7 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let mut entry = resource_entry_record();
     assert!(
-        matches!(entry.add_reference(&ctx, "fcstd:native:gui#owner"),
+        matches!(entry.push_reference(&ctx, "fcstd:native:gui#owner"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FCStd GUI entry reference identity")
     );
@@ -302,7 +302,7 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
 fn document_domain_set_refuses_on_collection_limit() {
     let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";
     crate::test_support::assert_collection_refusal_at(&[], "FCStd document domains", |ctx| {
-        super::parse_document(ctx, document)
+        super::parse_document(ctx, document).map(|(facts, version, _)| (facts, version))
     });
 }
 
@@ -368,21 +368,6 @@ fn ordered_physical_span_vector_refuses_on_collection_limit() {
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.operation == "FCStd ordered physical spans")
-    );
-}
-
-#[test]
-fn coverage_classification_map_refuses_on_collection_limit() {
-    let logical = [crate::native::LogicalSpan {
-        id: "logical".to_owned(),
-        entry: "extra".to_owned(),
-        span: crate::native::ByteSpan::try_new(0, 1).expect("nonempty span"),
-        classification: crate::native::LogicalClassification::Structural,
-    }];
-    let result = collection_context(0, |ctx| super::byte_coverage(ctx, &[], &[], &logical, 0));
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd coverage classifications")
     );
 }
 

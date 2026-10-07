@@ -280,7 +280,7 @@ mod tests {
                 assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
             }
             let mut record = record;
-            assert!(record.add_reference(ctx, "invalid").is_err());
+            assert!(record.push_reference(ctx, "invalid").is_err());
             assert!(record.referenced_by().is_empty());
         });
         crate::test_support::assert_retained_refusal_at(&[], "FreeCAD entry digest", |ctx| {
@@ -3524,10 +3524,32 @@ impl TryFrom<Vec<String>> for EntryReferences {
 
 /// Check the exact ZIP name used by source scans and retained entry records.
 pub(crate) fn is_safe_entry_name(name: &str) -> bool {
-    !name.contains('\\')
+    match safe_entry_name(name, |_, _| Ok::<(), std::convert::Infallible>(())) {
+        Ok(safe) => safe,
+        Err(never) => match never {},
+    }
+}
+
+/// [`is_safe_entry_name`] under the decode budget.
+pub(crate) fn is_safe_entry_name_charged(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+) -> Result<bool, CodecError> {
+    safe_entry_name(name, |length, operation| {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+    })
+}
+
+/// Admits the name's bytes once, then reads them in two linear passes.
+fn safe_entry_name<E>(
+    name: &str,
+    admit: impl FnOnce(usize, &'static str) -> Result<(), E>,
+) -> Result<bool, E> {
+    admit(name.len(), "FCStd entry name check")?;
+    Ok(!name.contains('\\')
         && !name
             .split('/')
-            .any(|component| component.is_empty() || component == "." || component == "..")
+            .any(|component| component.is_empty() || component == "." || component == ".."))
 }
 
 impl EntryRecord {
@@ -3592,7 +3614,8 @@ impl EntryRecord {
         &self.sha256
     }
 
-    pub(crate) fn add_reference(
+    /// Appends a referencing owner; the caller adds each owner once.
+    pub(crate) fn push_reference(
         &mut self,
         ctx: &DecodeContext<'_>,
         owner: &str,
@@ -3603,15 +3626,6 @@ impl EntryRecord {
         )?;
         if !cadmpeg_ir::ids::is_valid_identity(owner) {
             return Err(CodecError::malformed("entry reference identity is invalid"));
-        }
-        for candidate in &self.referenced_by.0 {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(candidate.len()),
-                "FreeCAD entry reference comparison",
-            )?;
-            if candidate == owner {
-                return Ok(());
-            }
         }
         ctx.reserve_vec(&mut self.referenced_by.0, 1, "FCStd GUI entry references")?;
         let owner = ctx.copy_retained_text(owner, "FCStd GUI entry reference identity")?;

@@ -61,7 +61,7 @@ pub(crate) fn parse_with_context(
     )
 }
 
-fn parse_document(
+pub(crate) fn parse_document(
     text: &str,
     xml: &roxmltree::Document<'_>,
     schema: FcstdDialect,

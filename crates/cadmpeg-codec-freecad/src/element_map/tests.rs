@@ -100,7 +100,7 @@ fn string_table_record_refuses_on_collection_limit() {
     crate::test_support::assert_collection_refusal_at(
         document,
         "FreeCAD string table records",
-        |ctx| parse(ctx, document, 1, &[], &[]),
+        |ctx| parse_bytes(ctx, document, 1, &[], &[]),
     );
 }
 
@@ -171,7 +171,7 @@ fn test_parse(
     ),
     CodecError,
 > {
-    in_decode_context(|ctx| parse(ctx, document, file_version, properties, entries))
+    in_decode_context(|ctx| parse_bytes(ctx, document, file_version, properties, entries))
 }
 
 fn test_parse_string_table(
@@ -382,7 +382,7 @@ fn element_map_identity_refuses_at_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
         b"<Document/>",
         "FreeCAD native child identity",
-        |ctx| parse(ctx, b"<Document/>", 1, std::slice::from_ref(&property), &[]),
+        |ctx| parse_bytes(ctx, b"<Document/>", 1, std::slice::from_ref(&property), &[]),
     );
 }
 
@@ -839,4 +839,24 @@ fn child_map_reference_is_rejected_by_complete_source_admission() {
     );
     let error = result.expect_err("current source route rejects the mutated child-map index");
     assert!(error.to_string().contains("mapIndex"), "{error}");
+}
+
+/// Parses `Document.xml` bytes into a tree and reads its element maps.
+fn parse_bytes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    document: &[u8],
+    file_version: usize,
+    properties: &[PropertyRecord],
+    entries: &[EntryRecord],
+) -> Result<
+    (
+        crate::native::StringTables,
+        Vec<crate::native::element_map::ElementMapRecord>,
+    ),
+    CodecError,
+> {
+    let text = std::str::from_utf8(document)
+        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
+    let xml = ctx.parse_xml(text, "FreeCAD XML tree")?;
+    parse(ctx, xml.document(), file_version, properties, entries)
 }
