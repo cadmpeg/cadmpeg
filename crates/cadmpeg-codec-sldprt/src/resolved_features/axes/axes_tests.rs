@@ -1343,11 +1343,9 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             .unwrap()
             .is_none()
     );
-    for operation in ["find SLDPRT implicit profile axis"] {
-        crate::test_support::work_refusal_at(operation, |ctx| {
-            super::profile_roster_implicit_axis_endpoints(ctx, &lane, "profile-native", &markers)
-        });
-    }
+    crate::test_support::work_refusal_at("find SLDPRT implicit profile axis", |ctx| {
+        super::profile_roster_implicit_axis_endpoints(ctx, &lane, "profile-native", &markers)
+    });
 }
 
 #[test]

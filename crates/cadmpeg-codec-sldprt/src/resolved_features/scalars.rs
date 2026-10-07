@@ -84,52 +84,27 @@ pub(crate) fn named_scalars_charged(
 /// The name length comes from the payload's own length byte, so the offset is a
 /// function of the retained bytes alone and never of a stored name value.
 fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
-    let Some((header_offset, value_offset)) = (|| {
-        let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
-        let header_offset = name_offset
-            .checked_add(NAME_MARKER.len() + 1)?
-            .checked_add(units.checked_mul(2)?)?;
-        Some((
-            header_offset,
-            header_offset.checked_add(SCALAR_HEADER.len())?,
-        ))
-    })() else {
-        return None;
-    };
+    let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
+    let header_offset = name_offset.checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(units.checked_mul(2)?)?;
+    let value_offset = header_offset.checked_add(SCALAR_HEADER.len())?;
     if payload.get(header_offset..value_offset) == Some(SCALAR_HEADER) {
         return Some(value_offset);
     }
-    let Some(compact_value_offset) = header_offset.checked_add(COMPACT_SCALAR_HEADER.len()) else {
-        return None;
-    };
+    let compact_value_offset = header_offset.checked_add(COMPACT_SCALAR_HEADER.len())?;
     if payload.get(header_offset..compact_value_offset) == Some(COMPACT_SCALAR_HEADER) {
-        let Some(trailer_offset) = compact_value_offset.checked_add(8) else {
-            return None;
-        };
-        if compact_scalar_layout(payload, trailer_offset) {
-            return Some(compact_value_offset);
-        }
+        let trailer_offset = compact_value_offset.checked_add(8)?;
+        if compact_scalar_layout(payload, trailer_offset) { return Some(compact_value_offset); }
     }
-    let Some((value_only_offset, shifted_value_offset, shifted_trailer_offset)) = (|| {
-        let value_only_offset = header_offset.checked_add(VALUE_ONLY_SCALAR_HEADER.len())?;
-        let shifted_value_offset = value_only_offset.checked_add(4)?;
-        Some((
-            value_only_offset,
-            shifted_value_offset,
-            shifted_value_offset.checked_add(8)?,
-        ))
-    })() else {
-        return None;
-    };
+    let value_only_offset = header_offset.checked_add(VALUE_ONLY_SCALAR_HEADER.len())?;
+    let shifted_value_offset = value_only_offset.checked_add(4)?;
+    let shifted_trailer_offset = shifted_value_offset.checked_add(8)?;
     if payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER)
         && payload.get(value_only_offset..shifted_value_offset) == Some(&[0; 4])
         && View::f64_le_at(payload, shifted_value_offset).is_some_and(f64::is_finite)
         && shifted_value_only_scalar_trailer(payload, shifted_trailer_offset)
-    {
-        return Some(shifted_value_offset);
-    }
-    (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
-        .then_some(value_only_offset)
+    { return Some(shifted_value_offset); }
+    (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER)).then_some(value_only_offset)
 }
 
 /// Whether two scalar indexes agree, field by field, with values within four

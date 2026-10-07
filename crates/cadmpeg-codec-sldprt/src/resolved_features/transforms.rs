@@ -394,14 +394,12 @@ pub(super) fn dimensioned_circle_transform(
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut signature =
         |transform: MarkerTransform| -> Result<Option<Vec<_>>, cadmpeg_core::CodecError> {
-            let mut transformed = storage.with_storage(|| {
-                ctx.collection_vec::<(i64, i64, GridCoordinate)>(circles.len(), OPERATION)
-            })?;
+            let mut transformed = Vec::new();
             for (center, radius) in ctx.admit_iter(circles, OPERATION)? {
                 let Some(center) = transform.apply(*center) else {
                     continue;
                 };
-                transformed.push((center.0, center.1, *radius));
+                storage.with_storage(|| ctx.push_vec(&mut transformed, (center.0, center.1, *radius), OPERATION))?;
             }
             ctx.sort_unstable_by(&mut transformed, |value| value, Ord::cmp, OPERATION)?;
             Ok(

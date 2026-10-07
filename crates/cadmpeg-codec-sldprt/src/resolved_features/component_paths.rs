@@ -280,6 +280,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    const DEPENDENCY: &str = "collect SLDPRT adjacent profile dependencies";
     #[derive(PartialEq)]
     enum ProfileVote<'a> {
         Missing,
@@ -558,7 +559,6 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         let Some(&profile_index) = ctx.get_hash_map(&neutral_indices, *profile, INDEX)? else {
             continue;
         };
-        const DEPENDENCY: &str = "collect SLDPRT adjacent profile dependencies";
         let reference = features[profile_index]
             .id
             .try_clone_for_decode(ctx, DEPENDENCY)?;
@@ -612,25 +612,21 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
     let explicit_children = if let Some(encoded) =
         ctx.get_btree_map(&profile.properties, "DissectableChildren", OWNERSHIP)?
     {
-        // The split and trims read each byte of the list a bounded number
-        // of times.
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(encoded.len()),
-            "parse SLDPRT profile block children",
-        )?;
         let mut children = BTreeSet::new();
-        for value in encoded.split(',') {
-            let Ok(source) =
-                ctx.parse_text::<u32>(value.trim(), "parse SLDPRT profile child identity")?
-            else {
+        let mut characters = encoded.char_indices();
+        let mut start = 0;
+        loop {
+            let end = ctx.find_map(&mut characters, |(offset, character)| Ok((character == ',').then_some(offset)),
+                "parse SLDPRT profile block children")?.unwrap_or(encoded.len());
+            let value = ctx.trim_text(&encoded[start..end], "trim SLDPRT profile child identity")?;
+            let Ok(source) = ctx.parse_text::<u32>(value, "parse SLDPRT profile child identity")? else {
                 return Ok(false);
             };
-            if source == 0
-                || !storage
-                    .with_storage(|| ctx.insert_btree_set(&mut children, source, OWNERSHIP))?
-            {
+            if source == 0 || !storage.with_storage(|| ctx.insert_btree_set(&mut children, source, OWNERSHIP))? {
                 return Ok(false);
             }
+            if end == encoded.len() { break; }
+            start = end + 1;
         }
         Some(children)
     } else {
@@ -746,6 +742,7 @@ pub(crate) fn project_dissected_sketches(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[crate::records::FeatureHistory],
 ) -> Result<(), CodecError> {
+    const DEPENDENCY: &str = "replace SLDPRT dissected profile dependency";
     const INDEX: &str = "index SLDPRT dissected profiles";
     const IDENTITY: &str = "retain SLDPRT dissected profile identity";
     let mut storage = ctx.reserve_scoped(0, INDEX)?;
@@ -955,7 +952,6 @@ pub(crate) fn project_dissected_sketches(
         for (child, owner) in
             ctx.admit_iter(replaced?, "replace SLDPRT dissected profile dependency")?
         {
-            const DEPENDENCY: &str = "replace SLDPRT dissected profile dependency";
             if let Some(position) = ctx.position_by(
                 feature.dependencies.as_slice(),
                 |dependency| ctx.equal(dependency, &child, DEPENDENCY),
