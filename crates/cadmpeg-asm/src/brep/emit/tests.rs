@@ -262,6 +262,7 @@ fn procedural_source_id_refuses_collection_limit() {
     let error = super::append_source_id(
         &ctx,
         &mut sources,
+        &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap(),
         1,
         "f3d:child:surface#1",
         "ASM procedural support sources",
@@ -286,6 +287,7 @@ fn procedural_child_id_refuses_retained_limit() {
     let error = super::append_source_id(
         &ctx,
         &mut sources,
+        &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap(),
         1,
         "f3d:child:curve#1",
         "ASM procedural curve child sources",
@@ -542,7 +544,7 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let (_, inward) = super::super::topology::decode_analytic_carriers(&ctx, &records).unwrap();
+        let (_, inward) = super::super::topology::decode_analytic_carriers(&ctx, &records, &mut ctx.reserve_scoped(0, "ASM test scratch").unwrap()).unwrap();
         let reach = Reachable {
             faces: HashSet::from([0]),
             ..Reachable::default()
@@ -952,9 +954,8 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
                 format: crate::asm_format!("f3d"),
             },
             &mut out,
-            &mut carriers,
-            &mut reach,
-        )
+            &records, &mut carriers,
+            &mut reach, &mut asm_decode_ctx.reserve_scoped(0, "ASM test scratch").unwrap())
         .expect("generated topology is within resource limits");
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(normalized)) = &carriers.curve_geo[&4]
         else {

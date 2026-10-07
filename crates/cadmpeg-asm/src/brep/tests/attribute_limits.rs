@@ -17,14 +17,15 @@ fn source_attribute_string_refuses_retained_limit() {
         offset: 0,
         len: 0,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
-        4 * std::mem::size_of::<cadmpeg_ir::attributes::AttributeValue>(),
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "ASM attribute string", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            source_attribute(&ctx, &record, AttributeTarget::Document, FORMAT)
+        },
     );
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = source_attribute(&ctx, &record, AttributeTarget::Document, FORMAT)
-        .expect_err("one attribute string exceeds zero retained bytes");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected retained refusal: {error:?}");
     };

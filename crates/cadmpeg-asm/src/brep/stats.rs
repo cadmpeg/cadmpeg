@@ -33,32 +33,47 @@ pub struct Stats {
 impl Stats {
     /// Total count represented by `missing_face_surface_kinds`.
     #[must_use]
-    pub fn missing_face_surfaces(&self) -> usize {
-        self.missing_face_surface_kinds.values().sum()
+    pub fn missing_face_surfaces(
+        &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        Ok(ctx.admit_iter(&self.missing_face_surface_kinds, "ASM missing face surfaces count")?
+            .map(|(_, count)| count).sum())
     }
 
     /// Total count represented by `unknown_surface_kinds`.
     #[must_use]
-    pub fn unknown_surface_faces(&self) -> usize {
-        self.unknown_surface_kinds.values().sum()
+    pub fn unknown_surface_faces(
+        &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        Ok(ctx.admit_iter(&self.unknown_surface_kinds, "ASM unknown surface faces count")?
+            .map(|(_, count)| count).sum())
     }
 
     /// Total count represented by `procedural_curve_kinds`.
     #[must_use]
-    pub fn procedural_curve_edges(&self) -> usize {
-        self.procedural_curve_kinds.values().sum()
+    pub fn procedural_curve_edges(
+        &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        Ok(ctx.admit_iter(&self.procedural_curve_kinds, "ASM procedural curve edges count")?
+            .map(|(_, count)| count).sum())
     }
 
     /// Total count represented by `undecoded_pcurve_kinds`.
     #[must_use]
-    pub fn undecoded_pcurve_refs(&self) -> usize {
-        self.undecoded_pcurve_kinds.values().sum()
+    pub fn undecoded_pcurve_refs(
+        &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        Ok(ctx.admit_iter(&self.undecoded_pcurve_kinds, "ASM undecoded pcurve refs count")?
+            .map(|(_, count)| count).sum())
     }
 
     /// Total count represented by `other_record_kinds`.
     #[must_use]
-    pub fn other_records(&self) -> usize {
-        self.other_record_kinds.values().sum()
+    pub fn other_records(
+        &self, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        Ok(ctx.admit_iter(&self.other_record_kinds, "ASM other records count")?
+            .map(|(_, count)| count).sum())
     }
 
     pub(super) fn merge(
@@ -93,7 +108,7 @@ impl Stats {
             ),
             (&mut self.other_record_kinds, other.other_record_kinds),
         ] {
-            for (kind, count) in source {
+            for (kind, count) in ctx.admit_iter(source, "ASM merge loss kind traversal")? {
                 ctx.admit_btree_entry(target, &kind, "ASM merge loss kinds")?;
                 *target.entry(kind).or_default() += count;
             }
@@ -129,25 +144,25 @@ struct StatsWire {
 impl Serialize for Stats {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut wire = serializer.serialize_struct("Stats", 14)?;
-        wire.serialize_field("missing_face_surfaces", &self.missing_face_surfaces())?;
+        wire.serialize_field("missing_face_surfaces", &self.missing_face_surface_kinds.values().sum::<usize>())?;
         wire.serialize_field(
             "missing_face_surface_kinds",
             &self.missing_face_surface_kinds,
         )?;
-        wire.serialize_field("unknown_surface_faces", &self.unknown_surface_faces())?;
+        wire.serialize_field("unknown_surface_faces", &self.unknown_surface_kinds.values().sum::<usize>())?;
         wire.serialize_field("unknown_surface_kinds", &self.unknown_surface_kinds)?;
         wire.serialize_field("mesh_surface_faces", &self.mesh_surface_faces)?;
         wire.serialize_field("nurbs_surfaces", &self.nurbs_surfaces)?;
         wire.serialize_field("nurbs_curves", &self.nurbs_curves)?;
-        wire.serialize_field("procedural_curve_edges", &self.procedural_curve_edges())?;
+        wire.serialize_field("procedural_curve_edges", &self.procedural_curve_kinds.values().sum::<usize>())?;
         wire.serialize_field("procedural_curve_kinds", &self.procedural_curve_kinds)?;
-        wire.serialize_field("undecoded_pcurve_refs", &self.undecoded_pcurve_refs())?;
+        wire.serialize_field("undecoded_pcurve_refs", &self.undecoded_pcurve_kinds.values().sum::<usize>())?;
         wire.serialize_field("undecoded_pcurve_kinds", &self.undecoded_pcurve_kinds)?;
         wire.serialize_field(
             "partial_procedural_supports",
             &self.partial_procedural_supports,
         )?;
-        wire.serialize_field("other_records", &self.other_records())?;
+        wire.serialize_field("other_records", &self.other_record_kinds.values().sum::<usize>())?;
         wire.serialize_field("other_record_kinds", &self.other_record_kinds)?;
         wire.end()
     }
@@ -237,7 +252,7 @@ mod tests {
     fn a_restated_stats_kind_key_is_refused_by_name() {
         let read: Stats = serde_json::from_str(&document("{\"cone\":1,\"plane\":2}"))
             .expect("distinct kind keys");
-        assert_eq!(read.missing_face_surfaces(), 3);
+        assert_eq!(read.missing_face_surfaces(&cadmpeg_test_support::service_decode_context()).unwrap(), 3);
 
         let Err(error) = serde_json::from_str::<Stats>(&document("{\"cone\":1,\"cone\":3}")) else {
             panic!("a restated kind key is refused")

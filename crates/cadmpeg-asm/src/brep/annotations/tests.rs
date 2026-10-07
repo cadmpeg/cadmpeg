@@ -28,7 +28,7 @@ fn annotation_curve_index_refuses_collection_limit() {
         &mut out,
         &[],
         &std::collections::HashMap::new(),
-        &Carriers::default(),
+        &mut Carriers::default(),
         "source",
         crate::asm_format!("f3d"),
     )
@@ -41,7 +41,7 @@ fn annotation_curve_index_refuses_collection_limit() {
 
 #[test]
 fn annotation_stream_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 
@@ -52,7 +52,7 @@ fn annotation_stream_refuses_retained_limit() {
         offset: 0,
         len: 0,
     }];
-    let mut out = AsmBrep {
+    let make_out = || AsmBrep {
         curves: vec![Curve {
             id: CurveId::mint("f3d:brep:entity#1").unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -61,21 +61,20 @@ fn annotation_stream_refuses_retained_limit() {
         ..AsmBrep::default()
     };
     let by_index = std::collections::HashMap::from([(1, &records[0])]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<super::AnnotationRecord>());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = emit_annotation_records(
-        &ctx,
-        &mut out,
-        &records,
-        &by_index,
-        &Carriers::default(),
-        "source",
-        crate::asm_format!("f3d"),
-    )
-    .expect_err("one stream label exceeds zero retained bytes");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "ASM annotation stream", |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            ).unwrap();
+            emit_annotation_records(
+                &ctx, &mut make_out(), &records, &by_index,
+                &mut Carriers::default(), "source", crate::asm_format!("f3d"),
+            )
+        },
+    );
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected retained refusal: {error:?}");
     };
@@ -102,7 +101,7 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
         })
         .collect();
     let mut out = AsmBrep::default();
-    let carriers = Carriers {
+    let mut carriers = Carriers {
         procedural_support_sources: vec![(37, SurfaceId::mint("f3d:child:support#named").unwrap())],
         procedural_curve_child_sources: vec![(37, CurveId::mint("f3d:child:curve#named").unwrap())],
         ..Carriers::default()
@@ -119,7 +118,7 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
         &mut out,
         &records,
         &by_index,
-        &carriers,
+        &mut carriers,
         "source",
         crate::asm_format!("f3d"),
     )
