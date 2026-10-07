@@ -888,7 +888,7 @@ pub(super) fn compact_surface_selections(
         {
             continue;
         }
-        for (offset, components) in candidates {
+        for (offset, components) in ctx.admit_iter(candidates, OPERATION)? {
             let endpoint_selector = if kind == NativeClassKind::Extrusion {
                 compact_extrusion_endpoint_selector_for_marker(
                     ctx,
@@ -1741,7 +1741,6 @@ fn cosmetic_thread_cylinder_reference_at(
     payload: &[u8],
     body_offset: usize,
 ) -> Result<Option<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
-    ctx.charge_work(160, "decode SLDPRT cosmetic cylinder reference")?;
     let Some(marker) = cosmetic_thread_cylinder_reference_marker_layout_at(payload, body_offset)
     else {
         return Ok(None);
@@ -1820,13 +1819,6 @@ fn component_face_reference_at_impl(
 ) -> Result<Option<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     const NESTED_FACE_CLASS: &[u8] = b"moFaceRef_c";
 
-    const OPERATION: &str = "decode SLDPRT component face reference";
-    ctx.charge_work(
-        u64_from_index(nested_face::COMPONENT_MARKER)
-            .checked_add(32)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
     let marker_offsets = (|| {
         let token = View::u16_le_at(payload, body_offset)?;
         let flags = payload.get(body_offset + 6..body_offset + 8)?;
@@ -1932,32 +1924,14 @@ pub(super) fn component_face_reference_in_record(
         return Ok(None);
     };
     let mut candidate: Option<(usize, Vec<FeatureInputComponentPathEntry>)> = None;
-    let mut ambiguous = false;
-    for (offset, header) in payload.windows(header_length).enumerate() {
-        ctx.charge_work(u64_from_index(header_length), OPERATION)?;
+    let ambiguous = ctx.any_by(payload.windows(header_length).enumerate(), |(offset, header)| {
         if &header[..CLASS_MARKER.len()] != CLASS_MARKER
             || header[CLASS_MARKER.len()..CLASS_MARKER.len() + 2] != class_length.to_le_bytes()
-            || &header[CLASS_MARKER.len() + 2..] != CLASS
-        {
-            continue;
-        }
-        let Some(reference) = component_face_reference_at(ctx, payload, offset + header_length)?
-        else {
-            continue;
-        };
-        if let Some(candidate) = &candidate {
-            let work = u64_from_index(candidate.1.len())
-                .checked_add(u64_from_index(reference.1.len()))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
-            if candidate != &reference {
-                ambiguous = true;
-            }
-        } else {
-            candidate = Some(reference);
-        }
-    }
+            || &header[CLASS_MARKER.len() + 2..] != CLASS { return Ok(false); }
+        let Some(reference) = component_face_reference_at(ctx, payload, offset + header_length)? else { return Ok(false); };
+        if let Some(first) = &candidate { Ok(!ctx.equal(first, &reference, OPERATION)?) }
+        else { candidate = Some(reference); Ok(false) }
+    }, OPERATION)?;
     Ok(if ambiguous { None } else { candidate })
 }
 
@@ -1966,7 +1940,6 @@ fn compact_sketch_surface_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
-    ctx.charge_work(128, "decode SLDPRT sketch surface path")?;
     let header = (|| {
         if payload.get(marker.checked_sub(12)?..marker - 8)? != 5u32.to_le_bytes()
             || payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
@@ -2027,8 +2000,8 @@ fn compact_surface_selection_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
+    let (result, storage) = ctx.with_scoped_storage("decode SLDPRT compact surface path", || -> Result<_, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact surface path";
-    ctx.charge_work(32, OPERATION)?;
     let header = (|| {
         let count_start = marker.checked_sub(12)?;
         let kind_start = marker.checked_sub(8)?;
@@ -2051,37 +2024,25 @@ fn compact_surface_selection_at(
         return Ok(None);
     };
     let mut components = Vec::new();
-    loop {
-        ctx.charge_work(64, OPERATION)?;
-        if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice()) {
-            break;
-        }
-        let entry = (|| {
-            Some(FeatureInputComponentPathEntry {
-                instance: Some(View::u16_le_at(payload, cursor)?),
-                type_signature: signature,
-                local_id: Some(View::u32_le_at(payload, cursor + 16)?),
-            })
-        })();
-        let Some(entry) = entry else {
-            return Ok(None);
-        };
-        ctx.reserve_vec(&mut components, 1, OPERATION)?;
-        components.push(entry);
-        let Some(next) = cursor.checked_add(20) else {
-            return Ok(None);
-        };
-        cursor = next;
-        if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice())
-            && payload.get(cursor + 8..cursor + 20) == Some(signature.as_slice())
-        {
-            let Some(next) = cursor.checked_add(4) else {
-                return Ok(None);
-            };
-            cursor = next;
-        }
+    let mut offsets = std::iter::successors(Some(cursor), |offset| {
+        let next = offset.checked_add(20)?;
+        Some(if payload.get(next + 4..next + 16) != Some(signature.as_slice())
+            && payload.get(next + 8..next + 20) == Some(signature.as_slice()) { next.checked_add(4)? } else { next })
+    });
+    while let Some(offset) = ctx.next_charged(&mut offsets, OPERATION)? {
+        cursor = offset;
+        if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice()) { break; }
+        let Some(entry) = (|| { Some(FeatureInputComponentPathEntry {
+            instance: Some(View::u16_le_at(payload, cursor)?), type_signature: signature,
+            local_id: Some(View::u32_le_at(payload, cursor + 16)?),
+        }) })() else { return Ok(None); };
+        ctx.push_vec(&mut components, entry, OPERATION)?;
     }
     Ok((!components.is_empty()).then_some(components))
+
+    })?;
+    if result.is_some() { storage.commit()?; }
+    Ok(result)
 }
 
 fn flatten_surface_references(
@@ -2094,11 +2055,7 @@ fn flatten_surface_references(
     };
     let mut components = Vec::new();
     for reference in ctx.admit_iter(references, OPERATION)? {
-        for component in reference {
-            ctx.charge_work(1, OPERATION)?;
-            ctx.reserve_vec(&mut components, 1, OPERATION)?;
-            components.push(component);
-        }
+        ctx.extend_vec(&mut components, reference, OPERATION)?;
     }
     Ok(Some(components))
 }
@@ -2164,14 +2121,7 @@ pub(crate) fn surface_reference_matches_at(
         inline_surface_reference_at(ctx, payload, marker)?,
     ];
     for components in candidates.into_iter().flatten() {
-        let work = u64_from_index(components.len())
-            .checked_add(u64_from_index(expected.len()))
-            .and_then(|work| work.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, OPERATION)?;
-        if components == expected {
-            return Ok(true);
-        }
+        if ctx.equal(components.as_slice(), expected, OPERATION)? { return Ok(true); }
     }
     Ok(false)
 }
@@ -2261,7 +2211,6 @@ pub(super) fn mirror_pattern_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
-    ctx.charge_work(32, "decode SLDPRT mirror component path")?;
     let admitted = (|| {
         let prefix = marker.checked_sub(8)?;
         let marker_end = marker.checked_add(16)?;
@@ -2287,7 +2236,6 @@ pub(super) fn component_vector_path_at(
     reserve_operation: &'static str,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
     const OPERATION: &str = "decode SLDPRT component vector path";
-    ctx.charge_work(32, OPERATION)?;
     let count = (|| {
         let header = marker.checked_sub(12)?;
         if payload.get(marker..marker.checked_add(16)?)? != COMPACT_EDGE_VECTOR_MARKER
@@ -2367,18 +2315,14 @@ pub(super) fn component_vector_path_at(
     if let Some((components, _)) = candidate_results[2].take() {
         return Ok(Some(components));
     }
-    let work = u64_from_index(cell_count)
-        .checked_mul(32)
-        .and_then(|work| work.checked_add(8192))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)?;
-    Ok(unique_candidate(
-        candidate_results
-            .into_iter()
-            .flatten()
-            .filter(|(_, end)| !component_path_continues(payload, *end, true)),
-    )
-    .map(|(components, _)| components))
+    let mut unique = None;
+    for candidate in candidate_results.into_iter().flatten() {
+        if component_path_continues(payload, candidate.1, true) { continue; }
+        if let Some(first) = &unique {
+            if !ctx.equal(first, &candidate, OPERATION)? { return Ok(None); }
+        } else { unique = Some(candidate); }
+    }
+    Ok(unique.map(|(components, _)| components))
 }
 
 fn component_path_continues(payload: &[u8], end: usize, root_separators: bool) -> bool {
@@ -2458,15 +2402,12 @@ pub(super) fn compact_mixed_component_path(
     root_separators: bool,
     reserve_operation: &'static str,
 ) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
+    let (result, storage) = ctx.with_scoped_storage("decode SLDPRT mixed component path", || -> Result<_, CodecError> {
     const OPERATION: &str = "decode SLDPRT mixed component path";
-    let work = u64_from_index(count)
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(1024))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(work, OPERATION)?;
     let mut components = Vec::new();
     ctx.reserve_capacity(&mut components, count, reserve_operation)?;
-    for index in 0..count {
+    let mut indices = 0..count;
+    while let Some(index) = ctx.next_charged(&mut indices, OPERATION)? {
         let Some((component, len)) = compact_mixed_component_at(payload, cursor, count - index)
         else {
             return Ok(None);
@@ -2493,6 +2434,10 @@ pub(super) fn compact_mixed_component_path(
         cursor += gap;
     }
     Ok(Some((components, cursor)))
+
+    })?;
+    if result.is_some() { storage.commit()?; }
+    Ok(result)
 }
 
 fn counted_surface_component_path_at(
@@ -2501,7 +2446,6 @@ fn counted_surface_component_path_at(
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
     const OPERATION: &str = "decode SLDPRT counted surface path";
-    ctx.charge_work(32, OPERATION)?;
     let count = (|| {
         let header = marker.checked_sub(12)?;
         if payload.get(marker..marker.checked_add(16)?)? != COMPACT_EDGE_VECTOR_MARKER
@@ -2539,20 +2483,14 @@ fn counted_surface_component_path_at(
             None
         },
     ];
-    ctx.charge_work(
-        u64_from_index(count)
-            .checked_mul(32)
-            .and_then(|work| work.checked_add(8192))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    Ok(unique_candidate(
-        candidates
-            .into_iter()
-            .flatten()
-            .filter(|(_, end)| !component_path_continues(payload, *end, false)),
-    )
-    .map(|(components, _)| components))
+    let mut unique = None;
+    for candidate in candidates.into_iter().flatten() {
+        if component_path_continues(payload, candidate.1, false) { continue; }
+        if let Some(first) = &unique {
+            if !ctx.equal(first, &candidate, OPERATION)? { return Ok(None); }
+        } else { unique = Some(candidate); }
+    }
+    Ok(unique.map(|(components, _)| components))
 }
 
 fn mirror_surface_type_prefix(ctx: &DecodeContext<'_>, lane: &FeatureInputLane) -> Result<Option<[u8; 4]>, CodecError> {
@@ -2594,12 +2532,13 @@ fn inline_mirror_surface_paths(
         let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
+    let mut index_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut seen = std::collections::HashSet::new();
     let mut result = Vec::<(usize, Vec<FeatureInputComponentPathEntry>)>::new();
     let Some(scan_end) = end.checked_sub(16) else {
         return Ok(result);
     };
-    'terminals: for terminal in start..scan_end {
-        ctx.charge_work(64, OPERATION)?;
+    'terminals: for terminal in ctx.admit_iter(start..scan_end, OPERATION)? {
         if signature_at(terminal).is_none() {
             continue;
         }
@@ -2618,12 +2557,12 @@ fn inline_mirror_surface_paths(
             continue;
         }
         let mut cursor = terminal;
-        loop {
-            ctx.charge_work(32, OPERATION)?;
-            if instance_before(cursor).is_none() {
+        let mut predecessors = std::iter::successors(Some(terminal), |offset| offset.checked_sub(16));
+        while let Some(current) = ctx.next_charged(&mut predecessors, OPERATION)? {
+            if instance_before(current).is_none() {
                 break;
             }
-            let Some(previous) = cursor.checked_sub(16) else {
+            let Some(previous) = current.checked_sub(16) else {
                 break;
             };
             if signature_at(previous).is_none() {
@@ -2635,34 +2574,20 @@ fn inline_mirror_surface_paths(
         let Some(mut parsed_components) = inline_surface_components_at(payload, offset) else {
             continue;
         };
+        let mut component_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut components = Vec::new();
-        loop {
-            ctx.charge_work(32, OPERATION)?;
-            let Some(component) = parsed_components.next() else {
-                break;
-            };
+        while let Some(component) = ctx.next_charged(&mut parsed_components, OPERATION)? {
             let Some(component) = component else {
                 continue 'terminals;
             };
-            ctx.reserve_vec(&mut components, 1, OPERATION)?;
-            components.push(component);
+            component_storage.with_storage(|| ctx.push_vec(&mut components, component, OPERATION))?;
         }
-        let mut duplicate = false;
-        for (_, existing) in &result {
-            ctx.charge_work(
-                u64_from_index(components.len())
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            if existing == &components {
-                duplicate = true;
-                break;
-            }
-        }
-        if !duplicate {
-            ctx.reserve_vec(&mut result, 1, OPERATION)?;
-            result.push((offset, components));
+        let (key, key_storage) = ctx.with_scoped_storage(OPERATION, || ctx.collect_vec(
+            components.iter().map(|component| (component.instance, component.type_signature, component.local_id)), OPERATION))?;
+        if index_storage.with_storage(|| ctx.insert_hash_set(&mut seen, key, OPERATION))? {
+            index_storage.with_storage(|| key_storage.commit())?;
+            component_storage.commit()?;
+            ctx.push_vec(&mut result, (offset, components), OPERATION)?;
         }
     }
     Ok(result)
@@ -2730,17 +2655,13 @@ fn inline_surface_reference_at(
     payload: &[u8],
     offset: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
+    let (result, storage) = ctx.with_scoped_storage("decode SLDPRT inline surface reference", || -> Result<_, CodecError> {
     const OPERATION: &str = "decode SLDPRT inline surface reference";
-    ctx.charge_work(16, OPERATION)?;
     let Some(mut parsed_components) = inline_surface_components_at(payload, offset) else {
         return Ok(None);
     };
     let mut components = Vec::new();
-    loop {
-        ctx.charge_work(32, OPERATION)?;
-        let Some(component) = parsed_components.next() else {
-            break;
-        };
+    while let Some(component) = ctx.next_charged(&mut parsed_components, OPERATION)? {
         let Some(component) = component else {
             return Ok(None);
         };
@@ -2748,6 +2669,10 @@ fn inline_surface_reference_at(
         components.push(component);
     }
     Ok(Some(components))
+
+    })?;
+    if result.is_some() { storage.commit()?; }
+    Ok(result)
 }
 
 /// Decode persistent surface identities declared by `*SurfIdRep_c` classes.
@@ -2778,14 +2703,10 @@ pub(crate) fn generated_surface_identities(
         let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
+    let mut scratch = ctx.reserve_scoped(0, OPERATION)?;
     let mut prefixes = HashSet::new();
-    for class in &lane.classes {
-        ctx.charge_work(
-            u64_from_index(class.name.len())
-                .checked_add(1)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
+    let mut seen = HashSet::new();
+    for class in ctx.admit_iter(&lane.classes, OPERATION)? {
         if !class.name.ends_with("SurfIdRep_c") {
             continue;
         }
@@ -2808,15 +2729,14 @@ pub(crate) fn generated_surface_identities(
         let Some(prefix) = prefix else {
             continue;
         };
-        ctx.insert_hash_set(&mut prefixes, prefix, OPERATION)?;
+        scratch.with_storage(|| ctx.insert_hash_set(&mut prefixes, prefix, OPERATION))?;
     }
 
     let mut result = Vec::<SurfaceIdentityFields>::new();
     let Some(last) = lane.native_payload.len().checked_sub(16) else {
         return Ok(Vec::new());
     };
-    'terminals: for terminal in 0..=last {
-        ctx.charge_work(64, OPERATION)?;
+    'terminals: for terminal in ctx.admit_iter(0..=last, OPERATION)? {
         let Some(window) = lane
             .native_payload
             .get(terminal..terminal + 16)
@@ -2826,7 +2746,7 @@ pub(crate) fn generated_surface_identities(
         };
         let [p0, p1, p2, p3, .., t0, t1, t2, t3] = *window;
         let prefix = [p0, p1, p2, p3];
-        if !prefixes.contains(&prefix) {
+        if !ctx.contains_hash_set(&prefixes, &prefix, OPERATION)? {
             continue;
         }
         let Some(feature_source_id) = signature_prefix(window, prefix) else {
@@ -2845,12 +2765,12 @@ pub(crate) fn generated_surface_identities(
             continue;
         }
         let mut offset = terminal;
-        loop {
-            ctx.charge_work(32, OPERATION)?;
-            if instance_before(offset).is_none() {
+        let mut predecessors = std::iter::successors(Some(terminal), |offset| offset.checked_sub(16));
+        while let Some(current) = ctx.next_charged(&mut predecessors, OPERATION)? {
+            if instance_before(current).is_none() {
                 break;
             }
-            let Some(previous) = offset.checked_sub(16) else {
+            let Some(previous) = current.checked_sub(16) else {
                 break;
             };
             if lane
@@ -2868,36 +2788,21 @@ pub(crate) fn generated_surface_identities(
         else {
             continue;
         };
+        let mut component_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut components = Vec::new();
-        loop {
-            ctx.charge_work(32, OPERATION)?;
-            let Some(component) = parsed_components.next() else {
-                break;
-            };
+        while let Some(component) = ctx.next_charged(&mut parsed_components, OPERATION)? {
             let Some(component) = component else {
                 continue 'terminals;
             };
-            ctx.reserve_vec(&mut components, 1, OPERATION)?;
-            components.push(component);
+            component_storage.with_storage(|| ctx.push_vec(&mut components, component, OPERATION))?;
         }
-        let mut duplicate = false;
-        for identity in &result {
-            ctx.charge_work(
-                u64_from_index(components.len())
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            if identity.type_prefix == prefix && identity.components == components {
-                duplicate = true;
-                break;
-            }
-        }
-        if duplicate {
-            continue;
-        }
+        let (key, key_storage) = ctx.with_scoped_storage(OPERATION, || ctx.collect_vec(
+            components.iter().map(|component| (component.instance, component.type_signature, component.local_id)), OPERATION))?;
+        if !scratch.with_storage(|| ctx.insert_hash_set(&mut seen, (prefix, key), OPERATION))? { continue; }
+        scratch.with_storage(|| key_storage.commit())?;
+        component_storage.commit()?;
         let local_identity = cadmpeg_core::bytes::assemble_u32_le(tail);
-        ctx.reserve_vec(&mut result, 1, OPERATION)?;
+        scratch.with_storage(|| ctx.reserve_vec(&mut result, 1, OPERATION))?;
         let input_index = result.len();
         result.push(SurfaceIdentityFields {
             offset: u64_from_index(offset),
@@ -2919,17 +2824,10 @@ pub(crate) fn generated_surface_identities(
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut identities = Vec::new();
     ctx.reserve_vec(&mut identities, result.len(), OPERATION)?;
-    for (ordinal, fields) in result.into_iter().enumerate() {
+    for (ordinal, fields) in ctx.admit_iter(result, OPERATION)?.enumerate() {
         let ordinal = u32::try_from(ordinal).map_err(|_| {
             ctx.refuse_codec_limit(OPERATION, u64::from(u32::MAX), u64_from_index(ordinal))
         })?;
-        ctx.charge_work(
-            u64_from_index(lane_key.len())
-                .checked_add(u64_from_index(lane.id.len()))
-                .and_then(|size| size.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
         let id = ctx.format_retained(
             format_args!(
                 "sldprt:feature-input:generated-surface#{lane_key}:{}",
@@ -2961,8 +2859,8 @@ fn compact_edge_selection_vector(
     let Some(last_marker) = payload.len().checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) else {
         return Ok(None);
     };
-    for marker in 12..=last_marker {
-        ctx.charge_work(16, OPERATION)?;
+    let mut offsets = 12..=last_marker;
+    while let Some(marker) = ctx.next_charged(&mut offsets, OPERATION)? {
         if payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) {
             continue;
         }
@@ -2982,7 +2880,6 @@ pub(crate) fn compact_edge_selection_at(
     marker: usize,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact edge identities";
-    ctx.charge_work(32, OPERATION)?;
     let count = (|| {
         let count_start = marker.checked_sub(12)?;
         let kind_start = marker.checked_sub(8)?;
@@ -3013,28 +2910,17 @@ pub(crate) fn compact_edge_selection_at(
     let mut ambiguous = false;
     let mut consider = |ids: Vec<u32>| {
         if let Some(candidate) = &candidate {
-            let work = u64_from_index(candidate.len())
-                .checked_add(u64_from_index(ids.len()))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
-            if candidate != &ids {
-                ambiguous = true;
-            }
-        } else {
-            candidate = Some(ids);
-        }
+            if !ctx.equal(candidate, &ids, OPERATION)? { ambiguous = true; }
+        } else { candidate = Some(ids); }
         Ok::<_, CodecError>(())
     };
     if let Some(ids) = compact_homogeneous_edge_ids(ctx, payload, marker + 18, count)? {
         consider(ids)?;
     }
-    for ComponentPathReference(components, _) in
-        compact_edge_component_path_candidates(ctx, payload, marker, count)?
-    {
+    for ComponentPathReference(components, _) in ctx.admit_iter(
+        compact_edge_component_path_candidates(ctx, payload, marker, count)?, OPERATION)? {
         let mut ids = Vec::new();
-        for component in components {
-            ctx.charge_work(1, OPERATION)?;
+        for component in ctx.admit_iter(components, OPERATION)? {
             if let Some(id) = component.local_id {
                 ctx.reserve_vec(&mut ids, 1, OPERATION)?;
                 ids.push(id);
@@ -3056,7 +2942,6 @@ pub(crate) fn compact_edge_component_path_at(
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
     const OPERATION: &str = "decode SLDPRT edge component projection";
-    ctx.charge_work(32, OPERATION)?;
     let count = (|| {
         let count_start = marker.checked_sub(12)?;
         let kind_start = marker.checked_sub(8)?;
@@ -3075,19 +2960,11 @@ pub(crate) fn compact_edge_component_path_at(
     };
     if let Some(references) = compact_component_reference_list_at(ctx, payload, marker)? {
         let mut components = Vec::new();
-        for reference in references {
-            ctx.charge_work(u64_from_index(reference.len()), OPERATION)?;
-            if reference
-                .iter()
-                .any(|component| component.instance == Some(0x8083))
-            {
+        for reference in ctx.admit_iter(references, OPERATION)? {
+            if ctx.any_by(&reference, |component| Ok(component.instance == Some(0x8083)), OPERATION)? {
                 continue;
             }
-            for component in reference {
-                ctx.charge_work(1, OPERATION)?;
-                ctx.reserve_vec(&mut components, 1, OPERATION)?;
-                components.push(component);
-            }
+            ctx.extend_vec(&mut components, reference, OPERATION)?;
         }
         return Ok(Some(components));
     }
@@ -3109,8 +2986,8 @@ fn compact_component_reference_list(
     marker: usize,
     require_distinct_framing: bool,
 ) -> Result<Option<Vec<Vec<FeatureInputComponentPathEntry>>>, CodecError> {
+    let (result, storage) = ctx.with_scoped_storage("decode SLDPRT component reference list", || -> Result<_, CodecError> {
     const OPERATION: &str = "decode SLDPRT component reference list";
-    ctx.charge_work(48, OPERATION)?;
     let header = (|| {
         let count_start = marker.checked_sub(12)?;
         if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
@@ -3162,18 +3039,15 @@ fn compact_component_reference_list(
     let mut references = Vec::new();
     ctx.reserve_capacity(&mut references, count, OPERATION)?;
     let mut has_reference_framing = false;
-    for index in 0..count {
+    let mut indices = 0..count;
+    while let Some(index) = ctx.next_charged(&mut indices, OPERATION)? {
         let mut reference = Vec::new();
-        loop {
-            ctx.charge_work(32, OPERATION)?;
-            let Some(hop) = hop_at(cursor) else {
-                break;
-            };
-            ctx.reserve_vec(&mut reference, 1, OPERATION)?;
-            reference.push(hop);
-            cursor += 16;
+        let mut offsets = (cursor..payload.len()).step_by(16);
+        while let Some(offset) = ctx.next_charged(&mut offsets, OPERATION)? {
+            let Some(hop) = hop_at(offset) else { break; };
+            ctx.push_vec(&mut reference, hop, OPERATION)?;
+            cursor = offset + 16;
         }
-        ctx.charge_work(64, OPERATION)?;
         if reference.is_empty() && index + 1 == count && terminal_null_at(cursor) {
             return Ok((!references.is_empty()).then_some(references));
         }
@@ -3200,7 +3074,6 @@ fn compact_component_reference_list(
         if index + 1 == count {
             continue;
         }
-        ctx.charge_work(256, OPERATION)?;
         let Some(gap) = (0..=10).find(|gap| {
             payload
                 .get(cursor..cursor + *gap)
@@ -3212,6 +3085,10 @@ fn compact_component_reference_list(
         cursor += gap;
     }
     Ok((!require_distinct_framing || has_reference_framing).then_some(references))
+
+    })?;
+    if result.is_some() { storage.commit()?; }
+    Ok(result)
 }
 
 #[derive(Debug)]
@@ -3265,34 +3142,25 @@ pub(super) fn variable_fillet_control_references(
         Ord::cmp,
         "sort SLDPRT variable fillet controls",
     )?;
+    let mut names_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut names = names_storage.with_storage(|| ctx.collect_vec(&lane.names, OPERATION))?;
+    ctx.sort_unstable_by_key(&mut names, |name| name.offset, Ord::cmp, OPERATION)?;
     let mut result = Vec::new();
     let mut start = control_start;
-    for (marker, references) in controls {
-        let mut names = lane
-            .names
-            .iter()
-            .filter(|name| {
-                name.offset > u64_from_index(start) && name.offset < u64_from_index(marker)
-            })
-            .map(|name| {
-                variable_fillet_dimension_index_for_feature(ctx, feature, &name.value)
-                    .map(|index| index.map(|_| name))
-            })
-            .filter_map(Result::transpose);
-        ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
-        let Some(name) = names.next().transpose()? else {
-            return Ok(None);
-        };
-        if names.next().transpose()?.is_some() {
-            return Ok(None);
-        }
-        let mut name_text = String::new();
-        ctx.try_reserve_retained_text(&mut name_text, name.value.len(), OPERATION)?;
-        ctx.append_retained(&mut name_text, &name.value, OPERATION)?;
-        ctx.reserve_vec(&mut result, 1, OPERATION)?;
-        result.push(VariableFilletControl(name_text, references));
+    for (marker, references) in ctx.admit_iter(controls, OPERATION)? {
+        let first = ctx.partition_point(&names, |name| Ok(name.offset <= u64_from_index(start)), OPERATION)?;
+        let end = ctx.partition_point(&names, |name| Ok(name.offset < u64_from_index(marker)), OPERATION)?;
+        let mut name = None;
+        let ambiguous = ctx.any_by(&names[first..end], |candidate| {
+            if variable_fillet_dimension_index_for_feature(ctx, feature, &candidate.value)?.is_none() { return Ok(false); }
+            Ok(name.replace(*candidate).is_some())
+        }, OPERATION)?;
+        let Some(name) = name.filter(|_| !ambiguous) else { return Ok(None); };
+        let name_text = ctx.copy_retained_text(&name.value, OPERATION)?;
+        ctx.push_vec(&mut result, VariableFilletControl(name_text, references), OPERATION)?;
         start = marker;
     }
+
     Ok((!result.is_empty()).then_some(result))
 }
 
@@ -3325,7 +3193,6 @@ pub(super) fn compact_component_path_end_at(
     marker: usize,
 ) -> Result<Option<usize>, CodecError> {
     const OPERATION: &str = "decode SLDPRT component path end";
-    ctx.charge_work(32, OPERATION)?;
     let count = (|| {
         let count_start = marker.checked_sub(12)?;
         let kind_start = marker.checked_sub(8)?;
@@ -3362,19 +3229,9 @@ pub(super) fn compact_component_path_end_at(
     let mut candidate: Option<(Vec<FeatureInputComponentPathEntry>, usize)> = None;
     let mut ambiguous = false;
     for path in candidates.into_iter().flatten() {
-        ctx.charge_work(
-            u64_from_index(path.0.len())
-                .checked_add(2)
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-            OPERATION,
-        )?;
         if let Some(candidate) = &candidate {
-            if candidate != &path {
-                ambiguous = true;
-            }
-        } else {
-            candidate = Some(path);
-        }
+            if !ctx.equal(candidate, &path, OPERATION)? { ambiguous = true; }
+        } else { candidate = Some(path); }
     }
     Ok(if ambiguous {
         None
@@ -3432,30 +3289,15 @@ fn compact_edge_component_path_candidates(
         ];
         let mut distinct = Vec::new();
         for candidate in candidates.into_iter().flatten() {
-            let mut duplicate = false;
-            for existing in &distinct {
-                ctx.charge_work(
-                    u64_from_index(candidate.0.len())
-                        .checked_add(2)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                if existing == &candidate {
-                    duplicate = true;
-                    break;
-                }
-            }
-            if !duplicate {
-                ctx.reserve_vec(&mut distinct, 1, OPERATION)?;
-                distinct.push(candidate);
+            if !ctx.any_by(&distinct, |existing| ctx.equal(existing, &candidate, OPERATION), OPERATION)? {
+                ctx.push_vec(&mut distinct, candidate, OPERATION)?;
             }
         }
         Ok(distinct)
     };
     let mut terminal_paths = Vec::new();
     if count > 1 {
-        for (components, end) in component_paths(count - 1)? {
-            ctx.charge_work(36, OPERATION)?;
+        for (components, end) in ctx.admit_iter(component_paths(count - 1)?, OPERATION)? {
             if let Some(source) = edge_terminal_source_at(payload, end) {
                 ctx.reserve_vec(&mut terminal_paths, 1, OPERATION)?;
                 terminal_paths.push((components, end, source));
@@ -3479,32 +3321,17 @@ fn compact_edge_component_path_candidates(
         OPERATION,
     )?;
     let mut candidates = Vec::new();
-    for candidate in terminal_paths
-        .into_iter()
+    for candidate in ctx.admit_iter(terminal_paths, OPERATION)?
         .map(|(components, _, source)| ComponentPathReference(components, Some(source)))
         .chain(
-            full_paths
-                .into_iter()
+            ctx.admit_iter(full_paths, OPERATION)?
                 .map(|(components, _)| ComponentPathReference(components, None)),
         )
     {
-        let mut duplicate = false;
-        for existing in &candidates {
-            ctx.charge_work(
-                u64_from_index(candidate.0.len())
-                    .checked_add(2)
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                OPERATION,
-            )?;
-            if existing == &candidate {
-                duplicate = true;
-                break;
-            }
-        }
-        if !duplicate {
-            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
-            candidates.push(candidate);
-        }
+        if !ctx.any_by(&candidates, |existing: &ComponentPathReference| {
+            ctx.equal(&(&existing.0, existing.1), &(&candidate.0, candidate.1), OPERATION)
+        }, OPERATION)? { ctx.push_vec(&mut candidates, candidate, OPERATION)?; }
+
     }
     Ok(candidates)
 }
@@ -3522,25 +3349,6 @@ fn edge_terminal_source_at(payload: &[u8], end: usize) -> Option<u32> {
     }
     let source = View::u32_le_at(trailer, 16)?;
     (source != 0).then_some(source)
-}
-
-fn unique_candidate<T: PartialEq>(candidates: impl IntoIterator<Item = T>) -> Option<T> {
-    let mut unique = None;
-    let mut ambiguous = false;
-    for candidate in candidates {
-        if let Some(first) = &unique {
-            if first != &candidate {
-                ambiguous = true;
-            }
-        } else {
-            unique = Some(candidate);
-        }
-    }
-    if ambiguous {
-        None
-    } else {
-        unique
-    }
 }
 
 pub(crate) fn compact_edge_owner_feature_at(
@@ -3570,16 +3378,12 @@ pub(crate) fn compact_edge_owner_feature_at(
         owner
     };
     if let Some(source) = owner_source {
-        for feature in features {
-            ctx.charge_work(1, OPERATION)?;
-            if feature.source_value() != Some(source) {
-                continue;
-            }
+        if let Some(feature) = ctx.find_by(features, |feature| Ok(feature.source_value() == Some(source)), OPERATION)? {
             if feature_precedes_consumer(ctx, feature, features, consumer_ref)? {
                 return Ok(Some(ctx.copy_retained_text(&feature.id, OPERATION)?));
             }
-            break;
         }
+
     }
     Ok(component_path_input_features(ctx, components, features, consumer_ref)?.pop())
 }
@@ -3597,22 +3401,8 @@ pub(crate) fn compact_edge_producer_features_at(
     if let Some(owner) =
         compact_edge_owner_feature_at(ctx, payload, marker, components, features, consumer_ref)?
     {
-        let mut duplicate = false;
-        for producer in &producers {
-            let work = u64_from_index(producer.len())
-                .checked_add(u64_from_index(owner.len()))
-                .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, OPERATION)?;
-            if producer == &owner {
-                duplicate = true;
-                break;
-            }
-        }
-        if !duplicate {
-            ctx.reserve_vec(&mut producers, 1, OPERATION)?;
-            producers.push(owner);
-        }
+        if !ctx.contains(&producers, &owner, OPERATION)? { ctx.push_vec(&mut producers, owner, OPERATION)?; }
+
     }
     Ok(producers)
 }
@@ -3629,17 +3419,10 @@ pub(crate) fn surface_selection_terminal_feature_at(
         .and_then(|ComponentPathReference(_, source)| source)
     {
         let mut found = None;
-        for feature in features {
-            ctx.charge_work(1, OPERATION)?;
-            if feature.source_value() != Some(source) {
-                continue;
-            }
-            if found.is_some() {
-                found = None;
-                break;
-            }
-            found = Some(feature);
-        }
+        if ctx.any_by(features, |feature| {
+            if feature.source_value() != Some(source) { return Ok(false); }
+            Ok(found.replace(feature).is_some())
+        }, OPERATION)? { found = None; }
         if let Some(feature) = found {
             return Ok(Some(ctx.copy_retained_text(&feature.id, OPERATION)?));
         }
@@ -3653,6 +3436,7 @@ fn compact_homogeneous_edge_ids(
     mut cursor: usize,
     count: usize,
 ) -> Result<Option<Vec<u32>>, CodecError> {
+    let (result, storage) = ctx.with_scoped_storage("decode SLDPRT homogeneous edge identities", || -> Result<_, CodecError> {
     const OPERATION: &str = "decode SLDPRT homogeneous edge identities";
     let window = (|| {
         let signature = payload.get(cursor + 4..cursor + 16)?;
@@ -3668,13 +3452,9 @@ fn compact_homogeneous_edge_ids(
     };
     let mut ids = Vec::new();
     ctx.reserve_capacity(&mut ids, count, OPERATION)?;
-    ctx.charge_work(
-        u64_from_index(count)
-            .checked_mul(40)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
-    for index in 0..count {
+
+    let mut indices = 0..count;
+    while let Some(index) = ctx.next_charged(&mut indices, OPERATION)? {
         let Some(entry_signature) = payload.get(cursor + 4..cursor + 16) else {
             return Ok(None);
         };
@@ -3716,6 +3496,10 @@ fn compact_homogeneous_edge_ids(
         }
     }
     Ok(Some(ids))
+
+    })?;
+    if result.is_some() { storage.commit()?; }
+    Ok(result)
 }
 
 pub(super) fn compact_heterogeneous_component_path(
@@ -3762,6 +3546,7 @@ fn compact_component_path_with_layout(
     wide: bool,
     reserve_operation: &'static str,
 ) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
+    let (result, storage) = ctx.with_scoped_storage("decode SLDPRT component path layout", || -> Result<_, CodecError> {
     const OPERATION: &str = "decode SLDPRT component path layout";
     let entry_length = if wide { 24 } else { 20 };
     let local_id_offset = if wide { 20 } else { 16 };
@@ -3779,16 +3564,11 @@ fn compact_component_path_with_layout(
     {
         return Ok(None);
     }
-    ctx.charge_work(
-        u64_from_index(count)
-            .checked_add(1)
-            .and_then(|count| count.checked_mul(512))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
+
     let mut entries = Vec::new();
     ctx.reserve_capacity(&mut entries, count, reserve_operation)?;
-    for index in 0..count {
+    let mut indices = 0..count;
+    while let Some(index) = ctx.next_charged(&mut indices, OPERATION)? {
         if compact_component_entry_at(payload, cursor, wide).is_none() {
             return Ok(None);
         }
@@ -3815,6 +3595,10 @@ fn compact_component_path_with_layout(
         cursor += gap;
     }
     Ok(Some((entries, cursor)))
+
+    })?;
+    if result.is_some() { storage.commit()?; }
+    Ok(result)
 }
 
 fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> bool {
@@ -3860,6 +3644,7 @@ fn compact_sparse_component_path(
     cursor: usize,
     count: usize,
 ) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
+    let (result, storage) = ctx.with_scoped_storage("decode SLDPRT sparse component path", || -> Result<_, CodecError> {
     fn entry_prefix(payload: &[u8], offset: usize) -> Option<(u16, [u8; 12])> {
         let instance = payload.get(offset..offset + 4)?;
         let token = View::u16_le_at(instance, 0)?;
@@ -3881,14 +3666,14 @@ fn compact_sparse_component_path(
         cursor: usize,
         remaining: usize,
         failed: &mut HashSet<(usize, usize)>,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
         const OPERATION: &str = "decode SLDPRT sparse component path";
         let _depth = ctx.enter_nested(OPERATION)?;
-        ctx.charge_work(32, OPERATION)?;
-        if failed.contains(&(cursor, remaining)) {
+        if ctx.contains_hash_set(failed, &(cursor, remaining), OPERATION)? {
             return Ok(None);
         }
-        ctx.insert_hash_set(failed, (cursor, remaining), OPERATION)?;
+        storage.with_storage(|| ctx.insert_hash_set(failed, (cursor, remaining), OPERATION))?;
         let Some((instance, type_signature)) = entry_prefix(payload, cursor) else {
             return Ok(None);
         };
@@ -3916,20 +3701,17 @@ fn compact_sparse_component_path(
                 return Ok(Some((entries, end)));
             }
             for gap in COMPACT_COMPONENT_PATH_GAPS {
-                ctx.charge_work(32, OPERATION)?;
                 if !compact_component_separator(payload, end, *gap) {
                     continue;
                 }
                 let Some(next) = end.checked_add(*gap) else {
                     continue;
                 };
-                let Some((mut tail, path_end)) = parse(ctx, payload, next, remaining - 1, failed)?
+                let Some((mut tail, path_end)) = parse(ctx, payload, next, remaining - 1, failed, storage)?
                 else {
                     continue;
                 };
-                ctx.charge_work(u64_from_index(tail.len()), OPERATION)?;
-                ctx.reserve_vec(&mut tail, 1, OPERATION)?;
-                tail.insert(0, entry);
+                ctx.insert_vec(&mut tail, 0, entry, OPERATION)?;
                 return Ok(Some((tail, path_end)));
             }
         }
@@ -3949,7 +3731,14 @@ fn compact_sparse_component_path(
     {
         return Ok(None);
     }
-    parse(ctx, payload, cursor, count, &mut HashSet::new())
+    let mut storage = ctx.reserve_scoped(0, "decode SLDPRT sparse component path")?;
+    let mut failed = HashSet::new();
+    // The recursive path survives; only the memo table is scratch storage.
+    parse(ctx, payload, cursor, count, &mut failed, &mut storage)
+
+    })?;
+    if result.is_some() { storage.commit()?; }
+    Ok(result)
 }
 
 fn compact_u16_edge_ids(
@@ -3958,6 +3747,7 @@ fn compact_u16_edge_ids(
     cursor: usize,
     count: usize,
 ) -> Result<Option<Vec<u32>>, CodecError> {
+    let (result, storage) = ctx.with_scoped_storage("decode SLDPRT short edge identities", || -> Result<_, CodecError> {
     const OPERATION: &str = "decode SLDPRT short edge identities";
     let end = count.checked_mul(2).and_then(|len| cursor.checked_add(len));
     let Some(end) = end else {
@@ -3971,19 +3761,13 @@ fn compact_u16_edge_ids(
     };
     let mut ids = Vec::new();
     ctx.reserve_vec(&mut ids, count, OPERATION)?;
-    ctx.charge_work(
-        u64_from_index(count)
-            .checked_mul(2)
-            .and_then(|work| work.checked_add(32))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-        OPERATION,
-    )?;
+
     let mut view = View::over_retained(bytes);
-    for _ in 0..count {
+    for _ in ctx.admit_iter(0..count, OPERATION)? {
         let Some(id) = view.u16_le() else {
             return Ok(None);
         };
-        ids.push(u32::from(id));
+        ctx.push_vec(&mut ids, u32::from(id), OPERATION)?;
     }
     let sentinel_terminated = suffix.get(..19).is_some_and(|suffix| {
         suffix[..16].iter().all(|byte| *byte == 0) && suffix[16..19] == [0xff, 0xfe, 0xff]
@@ -3993,9 +3777,13 @@ fn compact_u16_edge_ids(
             && View::u16_le_at(suffix, 8).is_some_and(is_class_token)
     });
     Ok(
-        (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated))
+        (ctx.all_by(&ids, |id| Ok(*id != 0), OPERATION)? && (sentinel_terminated || object_terminated))
             .then_some(ids),
     )
+
+    })?;
+    if result.is_some() { storage.commit()?; }
+    Ok(result)
 }
 
 fn compact_body_selection_vector(
@@ -4009,8 +3797,8 @@ fn compact_body_selection_vector(
     let Some(last) = payload.len().checked_sub(16) else {
         return Ok(None);
     };
-    for relative in (0..=last).rev() {
-        ctx.charge_work(32, OPERATION)?;
+    let mut offsets = (0..=last).rev();
+    while let Some(relative) = ctx.next_charged(&mut offsets, OPERATION)? {
         if payload.get(relative..relative + 4) != Some(SCHEMA)
             || payload.get(relative + 4..relative + 12) != Some(&[0; 8])
         {
@@ -4062,7 +3850,6 @@ pub(crate) fn compact_body_selection_at(
     offset: usize,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     const OPERATION: &str = "decode SLDPRT compact body selection";
-    ctx.charge_work(32, OPERATION)?;
     let Some(header_end) = offset.checked_add(12) else {
         return Ok(None);
     };
@@ -4180,7 +3967,6 @@ pub(super) fn component_reference_curve_path_at(
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
     const OPERATION: &str = "decode SLDPRT component reference curve path";
-    ctx.charge_work(32, OPERATION)?;
     let count = (|| {
         let prefix = marker.checked_sub(8)?;
         let prefix_end = marker.checked_sub(4)?;
@@ -4210,8 +3996,8 @@ pub(super) fn component_reference_curve_path_at(
             };
             let mut components = Vec::new();
             ctx.reserve_vec(&mut components, count, OPERATION)?;
-            for index in 0..count {
-                ctx.charge_work(64, OPERATION)?;
+            let mut indices = 0..count;
+            while let Some(index) = ctx.next_charged(&mut indices, OPERATION)? {
                 if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice()) {
                     return Ok(None);
                 }
@@ -4225,7 +4011,7 @@ pub(super) fn component_reference_curve_path_at(
                 let Some(entry) = entry else {
                     return Ok(None);
                 };
-                components.push(entry);
+                ctx.push_vec(&mut components, entry, OPERATION)?;
                 cursor += 20;
                 if index + 1 != count {
                     let gap_valid = |gap: usize| {
@@ -4254,25 +4040,20 @@ pub(super) fn component_reference_curve_path_at(
     let Some((components, end)) = parse(count - 1)? else {
         return Ok(None);
     };
-    ctx.charge_work(12, OPERATION)?;
     Ok(
         (payload.get(end..end + 12) == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0x2a, 0, 0]))
             .then_some(components),
     )
 }
 
-pub(super) fn unique_marker_candidate(candidates: &[(String, bool)]) -> Option<&str> {
-    let mut coordinate = candidates
-        .iter()
-        .filter(|(_, coordinate)| *coordinate)
-        .map(|(id, _)| id.as_str());
-    if let Some(first) = coordinate.next() {
-        return coordinate.next().is_none().then_some(first);
-    }
-    let [(id, _)] = candidates else {
-        return None;
-    };
-    Some(id)
+pub(super) fn unique_marker_candidate<'a>(ctx: &DecodeContext<'_>, candidates: &'a [(String, bool)]) -> Result<Option<&'a str>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT scalar marker candidate";
+    let mut coordinate = None;
+    if ctx.any_by(candidates, |(id, located)| {
+        if !located { return Ok(false); }
+        Ok(coordinate.replace(id.as_str()).is_some())
+    }, OPERATION)? { return Ok(None); }
+    Ok(coordinate.or_else(|| match candidates { [(id, _)] => Some(id.as_str()), _ => None }))
 }
 
 pub(super) fn operand_accepts_marker(
@@ -4385,7 +4166,6 @@ pub(super) fn coordinate_marker_local_links(
     offset: usize,
 ) -> Result<Option<(Vec<u16>, u16)>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "decode SLDPRT coordinate marker links";
-    ctx.charge_work(512, OPERATION)?;
     let legacy_geometry_linked_point = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
         == Some(LEGACY_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(1)
@@ -4436,8 +4216,7 @@ pub(super) fn coordinate_marker_local_links(
         return Ok(None);
     };
     let mut links = Vec::new();
-    ctx.reserve_vec(&mut links, count, OPERATION)?;
-    links.extend(local_ids.into_iter().take(count));
+    ctx.extend_from_slice(&mut links, &local_ids[..count], OPERATION)?;
     Ok(Some((links, selector)))
 }
 

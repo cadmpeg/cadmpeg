@@ -1656,7 +1656,8 @@ pub(crate) fn finalize_lane_bindings(
                     &u32::from(local_id),
                     "lookup SLDPRT scalar marker group",
                 )?
-                .and_then(|candidates| unique_marker_candidate(candidates))
+                .map(|candidates| unique_marker_candidate(ctx, candidates))
+                .transpose()?.flatten()
             else {
                 continue;
             };
