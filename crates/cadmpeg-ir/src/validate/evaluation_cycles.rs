@@ -180,8 +180,13 @@ fn walk_cycles(
             Ok(())
         })
     })?;
-    let mut starts = graph_storage
-        .with_storage(|| ctx.collect_vec(graph.identities(), "cycle start identities"))?;
+    let mut starts = Vec::new();
+    graph_storage.with_storage(|| {
+        for identity in graph.identities("cycle start identities")? {
+            ctx.push_vec(&mut starts, identity, "cycle start identities")?;
+        }
+        Ok::<_, CodecError>(())
+    })?;
     ctx.stable_sort_by(&mut starts, |id| *id, Ord::cmp, "cycle start order")?;
     let mut stack = Vec::new();
     for start in starts {

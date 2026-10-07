@@ -253,6 +253,25 @@ impl crate::index::sealed::IndexQuery for EvaluationAdmission<'_, '_> {}
 impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
     type Error = ResourceLimit;
     type Output<T> = Result<T, ResourceLimit>;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> = std::iter::Chain<
+        std::iter::Flatten<std::option::IntoIter<cadmpeg_core::decode::scan::AdmittedIter<S::Iter>>>,
+        std::iter::Flatten<std::option::IntoIter<S::Iter>>,
+    >;
+    fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
+        &self, source: S, operation: &'static str,
+    ) -> Result<Self::Iter<S>, Self::Error> {
+        let (decode, standard) = if let Some(ctx) = self.context() {
+            if matches!(self, Self::WorkSlice(_)) {
+                if let Ok(bound) = source.visit_bound() {
+                    EvaluationAdmission::work(*self, bound, operation)?;
+                }
+            }
+            (Some(ctx.admit_iter(source, operation)?), None)
+        } else {
+            (None, Some(source.source_iter()))
+        };
+        Ok(decode.into_iter().flatten().chain(standard.into_iter().flatten()))
+    }
     fn finish<T>(&self, result: Result<T, ResourceLimit>) -> Self::Output<T> {
         result
     }

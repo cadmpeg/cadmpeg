@@ -60,16 +60,14 @@ pub(crate) enum NativeArena<'a> {
 }
 
 impl<'a> NativeArena<'a> {
-    pub(crate) fn records(self) -> impl Iterator<Item = NativeEntity<'a>> {
+    pub(crate) fn records<S: crate::index::IndexStorage>(self, storage: &S, operation: &'static str) -> Result<impl Iterator<Item = NativeEntity<'a>>, S::Error> {
         let (products, sources, order): (&[NativeRecord], &[UnknownRecord], &[usize]) = match self {
             Self::Product(records) => (records, &[], &[]),
             Self::Source(records, order) => (&[], records, order),
         };
-        products.iter().map(NativeEntity::Product).chain(
-            order
-                .iter()
-                .map(move |index| NativeEntity::Source(&sources[*index])),
-        )
+        Ok(storage.admit_iter(products, operation)?.map(NativeEntity::Product).chain(
+            storage.admit_iter(order, operation)?.map(move |index| NativeEntity::Source(&sources[*index])),
+        ))
     }
 
     pub(crate) fn len(self) -> usize {
@@ -95,51 +93,38 @@ impl<'a> NativeView<'a> {
     }
 
     /// Visit native arenas in map order, replacing one unknown arena by source facts.
-    pub(crate) fn visit<E>(
+    pub(crate) fn visit<S: crate::index::IndexStorage, E: From<S::Error>>(
         self,
-        mut work: impl FnMut(usize) -> Result<(), E>,
+        storage: &S,
+        operation: &'static str,
         mut visit: impl FnMut(&'a str, &'a str, NativeArena<'a>) -> Result<(), E>,
     ) -> Result<(), E> {
         let mut pending = self.unknowns;
-        for (format, namespace) in &self.ir.native.0 {
-            work(1)?;
-            if let Some((replacement, records, order)) = pending {
-                work(format.len())?;
-                work(replacement.len())?;
-                if replacement < format.as_str() {
-                    visit(replacement, "unknowns", NativeArena::Source(records, order))?;
-                    pending = None;
+        for (format, namespace) in storage.admit_iter(&self.ir.native.0, operation)? {
+            let order = if let Some((replacement, _, _)) = pending {
+                Some(storage.compare(replacement, format.as_str(), operation)?)
+            } else { None };
+            if order == Some(std::cmp::Ordering::Less) {
+                if let Some((replacement, records, indices)) = pending.take() {
+                    visit(replacement, "unknowns", NativeArena::Source(records, indices))?;
                 }
             }
-            for (arena, records) in namespace.arenas() {
-                work(1)?;
-                if let Some((replacement, sources, order)) = pending {
-                    work(format.len())?;
-                    work(replacement.len())?;
-                    work(arena.len())?;
-                    work("unknowns".len())?;
-                    if replacement == format && "unknowns" <= arena.as_str() {
-                        visit(replacement, "unknowns", NativeArena::Source(sources, order))?;
-                        pending = None;
+            let replacing = order == Some(std::cmp::Ordering::Equal);
+            for (arena, records) in storage.admit_iter(namespace.arenas(), operation)? {
+                if replacing {
+                    let order = storage.compare("unknowns", arena.as_str(), operation)?;
+                    if order != std::cmp::Ordering::Greater {
+                        if let Some((replacement, sources, indices)) = pending.take() {
+                            visit(replacement, "unknowns", NativeArena::Source(sources, indices))?;
+                        }
                     }
-                }
-                if let Some((replacement, _, _)) = self.unknowns {
-                    work(format.len())?;
-                    work(replacement.len())?;
-                    work(arena.len())?;
-                    work("unknowns".len())?;
-                    if replacement == format && arena == "unknowns" {
-                        continue;
-                    }
+                    if order == std::cmp::Ordering::Equal { continue; }
                 }
                 visit(format, arena, NativeArena::Product(records))?;
             }
-            if let Some((replacement, sources, order)) = pending {
-                work(format.len())?;
-                work(replacement.len())?;
-                if replacement == format {
-                    visit(replacement, "unknowns", NativeArena::Source(sources, order))?;
-                    pending = None;
+            if replacing {
+                if let Some((replacement, sources, indices)) = pending.take() {
+                    visit(replacement, "unknowns", NativeArena::Source(sources, indices))?;
                 }
             }
         }
@@ -147,5 +132,98 @@ impl<'a> NativeView<'a> {
             visit(format, "unknowns", NativeArena::Source(records, order))?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NativeArena, NativeEntity, NativeView};
+    use crate::document::CadIr;
+    use crate::index::PublicStorage;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn native_view_replacement_preserves_order_and_admits_before_visiting() {
+        let mut ir = CadIr::empty();
+        for format in ["b", "m", "z"] {
+            for arena in ["a", "unknowns", "z"] {
+                ir.native.namespace_mut(format).arenas_mut().insert(arena.into(), Vec::new());
+            }
+        }
+        for replacement in ["a", "b", "l", "m", "y", "z", "zz"] {
+            let view = NativeView::new(&ir, Some((replacement, &[], &[])));
+            let mut expected = Vec::new();
+            view.visit(&PublicStorage, "native view fixture", |format, arena, records| {
+                expected.push((format, arena, matches!(records, NativeArena::Source(_, _))));
+                Ok::<_, std::convert::Infallible>(())
+            }).unwrap();
+            assert!(expected.windows(2).all(|pair| (pair[0].0, pair[0].1) < (pair[1].0, pair[1].1)));
+            assert_eq!(expected.iter().filter(|row| row.2).copied().collect::<Vec<_>>(), [(replacement, "unknowns", true)]);
+            assert_eq!(expected.len(), if ["b", "m", "z"].contains(&replacement) { 9 } else { 10 });
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_collection_items = 0;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut decoded = Vec::new();
+            view.visit(&crate::index::DecodeStorage(&ctx), "native view fixture", |format, arena, records| {
+                decoded.push((format, arena, matches!(records, NativeArena::Source(_, _))));
+                Ok::<_, CodecError>(())
+            }).unwrap();
+            assert_eq!(decoded, expected);
+            ctx.finish_session().unwrap();
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "native view fixture", |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = policy.clone();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let mut visited = Vec::new();
+                let result = view.visit(&crate::index::DecodeStorage(&ctx), "native view fixture", |format, arena, _| {
+                    visited.push((format, arena));
+                    Ok::<_, CodecError>(())
+                });
+                if let Err(CodecError::ResourceLimit(limit)) = result {
+                    assert!(visited.is_empty());
+                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+                    return Err(limit.into());
+                }
+                result
+            });
+        }
+    }
+
+    #[test]
+    fn native_links_admit_arrays_and_keep_only_string_targets() {
+        let record = super::NativeRecord::new(
+            crate::ids::Identity::new("test:native:record#links").unwrap(),
+            serde_json::Map::from_iter([
+                ("a".into(), serde_json::Value::Null),
+                ("links".into(), serde_json::json!(["first", 7, "last"])),
+                ("z".into(), serde_json::Value::Null),
+            ]),
+        ).unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        assert_eq!(NativeEntity::Product(&record).links(&ctx).unwrap().collect::<Result<Vec<_>, _>>().unwrap(), ["first", "last"]);
+        for operation in ["native link field lookup", "native link field comparison", "native outgoing link scan"] {
+            cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let result = NativeEntity::Product(&record).links(&ctx).and_then(|mut links| {
+                    links.try_for_each(|link| link.map(|_| ()))
+                });
+                match result {
+                    Err(CodecError::ResourceLimit(limit)) => {
+                        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+                        Err(limit.into())
+                    }
+                    Err(error) => Err(error),
+                    Ok(()) => Ok(()),
+                }
+            });
+        }
     }
 }
