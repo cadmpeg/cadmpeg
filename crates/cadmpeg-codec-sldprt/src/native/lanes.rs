@@ -10,6 +10,7 @@ pub(super) fn admit(
     native: &SldprtNative,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    const AGREEMENT: &str = "compare SLDPRT lanes with their payload";
     for lane in ctx
         .admit_iter(&native.feature_input_lanes, "scan SLDPRT admit values")
         .map_err(cadmpeg_core::CodecError::from)?
@@ -127,7 +128,6 @@ pub(super) fn admit(
         pairs: expected,
         storage: _expected_reservation,
     } = expected_lanes_charged(ctx, native)?;
-    const AGREEMENT: &str = "compare SLDPRT lanes with their payload";
     for (lane, expected_lane) in ctx
         .admit_iter(expected, AGREEMENT)
         .map_err(cadmpeg_core::CodecError::from)?

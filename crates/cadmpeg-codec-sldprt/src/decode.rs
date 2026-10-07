@@ -197,8 +197,8 @@ fn decode_result(
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
 ) -> Result<Decoded, CodecError> {
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     const SOURCE_IMAGE: &str = "retain SLDPRT source image";
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     let source_image = match ctx.position_by(
         &unknowns,
         |record| Ok(record.id().as_str() == "sldprt:file:source-image#0"),
@@ -2177,8 +2177,6 @@ fn unbound_feature_input_operation_objects(
     use crate::classification::{classify, native_object_class, FeatureClass};
     use crate::records::FeatureInputClassRole;
     const OPERATION: &str = "count SLDPRT unbound feature-input operation objects";
-
-    let mut workspace = ctx.reserve_scoped(0, OPERATION)?;
     fn increment<K: Ord + cadmpeg_core::decode::cost::DecodeCost>(
         ctx: &DecodeContext<'_>,
         counts: &mut BTreeMap<K, usize>,
@@ -2190,6 +2188,8 @@ fn unbound_feature_input_operation_objects(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         Ok(())
     }
+
+    let mut workspace = ctx.reserve_scoped(0, OPERATION)?;
     // One pass over the history records: how often each source and each
     // source-class pair occurs, and the operation class of each classless
     // record by source.
@@ -2506,6 +2506,7 @@ fn multiply_projected_sketch_relation_records(
             projected_native_refs(ctx, ir)
         })?;
     for &native_ref in ctx.admit_iter(&native_refs, "count SLDPRT relation projections")? {
+        const OPERATION: &str = "count SLDPRT relation projections";
         if !ctx.contains_hash_set(
             &native_relation_ids,
             native_ref,
@@ -2513,7 +2514,6 @@ fn multiply_projected_sketch_relation_records(
         )? {
             continue;
         }
-        const OPERATION: &str = "count SLDPRT relation projections";
         if let Some(count) = ctx.get_mut_btree_map(
             &mut (projection_counts),
             &native_ref,
@@ -3128,6 +3128,8 @@ fn build_geometry_ir(
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
 ) -> Result<BuiltIr, CodecError> {
+    const BLOCKS: &str = "retain SLDPRT source blocks";
+    const FACE_COLORS: &str = "admit SLDPRT face appearance";
     fn add_opaque_link<'a>(
         ctx: &DecodeContext<'_>,
         opaque_links: &mut BTreeMap<&'a str, Vec<String>>,
@@ -3726,7 +3728,6 @@ fn build_geometry_ir(
     let mut unknowns = brep.unknowns;
     // Appearance and binding identities in the model, kept current as face
     // colours add to them.
-    const FACE_COLORS: &str = "admit SLDPRT face appearance";
     let mut appearance_ids = BTreeSet::new();
     for appearance in ctx.admit_iter(&ir.model.appearances, FACE_COLORS)? {
         let id = appearance.id.try_clone_for_decode(ctx, FACE_COLORS)?;
@@ -4102,7 +4103,6 @@ fn build_geometry_ir(
     let mut annotations = annotation_builder.build();
     // Unknown record identities already retained, kept current as source
     // blocks are retained.
-    const BLOCKS: &str = "retain SLDPRT source blocks";
     let mut retained_ids = BTreeSet::new();
     for record in ctx.admit_iter(&unknowns, BLOCKS)? {
         let id = record.id().try_clone_for_decode(ctx, BLOCKS)?;
@@ -5342,6 +5342,7 @@ fn mark_active_configuration(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const ACTIVE: &str = "find SLDPRT active configuration";
     let active_name = ir
         .source
         .as_ref()
@@ -5354,7 +5355,6 @@ fn mark_active_configuration(
         .map(|section| crate::container::configuration_index(ctx, section))
         .transpose()?
         .flatten();
-    const ACTIVE: &str = "find SLDPRT active configuration";
     let by_name = match active_name {
         Some(name) => unique_configuration(
             ctx,
@@ -5937,6 +5937,7 @@ fn bind_active_configuration_partition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
 ) -> Result<Option<(u32, usize)>, cadmpeg_core::CodecError> {
+    const PARTITION: &str = "scan SLDPRT partition configuration identities";
     let active_name = ir
         .source
         .as_ref()
@@ -5952,7 +5953,6 @@ fn bind_active_configuration_partition(
     let (Some(active_name), Some(active_index)) = (active_name, active_index) else {
         return Ok(None);
     };
-    const PARTITION: &str = "scan SLDPRT partition configuration identities";
     let Some(position) = unique_configuration(
         ctx,
         &ir.model.configurations,
