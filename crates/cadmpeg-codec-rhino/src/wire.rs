@@ -63,6 +63,7 @@ pub(crate) fn admitted_json(
             "Rhino admitted_json text",
         )?))
     })?;
+    ctx.charge_work(u64_from_index(bytes.len()), operation)?;
     String::from_utf8(bytes).or_else(|error| {
         Err(CodecError::malformed(ctx.format_retained(
             format_args!("{}", error),
@@ -105,12 +106,6 @@ pub(crate) fn admitted_canonical_json(
             "Rhino admitted_canonical_json text",
         )?))
     })?;
-    let scratch_bytes = count
-        .0
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
-        .max(8);
-    let _scratch = ctx.reserve_scoped(u64_from_index(scratch_bytes), operation)?;
     let (canonical, _tree) = ctx.with_scoped_storage(operation, || {
         let failure = RefCell::new(None);
         let seed = CanonicalSeed {
@@ -199,7 +194,9 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
         mut sequence: A,
     ) -> Result<Self::Value, A::Error> {
         let mut values = Vec::new();
-        while let Some(value) = sequence.next_element_seed(self.0)? {
+        loop {
+            self.0.ctx.charge_work(1, self.0.operation).map_err(|error| self.0.fail(error))?;
+            let Some(value) = sequence.next_element_seed(self.0)? else { break };
             self.0
                 .ctx
                 .reserve_vec(&mut values, 1, self.0.operation)
@@ -210,7 +207,9 @@ impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
     }
     fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut values = serde_json::Map::new();
-        while let Some(key) = map.next_key_seed(CanonicalKeySeed(self.0))? {
+        loop {
+            self.0.ctx.charge_work(1, self.0.operation).map_err(|error| self.0.fail(error))?;
+            let Some(key) = map.next_key_seed(CanonicalKeySeed(self.0))? else { break };
             self.0
                 .ctx
                 .charge_collection_items(1, self.0.operation)

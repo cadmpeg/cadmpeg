@@ -365,7 +365,7 @@ fn checksum_warning(
         typecode,
         TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
     ) {
-        let children = match mesh_checksum_children(ctx, data, &chunk, archive) {
+        let (children, _storage) = match ctx.with_scoped_storage("Rhino checksum child workspace", || mesh_checksum_children(ctx, data, &chunk, archive)) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -378,7 +378,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
-        let children = match render_settings_checksum_children(ctx, data, &chunk, archive) {
+        let (children, _storage) = match ctx.with_scoped_storage("Rhino checksum child workspace", || render_settings_checksum_children(ctx, data, &chunk, archive)) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -391,7 +391,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
-        let children = match settings_attributes_checksum_children(ctx, data, &chunk, archive) {
+        let (children, _storage) = match ctx.with_scoped_storage("Rhino checksum child workspace", || settings_attributes_checksum_children(ctx, data, &chunk, archive)) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -404,7 +404,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
-        let children = match plugin_list_checksum_children(ctx, data, &chunk, archive) {
+        let (children, _storage) = match ctx.with_scoped_storage("Rhino checksum child workspace", || plugin_list_checksum_children(ctx, data, &chunk, archive)) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -417,13 +417,13 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
-        let children = match checksum_children_through_class_end(
+        let (children, _storage) = match ctx.with_scoped_storage("Rhino checksum child workspace", || checksum_children_through_class_end(
             ctx,
             data,
             chunk.body().clone(),
             archive,
             "render-settings userdata",
-        ) {
+        )) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -436,7 +436,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
-        let children = match compressed_preview_checksum_children(ctx, data, &chunk, archive) {
+        let (children, _storage) = match ctx.with_scoped_storage("Rhino checksum child workspace", || compressed_preview_checksum_children(ctx, data, &chunk, archive)) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -449,7 +449,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
-        let children = match user_table_uuid_checksum_children(ctx, data, &chunk, archive) {
+        let (children, _storage) = match ctx.with_scoped_storage("Rhino checksum child workspace", || user_table_uuid_checksum_children(ctx, data, &chunk, archive)) {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -466,9 +466,9 @@ fn checksum_warning(
     }
     .or_else(|error| Err(framing_error(ctx, error)?))?;
     match status {
-        ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
+        ChecksumStatus::Mismatch { expected, actual } => Ok(Some(ctx.format_retained(format_args!(
             "CRC mismatch at offset {offset} for typecode {typecode:#x}: expected {expected:#x}, got {actual:#x}"
-        ))),
+        ), "Rhino checksum warning text")?)),
         _ => Ok(None),
     }
 }
@@ -862,39 +862,13 @@ fn list_checksum_children(
             needed: offset - chunk.body().end,
         });
     }
-    let first_child_offset = offset;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(child_count),
-        "Rhino view checksum child ranges",
-    )
-    .or_else(|error| {
-        Err(match error {
-            CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
-            other => FramingError::structural(
-                first_child_offset,
-                ctx.format_retained(
-                    format_args!("{}", other),
-                    "Rhino list_checksum_children text",
-                )?,
-            ),
-        })
-    })?;
-    for _ in 0..child_count {
-        let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
-        offset = child.next_offset();
-    }
     let mut children = Vec::new();
-    reservation.with_storage(|| {
-        ctx.reserve_capacity(&mut children, child_count, "Rhino view checksum ranges")
-    })?;
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(child_count),
-        "Rhino view checksum second walk",
-    )?;
-    offset = first_child_offset;
     for _ in 0..child_count {
+        ctx.charge_work(1, "Rhino view checksum child ranges")?;
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
-        children.push(child.range());
+        ctx.push_scoped_vec(
+            reservation, &mut children, child.range(), "Rhino view checksum ranges",
+        )?;
         offset = child.next_offset();
     }
     Ok(children)
@@ -928,6 +902,7 @@ fn plugin_list_checksum_children(
         .collection_vec(child_count, "Rhino plugin-list child ranges")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..child_count {
+        ctx.charge_work(1, "Rhino plugin checksum child walk")?;
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
         if child.typecode != TCODE_ANONYMOUS || child.short() {
@@ -1067,7 +1042,8 @@ fn known_record(record: u32) -> bool {
 
 /// Scan a V3/V4 or V5–V8 Rhino container.
 pub(crate) fn scan<'a>(ctx: &DecodeContext<'_>, data: &'a [u8]) -> Result<Scan<'a>, CodecError> {
-    scan_with_record_limit(ctx, data, TABLE_RECORD_CAP)
+    let header = parse_header(ctx, data).or_else(|error| Err(framing_error(ctx, error)?))?;
+    scan_with_record_limit(ctx, data, TABLE_RECORD_CAP, header)
 }
 
 fn count_object_typecode(
@@ -1075,8 +1051,7 @@ fn count_object_typecode(
     counts: &mut BTreeMap<u32, usize>,
     typecode: u32,
 ) -> Result<(), CodecError> {
-    ctx.admit_btree_entry(counts, &typecode, "Rhino object typecode counts")?;
-    *counts.entry(typecode).or_insert(0) += 1;
+    *ctx.entry_btree_map(counts, typecode, "Rhino object typecode counts")?.or_insert(0) += 1;
     Ok(())
 }
 
@@ -1084,8 +1059,8 @@ fn scan_with_record_limit<'a>(
     ctx: &DecodeContext<'_>,
     data: &'a [u8],
     record_limit: usize,
+    header: crate::chunks::Header,
 ) -> Result<Scan<'a>, CodecError> {
-    let header = parse_header(ctx, data).or_else(|error| Err(framing_error(ctx, error)?))?;
     let archive = header.archive_version;
     let archive_start = header.start_offset;
     let comment_offset = archive_start + file_header::LEN;
@@ -1127,6 +1102,7 @@ fn scan_with_record_limit<'a>(
     let mut history = Vec::new();
     let mut record_count = 0_usize;
     while offset < data.len() {
+        ctx.charge_work(1, "Rhino table framing walk")?;
         let chunk = chunk_at(data, offset, data.len(), archive, false)
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         if chunk.typecode == TCODE_ENDOFFILE {
@@ -1139,12 +1115,7 @@ fn scan_with_record_limit<'a>(
             let mut metadata =
                 crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings)?;
             let all_objects = resolve_identities(ctx, all_objects, &metadata, &mut warnings)?;
-            ctx.reserve_vec(
-                &mut opaque_records,
-                metadata.opaque_records.len(),
-                "Rhino scanned opaque records",
-            )?;
-            opaque_records.append(&mut metadata.opaque_records);
+            ctx.append_vec(&mut opaque_records, &mut metadata.opaque_records, "Rhino scanned opaque records")?;
             return Ok(Scan {
                 data,
                 archive,
@@ -1194,34 +1165,22 @@ fn scan_with_record_limit<'a>(
         let mut table_record_count = 0_usize;
         let mut object_typecodes = BTreeMap::new();
         let writer_version = if table_base(chunk.typecode) == TCODE_OBJECTS {
-            {
-                let mut version = None;
-                for table in ctx
-                    .admit_iter(&tables[..], "Rhino writer version table traversal")?
-                    .rev()
-                    .filter(|table| table_base(table.typecode) == TCODE_PROPERTIES)
-                {
-                    version = ctx.find_map(
-                        table.records.iter().rev(),
-                        |record| {
-                            Ok((record.typecode == TCODE_WRITER_VERSION)
-                                .then(|| record.short_value())
-                                .flatten())
-                        },
-                        "Rhino writer version record traversal",
-                    )?;
-                    if version.is_some() {
-                        break;
-                    }
+            ctx.find_map(tables.iter().rev(), |table| {
+                if table_base(table.typecode) != TCODE_PROPERTIES {
+                    return Ok(None);
                 }
-                version
-            }
+                ctx.find_map(table.records.iter().rev(), |record| {
+                    Ok((record.typecode == TCODE_WRITER_VERSION)
+                        .then(|| record.short_value()).flatten())
+                }, "Rhino writer version record traversal")
+            }, "Rhino writer version table traversal")?
         } else {
             None
         };
         let mut child_offset = chunk.body().start;
         let mut terminated = false;
         while child_offset < chunk.body().end {
+            ctx.charge_work(1, "Rhino table record framing walk")?;
             let child = chunk_at(data, child_offset, chunk.body().end, archive, false)
                 .or_else(|error| Err(framing_error(ctx, error)?))?;
             if child.typecode == TCODE_ENDOFTABLE {
@@ -1362,12 +1321,7 @@ fn scan_with_record_limit<'a>(
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             let parsed = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
             definitions = parsed.scan;
-            ctx.reserve_vec(
-                &mut opaque_records,
-                parsed.opaque_records.len(),
-                "Rhino scanned opaque records",
-            )?;
-            opaque_records.extend(parsed.opaque_records);
+            ctx.extend_vec(&mut opaque_records, parsed.opaque_records, "Rhino scanned opaque records")?;
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
             let parsed = crate::history::parse_records(
@@ -1379,12 +1333,7 @@ fn scan_with_record_limit<'a>(
                 chunk.typecode,
             )?;
             history = parsed.records;
-            ctx.reserve_vec(
-                &mut opaque_records,
-                parsed.opaque_records.len(),
-                "Rhino scanned opaque records",
-            )?;
-            opaque_records.extend(parsed.opaque_records);
+            ctx.extend_vec(&mut opaque_records, parsed.opaque_records, "Rhino scanned opaque records")?;
         }
         let table = Table::new(
             chunk.typecode,
@@ -1424,7 +1373,7 @@ pub(crate) fn scan_owned(data: Vec<u8>) -> Result<Scan<'static>, CodecError> {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )?;
-    scan_with_record_limit(&ctx, data, TABLE_RECORD_CAP)
+    scan(&ctx, data)
 }
 
 #[cfg(test)]
@@ -1439,7 +1388,8 @@ fn scan_with_test_record_limit(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )?;
-    scan_with_record_limit(&ctx, data, record_limit)
+    let header = parse_header(&ctx, data).or_else(|error| Err(framing_error(&ctx, error)?))?;
+    scan_with_record_limit(&ctx, data, record_limit, header)
 }
 
 fn insert_summary_attribute(
@@ -1519,16 +1469,16 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
             attributes,
         });
     }
+    let mut class_storage = ctx.reserve_scoped(0, "Rhino container class workspace")?;
     let mut classes = BTreeMap::<Uuid, (usize, usize)>::new();
     for object in ctx.admit_iter(&scan.objects[..], "Rhino summarize traversal")? {
         // The container report groups degraded records under the nil class UUID.
         let class_uuid = object.class_uuid().unwrap_or_else(Uuid::nil);
-        ctx.admit_btree_entry(&classes, &class_uuid, "Rhino container class groups")?;
-        let entry = classes.entry(class_uuid).or_insert((0, 0));
+        let entry = class_storage.with_storage(|| ctx.entry_btree_map(&mut classes, class_uuid, "Rhino container class groups"))?.or_insert((0, 0));
         entry.0 += 1;
         entry.1 += object.range().len();
     }
-    for (class_uuid, (count, bytes)) in classes {
+    for (class_uuid, (count, bytes)) in ctx.admit_iter(classes, "Rhino container class traversal")? {
         let mut attributes = BTreeMap::new();
         insert_summary_attribute(
             ctx,
@@ -1819,7 +1769,7 @@ pub(crate) fn inspect(
             notes,
         ));
     }
-    summarize(ctx, &scan(ctx, data)?)
+    summarize(ctx, &scan_with_record_limit(ctx, data, TABLE_RECORD_CAP, header)?)
 }
 
 /// Decode a Rhino stream according to the supported container depth.
@@ -1827,9 +1777,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let data = acquire(root);
     let header = parse_header(ctx, data).or_else(|error| Err(framing_error(ctx, error)?))?;
     if header.archive_version == ArchiveVersion::V1 {
-        return crate::legacy::decode_v1(ctx, data);
+        return crate::legacy::decode_v1_with_header(ctx, data, header);
     }
-    let scan = scan(ctx, data)?;
+    let scan = scan_with_record_limit(ctx, data, TABLE_RECORD_CAP, header)?;
     if ctx.container_only() && scan.archive.is_chunked() {
         return container_only_result(ctx, &scan);
     }

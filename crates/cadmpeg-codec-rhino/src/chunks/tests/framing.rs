@@ -199,19 +199,24 @@ fn header_magic_scan_refuses_work_before_search() {
         if with_magic {
             bytes.extend(header("80"));
         }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
-        policy.limits.max_work_units = scan_work - 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
-        assert!(
-            matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "Rhino header magic scan"
-                && limit.used == 0 && limit.additional == scan_work
-                && Some(limit) == ctx.resource_refusal())
+        let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, "Rhino header magic scan", |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+                let result = parse_header(&ctx, &bytes).map(|_| ()).map_err(|error| match error {
+                    FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+                    error => panic!("unexpected framing error before refusal: {error:?}"),
+                });
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            },
         );
+        assert!(matches!(refusal, CodecError::ResourceLimit(limit)
+            if limit.used == 0 && limit.additional == 1));
     }
 }
 
@@ -221,10 +226,9 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
     bytes.extend(header("80"));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let scan_work = u64::try_from(bytes.len()).expect("fixture length fits");
-    // Magic scan, seven digit-search visits, six prefix visits plus an end
-    // probe, two suffix visits plus an end probe, and the two-digit parse.
-    let total_work = scan_work + 7 + (6 + 1) + (2 + 1) + 2;
+    // 4096 nonmatching windows and one matching window. The version field
+    // is a fixed eight-byte read and has no input-sized traversal.
+    let total_work = 4096 + 1;
     policy.limits.max_work_units = total_work;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root bytes admitted");
@@ -235,7 +239,7 @@ fn header_magic_scan_charges_each_call_to_the_same_context() {
         matches!(parse_header(&ctx, &bytes), Err(FramingError::Resource(limit))
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "Rhino header magic scan"
-            && limit.used == total_work && limit.additional == scan_work
+            && limit.used == total_work && limit.additional == 1
             && Some(limit) == ctx.resource_refusal())
     );
 }
@@ -557,26 +561,15 @@ fn checksum_direct_bytes_refuse_before_hashing() {
 }
 
 #[test]
-fn archive_version_number_parse_preserves_refusal() {
-    let bytes = header("80");
-    cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits,
-        "Rhino archive version number parse",
-        |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-            let result = parse_header(&ctx, &bytes)
-                .map(|_| ())
-                .map_err(|error| match error {
-                    FramingError::Resource(refusal) => CodecError::ResourceLimit(refusal),
-                    other => panic!("valid header returned {other:?}"),
-                });
-            if let Err(CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
+fn header_magic_scan_does_not_charge_unvisited_suffix() {
+    let mut bytes = header("80");
+    bytes.resize(8192, 0x5a);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let parsed = parse_header(&ctx, &bytes).expect("the first window matches");
+    assert_eq!(parsed.start_offset, 0);
+    assert_eq!(parsed.archive_version, ArchiveVersion::V8);
+    ctx.finish_session().expect("the one visited window fits");
 }
