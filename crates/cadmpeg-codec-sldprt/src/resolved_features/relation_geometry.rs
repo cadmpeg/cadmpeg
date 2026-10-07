@@ -1,6 +1,6 @@
 //! Relation point and solved geometry projection.
 
-use super::curves::slot_curve_and_center_indices;
+use super::curves::{slot_curve_and_center_indices, SlotReferences};
 use super::endpoints::{inferred_point_coordinates_by_index, legacy_undetailed_profile_line};
 use super::grid::{quantize, GridPoint};
 use super::markers::{
@@ -3321,8 +3321,9 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         512,
         DIMENSIONED_HANDLE_OPERATION,
     )?;
+    let slots = SlotReferences::new(ctx, &lane.native_payload)?;
     let Some((_, center_indices)) =
-        slot_curve_and_center_indices(&lane.native_payload, marker_offset)
+        slot_curve_and_center_indices(ctx, &slots, marker_offset)?
     else {
         return Ok(None);
     };
