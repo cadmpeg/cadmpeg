@@ -56,36 +56,21 @@ impl CodecBackend for StepCodec {
     ) -> Result<Confidence, cadmpeg_core::CodecError> {
         let view = prefix;
         let prefix = prefix.window();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect STEP trivia",
-        )?;
         if starts_with_step_magic(ctx, prefix)? {
             return Ok(Confidence::High);
         }
         if archive::has_root_marker(ctx, view)? {
             return Ok(Confidence::Medium);
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len()),
-            "detect STEP HDF5",
-        )?;
         if is_part26_hdf5(prefix) {
             return Ok(Confidence::Medium);
         }
-        let xml_bytes = cadmpeg_core::decode::u64_from_index(prefix.len().min(4096));
-        ctx.charge_work(xml_bytes * 6, "detect STEP Part 28 XML")?;
         if is_part28_xml(ctx, prefix)? {
             return Ok(Confidence::Medium);
         }
-        ctx.charge_work(xml_bytes * 5, "detect STEP business-object XML")?;
         if is_ap242_bo_model_xml(ctx, prefix)? {
             return Ok(Confidence::Medium);
         }
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(prefix.len().min(4)),
-            "detect STEP ZIP",
-        )?;
         Ok(if archive::has_zip_magic(prefix) {
             Confidence::Low
         } else {
@@ -416,10 +401,12 @@ fn inspect_parsed_exchange(
 fn starts_with_step_magic(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     let mut at = 0;
     loop {
+        ctx.charge_work(1, "STEP magic cursor traversal")?;
         while bytes
             .get(at)
             .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
         {
+            ctx.charge_work(1, "STEP magic cursor traversal")?;
             at += 1;
         }
         if bytes.get(at..at + 2) == Some(b"/*") {
@@ -446,6 +433,7 @@ fn starts_with_step_magic(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool,
     }
     for &expected_byte in b"ISO-10303-21;" {
         while bytes.get(at).is_some_and(u8::is_ascii_control) {
+            ctx.charge_work(1, "STEP magic cursor traversal")?;
             at += 1;
         }
         if !bytes
@@ -675,7 +663,9 @@ fn xml_root_start_tag<'a>(
         0
     };
     loop {
+        ctx.charge_work(1, "STEP XML root cursor traversal")?;
         while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            ctx.charge_work(1, "STEP XML root cursor traversal")?;
             cursor += 1;
         }
         if bytes.get(cursor) != Some(&b'<') {
@@ -732,7 +722,7 @@ fn xml_root_start_tag<'a>(
         break;
     }
 
-    let Some(tag_end) = find_xml_tag_end(bytes, cursor + 1) else {
+    let Some(tag_end) = find_xml_tag_end(ctx, bytes, cursor + 1)? else {
         return Ok(None);
     };
     let mut name_end = cursor + 1;
@@ -740,6 +730,7 @@ fn xml_root_start_tag<'a>(
         .get(name_end)
         .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'/' && *byte != b'>')
     {
+        ctx.charge_work(1, "STEP XML root cursor traversal")?;
         name_end += 1;
     }
     if name_end == cursor + 1 {
@@ -751,19 +742,20 @@ fn xml_root_start_tag<'a>(
     )))
 }
 
-fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
+fn find_xml_tag_end(ctx: &DecodeContext<'_>, bytes: &[u8], mut cursor: usize) -> Result<Option<usize>, CodecError> {
     let mut quote = None;
     while let Some(byte) = bytes.get(cursor).copied() {
+        ctx.charge_work(1, "STEP XML tag cursor traversal")?;
         match quote {
             Some(delimiter) if byte == delimiter => quote = None,
             Some(_) => {}
             None if byte == b'\'' || byte == b'"' => quote = Some(byte),
-            None if byte == b'>' => return Some(cursor),
+            None if byte == b'>' => return Ok(Some(cursor)),
             None => {}
         }
         cursor += 1;
     }
-    None
+    Ok(None)
 }
 
 fn has_namespace_value(
@@ -785,7 +777,9 @@ fn xml_attribute_value<'a>(
 ) -> Result<Option<&'a [u8]>, CodecError> {
     let mut cursor = 0;
     while cursor < attributes.len() {
+        ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         if attributes.get(cursor).is_none_or(|byte| *byte == b'/') {
@@ -796,10 +790,12 @@ fn xml_attribute_value<'a>(
             .get(cursor)
             .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'=' && *byte != b'/')
         {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         let name = &attributes[name_start..cursor];
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         if attributes.get(cursor) != Some(&b'=') {
@@ -807,6 +803,7 @@ fn xml_attribute_value<'a>(
         }
         cursor += 1;
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         let Some(&delimiter) = attributes.get(cursor) else {
@@ -821,6 +818,7 @@ fn xml_attribute_value<'a>(
             .get(cursor)
             .is_some_and(|byte| *byte != delimiter)
         {
+            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         let value = &attributes[value_start..cursor];
@@ -879,20 +877,67 @@ mod tests {
     use super::{insert_attribute, starts_with_step_magic, StepCodec};
 
     #[test]
+    fn header_cursor_walks_refuse_work_before_advancing() {
+        for (source, operation) in [
+            (b" \0 ISO-10303-21;".as_slice(), "STEP magic cursor traversal"),
+            (b" \n <Uos a='v'>".as_slice(), "STEP XML root cursor traversal"),
+            (b"<Uos a='v'>".as_slice(), "STEP XML tag cursor traversal"),
+            (b"<Uos xmlns='urn:test'>".as_slice(), "STEP XML attribute cursor traversal"),
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+                    if operation == "STEP magic cursor traversal" {
+                        starts_with_step_magic(&ctx, source)
+                    } else {
+                        super::is_ap242_bo_model_xml(&ctx, source)
+                    }
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn magic_detection_does_not_charge_unvisited_suffix() {
+        use cadmpeg_ir::codec::CodecBackend;
+
+        let source = [b"ISO-10303-21;".as_slice(), &[b' '; 8192]].concat();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One trivia-loop visit; the fixed magic contains no ignored controls.
+        policy.limits.max_work_units = 1;
+        let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+        assert_eq!(StepCodec::default().detect_impl(&ctx, root).unwrap(), Confidence::High);
+    }
+
+    #[test]
     fn xml_namespace_value_equality_preserves_resource_refusal() {
         let attributes = b" xmlns='urn:test:namespace'";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(attributes, &arena, &policy).unwrap();
-        let error =
-            super::has_namespace_value(&ctx, attributes, b"urn:test:namespace").unwrap_err();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "STEP XML namespace value equality",
+            |cap| {
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(attributes, &arena, &policy).unwrap();
+                let result = super::has_namespace_value(&ctx, attributes, b"urn:test:namespace");
+                if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+                    assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                }
+                result
+            },
+        );
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("namespace comparison must preserve its resource refusal");
         };
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.operation, "STEP XML namespace value equality");
-        assert_eq!(ctx.resource_refusal(), Some(refusal));
         let service = cadmpeg_test_support::service_decode_context();
         assert!(super::has_namespace_value(&service, attributes, b"urn:test:namespace").unwrap());
         assert!(!super::has_namespace_value(&service, attributes, b"urn:test:different").unwrap());
