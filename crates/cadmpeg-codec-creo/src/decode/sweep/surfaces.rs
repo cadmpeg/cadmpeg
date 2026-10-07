@@ -687,7 +687,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             else {
                 continue;
             };
-            let Some(external_id) = order_table.external_id(ctx, internal_id)? else {
+            let Some(external_id) = order_table.external_id(internal_id) else {
                 continue;
             };
             let Some(native_surface_id) = generated_surface_id_for_feature(
@@ -776,7 +776,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(internal_id) = spline.entity_id else {
                 continue;
             };
-            let Some(external_id) = order_table.external_id(ctx, internal_id)? else {
+            let Some(external_id) = order_table.external_id(internal_id) else {
                 continue;
             };
             let Some(native_surface_id) = generated_surface_id_for_feature(

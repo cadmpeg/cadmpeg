@@ -266,7 +266,8 @@ fn arc_carriers_use_trim_vertices() {
                 internal_id: 3,
                 bitmask: 0,
                 offset: 10,
-            }],
+            }]
+            .into(),
             offset: 8,
         }),
         section_3d: None,

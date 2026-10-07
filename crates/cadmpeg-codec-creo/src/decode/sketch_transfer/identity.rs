@@ -481,7 +481,7 @@ pub(in super::super) fn saved_section_external_id(
     if !ctx.contains_btree_set(unique_saved_ids, &internal_id, OPERATION)? {
         return Ok(None);
     }
-    let Some(external_id) = order.external_id(ctx, internal_id)? else {
+    let Some(external_id) = order.external_id(internal_id) else {
         return Ok(None);
     };
     Ok(
@@ -806,7 +806,8 @@ mod tests {
                 internal_id: 3,
                 bitmask: 0,
                 offset: 0,
-            }],
+            }]
+            .into(),
             offset: 0,
         });
         definition.saved_section = Some(crate::feature::definitions::FeatureSavedSection {

@@ -891,37 +891,37 @@ pub(in crate::decode) fn trim_segment_ids(
     ctx.sort_unstable_by(&mut trim_ids, |id| id, Ord::cmp, OPERATION)?;
     let (mut ordinary_ids, _ordinary_storage) =
         ctx.temporary_vec(segment_table.rows.len(), OPERATION)?;
-    let mut unmatched_segment = None;
     for segment_row in ctx.admit_iter(segment_table.rows.as_slice(), OPERATION)? {
-        let SegmentRow::Ordinary(segment) = segment_row else {
-            continue;
-        };
-        ordinary_ids.push(segment.external_id);
-        let matched = ctx
-            .binary_search(&trim_ids, &segment.external_id, OPERATION)?
-            .is_ok();
-        if !matched && unmatched_segment.replace(segment.external_id).is_some() {
-            return Ok(ids);
+        if let SegmentRow::Ordinary(segment) = segment_row {
+            ordinary_ids.push(segment.external_id);
         }
     }
-    let Some(unmatched_segment) = unmatched_segment else {
+    // Exactly one ordinary segment and exactly one trim row lack a partner.
+    let Some(&unmatched_segment) = crate::decode::uniqueness::exactly_one_by(
+        ctx,
+        &ordinary_ids,
+        |id| Ok(ctx.binary_search(&trim_ids, id, OPERATION)?.is_err()),
+        OPERATION,
+    )?
+    else {
         return Ok(ids);
     };
     ctx.sort_unstable_by(&mut ordinary_ids, |id| id, Ord::cmp, OPERATION)?;
-    let mut unmatched_row = None;
-    for (index, row) in ctx.admit_iter(trim_rows, OPERATION)?.enumerate() {
-        let found_segment = ctx
-            .binary_search(&ordinary_ids, &row.external_id, OPERATION)?
-            .is_ok();
-        if !found_segment && unmatched_row.replace(index).is_some() {
-            return Ok(ids);
-        }
+    let unmatched_row =
+        |row: &crate::feature::definitions::FeatureTrimEntity| -> Result<bool, cadmpeg_core::CodecError> {
+            Ok(ctx
+                .binary_search(&ordinary_ids, &row.external_id, OPERATION)?
+                .is_err())
+        };
+    let Some(index) = ctx.position_by(trim_rows, unmatched_row, OPERATION)? else {
+        return Ok(ids);
+    };
+    if ctx.any_by(&trim_rows[index + 1..], unmatched_row, OPERATION)? {
+        return Ok(ids);
     }
-    if let Some(index) = unmatched_row {
-        // A row whose identifier names a segment of another family stays unmatched.
-        if !segment_table.rows.contains_id(trim_rows[index].external_id) {
-            ids[index] = Some(unmatched_segment);
-        }
+    // A row whose identifier names a segment of another family stays unmatched.
+    if !segment_table.rows.contains_id(trim_rows[index].external_id) {
+        ids[index] = Some(unmatched_segment);
     }
     Ok(ids)
 }

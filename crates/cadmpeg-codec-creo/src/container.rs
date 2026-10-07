@@ -2669,9 +2669,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
     }
     if let Some(order) = &mut definition.order_table {
         order.offset += section_offset;
-        for row in &mut order.rows {
-            row.offset += section_offset;
-        }
+        order.rows.add_offset(section_offset);
     }
     if let Some(section_3d) = &mut definition.section_3d {
         section_3d.offset += section_offset;

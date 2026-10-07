@@ -122,7 +122,8 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
                 bitmask: 0,
                 offset: 0,
             },
-        ],
+        ]
+        .into(),
         offset: 0,
     };
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {

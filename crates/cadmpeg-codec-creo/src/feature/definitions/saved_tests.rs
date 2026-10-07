@@ -148,7 +148,8 @@ fn generated_row_with_limits(
             internal_id: 7,
             bitmask: 0,
             offset: 0,
-        }],
+        }]
+        .into(),
         offset: 0,
     };
     let segments = FeatureSegmentTable {
@@ -1168,7 +1169,8 @@ fn saved_arc_replay_uses_order_table_row_boundaries() {
             internal_id: 7,
             bitmask: 0,
             offset: 0,
-        }],
+        }]
+        .into(),
         offset: 0,
     };
     let segments = FeatureSegmentTable {
@@ -1270,7 +1272,8 @@ fn saved_arc_replay_retains_a_structurally_terminated_scalar_prefix() {
             internal_id: 7,
             bitmask: 0,
             offset: 0,
-        }],
+        }]
+        .into(),
         offset: 0,
     };
     let segments = FeatureSegmentTable {
@@ -1327,7 +1330,8 @@ fn saved_generated_line_requires_its_orientation_invariant() {
             internal_id: 8,
             bitmask: 0,
             offset: 0,
-        }],
+        }]
+        .into(),
         offset: 0,
     };
     let segments = FeatureSegmentTable {

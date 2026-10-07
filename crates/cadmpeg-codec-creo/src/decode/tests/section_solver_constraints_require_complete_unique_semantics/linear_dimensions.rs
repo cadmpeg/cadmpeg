@@ -157,7 +157,8 @@ fn section_solver_linear_dimensions_require_complete_unique_semantics() {
                 internal_id: 20,
                 bitmask: 1,
                 offset: 95,
-            }],
+            }]
+            .into(),
             offset: 94,
         });
     conflicting_saved_spanning_distance.saved_section =

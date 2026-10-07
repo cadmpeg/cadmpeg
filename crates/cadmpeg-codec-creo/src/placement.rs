@@ -1091,7 +1091,7 @@ fn zero_offset_standard_section_plane_equation(
 }
 
 fn circular_profile_aligned_origin(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     definition: &FeatureDefinition,
     feature_id: u32,
     sketch_plane: SignedPlaneEquation,
@@ -1118,7 +1118,7 @@ fn circular_profile_aligned_origin(
     })() else {
         return Ok(None);
     };
-    let Some(profile_internal_id) = order.internal_id(ctx, profile_external_id)? else {
+    let Some(profile_internal_id) = order.internal_id(profile_external_id) else {
         return Ok(None);
     };
     Ok((|| {

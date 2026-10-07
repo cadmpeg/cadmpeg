@@ -346,7 +346,8 @@ fn saved_spline_extrusion_refuses_construction_identity_copies() {
             internal_id: 1,
             bitmask: 0,
             offset: 0,
-        }],
+        }]
+        .into(),
         offset: 0,
     });
     scan.features.definitions.push(definition);

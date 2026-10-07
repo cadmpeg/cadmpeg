@@ -71,7 +71,8 @@ fn definition() -> crate::feature::definitions::FeatureDefinition {
                 internal_id: 1,
                 bitmask: 0,
                 offset: 0,
-            }],
+            }]
+            .into(),
             offset: 0,
         }),
         section_3d: Some(crate::feature::definitions::FeatureSection3d {

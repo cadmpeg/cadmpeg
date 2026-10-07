@@ -1396,7 +1396,8 @@ mod tests {
                     internal_id: 7,
                     bitmask: 0,
                     offset: 0,
-                }],
+                }]
+                .into(),
                 offset: 0,
             });
             definition.saved_section = Some(crate::feature::definitions::FeatureSavedSection {

@@ -1245,7 +1245,8 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                 internal_id: 7,
                 bitmask: 0,
                 offset: 30,
-            }],
+            }]
+            .into(),
             offset: 30,
         }),
         section_3d: None,

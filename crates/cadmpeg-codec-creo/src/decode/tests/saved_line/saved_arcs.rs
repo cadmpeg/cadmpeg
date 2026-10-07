@@ -51,7 +51,8 @@ fn saved_arc_joins_through_order_table() {
                 internal_id: 3,
                 bitmask: 0,
                 offset: 10,
-            }],
+            }]
+            .into(),
             offset: 8,
         }),
         section_3d: None,

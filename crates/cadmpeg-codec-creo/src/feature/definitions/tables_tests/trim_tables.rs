@@ -241,21 +241,21 @@ fn order_with_limit(
     })
 }
 
-macro_rules! order_collection_limit_test {
-    ($name:ident, $limit:expr, $operation:literal) => {
-        #[test]
-        fn $name() {
-            for positional in [false, true] {
-                assert!(matches!(order_with_limit($limit, positional),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                        if refusal.dimension == ResourceDimension::CollectionItems
-                            && refusal.operation == $operation));
-                assert_eq!(order_with_limit(3, positional)
-                    .expect("order table admitted")
-                    .expect("one order table").rows.len(), 1);
-            }
-        }
-    };
+#[test]
+fn order_rows_and_identity_indexes_refuse_before_growth() {
+    for positional in [false, true] {
+        let table = crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &[
+                "creo order rows",
+                "creo order external ID index",
+                "creo order internal ID index",
+            ],
+            |limit| order_with_limit(limit, positional),
+        )
+        .expect("one order table");
+        assert_eq!(table.rows.len(), 1);
+    }
 }
 
 #[test]
@@ -350,16 +350,8 @@ fn positional_order_table_replays_prototype_and_following_rows() {
     assert_eq!(order.rows[0].internal_id, 2);
     assert_eq!(order.rows[0].bitmask, 1);
     assert_eq!(order.rows[1].external_id, 11);
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 10))
-            .expect("admitted order identity"),
-        Some(2)
-    );
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 2))
-            .expect("admitted order identity"),
-        Some(10)
-    );
+    assert_eq!(order.internal_id(10), Some(2));
+    assert_eq!(order.external_id(2), Some(10));
 
     let mut duplicate_external = order.clone();
     duplicate_external.declared_count += 1;
@@ -369,16 +361,8 @@ fn positional_order_table_replays_prototype_and_following_rows() {
         bitmask: 0,
         offset: 20,
     });
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| duplicate_external.internal_id(ctx, 10))
-            .expect("admitted order identity"),
-        None
-    );
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| duplicate_external.external_id(ctx, 2))
-            .expect("admitted order identity"),
-        None
-    );
+    assert_eq!(duplicate_external.internal_id(10), None);
+    assert_eq!(duplicate_external.external_id(2), None);
     let mut duplicate_internal = order;
     duplicate_internal.declared_count += 1;
     duplicate_internal.rows.push(FeatureOrderRow {
@@ -387,16 +371,8 @@ fn positional_order_table_replays_prototype_and_following_rows() {
         bitmask: 0,
         offset: 21,
     });
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| duplicate_internal.external_id(ctx, 2))
-            .expect("admitted order identity"),
-        None
-    );
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| duplicate_internal.internal_id(ctx, 10))
-            .expect("admitted order identity"),
-        None
-    );
+    assert_eq!(duplicate_internal.external_id(2), None);
+    assert_eq!(duplicate_internal.internal_id(10), None);
 }
 
 #[test]
@@ -413,16 +389,8 @@ fn named_order_table_replays_prototype_and_following_rows() {
     assert!(order.is_complete());
     assert_eq!(order.entity_ref, Some(66));
     assert_eq!(order.rows.len(), 2);
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 2))
-            .expect("admitted order identity"),
-        Some(10)
-    );
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 11))
-            .expect("admitted order identity"),
-        Some(3)
-    );
+    assert_eq!(order.external_id(2), Some(10));
+    assert_eq!(order.internal_id(11), Some(3));
 }
 
 #[test]
@@ -452,26 +420,14 @@ fn incomplete_order_tables_do_not_resolve_identifiers() {
     let order = order_table(named, 0, named.len()).expect("named order_table");
     assert_eq!(order.rows.len(), 1);
     assert!(!order.is_complete());
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 10))
-            .expect("admitted order identity"),
-        None
-    );
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| order.external_id(ctx, 2))
-            .expect("admitted order identity"),
-        None
-    );
+    assert_eq!(order.internal_id(10), None);
+    assert_eq!(order.external_id(2), None);
 
     let positional = b"\xf8\x02\xf7\x42\xfb\xe2";
     let order = positional_order_table(positional, 0, positional.len(), 66)
         .expect("positional order_table");
     assert!(!order.is_complete());
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| order.internal_id(ctx, 10))
-            .expect("admitted order identity"),
-        None
-    );
+    assert_eq!(order.internal_id(10), None);
 }
 
 #[test]
@@ -1107,17 +1063,3 @@ trim_entity_collection_limit_test!(
     2,
     "creo trim entity solved IDs"
 );
-
-order_collection_limit_test!(
-    order_external_id_nodes_refuse_before_btree_insertion,
-    0,
-    "creo order external ID nodes"
-);
-
-order_collection_limit_test!(
-    order_internal_id_nodes_refuse_before_btree_insertion,
-    1,
-    "creo order internal ID nodes"
-);
-
-order_collection_limit_test!(order_rows_refuse_before_vec_growth, 2, "creo order rows");

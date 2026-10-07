@@ -222,7 +222,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                             entity
                         {
                             let external_id = match spline.entity_id {
-                                Some(entity_id) => order.external_id(ctx, entity_id)?,
+                                Some(entity_id) => order.external_id(entity_id),
                                 None => None,
                             };
                             if let Some(external_id) = external_id {
@@ -364,7 +364,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 else {
                     return Ok(std::ops::ControlFlow::Continue(()));
                 };
-                let Some(external_id) = order.external_id(ctx, internal_id)? else {
+                let Some(external_id) = order.external_id(internal_id) else {
                     return Ok(std::ops::ControlFlow::Continue(()));
                 };
                 let Some(surface) = revolved_section_surface(transform, &section_geometry, &axis)
@@ -517,7 +517,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 return Ok(std::ops::ControlFlow::Continue(()));
             };
             let external_id = match (definition.order_table.as_ref(), spline.entity_id) {
-                (Some(order), Some(entity_id)) => order.external_id(ctx, entity_id)?,
+                (Some(order), Some(entity_id)) => order.external_id(entity_id),
                 _ => None,
             };
             let native_surface = match external_id {
