@@ -2098,9 +2098,12 @@ pub(crate) fn pattern_payload_transform_lane(
             let mut scalar_rows = Vec::new();
             let mut wide_rows = Vec::new();
             let mut ordinals = 1..declared_count;
-            while let Some(ordinal) =
-                ctx.next_charged(&mut ordinals, "NX pattern transform row traversal")?
-            {
+            while !ordinals.is_empty() {
+                let Some(ordinal) =
+                    ctx.next_charged(&mut ordinals, "NX pattern transform row traversal")?
+                else {
+                    break;
+                };
                 if record.payload().get(at) != Some(&row_schema_index.get()) {
                     return Ok(None);
                 }
@@ -2262,9 +2265,12 @@ pub(crate) fn multi_instance_output_payload_lane(
             let mut row_storage = ctx.reserve_scoped(0, "NX multi-instance row workspace")?;
             let mut rows = Vec::new();
             let mut indices = 2..=declared_count;
-            while let Some(expected) =
-                ctx.next_charged(&mut indices, "NX multi-instance selector row traversal")?
-            {
+            while !indices.is_empty() {
+                let Some(expected) =
+                    ctx.next_charged(&mut indices, "NX multi-instance selector row traversal")?
+                else {
+                    break;
+                };
                 if record.payload().get(at..at + ROW_PREFIX.len()) != Some(&ROW_PREFIX) {
                     return Ok(None);
                 }
@@ -2302,13 +2308,11 @@ pub(crate) fn multi_instance_output_payload_lane(
             at += REFERENCE_PREFIX.len();
             let mut references = Vec::new();
             let mut instances = 1..instance_count;
-            while ctx
-                .next_charged(
+            while !instances.is_empty() {
+                ctx.next_charged(
                     &mut instances,
                     "NX multi-instance trailing reference traversal",
-                )?
-                .is_some()
-            {
+                )?;
                 let Some(token) = record
                     .payload()
                     .get(at..)
@@ -2386,10 +2390,14 @@ pub(crate) fn identical_instance_output_payload_lane(
             let mut at = start + 4;
             let mut selectors = Vec::new();
             let mut ordinals = 2..=declared_count;
-            while let Some(ordinal) = ctx.next_charged(
-                &mut ordinals,
-                "NX identical-instance selector row traversal",
-            )? {
+            while !ordinals.is_empty() {
+                let Some(ordinal) = ctx.next_charged(
+                    &mut ordinals,
+                    "NX identical-instance selector row traversal",
+                )?
+                else {
+                    break;
+                };
                 if record.payload().get(at) != Some(&first)
                     || record.payload().get(at + 1) != Some(&second)
                     || record.payload().get(at + 2..at + 4) != Some(&ROW_MIDDLE)
@@ -2542,10 +2550,8 @@ pub(crate) fn swp104_payload_leading_branch(
     let operation = "NX SWP104 members";
     let mut members = storage.with_storage(|| ctx.collection_vec(len, operation))?;
     let mut indices = 1..declared_count;
-    while ctx
-        .next_charged(&mut indices, "scan NX SWP104 leading branch")?
-        .is_some()
-    {
+    while !indices.is_empty() {
+        ctx.next_charged(&mut indices, "scan NX SWP104 leading branch")?;
         let Some(object_index) = record
             .payload()
             .get(at..)
@@ -2676,9 +2682,8 @@ pub(crate) fn operation_body_members(
         let mut members = Vec::new();
         let mut rows = 0..count;
         let mut complete = true;
-        while let Some(_) =
-            ctx.next_charged(&mut rows, "NX operation body members row traversal")?
-        {
+        while !rows.is_empty() {
+            ctx.next_charged(&mut rows, "NX operation body members row traversal")?;
             if record.bytes().get(at) != Some(&0x2e) {
                 complete = false;
                 break;
@@ -2746,10 +2751,11 @@ pub(crate) fn operation_body_11_continuations(
         };
         let mut rows = 0..count;
         let mut complete = true;
-        while let Some(_) = ctx.next_charged(
-            &mut rows,
-            "NX operation body 11 continuations row validation",
-        )? {
+        while !rows.is_empty() {
+            ctx.next_charged(
+                &mut rows,
+                "NX operation body 11 continuations row validation",
+            )?;
             if record.bytes().get(at) != Some(&0x2e) {
                 complete = false;
                 break;
@@ -2883,13 +2889,11 @@ fn operation_body_reference_lane_values<T>(
 ) -> Result<Option<Vec<T>>, CodecError> {
     let mut values = Vec::new();
     let mut rows = 0..count;
-    while ctx
-        .next_charged(
+    while !rows.is_empty() {
+        ctx.next_charged(
             &mut rows,
             "NX operation body reference lane values range traversal",
-        )?
-        .is_some()
-    {
+        )?;
         let Some((value, width)) = record
             .bytes()
             .get(at..)
@@ -3315,9 +3319,12 @@ pub(crate) fn expression_declaration_name<'a>(
     let mut multiple_literals = false;
     if let Some(range_end) = bytes.len().checked_sub(4) {
         let mut candidates = 0..range_end;
-        while let Some(at) =
-            ctx.next_charged(&mut candidates, "NX expression declaration candidate scan")?
-        {
+        while !candidates.is_empty() {
+            let Some(at) =
+                ctx.next_charged(&mut candidates, "NX expression declaration candidate scan")?
+            else {
+                break;
+            };
             if bytes[at] != 0x04 {
                 continue;
             }
@@ -3891,7 +3898,10 @@ fn operation_state_journal_groups_before_boundary(
             }
         };
         let mut initial = group.rows().initial().iter();
-        while let Some(row) = ctx.next_charged(&mut initial, "NX journal initial rows")? {
+        while initial.len() > 0 {
+            let Some(row) = ctx.next_charged(&mut initial, "NX journal initial rows")? else {
+                break;
+            };
             let ordinal = row.ordinal().value();
             if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
                 return Ok(None);
@@ -4186,10 +4196,11 @@ fn counted_feature_object_indices(
     let mut storage = ctx.reserve_scoped(0, "NX counted feature reference candidate storage")?;
     let mut values = Vec::new();
     let mut indices = 0..count;
-    while let Some(_) = ctx.next_charged(
-        &mut indices,
-        "NX counted feature object indices range traversal",
-    )? {
+    while !indices.is_empty() {
+        ctx.next_charged(
+            &mut indices,
+            "NX counted feature object indices range traversal",
+        )?;
         let Some(value) = bytes
             .get(cursor..)
             .and_then(ReferenceIndexToken::read_feature)
@@ -4239,9 +4250,11 @@ pub(crate) fn counted_record_references(
         let mut candidate = Vec::new();
         let mut indices = 0..count;
         let mut complete = true;
-        while let Some(index) =
-            ctx.next_charged(&mut indices, "NX counted record tag validation")?
-        {
+        while !indices.is_empty() {
+            let Some(index) = ctx.next_charged(&mut indices, "NX counted record tag validation")?
+            else {
+                break;
+            };
             let token = at + 2 + index * 3;
             if bytes[token] != 0x90 {
                 complete = false;
@@ -5272,9 +5285,12 @@ fn offset_store_control_values(
     let mut storage = ctx.reserve_scoped(0, "NX zero-prefixed control candidate storage")?;
     let mut values = Vec::new();
     let mut words = 0..bytes.len() / 4;
-    while let Some(index) =
-        ctx.next_charged(&mut words, "NX zero-prefixed control word traversal")?
-    {
+    while !words.is_empty() {
+        let Some(index) =
+            ctx.next_charged(&mut words, "NX zero-prefixed control word traversal")?
+        else {
+            break;
+        };
         let word = &bytes[index * 4..index * 4 + 4];
         if word[0] != 0 {
             return Ok(None);
@@ -5335,7 +5351,10 @@ pub(crate) fn offset_store_control_class_ordinals(
     let mut maximum_identity = 0;
     let mut boundary = None;
     let mut indices = 0..count - 1;
-    while let Some(index) = ctx.next_charged(&mut indices, "nx offset-store identity scan")? {
+    while !indices.is_empty() {
+        let Some(index) = ctx.next_charged(&mut indices, "nx offset-store identity scan")? else {
+            break;
+        };
         let minimum = suffix_minima[index];
         let Some(identity) = value_at(index) else {
             return Ok(None);
@@ -5428,9 +5447,12 @@ fn offset_store_product_anchored_form(
     let mut storage = ctx.reserve_scoped(0, "NX product-anchored control candidate storage")?;
     let mut values = Vec::new();
     let mut words = 0..(product_offset - leading_width) / 4;
-    while let Some(index) =
-        ctx.next_charged(&mut words, "NX product-anchored control word traversal")?
-    {
+    while !words.is_empty() {
+        let Some(index) =
+            ctx.next_charged(&mut words, "NX product-anchored control word traversal")?
+        else {
+            break;
+        };
         let Some(value) = joined_control_u32_le(control, first_record, leading_width + index * 4)
         else {
             return Ok(None);

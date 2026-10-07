@@ -70,7 +70,8 @@ pub(crate) fn counted_lanes(
         let mut storage = ctx.reserve_scoped(0, "NX counted lane candidate storage")?;
         let mut members = Vec::new();
         let mut indices = 0..usize::from(declared_count) - 2;
-        while let Some(_) = ctx.next_charged(&mut indices, "NX counted lanes row validation")? {
+        while !indices.is_empty() {
+            ctx.next_charged(&mut indices, "NX counted lanes row validation")?;
             let Some(token) = LocatedCompactIndex::read(bytes, at) else {
                 return Ok(None);
             };

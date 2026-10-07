@@ -110,3 +110,44 @@ fn rejected_numeric_expression_does_not_retain_its_native_unit() {
         },
     );
 }
+
+#[test]
+fn empty_counted_feature_references_need_no_traversal_work() {
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let (values, end) = crate::om::counted_feature_object_indices(ctx, &[1, 1], 100, 0)
+                .unwrap()
+                .unwrap();
+            assert!(values.is_empty());
+            assert_eq!(end, 2);
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}
+
+#[test]
+fn control_word_traversal_pays_for_exactly_the_declared_words() {
+    let bytes = [0, 7, 0, 0, 0, 8, 0, 0];
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 2,
+        |ctx| {
+            let values = crate::om::offset_store_control_values(ctx, &bytes)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                values
+                    .into_iter()
+                    .map(|word| word.value())
+                    .collect::<Vec<_>>(),
+                [7, 8]
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}

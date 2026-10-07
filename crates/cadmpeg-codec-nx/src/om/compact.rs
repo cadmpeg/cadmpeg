@@ -208,9 +208,12 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         let operation = "NX mapped counted index members";
         let mut mapped = ctx.collection_vec(count, operation)?;
         let mut members = self.0.into_iter();
-        while let Some(member) =
-            ctx.next_charged(&mut members, "NX counted member mapping traversal")?
-        {
+        while members.len() > 0 {
+            let Some(member) =
+                ctx.next_charged(&mut members, "NX counted member mapping traversal")?
+            else {
+                break;
+            };
             mapped.push(map(member)?);
         }
         Ok(CountedIndexMembers(mapped, self.1))
@@ -224,9 +227,12 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         let mut storage = ctx.reserve_scoped(0, "NX counted member candidate storage")?;
         let mut mapped = Vec::new();
         let mut members = self.0.into_iter();
-        while let Some(member) =
-            ctx.next_charged(&mut members, "NX counted member resolution traversal")?
-        {
+        while members.len() > 0 {
+            let Some(member) =
+                ctx.next_charged(&mut members, "NX counted member resolution traversal")?
+            else {
+                break;
+            };
             let Some(value) = storage.with_storage(|| map(member))? else {
                 return Ok(None);
             };

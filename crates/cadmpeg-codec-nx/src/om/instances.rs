@@ -65,7 +65,10 @@ impl<O> MultiInstanceOutputs<O> {
             ));
         }
         let mut rows = rows.iter();
-        while let Some((selector, ordinal)) = next(&mut rows)? {
+        while rows.len() > 0 {
+            let Some((selector, ordinal)) = next(&mut rows)? else {
+                break;
+            };
             if usize::from(*ordinal) != preceding(counts, selector.atom.value())? + 2 {
                 return Ok(Err(
                     "ordinals: each selector must enumerate instances from two",

@@ -288,10 +288,7 @@ fn field_registry_start(
         else {
             continue;
         };
-        let mut probes = candidate..probe_end;
-        while let Some(probe) =
-            ctx.next_charged(&mut probes, "NX field registry start range traversal")?
-        {
+        for probe in candidate..probe_end {
             if registry_declaration_at(ctx, bytes, probe, end, b"UGS::")?.is_some() {
                 break;
             }
@@ -382,18 +379,25 @@ pub(super) fn field_definitions<'a>(
     let mut out = Vec::new();
     let mut search = start;
     let mut limit = start
-        .checked_add(256)
+        .checked_add(FIELD_START_PROBE_LIMIT)
         .ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?
         .min(end);
-    while let Some((definition, at)) = ctx.find_map(
-        search..limit,
-        |at| Ok(field_definition_at(ctx, bytes, at, end)?.map(|definition| (definition, at))),
-        "NX field registry candidate search",
-    )? {
+    while search < limit {
+        ctx.charge_work(1, "NX field registry window traversal")?;
+        let mut found = None;
+        for at in search..limit {
+            if let Some(definition) = field_definition_at(ctx, bytes, at, end)? {
+                found = Some((definition, at));
+                break;
+            }
+        }
+        let Some((definition, at)) = found else {
+            break;
+        };
         let next = at + definition.name.len() + 2;
         search = next;
         limit = search
-            .checked_add(256)
+            .checked_add(FIELD_START_PROBE_LIMIT)
             .ok_or_else(|| CodecError::Malformed("NX field search offset overflow".into()))?
             .min(end);
         ctx.reserve_vec(&mut out, 1, "nx field definitions")?;
