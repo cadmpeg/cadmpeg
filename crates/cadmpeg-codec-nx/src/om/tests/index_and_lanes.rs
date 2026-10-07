@@ -451,7 +451,7 @@ fn om_common_frame_route_refuses_retained_limit() {
         |ctx| {
             let record =
                 crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
-            let error = crate::om::operation_terminal_frame(ctx, record).unwrap_err();
+            let error = crate::om::operation_common_frames(ctx, record).unwrap_err();
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
             );
@@ -1968,3 +1968,20 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
 
 mod operation_reference_lanes;
 mod record_area_and_operation_frames;
+
+#[test]
+fn terminal_frame_scratch_does_not_require_retained_storage() {
+    let bytes = one_common_frame_payload();
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+            let terminal = crate::om::operation_terminal_frame(ctx, record)
+                .unwrap()
+                .unwrap();
+            assert_eq!(terminal, operation_terminal_frame(record).unwrap());
+        },
+    );
+}

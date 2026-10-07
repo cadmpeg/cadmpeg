@@ -486,7 +486,7 @@ pub(crate) fn offset_store_named_point<'a>(
     blocks: impl IntoIterator<Item = &'a [u8]>,
 ) -> Result<Option<OffsetStoreNamedPoint>, CodecError> {
     let mut bytes = Vec::new();
-    let mut byte_reservation = None;
+    let mut byte_reservation = ctx.reserve_scoped(0, "NX named point block bytes")?;
     let mut candidate = None;
     for (block_ordinal, block) in blocks.into_iter().enumerate() {
         // A later type-free name starts the next bounded data-block object.
@@ -497,17 +497,10 @@ pub(crate) fn offset_store_named_point<'a>(
         {
             return Ok(candidate);
         }
-        let length = bytes.len().checked_add(block.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit("NX named point block bytes", u64::MAX, u64::MAX)
-        })?;
-        drop(byte_reservation.take());
-        byte_reservation = Some(ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(length),
-            "NX named point block bytes",
-        )?);
-        ctx.reserve_vec(&mut bytes, block.len(), "NX named point block bytes")?;
-        bytes.extend_from_slice(block);
-        let names = name_field::scan(ctx, &bytes)?;
+        byte_reservation
+            .with_storage(|| ctx.extend_vec(&mut bytes, block, "NX named point block bytes"))?;
+        let mut name_storage = ctx.reserve_scoped(0, "NX named point name scan storage")?;
+        let names = name_storage.with_storage(|| name_field::scan(ctx, &bytes))?;
         let Some(name) = names.first() else {
             return Ok(None);
         };
@@ -520,7 +513,9 @@ pub(crate) fn offset_store_named_point<'a>(
             .admit_iter(&names, "NX named point following name lookup")?
             .find(|next| next.code().is_some() && next.offset() > name.offset());
         let interval_end = next_name.map_or(bytes.len(), name_field::NameField::offset);
-        let mut scalars = construction_payload_scalar_fields(ctx, &bytes)?
+        let mut scalar_storage = ctx.reserve_scoped(0, "NX named point scalar scan storage")?;
+        let mut scalars = scalar_storage
+            .with_storage(|| construction_payload_scalar_fields(ctx, &bytes))?
             .into_iter()
             .filter(|scalar| {
                 scalar.offset > name.offset()
@@ -533,8 +528,7 @@ pub(crate) fn offset_store_named_point<'a>(
             (Some(first_scalar), Some(second_scalar), None) => {
                 if candidate.is_none() {
                     let value = name.value();
-                    let mut owned = ctx.retained_string(value.len(), "NX named point name")?;
-                    ctx.append_retained(&mut owned, value, "NX admitted text append")?;
+                    let owned = ctx.copy_retained_text(value, "NX named point name")?;
                     candidate = Some(OffsetStoreNamedPoint {
                         name: owned,
                         values: [first_scalar, second_scalar].map(|field| LocatedBinary64 {
@@ -1063,13 +1057,7 @@ impl<'a> IndexedSection<'a> {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<NumericExpression<'a>>, CodecError> {
-        let records = self.numeric_expression_records(ctx)?;
-        let mut expressions = Vec::new();
-        for (_, expression) in records {
-            ctx.reserve_vec(&mut expressions, 1, "nx indexed numeric expressions")?;
-            expressions.push(expression);
-        }
-        Ok(expressions)
+        self.numeric_expression_output(ctx, |_, expression| expression)
     }
 
     /// Decode expressions together with their owning record ordinal.
@@ -1077,6 +1065,14 @@ impl<'a> IndexedSection<'a> {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<(usize, NumericExpression<'a>)>, CodecError> {
+        self.numeric_expression_output(ctx, |ordinal, expression| (ordinal, expression))
+    }
+
+    fn numeric_expression_output<T>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        mut project: impl FnMut(usize, NumericExpression<'a>) -> T,
+    ) -> Result<Vec<T>, CodecError> {
         let mut temporary = ctx.reserve_scoped(0, "nx indexed numeric record scan")?;
         let mut records: Vec<(usize, &'a [u8], Option<u32>)> = Vec::new();
         match &self.store {
@@ -1130,7 +1126,7 @@ impl<'a> IndexedSection<'a> {
         {
             if let Some(expression) = numeric_expression_at(ctx, bytes, offset, object_id)? {
                 ctx.reserve_vec(&mut expressions, 1, "nx indexed numeric expression records")?;
-                expressions.push((record_ordinal, expression));
+                expressions.push(project(record_ordinal, expression));
             }
         }
         Ok(expressions)
@@ -1152,8 +1148,11 @@ impl<'a> FixedEntityRecord<'a> {
         ctx: &DecodeContext<'_>,
         record_count: usize,
     ) -> Result<Vec<LocatedReference<RecordReference<()>>>, CodecError> {
-        let direct = record_references(ctx, self.bytes, self.offset)?;
-        let counted = counted_record_references(ctx, self.bytes, self.offset, record_count)?;
+        let mut storage = ctx.reserve_scoped(0, "NX fixed record reference scan storage")?;
+        let direct = storage.with_storage(|| record_references(ctx, self.bytes, self.offset))?;
+        let counted = storage.with_storage(|| {
+            counted_record_references(ctx, self.bytes, self.offset, record_count)
+        })?;
         let mut references = Vec::new();
         for reference in ctx
             .admit_iter(&direct, "NX direct fixed entity references")?
@@ -1374,14 +1373,10 @@ impl<'a> Section<'a> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
             return Ok(None);
         };
-        let Some((_, last_record)) = ctx
-            .admit_iter(
-                &self.operation_records_with_label_ordinals(ctx)?,
-                "NX last operation record",
-            )?
-            .last()
-            .copied()
-        else {
+        let mut record_storage = ctx.reserve_scoped(0, "NX state block record storage")?;
+        let records =
+            record_storage.with_storage(|| self.operation_records_with_label_ordinals(ctx))?;
+        let Some((_, last_record)) = records.last().copied() else {
             return Ok(None);
         };
         let start_offset = last_record.payload_offset();
@@ -1396,20 +1391,16 @@ impl<'a> Section<'a> {
         else {
             return Ok(None);
         };
-        let mut ends = ctx.vector_storage(2, "NX operation state boundaries")?;
-        if let Some(table) = &group {
-            let Some(overlap_end) =
-                terminal.checked_add(table.groups().first().opener().bytes().len())
+        let overlap_end = if let Some(table) = &group {
+            let Some(end) = terminal.checked_add(table.groups().first().opener().bytes().len())
             else {
                 return Ok(None);
             };
-            ends.push(overlap_end);
-        }
-        ends.push(terminal);
-        for end in ctx
-            .admit_iter(&ends, "NX operation state boundaries")?
-            .copied()
-        {
+            Some(end)
+        } else {
+            None
+        };
+        for end in overlap_end.into_iter().chain(std::iter::once(terminal)) {
             if let Some(block) =
                 operation_state_block_before_boundary(ctx, bytes, start, end, base_offset)?
             {
@@ -1495,7 +1486,9 @@ impl<'a> Section<'a> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<(usize, OperationBodyReference)>, CodecError> {
         let mut references = Vec::new();
-        for (ordinal, record) in self.operation_records_with_label_ordinals(ctx)? {
+        let mut storage = ctx.reserve_scoped(0, "NX operation body record storage")?;
+        let records = storage.with_storage(|| self.operation_records_with_label_ordinals(ctx))?;
+        for (ordinal, record) in ctx.admit_iter(records, "NX operation body record traversal")? {
             if let Some(reference) = operation_body_reference(ctx, record.body_view())? {
                 ctx.reserve_vec(&mut references, 1, "nx section operation body references")?;
                 references.push((ordinal, reference));
@@ -1512,11 +1505,10 @@ fn operation_labels<'a>(
     base_offset: usize,
 ) -> Result<Vec<OperationLabel<'a>>, CodecError> {
     let mut labels = Vec::new();
+    let mut storage = ctx.reserve_scoped(0, "NX operation label header storage")?;
+    let headers = storage.with_storage(|| validated_operation_headers(ctx, bytes, base_offset))?;
     for header in ctx
-        .admit_iter(
-            &validated_operation_headers(ctx, bytes, base_offset)?,
-            "NX operation label headers",
-        )?
+        .admit_iter(&headers, "NX operation label headers")?
         .copied()
     {
         if let Some(label) = operation_label_at(ctx, bytes, base_offset, header)? {
@@ -1778,10 +1770,9 @@ pub(crate) fn operation_payload_strings<'a>(
     record: OperationPayload<'a>,
 ) -> Result<Vec<OperationPayloadString<'a>>, CodecError> {
     let mut strings = Vec::new();
-    for frame in ctx.admit_iter(
-        &operation_payload_text_frames(ctx, record)?,
-        "NX operation payload string frames",
-    )? {
+    let mut storage = ctx.reserve_scoped(0, "NX payload string frame storage")?;
+    let frames = storage.with_storage(|| operation_payload_text_frames(ctx, record))?;
+    for frame in ctx.admit_iter(&frames, "NX operation payload string frames")? {
         if frame.marker == OperationTextMarker::String {
             ctx.reserve_vec(&mut strings, 1, "nx operation payload strings")?;
             strings.push(OperationPayloadString {
@@ -1801,7 +1792,9 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
     if record.name() != "SIMPLE HOLE" {
         return Ok(None);
     }
-    let mut templates = operation_payload_strings(ctx, record)?
+    let mut template_storage = ctx.reserve_scoped(0, "NX hole template frame storage")?;
+    let mut templates = template_storage
+        .with_storage(|| operation_payload_strings(ctx, record))?
         .into_iter()
         .filter(|value| value.value.as_str().starts_with("Hole_"));
     let Some(template) = templates.next() else {
@@ -1820,12 +1813,15 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
         cadmpeg_core::decode::u64_from_index(prefix.len()),
         "scan NX simple hole scalars",
     )?;
+    let mut scalar_storage = ctx.reserve_scoped(0, "NX hole scalar witness storage")?;
     let mut scalars = Vec::new();
     let mut at = 0usize;
     while at + 8 <= prefix.len() {
         if prefix[at] == 0x30 {
             if let Some(scalar) = ShiftedBinary64::read(&prefix[at..at + 8]) {
-                ctx.reserve_vec(&mut scalars, 1, "nx simple hole scalar witnesses")?;
+                scalar_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut scalars, 1, "NX simple hole scalar witnesses")
+                })?;
                 scalars.push((scalar, record.payload_offset() + at));
                 at += 8;
                 continue;
@@ -3607,6 +3603,7 @@ fn operation_state_group_table_before_counter_map(
     if map_start > bytes.len() {
         return Ok(None);
     }
+    let mut scratch = ctx.reserve_scoped(0, "NX operation-state group workspace")?;
     let mut candidates = Vec::new();
     if let Some(range_end) = map_start.checked_sub(2) {
         for at in ctx.admit_iter(&(0..range_end), "nx operation-state group scan")? {
@@ -3617,9 +3614,13 @@ fn operation_state_group_table_before_counter_map(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "nx operation-state group candidates")?;
-            ctx.reserve_capacity(&mut candidates, 1, "nx operation-state group candidates")?;
-            candidates.push((at, end));
+            scratch.with_storage(|| {
+                ctx.push_vec(
+                    &mut candidates,
+                    (at, end),
+                    "NX operation-state group candidates",
+                )
+            })?;
         }
     }
     ctx.stable_sort_by_key(
@@ -3632,52 +3633,50 @@ fn operation_state_group_table_before_counter_map(
         "sort NX operation state group candidates",
     )?;
 
-    let predecessor_bytes = candidates
-        .len()
-        .checked_mul(std::mem::size_of::<Option<usize>>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "nx operation-state group predecessors",
-                0,
-                cadmpeg_core::decode::u64_from_index(candidates.len()),
-            )
-        })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(predecessor_bytes),
-        "nx operation-state group predecessors",
-    )?;
-    let mut predecessors = ctx.alloc_filled(
-        candidates.len(),
-        None,
-        "nx operation-state group predecessors",
-    )?;
+    let mut predecessors = scratch.with_storage(|| {
+        ctx.alloc_filled(
+            candidates.len(),
+            None,
+            "NX operation-state group predecessors",
+        )
+    })?;
     let mut best_by_end = BTreeMap::<usize, GroupPath>::new();
-    for (candidate_index, (start, end)) in candidates.iter().enumerate() {
-        ctx.charge_work(1, "nx operation-state group paths")?;
-        let previous = best_by_end.get(start).copied();
+    for (candidate_index, (start, end)) in ctx
+        .admit_iter(&candidates, "NX operation-state group path candidates")?
+        .enumerate()
+    {
+        let previous = ctx
+            .get_btree_map(
+                &best_by_end,
+                start,
+                "NX preceding operation-state group path",
+            )?
+            .copied();
         let path = GroupPath {
             last_candidate: candidate_index,
             length: previous.map_or(1, |path| path.length + 1),
             first_start: previous.map_or(*start, |path| path.first_start),
         };
         predecessors[candidate_index] = previous.map(|path| path.last_candidate);
-        let replace = best_by_end.get(end).is_none_or(|current| {
-            path.length > current.length
-                || (path.length == current.length && path.first_start < current.first_start)
-        });
+        let replace = ctx
+            .get_btree_map(
+                &best_by_end,
+                end,
+                "NX operation-state group path replacement",
+            )?
+            .is_none_or(|current| {
+                path.length > current.length
+                    || (path.length == current.length && path.first_start < current.first_start)
+            });
         if replace {
-            if !best_by_end.contains_key(end) {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, GroupPath)>()),
-                    "nx operation-state group paths",
-                )?;
-            }
-            ctx.insert_btree_map(
-                &mut best_by_end,
-                *end,
-                path,
-                "nx operation-state group paths",
-            )?;
+            scratch.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut best_by_end,
+                    *end,
+                    path,
+                    "NX operation-state group path insertion",
+                )
+            })?;
         }
     }
 
@@ -3687,17 +3686,21 @@ fn operation_state_group_table_before_counter_map(
         } else {
             map_start
         };
-    let Some(terminal) = best_by_end.get(&trailing_start).copied() else {
+    let Some(terminal) = ctx
+        .get_btree_map(
+            &best_by_end,
+            &trailing_start,
+            "NX terminal operation-state group path",
+        )?
+        .copied()
+    else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(terminal.length),
-        "nx operation-state group path",
-    )?;
-    let mut path = Vec::new();
-    ctx.reserve_capacity(&mut path, terminal.length, "nx operation-state group path")?;
+    let mut path = scratch
+        .with_storage(|| ctx.collection_vec(terminal.length, "NX operation-state group path"))?;
     let mut candidate = Some(terminal.last_candidate);
     while let Some(candidate_index) = candidate {
+        ctx.charge_work(1, "NX operation-state predecessor traversal")?;
         path.push(candidate_index);
         candidate = predecessors[candidate_index];
     }
@@ -3705,12 +3708,7 @@ fn operation_state_group_table_before_counter_map(
     let Some(&last) = path.last() else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(path.len()),
-        "nx operation-state groups",
-    )?;
-    let mut groups = Vec::new();
-    ctx.reserve_capacity(&mut groups, path.len(), "nx operation-state groups")?;
+    let mut groups = ctx.collection_vec(path.len(), "NX operation-state groups")?;
     for candidate in ctx
         .admit_iter(&path, "NX selected state group path traversal")?
         .copied()
@@ -4044,7 +4042,8 @@ pub(crate) fn operation_terminal_frame(
     if record.payload().get(terminator) != Some(&0) {
         return Ok(None);
     }
-    let common_frames = operation_common_frames(ctx, record)?;
+    let mut storage = ctx.reserve_scoped(0, "NX terminal common frame storage")?;
+    let common_frames = storage.with_storage(|| operation_common_frames(ctx, record))?;
     let mut candidate = None;
     for start in ctx
         .admit_iter(
@@ -4311,7 +4310,8 @@ fn record_references(
     bytes: &[u8],
     base_offset: usize,
 ) -> Result<Vec<LocatedReference<DirectReference>>, CodecError> {
-    let parsed = references(ctx, bytes, base_offset)?;
+    let mut storage = ctx.reserve_scoped(0, "NX direct record reference storage")?;
+    let parsed = storage.with_storage(|| references(ctx, bytes, base_offset))?;
     let mut out = Vec::new();
     for reference in ctx
         .admit_iter(&parsed, "NX persistent record references")?
@@ -5094,17 +5094,20 @@ pub(crate) fn indexed_sections<'a>(
             else {
                 continue;
             };
-            if seen_record_starts.contains(&table_end) {
+            if ctx.contains_btree_set(
+                &seen_record_starts,
+                &table_end,
+                "NX fixed record start exclusion",
+            )? {
                 continue;
             }
-            temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                usize,
-            >()))?;
-            ctx.insert_btree_set(
-                &mut seen_record_starts,
-                table_end,
-                "nx OM seen record starts",
-            )?;
+            temporary.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut seen_record_starts,
+                    table_end,
+                    "NX fixed record start insertion",
+                )
+            })?;
             ctx.reserve_scoped_vec(
                 &mut temporary,
                 &mut candidates,
@@ -5189,13 +5192,20 @@ pub(crate) fn indexed_sections<'a>(
             ) else {
                 continue;
             };
-            if seen_record_starts.contains(&second) {
+            if ctx.contains_btree_set(
+                &seen_record_starts,
+                &second,
+                "NX offset record start exclusion",
+            )? {
                 continue;
             }
-            temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                usize,
-            >()))?;
-            ctx.insert_btree_set(&mut seen_record_starts, second, "nx OM seen record starts")?;
+            temporary.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut seen_record_starts,
+                    second,
+                    "NX offset record start insertion",
+                )
+            })?;
             ctx.reserve_scoped_vec(
                 &mut temporary,
                 &mut candidates,
@@ -5209,7 +5219,10 @@ pub(crate) fn indexed_sections<'a>(
         }
     }
     let mut sections = Vec::new();
-    for candidate in select_outer_indexed_candidates(ctx, candidates)? {
+    for candidate in ctx.admit_iter(
+        select_outer_indexed_candidates(ctx, candidates)?,
+        "NX selected indexed section traversal",
+    )? {
         let section = materialize_indexed_candidate(ctx, candidate)?;
         ctx.reserve_vec(&mut sections, 1, "nx indexed OM sections")?;
         sections.push(section);
@@ -5285,18 +5298,15 @@ pub(crate) fn offset_store_control_class_ordinals(
         (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]).value())
     };
     let count = bytes.len() / 4;
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     if ctx
         .admit_iter(&(0..count), "nx offset-store control validation")?
         .any(|index| value_at(index).is_none())
     {
         return Ok(None);
     }
-    let scratch_bytes = count_u64
-        .checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("nx offset-store suffix minima", 0, count_u64))?;
-    let _suffix_reservation = ctx.reserve_scoped(scratch_bytes, "nx offset-store suffix minima")?;
-    let mut suffix_minima = ctx.alloc_filled(count, u32::MAX, "nx offset-store suffix minima")?;
+    let mut scratch = ctx.reserve_scoped(0, "NX offset-store class workspace")?;
+    let mut suffix_minima = scratch
+        .with_storage(|| ctx.alloc_filled(count, u32::MAX, "NX offset-store suffix minima"))?;
     for index in ctx
         .admit_iter(
             &(0..count - 1),
@@ -5319,14 +5329,20 @@ pub(crate) fn offset_store_control_class_ordinals(
         let Some(identity) = value_at(index) else {
             return Ok(None);
         };
-        if identities.contains(&identity) {
+        if ctx.contains_btree_set(
+            &identities,
+            &identity,
+            "NX offset-store identity repetition",
+        )? {
             break;
         }
-        ctx.insert_btree_set(
-            &mut identities,
-            identity,
-            "nx offset-store class identities",
-        )?;
+        scratch.with_storage(|| {
+            ctx.insert_btree_set(
+                &mut identities,
+                identity,
+                "NX offset-store class identity insertion",
+            )
+        })?;
         maximum_identity = maximum_identity.max(identity);
         if maximum_identity < *minimum && boundary.replace(index + 1).is_some() {
             return Ok(None);
@@ -5583,83 +5599,53 @@ pub(crate) fn evaluate_constant_expression(
     struct Parser<'a, 'b, 'c> {
         bytes: &'a [u8],
         ctx: &'b DecodeContext<'c>,
-        failure: Option<CodecError>,
         at: usize,
         values: Vec<FiniteReal>,
         values_reservation: cadmpeg_core::decode::ScopedReservation<'b>,
-        charged_values_len: usize,
         operators: Vec<Operator>,
         operators_reservation: cadmpeg_core::decode::ScopedReservation<'b>,
-        charged_operators_len: usize,
         expect_operand: bool,
     }
 
     impl Parser<'_, '_, '_> {
-        fn push_value(&mut self, value: FiniteReal) -> Option<()> {
-            let charged = (|| -> Result<(), CodecError> {
-                if self.values.len() >= self.charged_values_len {
-                    self.values_reservation
-                        .grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            FiniteReal,
-                        >(
-                        )))?;
-                    self.charged_values_len =
-                        self.charged_values_len.checked_add(1).ok_or_else(|| {
-                            self.ctx
-                                .refuse_codec_limit("NX expression value stack", 0, u64::MAX)
-                        })?;
-                }
+        fn push_value(&mut self, value: FiniteReal) -> Result<(), CodecError> {
+            self.values_reservation.with_storage(|| {
                 self.ctx
-                    .reserve_vec(&mut self.values, 1, "NX expression value stack")
-            })();
-            if let Err(error) = charged {
-                self.failure = Some(error);
-                return None;
-            }
-            self.values.push(value);
-            Some(())
+                    .push_vec(&mut self.values, value, "NX expression value stack")
+            })
         }
-
-        fn push_operator(&mut self, operator: Operator) -> Option<()> {
-            let charged = (|| -> Result<(), CodecError> {
-                if self.operators.len() >= self.charged_operators_len {
-                    self.operators_reservation
-                        .grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                            Operator,
-                        >(
-                        )))?;
-                    self.charged_operators_len =
-                        self.charged_operators_len.checked_add(1).ok_or_else(|| {
-                            self.ctx
-                                .refuse_codec_limit("NX expression operator stack", 0, u64::MAX)
-                        })?;
-                }
-                self.ctx
-                    .reserve_vec(&mut self.operators, 1, "NX expression operator stack")
-            })();
-            if let Err(error) = charged {
-                self.failure = Some(error);
-                return None;
-            }
-            self.operators.push(operator);
-            Some(())
+        fn push_operator(&mut self, operator: Operator) -> Result<(), CodecError> {
+            self.operators_reservation.with_storage(|| {
+                self.ctx.push_vec(
+                    &mut self.operators,
+                    operator,
+                    "NX expression operator stack",
+                )
+            })
         }
-        fn spaces(&mut self) {
-            while self.bytes.get(self.at).is_some_and(u8::is_ascii_whitespace) {
-                self.at += 1;
-            }
+        fn spaces(&mut self) -> Result<(), CodecError> {
+            let skipped = self
+                .ctx
+                .position_by(
+                    self.at..self.bytes.len(),
+                    |at| Ok(!self.bytes[at].is_ascii_whitespace()),
+                    "NX constant expression whitespace",
+                )?
+                .unwrap_or(self.bytes.len() - self.at);
+            self.at += skipped;
+            Ok(())
         }
-
-        fn number(&mut self) -> Option<FiniteReal> {
-            self.spaces();
+        fn number(&mut self) -> Result<Option<FiniteReal>, CodecError> {
             let start = self.at;
-            while self
-                .bytes
-                .get(self.at)
-                .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'.')
-            {
-                self.at += 1;
-            }
+            let digits = self
+                .ctx
+                .position_by(
+                    self.at..self.bytes.len(),
+                    |at| Ok(!self.bytes[at].is_ascii_digit() && self.bytes[at] != b'.'),
+                    "NX constant expression mantissa",
+                )?
+                .unwrap_or(self.bytes.len() - self.at);
+            self.at += digits;
             if self
                 .bytes
                 .get(self.at)
@@ -5673,53 +5659,63 @@ pub(crate) fn evaluate_constant_expression(
                 {
                     self.at += 1;
                 }
-                let exponent = self.at;
-                while self.bytes.get(self.at).is_some_and(u8::is_ascii_digit) {
-                    self.at += 1;
+                let exponent = self
+                    .ctx
+                    .position_by(
+                        self.at..self.bytes.len(),
+                        |at| Ok(!self.bytes[at].is_ascii_digit()),
+                        "NX constant expression exponent",
+                    )?
+                    .unwrap_or(self.bytes.len() - self.at);
+                self.at += exponent;
+                if exponent == 0 {
+                    return Ok(None);
                 }
-                (self.at > exponent).then_some(())?;
             }
-            (self.at > start).then_some(())?;
-            let validated = match self.ctx.validate_utf8(
+            if self.at == start {
+                return Ok(None);
+            }
+            let Ok(text) = self.ctx.validate_utf8(
                 &self.bytes[start..self.at],
                 "NX constant expression UTF-8 validation",
-            ) {
-                Ok(validated) => validated,
-                Err(error) => {
-                    self.failure = Some(error);
-                    return None;
-                }
+            )?
+            else {
+                return Ok(None);
             };
-            let text = validated.ok()?;
-            let parsed = match self
+            let Ok(value) = self
                 .ctx
-                .parse_text::<f64>(text, "NX constant expression decimal parse")
-            {
-                Ok(parsed) => parsed,
-                Err(error) => {
-                    self.failure = Some(error);
-                    return None;
-                }
+                .parse_text::<f64>(text, "NX constant expression decimal parse")?
+            else {
+                return Ok(None);
             };
-            let value = parsed.ok()?;
-            FiniteReal::new(value)
+            Ok(FiniteReal::new(value))
         }
 
-        fn apply_top(&mut self) -> Option<()> {
-            let operator = self.operators.pop()?;
+        fn apply_top(&mut self) -> Result<Option<()>, CodecError> {
+            self.ctx
+                .charge_work(1, "NX constant expression operator application")?;
+            let Some(operator) = self.operators.pop() else {
+                return Ok(None);
+            };
             let value = match operator {
-                Operator::OpenParen => return None,
+                Operator::OpenParen => return Ok(None),
                 Operator::Unary(operator) => {
-                    let value = self.values.pop()?;
+                    let Some(value) = self.values.pop() else {
+                        return Ok(None);
+                    };
                     match operator {
                         b'+' => value,
                         b'-' => value.negated(),
-                        _ => return None,
+                        _ => return Ok(None),
                     }
                 }
                 Operator::Binary(operator) => {
-                    let right = self.values.pop()?;
-                    let left = self.values.pop()?;
+                    let Some(right) = self.values.pop() else {
+                        return Ok(None);
+                    };
+                    let Some(left) = self.values.pop() else {
+                        return Ok(None);
+                    };
                     let (left, right) = (left.get(), right.get());
                     let raw = match operator {
                         b'+' => left + right,
@@ -5727,16 +5723,21 @@ pub(crate) fn evaluate_constant_expression(
                         b'*' => left * right,
                         b'/' => left / right,
                         b'^' => left.powf(right),
-                        _ => return None,
+                        _ => return Ok(None),
                     };
-                    FiniteReal::new(raw)?
+                    {
+                        let Some(value) = FiniteReal::new(raw) else {
+                            return Ok(None);
+                        };
+                        value
+                    }
                 }
             };
             self.push_value(value)?;
-            Some(())
+            Ok(Some(()))
         }
 
-        fn push_binary(&mut self, operator: u8) -> Option<()> {
+        fn push_binary(&mut self, operator: u8) -> Result<Option<()>, CodecError> {
             let incoming = Operator::Binary(operator);
             while self.operators.last().is_some_and(|top| {
                 !matches!(top, Operator::OpenParen)
@@ -5744,31 +5745,36 @@ pub(crate) fn evaluate_constant_expression(
                         || (top.precedence() == incoming.precedence()
                             && !incoming.is_right_associative()))
             }) {
-                self.apply_top()?;
+                if self.apply_top()?.is_none() {
+                    return Ok(None);
+                }
             }
             self.push_operator(incoming)?;
             self.expect_operand = true;
-            Some(())
+            Ok(Some(()))
         }
 
-        fn close_group(&mut self) -> Option<()> {
+        fn close_group(&mut self) -> Result<Option<()>, CodecError> {
             while self
                 .operators
                 .last()
                 .is_some_and(|operator| !matches!(operator, Operator::OpenParen))
             {
-                self.apply_top()?;
+                if self.apply_top()?.is_none() {
+                    return Ok(None);
+                }
             }
-            matches!(self.operators.pop(), Some(Operator::OpenParen)).then_some(())
+            Ok(matches!(self.operators.pop(), Some(Operator::OpenParen)).then_some(()))
         }
 
-        fn parse(&mut self) -> Option<FiniteReal> {
+        fn parse(mut self) -> Result<Option<FiniteReal>, CodecError> {
             while self.at < self.bytes.len() {
-                self.spaces();
+                self.spaces()?;
                 if self.at == self.bytes.len() {
                     break;
                 }
-                let byte = *self.bytes.get(self.at)?;
+                self.ctx.charge_work(1, "NX numeric expression scan")?;
+                let byte = self.bytes[self.at];
                 if self.expect_operand {
                     match byte {
                         b'+' | b'-' => {
@@ -5780,7 +5786,9 @@ pub(crate) fn evaluate_constant_expression(
                             self.at += 1;
                         }
                         _ => {
-                            let value = self.number()?;
+                            let Some(value) = self.number()? else {
+                                return Ok(None);
+                            };
                             self.push_value(value)?;
                             self.expect_operand = false;
                         }
@@ -5788,58 +5796,49 @@ pub(crate) fn evaluate_constant_expression(
                 } else {
                     match byte {
                         b'+' | b'-' | b'*' | b'/' | b'^' => {
-                            self.push_binary(byte)?;
+                            if self.push_binary(byte)?.is_none() {
+                                return Ok(None);
+                            }
                             self.at += 1;
                         }
                         b')' => {
-                            self.close_group()?;
+                            if self.close_group()?.is_none() {
+                                return Ok(None);
+                            }
                             self.at += 1;
                         }
-                        _ => return None,
+                        _ => return Ok(None),
                     }
                 }
             }
             if self.expect_operand {
-                return None;
+                return Ok(None);
             }
             while let Some(operator) = self.operators.last() {
                 if matches!(operator, Operator::OpenParen) {
-                    return None;
+                    return Ok(None);
                 }
-                self.apply_top()?;
+                if self.apply_top()?.is_none() {
+                    return Ok(None);
+                }
             }
-            (self.values.len() == 1).then(|| self.values[0])
-        }
-
-        fn parse_with_refusal(mut self) -> Result<Option<FiniteReal>, CodecError> {
-            let value = self.parse();
-            if let Some(error) = self.failure {
-                return Err(error);
-            }
-            Ok(value)
+            Ok((self.values.len() == 1).then(|| self.values[0]))
         }
     }
 
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(text.len()),
-        "NX numeric expression scan",
-    )?;
     let values_reservation = ctx.reserve_scoped(0, "NX expression value stack")?;
     let operators_reservation = ctx.reserve_scoped(0, "NX expression operator stack")?;
     Parser {
         bytes: text.as_bytes(),
         ctx,
-        failure: None,
         at: 0,
         values: Vec::new(),
         values_reservation,
-        charged_values_len: 0,
         operators: Vec::new(),
         operators_reservation,
-        charged_operators_len: 0,
         expect_operand: true,
     }
-    .parse_with_refusal()
+    .parse()
 }
 
 #[cfg(test)]

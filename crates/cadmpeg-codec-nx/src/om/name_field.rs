@@ -119,8 +119,7 @@ impl NameField<&str, usize, ()> {
             }),
             None => None,
         };
-        let mut value = ctx.retained_string(self.value.len(), "NX native name field")?;
-        ctx.append_retained(&mut value, self.value, "NX admitted text append")?;
+        let value = ctx.copy_retained_text(self.value, "NX native name field")?;
         Ok(NameField::from_wire(ctx, value, offset, code)?.ok())
     }
 }

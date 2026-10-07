@@ -598,3 +598,32 @@ fn constant_decimal_utf8_refusal_propagates() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 4)
     );
 }
+
+#[test]
+fn constant_expression_stacks_are_scoped_and_refuse_at_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let text = "(1 + 2) * 3";
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx| {
+            assert_eq!(
+                crate::om::evaluate_constant_expression(ctx, text)
+                    .unwrap()
+                    .map(cadmpeg_ir::scalar::FiniteReal::get),
+                Some(9.0)
+            );
+        },
+    );
+    for operation in ["NX expression operator stack", "NX expression value stack"] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::MaterializedBytes,
+            operation,
+            |ctx| crate::om::evaluate_constant_expression(ctx, text),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+        );
+    }
+}
