@@ -400,3 +400,31 @@ fn coverage_rejects_unequal_lengths_without_scanning() {
     assert!(coverage.is_empty());
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn decode_transfer_verification_preserves_the_first_unresolved_target() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let ir = crate::CadIr::empty();
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let ledger = TransferLedger { entries: vec![TransferRecord {
+        source: "source".repeat(64), outcome: TransferOutcome::Emitted { target: "a:b:c#missing".to_owned() },
+    }; 4096] };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(ledger.verify_for_decode(&ctx, &index).unwrap(), ledger.verify(&index));
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "decode transfer verification"),
+        (ResourceDimension::RetainedBytes, "decode transfer refusal"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            ledger.verify_for_decode(&ctx, &index)
+        });
+    }
+}
