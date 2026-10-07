@@ -132,11 +132,11 @@ fn assert_reversed_lookup_refusal(procedural: bool, operation: &'static str) {
 }
 
 #[test]
-fn zero_entity_reversed_procedural_curve_lookup_preserves_work_refusal() {
-    assert_reversed_lookup_refusal(true, "catia_zero_reversed_procedural_curve_lookup");
+fn zero_entity_procedural_position_lookup_preserves_work_refusal() {
+    assert_reversed_lookup_refusal(true, "catia_zero_wire_procedural_lookup");
 }
 
 #[test]
-fn zero_entity_reversed_wire_curve_lookup_preserves_work_refusal() {
-    assert_reversed_lookup_refusal(false, "catia_zero_reversed_wire_curve_lookup");
+fn zero_entity_curve_position_lookup_preserves_work_refusal() {
+    assert_reversed_lookup_refusal(false, "catia_zero_wire_curve_lookup");
 }
