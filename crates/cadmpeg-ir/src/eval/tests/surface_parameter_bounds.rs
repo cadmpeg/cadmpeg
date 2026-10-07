@@ -439,3 +439,31 @@ fn surface_segment_validation_preserves_named_work_refusals() {
         );
     }
 }
+
+
+#[test]
+fn surface_patch_grid_lookup_keeps_first_match_at_shared_boundaries() {
+    use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], false);
+    let points = (0..3).map(|u| (0..3)
+        .map(|v| Point3::new(f64::from(u), f64::from(v), 0.0)).collect()).collect();
+    let surface = NurbsSurface::from_lanes(&ctx, axis(), axis(),
+        NurbsSurfaceLanes::new(points, None), false).unwrap().unwrap();
+    let budget = ctx.work_budget(1_000_000);
+    let patches = super::super::rational_surface_patches_with_budget(&ctx, &surface, &budget)
+        .unwrap().unwrap();
+    assert_eq!(patches.rows.len(), 4);
+    assert_eq!(patches.v_span_count, 2);
+    for u in [-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5] {
+        for v in [-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5] {
+            let expected = patches.rows.iter().find(|patch| {
+                patch.u_domain.lower() <= u && u <= patch.u_domain.upper()
+                    && patch.v_domain.lower() <= v && v <= patch.v_domain.upper()
+            });
+            let actual = patches.patch_at_parameters(&ctx,
+                FinitePoint2::new(Point2::new(u, v)).unwrap()).unwrap();
+            assert_eq!(actual.map(std::ptr::from_ref), expected.map(std::ptr::from_ref));
+        }
+    }
+}

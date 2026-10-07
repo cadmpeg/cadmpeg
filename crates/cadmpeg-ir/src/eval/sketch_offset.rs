@@ -173,25 +173,38 @@ mod tests {
     #[test]
     fn sketch_nurbs_endpoint_scans_preserve_first_and_later_original_refusals() {
         let curve = curve(0.0, Some(vec![1.0, 2.0, 1.0]));
-        for (cap, operation) in [
-            (0, "sketch NURBS endpoint knot scan"),
-            (2, "sketch NURBS endpoint knot scan"),
-            (4, "sketch NURBS endpoint weight scan"),
-            (6, "sketch NURBS endpoint weight scan"),
-            (7, "sketch NURBS endpoint tangent scan"),
-            (8, "sketch NURBS endpoint tangent scan"),
+        for operation in [
+            "sketch NURBS endpoint knot scan",
+            "sketch NURBS endpoint weight scan",
+            "sketch NURBS endpoint tangent scan",
         ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let limit = super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve).unwrap_err();
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(limit.operation, operation);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits, operation, |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                    let result = super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve)
+                        .map_err(CodecError::from);
+                    let Err(CodecError::ResourceLimit(limit)) = &result else {
+                        panic!("endpoint admission");
+                    };
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(limit.operation, operation);
+                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit));
+                    result
+                },
             );
         }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Four endpoint knots, three weights and two endpoint tangents.
+        policy.limits.max_work_units = 9;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(super::clamped_nurbs_pcurve_endpoint_frames(&ctx, &curve).unwrap().is_some());
+        let limit = ctx.charge_work_limit(1, "test next endpoint scan").unwrap_err();
+        assert_eq!((limit.used, limit.additional), (9, 1));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
     }
 
     #[test]
@@ -216,10 +229,32 @@ mod tests {
     fn fitted_sketch_nurbs_offset_preserves_result_curve_scan_refusal() {
         let source = crate::sketches::SketchGeometry::nurbs(curve(0.0, None));
         let result = crate::sketches::SketchGeometry::nurbs(curve(1.0, None));
+        let crate::sketches::SketchGeometryDefinition::Nurbs { curve } = source.definition() else {
+            panic!("source NURBS");
+        };
+        // Locate the source completion boundary before replaying the second
+        // curve's first scan, whose operation also occurs on the source.
+        let prefix = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, "test source endpoint completion", |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                assert!(super::clamped_nurbs_pcurve_endpoint_frames(&ctx, curve).unwrap().is_some());
+                let result = ctx.charge_work(1, "test source endpoint completion");
+                let Err(CodecError::ResourceLimit(limit)) = &result else {
+                    panic!("source completion probe");
+                };
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == *limit));
+                result
+            },
+        );
+        let CodecError::ResourceLimit(prefix) = prefix else {
+            panic!("source completion refusal");
+        };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // The source reads four endpoint knots and the first tangent at each end.
-        policy.limits.max_work_units = 6;
+        policy.limits.max_work_units = prefix.used;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let limit = super::super::fitted_nurbs_offset_frame_distance(&ctx, &source, &result, 0.0)
             .unwrap_err();
