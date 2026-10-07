@@ -10,34 +10,43 @@ use cadmpeg_ir::topology::FaceLoops;
 
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
-fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
+fn strictly_inside_planar_polygon(
+    ctx: &DecodeContext<'_>,
+    point: Point2,
+    polygon: &[Point2],
+    tolerance: f64,
+) -> Result<bool, CodecError> {
     let mut inside = false;
-    for (left, right) in polygon
-        .iter()
-        .zip(polygon.iter().cycle().skip(1))
-        .take(polygon.len())
-    {
-        let edge_u = right.u - left.u;
-        let edge_v = right.v - left.v;
-        let point_u = point.u - left.u;
-        let point_v = point.v - left.v;
-        let edge_length = edge_u.hypot(edge_v);
-        let cross = edge_u * point_v - edge_v * point_u;
-        let dot = point_u * (point.u - right.u) + point_v * (point.v - right.v);
-        if edge_length > 0.0
-            && cross.abs() <= tolerance * edge_length
-            && dot <= tolerance * tolerance
-        {
-            return false;
-        }
-        if (left.v > point.v) != (right.v > point.v) {
-            let intersection = left.u + (point.v - left.v) * edge_u / (right.v - left.v);
-            if intersection > point.u {
-                inside = !inside;
+    let strict = ctx.all_by(
+        polygon
+            .iter()
+            .zip(polygon.iter().cycle().skip(1))
+            .take(polygon.len()),
+        |(left, right)| {
+            let edge_u = right.u - left.u;
+            let edge_v = right.v - left.v;
+            let point_u = point.u - left.u;
+            let point_v = point.v - left.v;
+            let edge_length = edge_u.hypot(edge_v);
+            let cross = edge_u * point_v - edge_v * point_u;
+            let dot = point_u * (point.u - right.u) + point_v * (point.v - right.v);
+            if edge_length > 0.0
+                && cross.abs() <= tolerance * edge_length
+                && dot <= tolerance * tolerance
+            {
+                return Ok(false);
             }
-        }
-    }
-    inside
+            if (left.v > point.v) != (right.v > point.v) {
+                let intersection = left.u + (point.v - left.v) * edge_u / (right.v - left.v);
+                if intersection > point.u {
+                    inside = !inside;
+                }
+            }
+            Ok(true)
+        },
+        "catia_boundary_containment_edges",
+    )?;
+    Ok(strict && inside)
 }
 
 fn point_on_segment(point: Point2, left: Point2, right: Point2, tolerance: f64) -> bool {
@@ -102,37 +111,45 @@ fn segments_intersect_or_touch(
 }
 
 fn polygon_boundaries_intersect(
+    ctx: &DecodeContext<'_>,
     left: &[Point2],
     right: &[Point2],
     tolerance: f64,
     same_polygon: bool,
-) -> bool {
-    for (left_index, (&left_start, &left_end)) in left
-        .iter()
-        .zip(left.iter().cycle().skip(1))
-        .take(left.len())
-        .enumerate()
-    {
-        for (right_index, (&right_start, &right_end)) in right
-            .iter()
-            .zip(right.iter().cycle().skip(1))
-            .take(right.len())
-            .enumerate()
-        {
-            if same_polygon
-                && (left_index == right_index
-                    || (left_index + 1) % left.len() == right_index
-                    || (right_index + 1) % right.len() == left_index)
-            {
-                continue;
-            }
-            if segments_intersect_or_touch(left_start, left_end, right_start, right_end, tolerance)
-            {
-                return true;
-            }
-        }
-    }
-    false
+) -> Result<bool, CodecError> {
+    ctx.any_by(
+        left.iter()
+            .zip(left.iter().cycle().skip(1))
+            .take(left.len())
+            .enumerate(),
+        |(left_index, (&left_start, &left_end))| {
+            ctx.any_by(
+                right
+                    .iter()
+                    .zip(right.iter().cycle().skip(1))
+                    .take(right.len())
+                    .enumerate(),
+                |(right_index, (&right_start, &right_end))| {
+                    if same_polygon
+                        && (left_index == right_index
+                            || (left_index + 1) % left.len() == right_index
+                            || (right_index + 1) % right.len() == left_index)
+                    {
+                        return Ok(false);
+                    }
+                    Ok(segments_intersect_or_touch(
+                        left_start,
+                        left_end,
+                        right_start,
+                        right_end,
+                        tolerance,
+                    ))
+                },
+                "catia_boundary_segment_pairs",
+            )
+        },
+        "catia_boundary_segment_edges",
+    )
 }
 
 /// Classify complete planar boundary polygons by strict containment.
@@ -151,7 +168,7 @@ pub(crate) fn classify_planar_boundaries(
 ) -> Result<FaceLoops, CodecError> {
     let unspecified = || -> Result<FaceLoops, CodecError> {
         let mut ids = Vec::new();
-        for (id, _) in rows {
+        for (id, _) in ctx.admit_iter(rows, "catia_boundary_unspecified_rows")? {
             let id = id.try_clone_for_decode(ctx, "catia_boundary_unspecified_id_copy")?;
             ctx.push_vec(&mut ids, id, "catia_boundary_unspecified_ids")?;
         }
@@ -164,129 +181,180 @@ pub(crate) fn classify_planar_boundaries(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return unspecified();
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(rows.len()),
-        "catia_boundary_work_bound",
-    )?;
-    let point_count = rows
-        .iter()
-        .try_fold(0_u64, |count, (_, points)| {
-            count.checked_add(cadmpeg_core::decode::u64_from_index(points.len()))
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit("catia_boundary_work_bound", u64::MAX, u64::MAX))?;
-    // Segment pairs, containment passes, projection and area scans fit this bound.
-    let work = point_count
-        .checked_mul(point_count)
-        .and_then(|square| square.checked_mul(4))
-        .and_then(|pairs| point_count.checked_mul(8)?.checked_add(pairs))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("catia_boundary_classification_work", u64::MAX, u64::MAX)
-        })?;
-    ctx.charge_work(work, "catia_boundary_classification_work")?;
     let origin = plane_surface.origin().get();
     let u_axis = *plane_surface.frame().reference().as_raw();
     let v_axis = *plane_surface.frame().binormal().as_raw();
     let normal = *plane_surface.frame().axis().as_raw();
-    let mut polygons = Vec::new();
-    for (_, boundary) in rows {
-        if boundary.len() < 3 {
-            return unspecified();
-        }
-        let mut polygon = Vec::new();
-        ctx.reserve_vec(
-            &mut polygon,
-            boundary.len(),
-            "catia_boundary_polygon_points",
-        )?;
-        for point in boundary {
-            let offset = point.vector_from(origin);
-            let u = offset.dot(u_axis);
-            let v = offset.dot(v_axis);
-            let distance = offset.dot(normal);
-            let scale = 1.0_f64.max(u.abs()).max(v.abs());
-            if !u.is_finite()
-                || !v.is_finite()
-                || !distance.is_finite()
-                || distance.abs() > EPS_PLANAR_COORDINATE * scale
-            {
-                return unspecified();
-            }
-            polygon.push(Point2::new(u, v));
-        }
-        ctx.push_vec(&mut polygons, polygon, "catia_boundary_polygon_rows")?;
-    }
-    let coordinate_scale = polygons
-        .iter()
-        .flat_map(|polygon| polygon.iter())
-        .flat_map(|point| [point.u.abs(), point.v.abs()])
-        .fold(1.0, f64::max);
-    let coordinate_tolerance = EPS_PLANAR_COORDINATE * coordinate_scale;
-    let area_tolerance = coordinate_tolerance * coordinate_scale;
-    let mut areas = Vec::new();
-    for polygon in &polygons {
-        let area = polygon
-            .iter()
-            .zip(polygon.iter().cycle().skip(1))
-            .map(|(left, right)| left.u * right.v - right.u * left.v)
-            .sum::<f64>()
-            * 0.5;
-        ctx.push_vec(&mut areas, area, "catia_boundary_polygon_areas")?;
-    }
-    if areas
-        .iter()
-        .any(|area| !area.is_finite() || area.abs() <= area_tolerance)
-    {
-        return unspecified();
-    }
-    if polygons.iter().enumerate().any(|(index, polygon)| {
-        polygon_boundaries_intersect(polygon, polygon, coordinate_tolerance, true)
-            || polygons.iter().skip(index + 1).any(|other| {
-                polygon_boundaries_intersect(polygon, other, coordinate_tolerance, false)
-            })
-    }) {
-        return unspecified();
-    }
-    let Some((outer, outer_area)) = areas
-        .iter()
-        .enumerate()
-        .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()))
-    else {
+    let (projected, _polygon_storage) =
+        ctx.with_scoped_storage("catia_boundary_polygons", || {
+            let mut polygons = Vec::new();
+            let mut areas = Vec::new();
+            let mut coordinate_scale = 1.0_f64;
+            let complete = ctx.all_by(
+                rows,
+                |(_, boundary)| {
+                    if boundary.len() < 3 {
+                        return Ok(false);
+                    }
+                    let mut polygon = Vec::<Point2>::new();
+                    let mut area = 0.0;
+                    let complete = ctx.all_by(
+                        boundary,
+                        |point| {
+                            let offset = point.vector_from(origin);
+                            let u = offset.dot(u_axis);
+                            let v = offset.dot(v_axis);
+                            let distance = offset.dot(normal);
+                            let scale = 1.0_f64.max(u.abs()).max(v.abs());
+                            if !u.is_finite()
+                                || !v.is_finite()
+                                || !distance.is_finite()
+                                || distance.abs() > EPS_PLANAR_COORDINATE * scale
+                            {
+                                return Ok(false);
+                            }
+                            coordinate_scale = coordinate_scale.max(u.abs()).max(v.abs());
+                            if let Some(left) = polygon.last() {
+                                area += left.u * v - u * left.v;
+                            }
+                            ctx.push_vec(
+                                &mut polygon,
+                                Point2::new(u, v),
+                                "catia_boundary_polygon_points",
+                            )?;
+                            Ok(true)
+                        },
+                        "catia_boundary_projection_points",
+                    )?;
+                    if !complete {
+                        return Ok(false);
+                    }
+                    if let (Some(left), Some(right)) = (polygon.last(), polygon.first()) {
+                        area += left.u * right.v - right.u * left.v;
+                    }
+                    ctx.push_vec(&mut polygons, polygon, "catia_boundary_polygon_rows")?;
+                    ctx.push_vec(&mut areas, area * 0.5, "catia_boundary_polygon_areas")?;
+                    Ok(true)
+                },
+                "catia_boundary_projection_rows",
+            )?;
+            Ok::<_, CodecError>(complete.then_some((polygons, areas, coordinate_scale)))
+        })?;
+    let Some((polygons, areas, coordinate_scale)) = projected else {
+        drop(_polygon_storage);
         return unspecified();
     };
-    let outer_area = outer_area.abs();
-    if areas
-        .iter()
-        .enumerate()
-        .any(|(index, area)| index != outer && outer_area - area.abs() <= area_tolerance)
-    {
+    let coordinate_tolerance = EPS_PLANAR_COORDINATE * coordinate_scale;
+    let area_tolerance = coordinate_tolerance * coordinate_scale;
+    let mut largest: Option<(usize, f64)> = None;
+    if !ctx.all_by(
+        areas.iter().enumerate(),
+        |(index, area)| {
+            if !area.is_finite() || area.abs() <= area_tolerance {
+                return Ok(false);
+            }
+            let area = area.abs();
+            if largest.is_none_or(|(_, prior)| !area.total_cmp(&prior).is_lt()) {
+                largest = Some((index, area));
+            }
+            Ok(true)
+        },
+        "catia_boundary_area_search",
+    )? {
         return unspecified();
     }
-
-    if polygons.iter().enumerate().any(|(index, polygon)| {
-        index != outer
-            && polygon.iter().any(|point| {
-                !strictly_inside_planar_polygon(*point, &polygons[outer], coordinate_tolerance)
-            })
-    }) {
+    let Some((outer, outer_area)) = largest else {
+        return unspecified();
+    };
+    if ctx.any_by(
+        polygons.iter().enumerate(),
+        |(index, polygon)| {
+            Ok(
+                polygon_boundaries_intersect(ctx, polygon, polygon, coordinate_tolerance, true)?
+                    || ctx.any_by(
+                        &polygons[index + 1..],
+                        |other| {
+                            polygon_boundaries_intersect(
+                                ctx,
+                                polygon,
+                                other,
+                                coordinate_tolerance,
+                                false,
+                            )
+                        },
+                        "catia_boundary_polygon_pairs",
+                    )?,
+            )
+        },
+        "catia_boundary_polygon_intersections",
+    )? {
         return unspecified();
     }
-    if polygons.iter().enumerate().any(|(index, polygon)| {
-        index != outer
-            && polygons.iter().enumerate().any(|(other_index, other)| {
-                other_index != outer
-                    && other_index != index
-                    && polygon.iter().any(|point| {
-                        strictly_inside_planar_polygon(*point, other, coordinate_tolerance)
-                    })
-            })
-    }) {
+    if ctx.any_by(
+        areas.iter().enumerate(),
+        |(index, area)| Ok(index != outer && outer_area - area.abs() <= area_tolerance),
+        "catia_boundary_outer_uniqueness",
+    )? {
+        return unspecified();
+    }
+    if ctx.any_by(
+        polygons.iter().enumerate(),
+        |(index, polygon)| {
+            Ok(index != outer
+                && ctx.any_by(
+                    polygon,
+                    |point| {
+                        Ok(!strictly_inside_planar_polygon(
+                            ctx,
+                            *point,
+                            &polygons[outer],
+                            coordinate_tolerance,
+                        )?)
+                    },
+                    "catia_boundary_outer_point_search",
+                )?)
+        },
+        "catia_boundary_outer_containment",
+    )? {
+        return unspecified();
+    }
+    if ctx.any_by(
+        polygons.iter().enumerate(),
+        |(index, polygon)| {
+            Ok(index != outer
+                && ctx.any_by(
+                    polygons.iter().enumerate(),
+                    |(other_index, other)| {
+                        Ok(other_index != outer
+                            && other_index != index
+                            && ctx.any_by(
+                                polygon,
+                                |point| {
+                                    strictly_inside_planar_polygon(
+                                        ctx,
+                                        *point,
+                                        other,
+                                        coordinate_tolerance,
+                                    )
+                                },
+                                "catia_boundary_hole_point_search",
+                            )?)
+                    },
+                    "catia_boundary_hole_pairs",
+                )?)
+        },
+        "catia_boundary_hole_containment",
+    )? {
         return unspecified();
     }
     let Some((outer_id, _)) = rows.get(outer) else {
         return unspecified();
     };
     let mut inner = Vec::new();
-    for (index, (id, _)) in rows.iter().enumerate() {
+    for (index, (id, _)) in ctx
+        .admit_iter(rows, "catia_boundary_inner_rows")?
+        .enumerate()
+    {
         if index != outer {
             let id = id.try_clone_for_decode(ctx, "catia_boundary_inner_id_copy")?;
             ctx.push_vec(&mut inner, id, "catia_boundary_inner_ids")?;
@@ -354,16 +422,17 @@ mod tests {
             square(0.0, 0.0, 10.0, 10.0),
             square(2.0, 2.0, 3.0, 3.0),
         ]);
-        crate::test_support::with_work_limit(2, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) =
-                super::classify_planar_boundaries(ctx, &plane(), &boundaries)
-                    .expect_err("comparison work must be admitted")
-            else {
-                panic!("resource refusal required")
-            };
-            assert_eq!(limit.operation, "catia_boundary_classification_work");
-            assert_eq!(ctx.resource_refusal(), Some(limit));
-        });
+        let result =
+            crate::test_support::with_work_refusal("catia_boundary_segment_pairs", |ctx| {
+                let result = super::classify_planar_boundaries(ctx, &plane(), &boundaries);
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(ref limit)) = result {
+                    assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                }
+                result
+            });
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_boundary_segment_pairs")
+        );
     }
 
     #[test]

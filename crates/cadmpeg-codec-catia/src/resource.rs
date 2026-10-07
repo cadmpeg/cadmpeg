@@ -181,9 +181,7 @@ pub(crate) fn derived_annotation(
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     id: impl std::fmt::Display,
     field: &str,
-    operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(field.len()), operation)?;
     annotations
         .derived(ctx, id, field)
         .map_err(CodecError::from)?;
@@ -198,26 +196,14 @@ mod derived_annotation_tests {
         let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
         let key = cadmpeg_ir::report::decode::CoverageKey::new("decoded_entities");
         crate::test_support::with_service_context(|ctx| {
-            super::derived_annotation(
-                ctx,
-                &mut annotations,
-                "catia:test:vertex#0",
-                "point",
-                "catia_annotation_field",
-            )
-            .expect("initial annotation");
+            super::derived_annotation(ctx, &mut annotations, "catia:test:vertex#0", "point")
+                .expect("initial annotation");
             coverage.record(ctx, key, 1).expect("initial coverage");
         });
         crate::test_support::with_retained_limit(0, |ctx| {
             for _ in 0..64 {
-                super::derived_annotation(
-                    ctx,
-                    &mut annotations,
-                    "catia:test:vertex#0",
-                    "point",
-                    "catia_annotation_field",
-                )
-                .expect("count-only annotation update");
+                super::derived_annotation(ctx, &mut annotations, "catia:test:vertex#0", "point")
+                    .expect("count-only annotation update");
                 coverage
                     .record(ctx, key, 1)
                     .expect("count-only coverage update");
@@ -239,7 +225,6 @@ mod derived_annotation_tests {
                 &mut cadmpeg_ir::AnnotationBuilder::new(),
                 "catia:test:vertex#0",
                 "point",
-                "catia_annotation_field",
             )
         });
         assert!(
@@ -252,7 +237,6 @@ mod derived_annotation_tests {
                 &mut cadmpeg_ir::AnnotationBuilder::new(),
                 "catia:test:vertex#0",
                 "point",
-                "catia_annotation_field",
             )
         });
         assert!(
@@ -261,14 +245,8 @@ mod derived_annotation_tests {
         );
         let annotations = crate::test_support::with_service_context(|ctx| {
             let mut builder = cadmpeg_ir::AnnotationBuilder::new();
-            super::derived_annotation(
-                ctx,
-                &mut builder,
-                "catia:test:vertex#0",
-                "point",
-                "catia_annotation_field",
-            )
-            .expect("service profile admits derived field");
+            super::derived_annotation(ctx, &mut builder, "catia:test:vertex#0", "point")
+                .expect("service profile admits derived field");
             builder.build()
         });
         let fields = annotations.exactness()["catia:test:vertex#0"].fields();
