@@ -197,6 +197,8 @@ fn a_sketch_profile_region_states_which_boundary_form_it_uses() {
     assert!(error.contains("region"), "{error}");
 }
 
+const LOOP_INDEX_PEAK: u64 = 2 * 295;
+
 #[test]
 fn whole_loop_constructors_preserve_original_refusals_and_release_scoped_members() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -230,7 +232,9 @@ fn whole_loop_constructors_preserve_original_refusals_and_release_scoped_members
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 512;
+        // The two holes' index is eight buckets of 32-byte member slots with
+        // their control bytes, 295 bytes, held twice while its table is filled.
+        policy.limits.max_materialized_bytes = LOOP_INDEX_PEAK;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let loops = if region {
             let SketchProfileRegion::Loops { loops } =
@@ -261,7 +265,7 @@ fn whole_loop_constructors_preserve_original_refusals_and_release_scoped_members
             "holes must not contain outer"
         );
         let reservation = ctx
-            .reserve_scoped_limit(512, "released loop-member storage")
+            .reserve_scoped_limit(LOOP_INDEX_PEAK, "released loop-member storage")
             .unwrap();
         drop(reservation);
         ctx.finish_session().unwrap();
