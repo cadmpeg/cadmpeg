@@ -30,21 +30,51 @@ const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
 
 fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map(|_| ()).map_err(|error| match error { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode refusal: {other:?}") })
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| match error {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode refusal: {other:?}"),
+                })
+        },
+    );
 }
 
 fn assert_offset_retained_refusal(bytes: &[u8], operation: &str) {
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, operation, |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cap;
-        IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() })
-            .map(|_| ()).map_err(|error| match error { DecodeFailure::Codec(error) => error, other => panic!("unexpected decode refusal: {other:?}") })
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        operation,
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| match error {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode refusal: {other:?}"),
+                })
+        },
+    );
 }
 
 #[test]
@@ -349,13 +379,14 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
             let mut storage = ctx.reserve_scoped(0, "test offset source lookup").unwrap();
             index.update(&ir, ctx, &mut storage).unwrap();
             super::source_parameter_range(
-            ctx,
-            &ir,
-            &index,
-            &source_id,
-            source.geometry.solved().expect("solved carrier"),
-            EPS_OFFSET_ENDPOINT_MATCH,
-        )})
+                ctx,
+                &ir,
+                &index,
+                &source_id,
+                source.geometry.solved().expect("solved carrier"),
+                EPS_OFFSET_ENDPOINT_MATCH,
+            )
+        })
         .expect("source parameter selection")
         .map(FiniteVector::get),
         Some([0.0, 2.0])
@@ -829,8 +860,10 @@ fn offset_source_index_admits_only_appended_entities_and_keeps_first_identity() 
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
-            ).unwrap(),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
         )),
         source_object: None,
     };
@@ -847,7 +880,10 @@ fn offset_source_index_admits_only_appended_entities_and_keeps_first_identity() 
         ir.model.curves.push(curve);
         index.update(&ir, ctx, &mut storage).unwrap();
         assert_eq!(index.curve_count, 2);
-        assert_eq!(ctx.get_btree_map(&index.curves, &id, "test query").unwrap(), Some(&0));
+        assert_eq!(
+            ctx.get_btree_map(&index.curves, &id, "test query").unwrap(),
+            Some(&0)
+        );
     });
 }
 
@@ -858,8 +894,10 @@ fn offset_source_index_keys_and_nodes_use_released_scratch_storage() {
         id: CurveId::mint("test:model:curve#source").unwrap(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
-            ).unwrap(),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
         )),
         source_object: None,
     });
@@ -872,9 +910,13 @@ fn offset_source_index_keys_and_nodes_use_released_scratch_storage() {
         index.update(&ir, ctx, &mut storage).unwrap();
         assert_eq!(index.curves.len(), 1);
         drop((index, storage));
-        ctx.reserve_scoped(16_384, "released source index storage").unwrap();
+        ctx.reserve_scoped(16_384, "released source index storage")
+            .unwrap();
     });
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::MaterializedBytes] {
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::MaterializedBytes,
+    ] {
         let operation = if dimension == ResourceDimension::WorkUnits {
             "iges offset source curve scan"
         } else {
@@ -882,8 +924,11 @@ fn offset_source_index_keys_and_nodes_use_released_scratch_storage() {
         };
         cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
             let mut policy = DecodePolicy::service();
-            if dimension == ResourceDimension::WorkUnits { policy.limits.max_work_units = cap; }
-            else { policy.limits.max_materialized_bytes = cap; }
+            if dimension == ResourceDimension::WorkUnits {
+                policy.limits.max_work_units = cap;
+            } else {
+                policy.limits.max_materialized_bytes = cap;
+            }
             crate::test_support::with_policy_context(&[], &policy, |ctx| {
                 let mut storage = ctx.reserve_scoped(0, "test source index")?;
                 super::OffsetSourceIndex::default().update(&ir, ctx, &mut storage)
@@ -894,15 +939,22 @@ fn offset_source_index_keys_and_nodes_use_released_scratch_storage() {
 
 #[test]
 fn offset_greville_refuses_each_degree_controlled_knot_sum() {
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "iges offset Greville knots", |cap| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        crate::test_support::with_policy_context(&[], &policy, |ctx| {
-            super::greville(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], 2, 1, ctx)
-        })
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges offset Greville knots",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            crate::test_support::with_policy_context(&[], &policy, |ctx| {
+                super::greville(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], 2, 1, ctx)
+            })
+        },
+    );
     crate::test_support::with_service_context(&[], |ctx| {
-        assert_eq!(super::greville(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], 2, 1, ctx).unwrap(), Some(0.5));
+        assert_eq!(
+            super::greville(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], 2, 1, ctx).unwrap(),
+            Some(0.5)
+        );
     });
 }
 
@@ -911,6 +963,12 @@ fn offset_greville_preserves_the_float_sum_signed_zero_identity() {
     let knots = [-0.0; 6];
     let expected = knots[2..4].iter().sum::<f64>() / 2.0;
     crate::test_support::with_service_context(&[], |ctx| {
-        assert_eq!(super::greville(&knots, 2, 1, ctx).unwrap().unwrap().to_bits(), expected.to_bits());
+        assert_eq!(
+            super::greville(&knots, 2, 1, ctx)
+                .unwrap()
+                .unwrap()
+                .to_bits(),
+            expected.to_bits()
+        );
     });
 }
