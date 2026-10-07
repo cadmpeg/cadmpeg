@@ -1089,24 +1089,27 @@ impl cadmpeg_core::decode::cost::DecodeCost for FeatureTrimEntityTable {
 }
 
 impl FeatureTrimEntityTable {
-    /// Whether every declared hash-bucket index was decoded in order.
-    fn has_complete_bucket_index_sequence(&self) -> bool {
-        complete_bucket_index_sequence(self.declared_count, &self.buckets)
-    }
-
     /// Whether every declared bucket and entry body is structurally complete.
-    pub(crate) fn has_complete_bucket_frame(&self) -> bool {
-        self.has_complete_bucket_index_sequence()
-            && self.buckets.iter().all(FeatureTrimBucket::is_complete)
+    pub(crate) fn has_complete_bucket_frame(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        complete_bucket_frame(ctx, self.declared_count, &self.buckets)
     }
 
-    /// Whether each retained external entity identifier occurs once.
-    pub(crate) fn has_unique_external_ids(&self) -> bool {
-        self.rows.iter().enumerate().all(|(index, row)| {
-            self.rows[..index]
-                .iter()
-                .all(|previous| previous.external_id != row.external_id)
-        })
+    /// Whether each retained external entity identifier occurs once, from a
+    /// sorted scratch copy of the identifiers.
+    pub(crate) fn has_unique_external_ids(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        const OPERATION: &str = "creo trim external ID uniqueness";
+        let (mut ids, _storage) = ctx.temporary_vec(self.rows.len(), OPERATION)?;
+        for row in ctx.admit_iter(&self.rows, OPERATION)? {
+            ids.push(row.external_id);
+        }
+        ctx.sort_unstable_by(&mut ids, |id| id, Ord::cmp, OPERATION)?;
+        Ok(!ctx.any_by(ids.windows(2), |pair| Ok(pair[0] == pair[1]), OPERATION)?)
     }
 }
 
@@ -1182,26 +1185,37 @@ impl cadmpeg_core::decode::cost::DecodeCost for FeatureTrimVertexTable {
 }
 
 impl FeatureTrimVertexTable {
-    /// Whether every declared hash-bucket index was decoded in order.
-    fn has_complete_bucket_index_sequence(&self) -> bool {
-        complete_bucket_index_sequence(self.declared_count, &self.buckets)
-    }
-
     /// Whether every declared bucket and entry body is structurally complete.
-    pub(crate) fn has_complete_bucket_frame(&self) -> bool {
-        self.has_complete_bucket_index_sequence()
-            && self.buckets.iter().all(FeatureTrimBucket::is_complete)
+    pub(crate) fn has_complete_bucket_frame(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        complete_bucket_frame(ctx, self.declared_count, &self.buckets)
     }
 }
 
-fn complete_bucket_index_sequence(
+/// Whether every declared hash-bucket index was decoded in order and every
+/// bucket's entries are complete, charging each bucket visited.
+fn complete_bucket_frame(
+    ctx: &DecodeContext<'_>,
     declared_count: Option<u32>,
     buckets: &[FeatureTrimBucket],
-) -> bool {
-    declared_count.is_none_or(|count| {
-        usize::try_from(count).ok() == Some(buckets.len())
-            && buckets.iter().map(|bucket| bucket.index).eq(0..count)
-    })
+) -> Result<bool, CodecError> {
+    if declared_count.is_some_and(|count| usize::try_from(count).ok() != Some(buckets.len())) {
+        return Ok(false);
+    }
+    let ordered = declared_count.is_none()
+        || ctx.all_by(
+            buckets.iter().enumerate(),
+            |(position, bucket)| Ok(usize::try_from(bucket.index).ok() == Some(position)),
+            "creo trim bucket index sequence",
+        )?;
+    Ok(ordered
+        && ctx.all_by(
+            buckets,
+            |bucket| Ok(bucket.is_complete()),
+            "creo trim bucket completeness",
+        )?)
 }
 
 /// One generated-entity ordering row from a gsec3d section.
@@ -9749,7 +9763,7 @@ pub(crate) fn bind_trimmed_definition_owners(
     }
     let mut candidates = Vec::new();
     for definition in &definitions {
-        let external_ids = unique_trimmed_external_ids(definition);
+        let external_ids = unique_trimmed_external_ids(ctx, definition)?;
         let mut owners = BTreeSet::new();
         if definition.identity.owner_feature_id().is_none() && !external_ids.is_empty() {
             for table in entity_tables {
@@ -9808,7 +9822,7 @@ pub(crate) fn bind_replay_definition_owners(
     for definition in &definitions {
         let mut owners = BTreeSet::new();
         if definition.identity.owner_feature_id().is_none() {
-            let trimmed_external_ids = unique_trimmed_external_ids(definition);
+            let trimmed_external_ids = unique_trimmed_external_ids(ctx, definition)?;
             let mut order_external_ids = BTreeSet::new();
             if let Some(table) = &definition.order_table {
                 for row in &table.rows {
@@ -9883,13 +9897,14 @@ pub(crate) fn bind_replay_definition_owners(
     Ok(definitions)
 }
 
-fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> &[u32] {
-    definition
-        .trim_entities
-        .as_ref()
-        .filter(|table| table.has_unique_external_ids())
-        .map(|table| table.solved_external_ids.as_slice())
-        .unwrap_or_default()
+fn unique_trimmed_external_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    definition: &'a FeatureDefinition,
+) -> Result<&'a [u32], CodecError> {
+    Ok(match definition.trim_entities.as_ref() {
+        Some(table) if table.has_unique_external_ids(ctx)? => table.solved_external_ids.as_slice(),
+        _ => &[],
+    })
 }
 
 /// Bind bounded section definitions through the consecutive recipe, internal
@@ -10435,32 +10450,17 @@ mod tests {
     }
 
     #[test]
-    fn segment_row_vec_refuses_before_growth() {
-        use cadmpeg_core::decode::ResourceDimension;
-        use cadmpeg_core::CodecError;
-
-        assert_eq!(
-            one_segment_with_limits(2, u64::MAX)
-                .expect("one row admitted")
-                .rows
-                .len(),
-            1
+    fn segment_rows_and_identity_indexes_refuse_before_growth() {
+        let table = crate::test_support::assert_refusal_order(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            &[
+                "creo segment rows",
+                "creo segment identity nodes",
+                "creo segment identity index",
+            ],
+            |cap| one_segment_with_limits(cap, u64::MAX),
         );
-        let error = one_segment_with_limits(0, u64::MAX).expect_err("row needs one item");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo segment rows"));
-    }
-
-    #[test]
-    fn segment_identity_node_refuses_before_insertion() {
-        use cadmpeg_core::decode::ResourceDimension;
-        use cadmpeg_core::CodecError;
-
-        let error = one_segment_with_limits(1, u64::MAX).expect_err("ID node needs one item");
-        assert!(matches!(error, CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo segment identity nodes"));
+        assert_eq!(table.rows.len(), 1);
     }
 
     #[test]
@@ -10468,7 +10468,8 @@ mod tests {
         use cadmpeg_core::decode::ResourceDimension;
         use cadmpeg_core::CodecError;
 
-        let error = one_segment_with_limits(2, 0).expect_err("row body needs retained bytes");
+        let error =
+            one_segment_with_limits(u64::MAX, 0).expect_err("row body needs retained bytes");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "creo segment row body"));

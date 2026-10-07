@@ -6,7 +6,7 @@ use super::super::sketch::coordinates::resolved_section_points;
 use super::super::sketch::geometry::{
     resolved_section_segment_geometry, saved_section_entity_geometry,
 };
-use super::super::sketch::radii::trim_segment_id;
+use super::super::sketch::radii::trim_segment_ids;
 use super::super::sketch::skamp::complete_section_segment_rows;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::sweep::profiles::connected_sketch_profile_vertices;
@@ -153,12 +153,14 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         };
         let points = resolved_section_points(ctx, definition)?;
         let mut generating_ids = BTreeSet::new();
-        if let Some(trim_entities) = definition.trim_entities.as_ref() {
-            for row in ctx.admit_iter(&trim_entities.rows, "creo revolution trim rows")? {
-                if let Some(id) = trim_segment_id(ctx, definition, row)? {
-                    insert_generating_segment_id(ctx, &mut generating_ids, id)?;
-                }
-            }
+        for id in ctx
+            .admit_iter(
+                trim_segment_ids(ctx, definition)?,
+                "creo revolution trim rows",
+            )?
+            .flatten()
+        {
+            insert_generating_segment_id(ctx, &mut generating_ids, id)?;
         }
         let Some(sketch_id) = model_sketch_id(ctx, scan, definition)? else {
             continue;

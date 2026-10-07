@@ -2717,7 +2717,10 @@ pub(in super::super) fn section_dimension_constraints(
                         return None;
                     }
                     if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
-                        let segment = section_radius_relation_arc(definition, relation)?;
+                        let segment = capture_constraint_refusal(
+                            &mut coordinate_refusal,
+                            section_radius_relation_arc(ctx, definition, relation),
+                        )??;
                         return Some(circular_dimension_constraint(
                             capture_constraint_refusal(
                                 &mut coordinate_refusal,

@@ -11,7 +11,7 @@ use super::super::sketch::geometry::{
     resolved_section_segment_geometry, saved_section_entity_geometry,
 };
 use super::super::sketch::intersect::section_point_in_model;
-use super::super::sketch::radii::trim_segment_id;
+use super::super::sketch::radii::trim_segment_ids;
 use super::super::sketch::skamp::complete_section_segment_rows;
 use super::super::sketch_ids::sketch_section_curve_id_admitted;
 use super::super::uniqueness::{
@@ -990,13 +990,14 @@ fn extrusion_solved_segment_ids(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
     let mut solved = BTreeSet::new();
-    let Some(trim_entities) = definition.trim_entities.as_ref() else {
-        return Ok(solved);
-    };
-    for row in ctx.admit_iter(&trim_entities.rows, "creo extrusion solved trim rows")? {
-        if let Some(id) = trim_segment_id(ctx, definition, row)? {
-            ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
-        }
+    for id in ctx
+        .admit_iter(
+            trim_segment_ids(ctx, definition)?,
+            "creo extrusion solved trim rows",
+        )?
+        .flatten()
+    {
+        ctx.insert_btree_set(&mut solved, id, "creo extrusion solved segment ID nodes")?;
     }
     Ok(solved)
 }

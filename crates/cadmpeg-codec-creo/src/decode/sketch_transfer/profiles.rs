@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved profile chains and solver-only section entities.
 
-use super::super::sketch::radii::trim_segment_id;
+use super::super::sketch::radii::trim_segment_ids;
 use super::super::sketch::skamp::unique_decoded_section_segment;
 use super::super::sketch_ids::sketch_entity_id_admitted;
 use super::super::uniqueness::exactly_one;
@@ -28,14 +28,18 @@ pub(in super::super) fn resolved_profile_chains(
     let Some(table) = &definition.trim_entities else {
         return resolved_segment_profile_chains(ctx, definition, sketch, emitted);
     };
-    if !table.has_complete_bucket_frame() || !table.has_unique_external_ids() {
+    if !table.has_complete_bucket_frame(ctx)? || !table.has_unique_external_ids(ctx)? {
         // A present trim table is authoritative; its failure cannot authorize
         // the point-incidence fallback reserved for an absent table.
         return Ok(Vec::new());
     }
     let mut rows = Vec::new();
-    for row in ctx.admit_iter(&table.rows, "creo trim profile rows")? {
-        if let Some(id) = trim_segment_id(ctx, definition, row)? {
+    let trim_ids = trim_segment_ids(ctx, definition)?;
+    for (row, id) in ctx
+        .admit_iter(&table.rows, "creo trim profile rows")?
+        .zip(trim_ids)
+    {
+        if let Some(id) = id {
             ctx.reserve_vec(&mut rows, 1, "creo trim profile rows")?;
             rows.push((row, id));
         }
@@ -956,20 +960,17 @@ mod tests {
             "creo trim profile entity uses",
             "creo resolved trim profiles",
         ];
-        for (cap, operation) in operations.into_iter().enumerate() {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(cap);
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
-                .expect_err("profile needs the next collection item");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-                if resource.dimension == ResourceDimension::CollectionItems
-                    && resource.operation == operation),
-                "cap {cap}: {error}"
-            );
-        }
+        crate::test_support::assert_refusal_order(
+            ResourceDimension::CollectionItems,
+            &operations,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
+            },
+        );
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,

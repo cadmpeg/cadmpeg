@@ -496,58 +496,37 @@ pub(in crate::decode) fn section_segment_rows<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &'a crate::feature::definitions::FeatureDefinition,
 ) -> Result<Vec<&'a crate::feature::definitions::FeatureSegment>, cadmpeg_core::CodecError> {
-    let mut rows = Vec::new();
-    if let Some(table) = definition.segments.as_ref() {
-        let count = ctx
-            .admit_iter(table.rows.as_slice(), "creo section segment count rows")?
-            .filter_map(|row| match row {
-                SegmentRow::Ordinary(segment) => Some(segment),
-                _ => None,
-            })
-            .count();
-        ctx.reserve_vec(&mut rows, count, "creo section segment rows")?;
-        rows.extend(
-            ctx.admit_iter(table.rows.as_slice(), "creo section segment copy rows")?
-                .filter_map(|row| match row {
-                    SegmentRow::Ordinary(segment) => Some(segment),
-                    _ => None,
-                }),
-        );
+    match definition.segments.as_ref() {
+        Some(table) => ordinary_segment_rows(ctx, table, "creo section segment rows"),
+        None => Ok(Vec::new()),
     }
-    Ok(rows)
 }
 
 pub(in crate::decode) fn complete_section_segment_rows<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &'a crate::feature::definitions::FeatureDefinition,
 ) -> Result<Vec<&'a crate::feature::definitions::FeatureSegment>, cadmpeg_core::CodecError> {
-    let mut rows = Vec::new();
-    if let Some(table) = definition
+    match definition
         .segments
         .as_ref()
         .filter(|table| table.is_complete())
     {
-        let count = ctx
-            .admit_iter(
-                table.rows.as_slice(),
-                "creo complete section segment count rows",
-            )?
-            .filter_map(|row| match row {
-                SegmentRow::Ordinary(segment) => Some(segment),
-                _ => None,
-            })
-            .count();
-        ctx.reserve_vec(&mut rows, count, "creo complete section segment rows")?;
-        rows.extend(
-            ctx.admit_iter(
-                table.rows.as_slice(),
-                "creo complete section segment copy rows",
-            )?
-            .filter_map(|row| match row {
-                SegmentRow::Ordinary(segment) => Some(segment),
-                _ => None,
-            }),
-        );
+        Some(table) => ordinary_segment_rows(ctx, table, "creo complete section segment rows"),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// The ordinary segment rows of `table`, in stored order, in one pass.
+fn ordinary_segment_rows<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    table: &'a crate::feature::definitions::FeatureSegmentTable,
+    operation: &'static str,
+) -> Result<Vec<&'a crate::feature::definitions::FeatureSegment>, cadmpeg_core::CodecError> {
+    let mut rows = Vec::new();
+    for row in ctx.admit_iter(table.rows.as_slice(), operation)? {
+        if let SegmentRow::Ordinary(segment) = row {
+            ctx.push_vec(&mut rows, segment, operation)?;
+        }
     }
     Ok(rows)
 }

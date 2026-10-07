@@ -231,16 +231,16 @@ fn extrusion_solved_segment_ids_refuse_before_tree_node() {
         offset: 0,
     });
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
-    let error = super::extrusion_solved_segment_ids(&ctx, &definition)
-        .expect_err("one solved ID exceeds zero nodes");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo extrusion solved segment ID nodes"),
-        "{error:?}"
+    crate::test_support::assert_refusal_order(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        &["creo extrusion solved segment ID nodes"],
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+            super::extrusion_solved_segment_ids(&ctx, &definition)
+        },
     );
     let ids = crate::decode::with_test_decode_ctx(|ctx| {
         super::extrusion_solved_segment_ids(ctx, &definition)

@@ -545,6 +545,46 @@ pub(crate) fn last_refusal_at<T>(
     panic!("route did not finish within boundary bound");
 }
 
+/// Walk one dimension's refusals upward from zero, admitting each need in
+/// turn, and assert the named operations refuse in this order (other
+/// refusals may come between them). Returns the successful result.
+pub(crate) fn assert_refusal_order<T>(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operations: &[&str],
+    run: impl Fn(u64) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    use cadmpeg_core::CodecError;
+    let mut cap = 0;
+    let mut next = 0;
+    for _ in 0..4096 {
+        match run(cap) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, dimension);
+                if operations.get(next) == Some(&resource.operation) {
+                    next += 1;
+                }
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("resource need");
+                assert!(need > cap);
+                cap = need;
+            }
+            Err(error) => panic!("unexpected fixture refusal: {error:?}"),
+            Ok(value) => {
+                assert_eq!(
+                    next,
+                    operations.len(),
+                    "refusals stopped before {:?}",
+                    operations.get(next)
+                );
+                return value;
+            }
+        }
+    }
+    panic!("fixture did not finish within the resource boundary bound");
+}
+
 /// Admit preceding element-storage charges and select the named refusal limit.
 /// With no operation, return the first limit that admits the unchanged fixture.
 pub(crate) fn allocation_limit_at<T>(
