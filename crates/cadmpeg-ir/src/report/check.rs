@@ -172,6 +172,23 @@ pub struct ValidationReport {
 }
 
 impl ValidationReport {
+    /// Counts error and blocking findings after admitting the full traversal.
+    pub fn error_count_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<usize, cadmpeg_core::CodecError> {
+        Ok(ctx.admit_iter(&self.findings, "decode report error count")?
+            .filter(|finding| finding.severity >= Severity::Error).count())
+    }
+
+    /// Counts warning findings after admitting the full traversal.
+    pub fn warning_count_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<usize, cadmpeg_core::CodecError> {
+        Ok(ctx.admit_iter(&self.findings, "decode report warning count")?
+            .filter(|finding| finding.severity == Severity::Warning).count())
+    }
+
+    /// Stops at the first error or blocking finding.
+    pub fn is_ok_for_decode(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<bool, cadmpeg_core::CodecError> {
+        Ok(!ctx.any_by(&self.findings, |finding| Ok(finding.severity >= Severity::Error), "decode report error search")?)
+    }
+
     /// Number of findings at or above [`Severity::Error`].
     pub fn error_count(&self) -> usize {
         self.findings

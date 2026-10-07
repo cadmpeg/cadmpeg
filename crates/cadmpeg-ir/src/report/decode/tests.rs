@@ -370,17 +370,33 @@ fn coverage_entry_refuses_retained_map_storage() {
 }
 
 #[test]
-fn coverage_entry_refuses_lookup_work() {
+fn coverage_existing_entry_refuses_key_comparison() {
     use crate::report::decode::{Coverage, CoverageKey};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let key = CoverageKey::new("one_count");
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, "decode coverage lookup", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let mut coverage: Coverage = [(key, 7)].into_iter().collect();
+        let result = coverage.record(&ctx, key, 8);
+        assert_eq!(coverage.get(key.as_str()), Some(&7));
+        result
+    });
+}
+
+#[test]
+fn coverage_rejects_unequal_lengths_without_scanning() {
+    use crate::report::decode::{Coverage, CoverageKey};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut coverage = Coverage::default();
-    assert!(
-        matches!(coverage.record(&ctx, CoverageKey::new("one_count"), 7), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "decode coverage lookup")
-    );
+    let error = coverage.record_owned(&ctx, CoverageKey::new("one_count"), "x".repeat(4096), 7).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert!(coverage.is_empty());
+    ctx.finish_session().unwrap();
 }
