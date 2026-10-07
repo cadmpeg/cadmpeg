@@ -3411,6 +3411,29 @@ where
     Ok(property)
 }
 
+/// The sole property `predicate` selects under the decode budget: one charged
+/// step per property visited, stopping at a second match. The predicate does
+/// constant work, such as a comparison with a literal name.
+pub(crate) fn sole_property_matching<'a>(
+    ctx: &DecodeContext<'_>,
+    properties: &[&'a PropertyRecord],
+    predicate: impl Fn(&PropertyRecord) -> bool,
+) -> Result<Result<Option<&'a PropertyRecord>, DuplicateProperty>, CodecError> {
+    const OPERATION: &str = "FreeCAD sole property search";
+    let Some(index) = ctx.position_by(properties, |property| Ok(predicate(property)), OPERATION)?
+    else {
+        return Ok(Ok(None));
+    };
+    if ctx.any_by(
+        &properties[index + 1..],
+        |property| Ok(predicate(property)),
+        OPERATION,
+    )? {
+        return Ok(Err(DuplicateProperty));
+    }
+    Ok(Ok(Some(properties[index])))
+}
+
 /// Returns the sole property with a name.
 ///
 /// `owner` is the noun that names the property carrier in the duplicate
@@ -3421,7 +3444,7 @@ pub(crate) fn sole_named_property<'a>(
     properties: &[&'a PropertyRecord],
     name: &str,
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    match unique_property(properties.iter().copied(), |property| property.name == name) {
+    match sole_property_matching(ctx, properties, |property| property.name == name)? {
         Ok(property) => Ok(property),
         Err(_) => Err(CodecError::Malformed(ctx.format_retained(
             format_args!("{owner} property {name} occurs more than once"),

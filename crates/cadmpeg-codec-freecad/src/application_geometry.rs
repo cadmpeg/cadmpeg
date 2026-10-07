@@ -28,18 +28,6 @@ pub(crate) fn transfer(
     entries: &[EntryRecord],
     admitted_entities: &mut u64,
 ) -> Result<bool, CodecError> {
-    if !ctx.any_by(
-        properties,
-        |property| {
-            Ok(matches!(
-                property.type_name.as_str(),
-                "Mesh::PropertyMeshKernel" | "Points::PropertyPointKernel"
-            ))
-        },
-        "FreeCAD geometry property search",
-    )? {
-        return Ok(false);
-    }
     let mut entry_index = None;
     let mut transferred = false;
     for property in ctx.admit_iter(properties, "FreeCAD geometry properties")? {
@@ -383,8 +371,12 @@ fn point_transform(
     };
     let mut values = [0.0_f64; 16];
     let mut count = 0_usize;
-    let mut tokens = text.split_whitespace();
-    while let Some(token) = ctx.next_charged(&mut tokens, "FreeCAD point matrix token visits")? {
+    // Splitting reads each byte once, whitespace runs included.
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(text.len()),
+        "FreeCAD point matrix token visits",
+    )?;
+    for token in text.split_whitespace() {
         let value = ctx
             .parse_text::<f64>(token, "FreeCAD point matrix scalar")?
             .map_err(|_| CodecError::Malformed("invalid point-cloud transform scalar".into()))?;

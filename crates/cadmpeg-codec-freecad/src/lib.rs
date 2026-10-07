@@ -425,15 +425,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             )?;
         }
     }
-    let (product_by_object, _product_storage) =
-        ctx.with_scoped_storage("fcstd product validation index", || {
-            ctx.collect_hash_map(
-                product_nodes
-                    .iter()
-                    .map(|node| (node.object.as_str(), node)),
-                "fcstd product validation index",
-            )
-        })?;
     let (cyclic_products, _cycle_storage) = ctx
         .with_scoped_storage("fcstd product cycle lookup", || {
             product::product_cycle_nodes(ctx, &product_nodes)
@@ -478,7 +469,11 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 Some(&node.id),
             )?;
         }
-        if has(&cyclic_products, &node.object)? {
+        if ctx.contains_btree_set(
+            &cyclic_products,
+            node.object.as_str(),
+            "FreeCAD validation product cycles",
+        )? {
             push_finding(
                 ctx,
                 findings,
