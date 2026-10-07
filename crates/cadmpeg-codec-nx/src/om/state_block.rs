@@ -6,7 +6,7 @@ use super::state_message::{OperationStateMessage, StateMessage};
 use super::state_slot_lane::StateSlotLane;
 use super::state_status::{operation_state_opaque_lane_end_at, operation_state_status_row_at};
 use super::state_table::{OperationStateStatusTable, StateTableEntry};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
 
@@ -191,21 +191,7 @@ pub(super) fn operation_state_block_before_boundary<'a>(
         return Ok(None);
     }
 
-    let scanned = end - start;
-    let path_bytes = scanned
-        .checked_mul(std::mem::size_of::<(usize, OperationStatePath)>())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx state paths", 0, u64_from_index(scanned)))?;
-    let _status_paths_reservation =
-        ctx.reserve_scoped(u64_from_index(path_bytes), "scan NX state status paths")?;
-    let _message_paths_reservation =
-        ctx.reserve_scoped(u64_from_index(path_bytes), "scan NX state message paths")?;
-    let opaque_bytes = scanned
-        .checked_mul(std::mem::size_of::<usize>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("nx opaque state lanes", 0, u64_from_index(scanned))
-        })?;
-    let _opaque_lanes_reservation =
-        ctx.reserve_scoped(u64_from_index(opaque_bytes), "scan NX opaque state lanes")?;
+    let mut scratch = ctx.reserve_scoped(0, "NX state block workspace")?;
 
     let mut opaque_lane_starts = Vec::new();
     let Some(last_pair) = end.checked_sub(1) else {
@@ -213,7 +199,9 @@ pub(super) fn operation_state_block_before_boundary<'a>(
     };
     for at in ctx.admit_iter(&(start..last_pair), "scan NX state block")? {
         if bytes.get(at..at + 2) == Some(&[0x02, 0x11]) {
-            ctx.reserve_vec(&mut opaque_lane_starts, 1, "nx opaque state lanes")?;
+            scratch.with_storage(|| {
+                ctx.reserve_vec(&mut opaque_lane_starts, 1, "nx opaque state lanes")
+            })?;
             opaque_lane_starts.push(at);
         }
     }
@@ -233,7 +221,9 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                     return Ok(None);
                 };
                 let path_end = continuation.map_or(next, |path| path.end);
-                ctx.reserve_vec(&mut message_paths, 1, "nx state message paths")?;
+                scratch.with_storage(|| {
+                    ctx.reserve_vec(&mut message_paths, 1, "nx state message paths")
+                })?;
                 message_paths.push((
                     at,
                     OperationStatePath {
@@ -269,7 +259,8 @@ pub(super) fn operation_state_block_before_boundary<'a>(
             .filter(|status| message_path.is_none_or(|message| status.length >= message.length))
             .or(message_path);
         if let Some(path) = best_path {
-            ctx.reserve_vec(&mut status_paths, 1, "nx state status paths")?;
+            scratch
+                .with_storage(|| ctx.reserve_vec(&mut status_paths, 1, "nx state status paths"))?;
             status_paths.push((at, path));
         }
     }

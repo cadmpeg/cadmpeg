@@ -73,9 +73,10 @@ impl CachedDefinition {
         Ok(Self {
             offset,
             name: ctx.copy_retained_text(name, "NX cached definition name")?,
-            registry_tail: ctx
-                .copy_retained(tail, "NX cached definition tail")?
-                .into_boxed_slice(),
+            registry_tail: ctx.into_boxed_slice(
+                ctx.copy_retained(tail, "NX cached definition tail")?,
+                "NX cached definition tail boxing",
+            )?,
         })
     }
 }

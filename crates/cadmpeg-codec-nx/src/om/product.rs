@@ -40,8 +40,7 @@ impl ProductText<&str> {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<ProductText<String>, cadmpeg_core::CodecError> {
         let value = self.as_str();
-        let mut owned = ctx.retained_string(value.len(), "retain NX store version")?;
-        ctx.append_retained(&mut owned, value, "NX admitted text append")?;
+        let owned = ctx.copy_retained_text(value, "retain NX store version")?;
         ProductText::from_wire(ctx, owned)?
             .map_err(|_| ctx.refuse_codec_limit("validate NX store version", 0, 1))
     }
