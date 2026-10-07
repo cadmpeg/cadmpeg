@@ -20,11 +20,159 @@ fn limited<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     run(&ctx)
 }
 
+fn without_retained_storage<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    run(&ctx)
+}
+
+fn retained_refusal_at<T>(
+    operation: &'static str,
+    mut run: impl FnMut(&DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            run(&ctx)
+        },
+    );
+}
+
 fn property(feature: &mut Feature, key: &'static str, value: String) {
     feature.properties.insert(
         cadmpeg_core::text::NonBlankString::try_from(key).unwrap(),
         value,
     );
+}
+
+#[test]
+fn rejected_pattern_seed_releases_preceding_identity_copies() {
+    let mut source = feature("pattern", None, 0);
+    property(&mut source, "Seeds", "1,missing".into());
+    let seed = FeatureId::mint("synthetic:test:feature#seed").unwrap();
+    let by_source = HashMap::from([("1", &seed)]);
+    let definition = without_retained_storage(|ctx| {
+        super::pattern::project_pattern(ctx, &source, &by_source, &HashMap::new())
+    })
+    .unwrap();
+    assert!(
+        matches!(definition, FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) if seeds.is_empty())
+    );
+}
+
+#[test]
+fn unresolved_curve_pattern_releases_unused_path() {
+    let mut source = feature("pattern", None, 0);
+    source.kind = "CurveDrivenPattern".into();
+    property(&mut source, "Path", "guide".into());
+    let definition = without_retained_storage(|ctx| {
+        super::pattern::project_pattern(ctx, &source, &HashMap::new(), &HashMap::new())
+    })
+    .unwrap();
+    assert!(
+        matches!(definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if pattern == cadmpeg_ir::features::patterns::PatternKind::UNRESOLVED_CURVE_DRIVEN)
+    );
+}
+
+#[test]
+fn rejected_variable_fillet_releases_control_storage() {
+    let mut source = feature("fillet", None, 0);
+    source.kind = "VarFillet".into();
+    for (key, value) in [
+        ("Position0", "1"),
+        ("Position1", "0"),
+        ("Radius0", "2mm"),
+        ("Radius1", "3mm"),
+    ] {
+        source
+            .parameters
+            .insert(key.try_into().unwrap(), value.into());
+    }
+    let definition =
+        without_retained_storage(|ctx| super::modify::project_fillet(ctx, &source)).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
+        panic!("expected fillet");
+    };
+    assert!(matches!(
+        groups.as_slice()[0].radius,
+        cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
+            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
+        }
+    ));
+}
+
+#[test]
+fn rejected_equation_domain_releases_expression_storage() {
+    let mut source = feature("equation", None, 0);
+    for (key, value) in [
+        ("Parameter", "t"),
+        ("XEquation", "t"),
+        ("YEquation", "t"),
+        ("ZEquation", "t"),
+        ("Start", "NaN"),
+        ("End", "1"),
+    ] {
+        property(&mut source, key, value.into());
+    }
+    assert!(
+        without_retained_storage(|ctx| super::datum::project_equation_curve(ctx, &source))
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn invalid_composite_closed_flag_does_not_retain_segments() {
+    let mut source = feature("composite", None, 0);
+    property(&mut source, "Segments", "first;second".into());
+    property(&mut source, "Closed", "invalid".into());
+    assert!(
+        without_retained_storage(|ctx| super::datum::project_composite_curve(
+            ctx,
+            &source,
+            &HashMap::new()
+        ))
+        .unwrap()
+        .is_none()
+    );
+}
+
+#[test]
+fn invalid_extrusion_direction_does_not_retain_face_selection() {
+    let mut source = feature("extrusion", None, 0);
+    property(&mut source, "EndCondition", "ToFace".into());
+    property(&mut source, "Face", "face-a".into());
+    property(&mut source, "Direction", "0,0,0".into());
+    assert!(without_retained_storage(|ctx| {
+        let sources = super::solid::SourceFeatures::new(ctx, &[])?;
+        super::solid::project_extrude(ctx, &source, &HashMap::new(), &sources)
+    })
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn invalid_sweep_scale_does_not_retain_profile_or_path() {
+    let mut source = feature("sweep", None, 0);
+    property(&mut source, "Profile", "profile".into());
+    property(&mut source, "Path", "guide".into());
+    source
+        .parameters
+        .insert("Scale".try_into().unwrap(), "invalid".into());
+    assert!(without_retained_storage(|ctx| super::spin::project_sweep(
+        ctx,
+        &source,
+        &HashMap::new()
+    ))
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -221,4 +369,93 @@ fn zero_offset_roots_keep_cycle_entry_and_each_cycle_member() {
     )
     .unwrap();
     assert_eq!(roots, [1, 1, 2, 3, 3]);
+}
+
+#[test]
+fn missing_replacement_faces_does_not_retain_target_faces() {
+    let mut source = feature("replacement", None, 0);
+    property(&mut source, "Faces", "face-a".into());
+    assert!(
+        without_retained_storage(|ctx| super::modify::project_replace_face(ctx, &source))
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn accepted_pattern_seeds_refuse_retention_limit() {
+    let mut source = feature("pattern", None, 0);
+    property(&mut source, "Seeds", "1".into());
+    let seed = FeatureId::mint("synthetic:test:feature#seed").unwrap();
+    let by_source = HashMap::from([("1", &seed)]);
+    retained_refusal_at("project SLDPRT pattern seeds", |ctx| {
+        super::pattern::project_pattern(ctx, &source, &by_source, &HashMap::new())
+    });
+}
+
+#[test]
+fn accepted_curve_pattern_refuses_path_retention_limit() {
+    let mut source = feature("pattern", None, 0);
+    source.kind = "CurveDrivenPattern".into();
+    property(&mut source, "Path", "guide".into());
+    source
+        .parameters
+        .insert("Count".try_into().unwrap(), "2".into());
+    source
+        .parameters
+        .insert("Spacing".try_into().unwrap(), "4mm".into());
+    retained_refusal_at("retain SLDPRT pattern path", |ctx| {
+        super::pattern::project_pattern(ctx, &source, &HashMap::new(), &HashMap::new())
+    });
+}
+
+#[test]
+fn unresolved_curve_pattern_does_not_read_unused_path() {
+    let mut source = feature("pattern", None, 0);
+    source.kind = "CurveDrivenPattern".into();
+    property(&mut source, "Path", "x".repeat(100_000));
+    let definition = limited(|ctx| {
+        super::pattern::project_pattern(ctx, &source, &HashMap::new(), &HashMap::new())
+    })
+    .unwrap();
+    assert!(
+        matches!(definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if pattern == cadmpeg_ir::features::patterns::PatternKind::UNRESOLVED_CURVE_DRIVEN)
+    );
+}
+
+#[test]
+fn accepted_variable_fillet_refuses_control_retention_limit() {
+    let mut source = feature("fillet", None, 0);
+    source.kind = "VarFillet".into();
+    for (key, value) in [
+        ("Position0", "0"),
+        ("Position1", "1"),
+        ("Radius0", "2mm"),
+        ("Radius1", "3mm"),
+    ] {
+        source
+            .parameters
+            .insert(key.try_into().unwrap(), value.into());
+    }
+    retained_refusal_at("collect SLDPRT variable fillet controls", |ctx| {
+        super::modify::project_fillet(ctx, &source)
+    });
+}
+
+#[test]
+fn accepted_equation_curve_refuses_expression_retention_limit() {
+    let mut source = feature("equation", None, 0);
+    for (key, value) in [
+        ("Parameter", "t"),
+        ("XEquation", "t"),
+        ("YEquation", "t"),
+        ("ZEquation", "t"),
+        ("Start", "0"),
+        ("End", "1"),
+    ] {
+        property(&mut source, key, value.into());
+    }
+    retained_refusal_at("retain SLDPRT equation curve", |ctx| {
+        super::datum::project_equation_curve(ctx, &source)
+    });
 }
