@@ -266,9 +266,9 @@ fn non_coordinate_legacy_profile_line_carries_counted_endpoint_links() {
 #[test]
 fn coordinate_namespace_disambiguates_reused_local_id() {
     let candidates = vec![("relation".into(), false), ("geometry".into(), true)];
-    assert_eq!(unique_marker_candidate(&candidates), Some("geometry"));
+    assert_eq!(unique_marker_candidate(&cadmpeg_test_support::service_decode_context(), &candidates).unwrap(), Some("geometry"));
     let ambiguous = vec![("first".into(), true), ("second".into(), true)];
-    assert_eq!(unique_marker_candidate(&ambiguous), None);
+    assert_eq!(unique_marker_candidate(&cadmpeg_test_support::service_decode_context(), &ambiguous).unwrap(), None);
 }
 
 #[test]

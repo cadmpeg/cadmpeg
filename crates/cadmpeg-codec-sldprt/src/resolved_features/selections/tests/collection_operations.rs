@@ -75,3 +75,39 @@ fn cylinder_marker_reference_cost_counts_offset_tag_and_components() {
         reference.decode_cost(ctx, "SLDPRT marker reference cost")
     });
 }
+
+#[test]
+fn invalid_component_prefix_does_not_visit_the_remaining_count() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    const OPERATION: &str = "decode SLDPRT mixed component path";
+    let payload = [0; 2000];
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits, OPERATION, |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            super::super::compact_mixed_component_path(&ctx, &payload, 0, 100, false, OPERATION)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = limit.used + limit.additional;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::super::compact_mixed_component_path(&ctx, &payload, 0, 100, false, OPERATION).unwrap(), None);
+}
+
+#[test]
+fn rejected_component_storage_is_released_between_candidates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    const OPERATION: &str = "decode SLDPRT mixed component path";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 8;
+    policy.limits.max_materialized_bytes = 16384;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        assert_eq!(super::super::compact_mixed_component_path(&ctx, &[0; 2000], 0, 100, false, OPERATION).unwrap(), None);
+    }
+}

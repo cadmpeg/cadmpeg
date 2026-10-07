@@ -833,8 +833,8 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(interval) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            let region_addresses = compact_line_region_addresses(ctx, interval)?;
-            let chain_addresses = compact_line_chain_addresses(ctx, interval)?;
+            let (region_addresses, _region_storage) = ctx.with_scoped_storage(OPERATION, || compact_line_region_addresses(ctx, interval))?;
+            let (chain_addresses, _chain_storage) = ctx.with_scoped_storage(OPERATION, || compact_line_chain_addresses(ctx, interval))?;
             let addresses = region_addresses.as_ref().or(chain_addresses.as_ref());
             let owned_markers = owned_members(
                 ctx,
