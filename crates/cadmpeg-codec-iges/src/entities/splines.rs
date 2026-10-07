@@ -257,34 +257,34 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges splines parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges splines directory index",
-        )?;
-    }
+    // The transform resolver requires sequence maps. Their storage is local to this projection.
+    let mut transform_storage = ctx.reserve_scoped(0, "iges splines transform indexes")?;
+    let (records, entries) = transform_storage.with_storage(|| {
+        let mut records = BTreeMap::new();
+        for record in ctx.admit_iter(parameters, "iges splines parameter index traversal")? {
+            ctx.insert_btree_map(
+                &mut records, record.directory_sequence, record,
+                "iges splines parameter index",
+            )?;
+        }
+        let mut entries = BTreeMap::new();
+        for entry in ctx.admit_iter(directory, "iges splines directory index traversal")? {
+            ctx.insert_btree_map(
+                &mut entries, entry.sequence, entry,
+                "iges splines directory index",
+            )?;
+        }
+        Ok::<_, CodecError>((records, entries))
+    })?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges splines directory pass")?
         .filter(|entry| entry.entity_type == 112 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -728,12 +728,11 @@ pub(super) fn project(
         )?;
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges splines directory pass")?
         .filter(|entry| entry.entity_type == 114 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,

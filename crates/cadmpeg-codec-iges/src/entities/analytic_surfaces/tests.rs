@@ -370,3 +370,22 @@ fn iges_sphere_radius_remains_positive_when_the_ir_carrier_accepts_signed_radii(
         .message
         .contains("sphere radius is not positive and finite")));
 }
+
+#[test]
+fn analytic_surfaces_directory_pass_refuses_before_traversal() {
+    let bytes = pointer_defined_surface_file(190, 0);
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges analytic-surface directory pass",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
+                policy, ..DecodeOptions::default()
+            }).map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
+        },
+    );
+}

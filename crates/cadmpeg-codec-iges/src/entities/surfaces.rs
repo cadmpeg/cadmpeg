@@ -1391,35 +1391,35 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let mut records = BTreeMap::new();
-    for record in parameters {
-        ctx.insert_btree_map(
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges surfaces parameter index",
-        )?;
-    }
-    let mut entries = BTreeMap::new();
-    for entry in directory {
-        ctx.insert_btree_map(
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges surfaces directory index",
-        )?;
-    }
+    // The transform resolver requires sequence maps. Their storage is local to this projection.
+    let mut transform_storage = ctx.reserve_scoped(0, "iges surfaces transform indexes")?;
+    let (records, entries) = transform_storage.with_storage(|| {
+        let mut records = BTreeMap::new();
+        for record in ctx.admit_iter(parameters, "iges surfaces parameter index traversal")? {
+            ctx.insert_btree_map(
+                &mut records, record.directory_sequence, record,
+                "iges surfaces parameter index",
+            )?;
+        }
+        let mut entries = BTreeMap::new();
+        for entry in ctx.admit_iter(directory, "iges surfaces directory index traversal")? {
+            ctx.insert_btree_map(
+                &mut entries, entry.sequence, entry,
+                "iges surfaces directory index",
+            )?;
+        }
+        Ok::<_, CodecError>((records, entries))
+    })?;
     let mut index_storage = ctx.reserve_scoped(0, "IGES surface composite index")?;
     let composite_index = index_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?;
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1..=1))
     {
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -1465,8 +1465,11 @@ pub(super) fn project(
         };
         let boundary_sequence = u32::try_from(boundary)
             .ok()
-            .filter(|sequence| sequence % 2 == 1)
-            .filter(|sequence| entries.contains_key(sequence));
+            .filter(|sequence| sequence % 2 == 1);
+        let boundary_sequence = match boundary_sequence {
+            Some(sequence) if crate::directory::entry_by_sequence(directory, sequence, ctx)?.is_some() => Some(sequence),
+            _ => None,
+        };
         if (entry.form == 0 && boundary != 0) || (entry.form != 0 && boundary_sequence.is_none()) {
             super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane form and boundary pointer are inconsistent or the boundary target is missing"))?;
             continue;
@@ -1580,11 +1583,10 @@ pub(super) fn project(
         )?;
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
     {
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -1830,12 +1832,11 @@ pub(super) fn project(
         )?;
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 122 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -1856,7 +1857,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let Some(directrix_entry) = entries.get(&directrix_sequence).copied() else {
+        let Some(directrix_entry) = crate::directory::entry_by_sequence(directory, directrix_sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2344,12 +2345,11 @@ pub(super) fn project(
         )?;
     }
 
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 120 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -2869,12 +2869,11 @@ pub(super) fn project(
         )?;
     }
 
-    'surface: for entry in directory
-        .iter()
+    'surface: for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 128 && (0..=9).contains(&entry.form))
     {
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,
@@ -3454,12 +3453,11 @@ pub(super) fn project(
     // surface appends to `ir.model`, and an offset may serve as the support
     // of a later one in the same pass, so an index built up front would miss
     // surfaces that must be resolvable by the time they are referenced.
-    for entry in directory
-        .iter()
+    for entry in ctx.admit_iter(directory, "iges surfaces directory pass")?
         .filter(|entry| entry.entity_type == 140 && entry.form == 0)
     {
         let factor = global.length_factor_mm();
-        let Some(record) = records.get(&entry.sequence).copied() else {
+        let Some(record) = crate::parameter::record_by_sequence(parameters, entry.sequence, ctx)? else {
             super::push_entity_loss(
                 ctx,
                 &mut losses,

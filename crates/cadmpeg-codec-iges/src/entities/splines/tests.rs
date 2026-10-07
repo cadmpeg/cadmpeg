@@ -534,3 +534,22 @@ fn decode_rejects_a_degenerate_type_112_segment() {
         1
     );
 }
+
+#[test]
+fn splines_directory_pass_refuses_before_traversal() {
+    let bytes = parametric_spline_curve_file();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "iges splines directory pass",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
+                policy, ..DecodeOptions::default()
+            }).map_err(|failure| match failure {
+                DecodeFailure::Codec(error) => error,
+                other => panic!("unexpected decode failure: {other:?}"),
+            })
+        },
+    );
+}
