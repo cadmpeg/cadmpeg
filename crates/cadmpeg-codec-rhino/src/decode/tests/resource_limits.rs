@@ -224,21 +224,22 @@ fn class_outcome_rows_refuse_collection_limit() {
 }
 
 #[test]
-fn class_outcome_label_refuses_retained_limit() {
+fn class_outcome_label_refuses_materialized_limit() {
     let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
-    let retained_record_bytes =
-        u64::try_from(scan.objects[0].range().len()).expect("bounded point-cloud fixture");
-    let error = with_transaction_limits(
-        &scan,
-        6,
-        // Unknown record slots are scoped; the copied label follows the retained source bytes.
-        Some(retained_record_bytes),
-        None,
-        |expand| {
-            let context = DecodeContext::new(&scan, expand).expect("transaction admitted");
-            context
-                .class_outcomes(expand.ctx())
-                .expect_err("class label exceeds retained record bytes")
+    // The class map, output row, and label are scratch until loss reporting completes.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "Rhino class outcome label",
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                scan.data, &arena, &policy,
+            )?;
+            let expand = crate::mesh::MeshExpand::new(&ctx, root);
+            let context = DecodeContext::new(&scan, expand)?;
+            context.class_outcomes(&ctx).map(|rows| rows.len())
         },
     );
     assert!(
