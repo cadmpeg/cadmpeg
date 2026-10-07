@@ -31,13 +31,14 @@ impl<'a> NativeEntity<'a> {
     {
         let product = match self {
             Self::Product(record) => {
-                for _ in 0..=record.fields().len() {
-                    ctx.charge_work(6, "native link field lookup")?;
-                }
-                record
-                    .fields()
-                    .get("links")
-                    .and_then(serde_json::Value::as_array)
+                ctx.find_map(record.fields(), |(key, value)| {
+                    let order = crate::ids::comparison::compare(ctx, key, "links", "native link field comparison")?;
+                    Ok(match order {
+                        std::cmp::Ordering::Less => None,
+                        std::cmp::Ordering::Equal => Some(Some(value)),
+                        std::cmp::Ordering::Greater => Some(None),
+                    })
+                }, "native link field lookup")?.flatten().and_then(serde_json::Value::as_array)
             }
             Self::Source(_) => None,
         };
@@ -45,19 +46,10 @@ impl<'a> NativeEntity<'a> {
             Self::Source(record) => record.links(),
             Self::Product(_) => &[],
         };
-        Ok(product
-            .into_iter()
-            .flatten()
-            .filter_map(
-                move |value| match ctx.charge_work(1, "native outgoing link scan") {
-                    Err(error) => Some(Err(error)),
-                    Ok(()) => value.as_str().map(Ok),
-                },
-            )
-            .chain(source.iter().map(move |text| {
-                ctx.charge_work(1, "native outgoing link scan")?;
-                Ok(text.as_str())
-            })))
+        Ok(ctx
+            .admit_iter(product.map_or(&[][..], Vec::as_slice), "native outgoing link scan")?
+            .filter_map(|value| value.as_str().map(Ok))
+            .chain(ctx.admit_iter(source, "native outgoing link scan")?.map(|text| Ok(text.as_str()))))
     }
 }
 

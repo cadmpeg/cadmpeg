@@ -43,7 +43,6 @@ impl Sha256Digest {
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let text = ctx.retained_string(64, operation)?;
-        ctx.charge_work(64, operation)?;
         Ok(Self::encode_bytes(bytes, text))
     }
 
