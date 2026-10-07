@@ -575,6 +575,7 @@ fn scan_class_wrapper(
     let mut offset = data_chunk.next_offset();
     let mut end_seen = false;
     while offset < wrapper.body().end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
@@ -749,6 +750,7 @@ pub(crate) fn parse_user_string_list(
         .collection_vec(count_bytes, "Rhino user-string entries")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count_bytes {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let entry = chunk_at(bytes, reader.position(), list.body().end, archive, false)?;
         require_long(&entry, ANONYMOUS)?;
         let mut entry_reader = BoundedReader::new(bytes, entry.body().start, entry.body().end)?;
@@ -771,6 +773,7 @@ pub(crate) fn parse_user_string_list(
 }
 
 fn parse_history(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -781,6 +784,7 @@ fn parse_history(
     let mut header_range = None;
     let mut data_range = None;
     while offset < wrapper.body().end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         match item.typecode {
             HISTORY_HEADER if header_range.is_none() && data_range.is_none() => {
@@ -1004,6 +1008,7 @@ pub(crate) fn parse_attributes(
                 .collection_vec(bytes / 4, "Rhino object groups")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 4 {
+                ctx.charge_work(1, "Rhino objects cursor traversal")?;
                 values.push(reader.i32()?);
             }
             values
@@ -1022,6 +1027,7 @@ pub(crate) fn parse_attributes(
                 .collection_vec(bytes / 32, "Rhino object display materials")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 32 {
+                ctx.charge_work(1, "Rhino objects cursor traversal")?;
                 values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
             values
@@ -1049,6 +1055,7 @@ pub(crate) fn parse_attributes(
                 .collection_vec(bytes / 32, "Rhino object explicit display materials")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..bytes / 32 {
+                ctx.charge_work(1, "Rhino objects cursor traversal")?;
                 values.push((uuid(&mut reader)?, uuid(&mut reader)?));
             }
             (active_space, Uuid::nil(), values)
@@ -1212,6 +1219,7 @@ pub(crate) fn parse_attributes(
     };
     let mut last_item = None;
     while reader.remaining() > 0 {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = reader.u8()?;
         if item == 0 {
             reader.skip_remaining()?;
@@ -1282,6 +1290,7 @@ pub(crate) fn parse_attributes(
                     .collection_vec(bytes / 4, "Rhino object groups")
                     .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..bytes / 4 {
+                    ctx.charge_work(1, "Rhino objects cursor traversal")?;
                     attributes.groups.push(reader.i32()?);
                 }
             }
@@ -1294,6 +1303,7 @@ pub(crate) fn parse_attributes(
                     .collection_vec(bytes / 32, "Rhino object display materials")
                     .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..bytes / 32 {
+                    ctx.charge_work(1, "Rhino objects cursor traversal")?;
                     attributes
                         .display_materials
                         .push((uuid(&mut reader)?, uuid(&mut reader)?));
@@ -1408,6 +1418,7 @@ pub(crate) fn read_uuid_list(
         .collection_vec(bytes / 16, "Rhino UUID list")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 16 {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         values.push(uuid(&mut payload)?);
     }
     payload.skip_remaining()?;
@@ -1425,6 +1436,7 @@ pub(crate) fn parse_attribute_userdata(
     let mut result = Vec::new();
     let mut offset = range.start;
     while offset < range.end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = match chunk_at(bytes, offset, range.end, archive, false) {
             Ok(item) => item,
             Err(error) => {
@@ -1837,6 +1849,7 @@ pub(crate) fn parse_object_record(
     let mut userdata = Vec::new();
     let mut class_end_seen = false;
     while offset < class.body().end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = chunk_at(bytes, offset, class.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
@@ -1864,6 +1877,7 @@ pub(crate) fn parse_object_record(
     let mut phase = 0_u8;
     let mut object_end_seen = false;
     while offset < record.body().end {
+        ctx.charge_work(1, "Rhino objects cursor traversal")?;
         let item = chunk_at(bytes, offset, record.body().end, archive, false)?;
         if item.typecode == OBJECT_RECORD_END {
             require_short_zero(&item, OBJECT_RECORD_END)?;
@@ -1890,7 +1904,7 @@ pub(crate) fn parse_object_record(
             }
             OBJECT_RECORD_HISTORY if phase <= 2 => {
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
-                let descriptor = parse_history(bytes, &item, archive)?;
+                let descriptor = parse_history(ctx, bytes, &item, archive)?;
                 let checksum = match (&descriptor.header_range, &descriptor.data_range) {
                     (Some(header), Some(data)) => checksum_warning_excluding(
                         ctx,
@@ -2041,7 +2055,7 @@ pub(crate) fn resolve_identities(
         layers.insert(ctx, layer)?;
     }
     let mut resolved = Vec::new();
-    for (index, object) in objects.into_iter().enumerate() {
+    for (index, object) in ctx.admit_iter(objects, "Rhino resolve identities traversal")?.enumerate() {
         ctx.reserve_vec(&mut resolved, 1, "Rhino resolved object identities")?;
         resolved.push(match object {
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },

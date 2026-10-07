@@ -438,6 +438,7 @@ fn legacy_annotation_fields(
         .collection_vec(point_count, "Rhino legacy annotation points")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..point_count {
+        ctx.charge_work(1, "Rhino dimensions cursor traversal")?;
         let offset = annotation.position();
         points.push(scaled_point(point2(annotation)?, scale, offset)?);
     }
@@ -622,6 +623,7 @@ pub(crate) fn v2_annotation_direct(
         .collection_vec(point_bytes / 16, "Rhino V2 annotation points")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..point_bytes / 16 {
+        ctx.charge_work(1, "Rhino dimensions cursor traversal")?;
         let point_offset = reader.position();
         let raw_point = point2(reader)?;
         if ctx.any_by(

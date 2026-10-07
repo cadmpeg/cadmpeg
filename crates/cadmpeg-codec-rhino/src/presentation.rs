@@ -1266,7 +1266,7 @@ fn user_string_records(
     entries: Vec<(String, String)>,
 ) -> Result<Vec<UserStringRecord>, CodecError> {
     let mut records = ctx.collection_vec(entries.len(), "Rhino projected user-string entries")?;
-    for (key, value) in entries {
+    for (key, value) in ctx.admit_iter(entries, "Rhino user string projection traversal")? {
         records.push(UserStringRecord { key, value });
     }
     Ok(records)
@@ -1369,7 +1369,12 @@ fn first_user_string_records(
         },
         "Rhino first user string records traversal",
     )? {
-        attributes.remove(index);
+        let mut position = 0;
+        ctx.retain_vec(&mut attributes, |_| {
+            let keep = position != index;
+            position += 1;
+            Ok(keep)
+        }, "Rhino temporary user string removal")?;
     }
     Ok((geometry, attributes))
 }
@@ -2010,6 +2015,7 @@ fn parse_light_record_attributes(
     let mut phase = 0_u8;
     let mut record_end_seen = false;
     while offset < record.body().end {
+        ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
         let item = chunk_at(data, offset, record.body().end, archive, false)?;
         if item.typecode == LIGHT_RECORD_END {
             if !item.short() || item.value()? != 0 {
@@ -2157,7 +2163,7 @@ fn parse_light_record_attributes(
         losses,
     )
     .map_err(FramingError::from)?;
-    for warning in warnings {
+    for warning in ctx.admit_iter(&warnings[..], "Rhino light diagnostic traversal").map_err(CodecError::from)? {
         push_presentation_loss(
             ctx,
             losses,
@@ -2218,7 +2224,7 @@ fn append_file_reference_diagnostics(
     diagnostics: Diagnostics,
     source_offset: usize,
 ) -> Result<(), FramingError> {
-    for diagnostic in diagnostics {
+    for diagnostic in ctx.admit_iter(&diagnostics[..], "Rhino file reference diagnostic traversal").map_err(CodecError::from)? {
         let code = diagnostic.code.unwrap_or(RhinoLossCode::IntegrityFailure);
         ctx.reserve_vec(losses, 1, "Rhino texture file-reference losses")
             .map_err(crate::chunks::FramingError::from)?;
@@ -2414,6 +2420,7 @@ fn texture_array(
         .collection_vec(count, "Rhino material textures")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..count {
+        ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
         if object.short() {
             return Err(FramingError::structural(
@@ -3085,6 +3092,7 @@ fn segments(
         .collection_vec(bytes / 12, "Rhino linetype segments")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 12 {
+        ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
         let length = read_finite(ctx, reader, "linetype segment length")?;
         values.push(SourceLinetypeSegment {
             length,
@@ -3160,6 +3168,7 @@ fn parse_linetype(
                     .map_err(crate::chunks::FramingError::from)?;
                 let mut invalid = false;
                 for _ in 0..bytes / 16 {
+                    ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
                     let first = reader.f64()?;
                     let second = reader.f64()?;
                     match (FiniteReal::new(first), FiniteReal::new(second)) {
@@ -3193,7 +3202,7 @@ fn parse_linetype(
     let mut segments = ctx
         .collection_vec(values.len(), "Rhino projected linetype segments")
         .map_err(crate::chunks::FramingError::from)?;
-    for segment in values {
+    for segment in ctx.admit_iter(values, "Rhino linetype projection traversal").map_err(CodecError::from).map_err(FramingError::from)? {
         let length_millimeters = if always {
             let scale = pattern_document_scale(binding)?;
             scaled_coordinate(segment.length.get(), scale).ok_or_else(|| {
@@ -3278,6 +3287,7 @@ fn hatch_line_fields(
         .collection_vec(bytes / 8, "Rhino hatch line dashes")
         .map_err(crate::chunks::FramingError::from)?;
     for _ in 0..bytes / 8 {
+        ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
         dashes.push(read_finite(ctx, reader, "hatch dash")?);
     }
     Ok(SourceHatchLine {
@@ -3304,6 +3314,7 @@ fn hatch_pattern_scale(
 impl SourceHatchLine {
     fn into_millimeters(
         mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scale: MillimeterScale,
         source_offset: usize,
     ) -> Result<HatchLineRecord, FramingError> {
@@ -3311,7 +3322,7 @@ impl SourceHatchLine {
             .base
             .iter_mut()
             .chain(self.offset.iter_mut())
-            .chain(self.dashes.iter_mut())
+            .chain(ctx.admit_iter(&mut self.dashes[..], "Rhino hatch dash projection traversal").map_err(CodecError::from)?)
         {
             *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
                 FramingError::structural(source_offset, "scaled hatch line is invalid")
@@ -3366,6 +3377,7 @@ fn parse_hatch_pattern(
             .collection_vec(count, "Rhino modern hatch lines")
             .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..count {
+            ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
             let line = chunk_at(
                 data,
                 line_reader.position(),
@@ -3426,6 +3438,7 @@ fn parse_hatch_pattern(
             .collection_vec(count, "Rhino legacy hatch lines")
             .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..count {
+            ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
             lines.push(hatch_line_v5(ctx, &mut reader)?);
         }
         let id = if packed & 0x0f >= 2 {
@@ -3452,8 +3465,8 @@ fn parse_hatch_pattern(
         let mut projected = ctx
             .collection_vec(lines.len(), "Rhino projected hatch lines")
             .map_err(crate::chunks::FramingError::from)?;
-        for line in lines {
-            projected.push(line.into_millimeters(scale, source_offset)?);
+        for line in ctx.admit_iter(lines, "Rhino hatch pattern projection traversal").map_err(CodecError::from).map_err(FramingError::from)? {
+            projected.push(line.into_millimeters(ctx, scale, source_offset)?);
         }
         projected
     };
@@ -4635,6 +4648,7 @@ fn rendering_attributes(
             ..RenderingAttributesPresentation::default()
         };
         for _ in 0..material_count {
+            ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             let parsed = (|| {
                 let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
@@ -4669,6 +4683,7 @@ fn rendering_attributes(
                     value.position() - 4,
                 )?;
                 for _ in 0..obsolete_mapping_count {
+                    ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
                     let (_, next_offset) = parse_rendering_mapping_channel(
                         ctx,
                         data,
@@ -4719,6 +4734,7 @@ fn rendering_attributes(
                 .collection_vec(mapping_count, "Rhino projected rendering mappings")
                 .map_err(crate::chunks::FramingError::from)?;
             for _ in 0..mapping_count {
+                ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
                 let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
                 let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
                 if value.i32()? != 1 {
@@ -4750,6 +4766,7 @@ fn rendering_attributes(
                     .collection_vec(channel_count, "Rhino projected rendering channels")
                     .map_err(crate::chunks::FramingError::from)?;
                 for _ in 0..channel_count {
+                    ctx.charge_work(1, "Rhino presentation cursor traversal").map_err(FramingError::from)?;
                     let (channel, next_offset) = parse_rendering_mapping_channel(
                         ctx,
                         data,

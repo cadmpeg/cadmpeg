@@ -14,7 +14,6 @@ use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
 use crate::settings::{CoordinateLane, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
-use cadmpeg_core::decode::collect::ExactVec;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 
@@ -235,13 +234,14 @@ pub(crate) fn decode(
         .ok_or_else(|| {
             GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
         })?;
-    let mut loops = match ExactVec::<HatchLoop>::new(expand.ctx(), loop_bound, "Rhino hatch loops")
+    let mut loops = match expand.ctx().collection_vec(loop_bound.get(), "Rhino hatch loops")
     {
         Ok(loops) => loops,
         Err(error) => return Err(refused(expand.ctx(), body.position(), &error)?),
     };
     let mut warnings = Diagnostics::new();
     for loop_index in 0..count {
+        expand.ctx().charge_work(1, "Rhino hatch loop traversal")?;
         let loop_offset = body.position();
         let loop_version = body.req_u8()?;
         if loop_version >> 4 != 1 {
@@ -289,10 +289,7 @@ pub(crate) fn decode(
                 "hatch loop object is not a curve",
             ));
         };
-        if let Err(error) = loops.push(expand.ctx(), HatchLoop { kind, curve }, "Rhino hatch loops")
-        {
-            return Err(refused(expand.ctx(), body.position(), &error)?);
-        }
+        loops.push(HatchLoop { kind, curve });
         warnings.append_admitted(expand.ctx(), &mut loop_warnings)?;
     }
     let basepoint = if minor >= 2 {
@@ -310,10 +307,6 @@ pub(crate) fn decode(
     };
     body.skip(body.remaining())
         .ok_or_else(|| GeometryError::malformed(body.position(), "hatch suffix is out of range"))?;
-    let loops = match loops.finish() {
-        Ok(loops) => loops,
-        Err(error) => return Err(refused(expand.ctx(), body.position(), &error)?),
-    };
     Ok(Hatch {
         source_range: range,
         plane,
@@ -346,7 +339,10 @@ pub(crate) fn apply_userdata(
         match parse_userdata(data, extra, archive, scale) {
             Ok(basepoint) => last_basepoint = Some(basepoint),
             Err(GeometryError::Codec(error)) => return Err(error),
-            Err(error) => errors.push(error),
+            Err(error) => {
+                ctx.reserve_vec(&mut errors, 1, "Rhino hatch userdata errors")?;
+                errors.push(error);
+            },
         }
     }
     for extra in ctx
@@ -359,7 +355,10 @@ pub(crate) fn apply_userdata(
                 first_gradient.get_or_insert(gradient);
             }
             Err(GeometryError::Codec(error)) => return Err(error),
-            Err(error) => errors.push(error),
+            Err(error) => {
+                ctx.reserve_vec(&mut errors, 1, "Rhino hatch userdata errors")?;
+                errors.push(error);
+            },
         }
     }
     if let Some(basepoint) = last_basepoint {
@@ -425,14 +424,9 @@ fn parse_gradient_userdata(
     let count = usize::try_from(count).map_err(|_| FramingError::Overflow {
         offset: count_offset,
     })?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        data,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     let mut colors = ctx.collection_vec(count, "Rhino gradient color stops")?;
     for index in 0..count {
+        ctx.charge_work(1, "Rhino gradient stop traversal")?;
         let stop_offset = reader.position();
         let stop = chunk_at(data, stop_offset, outer.body().end, archive, false)?;
         if stop.typecode != ANONYMOUS || stop.short() {
@@ -967,4 +961,33 @@ pub(crate) mod tests {
         ))
         .is_err());
     }
+
+    #[test]
+    fn gradient_userdata_uses_the_callers_collection_and_work_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let payload = gradient_userdata_payload(1, &[]);
+        let hatch_payload = version_two_hatch_payload();
+        for (dimension, operation) in [
+            (ResourceDimension::CollectionItems, "Rhino gradient color stops"),
+            (ResourceDimension::WorkUnits, "Rhino gradient stop traversal"),
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+                let mut hatch = crate::decode::with_expand_bytes(&hatch_payload, |expand| {
+                    decode(expand, 0..hatch_payload.len(), MillimeterScale::IDENTITY, ArchiveVersion::V8)
+                        .expect("hatch fixture")
+                });
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    _ => unreachable!("test dimensions"),
+                }
+                let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)?;
+                apply_userdata(&ctx, &payload, &[gradient_descriptor(&payload)], MillimeterScale::IDENTITY, ArchiveVersion::V8, &mut hatch)
+                    .map(|result| result.expect("valid gradient userdata"))
+            });
+        }
+    }
+
 }

@@ -863,11 +863,10 @@ fn admitted_named_properties(
     use std::collections::btree_map::Entry;
 
     let mut kept = BTreeMap::new();
-    for (name, value) in entries {
+    for (name, value) in ctx.admit_iter(entries, "Rhino history property traversal")? {
         match cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")? {
             Some(key) => {
-                ctx.admit_btree_entry(&kept, &key, "Rhino history named property entries")?;
-                match kept.entry(key) {
+                match ctx.entry_btree_map(&mut kept, key, "Rhino history named property entries")? {
                     Entry::Vacant(slot) => {
                         slot.insert(value);
                     }
@@ -1155,12 +1154,7 @@ fn serialize_strip_triangles<S: serde::Serializer, V>(
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     use serde::ser::{Error as _, SerializeSeq};
-    let count = strips
-        .as_slice()
-        .iter()
-        .map(cadmpeg_ir::tessellation::Strip::triangle_count)
-        .sum();
-    let mut sequence = serializer.serialize_seq(Some(count))?;
+    let mut sequence = serializer.serialize_seq(None)?;
     let mut base = 0_u32;
     for strip in strips.as_slice() {
         for index in 0..strip.triangle_count() {
@@ -1752,6 +1746,13 @@ fn extended_geometry_json(
                 return None;
             }
         } {
+            let errors = match expand.ctx().admit_iter(errors, "Rhino history hatch diagnostic traversal") {
+                Ok(errors) => errors,
+                Err(error) => {
+                    *refusal = Some(error.into());
+                    return None;
+                }
+            };
             for error in errors {
                 optional_warning(
                     expand.ctx(),
@@ -2615,12 +2616,6 @@ pub(crate) fn project(
             ),
             native_ref: Some(native_ref),
         });
-    }
-    for record in ctx
-        .admit_iter(records, "Rhino project traversal")
-        .map_err(cadmpeg_core::CodecError::from)?
-    {
-        cadmpeg_core::decode::u64_from_index(record.source_range.start);
     }
     let native = records
         .iter()

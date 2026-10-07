@@ -370,6 +370,7 @@ fn decode_annotation(
             .collection_vec(bytes / 16, "Rhino modern annotation leader points")
             .map_err(crate::chunks::FramingError::from)?;
         for _ in 0..bytes / 16 {
+            ctx.charge_work(1, "Rhino annotations cursor traversal")?;
             let point = [outer.f64()?, outer.f64()?];
             let point = cadmpeg_ir::units::FiniteVector::new(point).ok_or_else(|| {
                 FramingError::structural(outer.position() - 16, "leader point is not finite")
@@ -877,9 +878,7 @@ pub(crate) fn install(
                 let mut leader_points = ctx
                     .collection_vec(value.points.len(), "Rhino legacy leader projection points")?;
                 leader_points.extend(
-                    value
-                        .points
-                        .into_iter()
+                    ctx.admit_iter(value.points, "Rhino leader projection traversal")?
                         .map(cadmpeg_ir::units::FiniteVector::finite_components),
                 );
                 ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")?;
@@ -969,10 +968,7 @@ pub(crate) fn install(
                         "Rhino V2 leader projection points",
                     )?;
                     points.extend(
-                        value
-                            .base
-                            .points
-                            .into_iter()
+                        ctx.admit_iter(value.base.points, "Rhino V2 leader projection traversal")?
                             .map(cadmpeg_ir::units::FiniteVector::finite_components),
                     );
                     points
