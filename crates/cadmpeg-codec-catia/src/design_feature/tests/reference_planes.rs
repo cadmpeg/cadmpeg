@@ -58,7 +58,7 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
             transfer_design_features(
                 ctx,
                 &mut ir,
-                &native,
+                &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
                 &crate::decode::ModelingGraphScope::Unscoped,
             )
         })

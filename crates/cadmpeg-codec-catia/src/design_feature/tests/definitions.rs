@@ -92,7 +92,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
         transfer_design_features(
             ctx,
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -241,7 +241,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
         transfer_design_features(
             ctx,
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
@@ -396,7 +396,7 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         transfer_design_features(
             ctx,
             &mut ir,
-            &native,
+            &crate::design_feature::DesignFeatureSources::new(ctx, &native)?,
             &crate::decode::ModelingGraphScope::Unscoped,
         )
     })
