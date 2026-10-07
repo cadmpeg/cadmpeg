@@ -80,7 +80,7 @@ fn diameter_interval_index_reuses_lane_work_and_keeps_absent_source_lazy() {
     assert!(index.records.get().is_none());
     feature.source_id = FeatureSource::from_value(53);
     assert_eq!(index.tail(&ctx, &feature).unwrap(), Some(158..400));
-    let original = index.records.get().unwrap() as *const _;
+    let original = std::ptr::from_ref(index.records.get().unwrap());
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "index SLDPRT cosmetic diameter intervals",
@@ -89,7 +89,7 @@ fn diameter_interval_index_reuses_lane_work_and_keeps_absent_source_lazy() {
     for _ in 0..16 {
         assert_eq!(index.tail(&ctx, &feature).unwrap(), Some(158..400));
     }
-    assert_eq!(index.records.get().unwrap() as *const _, original);
+    assert_eq!(std::ptr::from_ref(index.records.get().unwrap()), original);
 }
 
 #[test]

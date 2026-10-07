@@ -1275,8 +1275,14 @@ fn surface_lane_group_entry_propagates_slot_refusal() {
     assert_eq!(grouped.len(), 1);
     let entries = grouped.get(selection.parent.as_str()).unwrap();
     assert_eq!(entries.len(), 2);
-    assert!(std::ptr::eq(entries[0], &selection));
-    assert!(std::ptr::eq(entries[1], &selection));
+    assert!(std::ptr::eq(
+        std::ptr::from_ref(entries[0]),
+        std::ptr::from_ref(&selection)
+    ));
+    assert!(std::ptr::eq(
+        std::ptr::from_ref(entries[1]),
+        std::ptr::from_ref(&selection)
+    ));
 }
 
 #[test]

@@ -2313,12 +2313,12 @@ fn point_distance_assignment_exists(
     Ok(result)
 }
 
-pub(super) fn implicit_coordinate_roster_curve_endpoints<'a>(
+pub(super) fn implicit_coordinate_roster_curve_endpoints(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
     inferred: &HashMap<u32, [f64; 2]>,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT inferred roster endpoints";
     let offset = (|| {
@@ -2451,9 +2451,9 @@ pub(super) fn implicit_profile_chain_closure_endpoints<'a>(
             if !matches!(
                 sibling.kind(),
                 SketchInputKind::LineOrCircle | SketchInputKind::Arc
-            ) || !usize::try_from(sibling.offset())
+            ) || usize::try_from(sibling.offset())
                 .ok()
-                .is_some_and(|offset| marker_profile_curve_role(payload, offset) == Some(1))
+                .is_none_or(|offset| marker_profile_curve_role(payload, offset) != Some(1))
                 || !in_curve_feature(sibling)?
                 || same_marker(ctx, sibling, curve)?
             {
@@ -2822,7 +2822,7 @@ pub(super) fn coordinate_roster_arc_center(
                 {
                     match roster_center {
                         Some(candidate) if !same_center(candidate, center) => {
-                            ambiguous_center = true
+                            ambiguous_center = true;
                         }
                         Some(_) => {}
                         None => roster_center = Some(center),
@@ -2954,11 +2954,11 @@ pub(super) fn legacy_compact_diameter_arc_center(
     Ok(center)
 }
 
-pub(super) fn coordinate_circle_radius<'a>(
+pub(super) fn coordinate_circle_radius(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     circle: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<f64>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT circle coordinate roster";
     let center = (|| {
@@ -2989,7 +2989,7 @@ pub(super) fn coordinate_circle_radius<'a>(
     };
     let coordinates = geometry.roster(circle, MarkerRoster::Points)?;
     let insertion = ctx.partition_point(
-        &coordinates,
+        coordinates,
         |marker| Ok(marker.offset() < circle.offset()),
         OPERATION,
     )?;
@@ -3139,10 +3139,10 @@ pub(super) fn legacy_coordinate_circle_radius(
     })())
 }
 
-pub(super) fn coordinate_roster_full_circle<'a>(
+pub(super) fn coordinate_roster_full_circle(
     payload: &[u8],
     circle: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     let eligibility = (|| {
         let offset = usize::try_from(circle.offset()).ok()?;
@@ -3201,10 +3201,10 @@ pub(super) fn coordinate_roster_full_circle<'a>(
     })())
 }
 
-pub(super) fn extended_geometry_full_circle<'a>(
+pub(super) fn extended_geometry_full_circle(
     payload: &[u8],
     circle: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     let eligibility = (|| {
         let offset = usize::try_from(circle.offset()).ok()?;
@@ -3341,10 +3341,10 @@ fn extended_geometry_terminal_full_circle_tail(payload: &[u8], offset: usize) ->
         && payload.get(offset + 156..offset + 160) == Some(&[0xff; 4])
 }
 
-pub(super) fn equal_index_coordinate_roster_full_circle<'a>(
+pub(super) fn equal_index_coordinate_roster_full_circle(
     payload: &[u8],
     circle: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     let eligibility = (|| {
         let offset = usize::try_from(circle.offset()).ok()?;
@@ -3457,10 +3457,10 @@ pub(super) fn equal_index_coordinate_roster_full_circle<'a>(
     })())
 }
 
-pub(super) fn current_profile_circle_dimension<'a>(
+pub(super) fn current_profile_circle_dimension(
     payload: &[u8],
     circle: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     let eligibility = (|| {
         let offset = usize::try_from(circle.offset()).ok()?;
@@ -3546,11 +3546,11 @@ pub(super) fn current_profile_circle_dimension<'a>(
     })())
 }
 
-pub(super) fn compact_profile_full_circle<'a>(
+pub(super) fn compact_profile_full_circle(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     circle: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT compact profile full circle";
     let (circle, _storage) = ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
@@ -3683,10 +3683,10 @@ pub(super) fn compact_profile_full_circle<'a>(
     Ok(circle)
 }
 
-pub(super) fn compact_legacy_terminal_diameter_circle<'a>(
+pub(super) fn compact_legacy_terminal_diameter_circle(
     payload: &[u8],
     circle: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     let radial_index = (|| {
         let offset = usize::try_from(circle.offset()).ok()?;
@@ -3833,10 +3833,10 @@ pub(super) fn compact_legacy_profile_full_circle(
     })())
 }
 
-pub(super) fn legacy_profile_radial_circle<'a>(
+pub(super) fn legacy_profile_radial_circle(
     payload: &[u8],
     circle: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     let eligibility = (|| {
         let offset = usize::try_from(circle.offset()).ok()?;
@@ -3928,11 +3928,11 @@ pub(super) fn legacy_profile_radial_circle<'a>(
     })())
 }
 
-pub(super) fn wide_coordinate_roster_full_circle<'a>(
+pub(super) fn wide_coordinate_roster_full_circle(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     circle: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<([f64; 2], f64)>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT wide coordinate roster full circle";
     let eligibility = (|| {
@@ -4023,7 +4023,7 @@ pub(super) fn wide_coordinate_roster_full_circle<'a>(
     } else {
         None
     };
-    Ok((|| {
+    Ok({
         let raw_index = usize::from(raw_index_u16);
         let roster_pair = if terminal {
             raw_index.checked_sub(2).zip(raw_index.checked_sub(1))
@@ -4051,7 +4051,7 @@ pub(super) fn wide_coordinate_roster_full_circle<'a>(
             }
             [Some(_), Some(_)] => None,
         }
-    })())
+    })
 }
 
 fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
@@ -4206,11 +4206,11 @@ fn ellipse_axis_bounds(
     Ok(second.map(|second| [first, second]))
 }
 
-pub(super) fn coordinate_ellipse_axes<'a>(
+pub(super) fn coordinate_ellipse_axes(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     ellipse: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<Option<([f64; 2], f64, f64)>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT ellipse coordinate roster";
     let eligibility = (|| {
@@ -6847,11 +6847,11 @@ pub(super) fn auxiliary_profile_record(payload: &[u8], offset: usize) -> bool {
 /// marker is a relation display carrier, not an independent sketch curve.
 /// Profile curves use the same feature-local namespace, but both endpoint
 /// identifiers must resolve to distinct coordinate-bearing point markers.
-pub(super) fn relation_reference_curve_record<'a>(
+pub(super) fn relation_reference_curve_record(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
-    geometry: &MarkerGeometryIndex<'a, '_, '_>,
+    geometry: &MarkerGeometryIndex<'_, '_, '_>,
 ) -> Result<bool, CodecError> {
     const OPERATION: &str = "resolve SLDPRT relation reference carrier";
     if !matches!(

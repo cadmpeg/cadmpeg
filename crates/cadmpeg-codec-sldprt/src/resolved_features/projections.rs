@@ -1233,6 +1233,7 @@ pub(crate) fn project_compact_edge_selections(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const DEPENDENCY_OPERATION: &str = "add SLDPRT compact edge dependency";
     const INDEX_OPERATION: &str = "index SLDPRT compact edge selections";
     let (selections, _selections_storage) = selections_by_feature(
         ctx,
@@ -1361,7 +1362,6 @@ pub(crate) fn project_compact_edge_selections(
                 }
                 _ => return Ok(()),
             }
-            const DEPENDENCY_OPERATION: &str = "add SLDPRT compact edge dependency";
             for selection in ctx.admit_iter(edge_selections, DEPENDENCY_OPERATION)? {
                 add_producer_dependencies(
                     ctx,
@@ -1419,6 +1419,8 @@ fn endpoint_signatures(
     Ok(signatures)
 }
 
+type OrderedFilletDimensions = (Vec<(usize, PositiveLength)>, bool);
+
 /// The `(index, radius)` dimensions of a variable fillet in index order, and whether the indices
 /// are exactly `0..n`; `None` when a name is not a radius dimension.
 fn ordered_fillet_dimensions(
@@ -1426,7 +1428,7 @@ fn ordered_fillet_dimensions(
     feature: &crate::records::Feature,
     parameter_names: &BTreeSet<&cadmpeg_core::text::NonBlankString>,
     operation: &'static str,
-) -> Result<Option<(Vec<(usize, PositiveLength)>, bool)>, cadmpeg_core::CodecError> {
+) -> Result<Option<OrderedFilletDimensions>, cadmpeg_core::CodecError> {
     let mut ordered = Vec::new();
     let mut visited = parameter_names.iter();
     while let Some(name) = ctx.next_charged(&mut visited, operation)? {

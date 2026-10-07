@@ -56,10 +56,10 @@ fn rectangle_coordinate_collections_preserve_output_and_refusals() {
                     match dimension {
                         ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
                         ResourceDimension::CollectionItems => {
-                            policy.limits.max_collection_items = cap
+                            policy.limits.max_collection_items = cap;
                         }
                         ResourceDimension::MaterializedBytes => {
-                            policy.limits.max_materialized_bytes = cap
+                            policy.limits.max_materialized_bytes = cap;
                         }
                         _ => panic!("test dimension"),
                     }

@@ -59,7 +59,7 @@ fn position_index_preserves_radius_admission_and_cell_representative() {
             // Include both sides of the radius tolerance and different points in one cell.
             let mut points = vec![(Some("center"), Point2::new(0.0, 0.0))];
             for index in 0..128 {
-                let u = (f64::from(index) - 64.0) * tolerance * 0.015625;
+                let u = (f64::from(index) - 64.0) * tolerance * 0.015_625;
                 let v = scale * (f64::from(index % 7) - 3.0);
                 points.push((None, Point2::new(u, v)));
                 points.push((None, Point2::new((f64::from(index) + 2.0) * scale, v)));
