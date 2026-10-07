@@ -123,7 +123,10 @@ impl ProteinRecord {
         let wire = match <[_; 1]>::try_from(records) {
             Ok([wire]) => wire,
             Err(records) => {
-                let detail = format!("Inventor native data has {} Protein state records", records.len());
+                let detail = format!(
+                    "Inventor native data has {} Protein state records",
+                    records.len()
+                );
                 return Err(NativeConvertError::ConversionMessage(detail));
             }
         };
@@ -245,7 +248,9 @@ impl ProteinAssetRecordWire {
         _ctx: &DecodeContext<'_>,
     ) -> Result<ProteinAssetRecord, CodecError> {
         if self.ordinal != self.asset.ordinal {
-            return Err(CodecError::malformed("ordinal disagrees with asset.ordinal"));
+            return Err(CodecError::malformed(
+                "ordinal disagrees with asset.ordinal",
+            ));
         }
         Ok(ProteinAssetRecord {
             id: self.id,
@@ -320,7 +325,9 @@ impl Serialize for InstancePropertiesEntry {
 impl InstancePropertiesEntry {
     fn try_new(value: String) -> Result<Self, CodecError> {
         if !value.ends_with("InstanceProperties.bin") {
-            return Err(CodecError::malformed("entry_name must end with InstanceProperties.bin"));
+            return Err(CodecError::malformed(
+                "entry_name must end with InstanceProperties.bin",
+            ));
         }
         Ok(Self(value))
     }
@@ -363,9 +370,11 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        assert!(matches!(ProteinRecord::read(&ctx, &NativeNamespace::default()),
+        assert!(
+            matches!(ProteinRecord::read(&ctx, &NativeNamespace::default()),
             Err(cadmpeg_ir::native::NativeConvertError::ConversionMessage(detail))
-                if detail == "Inventor native data has 0 Protein state records"));
+                if detail == "Inventor native data has 0 Protein state records")
+        );
     }
 
     #[test]
@@ -384,15 +393,28 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let wire: ProteinAssetRecordWire = serde_json::from_value(valid.clone()).expect("wire");
-        assert_eq!(wire.into_record(&ctx).expect("fixed validation").ordinal(), 3);
+        assert_eq!(
+            wire.into_record(&ctx).expect("fixed validation").ordinal(),
+            3
+        );
         for (field, value, message) in [
-            ("ordinal", serde_json::json!(4), "ordinal disagrees with asset.ordinal"),
-            ("entry_name", serde_json::json!("wrong.bin"), "entry_name must end with InstanceProperties.bin"),
+            (
+                "ordinal",
+                serde_json::json!(4),
+                "ordinal disagrees with asset.ordinal",
+            ),
+            (
+                "entry_name",
+                serde_json::json!("wrong.bin"),
+                "entry_name must end with InstanceProperties.bin",
+            ),
         ] {
             let mut value_wire = valid.clone();
             value_wire[field] = value;
             let wire: ProteinAssetRecordWire = serde_json::from_value(value_wire).expect("wire");
-            assert!(matches!(wire.into_record(&ctx), Err(CodecError::Malformed(detail)) if detail == message));
+            assert!(
+                matches!(wire.into_record(&ctx), Err(CodecError::Malformed(detail)) if detail == message)
+            );
         }
     }
 
