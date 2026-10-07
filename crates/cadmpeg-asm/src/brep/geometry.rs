@@ -378,13 +378,14 @@ pub(super) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2
 pub(super) fn pcurve_ranges_on_domain(
     candidate: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
     edge: Option<&Record>,
-) -> Option<Vec<[f64; 2]>> {
+) -> Option<impl Iterator<Item = [f64; 2]>> {
     let first = *candidate
         .knots()
         .get(usize::try_from(candidate.degree()).ok()?)?;
     let last = *candidate.knots().get(candidate.pole_rows().count())?;
     (first < last).then_some(())?;
-    let mut ranges = Vec::new();
+    let mut ranges = [None; 3];
+    let mut count = 0;
     for range in edge
         .and_then(edge_pcurve_parameter_ranges)
         .into_iter()
@@ -404,13 +405,14 @@ pub(super) fn pcurve_ranges_on_domain(
             let range = range.map(|value| value.clamp(first, last));
             (range[0] != range[1]).then_some(range)
         })() {
-            ranges.push(range);
+            ranges[count] = Some(range);
+            count += 1;
         }
     }
-    if !ranges.contains(&[first, last]) {
-        ranges.push([first, last]);
+    if !ranges.contains(&Some([first, last])) {
+        ranges[count] = Some([first, last]);
     }
-    Some(ranges)
+    Some(ranges.into_iter().flatten())
 }
 
 /// Decode an analytic curve carrier.

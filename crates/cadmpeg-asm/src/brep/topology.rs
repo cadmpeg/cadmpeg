@@ -1183,9 +1183,7 @@ pub(super) fn shell_faces(
         else {
             break;
         };
-        for face in ctx.admit_iter(face_chain_from(ctx, record.ref_at(6), by_index, kept, format)?, "ASM subshell face append")? {
-            ctx.push_vec(&mut out, face, "ASM shell faces")?;
-        }
+        face_chain_from(ctx, record.ref_at(6), by_index, kept, format, &mut out)?;
         if let Some(next) = record.ref_at(4) {
             pending_storage.with_storage(|| ctx.push_vec(&mut pending, next, "ASM pending subshells"))?;
         }
@@ -1236,8 +1234,8 @@ fn face_chain_from(
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
     format: IdFormat,
-) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
-    let mut out = Vec::new();
+    out: &mut Vec<FaceId>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut guard = HashSet::new();
         let mut guard_storage = ctx.reserve_scoped(0, "ASM topology visited storage")?;
     while let Some(index) = current {
@@ -1246,14 +1244,14 @@ fn face_chain_from(
             break;
         }
         if kept.contains(&index) {
-            ctx.push_vec(&mut out, FaceId::from(id(format, index)), "ASM shell faces")?;
+            ctx.push_vec(out, FaceId::from(id(format, index)), "ASM shell faces")?;
         }
         let Some(face) = by_index.get(&index) else {
             break;
         };
         current = face.ref_at(3);
     }
-    Ok(out)
+    Ok(())
 }
 
 pub(super) fn shell_chain(

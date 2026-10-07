@@ -143,13 +143,12 @@ pub(super) fn attribute_owner(record: &Record) -> Option<i64> {
 /// The numeric record-index key of an attribute id
 /// (`<format>:brep:attribute#<index>`), used to key records derived from that
 /// attribute.
-pub fn attribute_key(attribute: &SourceAttribute) -> &str {
-    attribute
-        .id
-        .as_str()
-        .rsplit('#')
-        .next()
-        .unwrap_or(attribute.id.as_str())
+pub fn attribute_key<'attribute>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    attribute: &'attribute SourceAttribute,
+) -> Result<&'attribute str, cadmpeg_core::CodecError> {
+    Ok(ctx.rsplit_once(attribute.id.as_str(), "#", "ASM attribute identity key")?
+        .map_or(attribute.id.as_str(), |(_, key)| key))
 }
 
 /// Serialize one attribute record's value chunks as a [`SourceAttribute`]

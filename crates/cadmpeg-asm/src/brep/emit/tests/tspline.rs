@@ -106,7 +106,7 @@ fn emit(record: &Record) -> Result<(), cadmpeg_core::CodecError> {
         &mut AsmBrep::default(),
         record,
         0,
-        (&mut carriers, &mut scratch),
+        (&mut carriers, &mut scratch, crate::brep::DecodePurpose::Model),
         &Reachable::default(),
         crate::asm_format!("f3d"),
     )

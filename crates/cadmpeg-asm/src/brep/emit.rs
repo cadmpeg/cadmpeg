@@ -158,11 +158,11 @@ fn emit_carrier_surface(
     out: &mut AsmBrep,
     r: &Record,
     i: i64,
-    carrier_scratch: (&mut Carriers, &mut cadmpeg_core::decode::ScopedReservation<'_>),
+    carrier_scratch: (&mut Carriers, &mut cadmpeg_core::decode::ScopedReservation<'_>, super::DecodePurpose),
     reach: &Reachable,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (carriers, scratch) = carrier_scratch;
+    let (carriers, scratch, purpose) = carrier_scratch;
     let Carriers {
         surface_geo,
         procedural_surface_defs,
@@ -174,8 +174,7 @@ fn emit_carrier_surface(
         cached_unknown_procedural_surfaces,
         ..
     } = reach;
-    // A record index appears at most once in `records`; a duplicate
-    // would have consumed the entry already, so skip rather than panic.
+    // Each carrier is consumed at its first source record.
     let Some(geometry) = surface_geo.remove(&i) else {
         return Ok(());
     };
@@ -626,6 +625,7 @@ fn emit_carrier_surface(
                 format,
             )?,
         };
+        if purpose == super::DecodePurpose::Model {
         for surface in ctx.admit_iter(&out.surfaces[support_start..], "ASM support surface sources")? {
             append_source_id(
                 ctx,
@@ -645,6 +645,7 @@ fn emit_carrier_surface(
                 curve.id.as_str(),
                 "ASM procedural curve child sources",
             )?;
+        }
         }
         let cache_fit_tolerance = match cache {
             ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
@@ -4723,12 +4724,12 @@ pub(super) fn emit_carrier_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
-    carrier_scratch: (&mut Carriers, &mut cadmpeg_core::decode::ScopedReservation<'_>),
+    carrier_scratch: (&mut Carriers, &mut cadmpeg_core::decode::ScopedReservation<'_>, super::DecodePurpose),
     reach: &Reachable,
     senses: CurveSenseRefs<'_>,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let (carriers, scratch) = carrier_scratch;
+    let (carriers, scratch, purpose) = carrier_scratch;
     let CurveSenseRefs {
         reversed_curve_refs,
         forward_curve_refs,
@@ -4743,7 +4744,7 @@ pub(super) fn emit_carrier_records(
         })?;
         match r.head() {
             _ if reach.surfaces.contains(&i) => {
-                emit_carrier_surface(ctx, out, r, i, (carriers, scratch), reach, format)?;
+                emit_carrier_surface(ctx, out, r, i, (carriers, scratch, purpose), reach, format)?;
             }
             _ if reach.unknown_surface_records.contains(&i) => {
                 // Topology-known face on an undecoded surface: emit an opaque

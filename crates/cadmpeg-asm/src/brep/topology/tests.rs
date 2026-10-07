@@ -432,6 +432,7 @@ fn subshell_face_chain_walk_refuses_work() {
             &by_index,
             &HashSet::from([0]),
             crate::asm_format!("f3d"),
+            &mut Vec::new(),
         )
         .unwrap_err()
     });
@@ -608,7 +609,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                 &asm_decode_ctx,
                 &mut out,
                 &records,
-                (&mut carriers, &mut asm_decode_ctx.reserve_scoped(0, "ASM test scratch").unwrap()),
+                (&mut carriers, &mut asm_decode_ctx.reserve_scoped(0, "ASM test scratch").unwrap(), DecodePurpose::Model),
                 &reach,
                 crate::brep::emit::CurveSenseRefs {
                     reversed_curve_refs: &HashSet::new(),
