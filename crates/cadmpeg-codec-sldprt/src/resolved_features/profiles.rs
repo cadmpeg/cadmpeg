@@ -1932,7 +1932,7 @@ pub(crate) fn project_marker_backed_sketches(
                             &lane.native_payload,
                             marker,
                             &object_markers,
-                        )?
+                         &geometry_index)?
                         || terminal_carriers.carries(ctx, lane, marker)?
                     {
                         continue;
@@ -2156,35 +2156,29 @@ pub(crate) fn project_marker_backed_sketches(
                             .ok_or(MarkerGeometryFailure::Absent)?
                         }
                         SketchInputKind::LineOrCircle => {
-                            let mut circle_geometry = legacy_profile_radial_circle(
-                                ctx,
-                                &lane.native_payload,
-                                marker,
-                                &object_markers,
-                            )?;
+                            let mut circle_geometry = legacy_profile_radial_circle(&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             if circle_geometry.is_none() {
-                                circle_geometry = compact_profile_full_circle(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?;
+                                circle_geometry = compact_profile_full_circle(ctx,
+&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             }
                             if circle_geometry.is_none() {
-                                circle_geometry = current_profile_circle_dimension(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?;
+                                circle_geometry = current_profile_circle_dimension(&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             }
                             if circle_geometry.is_none() {
-                                circle_geometry = compact_legacy_terminal_diameter_circle(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?;
+                                circle_geometry = compact_legacy_terminal_diameter_circle(ctx,
+&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             }
                             if circle_geometry.is_none() {
                                 circle_geometry = compact_legacy_profile_full_circle(
@@ -2196,28 +2190,23 @@ pub(crate) fn project_marker_backed_sketches(
                                 )?;
                             }
                             if circle_geometry.is_none() {
-                                circle_geometry = extended_geometry_full_circle(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?;
+                                circle_geometry = extended_geometry_full_circle(&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             }
                             if circle_geometry.is_none() {
-                                circle_geometry = coordinate_roster_full_circle(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?;
+                                circle_geometry = coordinate_roster_full_circle(&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             }
                             if circle_geometry.is_none() {
-                                circle_geometry = wide_coordinate_roster_full_circle(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?;
+                                circle_geometry = wide_coordinate_roster_full_circle(ctx,
+&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             }
                             if let Some((center, radius)) = circle_geometry {
                                 let point = transform
@@ -2297,13 +2286,12 @@ pub(crate) fn project_marker_backed_sketches(
                                                 inferred_points.get_or_init(|| inferred)
                                             }
                                         };
-                                        endpoints = implicit_coordinate_roster_curve_endpoints(
-                                            ctx,
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                            inferred,
-                                        )?;
+                                        endpoints = implicit_coordinate_roster_curve_endpoints(ctx,
+&lane.native_payload,
+marker,
+inferred,
+&geometry_index,
+)?;
                                     }
                                     if endpoints.is_none() {
                                         endpoints = implicit_profile_chain_closure_endpoints(ctx, &lane.native_payload, marker, &object_markers, &geometry_index)?;
@@ -2339,35 +2327,29 @@ pub(crate) fn project_marker_backed_sketches(
                         }
                         SketchInputKind::Arc => {
                             let endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers_by_id, &object_markers, &geometry_index)?;
-                            let mut circle_geometry = equal_index_coordinate_roster_full_circle(
-                                ctx,
-                                &lane.native_payload,
-                                marker,
-                                &object_markers,
-                            )?;
+                            let mut circle_geometry = equal_index_coordinate_roster_full_circle(&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             if circle_geometry.is_none() {
-                                circle_geometry = compact_profile_full_circle(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?;
+                                circle_geometry = compact_profile_full_circle(ctx,
+&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             }
                             if circle_geometry.is_none() {
-                                circle_geometry = coordinate_roster_full_circle(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?;
+                                circle_geometry = coordinate_roster_full_circle(&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             }
                             if circle_geometry.is_none() {
-                                circle_geometry = wide_coordinate_roster_full_circle(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?;
+                                circle_geometry = wide_coordinate_roster_full_circle(ctx,
+&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                             }
                             if let Some((center, radius)) = circle_geometry {
                                 let point = transform
@@ -2395,12 +2377,11 @@ pub(crate) fn project_marker_backed_sketches(
                                 .ok_or(MarkerGeometryFailure::Absent)?
                             } else if let (Some(point), Some(radius)) =
                                 (marker.coordinates_m.and_then(|_| project(marker)), {
-                                    let radius = coordinate_circle_radius(
-                                        ctx,
-                                        &lane.native_payload,
-                                        marker,
-                                        &object_markers,
-                                    )?;
+                                    let radius = coordinate_circle_radius(ctx,
+&lane.native_payload,
+marker,
+&geometry_index,
+)?;
                                     if radius.is_some() {
                                         radius
                                     } else {
@@ -2422,12 +2403,11 @@ pub(crate) fn project_marker_backed_sketches(
                                 .ok_or(MarkerGeometryFailure::Absent)?
                             } else if let (Some(center), Some((major_axis, major, minor))) = (
                                 marker.coordinates_m.and_then(|_| project(marker)),
-                                coordinate_ellipse_axes(
-                                    ctx,
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )?,
+                                coordinate_ellipse_axes(ctx,
+&lane.native_payload,
+marker,
+&geometry_index,
+)?,
                             ) {
                                 let axis = transform
                                     .apply_axes(quantize(

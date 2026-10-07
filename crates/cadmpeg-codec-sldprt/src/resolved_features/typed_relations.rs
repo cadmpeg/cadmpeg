@@ -2512,13 +2512,12 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
             }
             endpoints
         } else {
-            super::endpoints::coordinate_roster_curve_endpoint_markers_at(
-                ctx,
-                payload,
-                curve,
-                markers,
-                Some(56),
-            )?
+            super::endpoints::coordinate_roster_curve_endpoint_markers_at(ctx,
+payload,
+curve,
+Some(56),
+geometry,
+)?
         };
         if endpoints.len() == 2 {
             return Ok(endpoints);
