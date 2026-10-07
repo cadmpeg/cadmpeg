@@ -222,11 +222,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         })
     }
 
-    fn charge_stage(&mut self, operation: &'static str) -> Result<(), CodecError> {
-        self.charge_pending_ir_entities(operation)?;
-        Ok(())
-    }
-
     fn charge_pending_ir_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
         let current_entities = u64_from_index(self.ir.model.entity_count());
         if current_entities < self.admitted_ir_entities {
@@ -350,18 +345,17 @@ fn decode_exchange_mode(
         return session.into_result(SourceFidelity::default(), BTreeSet::new());
     }
 
-    session.charge_stage("step_geometry_decode")?;
+    session.charge_pending_ir_entities("step_geometry_decode")?;
     let mut geometry = geometry::decode(exchange, &mut session.ir, session.ctx)?;
-    session.charge_stage("step_dependency_decode")?;
+    session.charge_pending_ir_entities("step_dependency_decode")?;
     let mut dependencies = dependencies::decode(exchange, session.ctx)?;
-    session.charge_stage("step_carrier_index")?;
-    let (carrier_index, _carrier_storage) = session.ctx.with_scoped_storage("STEP carrier index scratch", || index::CarrierIndex::from_ir(&session.ir, session.ctx))?;
-    session.charge_stage("step_topology_decode")?;
+    session.charge_pending_ir_entities("step_carrier_index")?;
+    let (carrier_index, carrier_storage) = session.ctx.with_scoped_storage("STEP carrier index scratch", || index::CarrierIndex::from_ir(&session.ir, session.ctx))?;
+    session.charge_pending_ir_entities("step_topology_decode")?;
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
     geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
-    let owned_carriers =
-        geometry::topology_owned_carriers(&session.ir, &carrier_index, session.ctx)?;
-    session.charge_stage("step_topology_association")?;
+    let (owned_carriers, owned_carrier_storage) = session.ctx.with_scoped_storage("STEP topology owned carrier scratch", || geometry::topology_owned_carriers(&session.ir, &carrier_index, session.ctx))?;
+    session.charge_pending_ir_entities("step_topology_association")?;
     geometry::associate_topology_carriers(
         exchange,
         &mut session.ir,
@@ -369,11 +363,11 @@ fn decode_exchange_mode(
         &owned_carriers,
         session.ctx,
     )?;
-    session.charge_stage("step_replica_association")?;
+    session.charge_pending_ir_entities("step_replica_association")?;
     geometry::associate_replica_bases(exchange, &mut session.ir, &carrier_index, session.ctx)?;
-    session.charge_stage("step_pcurve_association")?;
+    session.charge_pending_ir_entities("step_pcurve_association")?;
     geometry::associate_pcurve_supports(exchange, &mut session.ir, &carrier_index, session.ctx)?;
-    session.charge_stage("step_geometric_set_association")?;
+    session.charge_pending_ir_entities("step_geometric_set_association")?;
     geometry::associate_free_geometric_set_members(
         exchange,
         &mut session.ir,
@@ -382,7 +376,7 @@ fn decode_exchange_mode(
         &mut geometry.losses,
         session.ctx,
     )?;
-    session.charge_stage("step_representation_association")?;
+    session.charge_pending_ir_entities("step_representation_association")?;
     geometry::associate_free_representation_members(
         exchange,
         &mut session.ir,
@@ -391,7 +385,7 @@ fn decode_exchange_mode(
         &mut geometry.losses,
         session.ctx,
     )?;
-    session.charge_stage("step_presentation_carrier_association")?;
+    session.charge_pending_ir_entities("step_presentation_carrier_association")?;
     geometry::associate_free_presentation_carriers(
         exchange,
         &mut session.ir,
@@ -400,7 +394,7 @@ fn decode_exchange_mode(
         &mut geometry.losses,
         session.ctx,
     )?;
-    session.charge_stage("step_surface_curve_association")?;
+    session.charge_pending_ir_entities("step_surface_curve_association")?;
     geometry::associate_surface_curve_supports(
         exchange,
         &mut session.ir,
@@ -408,7 +402,11 @@ fn decode_exchange_mode(
         &owned_carriers,
         session.ctx,
     )?;
-    session.charge_stage("step_product_decode")?;
+    drop(owned_carriers);
+    drop(owned_carrier_storage);
+    drop(carrier_index);
+    drop(carrier_storage);
+    session.charge_pending_ir_entities("step_product_decode")?;
     let mut product = product::decode(
         exchange,
         &geometry.value,
@@ -417,7 +415,7 @@ fn decode_exchange_mode(
         session.ctx,
         &mut session.admitted_ir_entities,
     )?;
-    session.charge_stage("step_tessellation_decode")?;
+    session.charge_pending_ir_entities("step_tessellation_decode")?;
     let mut tessellation = tessellation::decode(
         exchange,
         &geometry.value,
@@ -425,7 +423,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
     )?;
-    session.charge_stage("step_pmi_decode")?;
+    session.charge_pending_ir_entities("step_pmi_decode")?;
     let mut pmi = pmi::decode(
         exchange,
         &geometry.value,
@@ -433,15 +431,15 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
     )?;
-    session.charge_stage("step_presentation_decode")?;
+    session.charge_pending_ir_entities("step_presentation_decode")?;
     let mut presentation = presentation::decode(
         exchange,
         &topology.value,
         &mut session.ir,
-        &product.value.product_definition_ids_by_source,
+        &product.value.0.product_definition_ids_by_source,
         session.ctx,
     )?;
-    session.charge_stage("step_validation_decode")?;
+    session.charge_pending_ir_entities("step_validation_decode")?;
     let mut validation =
         validation::decode(exchange, &geometry.value, &mut session.ir, session.ctx)?;
     if !session.ir.model.points.is_empty()
@@ -456,30 +454,40 @@ fn decode_exchange_mode(
     // Keep the established report order while every pass contributes through
     // the same accumulator.
     session.absorb(&mut dependencies)?;
+    drop(dependencies);
     session.absorb(&mut presentation)?;
+    drop(presentation);
     session.absorb(&mut product)?;
+    let (product_data, product_claim_storage, product_report_storage) = product.value;
+    drop(product_claim_storage);
+    drop(product_report_storage);
     session.absorb(&mut tessellation)?;
     session.absorb(&mut topology)?;
     session.absorb(&mut geometry)?;
     session.absorb(&mut pmi)?;
+    drop(pmi);
     session.absorb(&mut validation)?;
+    drop(validation);
 
-    session.charge_stage("step_drawing_decode")?;
+    session.charge_pending_ir_entities("step_drawing_decode")?;
     let mut drawing = drawing::decode(
         exchange,
         &mut session.ir,
         &session.typed_records,
-        &product.value.product_definition_ids_by_shape,
+        &product_data.product_definition_ids_by_shape,
         session.ctx,
     )?;
     session.absorb(&mut drawing)?;
+    drop(drawing);
+    drop(product_data);
+    let post_loss_storage = std::cell::RefCell::new(session.ctx.reserve_scoped(0, "STEP carrier report buffer")?);
     let mut post_decode_losses = Vec::new();
-    session.charge_stage("step_carrier_retention")?;
+    session.charge_pending_ir_entities("step_carrier_retention")?;
     retain_unowned_carriers(
         exchange,
         &mut session.ir,
         &mut session.typed_records,
-        &mut post_decode_losses,
+        (&mut post_decode_losses, &post_loss_storage),
         session.ctx,
     )?;
     session.ctx.reserve_vec(
@@ -487,15 +495,17 @@ fn decode_exchange_mode(
         post_decode_losses.len(),
         "step_carrier_retention_losses",
     )?;
-    session.body.losses.append(&mut post_decode_losses);
+    session.body.losses.extend(session.ctx.admit_iter(post_decode_losses, "STEP carrier retention loss transfer")?);
+    drop(post_loss_storage);
 
-    session.charge_stage("step_opaque_record_retention")?;
+    session.charge_pending_ir_entities("step_opaque_record_retention")?;
     let opaque_offsets = match mode {
         DecodeMode::Decode(_) => BTreeSet::new(),
         DecodeMode::Inspect => {
             inspect_opaque_offsets(exchange, &session.typed_records, session.ctx)?
         }
     };
+    let mut opaque_storage = ctx.reserve_scoped(0, "STEP opaque source indices")?;
     let mut counts = BTreeMap::<String, usize>::new();
     let mut opaque_ids = BTreeMap::new();
     let mut source_targets = BTreeMap::new();
@@ -508,21 +518,19 @@ fn decode_exchange_mode(
             if ctx.contains_hash_set(&session.typed_records, &id, "STEP mod session.typed_records contains")? {
                 continue;
             }
-            let unknown_id = opaque_record_id(id, record, session.ctx)?;
-            session
-                .ctx
-                .insert_btree_map(&mut opaque_ids, id, unknown_id, "step_opaque_ids")?;
+            opaque_storage.with_storage(|| {
+                let unknown_id = opaque_record_id(id, record, session.ctx)?;
+                session.ctx.insert_btree_map(&mut opaque_ids, id, unknown_id, "step_opaque_ids")
+            })?;
         }
-        session
-            .ctx
-            .reserve_vec(&mut opaque_sources, opaque_ids.len(), "step_opaque_sources")?;
+        opaque_storage.with_storage(|| session.ctx.reserve_vec(&mut opaque_sources, opaque_ids.len(), "step_opaque_sources"))?;
         for (&id, record) in
             ctx.admit_iter(exchange.records(), "STEP decode exchange mode traversal")?
         {
             if ctx.contains_hash_set(&session.typed_records, &id, "STEP mod session.typed_records contains")? {
                 continue;
             }
-            count_unknown_kind(&mut counts, record, session.ctx)?;
+            opaque_storage.with_storage(|| count_unknown_kind(&mut counts, record, session.ctx))?;
             let mut links = BTreeSet::new();
             for partial in ctx.admit_iter(
                 &(record.partials)[..],
@@ -532,7 +540,7 @@ fn decode_exchange_mode(
                     &(partial.parameters)[..],
                     "STEP decode exchange mode traversal",
                 )? {
-                    collect_references(value, &mut links, session.ctx)?;
+                    opaque_storage.with_storage(|| collect_references(value, &mut links, session.ctx))?;
                 }
             }
             let unknown_id = ctx.get_btree_map(&opaque_ids, &id, "STEP opaque source identity lookup")?
@@ -548,17 +556,17 @@ fn decode_exchange_mode(
         let mut target_ids = BTreeSet::new();
         for source in ctx.admit_iter(&opaque_sources[..], "STEP decode exchange mode traversal")? {
             for &id in ctx.admit_iter(&source.links, "STEP opaque source target traversal")? {
-                session.ctx.insert_btree_set(&mut target_ids,
+                opaque_storage.with_storage(|| session.ctx.insert_btree_set(&mut target_ids,
                     id,
                     "step_opaque_target_ids_index",
-                )?;
+                ))?;
             }
         }
-        source_targets = record_targets(
+        source_targets = opaque_storage.with_storage(|| record_targets(
             &session.ir,
             |record_id| ctx.contains_btree_set(&target_ids, &record_id, "STEP mod target_ids contains"),
             session.ctx,
-        )?;
+        ))?;
     } else {
         for (&id, record) in
             ctx.admit_iter(exchange.records(), "STEP decode exchange mode traversal")?
@@ -566,7 +574,7 @@ fn decode_exchange_mode(
             if ctx.contains_hash_set(&session.typed_records, &id, "STEP mod session.typed_records contains")? {
                 continue;
             }
-            count_unknown_kind(&mut counts, record, session.ctx)?;
+            opaque_storage.with_storage(|| count_unknown_kind(&mut counts, record, session.ctx))?;
         }
     }
     let accounting = {
@@ -574,14 +582,8 @@ fn decode_exchange_mode(
     };
     if matches!(mode, DecodeMode::Decode(_)) {
         let signature_spans = exchange.release_source_graph();
-        let opaque_count = opaque_sources
-            .len()
-            .checked_add(signature_spans.len())
-            .ok_or_else(|| {
-                session
-                    .ctx
-                    .refuse_codec_limit("step_opaque_records", 0, u64::MAX)
-            })?;
+        // Records and signatures occupy disjoint source spans.
+        let opaque_count = opaque_sources.len() + signature_spans.len();
         let mut opaque = session
             .ctx
             .collection_vec(opaque_count, "step_opaque_records")?;
@@ -622,7 +624,7 @@ fn decode_exchange_mode(
                 .ctx
                 .copy_retained(&input[signature.clone()], "step_signature_record")?;
             let signature_kind = String::from("SIGNATURE");
-            *ctx.entry_btree_map(&mut counts, signature_kind, "step_opaque_kind_counts")?.or_default() += 1;
+            *opaque_storage.with_storage(|| ctx.entry_btree_map(&mut counts, signature_kind, "step_opaque_kind_counts"))?.or_default() += 1;
             opaque.push(UnknownRecord::retained(
                 ids::signature(index),
                 u64_from_index(signature.start),
@@ -702,7 +704,7 @@ fn retain_unowned_carriers(
     exchange: &Exchange,
     ir: &mut CadIr,
     typed_records: &mut HashSet<u64>,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP retain_unowned_carriers scratch")?;
@@ -715,7 +717,7 @@ fn retain_unowned_carriers(
             &(coedge.pcurves)[..],
             "STEP retain unowned carriers traversal",
         )? {
-            insert_retained_identity(&mut owned, use_.pcurve.as_str(), ctx)?;
+            scratch_storage.with_storage(|| insert_retained_identity(&mut owned, use_.pcurve.as_str(), ctx))?;
         }
     }
     for loop_ in ctx.admit_iter(
@@ -724,7 +726,7 @@ fn retain_unowned_carriers(
     )? {
         if let Some((_, pcurves)) = loop_.singular_vertex() {
             for pcurve in ctx.admit_iter(pcurves, "STEP singular vertex pcurve traversal")? {
-                insert_retained_identity(&mut owned, pcurve.pcurve.as_str(), ctx)?;
+                scratch_storage.with_storage(|| insert_retained_identity(&mut owned, pcurve.pcurve.as_str(), ctx))?;
             }
         }
         for use_ in ctx.admit_iter(
@@ -735,7 +737,7 @@ fn retain_unowned_carriers(
                 use_.pcurves.as_slice(),
                 "STEP anchored vertex pcurve traversal",
             )? {
-                insert_retained_identity(&mut owned, pcurve.pcurve.as_str(), ctx)?;
+                scratch_storage.with_storage(|| insert_retained_identity(&mut owned, pcurve.pcurve.as_str(), ctx))?;
             }
         }
     }
@@ -754,7 +756,7 @@ fn retain_unowned_carriers(
             boundary_pcurves.as_slice(),
             "STEP retain unowned carriers view traversal",
         )? {
-            insert_retained_identity(&mut owned, pcurve.as_str(), ctx)?;
+            scratch_storage.with_storage(|| insert_retained_identity(&mut owned, pcurve.as_str(), ctx))?;
         }
     }
     let mut unowned_pcurves = BTreeSet::new();
@@ -771,7 +773,7 @@ fn retain_unowned_carriers(
             scratch_storage.with_storage(|| ctx.insert_btree_set(&mut unowned_pcurves, id, "step_unowned_pcurves"))?;
         }
     }
-    let referenced = referenced_record_ids(exchange, ctx)?;
+    let (referenced, _reference_storage) = ctx.with_scoped_storage("STEP referenced record scratch", || referenced_record_ids(exchange, ctx))?;
     let direct_carriers = ctx
         .admit_iter(
             &(ir.model.points)[..],
@@ -910,8 +912,8 @@ fn retain_unowned_carriers(
         if ctx.contains_btree_set(&unowned_pcurves, &id, "STEP unowned pcurve root lookup")? { continue; }
         scratch_storage.with_storage(|| ctx.insert_btree_set(&mut protected_roots, id, "step_unowned_protected_root_copy"))?;
     }
-    let protected = record_closure(&protected_roots, exchange, ctx)?;
-    let removed_closure = record_closure(&unowned_pcurves, exchange, ctx)?;
+    let (protected, _protected_storage) = ctx.with_scoped_storage("STEP protected closure scratch", || record_closure(&protected_roots, exchange, ctx))?;
+    let (removed_closure, _removed_storage) = ctx.with_scoped_storage("STEP removed closure scratch", || record_closure(&unowned_pcurves, exchange, ctx))?;
     let deleted_pcurves = ctx
         .admit_iter(
             &(ir.model.pcurves)[..],
@@ -919,89 +921,13 @@ fn retain_unowned_carriers(
         )?
         .map(|pcurve| retains_carrier(ctx, pcurve.id.as_str(), &removed_closure, &protected))
         .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? {
-                Ok(count)
-            } else {
-                count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
-                })
-            }
+            Ok(count + usize::from(!retained?))
         })?;
-    let deleted_points = ctx
-        .admit_iter(
-            &(ir.model.points)[..],
-            "STEP retain unowned carriers traversal",
-        )?
-        .map(|point| retains_carrier(ctx, point.id.as_str(), &removed_closure, &protected))
-        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? {
-                Ok(count)
-            } else {
-                count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
-                })
-            }
-        })?;
-    let deleted_curves = ctx
-        .admit_iter(
-            &(ir.model.curves)[..],
-            "STEP retain unowned carriers traversal",
-        )?
-        .map(|curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected))
-        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? {
-                Ok(count)
-            } else {
-                count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
-                })
-            }
-        })?;
-    let deleted_surfaces = ctx
-        .admit_iter(
-            &(ir.model.surfaces)[..],
-            "STEP retain unowned carriers traversal",
-        )?
-        .map(|surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected))
-        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? {
-                Ok(count)
-            } else {
-                count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
-                })
-            }
-        })?;
-    let deleted_procedural_curves = ctx
-        .admit_iter(
-            &(ir.model.procedural_curves)[..],
-            "STEP retain unowned carriers traversal",
-        )?
-        .map(|curve| retains_carrier(ctx, curve.id.as_str(), &removed_closure, &protected))
-        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? {
-                Ok(count)
-            } else {
-                count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
-                })
-            }
-        })?;
-    let deleted_procedural_surfaces = ctx
-        .admit_iter(
-            &(ir.model.procedural_surfaces)[..],
-            "STEP retain unowned carriers traversal",
-        )?
-        .map(|surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected))
-        .try_fold(0_usize, |count, retained| -> Result<_, CodecError> {
-            if retained? {
-                Ok(count)
-            } else {
-                count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("STEP deleted carrier count", 0, u64::MAX)
-                })
-            }
-        })?;
+    let prior_points = ir.model.points.len();
+    let prior_curves = ir.model.curves.len();
+    let prior_surfaces = ir.model.surfaces.len();
+    let prior_procedural_curves = ir.model.procedural_curves.len();
+    let prior_procedural_surfaces = ir.model.procedural_surfaces.len();
     ctx.retain_vec(
         &mut ir.model.pcurves,
         |pcurve| {
@@ -1038,6 +964,11 @@ fn retain_unowned_carriers(
         |surface| retains_carrier(ctx, surface.id.as_str(), &removed_closure, &protected),
         "STEP unowned procedural_surfaces retention",
     )?;
+    let deleted_points = prior_points - ir.model.points.len();
+    let deleted_curves = prior_curves - ir.model.curves.len();
+    let deleted_surfaces = prior_surfaces - ir.model.surfaces.len();
+    let deleted_procedural_curves = prior_procedural_curves - ir.model.procedural_curves.len();
+    let deleted_procedural_surfaces = prior_procedural_surfaces - ir.model.procedural_surfaces.len();
     for id in ctx.admit_iter(&unowned_pcurves, "STEP unowned pcurve claim release")? {
         ctx.remove_hash_set(typed_records, id, "STEP unowned pcurve claim release")?;
     }
@@ -1051,7 +982,7 @@ fn retain_unowned_carriers(
         .map(|id| ctx.contains_btree_set(&protected, id, "STEP mod protected contains"))
         .try_fold(0, |total, protected| -> Result<usize, CodecError> { Ok(total + usize::from(protected?)) })?;
     let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
-    ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
+    ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DecodeWarning.note(format!(
         "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
     )), "step_decode_loss_notes")?;
     Ok(())
@@ -1155,12 +1086,13 @@ fn record_closure(
             continue;
         };
         let mut references = BTreeSet::new();
+        let mut reference_storage = ctx.reserve_scoped(0, "STEP closure edge scratch")?;
         for partial in ctx.admit_iter(&record.partials[..], "STEP record closure traversal")? {
             for value in ctx.admit_iter(
                 partial.parameters.as_slice(),
                 "STEP record parameter traversal",
             )? {
-                collect_references(value, &mut references, ctx)?;
+                reference_storage.with_storage(|| collect_references(value, &mut references, ctx))?;
             }
         }
         ctx.reserve_vec(
@@ -1200,16 +1132,22 @@ fn referenced_record_ids(
     Ok(references)
 }
 
+fn record_type_text(
+    record: &parse::RawRecord,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let (mut names, _storage) = ctx.temporary_vec(record.partials.len(), "STEP record type fragments")?;
+    names.extend(ctx.admit_iter(&record.partials[..], "STEP record type traversal")?.map(|partial| partial.name.as_str()));
+    ctx.join_retained(&names, "+", operation)
+}
+
 fn count_unknown_kind(
     counts: &mut BTreeMap<String, usize>,
     record: &parse::RawRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let kind = ctx.join_display_retained(
-        record.partials.iter().map(|partial| partial.name.as_str()),
-        "+",
-        "step_opaque_kind_text",
-    )?;
+    let kind = record_type_text(record, ctx, "step_opaque_kind_text")?;
 
     *ctx.entry_btree_map(counts, kind, "step_opaque_kind_counts")?.or_default() += 1;
     Ok(())
@@ -1224,30 +1162,25 @@ fn opaque_record_id(
     let len = ctx
         .admit_iter(&record.partials[..], "STEP opaque record id traversal")?
         .enumerate()
-        .try_fold(0usize, |length, (index, partial)| {
-            length
-                .checked_add(usize::from(index > 0))?
-                .checked_add(partial.name.len())
-        })
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let mut kind = ctx.retained_string(len, operation)?;
+        .fold(0usize, |length, (index, partial)| {
+            length + usize::from(index > 0) + partial.name.len()
+        });
+    let mut storage = ctx.reserve_scoped(0, operation)?;
+    let mut kind = storage.with_storage(|| ctx.retained_string(len, operation))?;
 
     for (index, partial) in ctx
         .admit_iter(&record.partials[..], "STEP opaque record id traversal")?
         .enumerate()
     {
         if index > 0 {
-            ctx.push_retained_char(&mut kind, '_', "STEP opaque kind separator character")?;
+            kind.push('_');
         }
         for byte in ctx
             .admit_iter(partial.name.as_bytes(), "STEP opaque record id traversal")?
             .copied()
         {
-            ctx.push_retained_char(
-                &mut kind,
-                char::from(byte.to_ascii_lowercase()),
-                "STEP opaque kind letter character",
-            )?;
+            // The admitted byte iteration writes one ASCII byte into reserved capacity.
+            kind.push(char::from(byte.to_ascii_lowercase()));
         }
     }
     let derived = crate::ids::IdentityKind::try_new(kind).ok();
@@ -1277,15 +1210,11 @@ fn record_targets(
         if !include_record(record_id)? {
             continue;
         }
-        if !ctx.contains_key_btree_map(&targets, &record_id, "STEP mod targets contains_key")? {
-            ctx.insert_btree_map(&mut targets,
-                record_id,
-                BTreeSet::new(),
-                "step_opaque_target_records",
-            )?;
-        }
-        let values = ctx.get_mut_btree_map(&mut targets, &record_id, "STEP mod targets get_mut")?
-            .ok_or_else(|| ctx.refuse_codec_limit("step_opaque_target_records", 0, 1))?;
+        let values = ctx.entry_btree_map(
+            &mut targets,
+            record_id,
+            "step_opaque_target_records",
+        )?.or_default();
         if !ctx.contains_btree_set(values, identity, "STEP values membership")? {
             let copy =
                 ctx.format_retained(format_args!("{identity}"), "step_opaque_target_identity")?;
@@ -1499,16 +1428,31 @@ fn decode_text_charged(
     code: StepLossCode,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "step_string_text")?;
-    let text = decode_text_scoped(exchange, value, losses, record_id, (field, code), ctx, &mut storage)?;
-    storage.commit()?;
-    Ok(text)
+    let Value::String(bytes) = value else {
+        return Ok(None);
+    };
+    decoded_text_result(exchange.decode_string_with_context(bytes, ctx), (losses, None), record_id, (field, code), ctx)
+}
+
+fn decode_output_text(
+    exchange: &Exchange,
+    value: &Value,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
+    record_id: u64,
+    field: &str,
+    code: StepLossCode,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<String>, CodecError> {
+    let Value::String(bytes) = value else {
+        return Ok(None);
+    };
+    decoded_text_result(exchange.decode_string_with_context(bytes, ctx), (losses, Some(slot_storage)), record_id, (field, code), ctx)
 }
 
 fn decode_text_scoped(
     exchange: &Exchange,
     value: &Value,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     record_id: u64,
     (field, code): (&str, StepLossCode),
     ctx: &DecodeContext<'_>,
@@ -1517,14 +1461,28 @@ fn decode_text_scoped(
     let Value::String(bytes) = value else {
         return Ok(None);
     };
-    match storage.with_storage(|| exchange.decode_string_with_context(bytes, ctx)) {
+    decoded_text_result(storage.with_storage(|| exchange.decode_string_with_context(bytes, ctx)), (losses, Some(slot_storage)), record_id, (field, code), ctx)
+}
+
+fn decoded_text_result(
+    result: Result<String, crate::strings::StringDecodeFailure>,
+    (losses, slot_storage): (&mut Vec<LossNote>, Option<&std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>>),
+    record_id: u64,
+    (field, code): (&str, StepLossCode),
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<String>, CodecError> {
+    match result {
         Ok(text) => Ok(Some(text)),
         Err(crate::strings::StringDecodeFailure::Invalid(error)) => {
             let message = ctx.format_retained(
                 format_args!("STEP record #{record_id} has an invalid {field} string: {error}"),
                 "step_invalid_string_loss_text",
             )?;
-            ctx.reserve_vec(losses, 1, "step_invalid_string_losses")?;
+            if let Some(storage) = slot_storage {
+                storage.borrow_mut().with_storage(|| ctx.reserve_vec(losses, 1, "step_invalid_string_losses"))?;
+            } else {
+                ctx.reserve_vec(losses, 1, "step_invalid_string_losses")?;
+            }
             losses.push(code.note(message));
             Ok(None)
         }

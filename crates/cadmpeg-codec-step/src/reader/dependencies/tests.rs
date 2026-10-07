@@ -30,12 +30,13 @@ fn dependency_collection_refusal(operation: &str) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy)
             .expect("root fits collection policy");
-        matches!(
+        let refused = matches!(
             super::decode(&exchange, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
-        )
+        );
+        refused
     });
     assert!(refused, "no collection limit refused {operation}");
 }
@@ -112,7 +113,7 @@ fn dependency_string_text_refuses_materialized_limit() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy).expect("root");
-        super::decode(&exchange, &ctx)
+        super::decode(&exchange, &ctx).map(|_| ())
     });
     assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::MaterializedBytes && refusal.operation == "step_string_text"));
 }

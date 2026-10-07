@@ -24,18 +24,20 @@ enum Expected {
     Centroid(Point3),
 }
 
-pub(super) fn decode(
+pub(super) fn decode<'ctx>(
     exchange: &Exchange,
     geometry: &GeometryData,
     ir: &mut CadIr,
-    ctx: &DecodeContext<'_>,
-) -> Result<StageOutcome<()>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<StageOutcome<(cadmpeg_core::decode::ScopedReservation<'ctx>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+    let slot_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP stage report buffers")?);
+    let mut claim_storage = ctx.reserve_scoped(0, "STEP stage claim storage")?;
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     if !exchange.has_entity(ctx, "PROPERTY_DEFINITION")?
         || !exchange.has_entity(ctx, "PROPERTY_DEFINITION_REPRESENTATION")?
     {
         return Ok(StageOutcome {
-            value: (),
+            value: (claim_storage, slot_storage.into_inner()),
             claims: BTreeSet::new(),
             notes: Vec::new(),
             losses: Vec::new(),
@@ -72,7 +74,7 @@ pub(super) fn decode(
                 decode_text_scoped(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     id,
                     ("validation property name", StepLossCode::MetadataStringInvalid),
                     ctx,
@@ -92,7 +94,7 @@ pub(super) fn decode(
                     decode_text_scoped(
                         exchange,
                         value,
-                        &mut losses,
+                        (&mut losses, &slot_storage),
                         id,
                         ("validation property description", StepLossCode::MetadataStringInvalid),
                         ctx,
@@ -141,10 +143,10 @@ pub(super) fn decode(
                 continue;
             };
             let scale = geometry.units.length([item_id, representation_id]).get();
-            let expected = expected_value(item_id, item, exchange, scale, &mut losses, ctx)?;
+            let expected = expected_value(item_id, item, exchange, scale, (&mut losses, &slot_storage), ctx)?;
             let Some(expected) = expected else {
                 push_validation_loss(
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     StepLossCode::DecodeWarning,
                     format!(
                         "geometric validation property #{property_id} has unsupported item #{item_id}"
@@ -157,10 +159,10 @@ pub(super) fn decode(
                 scratch_storage.with_storage(|| ctx.insert_btree_set(&mut validation_points, item_id, "step_validation_points"))?;
             }
             for id in [property_id, relation_id, representation_id, item_id] {
-                ctx.insert_btree_set(&mut typed, id, "step_validation_claims")?;
+                claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_validation_claims"))?;
             }
             if let Some(unit) = measure_unit(ctx, item)? {
-                collect_unit_records(unit, exchange, &mut typed, ctx)?;
+                claim_storage.with_storage(|| collect_unit_records(unit, exchange, &mut typed, ctx))?;
             }
             let (kind, expected_text, actual) = match expected {
                 Expected::Area(value) => {
@@ -180,18 +182,13 @@ pub(super) fn decode(
                     Expected::Centroid(_) => format!("distance {actual}"),
                     _ => actual.to_string(),
                 };
-                ctx.push_formatted_retained(&mut notes, format_args!(
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut notes, ctx.format_retained(format_args!(
                         "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
-                    ), "step_validation_notes", "step_validation_note_text")?;
+                    ), "step_validation_note_text")?, "step_validation_notes")?;
             } else {
-                ctx.push_formatted_retained(
-                    &mut notes,
-                    format_args!(
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut notes, ctx.format_retained(format_args!(
                         "geometric validation {kind} {description}: expected {expected_text}"
-                    ),
-                    "step_validation_notes",
-                    "step_validation_note_text",
-                )?;
+                    ), "step_validation_note_text")?, "step_validation_notes")?;
             }
         }
     }
@@ -209,12 +206,12 @@ pub(super) fn decode(
                     partial.parameters.as_slice(),
                     "STEP validation reference parameter traversal",
                 )? {
-                    collect_validation_references(
+                    scratch_storage.with_storage(|| collect_validation_references(
                         value,
                         &validation_points,
                         &mut referenced_validation_points,
                         ctx,
-                    )?;
+                    ))?;
                 }
             }
         }
@@ -231,7 +228,7 @@ pub(super) fn decode(
         "STEP validation point retention",
     )?;
     Ok(StageOutcome {
-        value: (),
+        value: (claim_storage, slot_storage.into_inner()),
         claims: typed,
         notes,
         losses,
@@ -243,7 +240,7 @@ fn expected_value(
     record: &RawRecord,
     exchange: &Exchange,
     scale: f64,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Expected>, CodecError> {
     if let Some(point) = record.partial(ctx, "CARTESIAN_POINT")? {
@@ -274,7 +271,7 @@ fn expected_value(
     let Some((kind, value)) = measure else {
         return Ok(None);
     };
-    let scale = measure_scale(id, record, exchange, scale, kind, losses, ctx)?;
+    let scale = measure_scale(id, record, exchange, scale, kind, (losses, slot_storage), ctx)?;
     Ok(Some(match kind {
         "AREA_MEASURE" => Expected::Area(value * scale),
         "VOLUME_MEASURE" => Expected::Volume(value * scale),
@@ -288,7 +285,7 @@ fn measure_scale(
     exchange: &Exchange,
     fallback: f64,
     kind: &str,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     ctx: &DecodeContext<'_>,
 ) -> Result<f64, CodecError> {
     let resolved = measure_unit(ctx, record)?
@@ -321,9 +318,8 @@ fn measure_scale(
                 scale = None;
                 return Ok(false);
             };
-            let Some(base) =
-                super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), ctx)?
-            else {
+            let (base, _unit_storage) = ctx.with_scoped_storage("STEP validation unit resolver scratch", || super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), ctx))?;
+            let Some(base) = base else {
                 scale = None;
                 return Ok(false);
             };
@@ -338,7 +334,7 @@ fn measure_scale(
         Some(scale) => Ok(scale),
         None => {
             push_validation_loss(
-                losses,
+                (losses, slot_storage),
                 StepLossCode::ValidationMeasureUnitUnresolved,
                 ctx.format_retained(format_args!(
                     "geometric validation {kind} measure #{id} unit scale did not resolve; the document length scale was used",
@@ -351,12 +347,12 @@ fn measure_scale(
 }
 
 fn push_validation_loss(
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     code: StepLossCode,
     message: String,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.reserve_vec(losses, 1, "step_validation_losses")?;
+    slot_storage.borrow_mut().with_storage(|| ctx.reserve_vec(losses, 1, "step_validation_losses"))?;
     losses.push(code.note(message));
     Ok(())
 }
@@ -452,7 +448,6 @@ fn mesh_properties(
     ir: &CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<MeshProperties>, CodecError> {
-    let mut scratch_storage = ctx.reserve_scoped(0, "STEP mesh_properties scratch")?;
     let Some(body) = (ir.model.bodies.len() == 1).then(|| &ir.model.bodies[0].id) else {
         return Ok(None);
     };
@@ -509,6 +504,7 @@ fn mesh_properties(
     let mut watertight = true;
     let mut coordinate_scale = 0.0_f64;
     for mesh in ctx.admit_iter(&meshes, "STEP validation mesh property traversal")? {
+        let mut edge_storage = ctx.reserve_scoped(0, "STEP mesh edge scratch")?;
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
         for triangle in ctx.admit_iter(mesh.triangles(), "step_validation_mesh_triangles")? {
             let [a, b, c] = triangle.map(|index| {
@@ -526,7 +522,7 @@ fn mesh_properties(
             ] {
                 let edge = (first.min(second), first.max(second));
 
-                match scratch_storage.with_storage(|| ctx.entry_btree_map(&mut edge_uses, edge, "step_validation_mesh_edges"))? {
+                match edge_storage.with_storage(|| ctx.entry_btree_map(&mut edge_uses, edge, "step_validation_mesh_edges"))? {
                     Entry::Occupied(mut entry) => *entry.get_mut() += 1,
                     Entry::Vacant(entry) => {
                         entry.insert(1);

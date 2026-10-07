@@ -56,3 +56,33 @@ fn style_depth_index_preserves_keyed_lookup_refusal() {
     });
     assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.operation == "STEP style depth record lookup"));
 }
+
+#[test]
+fn zero_style_graph_limit_performs_no_source_work() {
+    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("style graph");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root");
+    let mut cache = BTreeMap::new();
+    let mut storage = ctx.reserve_scoped(0, "style fixture").expect("scope");
+    for id in [1, 3, 4, 99] {
+        assert_eq!(style_application_order(id, &exchange, 0, &mut cache, &mut storage, &ctx).expect("zero-depth gate"), (true, None));
+    }
+    assert!(cache.is_empty());
+}
+
+#[test]
+fn truncated_style_depth_does_not_cache_unvisited_suffixes() {
+    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).expect("style graph");
+    crate::test_support::with_service_context(SOURCE, |_, ctx| {
+        let mut cache = BTreeMap::new();
+        let mut storage = ctx.reserve_scoped(0, "style fixture").expect("scope");
+        assert_eq!(style_application_order(3, &exchange, 1, &mut cache, &mut storage, ctx).expect("bounded path"), (true, None));
+        assert!(cache.is_empty());
+        assert_eq!(style_application_order(1, &exchange, 1, &mut cache, &mut storage, ctx).expect("base depth"), (false, Some(0)));
+        assert_eq!(cache, BTreeMap::from([(1, Some(0))]));
+        assert_eq!(style_application_order(2, &exchange, 2, &mut cache, &mut storage, ctx).expect("cached base"), (false, Some(1)));
+    });
+}

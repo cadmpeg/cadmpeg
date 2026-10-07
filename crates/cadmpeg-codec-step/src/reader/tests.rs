@@ -40,7 +40,7 @@ fn record_display_name_refuses_retained_byte_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
     assert!(
-        matches!(ctx.join_display_retained(record.partials.iter().map(|partial| partial.name.as_str()), "+", "step_record_display_name"),
+        matches!(super::record_type_text(record, &ctx, "step_record_display_name"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_record_display_name")
@@ -1188,7 +1188,7 @@ fn record_closure_ids_refuse_collection_limit() {
 }
 
 #[test]
-fn opaque_kind_name_refuses_retained_limit() {
+fn opaque_kind_name_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -1196,15 +1196,16 @@ fn opaque_kind_name_refuses_retained_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits retained policy");
-    let error = super::opaque_record_id(1, &exchange.records()[&1], &ctx)
-        .expect_err("four-byte kind needs more retained bytes");
+    // The four normalized kind bytes are scratch; the final identity is retained.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, "step_opaque_kind_name", |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
+        super::opaque_record_id(1, &exchange.records()[&1], &ctx)
+    });
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "step_opaque_kind_name"));
 }
 
@@ -1217,13 +1218,14 @@ fn opaque_identity_text_refuses_retained_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits retained policy");
-    let error = super::opaque_record_id(1, &exchange.records()[&1], &ctx)
-        .expect_err("the identity text needs more than the kind name");
+    // The final identity has sixteen bytes; its four kind bytes are scratch.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, "step_opaque_identity_text", |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
+        super::opaque_record_id(1, &exchange.records()[&1], &ctx)
+    });
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "step_opaque_identity_text"));
@@ -1264,13 +1266,14 @@ fn opaque_kind_count_refuses_collection_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("valid exchange");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits collection policy");
-    let error = super::count_unknown_kind(&mut BTreeMap::new(), &exchange.records()[&1], &ctx)
-        .expect_err("new kind needs one map item");
+    // Admit the borrowed-name slots before refusing the kind map entry.
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, "step_opaque_kind_counts", |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).expect("root");
+        super::count_unknown_kind(&mut BTreeMap::new(), &exchange.records()[&1], &ctx)
+    });
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "step_opaque_kind_counts"));
@@ -1421,7 +1424,7 @@ fn byte_accounting_note_refuses_collection_limit() {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits collection policy");
-        matches!(
+        let refused = matches!(
             super::decode_exchange_mode(
                 source,
                 &mut exchange.clone(),
@@ -1432,7 +1435,8 @@ fn byte_accounting_note_refuses_collection_limit() {
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "step_byte_accounting_note"
-        )
+        );
+        refused
     });
     assert!(refused, "byte accounting note must charge its vector item");
 }
@@ -1498,12 +1502,13 @@ fn dialect_match_copy_refuses_collection_limit() {
         ) else {
             return false;
         };
-        matches!(
+        let refused = matches!(
             session.into_result(cadmpeg_ir::SourceFidelity::default(), BTreeSet::new()),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == "copy STEP dialect layer"
-        )
+        );
+        refused
     });
     assert!(refused, "dialect declaration copy must charge each item");
 }
@@ -1603,7 +1608,7 @@ fn unowned_pcurve_set_refuses_collection_limit() {
         &exchange,
         &mut cadmpeg_ir::CadIr::empty(),
         &mut HashSet::new(),
-        &mut Vec::new(),
+        (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
         &ctx,
     )
     .expect_err("unowned pcurve needs one set item");
@@ -1647,7 +1652,7 @@ fn unowned_direct_carriers_refuse_collection_limit() {
         &exchange,
         &mut point_ir(false),
         &mut HashSet::new(),
-        &mut Vec::new(),
+        (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
         &ctx,
     )
     .expect_err("free point needs one carrier set item");
@@ -1674,7 +1679,7 @@ fn protected_roots_refuse_collection_limit() {
         &exchange,
         &mut point_ir(true),
         &mut HashSet::new(),
-        &mut Vec::new(),
+        (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
         &ctx,
     )
     .expect_err("protected root needs an additional set item");
@@ -1701,7 +1706,7 @@ fn protected_root_copy_refuses_collection_limit() {
         &exchange,
         &mut point_ir(true),
         &mut HashSet::new(),
-        &mut Vec::new(),
+        (&mut Vec::new(), &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"))),
         &ctx,
     )
     .expect_err("protected root copy needs an additional set item");
@@ -1874,44 +1879,6 @@ fn source_numeric_identity_parse_preserves_refusal() {
     );
 }
 
-#[test]
-fn opaque_kind_letter_character_preserves_refusal() {
-    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(ALPHA() BETA());ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
-    cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "STEP opaque kind letter character",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::opaque_record_id(1, &exchange.records()[&1], &ctx).map(|_| ());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-}
 
-#[test]
-fn opaque_kind_separator_character_preserves_refusal() {
-    let (exchange, _) = crate::test_support::with_service_context(b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(ALPHA() BETA());ENDSEC;END-ISO-10303-21;", crate::parse::parse_inner).unwrap();
-    cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "STEP opaque kind separator character",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = super::opaque_record_id(1, &exchange.records()[&1], &ctx).map(|_| ());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-}
+mod scoped_storage;
+mod stage_storage;

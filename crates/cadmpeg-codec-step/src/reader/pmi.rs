@@ -22,7 +22,7 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::{decode_text_charged, decode_text_scoped};
+use super::{decode_output_text, decode_text_scoped};
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::StageOutcome;
@@ -31,11 +31,11 @@ mod annotations;
 
 use annotations::{AnnotationDraft, AnnotationIndex, Annotations};
 
-struct MeasureContext<'a> {
+struct MeasureContext<'a, 'ctx> {
     length_scale: f64,
     angle_scale: f64,
     graph_limit: usize,
-    losses: &'a mut Vec<LossNote>,
+    losses: (&'a mut Vec<LossNote>, &'a std::cell::RefCell<ScopedReservation<'ctx>>),
 }
 
 fn collect_pmi_references(
@@ -53,17 +53,19 @@ fn collect_pmi_references(
     Ok(ids)
 }
 
-pub(super) fn decode(
+pub(super) fn decode<'ctx>(
     exchange: &Exchange,
     geometry: &GeometryData,
     topology: &TopologyData,
     ir: &mut CadIr,
-    ctx: &DecodeContext<'_>,
-) -> Result<StageOutcome<()>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<StageOutcome<(cadmpeg_core::decode::ScopedReservation<'ctx>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+    let slot_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP stage report buffers")?);
+    let mut claim_storage = ctx.reserve_scoped(0, "STEP stage claim storage")?;
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     if !exchange.has_entity_matching(ctx, is_pmi_entity_name)? {
         return Ok(StageOutcome {
-            value: (),
+            value: (claim_storage, slot_storage.into_inner()),
             claims: BTreeSet::new(),
             losses: Vec::new(),
             notes: Vec::new(),
@@ -87,14 +89,14 @@ pub(super) fn decode(
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let graph_limit = super::record_graph_limit(ctx);
     let characteristic_values =
-        characteristic_values(exchange, geometry, &mut losses, graph_limit, &mut scratch_storage, ctx)?;
+        characteristic_values(exchange, geometry, (&mut losses, &slot_storage), graph_limit, &mut scratch_storage, ctx)?;
     for (id, record) in exchange.entities(ctx, "DATUM")? {
         let identification = record.partial(ctx, "DATUM")?.and_then(|partial| partial.parameters.get(0))
             .map(|value| {
-                decode_text_charged(
+                decode_output_text(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     id,
                     "datum identification",
                     StepLossCode::MetadataStringInvalid,
@@ -111,10 +113,10 @@ pub(super) fn decode(
             AnnotationDraft {
                 name: shape_aspect_parameter(ctx, record, 0)?
                     .map(|value| {
-                        decode_text_charged(
+                        decode_output_text(
                             exchange,
                             value,
-                            &mut losses,
+                            (&mut losses, &slot_storage),
                             id,
                             "datum name",
                             StepLossCode::MetadataStringInvalid,
@@ -128,7 +130,7 @@ pub(super) fn decode(
                 definition: PmiDefinition::Datum { identification },
             },
         )?;
-        ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
     }
 
     for entity in exchange.matching_entity_ids(ctx, is_datum_target_name)? {
@@ -136,16 +138,17 @@ pub(super) fn decode(
         let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP pmi record get")? else {
             continue;
         };
+        let mut form_storage = ctx.reserve_scoped(0, "STEP datum target form scratch")?;
         let form = shape_aspect_parameter(ctx, record, 1)?
             .map(|value| {
-                decode_text_charged(
+                decode_text_scoped(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     id,
-                    "datum target form",
-                    StepLossCode::MetadataStringInvalid,
+                    ("datum target form", StepLossCode::MetadataStringInvalid),
                     ctx,
+                    &mut form_storage,
                 )
             })
             .transpose()?
@@ -153,10 +156,10 @@ pub(super) fn decode(
             .unwrap_or_default();
         let identification = datum_target_identification_parameter(ctx, record)?
             .map(|value| {
-                decode_text_charged(
+                decode_output_text(
                     exchange,
                     value,
-                    &mut losses,
+                    (&mut losses, &slot_storage),
                     id,
                     "datum target identification",
                     StepLossCode::MetadataStringInvalid,
@@ -173,10 +176,10 @@ pub(super) fn decode(
             AnnotationDraft {
                 name: shape_aspect_parameter(ctx, record, 0)?
                     .map(|value| {
-                        decode_text_charged(
+                        decode_output_text(
                             exchange,
                             value,
-                            &mut losses,
+                            (&mut losses, &slot_storage),
                             id,
                             "datum target name",
                             StepLossCode::MetadataStringInvalid,
@@ -194,7 +197,7 @@ pub(super) fn decode(
                 },
             },
         )?;
-        ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
     }
 
     for (id, record) in exchange.entities(ctx, "DATUM_SYSTEM")? {
@@ -206,8 +209,10 @@ pub(super) fn decode(
             )?
             .unwrap_or_default();
         let mut datum_records = BTreeSet::new();
-        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
+        let mut datum_record_storage = ctx.reserve_scoped(0, "STEP datum claim candidates")?;
+        let mut measurements = measure_context(geometry, id, (&mut losses, &slot_storage), graph_limit);
         let mut datum_references = Vec::new();
+        let mut reference_storage = ctx.reserve_scoped(0, "STEP datum reference candidate scratch")?;
         for (index, constituent) in ctx
             .admit_iter(&constituents[..], "STEP decode traversal")?
             .enumerate()
@@ -215,28 +220,20 @@ pub(super) fn decode(
             let Some(precedence) = u32::try_from(index + 1).ok().and_then(NonZeroU32::new) else {
                 continue;
             };
-            for reference in datum_references_for_compartment(
-                constituent,
-                precedence,
+            datum_references_for_compartment(
+                (constituent, precedence),
                 exchange,
                 &annotations,
-                &mut datum_records,
+                (&mut datum_records, &mut datum_record_storage),
                 &mut measurements,
+                (&mut datum_references, &mut reference_storage),
                 ctx,
-            )? {
-                ctx.push_vec(
-                    &mut datum_references,
-                    reference,
-                    "step_pmi_datum_system_references",
-                )?;
-            }
+            )?;
         }
-        admit_datum_reference_maps(&datum_references, ctx)?;
         let datum_references = match datum_references.try_into() {
             Ok(references) => references,
             Err(error) => {
-                ctx.push_vec(
-                    &mut losses,
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses,
                     StepLossCode::PmiDatumSystemInvalid.note(ctx.format_retained(
                         format_args!("DATUM_SYSTEM #{id} omitted: {error}"),
                         "STEP decode text",
@@ -253,10 +250,10 @@ pub(super) fn decode(
             AnnotationDraft {
                 name: shape_aspect_parameter(ctx, record, 0)?
                     .map(|value| {
-                        decode_text_charged(
+                        decode_output_text(
                             exchange,
                             value,
-                            &mut losses,
+                            (&mut losses, &slot_storage),
                             id,
                             "datum system name",
                             StepLossCode::MetadataStringInvalid,
@@ -280,8 +277,9 @@ pub(super) fn decode(
                 },
             },
         )?;
-        ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
-        super::claim_records(ctx, &mut typed, datum_records, "step_pmi_typed_claims")?;
+        reference_storage.commit()?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
+        claim_storage.with_storage(|| super::claim_records(ctx, &mut typed, datum_records, "step_pmi_typed_claims"))?;
     }
 
     for entity in exchange.matching_entity_ids(ctx, is_dimension_name)? {
@@ -293,15 +291,16 @@ pub(super) fn decode(
             continue;
         };
         let name = find_record_value(record, ctx, |value| {
-            decode_text_charged(exchange, value, &mut losses, id, "dimension name", StepLossCode::MetadataStringInvalid, ctx)
+            decode_output_text(exchange, value, (&mut losses, &slot_storage), id, "dimension name", StepLossCode::MetadataStringInvalid, ctx)
         })?;
         if matches!(kind, DimensionKind::Size) {
+            let mut category_storage = ctx.reserve_scoped(0, "STEP dimension category scratch")?;
             let category = if dimension_name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE") {
                 if let Some(partial) = ctx.find_map(&record.partials[..], |partial| {
                     Ok(ctx.equal(partial.name.as_str(), dimension_name, "STEP PMI dimension name equality")?.then_some(partial))
                 }, "STEP PMI dimension partial search")? {
                     ctx.find_map(partial.parameters.iter().rev(), |value| {
-                        decode_text_charged(exchange, value, &mut losses, id, "dimension category", StepLossCode::MetadataStringInvalid, ctx)
+                        decode_text_scoped(exchange, value, (&mut losses, &slot_storage), id, ("dimension category", StepLossCode::MetadataStringInvalid), ctx, &mut category_storage)
                     }, "STEP dimension category parameter search")?
                 } else { None }
             } else {
@@ -359,12 +358,11 @@ pub(super) fn decode(
                 definition: PmiDefinition::Dimension(definition),
             },
         )?;
-        ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
     }
 
     for (id, record) in exchange.entities(ctx, "PLUS_MINUS_TOLERANCE")? {
-        let refs =
-            collect_pmi_references(record.parameters(), ctx, "step_pmi_plus_minus_references")?;
+        let (refs, _reference_storage) = ctx.with_scoped_storage("STEP PMI reference scratch", || collect_pmi_references(record.parameters(), ctx, "step_pmi_plus_minus_references"))?;
         let dimension = ctx.find_map(
             &refs[..],
             |reference| annotations.get(ctx, *reference),
@@ -378,6 +376,7 @@ pub(super) fn decode(
             },
             "STEP decode traversal",
         )?;
+        let mut fit_storage = ctx.reserve_scoped(0, "STEP limits-and-fits candidate scratch")?;
         let fit = ctx.find_map(
             &refs[..],
             |reference| {
@@ -393,14 +392,14 @@ pub(super) fn decode(
                         form_variance: record
                             .parameter(0)
                             .map(|value| {
-                                decode_text_charged(
+                                decode_text_scoped(
                                     exchange,
                                     value,
-                                    &mut losses,
+                                    (&mut losses, &slot_storage),
                                     *reference,
-                                    "limits-and-fits form variance",
-                                    StepLossCode::MetadataStringInvalid,
+                                    ("limits-and-fits form variance", StepLossCode::MetadataStringInvalid),
                                     ctx,
+                                    &mut fit_storage,
                                 )
                             })
                             .transpose()?
@@ -409,14 +408,14 @@ pub(super) fn decode(
                         zone_variance: record
                             .parameter(1)
                             .map(|value| {
-                                decode_text_charged(
+                                decode_text_scoped(
                                     exchange,
                                     value,
-                                    &mut losses,
+                                    (&mut losses, &slot_storage),
                                     *reference,
-                                    "limits-and-fits zone variance",
-                                    StepLossCode::MetadataStringInvalid,
+                                    ("limits-and-fits zone variance", StepLossCode::MetadataStringInvalid),
                                     ctx,
+                                    &mut fit_storage,
                                 )
                             })
                             .transpose()?
@@ -425,14 +424,14 @@ pub(super) fn decode(
                         grade: record
                             .parameter(2)
                             .map(|value| {
-                                decode_text_charged(
+                                decode_text_scoped(
                                     exchange,
                                     value,
-                                    &mut losses,
+                                    (&mut losses, &slot_storage),
                                     *reference,
-                                    "limits-and-fits grade",
-                                    StepLossCode::MetadataStringInvalid,
+                                    ("limits-and-fits grade", StepLossCode::MetadataStringInvalid),
                                     ctx,
+                                    &mut fit_storage,
                                 )
                             })
                             .transpose()?
@@ -441,14 +440,14 @@ pub(super) fn decode(
                         source: record
                             .parameter(3)
                             .map(|value| {
-                                decode_text_charged(
+                                decode_text_scoped(
                                     exchange,
                                     value,
-                                    &mut losses,
+                                    (&mut losses, &slot_storage),
                                     *reference,
-                                    "limits-and-fits source",
-                                    StepLossCode::MetadataStringInvalid,
+                                    ("limits-and-fits source", StepLossCode::MetadataStringInvalid),
                                     ctx,
+                                    &mut fit_storage,
                                 )
                             })
                             .transpose()?
@@ -460,7 +459,7 @@ pub(super) fn decode(
             "STEP decode traversal",
         )?;
         if let (Some(index), Some(limits)) = (dimension, limits) {
-            let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
+            let mut measurements = measure_context(geometry, id, (&mut losses, &slot_storage), graph_limit);
             let lower = limits
                 .parameters()
                 .first()
@@ -481,11 +480,10 @@ pub(super) fn decode(
                 .map_err(|error| {
                     CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
                 })? {
-                    ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
-                    super::claim_records(ctx, &mut typed, refs, "step_pmi_typed_claims")?;
+                    claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
+                    claim_storage.with_storage(|| super::claim_records(ctx, &mut typed, refs, "step_pmi_typed_claims"))?;
                 } else {
-                    ctx.push_vec(
-                        &mut losses,
+                    ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses,
                         StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
                     )),
@@ -493,8 +491,7 @@ pub(super) fn decode(
                     )?;
                 }
             } else {
-                ctx.push_vec(
-                    &mut losses,
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses,
                     StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
                     )),
@@ -509,10 +506,10 @@ pub(super) fn decode(
             .map_err(|error| {
                 CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
             })? {
-                super::claim_records(ctx, &mut typed, [id, fit_id], "step_pmi_typed_claims")?;
+                fit_storage.commit()?;
+                for claim in [id, fit_id] { claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, claim, "step_pmi_typed_claims"))?; }
             } else {
-                ctx.push_vec(
-                    &mut losses,
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses,
                     StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
                     )),
@@ -520,8 +517,7 @@ pub(super) fn decode(
                 )?;
             }
         } else {
-            ctx.push_vec(
-                &mut losses,
+            ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses,
                 StepLossCode::DecodeWarning.note(format!(
                     "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
                 )),
@@ -561,12 +557,8 @@ pub(super) fn decode(
         let reference_values = record
             .partial(ctx, "GEOMETRIC_TOLERANCE")?
             .map_or(record.parameters(), |partial| partial.parameters.as_slice());
-        let refs = collect_pmi_references(
-            reference_values,
-            ctx,
-            "step_pmi_geometric_tolerance_references",
-        )?;
-        let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
+        let (refs, _reference_storage) = ctx.with_scoped_storage("STEP PMI reference scratch", || collect_pmi_references(reference_values, ctx, "step_pmi_geometric_tolerance_references"))?;
+        let mut measurements = measure_context(geometry, id, (&mut losses, &slot_storage), graph_limit);
         let magnitude = first_measure(
             record.partial(ctx, "GEOMETRIC_TOLERANCE")?.map(|partial| partial.parameters.as_slice()).unwrap_or_default(),
             exchange, &mut measurements, ctx,
@@ -579,17 +571,12 @@ pub(super) fn decode(
             }, "STEP tolerance fallback partial traversal")?,
         };
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
-            let display_name = ctx.join_display_retained(
-                record.partials.iter().map(|partial| partial.name.as_str()),
-                "+",
-                "step_record_display_name",
-            )?;
+            let (display_name, _display_storage) = ctx.with_scoped_storage("STEP tolerance type text scratch", || super::record_type_text(record, ctx, "step_record_display_name"))?;
             let message = ctx.format_retained(
                 format_args!("{display_name} #{id} has no numeric magnitude"),
                 "step_pmi_invalid_tolerance_text",
             )?;
-            ctx.push_vec(
-                &mut losses,
+            ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses,
                 StepLossCode::DecodeWarning.note(message),
                 "step_pmi_losses",
             )?;
@@ -628,25 +615,18 @@ pub(super) fn decode(
         // A complex tolerance keeps its base targets in GEOMETRIC_TOLERANCE,
         // while GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE carries the datum
         // system as a separate aggregate.
-        let datum_system = first_matching(
-            ctx.admit_iter(
-                record
-                    .partial(ctx, "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")?
-                    .map(|partial| partial.parameters.as_slice())
-                    .unwrap_or_default(),
-                "STEP tolerance datum parameter traversal",
-            )?,
-            ctx,
-            |id| {
-                Ok({
-                    annotations.get(ctx, id)?.is_some_and(|index| {
-                        matches!(
-                            ir.model.pmi[index.get()].definition,
-                            PmiDefinition::DatumSystem { .. }
-                        )
-                    })
-                })
-            },
+        let datum_values = record
+            .partial(ctx, "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")?
+            .map(|partial| partial.parameters.as_slice())
+            .unwrap_or_default();
+        let datum_system = ctx.find_map(
+            datum_values,
+            |value| first_matching([value], ctx, |id| {
+                Ok(annotations.get(ctx, id)?.is_some_and(|index| {
+                    matches!(ir.model.pmi[index.get()].definition, PmiDefinition::DatumSystem { .. })
+                }))
+            }),
+            "STEP tolerance datum parameter traversal",
         )?
         .map(|id| annotations.get(ctx, id))
         .transpose()?.flatten()
@@ -661,10 +641,10 @@ pub(super) fn decode(
                 name: record.partial(ctx, "GEOMETRIC_TOLERANCE")?.and_then(|partial| partial.parameters.get(0))
                     .or_else(|| record.parameter(0))
                     .map(|value| {
-                        decode_text_charged(
+                        decode_output_text(
                             exchange,
                             value,
-                            &mut losses,
+                            (&mut losses, &slot_storage),
                             id,
                             "geometric tolerance name",
                             StepLossCode::MetadataStringInvalid,
@@ -692,7 +672,7 @@ pub(super) fn decode(
                 },
             },
         )?;
-        ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
         for reference in ctx
             .admit_iter(
                 refs.as_slice(),
@@ -702,7 +682,7 @@ pub(super) fn decode(
         {
             if let Some(record) = ctx.get_btree_map(exchange.records(), &reference, "STEP pmi record get")? {
                 if is_measure_record(ctx, record)? {
-                    ctx.insert_btree_set(&mut typed, reference, "step_pmi_typed_claims")?;
+                    claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, reference, "step_pmi_typed_claims"))?;
                 }
             }
         }
@@ -715,7 +695,7 @@ pub(super) fn decode(
                     let reference = reference?;
                     if let Some(record) = ctx.get_btree_map(exchange.records(), &reference, "STEP pmi record get")? {
                         if is_measure_record(ctx, record)? {
-                            ctx.insert_btree_set(&mut typed, reference, "step_pmi_typed_claims")?;
+                            claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, reference, "step_pmi_typed_claims"))?;
                         }
                     }
                 }
@@ -745,7 +725,7 @@ pub(super) fn decode(
                     ))?;
                 }
             }
-            ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
+            claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
         }
     }
 
@@ -758,12 +738,13 @@ pub(super) fn decode(
             continue;
         };
         let mut text_records = BTreeSet::new();
+        let mut text_record_storage = ctx.reserve_scoped(0, "STEP annotation claim candidates")?;
         let text = find_annotation_text(
             id,
             exchange,
             &mut BTreeSet::new(),
-            &mut text_records,
-            &mut losses,
+            (&mut text_records, &mut text_record_storage),
+            (&mut losses, &slot_storage),
             0,
             ctx,
         )?;
@@ -795,7 +776,7 @@ pub(super) fn decode(
             0 => None,
             1 => placement_candidates.values().next().copied(),
             count => {
-                ctx.push_vec(&mut losses, StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses, StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
                     format!(
                         "presentation annotation #{id} has {count} reachable placement carriers with no unique placement"
                     ),
@@ -842,10 +823,10 @@ pub(super) fn decode(
                     )?
                     .or_else(|| record.parameter(0))
                     .map(|value| {
-                        decode_text_charged(
+                        decode_output_text(
                             exchange,
                             value,
-                            &mut losses,
+                            (&mut losses, &slot_storage),
                             id,
                             "presentation annotation name",
                             StepLossCode::MetadataStringInvalid,
@@ -864,18 +845,18 @@ pub(super) fn decode(
                 },
             },
         )?;
-        ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
-        super::claim_records(ctx, &mut typed, text_records, "step_pmi_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
+        claim_storage.with_storage(|| super::claim_records(ctx, &mut typed, text_records, "step_pmi_typed_claims"))?;
     }
     for entity in exchange.entities_any(
         ctx,
         &["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"],
     )? {
         let (id, _) = entity?;
-        ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
     }
 
-    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed, ctx)?;
+    resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, (&mut typed, &mut claim_storage), ctx)?;
     let (points_by_source, _point_storage) = ctx.with_scoped_storage("STEP PMI point source scratch", || point_sources(ir, ctx))?;
     let (curves_by_source, _curve_storage) = ctx.with_scoped_storage("STEP PMI curve source scratch", || curve_sources(ir, ctx))?;
     let geometry_sources = GeometrySources {
@@ -888,7 +869,7 @@ pub(super) fn decode(
         geometry_sources,
         (&shape_aspects, &annotations),
         ir,
-        &mut typed,
+        (&mut typed, &mut claim_storage),
         ctx,
     )?;
 
@@ -911,12 +892,12 @@ pub(super) fn decode(
     }
     for &id in ctx.admit_iter(&targeted_aspects, "step_pmi_typed_claims")? {
         if ctx.contains_btree_set(&shape_aspects, &id, "step_pmi_typed_claims")? {
-            ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims")?;
+            claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
         }
     }
-    mark_characteristic_representations(exchange, &annotations, &mut typed, ctx)?;
+    mark_characteristic_representations(exchange, &annotations, (&mut typed, &mut claim_storage), ctx)?;
     Ok(StageOutcome {
-        value: (),
+        value: (claim_storage, slot_storage.into_inner()),
         claims: typed,
         losses,
         notes: Vec::new(),
@@ -936,7 +917,7 @@ fn set_dimension_tolerance(
 fn mark_characteristic_representations(
     exchange: &Exchange,
     annotations: &Annotations,
-    typed: &mut BTreeSet<u64>,
+    (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
@@ -948,7 +929,7 @@ fn mark_characteristic_representations(
         else {
             continue;
         };
-        ctx.insert_btree_set(typed, id, "step_pmi_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(typed, id, "step_pmi_typed_claims"))?;
         for partial in ctx.admit_iter(&record.partials[..], "STEP PMI record partial traversal")? {
             for parameter in ctx.admit_iter(
                 partial.parameters.as_slice(),
@@ -965,7 +946,7 @@ fn mark_characteristic_representations(
                     {
                         continue;
                     }
-                    ctx.insert_btree_set(typed, representation_id, "step_pmi_typed_claims")?;
+                    claim_storage.with_storage(|| ctx.insert_btree_set(typed, representation_id, "step_pmi_typed_claims"))?;
                     for partial in ctx.admit_iter(
                         &representation.partials[..],
                         "STEP PMI record partial traversal",
@@ -978,10 +959,10 @@ fn mark_characteristic_representations(
                                 let reference = reference?;
                                 if let Some(record) = ctx.get_btree_map(exchange.records(), &reference, "STEP pmi record get")? {
                                     if is_measure_record(ctx, record)? {
-                                        ctx.insert_btree_set(typed,
+                                        claim_storage.with_storage(|| ctx.insert_btree_set(typed,
                                             reference,
                                             "step_pmi_typed_claims",
-                                        )?;
+                                        ))?;
                                     }
                                 }
                             }
@@ -998,7 +979,7 @@ fn resolve_feature_for_datum_target_relationships(
     exchange: &Exchange,
     annotations: &Annotations,
     ir: &mut CadIr,
-    typed: &mut BTreeSet<u64>,
+    (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut target_indices = BTreeMap::<usize, TargetIndex>::new();
@@ -1022,7 +1003,7 @@ fn resolve_feature_for_datum_target_relationships(
             || Ok(PmiTarget::ShapeAspect { source_id: source_id.try_clone_for_decode(ctx, "step_pmi_datum_basis_identity")? }),
             ctx, "step_pmi_datum_basis_targets",
         )?;
-        super::claim_records(ctx, typed, [id, relating], "step_pmi_typed_claims")?;
+        for claim in [id, relating] { claim_storage.with_storage(|| ctx.insert_btree_set(typed, claim, "step_pmi_typed_claims"))?; }
     }
     Ok(())
 }
@@ -1033,7 +1014,7 @@ fn resolve_geometric_item_usages(
     geometry_sources: GeometrySources<'_>,
     (shape_aspects, annotations): (&BTreeSet<u64>, &Annotations),
     ir: &mut CadIr,
-    typed: &mut BTreeSet<u64>,
+    (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP resolve_geometric_item_usages scratch")?;
@@ -1161,7 +1142,7 @@ fn resolve_geometric_item_usages(
                 )?;
             }
         }
-        ctx.insert_btree_set(typed, id, "step_pmi_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(typed, id, "step_pmi_typed_claims"))?;
     }
     Ok(())
 }
@@ -1370,19 +1351,19 @@ fn curve_sources(
 }
 
 fn datum_references_for_compartment(
-    value: &Value,
-    precedence: NonZeroU32,
+    (value, precedence): (&Value, NonZeroU32),
     exchange: &Exchange,
     annotations: &Annotations,
-    typed: &mut BTreeSet<u64>,
-    measurements: &mut MeasureContext<'_>,
+    (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
+    measurements: &mut MeasureContext<'_, '_>,
+    (output, output_storage): (&mut Vec<DatumReference>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
-) -> Result<Vec<DatumReference>, CodecError> {
+) -> Result<(), CodecError> {
     let Some(compartment_id) = value.reference() else {
-        return Ok(Vec::new());
+        return Ok(());
     };
     let Some(compartment) = ctx.get_btree_map(exchange.records(), &compartment_id, "STEP pmi record get")? else {
-        return Ok(Vec::new());
+        return Ok(());
     };
     if compartment
         .partial(ctx, "DATUM_REFERENCE_COMPARTMENT")?
@@ -1391,18 +1372,19 @@ fn datum_references_for_compartment(
             .partial(ctx, "DATUM_REFERENCE_ELEMENT")?
             .is_none()
     {
-        return Ok(Vec::new());
+        return Ok(());
     }
-    ctx.insert_btree_set(typed, compartment_id, "step_pmi_typed_claims")?;
-    let mut compartment_modifiers = Vec::new();
+    claim_storage.with_storage(|| ctx.insert_btree_set(typed, compartment_id, "step_pmi_typed_claims"))?;
+    let (mut compartment_modifiers, mut modifier_storage) = ctx.temporary_vec(0, "step_pmi_datum_modifier_items")?;
     for modifier in ctx.admit_iter(
         datum_modifiers(ctx, compartment)?
             .and_then(ValueExt::list)
             .unwrap_or_default(),
         "STEP datum modifier traversal",
     )? {
-        if let Some(text) = modifier_text(modifier, exchange, typed, measurements, ctx)? {
-            ctx.push_vec(
+        if let Some(text) = modifier_text(modifier, exchange, (typed, claim_storage), measurements, &mut modifier_storage, ctx)? {
+            ctx.push_scoped_vec(
+                &mut modifier_storage,
                 &mut compartment_modifiers,
                 text,
                 "step_pmi_datum_modifier_items",
@@ -1410,21 +1392,16 @@ fn datum_references_for_compartment(
         }
     }
     let base = datum_base(ctx, compartment)?;
-    let mut output = Vec::new();
     if is_common_datum_list(base) {
         let Some(Value::Typed(_, members)) = base else {
-            return Ok(output);
+            return Ok(());
         };
         let members = members.list().unwrap_or_default();
-        let common_group = (ctx
-            .admit_iter(
-                &(members)[..],
-                "STEP datum references for compartment traversal",
-            )?
-            .filter_map(ValueExt::reference)
-            .count()
-            >= 2)
-            .then_some(precedence.get());
+        let mut member_count = 0;
+        let common_group = ctx.any_by(members, |member| {
+            member_count += usize::from(member.reference().is_some());
+            Ok(member_count >= 2)
+        }, "STEP datum common group member search")?.then_some(precedence.get());
         for element_id in ctx
             .admit_iter(
                 &(members)[..],
@@ -1444,25 +1421,26 @@ fn datum_references_for_compartment(
             if annotations.get(ctx, datum)?.is_none() {
                 continue;
             }
-            let mut modifiers = ctx.try_collect_vec(
+            let mut modifiers = output_storage.with_storage(|| ctx.try_collect_vec(
                 compartment_modifiers
                     .iter()
                     .map(|value| ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")),
                 "step_pmi_datum_modifier_items",
-            )?;
+            ))?;
             for modifier in ctx.admit_iter(
                 datum_modifiers(ctx, element)?
                     .and_then(ValueExt::list)
                     .unwrap_or_default(),
                 "STEP datum modifier traversal",
             )? {
-                if let Some(text) = modifier_text(modifier, exchange, typed, measurements, ctx)? {
-                    ctx.push_vec(&mut modifiers, text, "step_pmi_datum_modifier_items")?;
+                if let Some(text) = modifier_text(modifier, exchange, (typed, claim_storage), measurements, output_storage, ctx)? {
+                    ctx.push_scoped_vec(output_storage, &mut modifiers, text, "step_pmi_datum_modifier_items")?;
                 }
             }
-            super::claim_records(ctx, typed, [element_id, datum], "step_pmi_typed_claims")?;
-            ctx.push_vec(
-                &mut output,
+            for claim in [element_id, datum] { claim_storage.with_storage(|| ctx.insert_btree_set(typed, claim, "step_pmi_typed_claims"))?; }
+            ctx.push_scoped_vec(
+                output_storage,
+                output,
                 DatumReference {
                     datum: pmi_id(datum),
                     precedence,
@@ -1472,50 +1450,32 @@ fn datum_references_for_compartment(
                 "step_pmi_datum_reference_items",
             )?;
         }
-        return Ok(output);
+        return Ok(());
     }
     if let Some(base) = base {
         visit_datum_ids(base, ctx, &mut |datum| {
             if annotations.get(ctx, datum)?.is_none() {
                 return Ok(());
             }
-            ctx.insert_btree_set(typed, datum, "step_pmi_typed_claims")?;
-            ctx.push_vec(
-                &mut output,
+            claim_storage.with_storage(|| ctx.insert_btree_set(typed, datum, "step_pmi_typed_claims"))?;
+            let modifiers = output_storage.with_storage(|| ctx.try_collect_vec(
+                compartment_modifiers.iter().map(|value| {
+                    ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")
+                }),
+                "step_pmi_datum_modifier_items",
+            ))?;
+            ctx.push_scoped_vec(
+                output_storage,
+                output,
                 DatumReference {
                     datum: pmi_id(datum),
                     precedence,
                     common_group: None,
-                    modifiers: ctx.try_collect_vec(
-                        compartment_modifiers.iter().map(|value| {
-                            ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")
-                        }),
-                        "step_pmi_datum_modifier_items",
-                    )?,
+                    modifiers,
                 },
                 "step_pmi_datum_reference_items",
             )
         })?;
-    }
-    Ok(output)
-}
-
-fn admit_datum_reference_maps(
-    references: &[DatumReference],
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "STEP datum reference group indices")?;
-    let mut precedences = BTreeSet::new();
-    let mut common_groups = BTreeSet::new();
-    for reference in ctx.admit_iter(references, "STEP datum reference group traversal")? {
-        if storage.with_storage(|| ctx.insert_btree_set(&mut precedences, reference.precedence, "STEP datum precedence index"))? {
-            ctx.charge_collection_items(1, "step_pmi_datum_compartments")?;
-        }
-        if let Some(group) = reference.common_group {
-            if storage.with_storage(|| ctx.insert_btree_set(&mut common_groups, group, "STEP datum common group index"))? {
-                ctx.charge_collection_items(1, "step_pmi_datum_common_groups")?;
-            }
-        }
     }
     Ok(())
 }
@@ -1567,18 +1527,19 @@ fn visit_datum_ids(
 fn modifier_text(
     value: &Value,
     exchange: &Exchange,
-    typed: &mut BTreeSet<u64>,
-    measurements: &mut MeasureContext<'_>,
+    (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
+    measurements: &mut MeasureContext<'_, '_>,
+    storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
     let _nested = ctx.enter_nested("step_pmi_datum_modifier_walk")?;
     match value {
         Value::Enumeration(value) => {
-            let mut text = ctx.copy_retained_text(value, "step_pmi_datum_modifier_text")?;
+            let mut text = storage.with_storage(|| ctx.copy_retained_text(value, "step_pmi_datum_modifier_text"))?;
             ctx.make_ascii_lowercase(&mut text, "STEP PMI text case conversion")?;
             Ok(Some(text))
         }
-        Value::Typed(_, value) => modifier_text(value, exchange, typed, measurements, ctx),
+        Value::Typed(_, value) => modifier_text(value, exchange, (typed, claim_storage), measurements, storage, ctx),
         Value::Reference(id) => {
             let Some(record) = ctx.get_btree_map(exchange.records(), id, "STEP pmi record get")? else {
                 return Ok(None);
@@ -1588,7 +1549,7 @@ fn modifier_text(
                 return Ok(None);
             };
             let parameters = parameters.parameters.as_slice();
-            ctx.insert_btree_set(typed, *id, "step_pmi_typed_claims")?;
+            claim_storage.with_storage(|| ctx.insert_btree_set(typed, *id, "step_pmi_typed_claims"))?;
             let Some(kind) = parameters.first().and_then(ValueExt::enumeration) else {
                 return Ok(None);
             };
@@ -1600,11 +1561,8 @@ fn modifier_text(
                 return Ok(None);
             };
             let value = value.value.get();
-            ctx.insert_btree_set(typed, measure_id, "step_pmi_typed_claims")?;
-            let mut text = ctx.format_retained(
-                format_args!("{kind}:{value}"),
-                "step_pmi_datum_modifier_value_text",
-            )?;
+            claim_storage.with_storage(|| ctx.insert_btree_set(typed, measure_id, "step_pmi_typed_claims"))?;
+            let mut text = storage.with_storage(|| ctx.format_retained(format_args!("{kind}:{value}"), "step_pmi_datum_modifier_value_text"))?;
             ctx.make_ascii_lowercase(&mut text, "STEP PMI text case conversion")?;
             Ok(Some(text))
         }
@@ -1732,23 +1690,23 @@ fn find_annotation_text(
     id: u64,
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
-    used: &mut BTreeSet<u64>,
-    losses: &mut Vec<LossNote>,
+    (used, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "STEP annotation text scratch")?;
     let mut candidates = BTreeMap::new();
-    collect_annotation_text(id, exchange, visited, (&mut candidates, &mut storage), losses, depth, ctx)?;
+    collect_annotation_text(id, exchange, visited, (&mut candidates, &mut storage), (losses, slot_storage), depth, ctx)?;
     match candidates.len() {
         0 => Ok(None),
         1 => {
             let Some((text_id, text)) = ctx.admit_iter(candidates, "STEP PMI singleton annotation text")?.next() else { return Ok(None); };
-            ctx.insert_btree_set(used, text_id, "step_pmi_annotation_text_used")?;
+            claim_storage.with_storage(|| ctx.insert_btree_set(used, text_id, "step_pmi_annotation_text_used"))?;
             Ok(Some(ctx.copy_retained_text(&text, "step_string_text")?))
         }
         count => {
-            ctx.push_vec(losses, StepLossCode::PresentationAnnotationTextUnordered.note(format!(
+            ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::PresentationAnnotationTextUnordered.note(format!(
                 "presentation annotation #{id} has {count} reachable text carriers with no ordered composition"
             )), "step_pmi_losses")?;
             Ok(None)
@@ -1761,7 +1719,7 @@ fn collect_annotation_text(
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
     (candidates, storage): (&mut BTreeMap<u64, String>, &mut ScopedReservation<'_>),
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
@@ -1780,7 +1738,7 @@ fn collect_annotation_text(
         if let Some(text) = decode_text_scoped(
             exchange,
             value,
-            losses,
+            (losses, slot_storage),
             id,
             ("PMI annotation text", StepLossCode::MetadataStringInvalid), ctx, storage,
         )? {
@@ -1799,7 +1757,7 @@ fn collect_annotation_text(
                     exchange,
                     visited,
                     (candidates, storage),
-                    losses,
+                    (losses, slot_storage),
                     depth + 1,
                     ctx,
                 )?;
@@ -2232,14 +2190,14 @@ fn modifier_values(
 fn characteristic_values(
     exchange: &Exchange,
     geometry: &GeometryData,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     graph_limit: usize,
     storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
-        let mut measurements = measure_context(geometry, id, losses, graph_limit);
+        let mut measurements = measure_context(geometry, id, (losses, slot_storage), graph_limit);
         let Some(characteristic) = find_record_value(record, ctx, |value| {
             first_matching([value], ctx, |id| {
                 Ok({
@@ -2306,7 +2264,7 @@ fn characteristic_values(
         let selected = if named_count == 1 {
             named_first
         } else if named_count > 1 {
-            ctx.push_vec(losses, StepLossCode::DimensionalNominalAmbiguous.note(format!(
+            ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DimensionalNominalAmbiguous.note(format!(
                 "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {named_count} nominal value measures; the nominal is ambiguous"
                 )), "step_pmi_losses")?;
             None
@@ -2314,7 +2272,7 @@ fn characteristic_values(
             values.first().map(|(_, value)| *value)
         } else {
             if values.len() > 1 {
-                ctx.push_vec(losses, StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(format!(
+                ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), losses, StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(format!(
                         "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} unnamed measure values; the nominal is ambiguous",
                         values.len()
                     )), "step_pmi_losses")?;
@@ -2369,16 +2327,17 @@ impl MeasureParameters<'_> {
 fn characteristic_measure_values(
     parameters: &MeasureParameters<'_>,
     exchange: &Exchange,
-    measurements: &mut MeasureContext<'_>,
+    measurements: &mut MeasureContext<'_, '_>,
     storage: &mut ScopedReservation<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<(Option<String>, PmiValue)>, CodecError> {
     let mut measure_ids = BTreeSet::new();
+    let mut visited = BTreeMap::new();
     parameters.visit(ctx, |parameter| {
         storage.with_storage(|| collect_measure_ids(
             parameter,
             exchange,
-            &mut BTreeSet::new(),
+            &mut visited,
             0,
             measurements.graph_limit,
             &mut measure_ids,
@@ -2389,7 +2348,7 @@ fn characteristic_measure_values(
     for id in ctx.admit_iter(measure_ids, "STEP pmi measure_ids traversal")? {
         if let Some(value) = measure(&Value::Reference(id), exchange, measurements, ctx)? {
             let name = ctx.get_btree_map(exchange.records(), &id, "STEP pmi record get")?
-                .map(|record| measure_item_name(id, record, exchange, measurements.losses, (ctx, storage)))
+                .map(|record| measure_item_name(id, record, exchange, (measurements.losses.0, measurements.losses.1), (ctx, storage)))
                 .transpose()?
                 .flatten();
             storage.with_storage(|| ctx.reserve_vec(&mut values, 1, "step_pmi_measure_values"))?;
@@ -2411,7 +2370,7 @@ fn characteristic_measure_values(
 fn collect_measure_ids(
     value: &Value,
     exchange: &Exchange,
-    active: &mut BTreeSet<u64>,
+    visited: &mut BTreeMap<u64, usize>,
     depth: usize,
     graph_limit: usize,
     measure_ids: &mut BTreeSet<u64>,
@@ -2423,10 +2382,10 @@ fn collect_measure_ids(
     let _nested = ctx.enter_nested("step_pmi_measure_id_walk")?;
     match value {
         Value::Reference(id) => {
-            if ctx.contains_btree_set(&active, id, "STEP pmi active contains")? {
+            if ctx.get_btree_map(visited, id, "STEP measure visited depth lookup")?.is_some_and(|prior| *prior <= depth) {
                 return Ok(());
             }
-            let (_inserted, _active_storage) = ctx.with_scoped_storage("STEP active key scratch", || ctx.insert_btree_set(active, *id, "step_pmi_measure_active_ids"))?;
+            ctx.insert_btree_map(visited, *id, depth, "step_pmi_measure_visited_ids")?;
             if let Some(record) = ctx.get_btree_map(exchange.records(), id, "STEP pmi record get")? {
                 if is_measure_record(ctx, record)? {
                     ctx.insert_btree_set(measure_ids, *id, "step_pmi_measure_ids")?;
@@ -2441,7 +2400,7 @@ fn collect_measure_ids(
                             collect_measure_ids(
                                 parameter,
                                 exchange,
-                                active,
+                                visited,
                                 depth + 1,
                                 graph_limit,
                                 measure_ids,
@@ -2451,7 +2410,6 @@ fn collect_measure_ids(
                     }
                 }
             }
-            ctx.remove_btree_set(active, id, "STEP pmi active remove")?;
         }
         Value::List(values) => {
             for value in ctx.admit_iter(
@@ -2461,7 +2419,7 @@ fn collect_measure_ids(
                 collect_measure_ids(
                     value,
                     exchange,
-                    active,
+                    visited,
                     depth + 1,
                     graph_limit,
                     measure_ids,
@@ -2473,7 +2431,7 @@ fn collect_measure_ids(
             collect_measure_ids(
                 value,
                 exchange,
-                active,
+                visited,
                 depth + 1,
                 graph_limit,
                 measure_ids,
@@ -2489,7 +2447,7 @@ fn measure_item_name(
     id: u64,
     record: &RawRecord,
     exchange: &Exchange,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     (ctx, storage): (&DecodeContext<'_>, &mut ScopedReservation<'_>),
 ) -> Result<Option<String>, CodecError> {
     Ok(record
@@ -2509,7 +2467,7 @@ fn measure_item_name(
             decode_text_scoped(
                 exchange,
                 value,
-                losses,
+                (losses, slot_storage),
                 id,
                 ("measure item name", StepLossCode::MetadataStringInvalid), ctx, storage,
             )
@@ -2519,12 +2477,12 @@ fn measure_item_name(
         .filter(|name| !name.is_empty()))
 }
 
-fn measure_context<'a>(
+fn measure_context<'a, 'ctx>(
     geometry: &GeometryData,
     id: u64,
-    losses: &'a mut Vec<LossNote>,
+    losses: (&'a mut Vec<LossNote>, &'a std::cell::RefCell<ScopedReservation<'ctx>>),
     graph_limit: usize,
-) -> MeasureContext<'a> {
+) -> MeasureContext<'a, 'ctx> {
     MeasureContext {
         length_scale: geometry.units.length([id]).get(),
         angle_scale: geometry.units.angle([id]).get(),
@@ -2536,7 +2494,7 @@ fn measure_context<'a>(
 fn first_measure<'a>(
     values: &'a [Value],
     exchange: &Exchange,
-    measurements: &mut MeasureContext<'_>,
+    measurements: &mut MeasureContext<'_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PmiValue>, CodecError> {
     ctx.find_map(values, |value| measure(value, exchange, measurements, ctx), "STEP first measure traversal")
@@ -2545,7 +2503,7 @@ fn first_measure<'a>(
 fn measure(
     value: &Value,
     exchange: &Exchange,
-    measurements: &mut MeasureContext<'_>,
+    measurements: &mut MeasureContext<'_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PmiValue>, CodecError> {
     measure_inner(value, exchange, &mut BTreeSet::new(), 0, measurements, ctx)
@@ -2556,7 +2514,7 @@ fn measure_inner(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
-    measurements: &mut MeasureContext<'_>,
+    measurements: &mut MeasureContext<'_, '_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<PmiValue>, CodecError> {
     if depth >= measurements.graph_limit {
@@ -2634,18 +2592,18 @@ fn measure_inner(
             let scale = match quantity {
                 PmiQuantity::Length => {
                     let resolved = match unit {
-                        Some(unit) => super::geometry::unit_scale_mm(
-                            unit,
-                            exchange,
-                            &mut BTreeSet::new(),
-                            ctx,
-                        )?,
+                        Some(unit) => {
+                            let (scale, _unit_storage) = ctx.with_scoped_storage("STEP measure unit resolver scratch", || super::geometry::unit_scale_mm(
+                                unit, exchange, &mut BTreeSet::new(), ctx,
+                            ))?;
+                            scale
+                        },
                         None => None,
                     };
                     if let Some(scale) = resolved {
                         scale.get()
                     } else {
-                        ctx.push_vec(measurements.losses, StepLossCode::PmiLengthUnitUnresolved.note(format!(
+                        ctx.push_scoped_vec(&mut measurements.losses.1.borrow_mut(), measurements.losses.0, StepLossCode::PmiLengthUnitUnresolved.note(format!(
                                 "PMI length measure #{id} unit scale did not resolve; the document length scale was used"
                             )), "step_pmi_losses")?;
                         measurements.length_scale
@@ -2653,18 +2611,18 @@ fn measure_inner(
                 }
                 PmiQuantity::Angle => {
                     let resolved = match unit {
-                        Some(unit) => super::geometry::unit_scale_radians(
-                            unit,
-                            exchange,
-                            &mut BTreeSet::new(),
-                            ctx,
-                        )?,
+                        Some(unit) => {
+                            let (scale, _unit_storage) = ctx.with_scoped_storage("STEP measure unit resolver scratch", || super::geometry::unit_scale_radians(
+                                unit, exchange, &mut BTreeSet::new(), ctx,
+                            ))?;
+                            scale
+                        },
                         None => None,
                     };
                     if let Some(scale) = resolved {
                         scale.get()
                     } else {
-                        ctx.push_vec(measurements.losses, StepLossCode::PmiAngleUnitUnresolved.note(format!(
+                        ctx.push_scoped_vec(&mut measurements.losses.1.borrow_mut(), measurements.losses.0, StepLossCode::PmiAngleUnitUnresolved.note(format!(
                                 "PMI angle measure #{id} unit scale did not resolve; the document plane-angle scale was used"
                             )), "step_pmi_losses")?;
                         measurements.angle_scale

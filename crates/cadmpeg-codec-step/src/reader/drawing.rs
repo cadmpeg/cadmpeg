@@ -19,7 +19,7 @@ use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, ReferenceName, Value};
 
 use super::representation;
-use super::{decode_text_charged, opaque_record_id, record_targets, StageOutcome};
+use super::{decode_output_text, opaque_record_id, record_targets, StageOutcome};
 use super::{RecordExt, ValueExt};
 
 const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
@@ -152,13 +152,15 @@ impl TargetContext<'_> {
 }
 
 /// Decode the drawing object graph without claiming unsupported graphics.
-pub(super) fn decode(
+pub(super) fn decode<'ctx>(
     exchange: &Exchange,
     ir: &mut CadIr,
     known_typed: &HashSet<u64>,
     product_definition_ids_by_shape: &BTreeMap<u64, ProductDefinitionId>,
-    ctx: &DecodeContext<'_>,
-) -> Result<StageOutcome<()>, CodecError> {
+    ctx: &'ctx DecodeContext<'_>,
+) -> Result<StageOutcome<(cadmpeg_core::decode::ScopedReservation<'ctx>, cadmpeg_core::decode::ScopedReservation<'ctx>)>, CodecError> {
+    let slot_storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP stage report buffers")?);
+    let mut claim_storage = ctx.reserve_scoped(0, "STEP stage claim storage")?;
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     let mut losses = Vec::new();
     let mut candidates = Vec::new();
@@ -168,7 +170,7 @@ pub(super) fn decode(
         };
         let parameters = source_parameters(ctx, record, name)?;
         if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
-            ctx.reserve_vec(&mut losses, 1, "step_drawing_losses")?;
+            slot_storage.borrow_mut().with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_drawing_losses"))?;
             losses.push(
                 StepLossCode::DrawingRecordTooFewParameters.note(ctx.format_retained(
                     format_args!(
@@ -197,7 +199,7 @@ pub(super) fn decode(
 
     if candidates.is_empty() {
         return Ok(StageOutcome {
-            value: (),
+            value: (claim_storage, slot_storage.into_inner()),
             claims: BTreeSet::new(),
             losses,
             notes: Vec::new(),
@@ -281,7 +283,7 @@ pub(super) fn decode(
     };
 
     let mut drawings = BTreeMap::<u64, Drawing>::new();
-    for (order, candidate) in candidates.into_iter().enumerate() {
+    for (order, candidate) in ctx.admit_iter(candidates, "STEP drawing candidate traversal")?.enumerate() {
         let DrawingCandidate {
             id,
             name,
@@ -304,7 +306,7 @@ pub(super) fn decode(
             if let Some(value) = value_text(
                 exchange,
                 value,
-                &mut losses,
+                (&mut losses, &slot_storage),
                 id,
                 &format!("drawing parameter {index}"),
                 ctx,
@@ -316,7 +318,7 @@ pub(super) fn decode(
         }
 
         let Some(order) = cadmpeg_core::decode::id_from_index(order) else {
-            ctx.reserve_vec(&mut losses, 1, "step_drawing_losses")?;
+            slot_storage.borrow_mut().with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_drawing_losses"))?;
             losses.push(StepLossCode::DrawingOrderUnstatable.note(format!(
                 "drawing #{id} position in the stored order exceeds the stated order width"
             )));
@@ -330,7 +332,7 @@ pub(super) fn decode(
             parameters,
             id,
             &target_context,
-            &mut losses,
+            (&mut losses, &slot_storage),
         )?;
 
         let drawing = Drawing {
@@ -355,14 +357,15 @@ pub(super) fn decode(
         scratch_storage.with_storage(|| ctx.insert_btree_map(&mut drawings, id, drawing, "step_drawing_entries"))?;
     }
 
-    add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses, ctx)?;
+    add_sheet_revision_usages(exchange, &mut drawings, &target_context, (&mut losses, &slot_storage), ctx)?;
     let mut association_ids = BTreeSet::new();
+    let mut association_storage = ctx.reserve_scoped(0, "STEP drawing association claim candidates")?;
     add_draughting_model_associations(
         exchange,
         &mut drawings,
         &target_context,
-        &mut losses,
-        &mut association_ids,
+        (&mut losses, &slot_storage),
+        (&mut association_ids, &mut association_storage),
     )?;
 
     let mut typed_records = BTreeSet::new();
@@ -370,11 +373,12 @@ pub(super) fn decode(
         .admit_iter(&(drawings), "STEP decode map traversal")?
         .map(|(key, _)| key)
     {
-        ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims"))?;
     }
     for id in ctx.admit_iter(association_ids, "step_drawing_typed_claims")? {
-        ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims")?;
+        claim_storage.with_storage(|| ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims"))?;
     }
+    drop(association_storage);
     ctx.reserve_vec(
         &mut ir.model.drawings,
         drawings.len(),
@@ -382,7 +386,7 @@ pub(super) fn decode(
     )?;
     ir.model.drawings.extend(ctx.admit_iter(drawings, "STEP drawing arena transfer")?.map(|(_, drawing)| drawing));
     Ok(StageOutcome {
-        value: (),
+        value: (claim_storage, slot_storage.into_inner()),
         claims: typed_records,
         losses,
         notes: Vec::new(),
@@ -478,7 +482,8 @@ fn add_source_typed_targets(
         let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP drawing record get")? else {
             continue;
         };
-        if wrapper_target_resolution(id, target_identities, exchange, ctx)?.is_some() {
+        let (wrapper, _wrapper_storage) = ctx.with_scoped_storage("STEP drawing wrapper probe scratch", || wrapper_target_resolution(id, target_identities, exchange, ctx))?;
+        if wrapper.is_some() {
             continue;
         }
         let identity = opaque_record_id(id, record, ctx)?;
@@ -486,11 +491,7 @@ fn add_source_typed_targets(
             identity.as_str(),
             "step_drawing_native_target_identity_copy",
         ))?;
-        let source_type = ctx.join_display_retained(
-            record.partials.iter().map(|partial| partial.name.as_str()),
-            "+",
-            "step_drawing_source_type_text",
-        )?;
+        let source_type = super::record_type_text(record, ctx, "step_drawing_source_type_text")?;
         ctx.reserve_scoped_vec(&mut native_storage, &mut native_targets, 1, "step_drawing_native_target_items")?;
         native_targets.push(NativeRecord::from_identity(
             identity,
@@ -649,7 +650,7 @@ fn add_reference_fields(
     parameters: DrawingParameters<'_>,
     source_id: u64,
     target_context: &TargetContext<'_>,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
 ) -> Result<(), CodecError> {
     for &index in relationship_indices(name) {
         let Some(value) = parameters.get(index) else {
@@ -673,7 +674,7 @@ fn add_reference_fields(
                         "STEP drawing source label",
                     )?;
                     note_ambiguous_target(
-                        losses,
+                        (losses, slot_storage),
                         &source,
                         role.as_str(),
                         target_id,
@@ -682,9 +683,7 @@ fn add_reference_fields(
                     )?;
                 }
                 TargetResolution::Unresolved => {
-                    target_context
-                        .ctx
-                        .reserve_vec(losses, 1, "step_drawing_losses")?;
+                    slot_storage.borrow_mut().with_storage(|| target_context.ctx.reserve_vec(losses, 1, "step_drawing_losses"))?;
                     losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(target_context.ctx.format_retained(format_args!(
                         "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
                     ), "STEP unresolved drawing relationship")?));
@@ -697,19 +696,17 @@ fn add_reference_fields(
 }
 
 fn note_ambiguous_target(
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     source: &str,
     role: &str,
     target_id: u64,
     identities: &BTreeSet<String>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let identities = ctx.join_display_retained(
-        identities.iter().map(String::as_str),
-        ", ",
-        "step_drawing_ambiguous_identities_text",
-    )?;
-    ctx.reserve_vec(losses, 1, "step_drawing_losses")?;
+    let (mut parts, _parts_storage) = ctx.temporary_vec(identities.len(), "STEP drawing ambiguity fragments")?;
+    parts.extend(ctx.admit_iter(identities, "STEP drawing ambiguity fragment traversal")?.map(String::as_str));
+    let (identities, _identity_storage) = ctx.with_scoped_storage("STEP drawing ambiguity detail scratch", || ctx.join_retained(&parts, ", ", "step_drawing_ambiguous_identities_text"))?;
+    slot_storage.borrow_mut().with_storage(|| ctx.reserve_vec(losses, 1, "step_drawing_losses"))?;
     let message = ctx.format_retained(format_args!("STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"), "step_drawing_ambiguous_loss_text")?;
     losses.push(StepLossCode::DrawingRelationshipTargetAmbiguous.note(message));
     Ok(())
@@ -719,7 +716,7 @@ fn add_sheet_revision_usages(
     exchange: &Exchange,
     drawings: &mut BTreeMap<u64, Drawing>,
     target_context: &TargetContext<'_>,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for (usage_id, record) in exchange.entities(ctx, "DRAWING_SHEET_REVISION_USAGE")? {
@@ -742,7 +739,7 @@ fn add_sheet_revision_usages(
                     "step_drawing_relationship_members",
                 )?,
                 TargetResolution::Ambiguous((identities, _storage)) => note_ambiguous_target(
-                    losses,
+                    (losses, slot_storage),
                     &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
                     "drawing_revision",
                     revision_id,
@@ -750,9 +747,7 @@ fn add_sheet_revision_usages(
                     target_context.ctx,
                 )?,
                 TargetResolution::Unresolved => {
-                    target_context
-                        .ctx
-                        .reserve_vec(losses, 1, "step_drawing_losses")?;
+                    slot_storage.borrow_mut().with_storage(|| target_context.ctx.reserve_vec(losses, 1, "step_drawing_losses"))?;
                     losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
                         "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
                     )));
@@ -764,7 +759,7 @@ fn add_sheet_revision_usages(
                     value_text(
                         target_context.exchange,
                         value,
-                        losses,
+                        (losses, slot_storage),
                         usage_id,
                         "drawing sheet revision usage sequence",
                         ctx,
@@ -788,7 +783,7 @@ fn add_sheet_revision_usages(
                     "step_drawing_relationship_members",
                 )?,
                 TargetResolution::Ambiguous((identities, _storage)) => note_ambiguous_target(
-                    losses,
+                    (losses, slot_storage),
                     &format!("drawing revision #{revision_id} usage #{usage_id}"),
                     "sheet_revision",
                     sheet_id,
@@ -796,9 +791,7 @@ fn add_sheet_revision_usages(
                     target_context.ctx,
                 )?,
                 TargetResolution::Unresolved => {
-                    target_context
-                        .ctx
-                        .reserve_vec(losses, 1, "step_drawing_losses")?;
+                    slot_storage.borrow_mut().with_storage(|| target_context.ctx.reserve_vec(losses, 1, "step_drawing_losses"))?;
                     losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
                         "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
                     )));
@@ -813,8 +806,8 @@ fn add_draughting_model_associations(
     exchange: &Exchange,
     drawings: &mut BTreeMap<u64, Drawing>,
     target_context: &TargetContext<'_>,
-    losses: &mut Vec<LossNote>,
-    typed: &mut BTreeSet<u64>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<cadmpeg_core::decode::ScopedReservation<'_>>),
+    (typed, claim_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
 ) -> Result<(), CodecError> {
     let ctx = target_context.ctx;
     for entity in
@@ -841,7 +834,7 @@ fn add_draughting_model_associations(
                 TargetResolution::Resolved(definition) => Some(definition),
                 TargetResolution::Ambiguous((identities, _storage)) => {
                     note_ambiguous_target(
-                        losses,
+                        (losses, slot_storage),
                         &format!("draughting model #{model_id} association #{association_id}"),
                         "semantic_definition",
                         definition_id,
@@ -852,9 +845,7 @@ fn add_draughting_model_associations(
                     None
                 }
                 TargetResolution::Unresolved => {
-                    target_context
-                        .ctx
-                        .reserve_vec(losses, 1, "step_drawing_losses")?;
+                    slot_storage.borrow_mut().with_storage(|| target_context.ctx.reserve_vec(losses, 1, "step_drawing_losses"))?;
                     losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(
                         format!(
                             "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
@@ -890,7 +881,7 @@ fn add_draughting_model_associations(
                     )?,
                     TargetResolution::Ambiguous((identities, _storage)) => {
                         note_ambiguous_target(
-                            losses,
+                            (losses, slot_storage),
                             &format!("draughting model #{model_id} association #{association_id}"),
                             "associated_items",
                             item_id,
@@ -900,9 +891,7 @@ fn add_draughting_model_associations(
                         complete = false;
                     }
                     TargetResolution::Unresolved => {
-                        target_context
-                            .ctx
-                            .reserve_vec(losses, 1, "step_drawing_losses")?;
+                        slot_storage.borrow_mut().with_storage(|| target_context.ctx.reserve_vec(losses, 1, "step_drawing_losses"))?;
                         losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
                             format!(
                                 "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
@@ -927,7 +916,7 @@ fn add_draughting_model_associations(
                     TargetResolution::Resolved(placeholder) => Some(placeholder),
                     TargetResolution::Ambiguous((identities, _storage)) => {
                         note_ambiguous_target(
-                            losses,
+                            (losses, slot_storage),
                             &format!("draughting model #{model_id} association #{association_id}"),
                             "annotation_placeholder",
                             placeholder_id,
@@ -938,9 +927,7 @@ fn add_draughting_model_associations(
                         None
                     }
                     TargetResolution::Unresolved => {
-                        target_context
-                            .ctx
-                            .reserve_vec(losses, 1, "step_drawing_losses")?;
+                        slot_storage.borrow_mut().with_storage(|| target_context.ctx.reserve_vec(losses, 1, "step_drawing_losses"))?;
                         losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                             "STEP draughting model #{model_id} association #{association_id} relationship annotation_placeholder references source-typed record #{placeholder_id} without a neutral identity"
                         )));
@@ -976,10 +963,10 @@ fn add_draughting_model_associations(
             )?;
         }
         if complete {
-            target_context.ctx.insert_btree_set(typed,
+            claim_storage.with_storage(|| target_context.ctx.insert_btree_set(typed,
                 association_id,
                 "step_drawing_typed_claims",
-            )?;
+            ))?;
         }
     }
     Ok(())
@@ -1180,94 +1167,88 @@ fn mapped_representation(
 fn value_text(
     exchange: &Exchange,
     value: &Value,
-    losses: &mut Vec<LossNote>,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<ScopedReservation<'_>>),
     record_id: u64,
     field: &str,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
+    if matches!(value, Value::String(_)) {
+        let _depth_guard = ctx.enter_nested("step_drawing_value_text_depth")?;
+        return decode_output_text(exchange, value, (losses, slot_storage), record_id, field, StepLossCode::MetadataStringInvalid, ctx);
+    }
+    let (mut parts, mut storage) = ctx.temporary_vec(0, "STEP drawing text fragments")?;
+    if !collect_value_text(value, exchange, (losses, slot_storage), (record_id, field), (&mut parts, &mut storage), ctx)? {
+        return Ok(None);
+    }
+    let (mut text_parts, _text_part_storage) = ctx.temporary_vec(parts.len(), "STEP drawing text join fragments")?;
+    text_parts.extend(ctx.admit_iter(&parts, "STEP drawing text join fragment traversal")?.map(|part| part.as_ref()));
+    Ok(Some(ctx.join_retained(&text_parts, "", "step_drawing_value_text")?))
+}
+
+fn collect_value_text<'a>(
+    value: &'a Value,
+    exchange: &Exchange,
+    (losses, slot_storage): (&mut Vec<LossNote>, &std::cell::RefCell<ScopedReservation<'_>>),
+    (record_id, field): (u64, &str),
+    (parts, storage): (&mut Vec<std::borrow::Cow<'a, str>>, &mut ScopedReservation<'_>),
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    use std::borrow::Cow;
     let _depth_guard = ctx.enter_nested("step_drawing_value_text_depth")?;
-    let text = match value {
-        Value::Reference(id) => {
-            ctx.format_retained(format_args!("#{id}"), "step_drawing_value_text")?
+    let text: Cow<'a, str> = match value {
+        Value::Reference(id) => Cow::Owned(storage.with_storage(|| ctx.format_retained(format_args!("#{id}"), "step_drawing_value_text"))?),
+        Value::ExternalReference(id) => Cow::Owned(storage.with_storage(|| ctx.format_retained(format_args!("@{id}"), "step_drawing_value_text"))?),
+        Value::ConstantEntity(name) | Value::ExpressValueConstant(name) => {
+            let prefix = if matches!(value, Value::ConstantEntity(_)) { "#" } else { "@" };
+            ctx.push_scoped_vec(storage, parts, Cow::Borrowed(prefix), "STEP drawing text fragments")?;
+            Cow::Borrowed(name)
         }
-        Value::ExternalReference(id) => {
-            ctx.format_retained(format_args!("@{id}"), "step_drawing_value_text")?
-        }
-        Value::ConstantEntity(name) => {
-            ctx.format_retained(format_args!("#{name}"), "step_drawing_value_text")?
-        }
-        Value::ExpressValueConstant(name) => {
-            ctx.format_retained(format_args!("@{name}"), "step_drawing_value_text")?
-        }
-        Value::Integer(value) => {
-            ctx.format_retained(format_args!("{value}"), "step_drawing_value_text")?
-        }
-        Value::Real(value) => {
-            ctx.format_retained(format_args!("{}", value.get()), "step_drawing_value_text")?
-        }
+        Value::Integer(value) => Cow::Owned(storage.with_storage(|| ctx.format_retained(format_args!("{value}"), "step_drawing_value_text"))?),
+        Value::Real(value) => Cow::Owned(storage.with_storage(|| ctx.format_retained(format_args!("{}", value.get()), "step_drawing_value_text"))?),
         Value::Enumeration(value) => {
-            ctx.format_retained(format_args!(".{value}."), "step_drawing_value_text")?
+            ctx.push_scoped_vec(storage, parts, Cow::Borrowed("."), "STEP drawing text fragments")?;
+            ctx.push_scoped_vec(storage, parts, Cow::Borrowed(value), "STEP drawing text fragments")?;
+            Cow::Borrowed(".")
         }
         Value::String(_) => {
-            return decode_text_charged(
-                exchange,
-                value,
-                losses,
-                record_id,
-                field,
-                StepLossCode::MetadataStringInvalid,
-                ctx,
-            )
+            let Some(text) = super::decode_text_scoped(exchange, value, (losses, slot_storage), record_id, (field, StepLossCode::MetadataStringInvalid), ctx, storage)? else { return Ok(false); };
+            Cow::Owned(text)
         }
         Value::Binary(value) => {
             const HEX: &[u8; 16] = b"0123456789ABCDEF";
-            let mut text = ctx.format_retained(
-                format_args!("binary:{}:", value.bit_len()),
-                "step_drawing_value_text",
-            )?;
+            let mut text = storage.with_storage(|| ctx.format_retained(format_args!("binary:{}:", value.bit_len()), "step_drawing_value_text"))?;
+            // A byte Vec has at most isize::MAX entries; twice its length fits usize.
+            storage.with_storage(|| ctx.try_reserve_retained_text(&mut text, value.data().len() * 2, "step_drawing_value_text"))?;
             for byte in ctx.admit_iter(value.data(), "STEP value text borrowed traversal")? {
-                ctx.append_formatted_retained(
-                    &mut text,
-                    format_args!(
-                        "{}{}",
-                        char::from(HEX[usize::from(byte >> 4)]),
-                        char::from(HEX[usize::from(byte & 0x0f)])
-                    ),
-                    "step_drawing_value_text",
-                )?;
+                text.push(char::from(HEX[usize::from(byte >> 4)]));
+                text.push(char::from(HEX[usize::from(byte & 0x0f)]));
             }
-            text
+            Cow::Owned(text)
         }
         Value::Resource(value) => {
-            ctx.format_retained(format_args!("<{value}>"), "step_drawing_value_text")?
+            ctx.push_scoped_vec(storage, parts, Cow::Borrowed("<"), "STEP drawing text fragments")?;
+            ctx.push_scoped_vec(storage, parts, Cow::Borrowed(value), "STEP drawing text fragments")?;
+            Cow::Borrowed(">")
         }
-        Value::Omitted => ctx.format_retained(format_args!("$"), "step_drawing_value_text")?,
-        Value::Derived => ctx.format_retained(format_args!("*"), "step_drawing_value_text")?,
+        Value::Omitted => Cow::Borrowed("$"),
+        Value::Derived => Cow::Borrowed("*"),
         Value::List(values) => {
-            let mut text = ctx.format_retained(format_args!("("), "step_drawing_value_text")?;
-            for (index, value) in ctx
-                .admit_iter(&values[..], "STEP value text traversal")?
-                .enumerate()
-            {
-                let Some(part) = value_text(exchange, value, losses, record_id, field, ctx)? else {
-                    return Ok(None);
-                };
-                if index != 0 {
-                    ctx.append_retained(&mut text, ",", "step_drawing_value_text")?;
-                }
-                ctx.append_retained(&mut text, &part, "step_drawing_value_text")?;
+            ctx.push_scoped_vec(storage, parts, Cow::Borrowed("("), "STEP drawing text fragments")?;
+            for (index, value) in ctx.admit_iter(values, "STEP value text traversal")?.enumerate() {
+                if index != 0 { ctx.push_scoped_vec(storage, parts, Cow::Borrowed(","), "STEP drawing text fragments")?; }
+                if !collect_value_text(value, exchange, (losses, slot_storage), (record_id, field), (parts, storage), ctx)? { return Ok(false); }
             }
-            ctx.append_retained(&mut text, ")", "step_drawing_value_text")?;
-            text
+            Cow::Borrowed(")")
         }
         Value::Typed(name, value) => {
-            let Some(value) = value_text(exchange, value, losses, record_id, field, ctx)? else {
-                return Ok(None);
-            };
-            ctx.format_retained(format_args!("{name}({value})"), "step_drawing_value_text")?
+            ctx.push_scoped_vec(storage, parts, Cow::Borrowed(name), "STEP drawing text fragments")?;
+            ctx.push_scoped_vec(storage, parts, Cow::Borrowed("("), "STEP drawing text fragments")?;
+            if !collect_value_text(value, exchange, (losses, slot_storage), (record_id, field), (parts, storage), ctx)? { return Ok(false); }
+            Cow::Borrowed(")")
         }
     };
-    Ok(Some(text))
+    ctx.push_scoped_vec(storage, parts, text, "STEP drawing text fragments")?;
+    Ok(true)
 }
 
 #[cfg(test)]
