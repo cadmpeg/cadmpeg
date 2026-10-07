@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
 };
 use cadmpeg_core::CodecError;
 
@@ -36,57 +36,46 @@ fn poles(rational: bool) -> PcurveNurbsPoles<FinitePoint2> {
 fn evaluator_lanes_admit_each_copy_and_release_both_lanes() {
     for rational in [false, true] {
         let source = poles(rational);
-        let point_work = 2 * u64_from_index(std::mem::size_of::<Point2>());
-        let work = point_work
-            + if rational {
-                2 * u64_from_index(std::mem::size_of::<f64>())
-            } else {
-                0
-            };
-        for allowance in 0..=work {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowance;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = 4096;
-            policy.limits.max_collection_items = if rational { 4 } else { 2 };
-            policy.limits.max_recursion_depth = 0;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let result = PcurveEvaluatorLanes::new(
-                &ctx,
-                &source,
-                "evaluator point copy",
-                "evaluator weight copy",
-            );
-            if allowance < work {
-                let original = result.unwrap_err();
-                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(
-                    original.operation,
-                    if allowance < point_work {
-                        "evaluator point copy"
-                    } else {
-                        "evaluator weight copy"
+        for operation in if rational {
+            vec!["evaluator point copy", "evaluator weight copy"]
+        } else {
+            vec!["evaluator point copy"]
+        } {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let arena = DecodeArena::new();
+                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                    let result = PcurveEvaluatorLanes::new(
+                        &ctx, &source, "evaluator point copy", "evaluator weight copy",
+                    ).map(|_| ());
+                    if let Err(ref limit) = result {
+                        assert!(matches!(ctx.finish_session(),
+                            Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
                     }
-                );
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-                );
-            } else {
-                let lanes = result.unwrap();
-                assert_eq!(
-                    lanes.points(),
-                    [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]
-                );
-                assert_eq!(lanes.weights(), rational.then_some([1.0, 2.0].as_slice()));
-                drop(lanes);
-                drop(
-                    ctx.reserve_scoped_limit(4096, "evaluator lanes released")
-                        .unwrap(),
-                );
-                ctx.finish_session().unwrap();
-            }
+                    result.map_err(Into::into)
+                },
+            );
         }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = if rational { 4 } else { 2 };
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_collection_items = if rational { 4 } else { 2 };
+        policy.limits.max_recursion_depth = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let lanes = PcurveEvaluatorLanes::new(
+            &ctx, &source, "evaluator point copy", "evaluator weight copy",
+        ).unwrap();
+        assert_eq!(lanes.points(), [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
+        assert_eq!(lanes.weights(), rational.then_some([1.0, 2.0].as_slice()));
+        drop(lanes);
+        drop(ctx.reserve_scoped_limit(4096, "evaluator lanes released").unwrap());
+        ctx.finish_session().unwrap();
     }
 }
 
